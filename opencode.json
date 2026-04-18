@@ -1,0 +1,185 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "opencode-go/glm-5.1",
+  "small_model": "opencode-go/qwen3.6-plus",
+  "provider": {
+    "opencode-go": {
+      "options": {
+        "apiKey": "{env:OPENCODE_GO_API_KEY}"
+      }
+    }
+  },
+  "instructions": [
+    "requirements.md"
+  ],
+  "permission": {
+    "edit": "allow",
+    "bash": "allow",
+    "webfetch": "allow"
+  },
+  "agent": {
+    "build": {
+      "model": "opencode-go/glm-5.1",
+      "temperature": 0.3,
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "*": "allow"
+        },
+        "webfetch": "allow"
+      }
+    },
+    "plan": {
+      "model": "opencode-go/kimi-k2.5",
+      "temperature": 0.1,
+      "permission": {
+        "edit": "ask",
+        "bash": {
+          "*": "ask"
+        },
+        "webfetch": "allow"
+      }
+    },
+    "code-reviewer": {
+      "description": "Reviews code for security vulnerabilities, performance issues, and Clean Architecture / FSD violations. Read-only — cannot modify files.",
+      "mode": "subagent",
+      "model": "opencode-go/glm-5",
+      "temperature": 0.1,
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git status*": "allow",
+          "npm run lint*": "allow",
+          "npm run test*": "allow",
+          "npx prisma*": "allow",
+          "*": "ask"
+        },
+        "webfetch": "allow"
+      },
+      "steps": 15
+    },
+    "architect": {
+      "description": "Plans system architecture for NestJS modules and Next.js FSD layers. Produces detailed plans without making code changes. Use for planning new features, module boundaries, and data flow.",
+      "mode": "subagent",
+      "model": "opencode-go/kimi-k2.5",
+      "temperature": 0.2,
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "git diff*": "allow",
+          "git log*": "allow",
+          "*": "ask"
+        },
+        "webfetch": "allow"
+      },
+      "steps": 10
+    },
+    "tdd-agent": {
+      "description": "Implements features using strict TDD: Red (write failing test) → Green (minimal implementation) → Refactor. Use for critical modules: cart calculations, discounts, inventory management.",
+      "mode": "subagent",
+      "model": "opencode-go/glm-5.1",
+      "temperature": 0.2,
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "*": "allow"
+        },
+        "webfetch": "allow"
+      },
+      "steps": 25
+    },
+    "task-planner": {
+      "description": "Creates persistent implementation plan documents in docs/plans/ and updates BACKLOG.md. Breaks down features into tasks with acceptance criteria. Use /plan to invoke or ask 'plan this feature'. When asked 'what's next?', reads BACKLOG.md and suggests the next task.",
+      "mode": "subagent",
+      "model": "opencode-go/qwen3.6-plus",
+      "temperature": 0.3,
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git status*": "allow",
+          "ls*": "allow",
+          "*": "ask"
+        },
+        "webfetch": "allow"
+      },
+      "steps": 12
+    }
+  },
+  "command": {
+    "test": {
+      "template": "Run the relevant test suite and analyze results.\n\n1. Determine which workspace the changed files belong to (store-api, store-client, or store-admin).\n2. Run `npm run test -w apps/<workspace>` — if no workspace is obvious, run `npm run test` for all.\n3. If any tests fail, analyze the failures and suggest fixes.\n4. After fixing, re-run tests to confirm they pass.\n\nUse @tdd skill for TDD-specific workflows.",
+      "description": "Run tests and fix failures"
+    },
+    "lint": {
+      "template": "Run linting and type checking across the project.\n\n1. Run `npm run lint` to check for ESLint errors.\n2. Run `npm run typecheck` to check for TypeScript errors.\n3. Report all issues and fix them.\n4. Re-run to confirm clean results.",
+      "description": "Run ESLint and TypeScript checks"
+    },
+    "db-push": {
+      "template": "Push the current Prisma schema to the database without creating a migration.\n\n1. Run `npx prisma generate` to ensure the client is up to date.\n2. Run `npx prisma db push` to sync schema with the database.\n3. Verify the push was successful.\n4. Use only for dev — never for production.",
+      "description": "Push Prisma schema to DB (dev only)"
+    },
+    "db-migrate": {
+      "template": "Create and apply a new Prisma migration.\n\n1. Review the current schema changes in `apps/store-api/prisma/schema.prisma`.\n2. Run `npx prisma migrate dev --name $ARGUMENTS` — if no name is provided, ask for one.\n3. Verify the migration was created and applied successfully.\n4. Run `npx prisma generate` to update the Prisma Client.\n\nUse @prisma-migration skill for Prisma best practices.",
+      "description": "Create and apply a Prisma migration"
+    },
+    "review": {
+      "template": "Review the current changes for code quality, security, and architecture compliance.\n\n1. Run `git diff` to see all uncommitted changes.\n2. Analyze the changes for:\n   - Clean Architecture violations (business logic in controllers, direct PrismaClient usage in services)\n   - FSD import direction violations (importing from layers above)\n   - Security issues (missing validation, exposed secrets, SQL injection risks)\n   - Missing tests for critical business logic\n   - Inconsistent API response format\n   - Missing error handling\n3. Provide a structured review with severity levels (critical, warning, suggestion).",
+      "description": "Code review with architecture and security focus",
+      "agent": "code-reviewer"
+    },
+    "plan": {
+      "template": "Generate a detailed implementation plan for: $ARGUMENTS\n\nUse the @task-planner agent and @plan-document skill.\n\nSteps:\n1. Read `docs/roadmap.md` to understand which phase this feature belongs to.\n2. Read `BACKLOG.md` to find existing tasks and the next TASK number.\n3. List files in `docs/plans/` to find the next sequential plan number.\n4. Analyze the codebase for existing patterns.\n5. Generate a structured plan using the @plan-document skill template.\n6. Save the plan to `docs/plans/[NNN]-[feature-name].md`.\n7. Update `BACKLOG.md` with new tasks referencing the plan.\n\nDo NOT modify any application code. This is planning only.",
+      "description": "Generate a persistent implementation plan and update backlog",
+      "agent": "task-planner"
+    },
+    "next": {
+      "template": "What should I work on next?\n\n1. Read `BACKLOG.md` to find the current project status.\n2. Find the first task with status ⬜ (To Do) whose dependencies are all ✅ (Done).\n3. If the task has a plan file referenced in the Plan column, read it for context.\n4. Suggest the next task with a brief description of what needs to be done.\n5. Ask if the user wants to start working on it.",
+      "description": "Suggest the next task from the backlog",
+      "agent": "task-planner"
+    }
+  },
+  "mcp": {
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "enabled": true
+    },
+    "prisma": {
+      "type": "local",
+      "command": ["npx", "-y", "@prisma/mcp-server"],
+      "enabled": true
+    },
+    "sentry": {
+      "type": "remote",
+      "url": "https://mcp.sentry.dev/mcp",
+      "oauth": {},
+      "enabled": true
+    }
+  },
+  "lsp": {
+    "typescript": {
+      "disabled": false
+    },
+    "prisma": {
+      "disabled": false
+    }
+  },
+  "watcher": {
+    "ignore": [
+      "node_modules/**",
+      "dist/**",
+      ".next/**",
+      ".git/**",
+      "coverage/**"
+    ]
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "reserved": 10000
+  }
+}

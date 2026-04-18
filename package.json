@@ -1,0 +1,31 @@
+{
+  "name": "store-test-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mobile Accessories E-Commerce Store — Monorepo",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w apps/store-api -w apps/store-client -w apps/store-admin",
+    "lint": "npm run lint -w apps/store-api -w apps/store-client -w apps/store-admin",
+    "test": "npm run test -w apps/store-api -w apps/store-client -w apps/store-admin",
+    "test:e2e": "npm run test:e2e -w apps/store-api",
+    "typecheck": "npm run typecheck -w apps/store-api -w apps/store-client -w apps/store-admin",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}

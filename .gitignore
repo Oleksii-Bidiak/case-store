@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+.turbo/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+
+# Prisma
+apps/store-api/prisma/migrations/*_*/
+!apps/store-api/prisma/migrations/migration_lock.toml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temp
+tmp/
+temp/
+*.tmp
+
+# OpenCode
+.opencode/sessions/
+
+# Cache
+.cache/
+.eslintcache
+.tsbuildinfo
