@@ -25,7 +25,7 @@
 | TASK-001 | Set up monorepo with npm workspaces (package.json + .gitignore) | ✅ | — |
 | TASK-002 | Configure Docker Compose (PostgreSQL, Redis) | ✅ | — |
 | TASK-003 | Set up ESLint + Prettier + Husky pre-commit hooks | ✅ | — |
-| TASK-004 | Configure shared TypeScript settings | ⬜ | — |
+| TASK-004 | Configure shared TypeScript settings | ✅ | — |
 | TASK-005 | Set up CI/CD pipeline (GitHub Actions) | ✅ | — |
 
 ### Database

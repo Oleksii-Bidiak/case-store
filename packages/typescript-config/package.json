@@ -1,0 +1,12 @@
+{
+  "name": "@store/typescript-config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared TypeScript configurations for the monorepo",
+  "license": "UNLICENSED",
+  "exports": {
+    "./base": "./base.json",
+    "./nest": "./nest.json",
+    "./next": "./next.json"
+  }
+}
