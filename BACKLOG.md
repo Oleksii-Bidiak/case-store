@@ -40,7 +40,7 @@
 
 | Task ID | Description | Status | Plan |
 |---------|-------------|--------|------|
-| TASK-009 | Set up NestJS project structure (Clean Architecture) | ⬜ | — |
+| TASK-009 | Set up NestJS project structure (Clean Architecture) | 🔄 | docs/plans/001-nestjs-setup.md |
 | TASK-010 | Implement Auth module (register, login, refresh tokens) | ⬜ | — |
 | TASK-011 | Implement User module (CRUD, profile) | ⬜ | — |
 | TASK-012 | Implement Product module (CRUD, filtering) | ⬜ | — |
