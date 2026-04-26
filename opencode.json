@@ -7,7 +7,20 @@
   ],
   "permission": {
     "edit": "allow",
-    "bash": "allow",
+    "bash": {
+      "git status*": "allow",
+      "git diff*": "allow",
+      "git log*": "allow",
+      "git branch*": "allow",
+      "npm *": "allow",
+      "npx *": "allow",
+      "mkdir *": "allow",
+      "ls *": "allow",
+      "dir *": "allow",
+      "docker *": "allow",
+      "node *": "allow",
+      "*": "ask"
+    },
     "webfetch": "allow",
     "lsp": "allow"
   },
@@ -18,7 +31,18 @@
       "permission": {
         "edit": "allow",
         "bash": {
-          "*": "allow"
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git branch*": "allow",
+          "npm *": "allow",
+          "npx *": "allow",
+          "mkdir *": "allow",
+          "ls *": "allow",
+          "dir *": "allow",
+          "docker *": "allow",
+          "node *": "allow",
+          "*": "ask"
         },
         "webfetch": "allow",
         "lsp": "allow"
@@ -82,7 +106,17 @@
       "permission": {
         "edit": "allow",
         "bash": {
-          "*": "allow"
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git branch*": "allow",
+          "npm *": "allow",
+          "npx *": "allow",
+          "mkdir *": "allow",
+          "ls *": "allow",
+          "dir *": "allow",
+          "node *": "allow",
+          "*": "ask"
         },
         "webfetch": "allow",
         "lsp": "allow"
@@ -100,7 +134,9 @@
           "git diff*": "allow",
           "git log*": "allow",
           "git status*": "allow",
-          "ls*": "allow",
+          "ls *": "allow",
+          "dir *": "allow",
+          "mkdir *": "allow",
           "*": "ask"
         },
         "webfetch": "allow",

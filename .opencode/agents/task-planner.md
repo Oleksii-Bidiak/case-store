@@ -9,7 +9,9 @@ permission:
     "git diff*": allow
     "git log*": allow
     "git status*": allow
-    "ls*": allow
+    "ls *": allow
+    "dir *": allow
+    "mkdir *": allow
     "*": ask
   webfetch: allow
 steps: 12

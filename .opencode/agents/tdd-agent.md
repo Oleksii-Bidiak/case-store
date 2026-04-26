@@ -6,8 +6,19 @@ temperature: 0.2
 permission:
   edit: allow
   bash:
-    "*": allow
+    "git status*": allow
+    "git diff*": allow
+    "git log*": allow
+    "git branch*": allow
+    "npm *": allow
+    "npx *": allow
+    "mkdir *": allow
+    "ls *": allow
+    "dir *": allow
+    "node *": allow
+    "*": ask
   webfetch: allow
+  lsp: allow
 steps: 25
 ---
 
