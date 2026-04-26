@@ -50,7 +50,7 @@ jobs:
     needs: [test-unit]
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -69,6 +69,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: npx prisma generate --schema=apps/store-api/prisma/schema.prisma
       - run: npx prisma migrate deploy --schema=apps/store-api/prisma/schema.prisma
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/store_test

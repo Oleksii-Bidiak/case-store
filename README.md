@@ -43,10 +43,10 @@ npm install
 
 ### 2. Set Up Environment Variables
 
-Copy the example env files and fill in your values:
+Copy the example env file and fill in your values:
 
 ```bash
-cp apps/store-api/.env.example apps/store-api/.env
+cp .env.example apps/store-api/.env
 ```
 
 ### 3. Start Infrastructure

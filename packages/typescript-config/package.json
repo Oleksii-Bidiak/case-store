@@ -4,6 +4,11 @@
   "private": true,
   "description": "Shared TypeScript configurations for the monorepo",
   "license": "UNLICENSED",
+  "files": [
+    "base.json",
+    "nest.json",
+    "next.json"
+  ],
   "exports": {
     "./base": "./base.json",
     "./nest": "./nest.json",
