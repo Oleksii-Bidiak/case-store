@@ -1,11 +1,18 @@
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/prisma';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication;
+
+  // Mock PrismaService to prevent database connection errors in test environment
+  const prismaServiceMock = {
+    $connect: jest.fn(),
+    $disconnect: jest.fn(),
+  };
 
   beforeAll(async () => {
     const moduleFixture = await Test.createTestingModule({
@@ -16,7 +23,10 @@ describe('AppController (e2e)', () => {
         }),
         AppModule,
       ],
-    }).compile();
+    })
+      .overrideProvider(PrismaService)
+      .useValue(prismaServiceMock)
+      .compile();
 
     app = moduleFixture.createNestApplication();
 

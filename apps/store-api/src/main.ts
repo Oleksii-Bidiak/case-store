@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters';
@@ -21,6 +22,9 @@ async function bootstrap() {
 
   // Security: Helmet sets secure HTTP headers
   app.use(helmet());
+
+  // Parse cookies from incoming requests (needed for refresh token)
+  app.use(cookieParser());
 
   // CORS configuration
   const corsOrigins = configService.get<string>('CORS_ORIGINS', '*');

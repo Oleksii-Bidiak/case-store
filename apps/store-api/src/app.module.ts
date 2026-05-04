@@ -5,6 +5,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './auth';
 
 @Module({
   imports: [
@@ -41,6 +42,9 @@ import { PrismaModule } from './prisma/prisma.module';
 
     // Database
     PrismaModule,
+
+    // Authentication
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
