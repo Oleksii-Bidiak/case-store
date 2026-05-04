@@ -10,5 +10,8 @@ export default [
   },
   {
     ignores: ['dist/', 'node_modules/', 'coverage/'],
+    rules: {
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
+    },
   },
 ];
