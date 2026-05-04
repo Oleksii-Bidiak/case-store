@@ -78,6 +78,10 @@ export class AuthService {
   /**
    * Refresh authentication tokens.
    * Validates stored token, checks not revoked/expired, revokes old, issues new pair.
+   *
+   * Security: If a revoked token is reused, this indicates a potential token theft.
+   * Per RFC 6819 §5.2.2, we revoke ALL tokens for the user to terminate all sessions,
+   * forcing re-authentication and preventing the attacker from continuing to use stolen tokens.
    */
   async refreshToken(oldToken: string): Promise<AuthTokens> {
     // Find the refresh token in the database
@@ -86,9 +90,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    // Check if token is revoked
+    // Check if token is revoked — reuse detection
     if (storedToken.isRevoked) {
-      throw new UnauthorizedException('Refresh token has been revoked');
+      // Token reuse detected: revoke ALL tokens for this user to terminate all sessions.
+      // This prevents an attacker who stole a token from continuing to use it.
+      await this.authRepository.revokeAllUserTokens(storedToken.user.id);
+      throw new UnauthorizedException('Token reuse detected — all sessions terminated');
     }
 
     // Check if token is expired

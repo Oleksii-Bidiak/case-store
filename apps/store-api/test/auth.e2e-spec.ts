@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
@@ -13,7 +15,18 @@ import * as argon2 from 'argon2';
  * Uses mocked AuthRepository and PrismaService to avoid requiring
  * a real database connection. This mocks at the clean architecture
  * boundary (repository layer), keeping the full HTTP pipeline intact.
+ *
+ * ThrottlerGuard is overridden with a pass-through guard to avoid
+ * rate limiting issues during test execution.
  */
+
+// Pass-through guard that allows all requests (disables rate limiting in tests)
+class ThrottlerGuardPassThrough extends ThrottlerGuard {
+  protected async handleRequest(): Promise<boolean> {
+    return true;
+  }
+}
+
 describe('AuthController (e2e)', () => {
   let app: INestApplication;
 
@@ -58,6 +71,8 @@ describe('AuthController (e2e)', () => {
           isGlobal: true,
           envFilePath: ['.env'],
         }),
+        // Override ThrottlerModule with very high limits for tests
+        ThrottlerModule.forRoot([{ ttl: 60000, limit: 100000 }]),
         AppModule,
       ],
     })
@@ -65,6 +80,9 @@ describe('AuthController (e2e)', () => {
       .useValue(prismaServiceMock)
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
+      // Override ThrottlerGuard with pass-through to avoid rate limiting in tests
+      .overrideProvider(APP_GUARD)
+      .useClass(ThrottlerGuardPassThrough)
       .compile();
 
     app = moduleFixture.createNestApplication();

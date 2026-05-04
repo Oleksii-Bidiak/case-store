@@ -201,14 +201,22 @@ describe('AuthService', () => {
       await expect(service.refreshToken('invalid-token')).rejects.toThrow(UnauthorizedException);
     });
 
-    it('should throw UnauthorizedException when token is revoked', async () => {
+    it('should revoke ALL user tokens and throw when revoked token is reused (reuse detection)', async () => {
       const revokedToken = {
         ...mockRefreshTokenRecord,
         isRevoked: true,
       };
       authRepository.findRefreshToken.mockResolvedValue(revokedToken);
+      authRepository.revokeAllUserTokens.mockResolvedValue(undefined);
 
-      await expect(service.refreshToken('revoked-token')).rejects.toThrow(UnauthorizedException);
+      await expect(service.refreshToken('revoked-token')).rejects.toThrow(
+        new UnauthorizedException('Token reuse detected — all sessions terminated'),
+      );
+
+      // Must revoke ALL tokens for the user, not just the reused one
+      expect(authRepository.revokeAllUserTokens).toHaveBeenCalledWith(mockUser.id);
+      // Must NOT call revokeToken (single token) — the entire family is revoked
+      expect(authRepository.revokeToken).not.toHaveBeenCalled();
     });
 
     it('should throw UnauthorizedException when token is expired', async () => {

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { PrismaService } from '../prisma';
 import { User, RefreshToken } from '@prisma/client';
 
@@ -16,6 +17,15 @@ export interface RefreshTokenWithUser extends RefreshToken {
 @Injectable()
 export class AuthRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Hash a refresh token using SHA-256 before storing or looking up.
+   * This ensures that even if the database is compromised,
+   * attackers cannot use the stored values to impersonate users.
+   */
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
 
   /**
    * Find a user by email address.
@@ -42,24 +52,26 @@ export class AuthRepository {
   }
 
   /**
-   * Find a refresh token by its value, including the associated user.
-   * Returns the token with user relation or null if not found.
+   * Find a refresh token by its raw value, including the associated user.
+   * The token is hashed before lookup — only the hash is stored in the database.
+   * Returns the token record with user relation or null if not found.
    */
-  findRefreshToken(token: string): Promise<RefreshTokenWithUser | null> {
+  findRefreshToken(rawToken: string): Promise<RefreshTokenWithUser | null> {
     return this.prisma.refreshToken.findUnique({
-      where: { token },
+      where: { token: this.hashToken(rawToken) },
       include: { user: true },
     });
   }
 
   /**
    * Persist a new refresh token for a user.
-   * Returns the created refresh token record.
+   * The token is hashed (SHA-256) before storage — the raw token is never saved.
+   * Returns the created refresh token record (with hashed token).
    */
-  saveRefreshToken(userId: string, token: string, expiresAt: Date): Promise<RefreshToken> {
+  saveRefreshToken(userId: string, rawToken: string, expiresAt: Date): Promise<RefreshToken> {
     return this.prisma.refreshToken.create({
       data: {
-        token,
+        token: this.hashToken(rawToken),
         userId,
         expiresAt,
       },
