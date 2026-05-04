@@ -1,6 +1,6 @@
 # Plan: Prisma Schema Design (User, Product, Category + Core Entities)
 
-> **Status:** ⬜ To Do
+> **Status:** ✅ Done
 > **Phase:** Phase 1 — Foundation (MVP Core)
 > **Created:** 2026-04-27
 > **Last Updated:** 2026-04-27
@@ -196,11 +196,13 @@ model CartItem {
   cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
   productId String   @map("product_id")
   product   Product  @relation(fields: [productId], references: [id])
+  variantId String?  @map("variant_id")  // Optional - some products have no variants
+  variant   ProductVariant? @relation(fields: [variantId], references: [id])
   quantity  Int      @default(1)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@unique([cartId, productId])
+  @@unique([cartId, productId, variantId])
   @@index([cartId])
   @@map("cart_items")
 }
@@ -216,8 +218,8 @@ model Order {
   shippingCost    Decimal       @default(0) @map("shipping_cost") @db.Decimal(10, 2)
   tax             Decimal       @default(0) @db.Decimal(10, 2)
   total           Decimal       @db.Decimal(10, 2)
-  shippingAddress String?       @map("shipping_address")
-  billingAddress  String?       @map("billing_address")
+  shippingAddress Json?         @map("shipping_address") // {city, warehouse, address, ref}
+  billingAddress  Json?         @map("billing_address")  // Same structure
   notes           String?
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
@@ -288,17 +290,17 @@ model Review {
 
 ### Design Decisions
 
-| Decision                                                    | Rationale                                                                              |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `Decimal` type for prices                                   | Avoids floating-point precision issues in financial calculations                       |
-| `isActive` flags instead of soft-delete                     | Simpler queries, easier to toggle visibility without orphaned relations                |
-| One cart per user (`userId @unique`)                        | Simplifies cart logic; anonymous carts not needed for MVP                              |
-| `CartItem` links to `Product` (not `ProductVariant`)        | Simplified for MVP; can be extended to variant-level in Phase 2                        |
-| `OrderItem` stores `price` snapshot                         | Preserves historical price at time of purchase, independent of current product price   |
-| `attributes` as JSON on `ProductVariant`                    | Flexible schema for variant properties (color, size, model) without rigid columns      |
-| `shippingAddress`/`billingAddress` as strings on `Order`    | Stores serialized address at time of order; avoids FK complexity for historical orders |
-| Review requires admin approval (`isActive @default(false)`) | Prevents spam; admin moderates before reviews go public                                |
-| Self-referential `Category` hierarchy                       | Supports unlimited nesting (Cases → Phone Cases → iPhone Cases)                        |
+| Decision                                                    | Rationale                                                                            |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `Decimal` type for prices                                   | Avoids floating-point precision issues in financial calculations                     |
+| `isActive` flags instead of soft-delete                     | Simpler queries, easier to toggle visibility without orphaned relations              |
+| One cart per user (`userId @unique`)                        | Simplifies cart logic; anonymous carts not needed for MVP                            |
+| `CartItem` optionally links to `ProductVariant`             | Supports variant selection while allowing products without variants                  |
+| `OrderItem` stores `price` snapshot                         | Preserves historical price at time of purchase, independent of current product price |
+| `attributes` as JSON on `ProductVariant`                    | Flexible schema for variant properties (color, size, model) without rigid columns    |
+| `shippingAddress`/`billingAddress` as Json on `Order`       | Structured storage for Novaposhta pickup points                                      |
+| Review requires admin approval (`isActive @default(false)`) | Prevents spam; admin moderates before reviews go public                              |
+| Self-referential `Category` hierarchy                       | Supports unlimited nesting (Cases → Phone Cases → iPhone Cases)                      |
 
 ### Backend (NestJS — Clean Architecture)
 
@@ -337,7 +339,7 @@ No frontend components are created by this task. The generated Prisma Client typ
 - [ ] All enums defined: UserRole, OrderStatus, PaymentStatus, AddressType
 - [ ] All relations properly configured with `@relation` attributes
 - [ ] Indexes defined on frequently queried fields (slug, categoryId, userId, status)
-- [ ] Unique constraints on: User.email, Category.slug, Product.slug, Cart.userId, CartItem(cartId+productId), Review(userId+productId)
+- [ ] Unique constraints on: User.email, Category.slug, Product.slug, Cart.userId, CartItem(cartId+productId+variantId), Review(userId+productId)
 - [ ] `npx prisma validate` passes with zero errors
 - [ ] `npx prisma generate` succeeds and produces typed Prisma Client
 
@@ -380,10 +382,30 @@ No frontend components are created by this task. The generated Prisma Client typ
 **Acceptance Criteria:**
 
 - [ ] Seed script at `apps/store-api/prisma/seed.ts` exists
-- [ ] Seeds at least: 1 admin user, 1 customer user, 3 categories (with hierarchy), 5 products with variants and images
 - [ ] Seed script is idempotent (can be run multiple times without duplicating data)
 - [ ] `npx prisma db seed` executes successfully
 - [ ] Seeded data is visible in Prisma Studio
+
+**Seed Data Requirements:**
+
+**Users:**
+
+- `admin@store.com` — ADMIN role
+- `customer@store.com` — CUSTOMER role
+
+**Categories:**
+
+- **Cases** (with subcategories: iPhone, Samsung, Xiaomi)
+- **Chargers** (with subcategories: Wall, Car, Wireless)
+- **Cables** (with subcategories: Lightning, USB-C, Micro-USB)
+- **Screen Protectors**
+
+**Products:**
+
+- Phone cases with color variants (Black, White, Blue, Red)
+- Chargers: 20W, 30W, 65W power options
+- Cables: 1m, 2m, 3m length options
+- Screen protectors (tempered glass, film)
 
 **Files to create/modify:**
 

@@ -32,9 +32,9 @@
 
 | Task ID  | Description                                                                             | Status | Plan                            |
 | -------- | --------------------------------------------------------------------------------------- | ------ | ------------------------------- |
-| TASK-006 | Design and create Prisma schema (User, Product, Category, Cart, Order, Address, Review) | ⬜     | docs/plans/002-prisma-schema.md |
-| TASK-007 | Create initial Prisma migration                                                         | ⬜     | docs/plans/002-prisma-schema.md |
-| TASK-008 | Set up seed data for development                                                        | ⬜     | docs/plans/002-prisma-schema.md |
+| TASK-006 | Design and create Prisma schema (User, Product, Category, Cart, Order, Address, Review) | ✅     | docs/plans/002-prisma-schema.md |
+| TASK-007 | Create initial Prisma migration                                                         | ✅     | docs/plans/002-prisma-schema.md |
+| TASK-008 | Set up seed data for development                                                        | ✅     | docs/plans/002-prisma-schema.md |
 
 ### Backend Core
 
