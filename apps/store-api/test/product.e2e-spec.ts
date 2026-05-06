@@ -1,0 +1,525 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtService } from '@nestjs/jwt';
+import request from 'supertest';
+import { AppModule } from '../src/app.module';
+import { AuthRepository } from '../src/auth/auth.repository';
+import { UserRepository } from '../src/user/user.repository';
+import { ProductRepository } from '../src/product/product.repository';
+import { PrismaService } from '../src/prisma';
+
+/**
+ * E2E tests for the Product module.
+ *
+ * Uses mocked AuthRepository, UserRepository, ProductRepository, and PrismaService
+ * to avoid requiring a real database connection. JWT tokens are generated directly
+ * via JwtService to bypass the rate-limited auth endpoints.
+ *
+ * ThrottlerGuard is overridden with a pass-through guard to avoid
+ * rate limiting issues during test execution.
+ */
+
+// Pass-through guard that allows all requests (disables rate limiting in tests)
+class ThrottlerGuardPassThrough extends ThrottlerGuard {
+  protected async handleRequest(): Promise<boolean> {
+    return true;
+  }
+}
+
+describe('ProductController (e2e)', () => {
+  let app: INestApplication;
+  let jwtService: JwtService;
+
+  // Mock AuthRepository — for JWT strategy user lookup
+  const authRepositoryMock = {
+    findByEmail: jest.fn(),
+    findById: jest.fn(),
+    createUser: jest.fn(),
+    findRefreshToken: jest.fn(),
+    saveRefreshToken: jest.fn(),
+    revokeToken: jest.fn(),
+    revokeAllUserTokens: jest.fn(),
+  };
+
+  // Mock UserRepository — for user management
+  const userRepositoryMock = {
+    findById: jest.fn(),
+    findByEmail: jest.fn(),
+    findAll: jest.fn(),
+    update: jest.fn(),
+    deactivate: jest.fn(),
+    activate: jest.fn(),
+  };
+
+  // Mock ProductRepository — for product management
+  const productRepositoryMock = {
+    findById: jest.fn(),
+    findBySlug: jest.fn(),
+    findBySku: jest.fn(),
+    findBySlugWithRelations: jest.fn(),
+    findAll: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    deactivate: jest.fn(),
+    activate: jest.fn(),
+  };
+
+  // Mock PrismaService — prevents database connection errors
+  const prismaServiceMock = {
+    $connect: jest.fn(),
+    $disconnect: jest.fn(),
+    user: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+    },
+    refreshToken: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    },
+  };
+
+  // Test data
+  const testAdmin = {
+    id: 'admin-e2e-1',
+    email: 'e2e-admin@example.com',
+    passwordHash: '$argon2id$hash',
+    firstName: 'Admin',
+    lastName: 'User',
+    phone: null,
+    role: 'ADMIN' as const,
+    isActive: true,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  };
+
+  const testCustomer = {
+    id: 'customer-e2e-1',
+    email: 'e2e-customer@example.com',
+    passwordHash: '$argon2id$hash',
+    firstName: 'Customer',
+    lastName: 'User',
+    phone: null,
+    role: 'CUSTOMER' as const,
+    isActive: true,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  };
+
+  const testProduct = {
+    id: 'product-e2e-1',
+    name: 'iPhone 15 Pro Case — Clear MagSafe',
+    slug: 'iphone-15-pro-case-clear-magsafe',
+    description: 'Premium clear case with MagSafe compatibility',
+    price: { toString: () => '29.99' },
+    compareAtPrice: { toString: () => '39.99' },
+    sku: 'IP15-PRO-CASE-CLR',
+    categoryId: 'category-e2e-1',
+    isActive: true,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  };
+
+  const testProductWithRelations = {
+    ...testProduct,
+    category: { id: 'category-e2e-1', name: 'Phone Cases', slug: 'phone-cases' },
+    variants: [],
+    images: [],
+  };
+
+  /**
+   * Generate a JWT access token for a given user ID and role.
+   * Bypasses the rate-limited auth register endpoint.
+   */
+  function generateAccessToken(userId: string, role: string): string {
+    return jwtService.sign(
+      { sub: userId, role },
+      {
+        secret: 'dev-secret-change-in-production',
+        expiresIn: '15m',
+      },
+    );
+  }
+
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({
+          isGlobal: true,
+          envFilePath: ['.env'],
+        }),
+        ThrottlerModule.forRoot([{ ttl: 60000, limit: 100000 }]),
+        AppModule,
+      ],
+    })
+      .overrideProvider(PrismaService)
+      .useValue(prismaServiceMock)
+      .overrideProvider(AuthRepository)
+      .useValue(authRepositoryMock)
+      .overrideProvider(UserRepository)
+      .useValue(userRepositoryMock)
+      .overrideProvider(ProductRepository)
+      .useValue(productRepositoryMock)
+      .overrideProvider(APP_GUARD)
+      .useClass(ThrottlerGuardPassThrough)
+      .compile();
+
+    app = moduleFixture.createNestApplication();
+    jwtService = moduleFixture.get<JwtService>(JwtService);
+
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: {
+          enableImplicitConversion: true,
+        },
+      }),
+    );
+
+    app.setGlobalPrefix('api', {
+      exclude: ['health'],
+    });
+
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  // Reset mocks between tests
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // ─── GET /api/products (public) ──────────────────────────────────────────────
+
+  describe('GET /api/products', () => {
+    it('should return 200 with paginated product list (no auth required)', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({
+        products: [testProduct],
+        total: 1,
+      });
+
+      const response = await request(app.getHttpServer()).get('/api/products').expect(200);
+
+      expect(response.body).toHaveProperty('data');
+      expect(response.body).toHaveProperty('meta');
+      expect(response.body.meta).toHaveProperty('total');
+      expect(response.body.meta).toHaveProperty('page');
+      expect(response.body.meta).toHaveProperty('limit');
+      expect(response.body.meta).toHaveProperty('totalPages');
+      expect(Array.isArray(response.body.data)).toBe(true);
+    });
+
+    it('should pass query parameters for filtering', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({
+        products: [testProduct],
+        total: 1,
+      });
+
+      const response = await request(app.getHttpServer())
+        .get(
+          '/api/products?categoryId=550e8400-e29b-41d4-a716-446655440000&isActive=true&search=iphone&page=1&limit=10',
+        )
+        .expect(200);
+
+      expect(response.body).toHaveProperty('data');
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          categoryId: '550e8400-e29b-41d4-a716-446655440000',
+          isActive: true,
+          search: 'iphone',
+          page: 1,
+          limit: 10,
+        }),
+      );
+    });
+  });
+
+  // ─── GET /api/products/:slug (public) ────────────────────────────────────────
+
+  describe('GET /api/products/:slug', () => {
+    it('should return 200 with product detail for valid slug', async () => {
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(testProductWithRelations);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/products/iphone-15-pro-case-clear-magsafe')
+        .expect(200);
+
+      expect(response.body).toHaveProperty('data');
+      expect(response.body).toHaveProperty('category');
+      expect(response.body).toHaveProperty('variants');
+      expect(response.body).toHaveProperty('images');
+      expect(response.body.data).toHaveProperty('id');
+      expect(response.body.data).toHaveProperty('name');
+      expect(response.body.data).toHaveProperty('slug');
+      expect(response.body.data).toHaveProperty('price');
+    });
+
+    it('should return 404 for non-existent slug', async () => {
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(null);
+
+      await request(app.getHttpServer()).get('/api/products/nonexistent-slug').expect(404);
+    });
+  });
+
+  // ─── POST /api/products (admin) ──────────────────────────────────────────────
+
+  describe('POST /api/products', () => {
+    it('should return 401 without auth token', async () => {
+      await request(app.getHttpServer())
+        .post('/api/products')
+        .send({
+          name: 'New Product',
+          price: 29.99,
+          categoryId: 'category-uuid-1',
+        })
+        .expect(401);
+    });
+
+    it('should return 403 for non-admin user', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .post('/api/products')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'New Product',
+          price: 29.99,
+          categoryId: 'category-uuid-1',
+        })
+        .expect(403);
+    });
+
+    it('should create a product and return 201 for admin', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.create.mockResolvedValue(testProduct);
+
+      const response = await request(app.getHttpServer())
+        .post('/api/products')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'iPhone 15 Pro Case — Clear MagSafe',
+          slug: 'iphone-15-pro-case-clear-magsafe',
+          price: 29.99,
+          compareAtPrice: 39.99,
+          sku: 'IP15-PRO-CASE-CLR',
+          categoryId: '550e8400-e29b-41d4-a716-446655440000',
+        })
+        .expect(201);
+
+      expect(response.body).toHaveProperty('data');
+      expect(response.body.data).toHaveProperty('id');
+      expect(response.body.data).toHaveProperty('name');
+      expect(response.body.data).toHaveProperty('slug');
+    });
+
+    it('should return 409 when slug is already taken', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      productRepositoryMock.findBySlug.mockResolvedValue(testProduct);
+
+      await request(app.getHttpServer())
+        .post('/api/products')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'Duplicate Product',
+          slug: 'iphone-15-pro-case-clear-magsafe',
+          price: 19.99,
+          categoryId: '550e8400-e29b-41d4-a716-446655440000',
+        })
+        .expect(409);
+    });
+
+    it('should return 400 when required fields are missing', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .post('/api/products')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ description: 'Missing required fields' })
+        .expect(400);
+    });
+  });
+
+  // ─── PUT /api/products/:id (admin) ───────────────────────────────────────────
+
+  describe('PUT /api/products/:id', () => {
+    it('should return 401 without auth token', async () => {
+      await request(app.getHttpServer())
+        .put('/api/products/product-e2e-1')
+        .send({ name: 'Updated Name' })
+        .expect(401);
+    });
+
+    it('should return 403 for non-admin user', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .put('/api/products/product-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Updated Name' })
+        .expect(403);
+    });
+
+    it('should update a product and return updated product for admin', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      productRepositoryMock.update.mockResolvedValue({
+        ...testProduct,
+        name: 'Updated Product Name',
+        updatedAt: new Date('2026-05-05T12:00:00.000Z'),
+      });
+
+      const response = await request(app.getHttpServer())
+        .put('/api/products/product-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Updated Product Name' })
+        .expect(200);
+
+      expect(response.body).toHaveProperty('data');
+      expect(response.body.data.name).toBe('Updated Product Name');
+    });
+
+    it('should return 404 when product is not found', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      productRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .put('/api/products/nonexistent-id')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Updated Name' })
+        .expect(404);
+    });
+
+    it('should return 409 when updating slug to one already taken', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      productRepositoryMock.findBySlug.mockResolvedValue({
+        ...testProduct,
+        id: 'other-product-id',
+        slug: 'taken-slug',
+      });
+
+      await request(app.getHttpServer())
+        .put('/api/products/product-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ slug: 'taken-slug' })
+        .expect(409);
+    });
+  });
+
+  // ─── PATCH /api/products/:id/deactivate (admin) ─────────────────────────────
+
+  describe('PATCH /api/products/:id/deactivate', () => {
+    it('should return 401 without auth token', async () => {
+      await request(app.getHttpServer()).patch('/api/products/some-id/deactivate').expect(401);
+    });
+
+    it('should return 403 for non-admin user', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .patch('/api/products/some-id/deactivate')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('should deactivate product and return updated product for admin', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      productRepositoryMock.findById.mockResolvedValue({
+        ...testProduct,
+        id: 'product-to-deactivate',
+        isActive: true,
+      });
+      productRepositoryMock.deactivate.mockResolvedValue({
+        ...testProduct,
+        id: 'product-to-deactivate',
+        isActive: false,
+      });
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/products/product-to-deactivate/deactivate')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body).toHaveProperty('data');
+      expect(response.body.data.isActive).toBe(false);
+    });
+
+    it('should return 404 when deactivating non-existent product', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      productRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .patch('/api/products/nonexistent-id/deactivate')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+  });
+
+  // ─── PATCH /api/products/:id/activate (admin) ───────────────────────────────
+
+  describe('PATCH /api/products/:id/activate', () => {
+    it('should return 401 without auth token', async () => {
+      await request(app.getHttpServer()).patch('/api/products/some-id/activate').expect(401);
+    });
+
+    it('should return 403 for non-admin user', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .patch('/api/products/some-id/activate')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('should activate product and return updated product for admin', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      productRepositoryMock.findById.mockResolvedValue({
+        ...testProduct,
+        id: 'product-to-activate',
+        isActive: false,
+      });
+      productRepositoryMock.activate.mockResolvedValue({
+        ...testProduct,
+        id: 'product-to-activate',
+        isActive: true,
+      });
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/products/product-to-activate/activate')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body).toHaveProperty('data');
+      expect(response.body.data.isActive).toBe(true);
+    });
+
+    it('should return 404 when activating non-existent product', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      productRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .patch('/api/products/nonexistent-id/activate')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+  });
+});

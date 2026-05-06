@@ -1,4 +1,5 @@
 import { Controller, Post, Body, Res, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
@@ -21,7 +22,10 @@ interface MessageResponse {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
   /**
    * POST /api/auth/register
@@ -71,17 +75,16 @@ export class AuthController {
    *
    * Rotate the refresh token. Expects a valid refresh token in the cookie.
    * Returns a new access token and sets a new refresh token cookie.
+   * The raw token is extracted by JwtRefreshStrategy and passed via request.user.
    */
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtRefreshGuard)
   async refresh(
-    @CurrentUser() user: { id: string; role: string },
+    @CurrentUser('id') userId: string,
+    @CurrentUser('refreshToken') refreshToken: string,
     @Res({ passthrough: true }) response: Response,
   ): Promise<{ data: AuthResponse }> {
-    // Extract the raw refresh token from the cookie
-    const refreshToken = response.req.cookies?.refreshToken;
-
     const tokens = await this.authService.refreshToken(refreshToken);
 
     this.setRefreshCookie(response, tokens.refreshToken);
@@ -117,7 +120,7 @@ export class AuthController {
    * Cookie is scoped to /api/auth/refresh path so it's only sent on refresh requests.
    */
   private setRefreshCookie(response: Response, refreshToken: string): void {
-    const isProduction = process.env.NODE_ENV === 'production';
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
 
     response.cookie('refreshToken', refreshToken, {
       httpOnly: true,
@@ -132,7 +135,7 @@ export class AuthController {
    * Clear the refresh token cookie by setting it with an expired maxAge.
    */
   private clearRefreshCookie(response: Response): void {
-    const isProduction = process.env.NODE_ENV === 'production';
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
 
     response.cookie('refreshToken', '', {
       httpOnly: true,

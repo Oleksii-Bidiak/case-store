@@ -287,7 +287,7 @@ describe('AuthService', () => {
       // Second call: refresh token with JWT_REFRESH_SECRET
       expect(jwtService.sign).toHaveBeenNthCalledWith(
         2,
-        { sub: 'user-uuid-1', type: 'refresh' },
+        { sub: 'user-uuid-1', role: 'CUSTOMER', type: 'refresh' },
         {
           secret: 'test-refresh-secret',
           expiresIn: '7d',

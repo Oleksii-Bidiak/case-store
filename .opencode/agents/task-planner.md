@@ -39,10 +39,13 @@ Use the **@plan-document** skill for the plan document template.
 When a user asks you to plan a feature:
 
 ### Option A: `/plan Feature Name`
+
 This command is already configured. It will invoke you with the feature description.
 
 ### Option B: Manual Request
+
 The user may say something like:
+
 - "Plan the cart module"
 - "Break down Phase 2 into tasks"
 - "I need a plan for user authentication"
@@ -85,6 +88,7 @@ As a [role], I want to [action], so that [benefit].
 ### 2. Break into Tasks
 
 Each task must be:
+
 - **Atomic**: One clear purpose, completable in one sitting
 - **Testable**: Has defined acceptance criteria
 - **Ordered**: Dependencies are explicit
@@ -104,17 +108,20 @@ For each task in the plan document:
 **Depends on:** TASK-[XXX]
 
 **Acceptance Criteria:**
+
 - [ ] Criterion 1
 - [ ] Criterion 2
 - [ ] Tests pass: [specific test command]
 
 **Files to create/modify:**
+
 - `path/to/file.ts` — purpose
 ```
 
 ### 4. Task Categories
 
 Always include tasks for:
+
 - **Prisma schema changes** (if new data)
 - **Backend implementation** (repository → service → controller)
 - **API contract** (Swagger decorators, Orval generation)
@@ -126,6 +133,7 @@ Always include tasks for:
 ### 5. Priority Ordering
 
 Tasks ordered by dependency chain:
+
 1. Data model (Prisma)
 2. Backend (Repository → Service → Controller)
 3. API contract (Swagger + Orval)
@@ -136,6 +144,7 @@ Tasks ordered by dependency chain:
 ## File Naming
 
 Plan files: `docs/plans/[NNN]-[feature-name].md`
+
 - Number: 3 digits, sequential (001, 002, 003...)
 - Name: kebab-case (cart, checkout, order-management)
 

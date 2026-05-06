@@ -25,6 +25,7 @@ Run the full test suite with coverage report and analyze any failures.
 4. For critical modules (cart, discounts, inventory, auth), use the @tdd skill.
 
 **Commands:**
+
 ```
 npm run test           # All tests
 npm run test -w apps/store-api     # Backend only

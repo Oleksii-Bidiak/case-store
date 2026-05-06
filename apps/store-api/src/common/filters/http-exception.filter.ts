@@ -1,16 +1,12 @@
-import {
-  ExceptionFilter,
-  Catch,
-  ArgumentsHost,
-  HttpException,
-  HttpStatus,
-  Logger,
-} from '@nestjs/common';
+import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
 import { Request, Response } from 'express';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger(HttpExceptionFilter.name);
+  constructor(private readonly logger: PinoLogger) {
+    this.logger.setContext(HttpExceptionFilter.name);
+  }
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
@@ -39,10 +35,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
         }
       }
     } else {
-      // Unexpected errors — log them
+      // Unexpected errors — log them with structured data
       this.logger.error(
-        `Unhandled exception: ${exception}`,
-        exception instanceof Error ? exception.stack : undefined,
+        { err: exception, path: request.url },
+        exception instanceof Error ? exception.message : 'Unhandled exception',
       );
     }
 

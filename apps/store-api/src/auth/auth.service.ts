@@ -134,7 +134,7 @@ export class AuthService {
 
     // Sign refresh token with JWT_REFRESH_SECRET
     const refreshToken = this.jwtService.sign(
-      { sub: userId, type: 'refresh' },
+      { sub: userId, role, type: 'refresh' },
       {
         secret: this.jwtRefreshSecret,
         expiresIn: this.jwtRefreshExpiration,

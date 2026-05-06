@@ -7,6 +7,11 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth';
+import { UserModule } from './user';
+import { ProductModule } from './product';
+import { CategoryModule } from './category';
+import { HttpExceptionFilter } from './common/filters';
+import { LoggingInterceptor } from './common/interceptors';
 
 @Module({
   imports: [
@@ -46,10 +51,22 @@ import { AuthModule } from './auth';
 
     // Authentication
     AuthModule,
+
+    // User management
+    UserModule,
+
+    // Product catalog
+    ProductModule,
+
+    // Category management
+    CategoryModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
+    // Register filter and interceptor as providers so they receive PinoLogger via DI
+    HttpExceptionFilter,
+    LoggingInterceptor,
     // Register ThrottlerGuard globally so @Throttle() decorators work on all endpoints
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],

@@ -1,11 +1,12 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { PrismaClient, Prisma } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
 
-  constructor() {
+  constructor(private readonly configService: ConfigService) {
     super({
       log: [
         { emit: 'event', level: 'query' },
@@ -21,9 +22,16 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     this.logger.log('Database connection established');
 
     // Log queries in development
-    if (process.env.NODE_ENV !== 'production') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (this as any).$on('query', (e: { query: string; duration: number }) => {
+    const nodeEnv = this.configService.get<string>('NODE_ENV', 'development');
+    if (nodeEnv !== 'production') {
+      // PrismaClient query events require the extended client API.
+      // The $on method is available at runtime but not typed for event-level subscriptions.
+      // We use a targeted type assertion to avoid `any` on the entire `this` object.
+      (
+        this as unknown as {
+          $on: (event: string, callback: (e: Prisma.QueryEvent) => void) => void;
+        }
+      ).$on('query', (e: Prisma.QueryEvent) => {
         this.logger.debug(`Query: ${e.query} — ${e.duration}ms`);
       });
     }

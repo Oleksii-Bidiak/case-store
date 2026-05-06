@@ -1,10 +1,13 @@
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger } from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
-  private readonly logger = new Logger('HTTP');
+  constructor(private readonly logger: PinoLogger) {
+    this.logger.setContext('HTTP');
+  }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest();
@@ -17,11 +20,12 @@ export class LoggingInterceptor implements NestInterceptor {
           const response = context.switchToHttp().getResponse();
           const { statusCode } = response;
           const duration = Date.now() - now;
-          this.logger.log(`${method} ${url} ${statusCode} — ${duration}ms`);
+          this.logger.info(`${method} ${url} ${statusCode} — ${duration}ms`);
         },
         error: (error) => {
           const duration = Date.now() - now;
           this.logger.error(
+            { statusCode: error.status || 500, duration, method, url },
             `${method} ${url} ${error.status || 500} — ${duration}ms — ${error.message}`,
           );
         },

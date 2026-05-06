@@ -54,11 +54,13 @@ src/
 When given a feature request, produce a plan with these sections:
 
 ### 1. Feature Scope
+
 - What the feature does (user story format)
 - What it does NOT include (scope boundaries)
 - Dependencies on other features/modules
 
 ### 2. Data Model
+
 - Prisma schema changes needed
 - New entities and their relationships
 - Indexes and constraints
@@ -66,6 +68,7 @@ When given a feature request, produce a plan with these sections:
 ### 3. Backend Plan (per module)
 
 For each new NestJS module:
+
 - **Controller**: List all endpoints (method, path, DTOs, response shape)
 - **Service**: List all methods with business rules
 - **Repository**: List all data access methods
@@ -74,6 +77,7 @@ For each new NestJS module:
 ### 4. Frontend Plan (per FSD layer)
 
 For each new UI feature:
+
 - **shared/ui**: New base components needed (if any)
 - **entities**: New API hooks from Orval, entity types
 - **features**: New business interaction components
@@ -81,15 +85,18 @@ For each new UI feature:
 - **app**: New routes/pages, layout changes
 
 ### 5. API Contract
+
 - OpenAPI endpoints with request/response schemas
 - Orval configuration changes
 
 ### 6. Testing Plan
+
 - Unit test cases for critical business logic
 - E2E test scenarios for endpoints
 - Component test cases for frontend
 
 ### 7. Migration Steps
+
 - Order of implementation (what to build first)
 - Prisma migration name suggestions
 - Breaking changes to watch for
@@ -100,29 +107,38 @@ For each new UI feature:
 # Architecture Plan: [Feature Name]
 
 ## 1. Feature Scope
+
 ...
 
 ## 2. Data Model
+
 ...
 
 ## 3. Backend Plan
+
 ### [Module Name]
+
 - **Controller**: ...
 - **Service**: ...
 - **Repository**: ...
 - **Module**: ...
 
 ## 4. Frontend Plan
+
 ### [FSD Layer]
+
 ...
 
 ## 5. API Contract
+
 ...
 
 ## 6. Testing Plan
+
 ...
 
 ## 7. Migration Steps
+
 1. First, create the Prisma migration...
 2. Then, implement the repository...
 3. ...

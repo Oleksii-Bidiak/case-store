@@ -9,11 +9,13 @@ Run linting and type checking across the entire project. Fix all issues found.
 **Steps:**
 
 1. Run ESLint across all workspaces:
+
    ```bash
    npm run lint
    ```
 
 2. Run TypeScript type checking:
+
    ```bash
    npm run typecheck
    ```
@@ -28,6 +30,7 @@ Run linting and type checking across the entire project. Fix all issues found.
    - Re-run `npm run typecheck` to confirm
 
 **Per-workspace commands:**
+
 ```bash
 npm run lint -w apps/store-api
 npm run lint -w apps/store-client

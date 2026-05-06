@@ -38,28 +38,36 @@
 
 ### Backend Core
 
-| Task ID    | Description                                                 | Status | Plan                           |
-| ---------- | ----------------------------------------------------------- | ------ | ------------------------------ |
-| TASK-009   | Set up NestJS project structure (Clean Architecture)        | ✅     | docs/plans/001-nestjs-setup.md |
-| TASK-010   | Implement Auth module (register, login, refresh tokens)     | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-A | Add RefreshToken model to Prisma schema + migration         | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-B | Install missing auth dependencies (passport, cookie-parser) | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-C | Configure cookie-parser middleware in main.ts               | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-D | Create Auth DTOs (RegisterDto, LoginDto)                    | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-E | Create AuthTokens entity                                    | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-F | Implement AuthRepository                                    | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-G | Write unit tests for AuthService (TDD — Red)                | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-H | Implement AuthService (TDD — Green)                         | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-I | Implement JWT strategies (access + refresh)                 | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-J | Implement guards (JwtAuth, JwtRefresh, Roles)               | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-K | Implement decorators (CurrentUser, Roles)                   | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-L | Implement AuthController (register, login, refresh, logout) | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-M | Register AuthModule in AppModule                            | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-N | Write E2E tests for auth endpoints                          | ✅     | docs/plans/003-auth-module.md  |
-| TASK-010-O | Update .env with JWT_REFRESH_SECRET                         | ✅     | docs/plans/003-auth-module.md  |
-| TASK-011   | Implement User module (CRUD, profile)                       | ⬜     | —                              |
-| TASK-012   | Implement Product module (CRUD, filtering)                  | ⬜     | —                              |
-| TASK-013   | Implement Category module (CRUD, hierarchy)                 | ⬜     | —                              |
+| Task ID    | Description                                                                       | Status | Plan                              |
+| ---------- | --------------------------------------------------------------------------------- | ------ | --------------------------------- |
+| TASK-009   | Set up NestJS project structure (Clean Architecture)                              | ✅     | docs/plans/001-nestjs-setup.md    |
+| TASK-010   | Implement Auth module (register, login, refresh tokens)                           | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-A | Add RefreshToken model to Prisma schema + migration                               | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-B | Install missing auth dependencies (passport, cookie-parser)                       | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-C | Configure cookie-parser middleware in main.ts                                     | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-D | Create Auth DTOs (RegisterDto, LoginDto)                                          | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-E | Create AuthTokens entity                                                          | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-F | Implement AuthRepository                                                          | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-G | Write unit tests for AuthService (TDD — Red)                                      | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-H | Implement AuthService (TDD — Green)                                               | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-I | Implement JWT strategies (access + refresh)                                       | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-J | Implement guards (JwtAuth, JwtRefresh, Roles)                                     | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-K | Implement decorators (CurrentUser, Roles)                                         | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-L | Implement AuthController (register, login, refresh, logout)                       | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-M | Register AuthModule in AppModule                                                  | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-N | Write E2E tests for auth endpoints                                                | ✅     | docs/plans/003-auth-module.md     |
+| TASK-010-O | Update .env with JWT_REFRESH_SECRET                                               | ✅     | docs/plans/003-auth-module.md     |
+| TASK-011   | Implement User module (CRUD, profile)                                             | ✅     | docs/plans/004-user-module.md     |
+| TASK-012   | Implement Product module (CRUD, filtering)                                        | ✅     | docs/plans/005-product-module.md  |
+| TASK-013   | Implement Category module (CRUD, hierarchy)                                       | ✅     | docs/plans/006-category-module.md |
+| TASK-013-A | Create Category DTOs (CreateCategoryDto, UpdateCategoryDto, CategoryListQueryDto) | ✅     | docs/plans/006-category-module.md |
+| TASK-013-B | Create CategoryEntity with fromPrisma() and tree mapping                          | ✅     | docs/plans/006-category-module.md |
+| TASK-013-C | Implement CategoryRepository with CRUD + hierarchy queries                        | ✅     | docs/plans/006-category-module.md |
+| TASK-013-D | Write failing unit tests for CategoryService (TDD — Red)                          | ✅     | docs/plans/006-category-module.md |
+| TASK-013-E | Implement CategoryService (TDD — Green)                                           | ✅     | docs/plans/006-category-module.md |
+| TASK-013-F | Implement CategoryController with public + admin endpoints                        | ✅     | docs/plans/006-category-module.md |
+| TASK-013-G | Create CategoryModule and register in AppModule                                   | ✅     | docs/plans/006-category-module.md |
+| TASK-013-H | Write E2E tests for Category endpoints                                            | ✅     | docs/plans/006-category-module.md |
 
 ### API Contract
 

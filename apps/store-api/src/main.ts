@@ -26,10 +26,10 @@ async function bootstrap() {
   // Parse cookies from incoming requests (needed for refresh token)
   app.use(cookieParser());
 
-  // CORS configuration
-  const corsOrigins = configService.get<string>('CORS_ORIGINS', '*');
+  // CORS configuration — never fall back to wildcard with credentials
+  const corsOrigins = configService.get<string>('CORS_ORIGINS', 'http://localhost:3000');
   app.enableCors({
-    origin: corsOrigins === '*' ? '*' : corsOrigins.split(','),
+    origin: corsOrigins.split(',').map((o) => o.trim()),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   });
@@ -46,11 +46,13 @@ async function bootstrap() {
     }),
   );
 
-  // Global exception filter — consistent error envelope
-  app.useGlobalFilters(new HttpExceptionFilter());
+  // Global exception filter — consistent error envelope (injected via DI for PinoLogger)
+  const httpExceptionFilter = app.get(HttpExceptionFilter);
+  app.useGlobalFilters(httpExceptionFilter);
 
-  // Global logging interceptor — request duration & status
-  app.useGlobalInterceptors(new LoggingInterceptor());
+  // Global logging interceptor — request duration & status (injected via DI for PinoLogger)
+  const loggingInterceptor = app.get(LoggingInterceptor);
+  app.useGlobalInterceptors(loggingInterceptor);
 
   // Set global API prefix
   app.setGlobalPrefix('api', {

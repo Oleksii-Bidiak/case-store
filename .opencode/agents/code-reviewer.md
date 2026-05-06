@@ -81,6 +81,7 @@ Structure your review as:
 ```
 
 Severity levels:
+
 - **CRITICAL**: Security vulnerability, data loss risk, must fix before merge
 - **WARNING**: Architecture violation, potential bug, should fix soon
 - **SUGGESTION**: Code quality improvement, better pattern, nice to have

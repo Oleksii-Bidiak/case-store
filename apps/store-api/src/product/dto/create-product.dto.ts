@@ -1,0 +1,99 @@
+import {
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsBoolean,
+  IsUUID,
+  MaxLength,
+  Min,
+  Matches,
+} from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+
+/**
+ * DTO for creating a new product.
+ *
+ * Admin-only endpoint. Slug is auto-generated from name if not provided.
+ * Price must be a positive number. SKU must be unique if provided.
+ */
+export class CreateProductDto {
+  @ApiProperty({
+    description: 'Product name',
+    example: 'iPhone 15 Pro Case — Clear MagSafe',
+  })
+  @IsString()
+  @MaxLength(255, { message: 'Product name must be at most 255 characters' })
+  name!: string;
+
+  @ApiProperty({
+    description: 'URL-friendly slug (auto-generated from name if not provided)',
+    example: 'iphone-15-pro-case-clear-magsafe',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255, { message: 'Slug must be at most 255 characters' })
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
+    message:
+      'Slug must be lowercase, contain only letters, numbers, and hyphens, and not start or end with a hyphen',
+  })
+  slug?: string;
+
+  @ApiProperty({
+    description: 'Product description (supports markdown)',
+    example: 'Premium clear case with MagSafe compatibility...',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000, { message: 'Description must be at most 5000 characters' })
+  description?: string;
+
+  @ApiProperty({
+    description: 'Product price (must be positive)',
+    example: 29.99,
+  })
+  @Type(() => Number)
+  @IsNumber({}, { message: 'Price must be a number' })
+  @Min(0.01, { message: 'Price must be greater than 0' })
+  price!: number;
+
+  @ApiProperty({
+    description: 'Original price for discount display (must be greater than price if set)',
+    example: 39.99,
+    required: false,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: 'Compare-at price must be a number' })
+  @Min(0.01, { message: 'Compare-at price must be greater than 0' })
+  compareAtPrice?: number;
+
+  @ApiProperty({
+    description: 'Stock Keeping Unit — must be unique',
+    example: 'IP15-PRO-CASE-CLR',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50, { message: 'SKU must be at most 50 characters' })
+  sku?: string;
+
+  @ApiProperty({
+    description: 'Category ID the product belongs to',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @IsUUID(4, { message: 'Category ID must be a valid UUID' })
+  categoryId!: string;
+
+  @ApiProperty({
+    description: 'Whether the product is active and visible in the store',
+    example: true,
+    required: false,
+    default: true,
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'isActive must be true or false' })
+  isActive?: boolean;
+}
