@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Put, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { CreateProductDto, UpdateProductDto, ProductListQueryDto } from './dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
@@ -53,6 +54,7 @@ interface ProductDetailResponse {
  *   PATCH  /products/:id/deactivate — Deactivate a product
  *   PATCH  /products/:id/activate   — Activate a product
  */
+@ApiTags('Products')
 @Controller('products')
 export class ProductController {
   constructor(private readonly productService: ProductService) {}
@@ -65,6 +67,8 @@ export class ProductController {
    * Public endpoint — no authentication required.
    */
   @Get()
+  @ApiOperation({ summary: 'List products' })
+  @ApiResponse({ status: 200, description: 'Paginated list of products' })
   async findAll(@Query() query: ProductListQueryDto): Promise<ProductListResponse> {
     return this.productService.findAll(query);
   }
@@ -76,6 +80,10 @@ export class ProductController {
    * Public endpoint — no authentication required.
    */
   @Get(':slug')
+  @ApiOperation({ summary: 'Get product by slug' })
+  @ApiParam({ name: 'slug', description: 'Product URL slug' })
+  @ApiResponse({ status: 200, description: 'Product detail with relations' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
   async findBySlug(@Param('slug') slug: string): Promise<ProductDetailResponse> {
     return this.productService.findBySlug(slug);
   }
@@ -89,6 +97,11 @@ export class ProductController {
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Create a product (admin)' })
+  @ApiResponse({ status: 201, description: 'Product created', type: ProductEntity })
+  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async create(@Body() dto: CreateProductDto): Promise<ProductResponse> {
     const product = await this.productService.create(dto);
 
@@ -104,6 +117,13 @@ export class ProductController {
   @Put(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Update a product (admin)' })
+  @ApiParam({ name: 'id', description: 'Product UUID' })
+  @ApiResponse({ status: 200, description: 'Product updated', type: ProductEntity })
+  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async update(@Param('id') id: string, @Body() dto: UpdateProductDto): Promise<ProductResponse> {
     const product = await this.productService.update(id, dto);
 
@@ -118,6 +138,12 @@ export class ProductController {
   @Patch(':id/deactivate')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Deactivate a product (admin)' })
+  @ApiParam({ name: 'id', description: 'Product UUID' })
+  @ApiResponse({ status: 200, description: 'Product deactivated', type: ProductEntity })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async deactivate(@Param('id') id: string): Promise<ProductResponse> {
     const product = await this.productService.deactivate(id);
 
@@ -132,6 +158,12 @@ export class ProductController {
   @Patch(':id/activate')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Activate a product (admin)' })
+  @ApiParam({ name: 'id', description: 'Product UUID' })
+  @ApiResponse({ status: 200, description: 'Product activated', type: ProductEntity })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async activate(@Param('id') id: string): Promise<ProductResponse> {
     const product = await this.productService.activate(id);
 

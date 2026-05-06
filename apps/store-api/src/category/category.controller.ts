@@ -1,4 +1,5 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { CategoryService } from './category.service';
 import { CategoryListQueryDto } from './dto';
 import { CategoryEntity, CategoryTreeNodeEntity, CategoryWithCountEntity } from './entities';
@@ -39,6 +40,7 @@ interface CategoryWithCountResponse {
  *   GET  /categories        — List root categories (paginated)
  *   GET  /categories/:slug  — Get category by slug with product count
  */
+@ApiTags('Categories')
 @Controller('categories')
 export class CategoryController {
   constructor(private readonly categoryService: CategoryService) {}
@@ -51,6 +53,8 @@ export class CategoryController {
    * Public endpoint — no authentication required.
    */
   @Get('tree')
+  @ApiOperation({ summary: 'Get category tree' })
+  @ApiResponse({ status: 200, description: 'Category tree for navigation' })
   async getCategoryTree(): Promise<CategoryTreeResponse> {
     return this.categoryService.getCategoryTree();
   }
@@ -63,6 +67,8 @@ export class CategoryController {
    * Public endpoint — no authentication required.
    */
   @Get()
+  @ApiOperation({ summary: 'List root categories' })
+  @ApiResponse({ status: 200, description: 'Paginated list of root categories' })
   async getRootCategories(@Query() query: CategoryListQueryDto): Promise<CategoryListResponse> {
     return this.categoryService.getRootCategories(query);
   }
@@ -74,6 +80,10 @@ export class CategoryController {
    * Public endpoint — no authentication required.
    */
   @Get(':slug')
+  @ApiOperation({ summary: 'Get category by slug' })
+  @ApiParam({ name: 'slug', description: 'Category URL slug' })
+  @ApiResponse({ status: 200, description: 'Category with product count' })
+  @ApiResponse({ status: 404, description: 'Category not found' })
   async findBySlug(@Param('slug') slug: string): Promise<CategoryWithCountResponse> {
     return this.categoryService.findBySlug(slug);
   }

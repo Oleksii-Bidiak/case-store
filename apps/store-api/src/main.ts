@@ -4,6 +4,7 @@ import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { ValidationPipe } from '@nestjs/common';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
@@ -59,11 +60,56 @@ async function bootstrap() {
     exclude: ['health'],
   });
 
+  // Swagger/OpenAPI documentation (development only)
+  if (nodeEnv === 'development') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Mobile Accessories Store API')
+      .setDescription('B2C e-commerce platform for mobile accessories')
+      .setVersion('0.1.0')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          name: 'Authorization',
+          in: 'header',
+        },
+        'access-token',
+      )
+      .addCookieAuth(
+        'refreshToken',
+        {
+          type: 'apiKey',
+          in: 'cookie',
+          name: 'refreshToken',
+        },
+        'refresh-token',
+      )
+      .addTag('Health', 'Health check endpoints')
+      .addTag('Auth', 'Authentication and authorization')
+      .addTag('Users', 'User profile and admin user management')
+      .addTag('Products', 'Product catalog browsing and admin management')
+      .addTag('Categories', 'Category browsing and admin management')
+      .build();
+
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document, {
+      customSiteTitle: 'Mobile Accessories Store API',
+      swaggerOptions: {
+        persistAuthorization: true,
+        tagsSorter: 'alpha',
+        operationsSorter: 'alpha',
+      },
+    });
+  }
+
   await app.listen(port);
 
   const logger = app.get(Logger);
   logger.log(`🚀 Application running on http://localhost:${port}`);
   logger.log(`📦 Environment: ${nodeEnv}`);
+  if (nodeEnv === 'development') {
+    logger.log(`📖 Swagger UI: http://localhost:${port}/api/docs`);
+  }
 }
-
 bootstrap();

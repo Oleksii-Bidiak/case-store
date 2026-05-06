@@ -1,4 +1,5 @@
 import { Controller, Get, Put, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { UserService } from './user.service';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
@@ -39,6 +40,7 @@ interface UserListResponse {
  *   PATCH  /users/:id/deactivate — Deactivate a user
  *   PATCH  /users/:id/activate   — Activate a user
  */
+@ApiTags('Users')
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
@@ -51,6 +53,10 @@ export class UserController {
    */
   @Get('me')
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Get current user profile' })
+  @ApiResponse({ status: 200, description: 'User profile retrieved', type: UserEntity })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getProfile(@CurrentUser('id') userId: string): Promise<UserResponse> {
     const user = await this.userService.getProfile(userId);
 
@@ -66,6 +72,11 @@ export class UserController {
    */
   @Put('me')
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Update current user profile' })
+  @ApiResponse({ status: 200, description: 'Profile updated', type: UserEntity })
+  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async updateProfile(
     @CurrentUser('id') userId: string,
     @Body() dto: UpdateProfileDto,
@@ -85,6 +96,11 @@ export class UserController {
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'List all users (admin)' })
+  @ApiResponse({ status: 200, description: 'Paginated list of users' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: UserListQueryDto): Promise<UserListResponse> {
     return this.userService.findAll(query);
   }
@@ -98,6 +114,12 @@ export class UserController {
   @Get(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Get user by ID (admin)' })
+  @ApiParam({ name: 'id', description: 'User UUID' })
+  @ApiResponse({ status: 200, description: 'User found', type: UserEntity })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findById(@Param('id') id: string): Promise<UserResponse> {
     const user = await this.userService.findById(id);
 
@@ -113,6 +135,12 @@ export class UserController {
   @Patch(':id/deactivate')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Deactivate user (admin)' })
+  @ApiParam({ name: 'id', description: 'User UUID' })
+  @ApiResponse({ status: 200, description: 'User deactivated', type: UserEntity })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async deactivateUser(@Param('id') id: string): Promise<UserResponse> {
     const user = await this.userService.deactivateUser(id);
 
@@ -128,6 +156,12 @@ export class UserController {
   @Patch(':id/activate')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Activate user (admin)' })
+  @ApiParam({ name: 'id', description: 'User UUID' })
+  @ApiResponse({ status: 200, description: 'User activated', type: UserEntity })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async activateUser(@Param('id') id: string): Promise<UserResponse> {
     const user = await this.userService.activateUser(id);
 

@@ -1,3 +1,5 @@
+import { ApiProperty } from '@nestjs/swagger';
+
 /**
  * Domain entity representing a product image.
  *
@@ -5,9 +7,23 @@
  * Contains only the data that should be exposed to the client.
  */
 export class ProductImageEntity {
+  @ApiProperty({
+    description: 'Image unique identifier',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
   id!: string;
+
+  @ApiProperty({ description: 'Image URL', example: 'https://example.com/images/product-1.jpg' })
   url!: string;
+
+  @ApiProperty({
+    description: 'Alt text for accessibility',
+    example: 'iPhone 15 Pro clear case',
+    required: false,
+  })
   alt!: string | null;
+
+  @ApiProperty({ description: 'Display sort order (lower = first)', example: 0 })
   sortOrder!: number;
 
   /**

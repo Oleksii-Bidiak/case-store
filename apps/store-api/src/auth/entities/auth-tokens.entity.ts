@@ -1,3 +1,5 @@
+import { ApiProperty } from '@nestjs/swagger';
+
 /**
  * Domain entity representing an authentication token pair.
  *
@@ -10,6 +12,15 @@
  * how to deliver each token.
  */
 export class AuthTokens {
+  @ApiProperty({
+    description: 'JWT access token',
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+  })
   accessToken!: string;
+
+  @ApiProperty({
+    description: 'JWT refresh token (set as HttpOnly cookie)',
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+  })
   refreshToken!: string;
 }

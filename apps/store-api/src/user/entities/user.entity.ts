@@ -1,4 +1,5 @@
 import { UserRole } from '@prisma/client';
+import { ApiProperty } from '@nestjs/swagger';
 
 /**
  * Domain entity representing a user.
@@ -11,14 +12,34 @@ import { UserRole } from '@prisma/client';
  * to prevent accidental leakage in API responses.
  */
 export class UserEntity {
+  @ApiProperty({
+    description: 'User unique identifier',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
   id!: string;
+
+  @ApiProperty({ description: 'User email address', example: 'user@example.com' })
   email!: string;
+
+  @ApiProperty({ description: 'User first name', example: 'John', required: false })
   firstName!: string | null;
+
+  @ApiProperty({ description: 'User last name', example: 'Doe', required: false })
   lastName!: string | null;
+
+  @ApiProperty({ description: 'User phone number', example: '+380991234567', required: false })
   phone!: string | null;
+
+  @ApiProperty({ description: 'User role', example: 'CUSTOMER', enum: ['CUSTOMER', 'ADMIN'] })
   role!: UserRole;
+
+  @ApiProperty({ description: 'Whether the user account is active', example: true })
   isActive!: boolean;
+
+  @ApiProperty({ description: 'Account creation timestamp', example: '2024-01-01T00:00:00.000Z' })
   createdAt!: Date;
+
+  @ApiProperty({ description: 'Last update timestamp', example: '2024-01-01T00:00:00.000Z' })
   updatedAt!: Date;
 
   /**

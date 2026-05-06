@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Put, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { CategoryService } from './category.service';
 import { CreateCategoryDto, UpdateCategoryDto, CategoryListQueryDto } from './dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
@@ -36,6 +37,7 @@ interface CategoryListWithCountResponse {
  *   PATCH  /admin/categories/:id/deactivate   — Deactivate a category
  *   PATCH  /admin/categories/:id/activate     — Activate a category
  */
+@ApiTags('Categories')
 @Controller('admin/categories')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
@@ -50,6 +52,10 @@ export class AdminCategoryController {
    * Admin-only endpoint.
    */
   @Get()
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'List all categories with product counts (admin)' })
+  @ApiResponse({ status: 200, description: 'Paginated list of categories with product counts' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAllWithProductCount(
     @Query() query: CategoryListQueryDto,
   ): Promise<CategoryListWithCountResponse> {
@@ -63,6 +69,12 @@ export class AdminCategoryController {
    * Admin-only endpoint.
    */
   @Get(':id')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Get category by ID (admin)' })
+  @ApiParam({ name: 'id', description: 'Category UUID' })
+  @ApiResponse({ status: 200, description: 'Category found', type: CategoryEntity })
+  @ApiResponse({ status: 404, description: 'Category not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findById(@Param('id') id: string): Promise<CategoryResponse> {
     const category = await this.categoryService.findById(id);
 
@@ -76,6 +88,11 @@ export class AdminCategoryController {
    * Slug is auto-generated from name if not provided.
    */
   @Post()
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Create a category (admin)' })
+  @ApiResponse({ status: 201, description: 'Category created', type: CategoryEntity })
+  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async create(@Body() dto: CreateCategoryDto): Promise<CategoryResponse> {
     const category = await this.categoryService.create(dto);
 
@@ -89,6 +106,13 @@ export class AdminCategoryController {
    * Only provided fields will be updated.
    */
   @Put(':id')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Update a category (admin)' })
+  @ApiParam({ name: 'id', description: 'Category UUID' })
+  @ApiResponse({ status: 200, description: 'Category updated', type: CategoryEntity })
+  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({ status: 404, description: 'Category not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async update(@Param('id') id: string, @Body() dto: UpdateCategoryDto): Promise<CategoryResponse> {
     const category = await this.categoryService.update(id, dto);
 
@@ -101,6 +125,12 @@ export class AdminCategoryController {
    * Deactivates a category (sets isActive = false). Admin-only endpoint.
    */
   @Patch(':id/deactivate')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Deactivate a category (admin)' })
+  @ApiParam({ name: 'id', description: 'Category UUID' })
+  @ApiResponse({ status: 200, description: 'Category deactivated', type: CategoryEntity })
+  @ApiResponse({ status: 404, description: 'Category not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async deactivate(@Param('id') id: string): Promise<CategoryResponse> {
     const category = await this.categoryService.deactivate(id);
 
@@ -113,6 +143,12 @@ export class AdminCategoryController {
    * Activates a category (sets isActive = true). Admin-only endpoint.
    */
   @Patch(':id/activate')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Activate a category (admin)' })
+  @ApiParam({ name: 'id', description: 'Category UUID' })
+  @ApiResponse({ status: 200, description: 'Category activated', type: CategoryEntity })
+  @ApiResponse({ status: 404, description: 'Category not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async activate(@Param('id') id: string): Promise<CategoryResponse> {
     const category = await this.categoryService.activate(id);
 

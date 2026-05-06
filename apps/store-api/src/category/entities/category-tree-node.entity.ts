@@ -1,3 +1,5 @@
+import { ApiProperty } from '@nestjs/swagger';
+
 /**
  * Domain entity representing a category node in a tree structure.
  *
@@ -9,13 +11,39 @@
  * the hierarchy is expressed through nesting.
  */
 export class CategoryTreeNodeEntity {
+  @ApiProperty({
+    description: 'Category unique identifier',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
   id!: string;
+
+  @ApiProperty({ description: 'Category name', example: 'Phone Cases' })
   name!: string;
+
+  @ApiProperty({ description: 'URL-friendly slug', example: 'phone-cases' })
   slug!: string;
+
+  @ApiProperty({
+    description: 'Category description',
+    example: 'Protective cases for all smartphones',
+    required: false,
+  })
   description!: string | null;
+
+  @ApiProperty({
+    description: 'Category image URL',
+    example: 'https://example.com/images/phone-cases.jpg',
+    required: false,
+  })
   image!: string | null;
+
+  @ApiProperty({ description: 'Whether the category is active', example: true })
   isActive!: boolean;
+
+  @ApiProperty({ description: 'Display sort order (lower = first)', example: 0 })
   sortOrder!: number;
+
+  @ApiProperty({ description: 'Child categories', type: [CategoryTreeNodeEntity] })
   children!: CategoryTreeNodeEntity[];
 
   /**

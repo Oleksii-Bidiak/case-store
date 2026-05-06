@@ -1,3 +1,5 @@
+import { ApiProperty } from '@nestjs/swagger';
+
 /**
  * Domain entity representing a product category (summary).
  *
@@ -6,8 +8,16 @@
  * summary (id, name, slug) is needed.
  */
 export class ProductCategoryEntity {
+  @ApiProperty({
+    description: 'Category unique identifier',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
   id!: string;
+
+  @ApiProperty({ description: 'Category name', example: 'Phone Cases' })
   name!: string;
+
+  @ApiProperty({ description: 'URL-friendly slug', example: 'phone-cases' })
   slug!: string;
 
   /**

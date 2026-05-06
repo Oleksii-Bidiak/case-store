@@ -1,3 +1,5 @@
+import { ApiProperty } from '@nestjs/swagger';
+
 /**
  * Domain entity representing a product variant.
  *
@@ -6,12 +8,32 @@
  * to avoid floating-point precision issues in JSON serialization.
  */
 export class ProductVariantEntity {
+  @ApiProperty({
+    description: 'Variant unique identifier',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
   id!: string;
+
+  @ApiProperty({ description: 'Variant name', example: 'Black / 6.1 inch' })
   name!: string;
+
+  @ApiProperty({ description: 'Stock Keeping Unit', example: 'IP15-PRO-CASE-BLK', required: false })
   sku!: string | null;
+
+  @ApiProperty({ description: 'Variant price as string', example: '34.99' })
   price!: string;
+
+  @ApiProperty({ description: 'Available stock quantity', example: 150 })
   stock!: number;
+
+  @ApiProperty({
+    description: 'Variant attributes (color, size, etc.)',
+    example: { color: 'black', size: '6.1' },
+    required: false,
+  })
   attributes!: unknown;
+
+  @ApiProperty({ description: 'Whether the variant is active', example: true })
   isActive!: boolean;
 
   /**

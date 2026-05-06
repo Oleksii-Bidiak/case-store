@@ -1,3 +1,5 @@
+import { ApiProperty } from '@nestjs/swagger';
+
 /**
  * Domain entity representing a product.
  *
@@ -11,16 +13,54 @@
  * are EXCLUDED from the base entity.
  */
 export class ProductEntity {
+  @ApiProperty({
+    description: 'Product unique identifier',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
   id!: string;
+
+  @ApiProperty({ description: 'Product name', example: 'iPhone 15 Pro Case — Clear MagSafe' })
   name!: string;
+
+  @ApiProperty({ description: 'URL-friendly slug', example: 'iphone-15-pro-case-clear-magsafe' })
   slug!: string;
+
+  @ApiProperty({
+    description: 'Product description (markdown)',
+    example: 'Premium clear case...',
+    required: false,
+  })
   description!: string | null;
+
+  @ApiProperty({
+    description: 'Product price as string (avoids float precision)',
+    example: '29.99',
+  })
   price!: string;
+
+  @ApiProperty({
+    description: 'Original price for discount display',
+    example: '39.99',
+    required: false,
+  })
   compareAtPrice!: string | null;
+
+  @ApiProperty({ description: 'Stock Keeping Unit', example: 'IP15-PRO-CASE-CLR', required: false })
   sku!: string | null;
+
+  @ApiProperty({
+    description: 'Category ID the product belongs to',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
   categoryId!: string;
+
+  @ApiProperty({ description: 'Whether the product is active', example: true })
   isActive!: boolean;
+
+  @ApiProperty({ description: 'Creation timestamp', example: '2024-01-01T00:00:00.000Z' })
   createdAt!: Date;
+
+  @ApiProperty({ description: 'Last update timestamp', example: '2024-01-01T00:00:00.000Z' })
   updatedAt!: Date;
 
   /**
