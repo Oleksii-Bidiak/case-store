@@ -1,5 +1,13 @@
 import { Controller, Get, Put, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiExtraModels,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { UserService } from './user.service';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
@@ -10,22 +18,33 @@ import { UserEntity } from './entities';
 /**
  * Response envelope for a single user.
  */
-interface UserResponse {
-  data: UserEntity;
+class UserResponseEnvelope {
+  data!: UserEntity;
+}
+
+/**
+ * Pagination metadata.
+ */
+class PaginationMeta {
+  total!: number;
+  page!: number;
+  limit!: number;
+  totalPages!: number;
 }
 
 /**
  * Response envelope for a paginated user list.
  */
-interface UserListResponse {
-  data: UserEntity[];
-  meta: {
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  };
+class UserListResponseEnvelope {
+  data!: UserEntity[];
+  meta!: PaginationMeta;
 }
+
+/**
+ * Type aliases for controller return types.
+ */
+type UserResponse = { data: UserEntity };
+type UserListResponse = { data: UserEntity[]; meta: PaginationMeta };
 
 /**
  * Controller for user profile and admin user management endpoints.
@@ -41,6 +60,7 @@ interface UserListResponse {
  *   PATCH  /users/:id/activate   — Activate a user
  */
 @ApiTags('Users')
+@ApiExtraModels(UserEntity, UserResponseEnvelope, UserListResponseEnvelope)
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
@@ -55,7 +75,16 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get current user profile' })
-  @ApiResponse({ status: 200, description: 'User profile retrieved', type: UserEntity })
+  @ApiResponse({
+    status: 200,
+    description: 'User profile retrieved',
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(UserResponseEnvelope) },
+        { properties: { data: { $ref: getSchemaPath(UserEntity) } } },
+      ],
+    },
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getProfile(@CurrentUser('id') userId: string): Promise<UserResponse> {
     const user = await this.userService.getProfile(userId);
@@ -74,7 +103,16 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Update current user profile' })
-  @ApiResponse({ status: 200, description: 'Profile updated', type: UserEntity })
+  @ApiResponse({
+    status: 200,
+    description: 'Profile updated',
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(UserResponseEnvelope) },
+        { properties: { data: { $ref: getSchemaPath(UserEntity) } } },
+      ],
+    },
+  })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async updateProfile(
@@ -98,7 +136,11 @@ export class UserController {
   @Roles('ADMIN')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'List all users (admin)' })
-  @ApiResponse({ status: 200, description: 'Paginated list of users' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of users',
+    type: UserListResponseEnvelope,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: UserListQueryDto): Promise<UserListResponse> {
@@ -117,7 +159,16 @@ export class UserController {
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get user by ID (admin)' })
   @ApiParam({ name: 'id', description: 'User UUID' })
-  @ApiResponse({ status: 200, description: 'User found', type: UserEntity })
+  @ApiResponse({
+    status: 200,
+    description: 'User found',
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(UserResponseEnvelope) },
+        { properties: { data: { $ref: getSchemaPath(UserEntity) } } },
+      ],
+    },
+  })
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findById(@Param('id') id: string): Promise<UserResponse> {
@@ -138,7 +189,16 @@ export class UserController {
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Deactivate user (admin)' })
   @ApiParam({ name: 'id', description: 'User UUID' })
-  @ApiResponse({ status: 200, description: 'User deactivated', type: UserEntity })
+  @ApiResponse({
+    status: 200,
+    description: 'User deactivated',
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(UserResponseEnvelope) },
+        { properties: { data: { $ref: getSchemaPath(UserEntity) } } },
+      ],
+    },
+  })
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async deactivateUser(@Param('id') id: string): Promise<UserResponse> {
@@ -159,7 +219,16 @@ export class UserController {
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Activate user (admin)' })
   @ApiParam({ name: 'id', description: 'User UUID' })
-  @ApiResponse({ status: 200, description: 'User activated', type: UserEntity })
+  @ApiResponse({
+    status: 200,
+    description: 'User activated',
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(UserResponseEnvelope) },
+        { properties: { data: { $ref: getSchemaPath(UserEntity) } } },
+      ],
+    },
+  })
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async activateUser(@Param('id') id: string): Promise<UserResponse> {

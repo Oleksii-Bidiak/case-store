@@ -2,26 +2,45 @@ import { Controller, Post, Body, Res, UseGuards, HttpCode, HttpStatus } from '@n
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiCookieAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiCookieAuth,
+  ApiExtraModels,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtRefreshGuard } from './guards';
 import { JwtAuthGuard } from './guards';
 import { CurrentUser } from './decorators';
+import { AuthTokens } from './entities';
 
 /**
- * Response envelope types for consistent API responses.
+ * Response envelope for auth operations.
  */
-interface AuthResponse {
-  accessToken: string;
+class AuthResponseEnvelope {
+  data!: { accessToken: string };
 }
 
-interface MessageResponse {
-  message: string;
+/**
+ * Response envelope for message operations.
+ */
+class MessageResponseEnvelope {
+  data!: { message: string };
 }
+
+/**
+ * Type aliases for controller return types.
+ */
+type AuthResponse = { accessToken: string };
+type MessageResponse = { message: string };
 
 @ApiTags('Auth')
+@ApiExtraModels(AuthTokens, AuthResponseEnvelope, MessageResponseEnvelope)
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -38,7 +57,16 @@ export class AuthController {
   @Post('register')
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Register a new user' })
-  @ApiResponse({ status: 201, description: 'User registered successfully' })
+  @ApiResponse({
+    status: 201,
+    description: 'User registered successfully',
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(AuthResponseEnvelope) },
+        { properties: { data: { $ref: getSchemaPath(AuthTokens) } } },
+      ],
+    },
+  })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 409, description: 'Email already exists' })
   async register(
@@ -64,7 +92,16 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Authenticate user' })
-  @ApiResponse({ status: 200, description: 'Login successful' })
+  @ApiResponse({
+    status: 200,
+    description: 'Login successful',
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(AuthResponseEnvelope) },
+        { properties: { data: { $ref: getSchemaPath(AuthTokens) } } },
+      ],
+    },
+  })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(
     @Body() dto: LoginDto,
@@ -91,7 +128,16 @@ export class AuthController {
   @UseGuards(JwtRefreshGuard)
   @ApiCookieAuth('refresh-token')
   @ApiOperation({ summary: 'Refresh access token' })
-  @ApiResponse({ status: 200, description: 'Token refreshed successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Token refreshed successfully',
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(AuthResponseEnvelope) },
+        { properties: { data: { $ref: getSchemaPath(AuthTokens) } } },
+      ],
+    },
+  })
   @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
   async refresh(
     @CurrentUser('id') userId: string,
@@ -117,7 +163,11 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Logout user' })
-  @ApiResponse({ status: 200, description: 'Logged out successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Logged out successfully',
+    type: MessageResponseEnvelope,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async logout(
     @CurrentUser('id') userId: string,

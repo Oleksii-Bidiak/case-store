@@ -1,5 +1,12 @@
 import { Controller, Get, Post, Put, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiExtraModels,
+} from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { CreateProductDto, UpdateProductDto, ProductListQueryDto } from './dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
@@ -14,32 +21,49 @@ import {
 /**
  * Response envelope for a single product.
  */
-interface ProductResponse {
-  data: ProductEntity;
+class ProductResponseEnvelope {
+  data!: ProductEntity;
+}
+
+/**
+ * Pagination metadata.
+ */
+class PaginationMeta {
+  total!: number;
+  page!: number;
+  limit!: number;
+  totalPages!: number;
 }
 
 /**
  * Response envelope for a paginated product list.
  */
-interface ProductListResponse {
-  data: ProductEntity[];
-  meta: {
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  };
+class ProductListResponseEnvelope {
+  data!: ProductEntity[];
+  meta!: PaginationMeta;
 }
 
 /**
  * Response envelope for a product detail with relations.
  */
-interface ProductDetailResponse {
+class ProductDetailResponseEnvelope {
+  data!: ProductEntity;
+  category!: ProductCategoryEntity;
+  variants!: ProductVariantEntity[];
+  images!: ProductImageEntity[];
+}
+
+/**
+ * Type aliases for controller return types.
+ */
+type ProductResponse = { data: ProductEntity };
+type ProductListResponse = { data: ProductEntity[]; meta: PaginationMeta };
+type ProductDetailResponse = {
   data: ProductEntity;
   category: ProductCategoryEntity;
   variants: ProductVariantEntity[];
   images: ProductImageEntity[];
-}
+};
 
 /**
  * Controller for product browsing and admin product management.
@@ -55,6 +79,15 @@ interface ProductDetailResponse {
  *   PATCH  /products/:id/activate   — Activate a product
  */
 @ApiTags('Products')
+@ApiExtraModels(
+  ProductEntity,
+  ProductVariantEntity,
+  ProductImageEntity,
+  ProductCategoryEntity,
+  ProductResponseEnvelope,
+  ProductListResponseEnvelope,
+  ProductDetailResponseEnvelope,
+)
 @Controller('products')
 export class ProductController {
   constructor(private readonly productService: ProductService) {}
@@ -68,7 +101,11 @@ export class ProductController {
    */
   @Get()
   @ApiOperation({ summary: 'List products' })
-  @ApiResponse({ status: 200, description: 'Paginated list of products' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of products',
+    type: ProductListResponseEnvelope,
+  })
   async findAll(@Query() query: ProductListQueryDto): Promise<ProductListResponse> {
     return this.productService.findAll(query);
   }
