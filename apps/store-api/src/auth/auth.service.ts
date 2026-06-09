@@ -18,11 +18,9 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {
-    this.jwtSecret = this.configService.get<string>('JWT_SECRET', 'dev-secret');
-    this.jwtRefreshSecret = this.configService.get<string>(
-      'JWT_REFRESH_SECRET',
-      'dev-refresh-secret',
-    );
+    // Secrets are required — never fall back to a default (env is validated at startup)
+    this.jwtSecret = this.configService.getOrThrow<string>('JWT_SECRET');
+    this.jwtRefreshSecret = this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
     this.jwtExpiration = this.configService.get<string>('JWT_EXPIRATION', '15m');
     this.jwtRefreshExpiration = this.configService.get<string>('JWT_REFRESH_EXPIRATION', '7d');
   }

@@ -13,6 +13,7 @@ import { CategoryModule } from './category';
 import { CartModule } from './cart';
 import { HttpExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
+import { validateEnv } from './config/env.validation';
 
 @Module({
   imports: [
@@ -20,6 +21,8 @@ import { LoggingInterceptor } from './common/interceptors';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env'],
+      // Fail fast at startup if required secrets/config are missing or invalid
+      validate: validateEnv,
     }),
 
     // Rate limiting
