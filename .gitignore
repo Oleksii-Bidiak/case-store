@@ -54,4 +54,4 @@ temp/
 # Cache
 .cache/
 .eslintcache
-.tsbuildinfo
+*.tsbuildinfo
