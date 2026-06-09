@@ -79,29 +79,55 @@
 
 ### Frontend Scaffold
 
-| Task ID  | Description                                                 | Status | Plan |
-| -------- | ----------------------------------------------------------- | ------ | ---- |
-| TASK-017 | Set up Next.js App Router (store-client) with FSD structure | ⬜     | —    |
-| TASK-018 | Set up Next.js App Router (store-admin) with FSD structure  | ⬜     | —    |
-| TASK-019 | Configure Tailwind CSS with semantic design tokens          | ⬜     | —    |
-| TASK-020 | Set up shadcn/ui base components (store-admin)              | ⬜     | —    |
+| Task ID      | Description                                                                    | Status | Plan                                                        |
+| ------------ | ------------------------------------------------------------------------------ | ------ | ----------------------------------------------------------- |
+| TASK-017     | Set up Next.js App Router (store-client) with FSD structure                    | ✅     | docs/plans/007-store-client-setup.md                        |
+| TASK-017-A   | Scaffold Next.js project with TypeScript, path aliases, and workspace config   | ✅     | docs/plans/007-store-client-setup.md                        |
+| TASK-017-B   | Configure Tailwind CSS with semantic design tokens                             | ✅     | docs/plans/007-store-client-setup.md                        |
+| TASK-017-C   | Set up FSD folder structure (widgets, features, entities, shared)              | ✅     | docs/plans/007-store-client-setup.md                        |
+| TASK-017-D   | Configure TanStack Query provider                                              | ✅     | docs/plans/007-store-client-setup.md                        |
+| TASK-017-E   | Configure Orval API client generation                                          | ✅     | docs/plans/007-store-client-setup.md                        |
+| TASK-017-F   | Configure ESLint + import rules for FSD layer boundaries                       | ✅     | docs/plans/007-store-client-setup.md                        |
+| TASK-017-G   | Create root layout with global providers                                       | ✅     | docs/plans/007-store-client-setup.md                        |
+| TASK-017-H   | Verify full build pipeline (build, lint, typecheck, generate:api)              | ✅     | docs/plans/007-store-client-setup.md                        |
+| TASK-018     | Set up Next.js App Router (store-admin) with FSD structure                     | ✅     | docs/plans/008-store-admin-setup.md                         |
+| TASK-018-A   | Scaffold Next.js admin project with TypeScript, path aliases, workspace config | ✅     | docs/plans/008-store-admin-setup.md                         |
+| TASK-018-B   | Configure Tailwind CSS with semantic design tokens (admin theme)               | ✅     | docs/plans/008-store-admin-setup.md                         |
+| TASK-018-C   | Initialize shadcn/ui base components                                           | ✅     | docs/plans/008-store-admin-setup.md                         |
+| TASK-018-D   | Set up FSD folder structure (widgets, features, entities, shared)              | ✅     | docs/plans/008-store-admin-setup.md                         |
+| TASK-018-E   | Configure TanStack Query provider                                              | ✅     | docs/plans/008-store-admin-setup.md                         |
+| TASK-018-F   | Configure Orval API client generation                                          | ✅     | docs/plans/008-store-admin-setup.md                         |
+| TASK-018-G   | Configure ESLint + import rules for FSD layer boundaries                       | ✅     | docs/plans/008-store-admin-setup.md                         |
+| TASK-018-H   | Create root layout with admin shell (sidebar + header + main)                  | ✅     | docs/plans/008-store-admin-setup.md                         |
+| TASK-018-I   | Verify full build pipeline (build, lint, typecheck, generate:api)              | ✅     | docs/plans/008-store-admin-setup.md                         |
+| ~~TASK-019~~ | ~~Configure Tailwind CSS with semantic design tokens~~                         | ~~⬜~~ | docs/plans/008-store-admin-setup.md (covered by TASK-018-B) |
+| ~~TASK-020~~ | ~~Set up shadcn/ui base components (store-admin)~~                             | ~~⬜~~ | docs/plans/008-store-admin-setup.md (covered by TASK-018-C) |
 
 ---
 
 ## Phase 2: Storefront & Cart
 
-| Task ID  | Description                                     | Status | Plan |
-| -------- | ----------------------------------------------- | ------ | ---- |
-| TASK-021 | Implement Cart module (backend) — TDD           | ⬜     | —    |
-| TASK-022 | Implement CartRepository                        | ⬜     | —    |
-| TASK-023 | Implement CartService with discount logic — TDD | ⬜     | —    |
-| TASK-024 | Implement CartController                        | ⬜     | —    |
-| TASK-025 | Generate Orval hooks for Cart API               | ⬜     | —    |
-| TASK-026 | Build HomePage (store-client)                   | ⬜     | —    |
-| TASK-027 | Build ProductListPage with filtering            | ⬜     | —    |
-| TASK-028 | Build ProductDetailPage                         | ⬜     | —    |
-| TASK-029 | Build CartPage with quantity management         | ⬜     | —    |
-| TASK-030 | Implement AddToCart feature (frontend)          | ⬜     | —    |
+### Cart Backend
+
+| Task ID  | Description                                          | Status | Plan                          |
+| -------- | ---------------------------------------------------- | ------ | ----------------------------- |
+| TASK-021 | Create Cart domain entities and DTOs                 | ✅     | docs/plans/009-cart-module.md |
+| TASK-022 | Implement CartRepository                             | ✅     | docs/plans/009-cart-module.md |
+| TASK-023 | Write failing unit tests for CartService (TDD — Red) | ✅     | docs/plans/009-cart-module.md |
+| TASK-024 | Implement CartService (TDD — Green)                  | ✅     | docs/plans/009-cart-module.md |
+| TASK-025 | Implement CartController and CartModule              | ✅     | docs/plans/009-cart-module.md |
+| TASK-026 | Write E2E tests for Cart endpoints                   | ⬜     | docs/plans/009-cart-module.md |
+| TASK-027 | Generate Orval hooks for Cart API                    | ⬜     | docs/plans/009-cart-module.md |
+
+### Storefront Pages
+
+| Task ID  | Description                             | Status | Plan |
+| -------- | --------------------------------------- | ------ | ---- |
+| TASK-028 | Build HomePage (store-client)           | ⬜     | —    |
+| TASK-029 | Build ProductListPage with filtering    | ⬜     | —    |
+| TASK-030 | Build ProductDetailPage                 | ⬜     | —    |
+| TASK-031 | Build CartPage with quantity management | ⬜     | —    |
+| TASK-032 | Implement AddToCart feature (frontend)  | ⬜     | —    |
 
 ---
 
@@ -109,11 +135,11 @@
 
 | Task ID  | Description                                 | Status | Plan |
 | -------- | ------------------------------------------- | ------ | ---- |
-| TASK-031 | Implement Order module (backend) — TDD      | ⬜     | —    |
-| TASK-032 | Implement Payment integration (Stripe stub) | ⬜     | —    |
-| TASK-033 | Implement Checkout feature (frontend)       | ⬜     | —    |
-| TASK-034 | Build OrderConfirmationPage                 | ⬜     | —    |
-| TASK-035 | Set up order confirmation emails            | ⬜     | —    |
+| TASK-033 | Implement Order module (backend) — TDD      | ⬜     | —    |
+| TASK-034 | Implement Payment integration (Stripe stub) | ⬜     | —    |
+| TASK-035 | Implement Checkout feature (frontend)       | ⬜     | —    |
+| TASK-036 | Build OrderConfirmationPage                 | ⬜     | —    |
+| TASK-037 | Set up order confirmation emails            | ⬜     | —    |
 
 ---
 
@@ -121,12 +147,12 @@
 
 | Task ID  | Description                             | Status | Plan |
 | -------- | --------------------------------------- | ------ | ---- |
-| TASK-036 | Implement RBAC (admin roles)            | ⬜     | —    |
-| TASK-037 | Admin Product management (CRUD)         | ⬜     | —    |
-| TASK-038 | Admin Category management (CRUD)        | ⬜     | —    |
-| TASK-039 | Admin Order management (status updates) | ⬜     | —    |
-| TASK-040 | Admin User management (view, ban)       | ⬜     | —    |
-| TASK-041 | Admin Dashboard (metrics, charts)       | ⬜     | —    |
+| TASK-038 | Implement RBAC (admin roles)            | ⬜     | —    |
+| TASK-039 | Admin Product management (CRUD)         | ⬜     | —    |
+| TASK-040 | Admin Category management (CRUD)        | ⬜     | —    |
+| TASK-041 | Admin Order management (status updates) | ⬜     | —    |
+| TASK-042 | Admin User management (view, ban)       | ⬜     | —    |
+| TASK-043 | Admin Dashboard (metrics, charts)       | ⬜     | —    |
 
 ---
 
@@ -134,13 +160,13 @@
 
 | Task ID  | Description                                | Status | Plan |
 | -------- | ------------------------------------------ | ------ | ---- |
-| TASK-042 | Redis caching for product listings         | ⬜     | —    |
-| TASK-043 | Dynamic sitemap.xml + Schema.org microdata | ⬜     | —    |
-| TASK-044 | Rate limiting + Helmet + CSRF protection   | ⬜     | —    |
-| TASK-045 | Pino structured logging                    | ⬜     | —    |
-| TASK-046 | Sentry integration (frontend + backend)    | ⬜     | —    |
-| TASK-047 | Abandoned cart detection + email follow-up | ⬜     | —    |
-| TASK-048 | GA4 e-commerce events                      | ⬜     | —    |
+| TASK-044 | Redis caching for product listings         | ⬜     | —    |
+| TASK-045 | Dynamic sitemap.xml + Schema.org microdata | ⬜     | —    |
+| TASK-046 | Rate limiting + Helmet + CSRF protection   | ⬜     | —    |
+| TASK-047 | Pino structured logging                    | ⬜     | —    |
+| TASK-048 | Sentry integration (frontend + backend)    | ⬜     | —    |
+| TASK-049 | Abandoned cart detection + email follow-up | ⬜     | —    |
+| TASK-050 | GA4 e-commerce events                      | ⬜     | —    |
 
 ---
 
