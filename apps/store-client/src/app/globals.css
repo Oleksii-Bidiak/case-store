@@ -1,0 +1,135 @@
+@import 'tailwindcss';
+
+/* ─────────────────────────────────────────────
+   Semantic Design Tokens (Light Mode)
+   ───────────────────────────────────────────── */
+:root {
+  /* Core colors */
+  --color-background: #ffffff;
+  --color-foreground: #0f172a;
+
+  /* Primary — main brand color (buttons, links) */
+  --color-primary: #2563eb;
+  --color-primary-foreground: #ffffff;
+
+  /* Muted — subtle backgrounds, secondary text */
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #64748b;
+
+  /* Accent — secondary actions, highlights */
+  --color-accent: #f1f5f9;
+  --color-accent-foreground: #0f172a;
+
+  /* Destructive — errors, delete actions */
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+
+  /* Card — card and popover backgrounds */
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+
+  /* Popover — dropdown and overlay backgrounds */
+  --color-popover: #ffffff;
+  --color-popover-foreground: #0f172a;
+
+  /* Border & Input */
+  --color-border: #e2e8f0;
+  --color-input: #e2e8f0;
+  --color-ring: #2563eb;
+
+  /* Radius */
+  --radius: 0.5rem;
+}
+
+/* ─────────────────────────────────────────────
+   Semantic Design Tokens (Dark Mode)
+   ───────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Core colors */
+    --color-background: #0a0a0a;
+    --color-foreground: #ededed;
+
+    /* Primary */
+    --color-primary: #3b82f6;
+    --color-primary-foreground: #ffffff;
+
+    /* Muted */
+    --color-muted: #1e293b;
+    --color-muted-foreground: #94a3b8;
+
+    /* Accent */
+    --color-accent: #1e293b;
+    --color-accent-foreground: #ededed;
+
+    /* Destructive */
+    --color-destructive: #dc2626;
+    --color-destructive-foreground: #ffffff;
+
+    /* Card */
+    --color-card: #0f0f0f;
+    --color-card-foreground: #ededed;
+
+    /* Popover */
+    --color-popover: #0f0f0f;
+    --color-popover-foreground: #ededed;
+
+    /* Border & Input */
+    --color-border: #334155;
+    --color-input: #334155;
+    --color-ring: #3b82f6;
+
+    /* Radius */
+    --radius: 0.5rem;
+  }
+}
+
+/* ─────────────────────────────────────────────
+   Tailwind v4 Theme — maps CSS vars to utilities
+   e.g. --color-primary → bg-primary, text-primary
+        --radius        → rounded-[var(--radius)]
+   ───────────────────────────────────────────── */
+@theme inline {
+  /* Colors */
+  --color-background: var(--color-background);
+  --color-foreground: var(--color-foreground);
+  --color-primary: var(--color-primary);
+  --color-primary-foreground: var(--color-primary-foreground);
+  --color-muted: var(--color-muted);
+  --color-muted-foreground: var(--color-muted-foreground);
+  --color-accent: var(--color-accent);
+  --color-accent-foreground: var(--color-accent-foreground);
+  --color-destructive: var(--color-destructive);
+  --color-destructive-foreground: var(--color-destructive-foreground);
+  --color-card: var(--color-card);
+  --color-card-foreground: var(--color-card-foreground);
+  --color-popover: var(--color-popover);
+  --color-popover-foreground: var(--color-popover-foreground);
+  --color-border: var(--color-border);
+  --color-input: var(--color-input);
+  --color-ring: var(--color-ring);
+
+  /* Radius */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Fonts */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* ─────────────────────────────────────────────
+   Base Styles
+   ───────────────────────────────────────────── */
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Border global default */
+* {
+  border-color: var(--color-border);
+}

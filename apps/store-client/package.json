@@ -1,0 +1,37 @@
+{
+  "name": "@store/store-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mobile Accessories E-Commerce — Next.js Storefront",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "generate:api": "orval --config orval.config.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.80.0",
+    "@tanstack/react-query-devtools": "^5.80.0",
+    "axios": "^1.9.0",
+    "next": "16.2.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@store/eslint-config": "^0.1.0",
+    "@store/typescript-config": "^0.1.0",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.4",
+    "eslint-plugin-import": "^2.31.0",
+    "orval": "^8.9.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
