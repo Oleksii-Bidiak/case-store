@@ -22,10 +22,6 @@
     "typescript": "^6.0.3"
   },
   "lint-staged": {
-    "*.{ts,tsx}": [
-      "eslint --fix",
-      "prettier --write"
-    ],
     "*.{json,md,yml,yaml}": [
       "prettier --write"
     ]
