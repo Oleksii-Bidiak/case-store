@@ -1,7 +1,7 @@
 ---
 description: Git helper that explains commands and suggests next steps. Never executes git commands — only shows and explains them. Helps with GitFlow, conventional commits, branching, and merging.
 mode: subagent
-model: opencode-go/glm-5.1
+model: opencode/glm-5.1
 temperature: 0.2
 permission:
   edit: deny

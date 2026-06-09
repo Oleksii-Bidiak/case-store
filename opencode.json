@@ -1,7 +1,7 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "opencode-go/glm-5",
-  "small_model": "opencode-go/qwen3.6-plus",
+  "model": "opencode/glm-5",
+  "small_model": "opencode/qwen3.6-plus",
   "instructions": ["requirements.md"],
   "permission": {
     "edit": "allow",
@@ -48,7 +48,7 @@
   },
   "agent": {
     "build": {
-      "model": "opencode-go/glm-5",
+      "model": "opencode/glm-5",
       "temperature": 0.3,
       "permission": {
         "edit": "allow",
@@ -95,7 +95,7 @@
       }
     },
     "plan": {
-      "model": "opencode-go/qwen3.6-plus",
+      "model": "opencode/qwen3.6-plus",
       "temperature": 0.1,
       "permission": {
         "edit": "ask",
@@ -109,7 +109,7 @@
     "code-reviewer": {
       "description": "Reviews code for security vulnerabilities, performance issues, and Clean Architecture / FSD violations. Read-only — cannot modify files.",
       "mode": "subagent",
-      "model": "opencode-go/glm-5.1",
+      "model": "opencode/glm-5.1",
       "temperature": 0.1,
       "permission": {
         "edit": "deny",
@@ -141,7 +141,7 @@
     "architect": {
       "description": "Plans system architecture for NestJS modules and Next.js FSD layers. Produces detailed plans without making code changes. Use for planning new features, module boundaries, and data flow.",
       "mode": "subagent",
-      "model": "opencode-go/qwen3.6-plus",
+      "model": "opencode/qwen3.6-plus",
       "temperature": 0.2,
       "permission": {
         "edit": "deny",
@@ -158,7 +158,7 @@
     "tdd-agent": {
       "description": "Implements features using strict TDD: Red (write failing test) → Green (minimal implementation) → Refactor. Use for critical modules: cart calculations, discounts, inventory management.",
       "mode": "subagent",
-      "model": "opencode-go/glm-5",
+      "model": "opencode/glm-5",
       "temperature": 0.2,
       "permission": {
         "edit": "allow",
@@ -208,7 +208,7 @@
     "task-planner": {
       "description": "Creates persistent implementation plan documents in docs/plans/ and updates BACKLOG.md. Breaks down features into tasks with acceptance criteria. Use /plan to invoke or ask 'plan this feature'. When asked 'what's next?', reads BACKLOG.md and suggests the next task.",
       "mode": "subagent",
-      "model": "opencode-go/qwen3.6-plus",
+      "model": "opencode/qwen3.6-plus",
       "temperature": 0.3,
       "permission": {
         "edit": "allow",
@@ -246,7 +246,7 @@
     "git-helper": {
       "description": "Git helper that explains commands and suggests next steps. Never executes git commands — only shows and explains them. Helps with GitFlow, conventional commits, branching, and merging. Use /commit or /git-help to invoke.",
       "mode": "subagent",
-      "model": "opencode-go/glm-5",
+      "model": "opencode/glm-5",
       "temperature": 0.2,
       "permission": {
         "edit": "deny",
@@ -352,7 +352,7 @@
       ".next/**",
       ".git/**",
       "coverage/**",
-      ".opencode-go/**",
+      ".opencode/**",
       "**/generated/**",
       "**/.prisma/**"
     ]

@@ -1,7 +1,7 @@
 ---
 description: Run the full test suite with coverage report and fix failures
 agent: build
-model: opencode-go/glm-5.1
+model: opencode/glm-5.1
 ---
 
 Run the full test suite with coverage report and analyze any failures.

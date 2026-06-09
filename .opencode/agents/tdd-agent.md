@@ -1,7 +1,7 @@
 ---
 description: Implements features using strict TDD (Red-Green-Refactor) for critical business modules
 mode: subagent
-model: opencode-go/glm-5.1
+model: opencode/glm-5.1
 temperature: 0.2
 permission:
   edit: allow

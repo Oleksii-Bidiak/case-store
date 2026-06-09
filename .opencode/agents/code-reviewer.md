@@ -1,7 +1,7 @@
 ---
 description: Reviews code for security vulnerabilities, Clean Architecture/FSD violations, and code quality. Read-only — cannot modify files.
 mode: subagent
-model: opencode-go/glm-5
+model: opencode/glm-5
 temperature: 0.1
 permission:
   edit: deny

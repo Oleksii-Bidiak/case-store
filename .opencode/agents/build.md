@@ -1,6 +1,6 @@
 ---
 description: Primary development agent that implements features, fixes bugs, and makes code changes across the monorepo.
-model: opencode-go/glm-5.1
+model: opencode/glm-5.1
 temperature: 0.3
 permission:
   edit: allow

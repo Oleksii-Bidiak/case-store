@@ -1,7 +1,7 @@
 ---
 description: Run ESLint and TypeScript type checking, fix all issues
 agent: build
-model: opencode-go/qwen3.6-plus
+model: opencode/qwen3.6-plus
 ---
 
 Run linting and type checking across the entire project. Fix all issues found.

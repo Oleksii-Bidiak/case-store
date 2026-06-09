@@ -1,7 +1,7 @@
 ---
 description: Breaks down features into structured task lists with acceptance criteria. Creates persistent plan documents in docs/plans/ and updates BACKLOG.md with task statuses.
 mode: subagent
-model: opencode-go/qwen3.6-plus
+model: opencode/qwen3.6-plus
 temperature: 0.3
 permission:
   edit: allow

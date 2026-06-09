@@ -1,7 +1,7 @@
 ---
 description: Plans system architecture for NestJS modules and Next.js FSD layers. Produces detailed implementation plans without making code changes.
 mode: subagent
-model: opencode-go/kimi-k2.5
+model: opencode/kimi-k2.5
 temperature: 0.2
 permission:
   edit: deny
