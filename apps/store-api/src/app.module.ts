@@ -10,6 +10,7 @@ import { AuthModule } from './auth';
 import { UserModule } from './user';
 import { ProductModule } from './product';
 import { CategoryModule } from './category';
+import { CartModule } from './cart';
 import { HttpExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
 
@@ -60,6 +61,9 @@ import { LoggingInterceptor } from './common/interceptors';
 
     // Category management
     CategoryModule,
+
+    // Shopping cart
+    CartModule,
   ],
   controllers: [AppController],
   providers: [
