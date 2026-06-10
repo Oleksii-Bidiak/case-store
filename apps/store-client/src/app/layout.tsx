@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { Providers } from "./providers";
+import { HeaderAuth } from "@/widgets/header";
 import { PRIMARY_COLOR } from "@/shared/config";
 import "./globals.css";
 
@@ -40,10 +41,28 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <Providers>
           <header className="border-b border-border">
-            <div className="mx-auto flex h-16 max-w-7xl items-center px-4">
+            <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4">
               <Link href="/" className="text-xl font-bold text-primary">
                 MobileStore
               </Link>
+              <nav
+                className="flex items-center gap-4 text-sm"
+                aria-label="Primary"
+              >
+                <Link
+                  href="/products"
+                  className="text-foreground hover:text-primary"
+                >
+                  Products
+                </Link>
+                <Link
+                  href="/cart"
+                  className="text-foreground hover:text-primary"
+                >
+                  Cart
+                </Link>
+                <HeaderAuth />
+              </nav>
             </div>
           </header>
           <main className="flex-1">{children}</main>

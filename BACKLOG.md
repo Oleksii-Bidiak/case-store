@@ -179,18 +179,18 @@
 
 | Task ID    | Description                                                                                               | Status | Plan                              |
 | ---------- | --------------------------------------------------------------------------------------------------------- | ------ | --------------------------------- |
-| TASK-052   | Storefront auth: login/register/logout + JWT in-memory + 401 interceptor + header auth widget             | ⬜     | docs/plans/018-storefront-auth.md |
-| TASK-052-A | Update shared/api/instance.ts: add Authorization interceptor + 401→refresh retry                          | ⬜     | docs/plans/018-storefront-auth.md |
-| TASK-052-B | Create entities/session slice: AuthContext, useAuth, AuthProvider (in-memory token + silent refresh)      | ⬜     | docs/plans/018-storefront-auth.md |
-| TASK-052-C | Install form dependencies: react-hook-form, @hookform/resolvers, zod                                      | ⬜     | docs/plans/018-storefront-auth.md |
-| TASK-052-D | Create features/auth/LoginForm (zod + react-hook-form + useAuthControllerLogin + cart invalidation)       | ⬜     | docs/plans/018-storefront-auth.md |
-| TASK-052-E | Create features/auth/RegisterForm (zod + react-hook-form + useAuthControllerRegister + cart invalidation) | ⬜     | docs/plans/018-storefront-auth.md |
-| TASK-052-F | Create features/auth/LogoutButton (useAuthControllerLogout + clearTokens + queryClient.clear)             | ⬜     | docs/plans/018-storefront-auth.md |
-| TASK-052-G | Create widgets/header/HeaderAuth + wire into existing Header widget                                       | ⬜     | docs/plans/018-storefront-auth.md |
-| TASK-052-H | Create app/(auth)/login/page.tsx route                                                                    | ⬜     | docs/plans/018-storefront-auth.md |
-| TASK-052-I | Create app/(auth)/register/page.tsx route                                                                 | ⬜     | docs/plans/018-storefront-auth.md |
-| TASK-052-J | Update CartView (TASK-031-E) to remove 401 sign-in state (no longer reachable after TASK-051)             | ⬜     | docs/plans/018-storefront-auth.md |
-| TASK-052-K | Full integration verification (build + lint + typecheck + manual smoke tests)                             | ⬜     | docs/plans/018-storefront-auth.md |
+| TASK-052   | Storefront auth: login/register/logout + JWT in-memory + 401 interceptor + header auth widget             | ✅     | docs/plans/018-storefront-auth.md |
+| TASK-052-A | Update shared/api/instance.ts: add Authorization interceptor + 401→refresh retry                          | ✅     | docs/plans/018-storefront-auth.md |
+| TASK-052-B | Create entities/session slice: AuthContext, useAuth, AuthProvider (in-memory token + silent refresh)      | ✅     | docs/plans/018-storefront-auth.md |
+| TASK-052-C | Install form dependencies: react-hook-form, @hookform/resolvers, zod                                      | ✅     | docs/plans/018-storefront-auth.md |
+| TASK-052-D | Create features/auth/LoginForm (zod + react-hook-form + useAuthControllerLogin + cart invalidation)       | ✅     | docs/plans/018-storefront-auth.md |
+| TASK-052-E | Create features/auth/RegisterForm (zod + react-hook-form + useAuthControllerRegister + cart invalidation) | ✅     | docs/plans/018-storefront-auth.md |
+| TASK-052-F | Create features/auth/LogoutButton (useAuthControllerLogout + clearTokens + queryClient.clear)             | ✅     | docs/plans/018-storefront-auth.md |
+| TASK-052-G | Create widgets/header/HeaderAuth + wire into existing Header widget                                       | ✅     | docs/plans/018-storefront-auth.md |
+| TASK-052-H | Create app/(auth)/login/page.tsx route                                                                    | ✅     | docs/plans/018-storefront-auth.md |
+| TASK-052-I | Create app/(auth)/register/page.tsx route                                                                 | ✅     | docs/plans/018-storefront-auth.md |
+| TASK-052-J | Update CartView to remove 401 sign-in state (built guest-first — no 401 branch existed)                   | ✅     | docs/plans/018-storefront-auth.md |
+| TASK-052-K | Full integration verification (build + lint + typecheck ✅; manual smoke tests pending running app)       | 🔄     | docs/plans/018-storefront-auth.md |
 
 ---
 
