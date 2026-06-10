@@ -126,13 +126,20 @@
 
 ### Storefront Pages
 
-| Task ID  | Description                             | Status | Plan |
-| -------- | --------------------------------------- | ------ | ---- |
-| TASK-028 | Build HomePage (store-client)           | ⬜     | —    |
-| TASK-029 | Build ProductListPage with filtering    | ⬜     | —    |
-| TASK-030 | Build ProductDetailPage                 | ⬜     | —    |
-| TASK-031 | Build CartPage with quantity management | ⬜     | —    |
-| TASK-032 | Implement AddToCart feature (frontend)  | ⬜     | —    |
+| Task ID    | Description                                         | Status | Plan                                    |
+| ---------- | --------------------------------------------------- | ------ | --------------------------------------- |
+| TASK-028   | Build HomePage (store-client)                       | ✅     | docs/plans/012-store-client-homepage.md |
+| TASK-028-A | Scaffold FSD entity layers for Product and Category | ✅     | docs/plans/012-store-client-homepage.md |
+| TASK-028-B | Create shared/ui Skeleton primitive                 | ✅     | docs/plans/012-store-client-homepage.md |
+| TASK-028-C | Create shared/ui ProductCard base component         | ✅     | docs/plans/012-store-client-homepage.md |
+| TASK-028-D | Create HeroBanner widget (static Server Component)  | ✅     | docs/plans/012-store-client-homepage.md |
+| TASK-028-E | Create CategoryNav widget with skeleton             | ✅     | docs/plans/012-store-client-homepage.md |
+| TASK-028-F | Create ProductGrid widget with skeleton             | ✅     | docs/plans/012-store-client-homepage.md |
+| TASK-028-G | Wire up app/page.tsx and verify full build          | ✅     | docs/plans/012-store-client-homepage.md |
+| TASK-029   | Build ProductListPage with filtering                | ⬜     | —                                       |
+| TASK-030   | Build ProductDetailPage                             | ⬜     | —                                       |
+| TASK-031   | Build CartPage with quantity management             | ⬜     | —                                       |
+| TASK-032   | Implement AddToCart feature (frontend)              | ⬜     | —                                       |
 
 ---
 

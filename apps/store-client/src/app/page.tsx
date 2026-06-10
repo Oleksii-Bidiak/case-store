@@ -1,27 +1,52 @@
+import { Suspense } from "react";
+import type { Metadata } from "next";
+import {
+  HeroBanner,
+  CategoryNav,
+  CategoryNavSkeleton,
+  ProductGrid,
+  ProductGridSkeleton,
+} from "@/widgets";
+
+export const metadata: Metadata = {
+  title: "Home | MobileStore",
+  description:
+    "Discover premium mobile accessories — cases, chargers, screen protectors and more.",
+};
+
 export default function HomePage() {
   return (
-    <div className="mx-auto max-w-7xl px-4 py-16">
-      <section className="text-center">
-        <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-          Welcome to MobileStore
-        </h1>
-        <p className="mt-4 text-lg text-muted-foreground">
-          Your one-stop shop for mobile phone accessories — cases, chargers,
-          screen protectors, and more.
-        </p>
+    <div className="flex flex-col gap-16 pb-16">
+      <HeroBanner />
+
+      <section
+        aria-labelledby="categories-heading"
+        className="mx-auto w-full max-w-7xl px-4"
+      >
+        <h2
+          id="categories-heading"
+          className="mb-6 text-2xl font-bold tracking-tight text-foreground"
+        >
+          Shop by Category
+        </h2>
+        <Suspense fallback={<CategoryNavSkeleton />}>
+          <CategoryNav />
+        </Suspense>
       </section>
 
-      <section className="mt-16 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div
-            key={i}
-            className="flex h-64 items-center justify-center rounded-lg border border-border bg-muted"
-          >
-            <p className="text-sm text-muted-foreground">
-              Product card placeholder
-            </p>
-          </div>
-        ))}
+      <section
+        aria-labelledby="latest-products-heading"
+        className="mx-auto w-full max-w-7xl px-4"
+      >
+        <h2
+          id="latest-products-heading"
+          className="mb-6 text-2xl font-bold tracking-tight text-foreground"
+        >
+          Latest Products
+        </h2>
+        <Suspense fallback={<ProductGridSkeleton />}>
+          <ProductGrid />
+        </Suspense>
       </section>
     </div>
   );

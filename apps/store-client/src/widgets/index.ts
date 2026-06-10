@@ -1,3 +1,4 @@
-// Widgets — Composite UI blocks (e.g., Header, ProductCard, Footer)
-// Re-export widget components here as they are created
-export {};
+// Widgets — Composite UI blocks (HeroBanner, CategoryNav, ProductGrid, …)
+export { HeroBanner } from "./hero-banner";
+export { CategoryNav, CategoryNavSkeleton } from "./category-nav";
+export { ProductGrid, ProductGridSkeleton } from "./product-grid";
