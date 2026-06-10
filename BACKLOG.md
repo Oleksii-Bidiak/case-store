@@ -148,13 +148,13 @@
 | TASK-030-D | Create widgets/product-detail/ProductVariantSelector                                | ✅     | docs/plans/015-store-client-product-detail.md |
 | TASK-030-E | Create widgets/product-detail/ProductDetailView (orchestrator)                      | ✅     | docs/plans/015-store-client-product-detail.md |
 | TASK-030-F | Create app/products/[slug]/page.tsx and wire full build                             | ✅     | docs/plans/015-store-client-product-detail.md |
-| TASK-031   | Build CartPage with quantity management (guest + user; depends on TASK-051-J)       | ⬜     | docs/plans/016-store-client-cart-page.md      |
-| TASK-031-A | Create entities/cart barrel slice (depends on TASK-051-J Orval regen)               | ⬜     | docs/plans/016-store-client-cart-page.md      |
-| TASK-031-B | Create widgets/cart/CartSkeleton                                                    | ⬜     | docs/plans/016-store-client-cart-page.md      |
-| TASK-031-C | Create widgets/cart/CartItemRow                                                     | ⬜     | docs/plans/016-store-client-cart-page.md      |
-| TASK-031-D | Create widgets/cart/CartSummary                                                     | ⬜     | docs/plans/016-store-client-cart-page.md      |
-| TASK-031-E | Create widgets/cart/CartView (orchestrator; no 401 state — guest cart always works) | ⬜     | docs/plans/016-store-client-cart-page.md      |
-| TASK-031-F | Create app/cart/page.tsx and verify full build                                      | ⬜     | docs/plans/016-store-client-cart-page.md      |
+| TASK-031   | Build CartPage with quantity management (guest + user; depends on TASK-051-J)       | ✅     | docs/plans/016-store-client-cart-page.md      |
+| TASK-031-A | Create entities/cart barrel slice (depends on TASK-051-J Orval regen)               | ✅     | docs/plans/016-store-client-cart-page.md      |
+| TASK-031-B | Create widgets/cart/CartSkeleton                                                    | ✅     | docs/plans/016-store-client-cart-page.md      |
+| TASK-031-C | Create widgets/cart/CartItemRow                                                     | ✅     | docs/plans/016-store-client-cart-page.md      |
+| TASK-031-D | Create widgets/cart/CartSummary                                                     | ✅     | docs/plans/016-store-client-cart-page.md      |
+| TASK-031-E | Create widgets/cart/CartView (orchestrator; no 401 state — guest cart always works) | ✅     | docs/plans/016-store-client-cart-page.md      |
+| TASK-031-F | Create app/cart/page.tsx and verify full build                                      | ✅     | docs/plans/016-store-client-cart-page.md      |
 | TASK-032   | Implement AddToCart feature (frontend)                                              | ⬜     | —                                             |
 
 ### Guest Cart Backend (Plan 017)
