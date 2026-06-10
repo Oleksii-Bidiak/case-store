@@ -109,15 +109,15 @@
 
 ### Cart Backend
 
-| Task ID  | Description                                          | Status | Plan                          |
-| -------- | ---------------------------------------------------- | ------ | ----------------------------- |
-| TASK-021 | Create Cart domain entities and DTOs                 | ✅     | docs/plans/009-cart-module.md |
-| TASK-022 | Implement CartRepository                             | ✅     | docs/plans/009-cart-module.md |
-| TASK-023 | Write failing unit tests for CartService (TDD — Red) | ✅     | docs/plans/009-cart-module.md |
-| TASK-024 | Implement CartService (TDD — Green)                  | ✅     | docs/plans/009-cart-module.md |
-| TASK-025 | Implement CartController and CartModule              | ✅     | docs/plans/009-cart-module.md |
-| TASK-026 | Write E2E tests for Cart endpoints                   | ⬜     | docs/plans/009-cart-module.md |
-| TASK-027 | Generate Orval hooks for Cart API                    | ⬜     | docs/plans/009-cart-module.md |
+| Task ID  | Description                                          | Status | Plan                             |
+| -------- | ---------------------------------------------------- | ------ | -------------------------------- |
+| TASK-021 | Create Cart domain entities and DTOs                 | ✅     | docs/plans/009-cart-module.md    |
+| TASK-022 | Implement CartRepository                             | ✅     | docs/plans/009-cart-module.md    |
+| TASK-023 | Write failing unit tests for CartService (TDD — Red) | ✅     | docs/plans/009-cart-module.md    |
+| TASK-024 | Implement CartService (TDD — Green)                  | ✅     | docs/plans/009-cart-module.md    |
+| TASK-025 | Implement CartController and CartModule              | ✅     | docs/plans/009-cart-module.md    |
+| TASK-026 | Write E2E tests for Cart endpoints                   | ✅     | docs/plans/010-cart-e2e-tests.md |
+| TASK-027 | Generate Orval hooks for Cart API                    | ⬜     | docs/plans/009-cart-module.md    |
 
 ### Storefront Pages
 
