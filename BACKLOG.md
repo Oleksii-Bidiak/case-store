@@ -75,7 +75,7 @@
 | -------- | ------------------------------------------- | ------ | ------------------------------------------------------------------ |
 | TASK-014 | Configure Swagger/OpenAPI decorators        | ✅     | — (done in main.ts; completed via TASK-009/TASK-010/TASK-025 work) |
 | TASK-015 | Set up Orval configuration for store-client | ✅     | docs/plans/007-store-client-setup.md (completed as TASK-017-E)     |
-| TASK-016 | Set up Orval configuration for store-admin  | ⬜     | —                                                                  |
+| TASK-016 | Set up Orval configuration for store-admin  | ✅     | docs/plans/013-store-admin-orval.md                                |
 
 ### Frontend Scaffold
 
