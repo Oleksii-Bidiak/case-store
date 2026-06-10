@@ -6,6 +6,7 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiExtraModels,
+  ApiProperty,
 } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { CreateProductDto, UpdateProductDto, ProductListQueryDto } from './dto';
@@ -22,6 +23,7 @@ import {
  * Response envelope for a single product.
  */
 class ProductResponseEnvelope {
+  @ApiProperty({ type: ProductEntity })
   data!: ProductEntity;
 }
 
@@ -29,9 +31,16 @@ class ProductResponseEnvelope {
  * Pagination metadata.
  */
 class PaginationMeta {
+  @ApiProperty({ description: 'Total number of items', example: 42 })
   total!: number;
+
+  @ApiProperty({ description: 'Current page (1-based)', example: 1 })
   page!: number;
+
+  @ApiProperty({ description: 'Items per page', example: 20 })
   limit!: number;
+
+  @ApiProperty({ description: 'Total number of pages', example: 3 })
   totalPages!: number;
 }
 
@@ -39,7 +48,10 @@ class PaginationMeta {
  * Response envelope for a paginated product list.
  */
 class ProductListResponseEnvelope {
+  @ApiProperty({ type: [ProductEntity], description: 'Products for the current page' })
   data!: ProductEntity[];
+
+  @ApiProperty({ type: PaginationMeta })
   meta!: PaginationMeta;
 }
 
@@ -47,9 +59,16 @@ class ProductListResponseEnvelope {
  * Response envelope for a product detail with relations.
  */
 class ProductDetailResponseEnvelope {
+  @ApiProperty({ type: ProductEntity })
   data!: ProductEntity;
+
+  @ApiProperty({ type: ProductCategoryEntity })
   category!: ProductCategoryEntity;
+
+  @ApiProperty({ type: [ProductVariantEntity] })
   variants!: ProductVariantEntity[];
+
+  @ApiProperty({ type: [ProductImageEntity] })
   images!: ProductImageEntity[];
 }
 
@@ -119,7 +138,11 @@ export class ProductController {
   @Get(':slug')
   @ApiOperation({ summary: 'Get product by slug' })
   @ApiParam({ name: 'slug', description: 'Product URL slug' })
-  @ApiResponse({ status: 200, description: 'Product detail with relations' })
+  @ApiResponse({
+    status: 200,
+    description: 'Product detail with relations',
+    type: ProductDetailResponseEnvelope,
+  })
   @ApiResponse({ status: 404, description: 'Product not found' })
   async findBySlug(@Param('slug') slug: string): Promise<ProductDetailResponse> {
     return this.productService.findBySlug(slug);
@@ -136,7 +159,7 @@ export class ProductController {
   @Roles('ADMIN')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Create a product (admin)' })
-  @ApiResponse({ status: 201, description: 'Product created', type: ProductEntity })
+  @ApiResponse({ status: 201, description: 'Product created', type: ProductResponseEnvelope })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async create(@Body() dto: CreateProductDto): Promise<ProductResponse> {
@@ -157,7 +180,7 @@ export class ProductController {
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Update a product (admin)' })
   @ApiParam({ name: 'id', description: 'Product UUID' })
-  @ApiResponse({ status: 200, description: 'Product updated', type: ProductEntity })
+  @ApiResponse({ status: 200, description: 'Product updated', type: ProductResponseEnvelope })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 404, description: 'Product not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
@@ -178,7 +201,7 @@ export class ProductController {
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Deactivate a product (admin)' })
   @ApiParam({ name: 'id', description: 'Product UUID' })
-  @ApiResponse({ status: 200, description: 'Product deactivated', type: ProductEntity })
+  @ApiResponse({ status: 200, description: 'Product deactivated', type: ProductResponseEnvelope })
   @ApiResponse({ status: 404, description: 'Product not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async deactivate(@Param('id') id: string): Promise<ProductResponse> {
@@ -198,7 +221,7 @@ export class ProductController {
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Activate a product (admin)' })
   @ApiParam({ name: 'id', description: 'Product UUID' })
-  @ApiResponse({ status: 200, description: 'Product activated', type: ProductEntity })
+  @ApiResponse({ status: 200, description: 'Product activated', type: ProductResponseEnvelope })
   @ApiResponse({ status: 404, description: 'Product not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async activate(@Param('id') id: string): Promise<ProductResponse> {

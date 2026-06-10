@@ -1,35 +1,64 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiProperty,
+  ApiExtraModels,
+} from '@nestjs/swagger';
 import { CategoryService } from './category.service';
 import { CategoryListQueryDto } from './dto';
 import { CategoryEntity, CategoryTreeNodeEntity, CategoryWithCountEntity } from './entities';
 
 /**
+ * Pagination metadata for paginated category responses.
+ */
+class CategoryPaginationMeta {
+  @ApiProperty({ description: 'Total number of items', example: 12 })
+  total!: number;
+
+  @ApiProperty({ description: 'Current page (1-based)', example: 1 })
+  page!: number;
+
+  @ApiProperty({ description: 'Items per page', example: 20 })
+  limit!: number;
+
+  @ApiProperty({ description: 'Total number of pages', example: 1 })
+  totalPages!: number;
+}
+
+/**
  * Response envelope for a paginated category list.
  */
-interface CategoryListResponse {
-  data: CategoryEntity[];
-  meta: {
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  };
+class CategoryListResponse {
+  @ApiProperty({ type: [CategoryEntity], description: 'Root categories for the current page' })
+  data!: CategoryEntity[];
+
+  @ApiProperty({ type: CategoryPaginationMeta })
+  meta!: CategoryPaginationMeta;
 }
 
 /**
  * Response envelope for the category tree.
  */
-interface CategoryTreeResponse {
-  data: CategoryTreeNodeEntity[];
+class CategoryTreeResponse {
+  @ApiProperty({
+    type: [CategoryTreeNodeEntity],
+    description: 'Active categories nested as a tree',
+  })
+  data!: CategoryTreeNodeEntity[];
 }
 
 /**
  * Response envelope for a category with product count.
  */
-interface CategoryWithCountResponse {
-  data: CategoryWithCountEntity;
-  productCount: number;
+class CategoryWithCountResponse {
+  @ApiProperty({ type: CategoryWithCountEntity })
+  data!: CategoryWithCountEntity;
+
+  @ApiProperty({ description: 'Number of products in the category', example: 5 })
+  productCount!: number;
 }
 
 /**
@@ -41,6 +70,15 @@ interface CategoryWithCountResponse {
  *   GET  /categories/:slug  — Get category by slug with product count
  */
 @ApiTags('Categories')
+@ApiExtraModels(
+  CategoryEntity,
+  CategoryTreeNodeEntity,
+  CategoryWithCountEntity,
+  CategoryPaginationMeta,
+  CategoryListResponse,
+  CategoryTreeResponse,
+  CategoryWithCountResponse,
+)
 @Controller('categories')
 export class CategoryController {
   constructor(private readonly categoryService: CategoryService) {}
@@ -54,7 +92,11 @@ export class CategoryController {
    */
   @Get('tree')
   @ApiOperation({ summary: 'Get category tree' })
-  @ApiResponse({ status: 200, description: 'Category tree for navigation' })
+  @ApiResponse({
+    status: 200,
+    description: 'Category tree for navigation',
+    type: CategoryTreeResponse,
+  })
   async getCategoryTree(): Promise<CategoryTreeResponse> {
     return this.categoryService.getCategoryTree();
   }
@@ -68,7 +110,11 @@ export class CategoryController {
    */
   @Get()
   @ApiOperation({ summary: 'List root categories' })
-  @ApiResponse({ status: 200, description: 'Paginated list of root categories' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of root categories',
+    type: CategoryListResponse,
+  })
   async getRootCategories(@Query() query: CategoryListQueryDto): Promise<CategoryListResponse> {
     return this.categoryService.getRootCategories(query);
   }
@@ -82,7 +128,11 @@ export class CategoryController {
   @Get(':slug')
   @ApiOperation({ summary: 'Get category by slug' })
   @ApiParam({ name: 'slug', description: 'Category URL slug' })
-  @ApiResponse({ status: 200, description: 'Category with product count' })
+  @ApiResponse({
+    status: 200,
+    description: 'Category with product count',
+    type: CategoryWithCountResponse,
+  })
   @ApiResponse({ status: 404, description: 'Category not found' })
   async findBySlug(@Param('slug') slug: string): Promise<CategoryWithCountResponse> {
     return this.categoryService.findBySlug(slug);
