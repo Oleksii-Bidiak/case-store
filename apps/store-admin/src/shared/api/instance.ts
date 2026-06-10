@@ -15,6 +15,11 @@ export const api = Axios.create({
   },
 });
 
+// TODO(auth): add a request interceptor that injects
+// `Authorization: Bearer <accessToken>` for admin-protected endpoints once the
+// admin login flow exists. Refresh tokens already travel via HttpOnly cookie
+// (withCredentials: true); only the access token needs wiring here.
+
 /**
  * Custom instance function for Orval-generated API calls.
  * Unwraps the response data so hooks receive typed data directly.

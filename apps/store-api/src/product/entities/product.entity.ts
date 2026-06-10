@@ -28,6 +28,8 @@ export class ProductEntity {
   @ApiProperty({
     description: 'Product description (markdown)',
     example: 'Premium clear case...',
+    type: String,
+    nullable: true,
     required: false,
   })
   description!: string | null;
@@ -41,11 +43,19 @@ export class ProductEntity {
   @ApiProperty({
     description: 'Original price for discount display',
     example: '39.99',
+    type: String,
+    nullable: true,
     required: false,
   })
   compareAtPrice!: string | null;
 
-  @ApiProperty({ description: 'Stock Keeping Unit', example: 'IP15-PRO-CASE-CLR', required: false })
+  @ApiProperty({
+    description: 'Stock Keeping Unit',
+    example: 'IP15-PRO-CASE-CLR',
+    type: String,
+    nullable: true,
+    required: false,
+  })
   sku!: string | null;
 
   @ApiProperty({

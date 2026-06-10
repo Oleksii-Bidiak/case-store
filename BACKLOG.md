@@ -71,11 +71,11 @@
 
 ### API Contract
 
-| Task ID  | Description                                 | Status | Plan |
-| -------- | ------------------------------------------- | ------ | ---- |
-| TASK-014 | Configure Swagger/OpenAPI decorators        | ⬜     | —    |
-| TASK-015 | Set up Orval configuration for store-client | ⬜     | —    |
-| TASK-016 | Set up Orval configuration for store-admin  | ⬜     | —    |
+| Task ID  | Description                                 | Status | Plan                                                               |
+| -------- | ------------------------------------------- | ------ | ------------------------------------------------------------------ |
+| TASK-014 | Configure Swagger/OpenAPI decorators        | ✅     | — (done in main.ts; completed via TASK-009/TASK-010/TASK-025 work) |
+| TASK-015 | Set up Orval configuration for store-client | ✅     | docs/plans/007-store-client-setup.md (completed as TASK-017-E)     |
+| TASK-016 | Set up Orval configuration for store-admin  | ✅     | docs/plans/013-store-admin-orval.md                                |
 
 ### Frontend Scaffold
 
@@ -109,25 +109,41 @@
 
 ### Cart Backend
 
-| Task ID  | Description                                          | Status | Plan                          |
-| -------- | ---------------------------------------------------- | ------ | ----------------------------- |
-| TASK-021 | Create Cart domain entities and DTOs                 | ✅     | docs/plans/009-cart-module.md |
-| TASK-022 | Implement CartRepository                             | ✅     | docs/plans/009-cart-module.md |
-| TASK-023 | Write failing unit tests for CartService (TDD — Red) | ✅     | docs/plans/009-cart-module.md |
-| TASK-024 | Implement CartService (TDD — Green)                  | ✅     | docs/plans/009-cart-module.md |
-| TASK-025 | Implement CartController and CartModule              | ✅     | docs/plans/009-cart-module.md |
-| TASK-026 | Write E2E tests for Cart endpoints                   | ⬜     | docs/plans/009-cart-module.md |
-| TASK-027 | Generate Orval hooks for Cart API                    | ⬜     | docs/plans/009-cart-module.md |
+| Task ID    | Description                                                                          | Status | Plan                               |
+| ---------- | ------------------------------------------------------------------------------------ | ------ | ---------------------------------- |
+| TASK-021   | Create Cart domain entities and DTOs                                                 | ✅     | docs/plans/009-cart-module.md      |
+| TASK-022   | Implement CartRepository                                                             | ✅     | docs/plans/009-cart-module.md      |
+| TASK-023   | Write failing unit tests for CartService (TDD — Red)                                 | ✅     | docs/plans/009-cart-module.md      |
+| TASK-024   | Implement CartService (TDD — Green)                                                  | ✅     | docs/plans/009-cart-module.md      |
+| TASK-025   | Implement CartController and CartModule                                              | ✅     | docs/plans/009-cart-module.md      |
+| TASK-026   | Write E2E tests for Cart endpoints                                                   | ✅     | docs/plans/010-cart-e2e-tests.md   |
+| TASK-027   | Generate Orval hooks for Cart API                                                    | ✅     | docs/plans/011-cart-orval-hooks.md |
+| TASK-027-A | Add swagger:export script to store-api (writes swagger.json without starting server) | ✅     | docs/plans/011-cart-orval-hooks.md |
+| TASK-027-B | Update store-client orval.config.ts to use static swagger.json as input              | ✅     | docs/plans/011-cart-orval-hooks.md |
+| TASK-027-C | Add explicit operationId to Cart controller @ApiOperation decorators                 | ✅     | docs/plans/011-cart-orval-hooks.md |
+| TASK-027-D | Run npm run generate:api and verify all Cart hooks and types are generated           | ✅     | docs/plans/011-cart-orval-hooks.md |
+| TASK-027-E | Update shared/api/index.ts to re-export generated Cart hooks and model types         | ✅     | docs/plans/011-cart-orval-hooks.md |
 
 ### Storefront Pages
 
-| Task ID  | Description                             | Status | Plan |
-| -------- | --------------------------------------- | ------ | ---- |
-| TASK-028 | Build HomePage (store-client)           | ⬜     | —    |
-| TASK-029 | Build ProductListPage with filtering    | ⬜     | —    |
-| TASK-030 | Build ProductDetailPage                 | ⬜     | —    |
-| TASK-031 | Build CartPage with quantity management | ⬜     | —    |
-| TASK-032 | Implement AddToCart feature (frontend)  | ⬜     | —    |
+| Task ID    | Description                                                           | Status | Plan                                        |
+| ---------- | --------------------------------------------------------------------- | ------ | ------------------------------------------- |
+| TASK-028   | Build HomePage (store-client)                                         | ✅     | docs/plans/012-store-client-homepage.md     |
+| TASK-028-A | Scaffold FSD entity layers for Product and Category                   | ✅     | docs/plans/012-store-client-homepage.md     |
+| TASK-028-B | Create shared/ui Skeleton primitive                                   | ✅     | docs/plans/012-store-client-homepage.md     |
+| TASK-028-C | Create shared/ui ProductCard base component                           | ✅     | docs/plans/012-store-client-homepage.md     |
+| TASK-028-D | Create HeroBanner widget (static Server Component)                    | ✅     | docs/plans/012-store-client-homepage.md     |
+| TASK-028-E | Create CategoryNav widget with skeleton                               | ✅     | docs/plans/012-store-client-homepage.md     |
+| TASK-028-F | Create ProductGrid widget with skeleton                               | ✅     | docs/plans/012-store-client-homepage.md     |
+| TASK-028-G | Wire up app/page.tsx and verify full build                            | ✅     | docs/plans/012-store-client-homepage.md     |
+| TASK-029   | Build ProductListPage with filtering                                  | ✅     | docs/plans/014-store-client-product-list.md |
+| TASK-029-A | Create features/product-filters slice (controls + debounced search)   | ✅     | docs/plans/014-store-client-product-list.md |
+| TASK-029-B | Create widgets/product-list slice (ProductList, Pagination, Skeleton) | ✅     | docs/plans/014-store-client-product-list.md |
+| TASK-029-C | Create widgets/product-list/ProductListView (URL-state orchestrator)  | ✅     | docs/plans/014-store-client-product-list.md |
+| TASK-029-D | Create app/products/page.tsx and wire full build                      | ✅     | docs/plans/014-store-client-product-list.md |
+| TASK-030   | Build ProductDetailPage                                               | ⬜     | —                                           |
+| TASK-031   | Build CartPage with quantity management                               | ⬜     | —                                           |
+| TASK-032   | Implement AddToCart feature (frontend)                                | ⬜     | —                                           |
 
 ---
 

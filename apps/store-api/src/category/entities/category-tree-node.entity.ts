@@ -26,6 +26,8 @@ export class CategoryTreeNodeEntity {
   @ApiProperty({
     description: 'Category description',
     example: 'Protective cases for all smartphones',
+    type: String,
+    nullable: true,
     required: false,
   })
   description!: string | null;
@@ -33,6 +35,8 @@ export class CategoryTreeNodeEntity {
   @ApiProperty({
     description: 'Category image URL',
     example: 'https://example.com/images/phone-cases.jpg',
+    type: String,
+    nullable: true,
     required: false,
   })
   image!: string | null;

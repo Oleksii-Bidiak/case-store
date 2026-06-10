@@ -139,7 +139,7 @@ describe('ProductController (e2e)', () => {
     return jwtService.sign(
       { sub: userId, role },
       {
-        secret: 'dev-secret-change-in-production',
+        secret: process.env.JWT_SECRET,
         expiresIn: '15m',
       },
     );

@@ -27,6 +27,8 @@ export class CategoryEntity {
   @ApiProperty({
     description: 'Category description',
     example: 'Protective cases for all smartphones',
+    type: String,
+    nullable: true,
     required: false,
   })
   description!: string | null;
@@ -34,6 +36,8 @@ export class CategoryEntity {
   @ApiProperty({
     description: 'Category image URL',
     example: 'https://example.com/images/phone-cases.jpg',
+    type: String,
+    nullable: true,
     required: false,
   })
   image!: string | null;
@@ -41,6 +45,8 @@ export class CategoryEntity {
   @ApiProperty({
     description: 'Parent category ID (null for root)',
     example: '550e8400-e29b-41d4-a716-446655440000',
+    type: String,
+    nullable: true,
     required: false,
   })
   parentId!: string | null;

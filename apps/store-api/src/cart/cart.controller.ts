@@ -37,7 +37,7 @@ export class CartController {
    * Creates an empty cart if none exists.
    */
   @Get()
-  @ApiOperation({ summary: 'Get current user cart' })
+  @ApiOperation({ summary: 'Get current user cart', operationId: 'getCart' })
   @ApiResponse({
     status: 200,
     description: 'Cart with items and totals',
@@ -62,7 +62,7 @@ export class CartController {
    * Returns the updated cart with recalculated totals.
    */
   @Post('items')
-  @ApiOperation({ summary: 'Add item to cart' })
+  @ApiOperation({ summary: 'Add item to cart', operationId: 'addToCart' })
   @ApiResponse({
     status: 201,
     description: 'Item added to cart',
@@ -90,7 +90,7 @@ export class CartController {
    * Returns the updated cart with recalculated totals.
    */
   @Patch('items/:itemId')
-  @ApiOperation({ summary: 'Update cart item quantity' })
+  @ApiOperation({ summary: 'Update cart item quantity', operationId: 'updateCartItem' })
   @ApiParam({ name: 'itemId', description: 'Cart item UUID' })
   @ApiResponse({
     status: 200,
@@ -121,7 +121,7 @@ export class CartController {
    * Returns the updated cart with recalculated totals.
    */
   @Delete('items/:itemId')
-  @ApiOperation({ summary: 'Remove item from cart' })
+  @ApiOperation({ summary: 'Remove item from cart', operationId: 'removeCartItem' })
   @ApiParam({ name: 'itemId', description: 'Cart item UUID' })
   @ApiResponse({
     status: 200,
@@ -150,7 +150,7 @@ export class CartController {
    * Returns an empty cart with zero totals.
    */
   @Delete()
-  @ApiOperation({ summary: 'Clear cart' })
+  @ApiOperation({ summary: 'Clear cart', operationId: 'clearCart' })
   @ApiResponse({
     status: 200,
     description: 'Cart cleared',

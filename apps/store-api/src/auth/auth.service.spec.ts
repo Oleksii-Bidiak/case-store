@@ -44,15 +44,23 @@ const mockRefreshTokenRecord = {
 
 // ─── Config mock ─────────────────────────────────────────────────────────────
 
+const testConfig: Record<string, string> = {
+  JWT_SECRET: 'test-access-secret',
+  JWT_REFRESH_SECRET: 'test-refresh-secret',
+  JWT_EXPIRATION: '15m',
+  JWT_REFRESH_EXPIRATION: '7d',
+};
+
 const configMock = {
   get: jest.fn((key: string, defaultValue?: string) => {
-    const config: Record<string, string> = {
-      JWT_SECRET: 'test-access-secret',
-      JWT_REFRESH_SECRET: 'test-refresh-secret',
-      JWT_EXPIRATION: '15m',
-      JWT_REFRESH_EXPIRATION: '7d',
-    };
-    return config[key] ?? defaultValue ?? '';
+    return testConfig[key] ?? defaultValue ?? '';
+  }),
+  getOrThrow: jest.fn((key: string) => {
+    const value = testConfig[key];
+    if (value === undefined) {
+      throw new Error(`Configuration key "${key}" does not exist`);
+    }
+    return value;
   }),
 };
 
@@ -70,6 +78,7 @@ describe('AuthService', () => {
 
     // Reset config mock call history
     configMock.get.mockClear();
+    configMock.getOrThrow.mockClear();
 
     // Create a mock AuthRepository
     const authRepositoryMock = {
