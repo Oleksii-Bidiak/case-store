@@ -5,9 +5,15 @@ export type {
   ProductEntity,
   ProductListResponseEnvelope,
   ProductControllerFindAllParams,
+  ProductDetailResponseEnvelope,
+  ProductCategoryEntity,
+  ProductVariantEntity,
+  ProductImageEntity,
 } from "@/shared/api/generated/models";
 
 export {
   useProductControllerFindAll,
   getProductControllerFindAllQueryKey,
+  useProductControllerFindBySlug,
+  getProductControllerFindBySlugQueryKey,
 } from "@/shared/api/generated/products/products";
