@@ -155,7 +155,10 @@
 | TASK-031-D | Create widgets/cart/CartSummary                                                     | ✅     | docs/plans/016-store-client-cart-page.md      |
 | TASK-031-E | Create widgets/cart/CartView (orchestrator; no 401 state — guest cart always works) | ✅     | docs/plans/016-store-client-cart-page.md      |
 | TASK-031-F | Create app/cart/page.tsx and verify full build                                      | ✅     | docs/plans/016-store-client-cart-page.md      |
-| TASK-032   | Implement AddToCart feature (frontend)                                              | ⬜     | —                                             |
+| TASK-032   | Implement AddToCart feature (frontend)                                              | ✅     | docs/plans/019-add-to-cart-feature.md         |
+| TASK-032-A | Create features/add-to-cart/AddToCartButton (useAddToCart + cart invalidation)      | ✅     | docs/plans/019-add-to-cart-feature.md         |
+| TASK-032-B | Integrate AddToCartButton into ProductDetailView (replace placeholder)              | ✅     | docs/plans/019-add-to-cart-feature.md         |
+| TASK-032-C | Build verification (build + typecheck + lint)                                       | ✅     | docs/plans/019-add-to-cart-feature.md         |
 
 ### Guest Cart Backend (Plan 017)
 

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useProductControllerFindBySlug } from "@/entities/product";
+import { AddToCartButton } from "@/features/add-to-cart";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
 import { ProductImageGallery } from "./product-image-gallery";
 import { ProductVariantSelector } from "./product-variant-selector";
@@ -152,14 +153,11 @@ export function ProductDetailView({ slug }: { slug: string }) {
               </section>
             )}
 
-          <button
-            type="button"
-            disabled
-            aria-label="Add to Cart feature coming soon"
-            className="w-full cursor-not-allowed rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground opacity-50"
-          >
-            Add to Cart — coming soon
-          </button>
+          <AddToCartButton
+            productId={product.id}
+            variantId={effectiveVariantId}
+            disabled={selectedVariant?.stock === 0}
+          />
         </div>
       </div>
     </article>
