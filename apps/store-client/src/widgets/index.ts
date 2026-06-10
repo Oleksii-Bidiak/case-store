@@ -2,3 +2,4 @@
 export { HeroBanner } from "./hero-banner";
 export { CategoryNav, CategoryNavSkeleton } from "./category-nav";
 export { ProductGrid, ProductGridSkeleton } from "./product-grid";
+export { ProductListView, ProductListSkeleton } from "./product-list";
