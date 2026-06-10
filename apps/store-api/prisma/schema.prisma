@@ -144,13 +144,15 @@ model ProductImage {
 
 model Cart {
   id        String   @id @default(uuid())
-  userId    String   @unique @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String?  @unique @map("user_id")
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String?  @unique @map("token")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   items     CartItem[]
 
+  @@index([token])
   @@map("carts")
 }
 

@@ -126,30 +126,71 @@
 
 ### Storefront Pages
 
-| Task ID    | Description                                                           | Status | Plan                                          |
-| ---------- | --------------------------------------------------------------------- | ------ | --------------------------------------------- |
-| TASK-028   | Build HomePage (store-client)                                         | ✅     | docs/plans/012-store-client-homepage.md       |
-| TASK-028-A | Scaffold FSD entity layers for Product and Category                   | ✅     | docs/plans/012-store-client-homepage.md       |
-| TASK-028-B | Create shared/ui Skeleton primitive                                   | ✅     | docs/plans/012-store-client-homepage.md       |
-| TASK-028-C | Create shared/ui ProductCard base component                           | ✅     | docs/plans/012-store-client-homepage.md       |
-| TASK-028-D | Create HeroBanner widget (static Server Component)                    | ✅     | docs/plans/012-store-client-homepage.md       |
-| TASK-028-E | Create CategoryNav widget with skeleton                               | ✅     | docs/plans/012-store-client-homepage.md       |
-| TASK-028-F | Create ProductGrid widget with skeleton                               | ✅     | docs/plans/012-store-client-homepage.md       |
-| TASK-028-G | Wire up app/page.tsx and verify full build                            | ✅     | docs/plans/012-store-client-homepage.md       |
-| TASK-029   | Build ProductListPage with filtering                                  | ✅     | docs/plans/014-store-client-product-list.md   |
-| TASK-029-A | Create features/product-filters slice (controls + debounced search)   | ✅     | docs/plans/014-store-client-product-list.md   |
-| TASK-029-B | Create widgets/product-list slice (ProductList, Pagination, Skeleton) | ✅     | docs/plans/014-store-client-product-list.md   |
-| TASK-029-C | Create widgets/product-list/ProductListView (URL-state orchestrator)  | ✅     | docs/plans/014-store-client-product-list.md   |
-| TASK-029-D | Create app/products/page.tsx and wire full build                      | ✅     | docs/plans/014-store-client-product-list.md   |
-| TASK-030   | Build ProductDetailPage                                               | ✅     | docs/plans/015-store-client-product-detail.md |
-| TASK-030-A | Update entities/product barrel with detail types and hook             | ✅     | docs/plans/015-store-client-product-detail.md |
-| TASK-030-B | Create widgets/product-detail/ProductDetailSkeleton                   | ✅     | docs/plans/015-store-client-product-detail.md |
-| TASK-030-C | Create widgets/product-detail/ProductImageGallery                     | ✅     | docs/plans/015-store-client-product-detail.md |
-| TASK-030-D | Create widgets/product-detail/ProductVariantSelector                  | ✅     | docs/plans/015-store-client-product-detail.md |
-| TASK-030-E | Create widgets/product-detail/ProductDetailView (orchestrator)        | ✅     | docs/plans/015-store-client-product-detail.md |
-| TASK-030-F | Create app/products/[slug]/page.tsx and wire full build               | ✅     | docs/plans/015-store-client-product-detail.md |
-| TASK-031   | Build CartPage with quantity management                               | ⬜     | —                                             |
-| TASK-032   | Implement AddToCart feature (frontend)                                | ⬜     | —                                             |
+| Task ID    | Description                                                                         | Status | Plan                                          |
+| ---------- | ----------------------------------------------------------------------------------- | ------ | --------------------------------------------- |
+| TASK-028   | Build HomePage (store-client)                                                       | ✅     | docs/plans/012-store-client-homepage.md       |
+| TASK-028-A | Scaffold FSD entity layers for Product and Category                                 | ✅     | docs/plans/012-store-client-homepage.md       |
+| TASK-028-B | Create shared/ui Skeleton primitive                                                 | ✅     | docs/plans/012-store-client-homepage.md       |
+| TASK-028-C | Create shared/ui ProductCard base component                                         | ✅     | docs/plans/012-store-client-homepage.md       |
+| TASK-028-D | Create HeroBanner widget (static Server Component)                                  | ✅     | docs/plans/012-store-client-homepage.md       |
+| TASK-028-E | Create CategoryNav widget with skeleton                                             | ✅     | docs/plans/012-store-client-homepage.md       |
+| TASK-028-F | Create ProductGrid widget with skeleton                                             | ✅     | docs/plans/012-store-client-homepage.md       |
+| TASK-028-G | Wire up app/page.tsx and verify full build                                          | ✅     | docs/plans/012-store-client-homepage.md       |
+| TASK-029   | Build ProductListPage with filtering                                                | ✅     | docs/plans/014-store-client-product-list.md   |
+| TASK-029-A | Create features/product-filters slice (controls + debounced search)                 | ✅     | docs/plans/014-store-client-product-list.md   |
+| TASK-029-B | Create widgets/product-list slice (ProductList, Pagination, Skeleton)               | ✅     | docs/plans/014-store-client-product-list.md   |
+| TASK-029-C | Create widgets/product-list/ProductListView (URL-state orchestrator)                | ✅     | docs/plans/014-store-client-product-list.md   |
+| TASK-029-D | Create app/products/page.tsx and wire full build                                    | ✅     | docs/plans/014-store-client-product-list.md   |
+| TASK-030   | Build ProductDetailPage                                                             | ✅     | docs/plans/015-store-client-product-detail.md |
+| TASK-030-A | Update entities/product barrel with detail types and hook                           | ✅     | docs/plans/015-store-client-product-detail.md |
+| TASK-030-B | Create widgets/product-detail/ProductDetailSkeleton                                 | ✅     | docs/plans/015-store-client-product-detail.md |
+| TASK-030-C | Create widgets/product-detail/ProductImageGallery                                   | ✅     | docs/plans/015-store-client-product-detail.md |
+| TASK-030-D | Create widgets/product-detail/ProductVariantSelector                                | ✅     | docs/plans/015-store-client-product-detail.md |
+| TASK-030-E | Create widgets/product-detail/ProductDetailView (orchestrator)                      | ✅     | docs/plans/015-store-client-product-detail.md |
+| TASK-030-F | Create app/products/[slug]/page.tsx and wire full build                             | ✅     | docs/plans/015-store-client-product-detail.md |
+| TASK-031   | Build CartPage with quantity management (guest + user; depends on TASK-051-J)       | ⬜     | docs/plans/016-store-client-cart-page.md      |
+| TASK-031-A | Create entities/cart barrel slice (depends on TASK-051-J Orval regen)               | ⬜     | docs/plans/016-store-client-cart-page.md      |
+| TASK-031-B | Create widgets/cart/CartSkeleton                                                    | ⬜     | docs/plans/016-store-client-cart-page.md      |
+| TASK-031-C | Create widgets/cart/CartItemRow                                                     | ⬜     | docs/plans/016-store-client-cart-page.md      |
+| TASK-031-D | Create widgets/cart/CartSummary                                                     | ⬜     | docs/plans/016-store-client-cart-page.md      |
+| TASK-031-E | Create widgets/cart/CartView (orchestrator; no 401 state — guest cart always works) | ⬜     | docs/plans/016-store-client-cart-page.md      |
+| TASK-031-F | Create app/cart/page.tsx and verify full build                                      | ⬜     | docs/plans/016-store-client-cart-page.md      |
+| TASK-032   | Implement AddToCart feature (frontend)                                              | ⬜     | —                                             |
+
+### Guest Cart Backend (Plan 017)
+
+| Task ID    | Description                                                                                     | Status | Plan                                 |
+| ---------- | ----------------------------------------------------------------------------------------------- | ------ | ------------------------------------ |
+| TASK-051   | Guest cart backend — nullable userId, cartToken cookie, optional-auth, merge on login           | 🔄     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-A | Prisma migration: nullable Cart.userId + unique token column (SQL authored; apply pending DB)   | 🔄     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-B | Implement OptionalJwtAuthGuard (AuthGuard extension — no throw on missing JWT)                  | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-C | Implement CartIdentityInterceptor + @CartIdentity() decorator (resolves userId or token)        | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-D | Update CartRepository: findByToken, findOrCreate(identity), assignCartToUser, addItem by cartId | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-E | Update CartService: dual-identity signatures + mergeGuestCart() (TDD)                           | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-F | Update CartController: remove JwtAuthGuard, add OptionalJwtAuthGuard + CartIdentityInterceptor  | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-G | Update CartModule: register new providers (CartIdentityInterceptor, ConfigModule)               | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-H | Wire cart-merge into AuthController login + register (import CartModule into AuthModule)        | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-I | E2E tests: guest cart, authenticated cart, merge on login, quantity clamp, merge failure (DB)   | ⬜     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-J | Regenerate Orval API hooks (store-client + store-admin) after cart controller changes           | ✅     | docs/plans/017-guest-cart-backend.md |
+
+### Storefront Auth — store-client (Plan 018)
+
+> **Depends on:** TASK-051-J (Orval regeneration) must be complete before this section begins.
+
+| Task ID    | Description                                                                                               | Status | Plan                              |
+| ---------- | --------------------------------------------------------------------------------------------------------- | ------ | --------------------------------- |
+| TASK-052   | Storefront auth: login/register/logout + JWT in-memory + 401 interceptor + header auth widget             | ⬜     | docs/plans/018-storefront-auth.md |
+| TASK-052-A | Update shared/api/instance.ts: add Authorization interceptor + 401→refresh retry                          | ⬜     | docs/plans/018-storefront-auth.md |
+| TASK-052-B | Create entities/session slice: AuthContext, useAuth, AuthProvider (in-memory token + silent refresh)      | ⬜     | docs/plans/018-storefront-auth.md |
+| TASK-052-C | Install form dependencies: react-hook-form, @hookform/resolvers, zod                                      | ⬜     | docs/plans/018-storefront-auth.md |
+| TASK-052-D | Create features/auth/LoginForm (zod + react-hook-form + useAuthControllerLogin + cart invalidation)       | ⬜     | docs/plans/018-storefront-auth.md |
+| TASK-052-E | Create features/auth/RegisterForm (zod + react-hook-form + useAuthControllerRegister + cart invalidation) | ⬜     | docs/plans/018-storefront-auth.md |
+| TASK-052-F | Create features/auth/LogoutButton (useAuthControllerLogout + clearTokens + queryClient.clear)             | ⬜     | docs/plans/018-storefront-auth.md |
+| TASK-052-G | Create widgets/header/HeaderAuth + wire into existing Header widget                                       | ⬜     | docs/plans/018-storefront-auth.md |
+| TASK-052-H | Create app/(auth)/login/page.tsx route                                                                    | ⬜     | docs/plans/018-storefront-auth.md |
+| TASK-052-I | Create app/(auth)/register/page.tsx route                                                                 | ⬜     | docs/plans/018-storefront-auth.md |
+| TASK-052-J | Update CartView (TASK-031-E) to remove 401 sign-in state (no longer reachable after TASK-051)             | ⬜     | docs/plans/018-storefront-auth.md |
+| TASK-052-K | Full integration verification (build + lint + typecheck + manual smoke tests)                             | ⬜     | docs/plans/018-storefront-auth.md |
 
 ---
 

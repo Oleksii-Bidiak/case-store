@@ -1,6 +1,17 @@
-import { Controller, Post, Body, Res, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Req,
+  Res,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Response } from 'express';
+import { JwtService } from '@nestjs/jwt';
+import { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
@@ -18,6 +29,8 @@ import { JwtRefreshGuard } from './guards';
 import { JwtAuthGuard } from './guards';
 import { CurrentUser } from './decorators';
 import { AuthTokens } from './entities';
+import { CartService } from '../cart/cart.service';
+import { CART_TOKEN_COOKIE } from '../cart/cart-identity.types';
 
 /**
  * Response envelope for auth operations.
@@ -43,9 +56,13 @@ type MessageResponse = { message: string };
 @ApiExtraModels(AuthTokens, AuthResponseEnvelope, MessageResponseEnvelope)
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
+    private readonly jwtService: JwtService,
+    private readonly cartService: CartService,
   ) {}
 
   /**
@@ -56,7 +73,9 @@ export class AuthController {
    */
   @Post('register')
   @Throttle({ default: { limit: 5, ttl: 60000 } })
-  @ApiOperation({ summary: 'Register a new user' })
+  @ApiOperation({
+    summary: 'Register a new user (merges guest cart if cartToken cookie present)',
+  })
   @ApiResponse({
     status: 201,
     description: 'User registered successfully',
@@ -71,11 +90,13 @@ export class AuthController {
   @ApiResponse({ status: 409, description: 'Email already exists' })
   async register(
     @Body() dto: RegisterDto,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<{ data: AuthResponse }> {
     const tokens = await this.authService.register(dto);
 
     this.setRefreshCookie(response, tokens.refreshToken);
+    await this.mergeGuestCartIfPresent(request, response, tokens.accessToken);
 
     return {
       data: { accessToken: tokens.accessToken },
@@ -91,7 +112,9 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
-  @ApiOperation({ summary: 'Authenticate user' })
+  @ApiOperation({
+    summary: 'Authenticate user (merges guest cart if cartToken cookie present)',
+  })
   @ApiResponse({
     status: 200,
     description: 'Login successful',
@@ -105,11 +128,13 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(
     @Body() dto: LoginDto,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<{ data: AuthResponse }> {
     const tokens = await this.authService.login(dto.email, dto.password);
 
     this.setRefreshCookie(response, tokens.refreshToken);
+    await this.mergeGuestCartIfPresent(request, response, tokens.accessToken);
 
     return {
       data: { accessToken: tokens.accessToken },
@@ -209,6 +234,54 @@ export class AuthController {
       secure: isProduction,
       sameSite: 'strict',
       path: '/api/auth/refresh',
+      maxAge: 0,
+    });
+  }
+
+  /**
+   * If the request carries a guest `cartToken` cookie, merge that guest cart
+   * into the authenticated user's cart and clear the cookie. The user ID is
+   * read from the freshly-signed access token's `sub` claim.
+   *
+   * A merge failure must never block authentication — errors are logged and
+   * swallowed, and the guest cookie is cleared regardless.
+   */
+  private async mergeGuestCartIfPresent(
+    request: Request,
+    response: Response,
+    accessToken: string,
+  ): Promise<void> {
+    const cartToken: string | undefined = request.cookies?.[CART_TOKEN_COOKIE];
+
+    if (!cartToken) {
+      return;
+    }
+
+    try {
+      const payload = this.jwtService.decode(accessToken) as { sub?: string } | null;
+      const userId = payload?.sub;
+
+      if (userId) {
+        await this.cartService.mergeGuestCart(cartToken, userId);
+      }
+    } catch (error) {
+      this.logger.error('Guest cart merge on authentication failed', error as Error);
+    } finally {
+      this.clearCartTokenCookie(response);
+    }
+  }
+
+  /**
+   * Clear the guest cart token cookie after a successful merge.
+   */
+  private clearCartTokenCookie(response: Response): void {
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+
+    response.cookie(CART_TOKEN_COOKIE, '', {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'strict',
+      path: '/api',
       maxAge: 0,
     });
   }

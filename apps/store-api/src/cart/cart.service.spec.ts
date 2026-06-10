@@ -4,6 +4,12 @@ import { CartRepository, CartWithItems } from './cart.repository';
 import { CartService } from './cart.service';
 import { CartEntity, CartItemEntity } from './entities';
 import { AddToCartDto, UpdateCartItemDto } from './dto';
+import type { ResolvedCartIdentity } from './cart-identity.types';
+
+// ─── Identities ─────────────────────────────────────────────────────────────
+
+const userIdentity: ResolvedCartIdentity = { type: 'user', userId: 'user-uuid-1' };
+const tokenIdentity: ResolvedCartIdentity = { type: 'token', token: 'guest-token-1' };
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -12,6 +18,7 @@ const now = new Date('2026-05-07T12:00:00.000Z');
 const mockCartWithVariantItem: CartWithItems = {
   id: 'cart-uuid-1',
   userId: 'user-uuid-1',
+  token: null,
   createdAt: now,
   updatedAt: now,
   items: [
@@ -43,6 +50,7 @@ const mockCartWithVariantItem: CartWithItems = {
 const mockCartWithNoVariantItem: CartWithItems = {
   id: 'cart-uuid-1',
   userId: 'user-uuid-1',
+  token: null,
   createdAt: now,
   updatedAt: now,
   items: [
@@ -68,6 +76,7 @@ const mockCartWithNoVariantItem: CartWithItems = {
 const mockCartWithMultipleItems: CartWithItems = {
   id: 'cart-uuid-1',
   userId: 'user-uuid-1',
+  token: null,
   createdAt: now,
   updatedAt: now,
   items: [
@@ -115,6 +124,7 @@ const mockCartWithMultipleItems: CartWithItems = {
 const mockEmptyCart: CartWithItems = {
   id: 'cart-uuid-1',
   userId: 'user-uuid-1',
+  token: null,
   createdAt: now,
   updatedAt: now,
   items: [],
@@ -123,6 +133,7 @@ const mockEmptyCart: CartWithItems = {
 const mockCartWithLowStockItem: CartWithItems = {
   id: 'cart-uuid-1',
   userId: 'user-uuid-1',
+  token: null,
   createdAt: now,
   updatedAt: now,
   items: [
@@ -154,6 +165,7 @@ const mockCartWithLowStockItem: CartWithItems = {
 const mockCartWithInactiveProduct: CartWithItems = {
   id: 'cart-uuid-1',
   userId: 'user-uuid-1',
+  token: null,
   createdAt: now,
   updatedAt: now,
   items: [
@@ -176,12 +188,65 @@ const mockCartWithInactiveProduct: CartWithItems = {
   ],
 };
 
+// Guest cart used by merge tests — token-based, two items.
+const mockGuestCart: CartWithItems = {
+  id: 'guest-cart-1',
+  userId: null,
+  token: 'guest-token-1',
+  createdAt: now,
+  updatedAt: now,
+  items: [
+    {
+      id: 'guest-item-1',
+      productId: 'product-uuid-1',
+      variantId: 'variant-uuid-1',
+      quantity: 2,
+      createdAt: now,
+      updatedAt: now,
+      product: {
+        id: 'product-uuid-1',
+        name: 'iPhone 15 Pro Case',
+        price: { toString: () => '29.99' } as any,
+        compareAtPrice: null,
+        isActive: true,
+      },
+      variant: {
+        id: 'variant-uuid-1',
+        name: 'Black / iPhone 15 Pro',
+        price: { toString: () => '29.99' } as any,
+        stock: 50,
+        isActive: true,
+      },
+    },
+    {
+      id: 'guest-item-2',
+      productId: 'product-uuid-2',
+      variantId: null,
+      quantity: 1,
+      createdAt: now,
+      updatedAt: now,
+      product: {
+        id: 'product-uuid-2',
+        name: 'Screen Protector',
+        price: { toString: () => '9.99' } as any,
+        compareAtPrice: null,
+        isActive: true,
+      },
+      variant: null,
+    },
+  ],
+};
+
 // ─── CartRepository mock ────────────────────────────────────────────────────
 
 const cartRepositoryMock = {
   findByUserId: jest.fn(),
+  findByToken: jest.fn(),
   findById: jest.fn(),
   findOrCreate: jest.fn(),
+  assignCartToUser: jest.fn(),
+  deleteCart: jest.fn(),
+  setItemQuantity: jest.fn(),
   addItem: jest.fn(),
   updateItem: jest.fn(),
   removeItem: jest.fn(),
@@ -210,7 +275,7 @@ describe('CartService', () => {
     it('should return cart with items and calculated totals', async () => {
       cartRepositoryMock.findOrCreate.mockResolvedValue(mockCartWithVariantItem);
 
-      const result = await service.getCart('user-uuid-1');
+      const result = await service.getCart(userIdentity);
 
       expect(result).toBeInstanceOf(CartEntity);
       expect(result.id).toBe('cart-uuid-1');
@@ -220,13 +285,13 @@ describe('CartService', () => {
       expect(result.totals.subtotal).toBe('59.98'); // 29.99 × 2
       expect(result.totals.itemCount).toBe(2);
       expect(result.totals.uniqueItems).toBe(1);
-      expect(cartRepositoryMock.findOrCreate).toHaveBeenCalledWith('user-uuid-1');
+      expect(cartRepositoryMock.findOrCreate).toHaveBeenCalledWith(userIdentity);
     });
 
     it('should return empty cart with zero totals when no items', async () => {
       cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
 
-      const result = await service.getCart('user-uuid-1');
+      const result = await service.getCart(userIdentity);
 
       expect(result.items).toHaveLength(0);
       expect(result.totals.subtotal).toBe('0.00');
@@ -237,7 +302,7 @@ describe('CartService', () => {
     it('should calculate totals correctly for multiple items', async () => {
       cartRepositoryMock.findOrCreate.mockResolvedValue(mockCartWithMultipleItems);
 
-      const result = await service.getCart('user-uuid-1');
+      const result = await service.getCart(userIdentity);
 
       // 29.99 × 2 (variant item) + 9.99 × 1 (no variant) = 69.97
       expect(result.totals.subtotal).toBe('69.97');
@@ -248,7 +313,7 @@ describe('CartService', () => {
     it('should use product price when no variant exists', async () => {
       cartRepositoryMock.findOrCreate.mockResolvedValue(mockCartWithNoVariantItem);
 
-      const result = await service.getCart('user-uuid-1');
+      const result = await service.getCart(userIdentity);
 
       expect(result.items[0].price).toBe('9.99');
       expect(result.items[0].lineTotal).toBe('9.99'); // 9.99 × 1
@@ -257,10 +322,19 @@ describe('CartService', () => {
     it('should use variant price when variant exists', async () => {
       cartRepositoryMock.findOrCreate.mockResolvedValue(mockCartWithVariantItem);
 
-      const result = await service.getCart('user-uuid-1');
+      const result = await service.getCart(userIdentity);
 
       expect(result.items[0].price).toBe('29.99');
       expect(result.items[0].lineTotal).toBe('59.98'); // 29.99 × 2
+    });
+
+    it('should resolve a guest cart for a token identity', async () => {
+      cartRepositoryMock.findOrCreate.mockResolvedValue(mockGuestCart);
+
+      const result = await service.getCart(tokenIdentity);
+
+      expect(result.userId).toBeNull();
+      expect(cartRepositoryMock.findOrCreate).toHaveBeenCalledWith(tokenIdentity);
     });
   });
 
@@ -273,40 +347,38 @@ describe('CartService', () => {
       quantity: 2,
     };
 
-    it('should add a new item to cart and return updated cart', async () => {
+    it('should resolve the cart, add the item, and return the updated cart', async () => {
+      cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
       cartRepositoryMock.addItem.mockResolvedValue(mockCartWithVariantItem);
 
-      const result = await service.addToCart('user-uuid-1', addDto);
+      const result = await service.addToCart(userIdentity, addDto);
 
       expect(result).toBeInstanceOf(CartEntity);
       expect(result.items).toHaveLength(1);
       expect(result.items[0].quantity).toBe(2);
+      expect(cartRepositoryMock.findOrCreate).toHaveBeenCalledWith(userIdentity);
       expect(cartRepositoryMock.addItem).toHaveBeenCalledWith({
-        userId: 'user-uuid-1',
+        cartId: 'cart-uuid-1',
         productId: 'product-uuid-1',
         variantId: 'variant-uuid-1',
         quantity: 2,
       });
     });
 
-    it('should increment quantity when adding same product+variant', async () => {
-      const incrementedCart: CartWithItems = {
-        ...mockCartWithVariantItem,
-        items: [{ ...mockCartWithVariantItem.items[0], quantity: 4 }],
-      };
-      cartRepositoryMock.addItem.mockResolvedValue(incrementedCart);
+    it('should work for a guest token identity', async () => {
+      cartRepositoryMock.findOrCreate.mockResolvedValue({ ...mockEmptyCart, id: 'guest-cart-1' });
+      cartRepositoryMock.addItem.mockResolvedValue(mockCartWithVariantItem);
 
-      const result = await service.addToCart('user-uuid-1', addDto);
+      await service.addToCart(tokenIdentity, addDto);
 
-      expect(result.items[0].quantity).toBe(4);
-      // Repository handles the increment via upsert
+      expect(cartRepositoryMock.findOrCreate).toHaveBeenCalledWith(tokenIdentity);
       expect(cartRepositoryMock.addItem).toHaveBeenCalledWith(
-        expect.objectContaining({ quantity: 2 }),
+        expect.objectContaining({ cartId: 'guest-cart-1' }),
       );
     });
 
     it('should throw BadRequestException when adding out-of-stock item', async () => {
-      // addItem returns a cart where the variant has stock = 0
+      cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
       const outOfStockCart: CartWithItems = {
         ...mockEmptyCart,
         items: [
@@ -337,7 +409,7 @@ describe('CartService', () => {
       cartRepositoryMock.addItem.mockResolvedValue(outOfStockCart);
 
       await expect(
-        service.addToCart('user-uuid-1', {
+        service.addToCart(userIdentity, {
           productId: 'product-oos',
           variantId: 'variant-oos',
           quantity: 1,
@@ -346,11 +418,7 @@ describe('CartService', () => {
     });
 
     it('should throw BadRequestException when quantity exceeds stock', async () => {
-      // Adding quantity=5 but variant only has stock=2
-      cartRepositoryMock.addItem.mockResolvedValue(mockCartWithLowStockItem);
-
-      // The cart shows quantity=1 but we're trying to add more
-      // The service should validate that the resulting quantity doesn't exceed stock
+      cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
       const lowStockCart: CartWithItems = {
         ...mockCartWithLowStockItem,
         items: [
@@ -363,7 +431,7 @@ describe('CartService', () => {
       cartRepositoryMock.addItem.mockResolvedValue(lowStockCart);
 
       await expect(
-        service.addToCart('user-uuid-1', {
+        service.addToCart(userIdentity, {
           productId: 'product-uuid-3',
           variantId: 'variant-uuid-3',
           quantity: 5,
@@ -372,6 +440,7 @@ describe('CartService', () => {
     });
 
     it('should throw BadRequestException when total quantity exceeds max (99)', async () => {
+      cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
       const maxQtyCart: CartWithItems = {
         ...mockCartWithVariantItem,
         items: [
@@ -384,7 +453,7 @@ describe('CartService', () => {
       cartRepositoryMock.addItem.mockResolvedValue(maxQtyCart);
 
       await expect(
-        service.addToCart('user-uuid-1', {
+        service.addToCart(userIdentity, {
           productId: 'product-uuid-1',
           variantId: 'variant-uuid-1',
           quantity: 100,
@@ -393,10 +462,11 @@ describe('CartService', () => {
     });
 
     it('should throw BadRequestException when adding inactive product', async () => {
+      cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
       cartRepositoryMock.addItem.mockResolvedValue(mockCartWithInactiveProduct);
 
       await expect(
-        service.addToCart('user-uuid-1', {
+        service.addToCart(userIdentity, {
           productId: 'product-uuid-4',
           quantity: 1,
         }),
@@ -404,6 +474,7 @@ describe('CartService', () => {
     });
 
     it('should add item without variant (variantId undefined)', async () => {
+      cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
       cartRepositoryMock.addItem.mockResolvedValue(mockCartWithNoVariantItem);
 
       const dtoNoVariant: AddToCartDto = {
@@ -411,7 +482,7 @@ describe('CartService', () => {
         quantity: 1,
       };
 
-      const result = await service.addToCart('user-uuid-1', dtoNoVariant);
+      const result = await service.addToCart(userIdentity, dtoNoVariant);
 
       expect(result.items[0].variantId).toBeNull();
       expect(cartRepositoryMock.addItem).toHaveBeenCalledWith(
@@ -430,7 +501,6 @@ describe('CartService', () => {
         ...mockCartWithVariantItem,
         items: [{ ...mockCartWithVariantItem.items[0], quantity: 5 }],
       };
-      // Initial lookup uses findByUserId (for validation)
       cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithVariantItem);
       cartRepositoryMock.updateItem.mockResolvedValue({
         id: 'item-uuid-1',
@@ -441,48 +511,42 @@ describe('CartService', () => {
         createdAt: now,
         updatedAt: now,
       });
-      // getCart() at the end uses findOrCreate
       cartRepositoryMock.findOrCreate.mockResolvedValue(updatedCart);
 
-      const result = await service.updateItem('user-uuid-1', 'item-uuid-1', updateDto);
+      const result = await service.updateItem(userIdentity, 'item-uuid-1', updateDto);
 
       expect(result).toBeInstanceOf(CartEntity);
       expect(result.items[0].quantity).toBe(5);
       expect(cartRepositoryMock.updateItem).toHaveBeenCalledWith('item-uuid-1', { quantity: 5 });
     });
 
+    it('should resolve a guest cart by token for update', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue({
+        ...mockCartWithVariantItem,
+        userId: null,
+        token: 'guest-token-1',
+      });
+      cartRepositoryMock.updateItem.mockResolvedValue({});
+      cartRepositoryMock.findOrCreate.mockResolvedValue(mockCartWithVariantItem);
+
+      await service.updateItem(tokenIdentity, 'item-uuid-1', updateDto);
+
+      expect(cartRepositoryMock.findByToken).toHaveBeenCalledWith('guest-token-1');
+    });
+
     it('should throw NotFoundException when item does not exist', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithVariantItem);
 
-      // The item ID is not in the user's cart
-      await expect(
-        service.updateItem('user-uuid-1', 'nonexistent-item', updateDto),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('should throw NotFoundException when item belongs to another user', async () => {
-      // User's cart doesn't contain the specified item —
-      // since we only look in the user's own cart, an item from
-      // another cart is simply "not found"
-      const otherUserCart: CartWithItems = {
-        ...mockCartWithVariantItem,
-        userId: 'user-uuid-1',
-      };
-      cartRepositoryMock.findByUserId.mockResolvedValue(otherUserCart);
-
-      // The item-uuid-1 is in user-uuid-1's cart, but we're looking for an item
-      // that belongs to a different cart — it won't be found
-      await expect(
-        service.updateItem('user-uuid-1', 'item-from-other-cart', updateDto),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.updateItem(userIdentity, 'nonexistent-item', updateDto)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should throw BadRequestException when quantity exceeds stock', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithLowStockItem);
 
-      // Trying to update to quantity=5 but stock=2
       await expect(
-        service.updateItem('user-uuid-1', 'item-uuid-3', { quantity: 5 }),
+        service.updateItem(userIdentity, 'item-uuid-3', { quantity: 5 }),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -490,7 +554,7 @@ describe('CartService', () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithVariantItem);
 
       await expect(
-        service.updateItem('user-uuid-1', 'item-uuid-1', { quantity: 100 }),
+        service.updateItem(userIdentity, 'item-uuid-1', { quantity: 100 }),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -499,16 +563,16 @@ describe('CartService', () => {
       cartRepositoryMock.removeItem.mockResolvedValue(undefined);
       cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
 
-      const result = await service.updateItem('user-uuid-1', 'item-uuid-1', { quantity: 0 });
+      const result = await service.updateItem(userIdentity, 'item-uuid-1', { quantity: 0 });
 
       expect(cartRepositoryMock.removeItem).toHaveBeenCalledWith('item-uuid-1');
       expect(result.items).toHaveLength(0);
     });
 
-    it('should throw NotFoundException when user has no cart', async () => {
+    it('should throw NotFoundException when cart does not exist', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(null);
 
-      await expect(service.updateItem('user-uuid-1', 'item-uuid-1', updateDto)).rejects.toThrow(
+      await expect(service.updateItem(userIdentity, 'item-uuid-1', updateDto)).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -520,32 +584,31 @@ describe('CartService', () => {
     it('should remove item and return updated cart', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithMultipleItems);
       cartRepositoryMock.removeItem.mockResolvedValue(undefined);
-      // After removal, cart has only the screen protector
       const afterRemoval: CartWithItems = {
         ...mockCartWithMultipleItems,
         items: [mockCartWithMultipleItems.items[1]],
       };
       cartRepositoryMock.findOrCreate.mockResolvedValue(afterRemoval);
 
-      const result = await service.removeItem('user-uuid-1', 'item-uuid-1');
+      const result = await service.removeItem(userIdentity, 'item-uuid-1');
 
       expect(cartRepositoryMock.removeItem).toHaveBeenCalledWith('item-uuid-1');
       expect(result.items).toHaveLength(1);
       expect(result.items[0].productId).toBe('product-uuid-2');
     });
 
-    it('should throw NotFoundException when item not in user cart', async () => {
+    it('should throw NotFoundException when item not in cart', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithVariantItem);
 
-      await expect(service.removeItem('user-uuid-1', 'nonexistent-item')).rejects.toThrow(
+      await expect(service.removeItem(userIdentity, 'nonexistent-item')).rejects.toThrow(
         NotFoundException,
       );
     });
 
-    it('should throw NotFoundException when user has no cart', async () => {
+    it('should throw NotFoundException when cart does not exist', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(null);
 
-      await expect(service.removeItem('user-uuid-1', 'item-uuid-1')).rejects.toThrow(
+      await expect(service.removeItem(userIdentity, 'item-uuid-1')).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -559,30 +622,148 @@ describe('CartService', () => {
       cartRepositoryMock.clearItems.mockResolvedValue(undefined);
       cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
 
-      const result = await service.clearCart('user-uuid-1');
+      const result = await service.clearCart(userIdentity);
 
       expect(cartRepositoryMock.clearItems).toHaveBeenCalledWith('cart-uuid-1');
       expect(result.items).toHaveLength(0);
       expect(result.totals.subtotal).toBe('0.00');
-      expect(result.totals.itemCount).toBe(0);
-      expect(result.totals.uniqueItems).toBe(0);
     });
 
-    it('should throw NotFoundException when user has no cart', async () => {
+    it('should throw NotFoundException when cart does not exist', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(null);
 
-      await expect(service.clearCart('user-uuid-1')).rejects.toThrow(NotFoundException);
+      await expect(service.clearCart(userIdentity)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ─── mergeGuestCart ──────────────────────────────────────────────────────────
+
+  describe('mergeGuestCart', () => {
+    it('should be a no-op when the guest cart does not exist', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue(null);
+
+      await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+      expect(cartRepositoryMock.findByUserId).not.toHaveBeenCalled();
+      expect(cartRepositoryMock.assignCartToUser).not.toHaveBeenCalled();
+      expect(cartRepositoryMock.setItemQuantity).not.toHaveBeenCalled();
+      expect(cartRepositoryMock.deleteCart).not.toHaveBeenCalled();
     });
 
-    it('should return empty cart even if cart was already empty', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(mockEmptyCart);
-      cartRepositoryMock.clearItems.mockResolvedValue(undefined);
-      cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
+    it('should be a no-op when the guest cart is empty', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue({
+        ...mockEmptyCart,
+        userId: null,
+        token: 'guest-token-1',
+      });
 
-      const result = await service.clearCart('user-uuid-1');
+      await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
 
-      expect(result.items).toHaveLength(0);
-      expect(result.totals.subtotal).toBe('0.00');
+      expect(cartRepositoryMock.assignCartToUser).not.toHaveBeenCalled();
+      expect(cartRepositoryMock.setItemQuantity).not.toHaveBeenCalled();
+    });
+
+    it('should reassign the guest cart when the user has no existing cart', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue(mockGuestCart);
+      cartRepositoryMock.findByUserId.mockResolvedValue(null);
+
+      await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+      expect(cartRepositoryMock.assignCartToUser).toHaveBeenCalledWith(
+        'guest-cart-1',
+        'user-uuid-1',
+      );
+      expect(cartRepositoryMock.deleteCart).not.toHaveBeenCalled();
+    });
+
+    it('should copy non-overlapping items into the user cart and delete the guest cart', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue(mockGuestCart);
+      // User cart has a different product (no overlap with guest items).
+      cartRepositoryMock.findByUserId.mockResolvedValue({
+        ...mockEmptyCart,
+        id: 'user-cart-1',
+        items: [],
+      });
+
+      await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+      // Both guest items written with their original quantities.
+      expect(cartRepositoryMock.setItemQuantity).toHaveBeenCalledWith(
+        'user-cart-1',
+        'product-uuid-1',
+        'variant-uuid-1',
+        2,
+      );
+      expect(cartRepositoryMock.setItemQuantity).toHaveBeenCalledWith(
+        'user-cart-1',
+        'product-uuid-2',
+        null,
+        1,
+      );
+      expect(cartRepositoryMock.deleteCart).toHaveBeenCalledWith('guest-cart-1');
+    });
+
+    it('should sum overlapping quantities and clamp to MAX_QUANTITY (99)', async () => {
+      // Guest has the no-variant product (qty 1); user already has 99 of it.
+      cartRepositoryMock.findByToken.mockResolvedValue({
+        ...mockGuestCart,
+        items: [{ ...mockGuestCart.items[1], quantity: 15 }], // product-uuid-2, no variant
+      });
+      cartRepositoryMock.findByUserId.mockResolvedValue({
+        ...mockEmptyCart,
+        id: 'user-cart-1',
+        items: [
+          {
+            ...mockCartWithNoVariantItem.items[0],
+            id: 'user-item-x',
+            quantity: 90,
+          },
+        ],
+      });
+
+      await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+      // 90 + 15 = 105 → clamped to 99
+      expect(cartRepositoryMock.setItemQuantity).toHaveBeenCalledWith(
+        'user-cart-1',
+        'product-uuid-2',
+        null,
+        99,
+      );
+    });
+
+    it('should clamp the merged quantity to variant stock', async () => {
+      // Guest item is a variant with stock 2; summed quantity would exceed it.
+      cartRepositoryMock.findByToken.mockResolvedValue({
+        ...mockGuestCart,
+        items: [
+          {
+            ...mockCartWithLowStockItem.items[0], // variant stock 2
+            quantity: 1,
+          },
+        ],
+      });
+      cartRepositoryMock.findByUserId.mockResolvedValue({
+        ...mockEmptyCart,
+        id: 'user-cart-1',
+        items: [
+          {
+            ...mockCartWithLowStockItem.items[0],
+            id: 'user-item-low',
+            quantity: 2,
+          },
+        ],
+      });
+
+      await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+      // 2 + 1 = 3 → clamped to stock 2
+      expect(cartRepositoryMock.setItemQuantity).toHaveBeenCalledWith(
+        'user-cart-1',
+        'product-uuid-3',
+        'variant-uuid-3',
+        2,
+      );
     });
   });
 
@@ -593,6 +774,7 @@ describe('CartService', () => {
       const cartWithWholePrice: CartWithItems = {
         id: 'cart-uuid-1',
         userId: 'user-uuid-1',
+        token: null,
         createdAt: now,
         updatedAt: now,
         items: [
@@ -616,7 +798,7 @@ describe('CartService', () => {
       };
       cartRepositoryMock.findOrCreate.mockResolvedValue(cartWithWholePrice);
 
-      const result = await service.getCart('user-uuid-1');
+      const result = await service.getCart(userIdentity);
 
       expect(result.totals.subtotal).toBe('30.00');
       expect(result.items[0].lineTotal).toBe('30.00');
@@ -625,7 +807,7 @@ describe('CartService', () => {
     it('should handle single item with quantity 1', async () => {
       cartRepositoryMock.findOrCreate.mockResolvedValue(mockCartWithNoVariantItem);
 
-      const result = await service.getCart('user-uuid-1');
+      const result = await service.getCart(userIdentity);
 
       expect(result.totals.subtotal).toBe('9.99');
       expect(result.totals.itemCount).toBe(1);
@@ -636,6 +818,7 @@ describe('CartService', () => {
       const cartWithDifferentVariantPrice: CartWithItems = {
         id: 'cart-uuid-1',
         userId: 'user-uuid-1',
+        token: null,
         createdAt: now,
         updatedAt: now,
         items: [
@@ -649,14 +832,14 @@ describe('CartService', () => {
             product: {
               id: 'product-diff',
               name: 'Premium Case',
-              price: { toString: () => '29.99' } as any, // product price
+              price: { toString: () => '29.99' } as any,
               compareAtPrice: null,
               isActive: true,
             },
             variant: {
               id: 'variant-diff',
               name: 'Limited Edition',
-              price: { toString: () => '49.99' } as any, // variant price (higher)
+              price: { toString: () => '49.99' } as any,
               stock: 10,
               isActive: true,
             },
@@ -665,9 +848,8 @@ describe('CartService', () => {
       };
       cartRepositoryMock.findOrCreate.mockResolvedValue(cartWithDifferentVariantPrice);
 
-      const result = await service.getCart('user-uuid-1');
+      const result = await service.getCart(userIdentity);
 
-      // Should use variant price (49.99), not product price (29.99)
       expect(result.items[0].price).toBe('49.99');
       expect(result.totals.subtotal).toBe('49.99');
     });

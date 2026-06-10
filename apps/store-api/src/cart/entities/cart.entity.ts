@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
 import { CartItemEntity } from './cart-item.entity';
 
 /**
@@ -45,10 +45,18 @@ export class CartEntity {
   id!: string;
 
   @ApiProperty({
-    description: 'Owning user ID',
+    description: 'Owning user ID (null for guest carts)',
     example: '550e8400-e29b-41d4-a716-446655440001',
+    nullable: true,
   })
-  userId!: string;
+  userId!: string | null;
+
+  /**
+   * Guest cart token. Never exposed in the JSON response — it travels
+   * exclusively via the HttpOnly `cartToken` cookie.
+   */
+  @ApiHideProperty()
+  token?: string | null;
 
   @ApiProperty({
     description: 'Items in the cart',
@@ -73,7 +81,8 @@ export class CartEntity {
    */
   static fromPrisma(cart: {
     id: string;
-    userId: string;
+    userId: string | null;
+    token?: string | null;
     createdAt: Date;
     updatedAt: Date;
     items: Array<{

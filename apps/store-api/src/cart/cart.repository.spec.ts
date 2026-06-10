@@ -23,6 +23,7 @@ const prismaMock = {
 const mockCartWithItems: CartWithItems = {
   id: 'cart-uuid-1',
   userId: 'user-uuid-1',
+  token: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   items: [
@@ -70,6 +71,7 @@ const mockCartWithItems: CartWithItems = {
 const emptyCart: CartWithItems = {
   id: 'cart-uuid-1',
   userId: 'user-uuid-1',
+  token: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   items: [],
@@ -135,11 +137,25 @@ describe('CartRepository', () => {
 
   // ─── findOrCreate ────────────────────────────────────────────────────────────
 
+  describe('findByToken', () => {
+    it('should look up a cart by its guest token', async () => {
+      prismaMock.cart.findUnique.mockResolvedValue(mockCartWithItems);
+
+      const result = await repository.findByToken('guest-token-1');
+
+      expect(result).toEqual(mockCartWithItems);
+      expect(prismaMock.cart.findUnique).toHaveBeenCalledWith({
+        where: { token: 'guest-token-1' },
+        include: expect.objectContaining({ items: expect.any(Object) }),
+      });
+    });
+  });
+
   describe('findOrCreate', () => {
-    it('should return existing cart if user already has one', async () => {
+    it('should upsert by userId for a user identity', async () => {
       prismaMock.cart.upsert.mockResolvedValue(mockCartWithItems);
 
-      const result = await repository.findOrCreate('user-uuid-1');
+      const result = await repository.findOrCreate({ type: 'user', userId: 'user-uuid-1' });
 
       expect(result).toEqual(mockCartWithItems);
       expect(prismaMock.cart.upsert).toHaveBeenCalledWith({
@@ -150,16 +166,16 @@ describe('CartRepository', () => {
       });
     });
 
-    it('should create a new cart if user does not have one', async () => {
+    it('should upsert by token for a guest identity', async () => {
       prismaMock.cart.upsert.mockResolvedValue(emptyCart);
 
-      const result = await repository.findOrCreate('new-user-uuid');
+      const result = await repository.findOrCreate({ type: 'token', token: 'guest-token-1' });
 
       expect(result).toEqual(emptyCart);
       expect(prismaMock.cart.upsert).toHaveBeenCalledWith({
-        where: { userId: 'new-user-uuid' },
+        where: { token: 'guest-token-1' },
         update: {},
-        create: { userId: 'new-user-uuid' },
+        create: { token: 'guest-token-1' },
         include: expect.objectContaining({ items: expect.any(Object) }),
       });
     });
@@ -169,7 +185,7 @@ describe('CartRepository', () => {
 
   describe('addItem', () => {
     const input: AddToCartInput = {
-      userId: 'user-uuid-1',
+      cartId: 'cart-uuid-1',
       productId: 'product-uuid-1',
       variantId: 'variant-uuid-1',
       quantity: 2,
@@ -178,7 +194,6 @@ describe('CartRepository', () => {
     it('should use a transaction to ensure atomicity', async () => {
       const txMock = {
         cart: {
-          upsert: jest.fn().mockResolvedValue({ id: 'cart-uuid-1', userId: 'user-uuid-1' }),
           findUnique: jest.fn().mockResolvedValue(mockCartWithItems),
         },
         cartItem: {
@@ -196,11 +211,9 @@ describe('CartRepository', () => {
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     });
 
-    it('should create or find cart, then upsert item, then return full cart', async () => {
-      const cartRecord = { id: 'cart-uuid-1', userId: 'user-uuid-1' };
+    it('should upsert the item into the given cart, then return the full cart', async () => {
       const txMock = {
         cart: {
-          upsert: jest.fn().mockResolvedValue(cartRecord),
           findUnique: jest.fn().mockResolvedValue(mockCartWithItems),
         },
         cartItem: {
@@ -214,14 +227,7 @@ describe('CartRepository', () => {
 
       const result = await repository.addItem(input);
 
-      // Step 1: Ensure cart exists
-      expect(txMock.cart.upsert).toHaveBeenCalledWith({
-        where: { userId: 'user-uuid-1' },
-        update: {},
-        create: { userId: 'user-uuid-1' },
-      });
-
-      // Step 2: Upsert cart item
+      // Upsert cart item into the resolved cart
       expect(txMock.cartItem.upsert).toHaveBeenCalledWith({
         where: {
           cartId_productId_variantId: {
@@ -239,7 +245,7 @@ describe('CartRepository', () => {
         },
       });
 
-      // Step 3: Return full cart
+      // Return full cart
       expect(txMock.cart.findUnique).toHaveBeenCalledWith({
         where: { id: 'cart-uuid-1' },
         include: expect.objectContaining({ items: expect.any(Object) }),
@@ -250,16 +256,14 @@ describe('CartRepository', () => {
 
     it('should handle null variantId correctly', async () => {
       const inputNoVariant: AddToCartInput = {
-        userId: 'user-uuid-1',
+        cartId: 'cart-uuid-1',
         productId: 'product-uuid-2',
         variantId: undefined,
         quantity: 1,
       };
 
-      const cartRecord = { id: 'cart-uuid-1', userId: 'user-uuid-1' };
       const txMock = {
         cart: {
-          upsert: jest.fn().mockResolvedValue(cartRecord),
           findUnique: jest.fn().mockResolvedValue(emptyCart),
         },
         cartItem: {

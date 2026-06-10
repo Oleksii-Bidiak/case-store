@@ -35,6 +35,7 @@ async function exportSwagger(): Promise<void> {
       { type: 'apiKey', in: 'cookie', name: 'refreshToken' },
       'refresh-token',
     )
+    .addCookieAuth('cartToken', { type: 'apiKey', in: 'cookie', name: 'cartToken' }, 'cart-token')
     .addTag('Health', 'Health check endpoints')
     .addTag('Auth', 'Authentication and authorization')
     .addTag('Users', 'User profile and admin user management')

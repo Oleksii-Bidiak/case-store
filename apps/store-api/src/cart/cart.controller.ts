@@ -1,17 +1,29 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
+  ApiCookieAuth,
   ApiParam,
   ApiExtraModels,
   getSchemaPath,
 } from '@nestjs/swagger';
 import { CartService } from './cart.service';
 import { AddToCartDto, UpdateCartItemDto } from './dto';
-import { JwtAuthGuard } from '../auth/guards';
-import { CurrentUser } from '../auth/decorators';
+import { OptionalJwtAuthGuard } from './guards';
+import { CartIdentityInterceptor } from './interceptors';
+import { CartIdentity } from './decorators';
+import type { ResolvedCartIdentity } from './cart-identity.types';
 import { CartEntity, CartTotals } from './entities';
 
 /**
@@ -25,22 +37,24 @@ class CartResponseEnvelope {
 @ApiTags('Cart')
 @ApiExtraModels(CartEntity, CartTotals, CartResponseEnvelope)
 @Controller('cart')
-@UseGuards(JwtAuthGuard)
-@ApiBearerAuth('access-token')
+@UseGuards(OptionalJwtAuthGuard)
+@UseInterceptors(CartIdentityInterceptor)
+@ApiCookieAuth('cart-token')
 export class CartController {
   constructor(private readonly cartService: CartService) {}
 
   /**
    * GET /api/cart
    *
-   * Get the current user's cart with all items and calculated totals.
-   * Creates an empty cart if none exists.
+   * Get the current cart (guest or user) with all items and calculated totals.
+   * Creates an empty cart if none exists. Guests receive an HttpOnly cartToken
+   * cookie identifying their cart.
    */
   @Get()
-  @ApiOperation({ summary: 'Get current user cart', operationId: 'getCart' })
+  @ApiOperation({ summary: 'Get current cart (guest or user)', operationId: 'getCart' })
   @ApiResponse({
     status: 200,
-    description: 'Cart with items and totals',
+    description: 'Guest or user cart with items and totals',
     schema: {
       allOf: [
         { $ref: getSchemaPath(CartResponseEnvelope) },
@@ -48,9 +62,8 @@ export class CartController {
       ],
     },
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getCart(@CurrentUser('id') userId: string): Promise<{ data: CartEntity }> {
-    const cart = await this.cartService.getCart(userId);
+  async getCart(@CartIdentity() identity: ResolvedCartIdentity): Promise<{ data: CartEntity }> {
+    const cart = await this.cartService.getCart(identity);
     return { data: cart };
   }
 
@@ -59,7 +72,6 @@ export class CartController {
    *
    * Add an item to the cart. If the same product+variant combination
    * already exists, the quantity is incremented.
-   * Returns the updated cart with recalculated totals.
    */
   @Post('items')
   @ApiOperation({ summary: 'Add item to cart', operationId: 'addToCart' })
@@ -74,12 +86,11 @@ export class CartController {
     },
   })
   @ApiResponse({ status: 400, description: 'Invalid input, out of stock, or inactive product' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async addToCart(
-    @CurrentUser('id') userId: string,
+    @CartIdentity() identity: ResolvedCartIdentity,
     @Body() dto: AddToCartDto,
   ): Promise<{ data: CartEntity }> {
-    const cart = await this.cartService.addToCart(userId, dto);
+    const cart = await this.cartService.addToCart(identity, dto);
     return { data: cart };
   }
 
@@ -87,7 +98,6 @@ export class CartController {
    * PATCH /api/cart/items/:itemId
    *
    * Update a cart item's quantity. If quantity is 0, the item is removed.
-   * Returns the updated cart with recalculated totals.
    */
   @Patch('items/:itemId')
   @ApiOperation({ summary: 'Update cart item quantity', operationId: 'updateCartItem' })
@@ -103,14 +113,13 @@ export class CartController {
     },
   })
   @ApiResponse({ status: 400, description: 'Invalid quantity or exceeds stock' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Cart item not found' })
   async updateItem(
-    @CurrentUser('id') userId: string,
+    @CartIdentity() identity: ResolvedCartIdentity,
     @Param('itemId') itemId: string,
     @Body() dto: UpdateCartItemDto,
   ): Promise<{ data: CartEntity }> {
-    const cart = await this.cartService.updateItem(userId, itemId, dto);
+    const cart = await this.cartService.updateItem(identity, itemId, dto);
     return { data: cart };
   }
 
@@ -118,7 +127,6 @@ export class CartController {
    * DELETE /api/cart/items/:itemId
    *
    * Remove an item from the cart.
-   * Returns the updated cart with recalculated totals.
    */
   @Delete('items/:itemId')
   @ApiOperation({ summary: 'Remove item from cart', operationId: 'removeCartItem' })
@@ -133,13 +141,12 @@ export class CartController {
       ],
     },
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Cart item not found' })
   async removeItem(
-    @CurrentUser('id') userId: string,
+    @CartIdentity() identity: ResolvedCartIdentity,
     @Param('itemId') itemId: string,
   ): Promise<{ data: CartEntity }> {
-    const cart = await this.cartService.removeItem(userId, itemId);
+    const cart = await this.cartService.removeItem(identity, itemId);
     return { data: cart };
   }
 
@@ -147,7 +154,6 @@ export class CartController {
    * DELETE /api/cart
    *
    * Clear all items from the cart.
-   * Returns an empty cart with zero totals.
    */
   @Delete()
   @ApiOperation({ summary: 'Clear cart', operationId: 'clearCart' })
@@ -161,10 +167,9 @@ export class CartController {
       ],
     },
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Cart not found' })
-  async clearCart(@CurrentUser('id') userId: string): Promise<{ data: CartEntity }> {
-    const cart = await this.cartService.clearCart(userId);
+  async clearCart(@CartIdentity() identity: ResolvedCartIdentity): Promise<{ data: CartEntity }> {
+    const cart = await this.cartService.clearCart(identity);
     return { data: cart };
   }
 }

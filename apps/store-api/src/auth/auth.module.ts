@@ -5,6 +5,7 @@ import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtAccessStrategy, JwtRefreshStrategy } from './strategies';
+import { CartModule } from '../cart/cart.module';
 
 @Module({
   imports: [
@@ -22,6 +23,8 @@ import { JwtAccessStrategy, JwtRefreshStrategy } from './strategies';
       }),
       global: true,
     }),
+    // Provides CartService so login/register can merge a guest cart.
+    CartModule,
   ],
   controllers: [AuthController],
   providers: [AuthRepository, AuthService, JwtAccessStrategy, JwtRefreshStrategy],

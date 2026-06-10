@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { CartRepository, AddToCartInput, CartWithItems } from './cart.repository';
 import { CartEntity } from './entities';
 import { AddToCartDto, UpdateCartItemDto } from './dto';
+import type { ResolvedCartIdentity } from './cart-identity.types';
 
 /**
  * Maximum quantity allowed per cart item.
@@ -11,74 +12,69 @@ const MAX_QUANTITY = 99;
 /**
  * CartService — business logic for the shopping cart.
  *
- * All methods return a CartEntity (domain entity) with calculated totals.
- * The service validates business rules (stock, max quantity, active status)
- * and delegates database operations to CartRepository.
+ * All methods accept a ResolvedCartIdentity (a user identity for authenticated
+ * requests, or a token identity for guests) and return a CartEntity with
+ * calculated totals. The service validates business rules (stock, max quantity,
+ * active status) and delegates database operations to CartRepository.
  */
 @Injectable()
 export class CartService {
+  private readonly logger = new Logger(CartService.name);
+
   constructor(private readonly cartRepository: CartRepository) {}
 
   /**
-   * Get the current user's cart. Creates an empty cart if none exists.
-   * Returns the cart with items and calculated totals.
+   * Get the current cart for the identity. Creates an empty cart if none exists.
    */
-  async getCart(userId: string): Promise<CartEntity> {
-    const cart = await this.cartRepository.findOrCreate(userId);
+  async getCart(identity: ResolvedCartIdentity): Promise<CartEntity> {
+    const cart = await this.cartRepository.findOrCreate(identity);
     return CartEntity.fromPrisma(cart);
   }
 
   /**
-   * Add an item to the cart. If the same product+variant combination
-   * already exists, the repository increments the quantity (upsert).
+   * Add an item to the cart. If the same product+variant combination already
+   * exists, the repository increments the quantity (upsert).
    *
-   * After adding, validates:
-   * - Product/variant is active
-   * - Quantity does not exceed available stock (for variants)
-   * - Quantity does not exceed max (99)
-   *
-   * If validation fails, the item is still in the DB (added by repository),
-   * but the service throws an error. This is acceptable for MVP —
-   * the repository's upsert is atomic and the next getCart() will
-   * return the current state. A future improvement could roll back
-   * the add on validation failure.
+   * After adding, validates active status, stock, and max quantity.
    */
-  async addToCart(userId: string, dto: AddToCartDto): Promise<CartEntity> {
+  async addToCart(identity: ResolvedCartIdentity, dto: AddToCartDto): Promise<CartEntity> {
+    const cart = await this.cartRepository.findOrCreate(identity);
+
     const input: AddToCartInput = {
-      userId,
+      cartId: cart.id,
       productId: dto.productId,
       variantId: dto.variantId,
       quantity: dto.quantity,
     };
 
-    const cart = await this.cartRepository.addItem(input);
+    const updated = await this.cartRepository.addItem(input);
 
     // Validate the resulting cart items
-    this.validateCartItems(cart);
+    this.validateCartItems(updated);
 
-    return CartEntity.fromPrisma(cart);
+    return CartEntity.fromPrisma(updated);
   }
 
   /**
    * Update a cart item's quantity.
    *
    * Business rules:
-   * - User must own a cart (NotFoundException if not)
-   * - Item must exist in the user's cart (NotFoundException if not)
+   * - The cart must exist (NotFoundException if not)
+   * - The item must exist in the cart (NotFoundException if not)
    * - If quantity is 0, remove the item instead of updating
    * - If quantity > 0, validate stock and max quantity
-   *
-   * Returns the updated cart with recalculated totals.
    */
-  async updateItem(userId: string, itemId: string, dto: UpdateCartItemDto): Promise<CartEntity> {
-    // Find the user's cart
-    const cart = await this.cartRepository.findByUserId(userId);
+  async updateItem(
+    identity: ResolvedCartIdentity,
+    itemId: string,
+    dto: UpdateCartItemDto,
+  ): Promise<CartEntity> {
+    const cart = await this.resolveCart(identity);
 
     if (!cart) {
       throw new NotFoundException('Cart not found');
     }
 
-    // Find the item in the cart
     const cartItem = cart.items.find((item) => item.id === itemId);
 
     if (!cartItem) {
@@ -88,7 +84,7 @@ export class CartService {
     // If quantity is 0, remove the item
     if (dto.quantity === 0) {
       await this.cartRepository.removeItem(itemId);
-      return this.getCart(userId);
+      return this.getCart(identity);
     }
 
     // Validate max quantity
@@ -103,21 +99,16 @@ export class CartService {
       );
     }
 
-    // Update the item
     await this.cartRepository.updateItem(itemId, { quantity: dto.quantity });
 
-    // Return the updated cart
-    return this.getCart(userId);
+    return this.getCart(identity);
   }
 
   /**
    * Remove an item from the cart.
-   *
-   * Validates that the item exists in the user's cart.
-   * Returns the updated cart with recalculated totals.
    */
-  async removeItem(userId: string, itemId: string): Promise<CartEntity> {
-    const cart = await this.cartRepository.findByUserId(userId);
+  async removeItem(identity: ResolvedCartIdentity, itemId: string): Promise<CartEntity> {
+    const cart = await this.resolveCart(identity);
 
     if (!cart) {
       throw new NotFoundException('Cart not found');
@@ -131,15 +122,14 @@ export class CartService {
 
     await this.cartRepository.removeItem(itemId);
 
-    return this.getCart(userId);
+    return this.getCart(identity);
   }
 
   /**
-   * Clear all items from the user's cart.
-   * Returns an empty cart with zero totals.
+   * Clear all items from the cart.
    */
-  async clearCart(userId: string): Promise<CartEntity> {
-    const cart = await this.cartRepository.findByUserId(userId);
+  async clearCart(identity: ResolvedCartIdentity): Promise<CartEntity> {
+    const cart = await this.resolveCart(identity);
 
     if (!cart) {
       throw new NotFoundException('Cart not found');
@@ -147,13 +137,73 @@ export class CartService {
 
     await this.cartRepository.clearItems(cart.id);
 
-    return this.getCart(userId);
+    return this.getCart(identity);
+  }
+
+  /**
+   * Merge a guest cart (identified by token) into the user's cart on login or
+   * registration. Quantities of matching items are summed and clamped to
+   * MAX_QUANTITY (and to variant stock where applicable). The guest cart is
+   * deleted afterwards. A no-op when the guest cart is missing or empty.
+   *
+   * This must never throw in a way that blocks authentication — the caller
+   * wraps it defensively.
+   */
+  async mergeGuestCart(guestToken: string, userId: string): Promise<void> {
+    const guestCart = await this.cartRepository.findByToken(guestToken);
+
+    if (!guestCart || guestCart.items.length === 0) {
+      return;
+    }
+
+    const userCart = await this.cartRepository.findByUserId(userId);
+
+    // No existing user cart → simply reassign the guest cart to the user.
+    if (!userCart) {
+      await this.cartRepository.assignCartToUser(guestCart.id, userId);
+      return;
+    }
+
+    for (const guestItem of guestCart.items) {
+      const existing = userCart.items.find(
+        (item) => item.productId === guestItem.productId && item.variantId === guestItem.variantId,
+      );
+
+      const summed = (existing?.quantity ?? 0) + guestItem.quantity;
+      let quantity = Math.min(MAX_QUANTITY, summed);
+
+      // Clamp to available stock when the line has a variant.
+      if (guestItem.variant) {
+        quantity = Math.min(quantity, guestItem.variant.stock);
+      }
+
+      if (quantity <= 0) {
+        continue;
+      }
+
+      await this.cartRepository.setItemQuantity(
+        userCart.id,
+        guestItem.productId,
+        guestItem.variantId,
+        quantity,
+      );
+    }
+
+    await this.cartRepository.deleteCart(guestCart.id);
+  }
+
+  /**
+   * Resolve the existing cart for an identity without creating one.
+   * Returns null when no cart exists.
+   */
+  private resolveCart(identity: ResolvedCartIdentity): Promise<CartWithItems | null> {
+    return identity.type === 'user'
+      ? this.cartRepository.findByUserId(identity.userId)
+      : this.cartRepository.findByToken(identity.token);
   }
 
   /**
    * Validate all items in a cart after an add operation.
-   * Checks for inactive products/variants, out-of-stock items,
-   * and quantity exceeding the maximum.
    *
    * @throws BadRequestException if any validation fails
    */

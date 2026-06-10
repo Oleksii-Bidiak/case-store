@@ -1,12 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma';
 import { CartItem, Prisma } from '@prisma/client';
+import type { ResolvedCartIdentity } from './cart-identity.types';
 
 /**
- * Input for adding an item to the cart.
+ * Input for adding an item to a specific cart.
+ * The owning cart is resolved by the service before calling the repository.
  */
 export interface AddToCartInput {
-  userId: string;
+  cartId: string;
   productId: string;
   variantId?: string;
   quantity: number;
@@ -26,7 +28,8 @@ export interface UpdateCartItemInput {
  */
 export interface CartWithItems {
   id: string;
-  userId: string;
+  userId: string | null;
+  token: string | null;
   createdAt: Date;
   updatedAt: Date;
   items: Array<{
@@ -108,6 +111,17 @@ export class CartRepository {
   }
 
   /**
+   * Find a guest cart by its opaque token, including all items.
+   * Returns null if no cart exists for the token.
+   */
+  findByToken(token: string): Promise<CartWithItems | null> {
+    return this.prisma.cart.findUnique({
+      where: { token },
+      include: CART_ITEMS_INCLUDE,
+    }) as Promise<CartWithItems | null>;
+  }
+
+  /**
    * Find a cart by its ID, including all items with product/variant details.
    * Returns null if the cart does not exist.
    */
@@ -119,45 +133,79 @@ export class CartRepository {
   }
 
   /**
-   * Find an existing cart for the user, or create one if it doesn't exist.
-   * Uses upsert to avoid race conditions between find and create.
-   * Returns the cart with all items.
+   * Find an existing cart for the given identity, or create one if it doesn't
+   * exist. A user identity upserts by `userId`; a token identity upserts by
+   * `token`. Uses upsert to avoid race conditions between find and create.
    */
-  findOrCreate(userId: string): Promise<CartWithItems> {
+  findOrCreate(identity: ResolvedCartIdentity): Promise<CartWithItems> {
+    const where =
+      identity.type === 'user' ? { userId: identity.userId } : { token: identity.token };
+    const create =
+      identity.type === 'user' ? { userId: identity.userId } : { token: identity.token };
+
     return this.prisma.cart.upsert({
-      where: { userId },
+      where,
       update: {},
-      create: { userId },
+      create,
       include: CART_ITEMS_INCLUDE,
     }) as Promise<CartWithItems>;
   }
 
   /**
-   * Add an item to the cart. If the same product+variant combination
-   * already exists in the cart, increment the quantity instead of
-   * creating a duplicate (upsert pattern).
-   *
-   * Uses a Prisma transaction to ensure atomicity:
-   * 1. Find or create the cart
-   * 2. Upsert the cart item
-   * 3. Return the full updated cart
+   * Assign a (guest) cart to a user, clearing its guest token. Used during
+   * merge when the user has no pre-existing cart.
+   */
+  async assignCartToUser(cartId: string, userId: string): Promise<void> {
+    await this.prisma.cart.update({
+      where: { id: cartId },
+      data: { userId, token: null },
+    });
+  }
+
+  /**
+   * Delete a cart by ID. Cascades to its CartItems via the schema relation.
+   */
+  async deleteCart(cartId: string): Promise<void> {
+    await this.prisma.cart.delete({ where: { id: cartId } });
+  }
+
+  /**
+   * Set a cart item to an absolute quantity, creating it if absent.
+   * Used by the merge logic to write already-clamped quantities.
+   */
+  async setItemQuantity(
+    cartId: string,
+    productId: string,
+    variantId: string | null,
+    quantity: number,
+  ): Promise<void> {
+    await this.prisma.cartItem.upsert({
+      where: {
+        cartId_productId_variantId: {
+          cartId,
+          productId,
+          variantId: (variantId ?? null) as string,
+        },
+      },
+      update: { quantity },
+      create: { cartId, productId, variantId, quantity },
+    });
+  }
+
+  /**
+   * Add an item to a specific cart. If the same product+variant combination
+   * already exists, increment the quantity instead of creating a duplicate.
+   * Returns the full updated cart with items.
    */
   async addItem(input: AddToCartInput): Promise<CartWithItems> {
-    const { userId, productId, variantId, quantity } = input;
+    const { cartId, productId, variantId, quantity } = input;
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Ensure cart exists
-      const cart = await tx.cart.upsert({
-        where: { userId },
-        update: {},
-        create: { userId },
-      });
-
-      // 2. Upsert the cart item — increment quantity if it already exists
+      // Upsert the cart item — increment quantity if it already exists
       await tx.cartItem.upsert({
         where: {
           cartId_productId_variantId: {
-            cartId: cart.id,
+            cartId,
             productId,
             variantId: (variantId ?? null) as string,
           },
@@ -166,16 +214,16 @@ export class CartRepository {
           quantity: { increment: quantity },
         },
         create: {
-          cartId: cart.id,
+          cartId,
           productId,
           variantId: variantId ?? null,
           quantity,
         },
       });
 
-      // 3. Return the full cart with items
+      // Return the full cart with items
       const result = await tx.cart.findUnique({
-        where: { id: cart.id },
+        where: { id: cartId },
         include: CART_ITEMS_INCLUDE,
       });
 
