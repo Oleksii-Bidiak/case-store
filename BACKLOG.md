@@ -71,11 +71,11 @@
 
 ### API Contract
 
-| Task ID  | Description                                 | Status | Plan |
-| -------- | ------------------------------------------- | ------ | ---- |
-| TASK-014 | Configure Swagger/OpenAPI decorators        | ⬜     | —    |
-| TASK-015 | Set up Orval configuration for store-client | ⬜     | —    |
-| TASK-016 | Set up Orval configuration for store-admin  | ⬜     | —    |
+| Task ID  | Description                                 | Status | Plan                                                               |
+| -------- | ------------------------------------------- | ------ | ------------------------------------------------------------------ |
+| TASK-014 | Configure Swagger/OpenAPI decorators        | ✅     | — (done in main.ts; completed via TASK-009/TASK-010/TASK-025 work) |
+| TASK-015 | Set up Orval configuration for store-client | ✅     | docs/plans/007-store-client-setup.md (completed as TASK-017-E)     |
+| TASK-016 | Set up Orval configuration for store-admin  | ⬜     | —                                                                  |
 
 ### Frontend Scaffold
 
@@ -109,15 +109,20 @@
 
 ### Cart Backend
 
-| Task ID  | Description                                          | Status | Plan                             |
-| -------- | ---------------------------------------------------- | ------ | -------------------------------- |
-| TASK-021 | Create Cart domain entities and DTOs                 | ✅     | docs/plans/009-cart-module.md    |
-| TASK-022 | Implement CartRepository                             | ✅     | docs/plans/009-cart-module.md    |
-| TASK-023 | Write failing unit tests for CartService (TDD — Red) | ✅     | docs/plans/009-cart-module.md    |
-| TASK-024 | Implement CartService (TDD — Green)                  | ✅     | docs/plans/009-cart-module.md    |
-| TASK-025 | Implement CartController and CartModule              | ✅     | docs/plans/009-cart-module.md    |
-| TASK-026 | Write E2E tests for Cart endpoints                   | ✅     | docs/plans/010-cart-e2e-tests.md |
-| TASK-027 | Generate Orval hooks for Cart API                    | ⬜     | docs/plans/009-cart-module.md    |
+| Task ID    | Description                                                                          | Status | Plan                               |
+| ---------- | ------------------------------------------------------------------------------------ | ------ | ---------------------------------- |
+| TASK-021   | Create Cart domain entities and DTOs                                                 | ✅     | docs/plans/009-cart-module.md      |
+| TASK-022   | Implement CartRepository                                                             | ✅     | docs/plans/009-cart-module.md      |
+| TASK-023   | Write failing unit tests for CartService (TDD — Red)                                 | ✅     | docs/plans/009-cart-module.md      |
+| TASK-024   | Implement CartService (TDD — Green)                                                  | ✅     | docs/plans/009-cart-module.md      |
+| TASK-025   | Implement CartController and CartModule                                              | ✅     | docs/plans/009-cart-module.md      |
+| TASK-026   | Write E2E tests for Cart endpoints                                                   | ✅     | docs/plans/010-cart-e2e-tests.md   |
+| TASK-027   | Generate Orval hooks for Cart API                                                    | ✅     | docs/plans/011-cart-orval-hooks.md |
+| TASK-027-A | Add swagger:export script to store-api (writes swagger.json without starting server) | ✅     | docs/plans/011-cart-orval-hooks.md |
+| TASK-027-B | Update store-client orval.config.ts to use static swagger.json as input              | ✅     | docs/plans/011-cart-orval-hooks.md |
+| TASK-027-C | Add explicit operationId to Cart controller @ApiOperation decorators                 | ✅     | docs/plans/011-cart-orval-hooks.md |
+| TASK-027-D | Run npm run generate:api and verify all Cart hooks and types are generated           | ✅     | docs/plans/011-cart-orval-hooks.md |
+| TASK-027-E | Update shared/api/index.ts to re-export generated Cart hooks and model types         | ✅     | docs/plans/011-cart-orval-hooks.md |
 
 ### Storefront Pages
 
