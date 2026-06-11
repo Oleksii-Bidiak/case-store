@@ -204,23 +204,45 @@
 
 ## Phase 3: Checkout & Orders
 
-| Task ID    | Description                                                                                        | Status | Plan                           |
-| ---------- | -------------------------------------------------------------------------------------------------- | ------ | ------------------------------ |
-| TASK-033   | Implement Order module (backend) — TDD                                                             | ✅     | docs/plans/020-order-module.md |
-| TASK-033-A | Review Prisma schema — confirm no migration needed for Order/OrderItem/enums                       | ✅     | docs/plans/020-order-module.md |
-| TASK-033-B | Export CartRepository from CartModule (required by OrderModule)                                    | ✅     | docs/plans/020-order-module.md |
-| TASK-033-C | Create Order domain entities (OrderEntity, OrderItemEntity, OrderWithItems interface)              | ✅     | docs/plans/020-order-module.md |
-| TASK-033-D | Create Order DTOs (CreateOrderDto, AddressDto, UpdateOrderStatusDto, OrderListQueryDto)            | ✅     | docs/plans/020-order-module.md |
-| TASK-033-E | Implement OrderRepository (createFromCart tx, findByUserId, findById, updateStatus, updatePayment) | ✅     | docs/plans/020-order-module.md |
-| TASK-033-F | Write failing unit tests for OrderService (TDD — Red)                                              | ✅     | docs/plans/020-order-module.md |
-| TASK-033-G | Implement OrderService (TDD — Green): createOrder, getOrders, getOrder, cancelOrder, updateStatus  | ✅     | docs/plans/020-order-module.md |
-| TASK-033-H | Implement OrderController + OrderModule + register in AppModule                                    | ✅     | docs/plans/020-order-module.md |
-| TASK-033-I | Write E2E tests for Order endpoints (Supertest, mocked repository)                                 | ✅     | docs/plans/020-order-module.md |
-| TASK-033-J | Regenerate Orval API hooks for Orders (store-client + store-admin)                                 | ✅     | docs/plans/020-order-module.md |
-| TASK-034   | Implement Payment integration (Stripe stub)                                                        | ⬜     | —                              |
-| TASK-035   | Implement Checkout feature (frontend)                                                              | ⬜     | —                              |
-| TASK-036   | Build OrderConfirmationPage                                                                        | ⬜     | —                              |
-| TASK-037   | Set up order confirmation emails                                                                   | ⬜     | —                              |
+| Task ID    | Description                                                                                        | Status | Plan                                  |
+| ---------- | -------------------------------------------------------------------------------------------------- | ------ | ------------------------------------- |
+| TASK-033   | Implement Order module (backend) — TDD                                                             | ✅     | docs/plans/020-order-module.md        |
+| TASK-033-A | Review Prisma schema — confirm no migration needed for Order/OrderItem/enums                       | ✅     | docs/plans/020-order-module.md        |
+| TASK-033-B | Export CartRepository from CartModule (required by OrderModule)                                    | ✅     | docs/plans/020-order-module.md        |
+| TASK-033-C | Create Order domain entities (OrderEntity, OrderItemEntity, OrderWithItems interface)              | ✅     | docs/plans/020-order-module.md        |
+| TASK-033-D | Create Order DTOs (CreateOrderDto, AddressDto, UpdateOrderStatusDto, OrderListQueryDto)            | ✅     | docs/plans/020-order-module.md        |
+| TASK-033-E | Implement OrderRepository (createFromCart tx, findByUserId, findById, updateStatus, updatePayment) | ✅     | docs/plans/020-order-module.md        |
+| TASK-033-F | Write failing unit tests for OrderService (TDD — Red)                                              | ✅     | docs/plans/020-order-module.md        |
+| TASK-033-G | Implement OrderService (TDD — Green): createOrder, getOrders, getOrder, cancelOrder, updateStatus  | ✅     | docs/plans/020-order-module.md        |
+| TASK-033-H | Implement OrderController + OrderModule + register in AppModule                                    | ✅     | docs/plans/020-order-module.md        |
+| TASK-033-I | Write E2E tests for Order endpoints (Supertest, mocked repository)                                 | ✅     | docs/plans/020-order-module.md        |
+| TASK-033-J | Regenerate Orval API hooks for Orders (store-client + store-admin)                                 | ✅     | docs/plans/020-order-module.md        |
+| TASK-034   | Implement Payment integration (Stripe stub)                                                        | ⬜     | docs/plans/021-payment-integration.md |
+| TASK-034-A | Prisma migration — add Payment model and PaymentIntentStatus enum                                  | ⬜     | docs/plans/021-payment-integration.md |
+| TASK-034-B | Update env.validation.ts with Stripe/payment env vars                                              | ⬜     | docs/plans/021-payment-integration.md |
+| TASK-034-C | Create Payment domain types, entities, and DTOs                                                    | ⬜     | docs/plans/021-payment-integration.md |
+| TASK-034-D | Implement StubPaymentProvider                                                                      | ⬜     | docs/plans/021-payment-integration.md |
+| TASK-034-E | Implement PaymentRepository                                                                        | ⬜     | docs/plans/021-payment-integration.md |
+| TASK-034-F | Write failing unit tests for PaymentService (TDD — Red)                                            | ⬜     | docs/plans/021-payment-integration.md |
+| TASK-034-G | Implement PaymentService (TDD — Green)                                                             | ⬜     | docs/plans/021-payment-integration.md |
+| TASK-034-H | Implement PaymentController, raw body middleware, and PaymentModule                                | ⬜     | docs/plans/021-payment-integration.md |
+| TASK-034-I | Write E2E tests for Payment endpoints                                                              | ⬜     | docs/plans/021-payment-integration.md |
+| TASK-034-J | Regenerate Orval API hooks for Payments (store-client + store-admin)                               | ⬜     | docs/plans/021-payment-integration.md |
+| TASK-035   | Implement Checkout feature (frontend)                                                              | ✅     | docs/plans/022-checkout-feature.md    |
+| TASK-035-A | Create entities/order barrel slice (re-export useCreateOrder + Order types)                        | ✅     | docs/plans/022-checkout-feature.md    |
+| TASK-035-B | Create checkout zod schema (checkoutSchema + CheckoutFormValues) and unit tests (TDD)              | ✅     | docs/plans/022-checkout-feature.md    |
+| TASK-035-C | Create features/checkout/model/useCheckout hook (mutation + cart invalidation + redirect)          | ✅     | docs/plans/022-checkout-feature.md    |
+| TASK-035-D | Update LoginForm to honour ?redirect= query param; wrap login page in Suspense                     | ✅     | docs/plans/022-checkout-feature.md    |
+| TASK-035-E | Create features/checkout/ui/CheckoutAddressForm (react-hook-form + zod; reusable fieldset)         | ✅     | docs/plans/022-checkout-feature.md    |
+| TASK-035-F | Create widgets/checkout/CheckoutOrderSummary (read-only cart summary via useGetCart)               | ✅     | docs/plans/022-checkout-feature.md    |
+| TASK-035-G | Create widgets/checkout/CheckoutView orchestrator (auth-gate + empty-cart guard + layout)          | ✅     | docs/plans/022-checkout-feature.md    |
+| TASK-035-H | Create features/checkout barrel (index.ts) and update features/index.ts                            | ✅     | docs/plans/022-checkout-feature.md    |
+| TASK-035-I | Create app/checkout/page.tsx route (Server Component; metadata; Suspense wrapper)                  | ✅     | docs/plans/022-checkout-feature.md    |
+| TASK-035-J | Create app/orders/[id]/confirmation/page.tsx stub (TASK-036 redirect target)                       | ✅     | docs/plans/022-checkout-feature.md    |
+| TASK-035-K | Update CartSummary — replace disabled button with active Link to /checkout                         | ✅     | docs/plans/022-checkout-feature.md    |
+| TASK-035-L | Build / lint / typecheck / smoke verification gate                                                 | ✅     | docs/plans/022-checkout-feature.md    |
+| TASK-036   | Build OrderConfirmationPage                                                                        | ⬜     | —                                     |
+| TASK-037   | Set up order confirmation emails                                                                   | ⬜     | —                                     |
 
 ---
 
