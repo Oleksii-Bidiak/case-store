@@ -173,8 +173,12 @@
 | TASK-051-F | Update CartController: remove JwtAuthGuard, add OptionalJwtAuthGuard + CartIdentityInterceptor  | ✅     | docs/plans/017-guest-cart-backend.md |
 | TASK-051-G | Update CartModule: register new providers (CartIdentityInterceptor, ConfigModule)               | ✅     | docs/plans/017-guest-cart-backend.md |
 | TASK-051-H | Wire cart-merge into AuthController login + register (import CartModule into AuthModule)        | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-I | E2E tests: guest cart, authenticated cart, merge on login, quantity clamp, merge failure (DB)   | ⬜     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-I | E2E tests: guest cart, authenticated cart, merge on login, quantity clamp, merge failure (DB)   | ✅     | docs/plans/017-guest-cart-backend.md |
 | TASK-051-J | Regenerate Orval API hooks (store-client + store-admin) after cart controller changes           | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-K | Review WARN#1: make mergeGuestCart transactional; clear cartToken cookie only on success        | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-L | Review WARN#2: handle findOrCreate vs assignCartToUser race (P2002) in the merge transaction    | ⬜     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-M | Review: unit tests for guard/interceptor/merge-failure + mixed overlap/new/delete merge case    | ⬜     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-N | Review WARN#4: apply migration + write guest/merge e2e (TASK-051-I) — user re-verifies manually | ⬜     | docs/plans/017-guest-cart-backend.md |
 
 ### Storefront Auth — store-client (Plan 018)
 
@@ -233,6 +237,14 @@
 | TASK-048 | Sentry integration (frontend + backend)    | ⬜     | —    |
 | TASK-049 | Abandoned cart detection + email follow-up | ⬜     | —    |
 | TASK-050 | GA4 e-commerce events                      | ⬜     | —    |
+
+---
+
+## Tech Debt & Architecture Review
+
+| Task ID  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Status | Plan |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---- |
+| TASK-054 | Review repository & folder architecture across the monorepo: root vs workspace `package.json` script conventions (standardize `db:*`/`prisma:*` naming, add missing root proxies + `db:seed`, align with `/db-*` slash commands), workspace boundaries, shared config placement, and overall directory layout consistency. Also consolidate the duplicated/divergent TypeScript configs: `packages/typescript-config/base.json` still declares the deprecated `moduleResolution: "node"` (node10) while `nest.json` now overrides to `node16` and `test/tsconfig.e2e.json` re-declares the same compiler options by hand — pick one source of truth and remove the drift. Consider bumping `@nestjs/cli` to clear the `DEP0190` child-process shell warning. Produce a findings doc + cleanup task breakdown. | ⬜     | —    |
 
 ---
 
