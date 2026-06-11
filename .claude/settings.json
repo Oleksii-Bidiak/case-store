@@ -12,10 +12,13 @@
       "Bash(npm run start:*)",
       "Bash(npm run dev:*)",
       "Bash(npm run generate-api:*)",
+      "Bash(npm run generate:api:*)",
+      "Bash(npm run swagger:export:*)",
       "Bash(npx prisma:*)",
       "Bash(docker compose:*)",
       "Bash(ls:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "mcp__context7__query-docs"
     ],
     "deny": [
       "Read(.env)",
