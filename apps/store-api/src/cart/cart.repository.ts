@@ -22,6 +22,17 @@ export interface UpdateCartItemInput {
 }
 
 /**
+ * A single already-clamped line to write into the user's cart during a merge.
+ * The quantity is absolute (final) — the service has summed and clamped it
+ * against stock / MAX_QUANTITY before handing it to the repository.
+ */
+export interface MergeCartLine {
+  productId: string;
+  variantId: string | null;
+  quantity: number;
+}
+
+/**
  * Cart with its items and related product/variant details.
  * This is the shape returned by all cart queries — it includes
  * the full item tree so the service can calculate totals.
@@ -163,32 +174,43 @@ export class CartRepository {
   }
 
   /**
-   * Delete a cart by ID. Cascades to its CartItems via the schema relation.
+   * Atomically merge a set of already-clamped lines into the user's cart and
+   * delete the guest cart, in a single transaction. Either every line is
+   * written and the guest cart removed, or nothing changes — there is no
+   * partially-merged state and no orphaned guest cart left behind on failure.
+   *
+   * Quantities are absolute: the service has already summed the guest and user
+   * quantities and clamped them against stock / MAX_QUANTITY.
    */
-  async deleteCart(cartId: string): Promise<void> {
-    await this.prisma.cart.delete({ where: { id: cartId } });
-  }
+  async mergeGuestCartIntoUser(params: {
+    userCartId: string;
+    guestCartId: string;
+    lines: MergeCartLine[];
+  }): Promise<void> {
+    const { userCartId, guestCartId, lines } = params;
 
-  /**
-   * Set a cart item to an absolute quantity, creating it if absent.
-   * Used by the merge logic to write already-clamped quantities.
-   */
-  async setItemQuantity(
-    cartId: string,
-    productId: string,
-    variantId: string | null,
-    quantity: number,
-  ): Promise<void> {
-    await this.prisma.cartItem.upsert({
-      where: {
-        cartId_productId_variantId: {
-          cartId,
-          productId,
-          variantId: (variantId ?? null) as string,
-        },
-      },
-      update: { quantity },
-      create: { cartId, productId, variantId, quantity },
+    await this.prisma.$transaction(async (tx) => {
+      for (const line of lines) {
+        await tx.cartItem.upsert({
+          where: {
+            cartId_productId_variantId: {
+              cartId: userCartId,
+              productId: line.productId,
+              variantId: (line.variantId ?? null) as string,
+            },
+          },
+          update: { quantity: line.quantity },
+          create: {
+            cartId: userCartId,
+            productId: line.productId,
+            variantId: line.variantId,
+            quantity: line.quantity,
+          },
+        });
+      }
+
+      // Cascades to the guest cart's CartItems via the schema relation.
+      await tx.cart.delete({ where: { id: guestCartId } });
     });
   }
 

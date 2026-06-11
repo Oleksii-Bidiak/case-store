@@ -245,8 +245,7 @@ const cartRepositoryMock = {
   findById: jest.fn(),
   findOrCreate: jest.fn(),
   assignCartToUser: jest.fn(),
-  deleteCart: jest.fn(),
-  setItemQuantity: jest.fn(),
+  mergeGuestCartIntoUser: jest.fn(),
   addItem: jest.fn(),
   updateItem: jest.fn(),
   removeItem: jest.fn(),
@@ -646,8 +645,7 @@ describe('CartService', () => {
 
       expect(cartRepositoryMock.findByUserId).not.toHaveBeenCalled();
       expect(cartRepositoryMock.assignCartToUser).not.toHaveBeenCalled();
-      expect(cartRepositoryMock.setItemQuantity).not.toHaveBeenCalled();
-      expect(cartRepositoryMock.deleteCart).not.toHaveBeenCalled();
+      expect(cartRepositoryMock.mergeGuestCartIntoUser).not.toHaveBeenCalled();
     });
 
     it('should be a no-op when the guest cart is empty', async () => {
@@ -660,7 +658,7 @@ describe('CartService', () => {
       await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
 
       expect(cartRepositoryMock.assignCartToUser).not.toHaveBeenCalled();
-      expect(cartRepositoryMock.setItemQuantity).not.toHaveBeenCalled();
+      expect(cartRepositoryMock.mergeGuestCartIntoUser).not.toHaveBeenCalled();
     });
 
     it('should reassign the guest cart when the user has no existing cart', async () => {
@@ -673,10 +671,10 @@ describe('CartService', () => {
         'guest-cart-1',
         'user-uuid-1',
       );
-      expect(cartRepositoryMock.deleteCart).not.toHaveBeenCalled();
+      expect(cartRepositoryMock.mergeGuestCartIntoUser).not.toHaveBeenCalled();
     });
 
-    it('should copy non-overlapping items into the user cart and delete the guest cart', async () => {
+    it('should merge non-overlapping items into the user cart atomically with their original quantities', async () => {
       cartRepositoryMock.findByToken.mockResolvedValue(mockGuestCart);
       // User cart has a different product (no overlap with guest items).
       cartRepositoryMock.findByUserId.mockResolvedValue({
@@ -687,20 +685,16 @@ describe('CartService', () => {
 
       await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
 
-      // Both guest items written with their original quantities.
-      expect(cartRepositoryMock.setItemQuantity).toHaveBeenCalledWith(
-        'user-cart-1',
-        'product-uuid-1',
-        'variant-uuid-1',
-        2,
-      );
-      expect(cartRepositoryMock.setItemQuantity).toHaveBeenCalledWith(
-        'user-cart-1',
-        'product-uuid-2',
-        null,
-        1,
-      );
-      expect(cartRepositoryMock.deleteCart).toHaveBeenCalledWith('guest-cart-1');
+      // Both guest lines handed to the transactional merge in one call,
+      // each with its original quantity; the guest cart id is deleted there.
+      expect(cartRepositoryMock.mergeGuestCartIntoUser).toHaveBeenCalledWith({
+        userCartId: 'user-cart-1',
+        guestCartId: 'guest-cart-1',
+        lines: [
+          { productId: 'product-uuid-1', variantId: 'variant-uuid-1', quantity: 2 },
+          { productId: 'product-uuid-2', variantId: null, quantity: 1 },
+        ],
+      });
     });
 
     it('should sum overlapping quantities and clamp to MAX_QUANTITY (99)', async () => {
@@ -724,12 +718,11 @@ describe('CartService', () => {
       await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
 
       // 90 + 15 = 105 → clamped to 99
-      expect(cartRepositoryMock.setItemQuantity).toHaveBeenCalledWith(
-        'user-cart-1',
-        'product-uuid-2',
-        null,
-        99,
-      );
+      expect(cartRepositoryMock.mergeGuestCartIntoUser).toHaveBeenCalledWith({
+        userCartId: 'user-cart-1',
+        guestCartId: 'guest-cart-1',
+        lines: [{ productId: 'product-uuid-2', variantId: null, quantity: 99 }],
+      });
     });
 
     it('should clamp the merged quantity to variant stock', async () => {
@@ -758,12 +751,11 @@ describe('CartService', () => {
       await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
 
       // 2 + 1 = 3 → clamped to stock 2
-      expect(cartRepositoryMock.setItemQuantity).toHaveBeenCalledWith(
-        'user-cart-1',
-        'product-uuid-3',
-        'variant-uuid-3',
-        2,
-      );
+      expect(cartRepositoryMock.mergeGuestCartIntoUser).toHaveBeenCalledWith({
+        userCartId: 'user-cart-1',
+        guestCartId: 'guest-cart-1',
+        lines: [{ productId: 'product-uuid-3', variantId: 'variant-uuid-3', quantity: 2 }],
+      });
     });
   });
 

@@ -244,7 +244,9 @@ export class AuthController {
    * read from the freshly-signed access token's `sub` claim.
    *
    * A merge failure must never block authentication — errors are logged and
-   * swallowed, and the guest cookie is cleared regardless.
+   * swallowed. The guest cookie is cleared ONLY after a successful merge, so a
+   * transient failure leaves the guest cart intact and the merge can be retried
+   * on the next authenticated request.
    */
   private async mergeGuestCartIfPresent(
     request: Request,
@@ -264,10 +266,12 @@ export class AuthController {
       if (userId) {
         await this.cartService.mergeGuestCart(cartToken, userId);
       }
+
+      // Clear the guest cookie only on success — never in a finally block —
+      // so a failed merge does not discard the guest cart token.
+      this.clearCartTokenCookie(response);
     } catch (error) {
       this.logger.error('Guest cart merge on authentication failed', error as Error);
-    } finally {
-      this.clearCartTokenCookie(response);
     }
   }
 
