@@ -4,6 +4,10 @@
 export type {
   OrderEntity,
   OrderItemEntity,
+  OrderEntityStatus,
+  OrderEntityPaymentStatus,
+  OrderEntityShippingAddress,
+  OrderEntityBillingAddress,
   OrderListResponseEnvelope,
   OrderResponseEnvelope,
   CreateOrderDto,
