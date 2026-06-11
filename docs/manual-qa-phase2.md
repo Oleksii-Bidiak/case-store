@@ -6,17 +6,17 @@
 
 ## 0. Prerequisites (do these first)
 
-- [x] Start infrastructure: `docker compose up -d` (PostgreSQL + Redis)
-- [x] **Apply the guest-cart migration** (authored offline, not yet applied):
-      `npm run prisma:migrate -w apps/store-api`
-      → migration `prisma/migrations/20260611120000_guest_cart_token` makes `Cart.userId`
-      nullable and adds the unique `token` column
-- [x] Seed dev data: `npm run db:seed` (or `/db-seed`) so products/variants/images exist
-- [x] Run the API: `npm run start:dev -w apps/store-api` (expect `http://localhost:3001`)
-- [x] Run the storefront: `npm run dev -w apps/store-client` (expect `http://localhost:3000`)
-- [x] Confirm `apps/store-client/.env.local` has `NEXT_PUBLIC_API_URL=http://localhost:3001`
-      (origin only — the generated client adds the `/api` prefix)
-- [ ] Run the guest/merge e2e (TASK-051-I): `npm run test:e2e -w apps/store-api` — all green
+- [✅] Start infrastructure: `docker compose up -d` (PostgreSQL + Redis)
+- [✅] **Apply the guest-cart migration** (authored offline, not yet applied):
+  `npm run prisma:migrate -w apps/store-api`
+  → migration `prisma/migrations/20260611120000_guest_cart_token` makes `Cart.userId`
+  nullable and adds the unique `token` column
+- [✅] Seed dev data: `npm run db:seed` (or `/db-seed`) so products/variants/images exist
+- [✅] Run the API: `npm run start:dev -w apps/store-api` (expect `http://localhost:3001`)
+- [✅] Run the storefront: `npm run dev -w apps/store-client` (expect `http://localhost:3000`)
+- [✅] Confirm `apps/store-client/.env.local` has `NEXT_PUBLIC_API_URL=http://localhost:3001`
+  (origin only — the generated client adds the `/api` prefix)
+- [✅] Run the guest/merge e2e (TASK-051-I): `npm run test:e2e -w apps/store-api` — all green
 
 ---
 
