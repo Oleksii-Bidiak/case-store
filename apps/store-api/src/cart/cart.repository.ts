@@ -204,26 +204,58 @@ export class CartRepository {
 
     await this.prisma.$transaction(async (tx) => {
       for (const line of lines) {
-        await tx.cartItem.upsert({
-          where: {
-            cartId_productId_variantId: {
-              cartId: userCartId,
-              productId: line.productId,
-              variantId: (line.variantId ?? null) as string,
-            },
-          },
-          update: { quantity: line.quantity },
-          create: {
-            cartId: userCartId,
-            productId: line.productId,
-            variantId: line.variantId,
-            quantity: line.quantity,
-          },
-        });
+        await this.writeCartLine(
+          tx,
+          userCartId,
+          line.productId,
+          line.variantId,
+          line.quantity,
+          'set',
+        );
       }
 
       // Cascades to the guest cart's CartItems via the schema relation.
       await tx.cart.delete({ where: { id: guestCartId } });
+    });
+  }
+
+  /**
+   * Upsert a single cart line by (cartId, productId, variantId) using a
+   * find-then-write strategy.
+   *
+   * The compound unique `cartId_productId_variantId` CANNOT be used as an
+   * upsert/where selector when `variantId` is null — Prisma rejects null in a
+   * unique where ("Argument `variantId` must not be null"), and Postgres treats
+   * NULLs as distinct so the constraint would not dedupe them anyway. `findFirst`
+   * accepts null as an ordinary filter, so we resolve the row first and then
+   * update or create it.
+   *
+   * `mode: 'increment'` adds to the existing quantity (add-to-cart); `mode:
+   * 'set'` writes the absolute quantity (merge, where the service pre-clamps).
+   */
+  private async writeCartLine(
+    tx: Prisma.TransactionClient,
+    cartId: string,
+    productId: string,
+    variantId: string | null,
+    quantity: number,
+    mode: 'increment' | 'set',
+  ): Promise<void> {
+    const existing = await tx.cartItem.findFirst({
+      where: { cartId, productId, variantId: variantId ?? null },
+      select: { id: true },
+    });
+
+    if (existing) {
+      await tx.cartItem.update({
+        where: { id: existing.id },
+        data: { quantity: mode === 'increment' ? { increment: quantity } : quantity },
+      });
+      return;
+    }
+
+    await tx.cartItem.create({
+      data: { cartId, productId, variantId: variantId ?? null, quantity },
     });
   }
 
@@ -236,25 +268,9 @@ export class CartRepository {
     const { cartId, productId, variantId, quantity } = input;
 
     return this.prisma.$transaction(async (tx) => {
-      // Upsert the cart item — increment quantity if it already exists
-      await tx.cartItem.upsert({
-        where: {
-          cartId_productId_variantId: {
-            cartId,
-            productId,
-            variantId: (variantId ?? null) as string,
-          },
-        },
-        update: {
-          quantity: { increment: quantity },
-        },
-        create: {
-          cartId,
-          productId,
-          variantId: variantId ?? null,
-          quantity,
-        },
-      });
+      // Add the line, incrementing the quantity if the same product+variant
+      // already exists in this cart.
+      await this.writeCartLine(tx, cartId, productId, variantId ?? null, quantity, 'increment');
 
       // Return the full cart with items
       const result = await tx.cart.findUnique({
