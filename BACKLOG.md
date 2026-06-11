@@ -162,19 +162,24 @@
 
 ### Guest Cart Backend (Plan 017)
 
-| Task ID    | Description                                                                                     | Status | Plan                                 |
-| ---------- | ----------------------------------------------------------------------------------------------- | ------ | ------------------------------------ |
-| TASK-051   | Guest cart backend — nullable userId, cartToken cookie, optional-auth, merge on login           | 🔄     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-A | Prisma migration: nullable Cart.userId + unique token column (SQL authored; apply pending DB)   | 🔄     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-B | Implement OptionalJwtAuthGuard (AuthGuard extension — no throw on missing JWT)                  | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-C | Implement CartIdentityInterceptor + @CartIdentity() decorator (resolves userId or token)        | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-D | Update CartRepository: findByToken, findOrCreate(identity), assignCartToUser, addItem by cartId | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-E | Update CartService: dual-identity signatures + mergeGuestCart() (TDD)                           | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-F | Update CartController: remove JwtAuthGuard, add OptionalJwtAuthGuard + CartIdentityInterceptor  | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-G | Update CartModule: register new providers (CartIdentityInterceptor, ConfigModule)               | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-H | Wire cart-merge into AuthController login + register (import CartModule into AuthModule)        | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-I | E2E tests: guest cart, authenticated cart, merge on login, quantity clamp, merge failure (DB)   | ⬜     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-J | Regenerate Orval API hooks (store-client + store-admin) after cart controller changes           | ✅     | docs/plans/017-guest-cart-backend.md |
+| Task ID    | Description                                                                                                                                                         | Status | Plan                                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------ |
+| TASK-051   | Guest cart backend — nullable userId, cartToken cookie, optional-auth, merge on login                                                                               | 🔄     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-A | Prisma migration: nullable Cart.userId + unique token column (applied — migrate status clean)                                                                       | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-B | Implement OptionalJwtAuthGuard (AuthGuard extension — no throw on missing JWT)                                                                                      | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-C | Implement CartIdentityInterceptor + @CartIdentity() decorator (resolves userId or token)                                                                            | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-D | Update CartRepository: findByToken, findOrCreate(identity), assignCartToUser, addItem by cartId                                                                     | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-E | Update CartService: dual-identity signatures + mergeGuestCart() (TDD)                                                                                               | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-F | Update CartController: remove JwtAuthGuard, add OptionalJwtAuthGuard + CartIdentityInterceptor                                                                      | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-G | Update CartModule: register new providers (CartIdentityInterceptor, ConfigModule)                                                                                   | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-H | Wire cart-merge into AuthController login + register (import CartModule into AuthModule)                                                                            | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-I | E2E tests: guest cart, authenticated cart, merge on login, quantity clamp, merge failure (DB)                                                                       | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-J | Regenerate Orval API hooks (store-client + store-admin) after cart controller changes                                                                               | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-K | Review WARN#1: make mergeGuestCart transactional; clear cartToken cookie only on success                                                                            | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-L | Review WARN#2: handle findOrCreate vs assignCartToUser race (P2002) in the merge transaction                                                                        | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-M | Review: unit tests for guard/interceptor/merge-failure + mixed overlap/new/delete merge case                                                                        | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-N | Review WARN#4: migration applied + guest/merge e2e done; manual QA pending (docs/manual-qa-phase2)                                                                  | 🔄     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-O | Real-DB integration harness (test:int vs isolated store_test) + CI job; caught & fixed null-variant cart-line upsert (Prisma rejects null in compound-unique where) | ✅     | docs/plans/017-guest-cart-backend.md |
 
 ### Storefront Auth — store-client (Plan 018)
 
@@ -233,6 +238,14 @@
 | TASK-048 | Sentry integration (frontend + backend)    | ⬜     | —    |
 | TASK-049 | Abandoned cart detection + email follow-up | ⬜     | —    |
 | TASK-050 | GA4 e-commerce events                      | ⬜     | —    |
+
+---
+
+## Tech Debt & Architecture Review
+
+| Task ID  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Status | Plan |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---- |
+| TASK-054 | Review repository & folder architecture across the monorepo: root vs workspace `package.json` script conventions (standardize `db:*`/`prisma:*` naming, add missing root proxies + `db:seed`, align with `/db-*` slash commands), workspace boundaries, shared config placement, and overall directory layout consistency. Also consolidate the duplicated/divergent TypeScript configs: `packages/typescript-config/base.json` still declares the deprecated `moduleResolution: "node"` (node10) while `nest.json` now overrides to `node16` and `test/tsconfig.e2e.json` re-declares the same compiler options by hand — pick one source of truth and remove the drift. Consider bumping `@nestjs/cli` to clear the `DEP0190` child-process shell warning. Produce a findings doc + cleanup task breakdown. | ⬜     | —    |
 
 ---
 

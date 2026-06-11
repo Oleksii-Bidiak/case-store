@@ -717,3 +717,69 @@ Execute in this order:
 | **`mergeGuestCart` failure blocking login.**                                                                                                                                                                                                                                                              | Wrapped in try/catch; error is logged but not re-thrown. Login succeeds regardless.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | **`CartService` injected into `AuthController` creates a circular module dependency.** `AuthModule` → `CartModule` → (no dependency on AuthModule) — this is a one-way dependency, so there is no circular reference.                                                                                     | Verify with `@nestjs/core` circular dependency detection in unit tests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | **Existing cart E2E tests send `Authorization: Bearer` header — they still work after the guard change.** `OptionalJwtAuthGuard` is a superset of `JwtAuthGuard`; it accepts valid tokens normally.                                                                                                       | Confirmed by running existing tests after TASK-051-F.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+
+## Review Follow-ups (deferred to next session)
+
+From the code review on 2026-06-11 (read-only). No CRITICAL issues; the items below are
+WARNINGs to resolve **before merging `develop` → `main`**. Tracked in BACKLOG as
+TASK-051-K..N.
+
+### TASK-051-K — Make `mergeGuestCart` transactional (WARNING #1)
+
+**Problem:** `CartService.mergeGuestCart` (`cart.service.ts:152-193`) is a sequence of
+independent repository calls, not one DB transaction. A mid-loop failure leaves the user cart
+partially merged and the guest cart undeleted; meanwhile `AuthController.mergeGuestCartIfPresent`
+clears the `cartToken` cookie in its `finally` block even on failure, so the un-merged remainder
+is orphaned with no retry path.
+
+**Fix:**
+
+- Add a repository method that runs the whole merge in a single `prisma.$transaction` (upsert
+  each clamped line + delete the guest cart atomically). The service computes the clamped
+  quantities (stock / MAX_QUANTITY=99) and hands the line list to the transactional method.
+- In `AuthController.mergeGuestCartIfPresent`, clear the `cartToken` cookie **only on success**
+  (move `clearCartTokenCookie` out of `finally`) so a transient failure can retry on the next
+  authenticated request.
+- Keep the try/catch so a failed merge still never blocks login.
+
+### TASK-051-L — Handle `findOrCreate` vs `assignCartToUser` race (WARNING #2)
+
+**Problem:** `assignCartToUser` does `UPDATE carts SET user_id=?, token=NULL`. A concurrent
+`findOrCreate({type:'user'})` could create a second user cart, making `assignCartToUser` violate
+the `userId @unique` constraint (Prisma `P2002`) — e.g. multi-tab login.
+
+**Fix:** Re-check for an existing user cart inside the merge transaction (TASK-051-K); or catch
+`P2002` in `assignCartToUser` and fall back to the item-by-item merge path.
+
+### TASK-051-M — Add unit/e2e coverage for the untested identity layer (WARNING #1/#2 support)
+
+**Problem:** `OptionalJwtAuthGuard`, `CartIdentityInterceptor`, and
+`AuthController.mergeGuestCartIfPresent` (decode + try/catch + cookie clear) have no tests.
+`mergeGuestCart` lacks a mixed overlap+new+delete case and the `quantity <= 0` `continue` branch.
+
+**Fix:** Add unit tests for the interceptor (cookie issuance, identity precedence) and the
+merge mixed case; assert "merge failure does not block login" and "cookie not cleared on
+failure" (after TASK-051-K).
+
+### TASK-051-N — Apply migration + write guest/merge e2e (WARNING #4) — ⚠️ user will re-verify manually
+
+**Problem:** The migration (`20260611120000_guest_cart_token`) is **not yet applied** (no DB at
+implementation time) and the guest/merge **e2e tests (TASK-051-I) are not written**, so the
+dual-identity DB paths (`findByToken`, upsert-by-token, `assignCartToUser` with `token:null`,
+nullable `user_id`, unique `token`) have never executed against Postgres.
+
+**Fix / verification:**
+
+- Apply the migration on a dev/test DB (`npm run prisma:migrate -w apps/store-api`).
+- Write TASK-051-I e2e: guest gets `cartToken`; guest can't read another cart by forging a
+  token (404/empty, not 500); login with `cartToken` merges + clears cookie; login with a
+  malformed `cartToken` still succeeds. Run migration in CI via `prisma migrate deploy`.
+- **NOTE:** the user will also re-verify these flows manually (see `docs/manual-qa-phase2.md`).
+
+### SUGGESTIONS (optional, non-blocking)
+
+- Return `userId` from `AuthService.login/register` and pass it to `mergeGuestCart` instead of
+  `jwtService.decode(accessToken)` in `AuthController` — removes the `jwtService` dependency and
+  the brittle `as { sub?: string }` cast (`auth.controller.ts:261-262`).
+- `setItemQuantity` writes an absolute quantity with no DB-level stock guard — acceptable for
+  MVP (stock re-validated at checkout, Phase 3); revisit when the Order module lands.

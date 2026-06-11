@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
-import { CartRepository, AddToCartInput, CartWithItems } from './cart.repository';
+import { CartRepository, AddToCartInput, CartWithItems, MergeCartLine } from './cart.repository';
 import { CartEntity } from './entities';
 import { AddToCartDto, UpdateCartItemDto } from './dto';
 import type { ResolvedCartIdentity } from './cart-identity.types';
@@ -148,6 +148,10 @@ export class CartService {
    *
    * This must never throw in a way that blocks authentication — the caller
    * wraps it defensively.
+   *
+   * The item upserts and the guest-cart deletion run inside a single repository
+   * transaction so a mid-merge failure cannot leave the user cart partially
+   * merged or the guest cart orphaned.
    */
   async mergeGuestCart(guestToken: string, userId: string): Promise<void> {
     const guestCart = await this.cartRepository.findByToken(guestToken);
@@ -156,40 +160,51 @@ export class CartService {
       return;
     }
 
-    const userCart = await this.cartRepository.findByUserId(userId);
+    let userCart = await this.cartRepository.findByUserId(userId);
 
-    // No existing user cart → simply reassign the guest cart to the user.
+    // No existing user cart → try to reassign the guest cart to the user.
     if (!userCart) {
-      await this.cartRepository.assignCartToUser(guestCart.id, userId);
-      return;
-    }
-
-    for (const guestItem of guestCart.items) {
-      const existing = userCart.items.find(
-        (item) => item.productId === guestItem.productId && item.variantId === guestItem.variantId,
-      );
-
-      const summed = (existing?.quantity ?? 0) + guestItem.quantity;
-      let quantity = Math.min(MAX_QUANTITY, summed);
-
-      // Clamp to available stock when the line has a variant.
-      if (guestItem.variant) {
-        quantity = Math.min(quantity, guestItem.variant.stock);
+      const reassigned = await this.cartRepository.assignCartToUser(guestCart.id, userId);
+      if (reassigned) {
+        return;
       }
 
-      if (quantity <= 0) {
-        continue;
+      // Reassign hit the userId unique constraint: a user cart was created
+      // concurrently (e.g. a parallel request/tab). Re-read it and merge the
+      // guest items into it instead.
+      userCart = await this.cartRepository.findByUserId(userId);
+      if (!userCart) {
+        return;
       }
-
-      await this.cartRepository.setItemQuantity(
-        userCart.id,
-        guestItem.productId,
-        guestItem.variantId,
-        quantity,
-      );
     }
 
-    await this.cartRepository.deleteCart(guestCart.id);
+    // Compute the final (summed + clamped) quantity for each guest line before
+    // touching the database, so the transactional write is a pure data apply.
+    const lines: MergeCartLine[] = guestCart.items
+      .map((guestItem) => {
+        const existing = userCart.items.find(
+          (item) =>
+            item.productId === guestItem.productId && item.variantId === guestItem.variantId,
+        );
+
+        const summed = (existing?.quantity ?? 0) + guestItem.quantity;
+        let quantity = Math.min(MAX_QUANTITY, summed);
+
+        // Clamp to available stock when the line has a variant.
+        if (guestItem.variant) {
+          quantity = Math.min(quantity, guestItem.variant.stock);
+        }
+
+        return { productId: guestItem.productId, variantId: guestItem.variantId, quantity };
+      })
+      .filter((line) => line.quantity > 0);
+
+    // Apply all lines and delete the guest cart atomically.
+    await this.cartRepository.mergeGuestCartIntoUser({
+      userCartId: userCart.id,
+      guestCartId: guestCart.id,
+      lines,
+    });
   }
 
   /**

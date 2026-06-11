@@ -12,13 +12,17 @@ import { CartRepository, CartWithItems } from '../src/cart/cart.repository';
 import { PrismaService } from '../src/prisma';
 
 /**
- * E2E tests for the Cart module.
+ * E2E tests for the Cart module — AUTHENTICATED path.
  *
- * Every cart endpoint requires JwtAuthGuard, so the suite mints JWT tokens
- * directly via JwtService (bypassing the rate-limited auth endpoints) and
- * mocks CartRepository — the clean-architecture boundary — so no real
- * database is needed. AuthRepository, UserRepository, and PrismaService are
- * also mocked to let AppModule bootstrap without a DB connection.
+ * Cart endpoints use OptionalJwtAuthGuard, so a valid JWT resolves a user
+ * identity. This suite mints JWT tokens directly via JwtService (bypassing the
+ * rate-limited auth endpoints) and sets an explicit `Authorization: Bearer`
+ * header on every request. CartRepository — the clean-architecture boundary —
+ * is mocked, so no real database is needed. AuthRepository, UserRepository, and
+ * PrismaService are also mocked to let AppModule bootstrap without a DB.
+ *
+ * Guest (no-JWT) access and the guest→user merge-on-login flow are covered in
+ * `cart-guest.e2e-spec.ts`.
  *
  * ThrottlerGuard is overridden with a pass-through guard to disable rate
  * limiting during test execution.
@@ -41,8 +45,11 @@ describe('CartController (e2e)', () => {
   // Mock CartRepository — clean architecture boundary
   const cartRepositoryMock = {
     findByUserId: jest.fn(),
+    findByToken: jest.fn(),
     findById: jest.fn(),
     findOrCreate: jest.fn(),
+    assignCartToUser: jest.fn(),
+    mergeGuestCartIntoUser: jest.fn(),
     addItem: jest.fn(),
     updateItem: jest.fn(),
     removeItem: jest.fn(),
@@ -140,6 +147,7 @@ describe('CartController (e2e)', () => {
   ): CartWithItems => ({
     id: 'cart-e2e-1',
     userId,
+    token: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     items,
@@ -258,6 +266,8 @@ describe('CartController (e2e)', () => {
   describe('POST /api/cart/items', () => {
     it('should add an item to the cart and return 201 with the updated cart', async () => {
       const token = generateAccessToken(userA.id, userA.role);
+      // addToCart resolves the cart (findOrCreate) before adding the item.
+      cartRepositoryMock.findOrCreate.mockResolvedValue(emptyCart(userA.id));
       cartRepositoryMock.addItem.mockResolvedValue(makeCartWithItems(userA.id));
 
       const response = await request(app.getHttpServer())
@@ -274,6 +284,7 @@ describe('CartController (e2e)', () => {
 
     it('should increment quantity when the same product+variant is added again', async () => {
       const token = generateAccessToken(userA.id, userA.role);
+      cartRepositoryMock.findOrCreate.mockResolvedValue(makeCartWithItems(userA.id));
       // Repository upsert has already incremented the quantity to 2
       cartRepositoryMock.addItem.mockResolvedValue(
         makeCartWithItems(userA.id, [{ ...testCartItem, quantity: 2 }]),
@@ -292,6 +303,7 @@ describe('CartController (e2e)', () => {
 
     it('should return 400 when the item quantity exceeds the variant stock', async () => {
       const token = generateAccessToken(userA.id, userA.role);
+      cartRepositoryMock.findOrCreate.mockResolvedValue(emptyCart(userA.id));
       cartRepositoryMock.addItem.mockResolvedValue(
         makeCartWithItems(userA.id, [testOutOfStockCartItem]),
       );
@@ -428,20 +440,34 @@ describe('CartController (e2e)', () => {
     });
   });
 
-  // ─── Authentication guard ─────────────────────────────────────────────────
+  // ─── Optional auth ─────────────────────────────────────────────────────────
+  // Guest (no-JWT) access and the merge-on-login flow are covered in
+  // cart-guest.e2e-spec.ts. Here we only assert that an INVALID/expired Bearer
+  // token no longer returns 401 — OptionalJwtAuthGuard swallows the auth error
+  // and the request falls back to a guest cart (200).
 
-  describe('Authentication', () => {
-    it('should return 401 for every endpoint when no Authorization header is provided', async () => {
-      const server = app.getHttpServer();
+  describe('Optional auth', () => {
+    it('should fall back to a guest cart (200) when the Bearer token is invalid, not 401', async () => {
+      cartRepositoryMock.findOrCreate.mockResolvedValue({
+        id: 'guest-cart-e2e',
+        userId: null,
+        token: 'guest-token-e2e',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        items: [],
+      });
 
-      await request(server).get('/api/cart').expect(401);
-      await request(server)
-        .post('/api/cart/items')
-        .send({ productId: VALID_PRODUCT_UUID, quantity: 1 })
-        .expect(401);
-      await request(server).patch('/api/cart/items/item-e2e-1').send({ quantity: 2 }).expect(401);
-      await request(server).delete('/api/cart/items/item-e2e-1').expect(401);
-      await request(server).delete('/api/cart').expect(401);
+      const response = await request(app.getHttpServer())
+        .get('/api/cart')
+        .set('Authorization', 'Bearer not-a-valid-jwt')
+        .expect(200);
+
+      // No user identity resolved → guest cart (userId is null).
+      expect(response.body.data.userId).toBeNull();
+      // A fresh guest token cookie is issued by the interceptor.
+      const setCookie = response.headers['set-cookie'];
+      expect(setCookie).toBeDefined();
+      expect(String(setCookie)).toContain('cartToken=');
     });
   });
 });
