@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetCartQueryKey,
@@ -56,14 +57,13 @@ export function CartSummary({ totals }: { totals: CartTotals }) {
         <span>{formatPrice(totals.subtotal)}</span>
       </div>
 
-      <button
-        type="button"
-        disabled
-        aria-label="Checkout — coming in a future update"
-        className="w-full cursor-not-allowed rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground opacity-50"
+      <Link
+        href="/checkout"
+        aria-label="Proceed to checkout"
+        className="w-full rounded-lg bg-primary px-6 py-3 text-center font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         Proceed to Checkout
-      </button>
+      </Link>
 
       <button
         type="button"

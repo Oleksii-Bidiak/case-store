@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -23,8 +23,16 @@ const fieldClass =
 /** LoginForm — email/password sign-in with zod validation. */
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { isAuthenticated, setTokens } = useAuth();
+
+  // Honour a `?redirect=` param so post-login navigation returns the user to
+  // where they came from (e.g. /checkout). Only same-origin paths are allowed —
+  // the leading-slash check prevents open-redirect attacks.
+  const redirectParam = searchParams.get("redirect");
+  const redirectTarget =
+    redirectParam && redirectParam.startsWith("/") ? redirectParam : "/";
 
   const {
     register,
@@ -37,9 +45,9 @@ export function LoginForm() {
   // Already signed in → leave the auth page.
   useEffect(() => {
     if (isAuthenticated) {
-      router.replace("/");
+      router.replace(redirectTarget);
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, router, redirectTarget]);
 
   const onSubmit = (values: LoginValues) => {
     login.mutate(
@@ -51,7 +59,7 @@ export function LoginForm() {
             setTokens(token);
           }
           queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
-          router.push("/");
+          router.push(redirectTarget);
         },
       },
     );
