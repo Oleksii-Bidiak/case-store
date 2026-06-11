@@ -9,6 +9,6 @@ import { CartIdentityInterceptor } from './interceptors';
   imports: [ConfigModule],
   controllers: [CartController],
   providers: [CartRepository, CartService, CartIdentityInterceptor],
-  exports: [CartService],
+  exports: [CartService, CartRepository],
 })
 export class CartModule {}

@@ -11,6 +11,7 @@ import { UserModule } from './user';
 import { ProductModule } from './product';
 import { CategoryModule } from './category';
 import { CartModule } from './cart';
+import { OrderModule } from './order';
 import { HttpExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
 import { validateEnv } from './config/env.validation';
@@ -67,6 +68,9 @@ import { validateEnv } from './config/env.validation';
 
     // Shopping cart
     CartModule,
+
+    // Orders
+    OrderModule,
   ],
   controllers: [AppController],
   providers: [

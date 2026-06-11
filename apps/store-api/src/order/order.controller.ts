@@ -1,0 +1,155 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Param,
+  Query,
+  Body,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiQuery,
+  ApiExtraModels,
+  getSchemaPath,
+} from '@nestjs/swagger';
+import { OrderService, PaginationMeta } from './order.service';
+import { OrderEntity, OrderItemEntity } from './entities';
+import { CreateOrderDto, OrderListQueryDto } from './dto';
+import { JwtAuthGuard, CurrentUser } from '../auth';
+
+/**
+ * Response envelope for a single order.
+ */
+class OrderResponseEnvelope {
+  data!: OrderEntity;
+}
+
+/**
+ * Response envelope for a paginated list of orders.
+ */
+class OrderListResponseEnvelope {
+  data!: OrderEntity[];
+  meta!: PaginationMeta;
+}
+
+@ApiTags('Orders')
+@ApiBearerAuth('access-token')
+@ApiExtraModels(OrderEntity, OrderItemEntity, OrderResponseEnvelope, OrderListResponseEnvelope)
+@Controller('orders')
+@UseGuards(JwtAuthGuard)
+export class OrderController {
+  constructor(private readonly orderService: OrderService) {}
+
+  /**
+   * POST /api/orders
+   *
+   * Create an order from the authenticated user's current cart.
+   */
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create order from cart', operationId: 'createOrder' })
+  @ApiResponse({
+    status: 201,
+    description: 'Order created',
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(OrderResponseEnvelope) },
+        { properties: { data: { $ref: getSchemaPath(OrderEntity) } } },
+      ],
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Empty cart or insufficient stock' })
+  @ApiResponse({ status: 404, description: 'Cart not found' })
+  async createOrder(
+    @CurrentUser('id') userId: string,
+    @Body() dto: CreateOrderDto,
+  ): Promise<{ data: OrderEntity }> {
+    const order = await this.orderService.createOrder(userId, dto);
+    return { data: order };
+  }
+
+  /**
+   * GET /api/orders
+   *
+   * List the authenticated user's orders (paginated, newest first).
+   */
+  @Get()
+  @ApiOperation({ summary: 'List current user orders', operationId: 'getOrders' })
+  @ApiQuery({ name: 'status', required: false, description: 'Filter by order status' })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number (1-based)' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (max 100)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of orders',
+    schema: { $ref: getSchemaPath(OrderListResponseEnvelope) },
+  })
+  async getOrders(
+    @CurrentUser('id') userId: string,
+    @Query() query: OrderListQueryDto,
+  ): Promise<{ data: OrderEntity[]; meta: PaginationMeta }> {
+    return this.orderService.getOrders(userId, query);
+  }
+
+  /**
+   * GET /api/orders/:orderId
+   *
+   * Get a single order owned by the authenticated user.
+   */
+  @Get(':orderId')
+  @ApiOperation({ summary: 'Get order by ID', operationId: 'getOrder' })
+  @ApiParam({ name: 'orderId', description: 'Order UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Order details',
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(OrderResponseEnvelope) },
+        { properties: { data: { $ref: getSchemaPath(OrderEntity) } } },
+      ],
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  async getOrder(
+    @CurrentUser('id') userId: string,
+    @Param('orderId') orderId: string,
+  ): Promise<{ data: OrderEntity }> {
+    const order = await this.orderService.getOrder(userId, orderId);
+    return { data: order };
+  }
+
+  /**
+   * PATCH /api/orders/:orderId/cancel
+   *
+   * Cancel a PENDING order owned by the authenticated user.
+   */
+  @Patch(':orderId/cancel')
+  @ApiOperation({ summary: 'Cancel a pending order', operationId: 'cancelOrder' })
+  @ApiParam({ name: 'orderId', description: 'Order UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Order cancelled',
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(OrderResponseEnvelope) },
+        { properties: { data: { $ref: getSchemaPath(OrderEntity) } } },
+      ],
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({ status: 409, description: 'Order cannot be cancelled in its current status' })
+  async cancelOrder(
+    @CurrentUser('id') userId: string,
+    @Param('orderId') orderId: string,
+  ): Promise<{ data: OrderEntity }> {
+    const order = await this.orderService.cancelOrder(userId, orderId);
+    return { data: order };
+  }
+}

@@ -198,19 +198,29 @@
 | TASK-052-H | Create app/(auth)/login/page.tsx route                                                                    | ✅     | docs/plans/018-storefront-auth.md |
 | TASK-052-I | Create app/(auth)/register/page.tsx route                                                                 | ✅     | docs/plans/018-storefront-auth.md |
 | TASK-052-J | Update CartView to remove 401 sign-in state (built guest-first — no 401 branch existed)                   | ✅     | docs/plans/018-storefront-auth.md |
-| TASK-052-K | Full integration verification (build + lint + typecheck ✅; manual smoke tests pending running app)       | 🔄     | docs/plans/018-storefront-auth.md |
+| TASK-052-K | Full integration verification (build + lint + typecheck ✅; manual smoke tests pending running app)       | ✅     | docs/plans/018-storefront-auth.md |
 
 ---
 
 ## Phase 3: Checkout & Orders
 
-| Task ID  | Description                                 | Status | Plan |
-| -------- | ------------------------------------------- | ------ | ---- |
-| TASK-033 | Implement Order module (backend) — TDD      | ⬜     | —    |
-| TASK-034 | Implement Payment integration (Stripe stub) | ⬜     | —    |
-| TASK-035 | Implement Checkout feature (frontend)       | ⬜     | —    |
-| TASK-036 | Build OrderConfirmationPage                 | ⬜     | —    |
-| TASK-037 | Set up order confirmation emails            | ⬜     | —    |
+| Task ID    | Description                                                                                        | Status | Plan                           |
+| ---------- | -------------------------------------------------------------------------------------------------- | ------ | ------------------------------ |
+| TASK-033   | Implement Order module (backend) — TDD                                                             | ✅     | docs/plans/020-order-module.md |
+| TASK-033-A | Review Prisma schema — confirm no migration needed for Order/OrderItem/enums                       | ✅     | docs/plans/020-order-module.md |
+| TASK-033-B | Export CartRepository from CartModule (required by OrderModule)                                    | ✅     | docs/plans/020-order-module.md |
+| TASK-033-C | Create Order domain entities (OrderEntity, OrderItemEntity, OrderWithItems interface)              | ✅     | docs/plans/020-order-module.md |
+| TASK-033-D | Create Order DTOs (CreateOrderDto, AddressDto, UpdateOrderStatusDto, OrderListQueryDto)            | ✅     | docs/plans/020-order-module.md |
+| TASK-033-E | Implement OrderRepository (createFromCart tx, findByUserId, findById, updateStatus, updatePayment) | ✅     | docs/plans/020-order-module.md |
+| TASK-033-F | Write failing unit tests for OrderService (TDD — Red)                                              | ✅     | docs/plans/020-order-module.md |
+| TASK-033-G | Implement OrderService (TDD — Green): createOrder, getOrders, getOrder, cancelOrder, updateStatus  | ✅     | docs/plans/020-order-module.md |
+| TASK-033-H | Implement OrderController + OrderModule + register in AppModule                                    | ✅     | docs/plans/020-order-module.md |
+| TASK-033-I | Write E2E tests for Order endpoints (Supertest, mocked repository)                                 | ✅     | docs/plans/020-order-module.md |
+| TASK-033-J | Regenerate Orval API hooks for Orders (store-client + store-admin)                                 | ✅     | docs/plans/020-order-module.md |
+| TASK-034   | Implement Payment integration (Stripe stub)                                                        | ⬜     | —                              |
+| TASK-035   | Implement Checkout feature (frontend)                                                              | ⬜     | —                              |
+| TASK-036   | Build OrderConfirmationPage                                                                        | ⬜     | —                              |
+| TASK-037   | Set up order confirmation emails                                                                   | ⬜     | —                              |
 
 ---
 
