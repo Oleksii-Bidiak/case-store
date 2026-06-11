@@ -165,12 +165,25 @@ export class CartRepository {
   /**
    * Assign a (guest) cart to a user, clearing its guest token. Used during
    * merge when the user has no pre-existing cart.
+   *
+   * Returns `false` when the user already owns a cart — a concurrent request
+   * created one between the caller's lookup and this update (e.g. multi-tab
+   * login), so the `userId` unique constraint is violated (Prisma P2002). The
+   * caller should then fall back to the item-by-item merge path instead.
    */
-  async assignCartToUser(cartId: string, userId: string): Promise<void> {
-    await this.prisma.cart.update({
-      where: { id: cartId },
-      data: { userId, token: null },
-    });
+  async assignCartToUser(cartId: string, userId: string): Promise<boolean> {
+    try {
+      await this.prisma.cart.update({
+        where: { id: cartId },
+        data: { userId, token: null },
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        return false;
+      }
+      throw error;
+    }
   }
 
   /**

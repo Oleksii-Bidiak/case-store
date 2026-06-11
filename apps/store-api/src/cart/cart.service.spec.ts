@@ -664,6 +664,7 @@ describe('CartService', () => {
     it('should reassign the guest cart when the user has no existing cart', async () => {
       cartRepositoryMock.findByToken.mockResolvedValue(mockGuestCart);
       cartRepositoryMock.findByUserId.mockResolvedValue(null);
+      cartRepositoryMock.assignCartToUser.mockResolvedValue(true);
 
       await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
 
@@ -672,6 +673,32 @@ describe('CartService', () => {
         'user-uuid-1',
       );
       expect(cartRepositoryMock.mergeGuestCartIntoUser).not.toHaveBeenCalled();
+    });
+
+    it('should fall back to merging into a concurrently-created user cart when the reassign hits a unique conflict', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue(mockGuestCart);
+      // First lookup: no user cart. assignCartToUser reports a conflict (false).
+      // Re-lookup then finds the cart created by the concurrent request.
+      cartRepositoryMock.findByUserId
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ...mockEmptyCart, id: 'user-cart-raced', items: [] });
+      cartRepositoryMock.assignCartToUser.mockResolvedValue(false);
+
+      await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+      expect(cartRepositoryMock.assignCartToUser).toHaveBeenCalledWith(
+        'guest-cart-1',
+        'user-uuid-1',
+      );
+      // Guest items are merged into the raced user cart instead of being lost.
+      expect(cartRepositoryMock.mergeGuestCartIntoUser).toHaveBeenCalledWith({
+        userCartId: 'user-cart-raced',
+        guestCartId: 'guest-cart-1',
+        lines: [
+          { productId: 'product-uuid-1', variantId: 'variant-uuid-1', quantity: 2 },
+          { productId: 'product-uuid-2', variantId: null, quantity: 1 },
+        ],
+      });
     });
 
     it('should merge non-overlapping items into the user cart atomically with their original quantities', async () => {
@@ -755,6 +782,42 @@ describe('CartService', () => {
         userCartId: 'user-cart-1',
         guestCartId: 'guest-cart-1',
         lines: [{ productId: 'product-uuid-3', variantId: 'variant-uuid-3', quantity: 2 }],
+      });
+    });
+
+    it('should merge overlapping and new lines together while dropping lines clamped to zero stock', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue({
+        ...mockGuestCart,
+        items: [
+          // Overlapping no-variant item: guest 1 + user 2 → 3
+          { ...mockGuestCart.items[1], quantity: 1 },
+          // Brand-new variant item (stock 50): copied as-is
+          { ...mockCartWithVariantItem.items[0], id: 'guest-new', quantity: 2 },
+          // Out-of-stock variant item: clamps to 0 and must be dropped entirely
+          {
+            ...mockCartWithLowStockItem.items[0],
+            id: 'guest-oos',
+            quantity: 3,
+            variant: { ...mockCartWithLowStockItem.items[0].variant!, stock: 0 },
+          },
+        ],
+      });
+      cartRepositoryMock.findByUserId.mockResolvedValue({
+        ...mockEmptyCart,
+        id: 'user-cart-1',
+        items: [{ ...mockCartWithNoVariantItem.items[0], id: 'user-item-x', quantity: 2 }],
+      });
+
+      await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+      // Only the two viable lines are written; the zero-stock line is filtered out.
+      expect(cartRepositoryMock.mergeGuestCartIntoUser).toHaveBeenCalledWith({
+        userCartId: 'user-cart-1',
+        guestCartId: 'guest-cart-1',
+        lines: [
+          { productId: 'product-uuid-2', variantId: null, quantity: 3 },
+          { productId: 'product-uuid-1', variantId: 'variant-uuid-1', quantity: 2 },
+        ],
       });
     });
   });

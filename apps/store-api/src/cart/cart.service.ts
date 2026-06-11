@@ -160,12 +160,22 @@ export class CartService {
       return;
     }
 
-    const userCart = await this.cartRepository.findByUserId(userId);
+    let userCart = await this.cartRepository.findByUserId(userId);
 
-    // No existing user cart → simply reassign the guest cart to the user.
+    // No existing user cart → try to reassign the guest cart to the user.
     if (!userCart) {
-      await this.cartRepository.assignCartToUser(guestCart.id, userId);
-      return;
+      const reassigned = await this.cartRepository.assignCartToUser(guestCart.id, userId);
+      if (reassigned) {
+        return;
+      }
+
+      // Reassign hit the userId unique constraint: a user cart was created
+      // concurrently (e.g. a parallel request/tab). Re-read it and merge the
+      // guest items into it instead.
+      userCart = await this.cartRepository.findByUserId(userId);
+      if (!userCart) {
+        return;
+      }
     }
 
     // Compute the final (summed + clamped) quantity for each guest line before
