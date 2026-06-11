@@ -288,6 +288,24 @@ describe('Cart — guest & merge (e2e)', () => {
       expect(res.body.data.items).toHaveLength(0);
       expect(cartRepositoryMock.clearItems).toHaveBeenCalledWith('guest-cart-e2e-1');
     });
+
+    it('GET /api/cart with an unknown/forged cartToken yields a fresh empty cart (200), never 500 or another user data', async () => {
+      // findOrCreate upserts by token, so an unknown token resolves to its own
+      // empty cart — a forged token can never surface someone else's cart.
+      cartRepositoryMock.findOrCreate.mockResolvedValue(makeGuestCart([]));
+
+      const res = await request(app.getHttpServer())
+        .get('/api/cart')
+        .set('Cookie', 'cartToken=forged-unknown-token')
+        .expect(200);
+
+      expect(res.body.data.userId).toBeNull();
+      expect(res.body.data.items).toHaveLength(0);
+      expect(cartRepositoryMock.findOrCreate).toHaveBeenCalledWith({
+        type: 'token',
+        token: 'forged-unknown-token',
+      });
+    });
   });
 
   // ─── Merge on login ──────────────────────────────────────────────────────────
