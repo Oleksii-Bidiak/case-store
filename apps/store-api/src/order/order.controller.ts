@@ -23,7 +23,7 @@ import {
 import { OrderService, PaginationMeta } from './order.service';
 import { OrderEntity, OrderItemEntity } from './entities';
 import { CreateOrderDto, OrderListQueryDto } from './dto';
-import { JwtAuthGuard, CurrentUser } from '../auth';
+import { JwtAuthGuard, RolesGuard, Roles, CurrentUser } from '../auth';
 
 /**
  * Response envelope for a single order.
@@ -44,7 +44,7 @@ class OrderListResponseEnvelope {
 @ApiBearerAuth('access-token')
 @ApiExtraModels(OrderEntity, OrderItemEntity, OrderResponseEnvelope, OrderListResponseEnvelope)
 @Controller('orders')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class OrderController {
   constructor(private readonly orderService: OrderService) {}
 
@@ -150,6 +150,38 @@ export class OrderController {
     @Param('orderId') orderId: string,
   ): Promise<{ data: OrderEntity }> {
     const order = await this.orderService.cancelOrder(userId, orderId);
+    return { data: order };
+  }
+
+  /**
+   * PATCH /api/orders/:orderId/confirm-payment
+   *
+   * Admin action: register that payment was received and confirm the order
+   * (PENDING → CONFIRMED, paymentStatus → PAID). Manual stand-in for the
+   * payment webhook until Stripe integration (TASK-034) lands.
+   */
+  @Patch(':orderId/confirm-payment')
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary: 'Mark payment received and confirm order (admin)',
+    operationId: 'confirmOrderPayment',
+  })
+  @ApiParam({ name: 'orderId', description: 'Order UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment recorded, order confirmed',
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(OrderResponseEnvelope) },
+        { properties: { data: { $ref: getSchemaPath(OrderEntity) } } },
+      ],
+    },
+  })
+  @ApiResponse({ status: 403, description: 'Admin role required' })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({ status: 409, description: 'Order is not PENDING' })
+  async confirmOrderPayment(@Param('orderId') orderId: string): Promise<{ data: OrderEntity }> {
+    const order = await this.orderService.confirmPayment(orderId);
     return { data: order };
   }
 }

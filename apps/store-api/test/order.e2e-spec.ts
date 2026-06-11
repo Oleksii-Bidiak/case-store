@@ -42,6 +42,7 @@ describe('OrderController (e2e)', () => {
     findById: jest.fn(),
     updateStatus: jest.fn(),
     updatePaymentStatus: jest.fn(),
+    markPaid: jest.fn(),
   };
 
   const cartRepositoryMock = {
@@ -93,6 +94,7 @@ describe('OrderController (e2e)', () => {
 
   const userA = { id: 'user-a-e2e-1', role: 'CUSTOMER' as const };
   const userB = { id: 'user-b-e2e-1', role: 'CUSTOMER' as const };
+  const admin = { id: 'admin-e2e-1', role: 'ADMIN' as const };
 
   const validAddress = {
     firstName: 'Olena',
@@ -418,6 +420,66 @@ describe('OrderController (e2e)', () => {
 
     it('should return 401 without a JWT', async () => {
       await request(app.getHttpServer()).patch('/api/orders/order-e2e-1/cancel').expect(401);
+    });
+  });
+
+  // ─── PATCH /api/orders/:orderId/confirm-payment (admin) ─────────────────────────
+
+  describe('PATCH /api/orders/:orderId/confirm-payment', () => {
+    it('should mark a PENDING order paid and confirmed for an admin (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.PENDING }));
+      orderRepositoryMock.markPaid.mockResolvedValue(
+        makeOrder({ status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/orders/order-e2e-1/confirm-payment')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data.status).toBe(OrderStatus.CONFIRMED);
+      expect(response.body.data.paymentStatus).toBe(PaymentStatus.PAID);
+      expect(orderRepositoryMock.markPaid).toHaveBeenCalledWith('order-e2e-1');
+    });
+
+    it('should return 403 for a non-admin user', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .patch('/api/orders/order-e2e-1/confirm-payment')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      expect(orderRepositoryMock.markPaid).not.toHaveBeenCalled();
+    });
+
+    it('should return 409 when the order is not PENDING', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.CONFIRMED }));
+
+      await request(app.getHttpServer())
+        .patch('/api/orders/order-e2e-1/confirm-payment')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(409);
+
+      expect(orderRepositoryMock.markPaid).not.toHaveBeenCalled();
+    });
+
+    it('should return 404 when the order does not exist', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .patch('/api/orders/nonexistent-uuid/confirm-payment')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('should return 401 without a JWT', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/orders/order-e2e-1/confirm-payment')
+        .expect(401);
     });
   });
 });

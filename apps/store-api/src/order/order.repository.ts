@@ -164,6 +164,20 @@ export class OrderRepository {
       include: ORDERS_INCLUDE,
     }) as Promise<OrderWithItems>;
   }
+
+  /**
+   * Mark an order as paid: set payment status to PAID and advance the order to
+   * CONFIRMED in a single update. Used by the admin "payment received" action
+   * (a manual stand-in until the Stripe webhook of TASK-034 lands). The service
+   * enforces that only a PENDING order reaches this point.
+   */
+  markPaid(orderId: string): Promise<OrderWithItems> {
+    return this.prisma.order.update({
+      where: { id: orderId },
+      data: { paymentStatus: PaymentStatus.PAID, status: OrderStatus.CONFIRMED },
+      include: ORDERS_INCLUDE,
+    }) as Promise<OrderWithItems>;
+  }
 }
 
 /**

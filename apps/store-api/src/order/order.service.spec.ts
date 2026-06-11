@@ -129,6 +129,7 @@ const orderRepositoryMock = {
   findById: jest.fn(),
   updateStatus: jest.fn(),
   updatePaymentStatus: jest.fn(),
+  markPaid: jest.fn(),
 };
 
 const cartRepositoryMock = {
@@ -304,6 +305,44 @@ describe('OrderService', () => {
 
       await expect(service.cancelOrder(USER_ID, 'order-uuid-1')).rejects.toThrow(ConflictException);
       expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── confirmPayment (admin) ───────────────────────────────────────────────
+
+  describe('confirmPayment', () => {
+    it('should mark a PENDING order as PAID and CONFIRMED', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.PENDING }));
+      orderRepositoryMock.markPaid.mockResolvedValue(
+        makeOrder({ status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      const result = await service.confirmPayment('order-uuid-1');
+
+      expect(orderRepositoryMock.markPaid).toHaveBeenCalledWith('order-uuid-1');
+      expect(result.status).toBe(OrderStatus.CONFIRMED);
+      expect(result.paymentStatus).toBe(PaymentStatus.PAID);
+    });
+
+    it('should throw NotFoundException when the order does not exist', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.confirmPayment('missing')).rejects.toThrow(NotFoundException);
+      expect(orderRepositoryMock.markPaid).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      OrderStatus.CONFIRMED,
+      OrderStatus.PROCESSING,
+      OrderStatus.SHIPPED,
+      OrderStatus.DELIVERED,
+      OrderStatus.CANCELLED,
+      OrderStatus.REFUNDED,
+    ])('should throw ConflictException when the order status is %s', async (status) => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status }));
+
+      await expect(service.confirmPayment('order-uuid-1')).rejects.toThrow(ConflictException);
+      expect(orderRepositoryMock.markPaid).not.toHaveBeenCalled();
     });
   });
 
