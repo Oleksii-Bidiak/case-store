@@ -162,23 +162,23 @@
 
 ### Guest Cart Backend (Plan 017)
 
-| Task ID    | Description                                                                                     | Status | Plan                                 |
-| ---------- | ----------------------------------------------------------------------------------------------- | ------ | ------------------------------------ |
-| TASK-051   | Guest cart backend — nullable userId, cartToken cookie, optional-auth, merge on login           | 🔄     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-A | Prisma migration: nullable Cart.userId + unique token column (SQL authored; apply pending DB)   | 🔄     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-B | Implement OptionalJwtAuthGuard (AuthGuard extension — no throw on missing JWT)                  | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-C | Implement CartIdentityInterceptor + @CartIdentity() decorator (resolves userId or token)        | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-D | Update CartRepository: findByToken, findOrCreate(identity), assignCartToUser, addItem by cartId | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-E | Update CartService: dual-identity signatures + mergeGuestCart() (TDD)                           | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-F | Update CartController: remove JwtAuthGuard, add OptionalJwtAuthGuard + CartIdentityInterceptor  | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-G | Update CartModule: register new providers (CartIdentityInterceptor, ConfigModule)               | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-H | Wire cart-merge into AuthController login + register (import CartModule into AuthModule)        | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-I | E2E tests: guest cart, authenticated cart, merge on login, quantity clamp, merge failure (DB)   | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-J | Regenerate Orval API hooks (store-client + store-admin) after cart controller changes           | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-K | Review WARN#1: make mergeGuestCart transactional; clear cartToken cookie only on success        | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-L | Review WARN#2: handle findOrCreate vs assignCartToUser race (P2002) in the merge transaction    | ⬜     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-M | Review: unit tests for guard/interceptor/merge-failure + mixed overlap/new/delete merge case    | ⬜     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-N | Review WARN#4: apply migration + write guest/merge e2e (TASK-051-I) — user re-verifies manually | ⬜     | docs/plans/017-guest-cart-backend.md |
+| Task ID    | Description                                                                                        | Status | Plan                                 |
+| ---------- | -------------------------------------------------------------------------------------------------- | ------ | ------------------------------------ |
+| TASK-051   | Guest cart backend — nullable userId, cartToken cookie, optional-auth, merge on login              | 🔄     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-A | Prisma migration: nullable Cart.userId + unique token column (applied — migrate status clean)      | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-B | Implement OptionalJwtAuthGuard (AuthGuard extension — no throw on missing JWT)                     | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-C | Implement CartIdentityInterceptor + @CartIdentity() decorator (resolves userId or token)           | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-D | Update CartRepository: findByToken, findOrCreate(identity), assignCartToUser, addItem by cartId    | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-E | Update CartService: dual-identity signatures + mergeGuestCart() (TDD)                              | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-F | Update CartController: remove JwtAuthGuard, add OptionalJwtAuthGuard + CartIdentityInterceptor     | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-G | Update CartModule: register new providers (CartIdentityInterceptor, ConfigModule)                  | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-H | Wire cart-merge into AuthController login + register (import CartModule into AuthModule)           | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-I | E2E tests: guest cart, authenticated cart, merge on login, quantity clamp, merge failure (DB)      | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-J | Regenerate Orval API hooks (store-client + store-admin) after cart controller changes              | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-K | Review WARN#1: make mergeGuestCart transactional; clear cartToken cookie only on success           | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-L | Review WARN#2: handle findOrCreate vs assignCartToUser race (P2002) in the merge transaction       | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-M | Review: unit tests for guard/interceptor/merge-failure + mixed overlap/new/delete merge case       | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-N | Review WARN#4: migration applied + guest/merge e2e done; manual QA pending (docs/manual-qa-phase2) | 🔄     | docs/plans/017-guest-cart-backend.md |
 
 ### Storefront Auth — store-client (Plan 018)
 
