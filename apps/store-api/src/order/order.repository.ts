@@ -55,12 +55,11 @@ export class OrderRepository {
   async createFromCart(params: CreateOrderParams): Promise<OrderWithItems> {
     const { userId, cartId, cartItems, shippingAddress, billingAddress, notes } = params;
 
-    // Snapshot unit prices (variant price if present, otherwise product price)
-    // and compute the subtotal with cents arithmetic to avoid float errors.
-    let subtotalCents = 0;
+    // Snapshot each line's unit price (variant price if present, otherwise
+    // product price) into the order-item rows. These persisted rows — not the
+    // cart — are the order's source of truth from here on.
     const itemData = cartItems.map((item) => {
       const priceStr = item.variant ? item.variant.price.toString() : item.product.price.toString();
-      subtotalCents += Math.round(parseFloat(priceStr) * 100) * item.quantity;
       return {
         productId: item.productId,
         variantId: item.variantId,
@@ -69,6 +68,12 @@ export class OrderRepository {
       };
     });
 
+    // Derive the subtotal from the persisted order-item rows themselves (single
+    // source of truth) using integer-cents arithmetic to avoid float drift.
+    const subtotalCents = itemData.reduce(
+      (cents, item) => cents + Math.round(item.price.toNumber() * 100) * item.quantity,
+      0,
+    );
     const subtotal = new Prisma.Decimal(centsToDecimalString(subtotalCents));
 
     const order = await this.prisma.$transaction(async (tx) => {

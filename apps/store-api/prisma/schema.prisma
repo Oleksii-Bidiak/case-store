@@ -115,7 +115,7 @@ model ProductVariant {
   name      String   // e.g., "Black / iPhone 15 Pro"
   sku       String?  @unique
   price     Decimal  @db.Decimal(10, 2)
-  stock     Int      @default(0)
+  stock     Int      @default(0) // DB CHECK (stock >= 0) added in migration 20260612120000 (not modelled in schema — Prisma has no CHECK support)
   attributes Json?   // e.g., {"color": "black", "model": "iPhone 15 Pro"}
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")

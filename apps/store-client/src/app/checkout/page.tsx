@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { CheckoutView, CartSkeleton } from "@/widgets";
+import { CheckoutView } from "@/widgets";
+import { CheckoutSkeleton } from "@/shared/ui";
 
 export const metadata: Metadata = {
   title: "Checkout | MobileStore",
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
 export default function CheckoutPage() {
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-8">
-      <Suspense fallback={<CartSkeleton />}>
+      <Suspense fallback={<CheckoutSkeleton />}>
         <CheckoutView />
       </Suspense>
     </div>

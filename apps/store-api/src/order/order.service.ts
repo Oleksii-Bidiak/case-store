@@ -1,10 +1,10 @@
 import {
   Injectable,
-  Logger,
   NotFoundException,
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
 import { OrderStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { CartRepository } from '../cart/cart.repository';
@@ -37,14 +37,15 @@ export interface PaginationMeta {
  */
 @Injectable()
 export class OrderService {
-  private readonly logger = new Logger(OrderService.name);
-
   constructor(
     private readonly orderRepository: OrderRepository,
     private readonly cartRepository: CartRepository,
     private readonly userRepository: UserRepository,
     private readonly mailService: MailService,
-  ) {}
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(OrderService.name);
+  }
 
   /**
    * Create an order from the user's current cart.
@@ -83,7 +84,7 @@ export class OrderService {
       notes: dto.notes,
     });
 
-    this.logger.log(`Order ${order.id} created for user ${userId}`);
+    this.logger.info(`Order ${order.id} created for user ${userId}`);
 
     const orderEntity = OrderEntity.fromPrisma(order);
 
@@ -100,12 +101,12 @@ export class OrderService {
           order: orderEntity,
           customerName: user.firstName ?? undefined,
         });
-        this.logger.log(`Order confirmation email sent to ${user.email} for order ${order.id}`);
+        this.logger.info(`Order confirmation email sent to ${user.email} for order ${order.id}`);
       }
     } catch (err) {
-      this.logger.error(
-        `Failed to send order confirmation email for order ${order.id}: ${String(err)}`,
-      );
+      // Structured fields ({ err, orderId }) so the failure is queryable in log
+      // aggregation, not just a formatted string.
+      this.logger.error({ err, orderId: order.id }, 'Failed to send order confirmation email');
     }
 
     return orderEntity;
@@ -167,7 +168,7 @@ export class OrderService {
     // stock to inventory atomically (stock was decremented at creation).
     const cancelled = await this.orderRepository.cancelAndRestock(orderId);
 
-    this.logger.log(`Order ${orderId} cancelled by user ${userId}; reserved stock released`);
+    this.logger.info(`Order ${orderId} cancelled by user ${userId}; reserved stock released`);
 
     return OrderEntity.fromPrisma(cancelled);
   }
@@ -197,7 +198,7 @@ export class OrderService {
 
     const paid = await this.orderRepository.markPaid(orderId);
 
-    this.logger.log(`Order ${orderId} marked PAID and CONFIRMED (admin)`);
+    this.logger.info(`Order ${orderId} marked PAID and CONFIRMED (admin)`);
 
     return OrderEntity.fromPrisma(paid);
   }

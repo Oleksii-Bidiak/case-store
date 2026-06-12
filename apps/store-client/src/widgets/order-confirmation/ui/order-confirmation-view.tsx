@@ -34,7 +34,7 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
   const router = useRouter();
   const { isAuthenticated, isInitializing } = useAuth();
 
-  const { data, isLoading, isError } = useGetOrder(orderId, {
+  const { data, isLoading, isError, error, refetch } = useGetOrder(orderId, {
     query: { enabled: isAuthenticated },
   });
 
@@ -50,10 +50,33 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
   }
 
   const order = data?.data;
+  const status = error?.response?.status;
 
-  // The backend returns an error for missing or non-owned orders; a successful
-  // response with no order body is treated the same way.
-  if (isError || !order) {
+  // A non-404 failure (network blip, 5xx) is transient, not a missing order —
+  // let the user retry the request rather than dead-ending on "not found".
+  if (isError && status !== 404) {
+    return (
+      <div role="alert" className="flex flex-col items-start gap-4 py-16">
+        <h1 className="text-2xl font-bold text-foreground">
+          Something went wrong
+        </h1>
+        <p className="text-muted-foreground">
+          We couldn&apos;t load your order right now. Please try again.
+        </p>
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          className={primaryCta}
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  // A 404 (missing or non-owned order) is terminal; a successful response with
+  // no order body is treated the same way.
+  if (!order) {
     return (
       <div role="alert" className="flex flex-col items-start gap-4 py-16">
         <h1 className="text-2xl font-bold text-foreground">

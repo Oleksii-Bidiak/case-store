@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
 import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { OrderService } from './order.service';
@@ -148,6 +149,13 @@ const mailServiceMock = {
   sendOrderConfirmation: jest.fn(),
 };
 
+const pinoLoggerMock = {
+  setContext: jest.fn(),
+  info: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+};
+
 const recipient = {
   id: USER_ID,
   email: 'olena@example.com',
@@ -170,6 +178,7 @@ describe('OrderService', () => {
         { provide: CartRepository, useValue: cartRepositoryMock },
         { provide: UserRepository, useValue: userRepositoryMock },
         { provide: MailService, useValue: mailServiceMock },
+        { provide: PinoLogger, useValue: pinoLoggerMock },
       ],
     }).compile();
 

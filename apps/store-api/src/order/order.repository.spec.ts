@@ -122,6 +122,64 @@ describe('OrderRepository', () => {
     });
   });
 
+  // ─── createFromCart — price snapshot & subtotal (TASK-057 / TASK-058) ──────
+
+  describe('createFromCart — price snapshot & subtotal', () => {
+    it('snapshots unit prices, derives the subtotal/total from those rows, and clears the cart', async () => {
+      const tx = makeTx();
+      tx.order.create.mockResolvedValue({ id: 'order-1', items: [] });
+      tx.productVariant.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+
+      await repository.createFromCart(baseParams);
+
+      const { data } = tx.order.create.mock.calls[0][0] as {
+        data: {
+          subtotal: { toString(): string };
+          total: { toString(): string };
+          items: { create: Array<{ variantId: string | null; price: { toString(): string } }> };
+        };
+      };
+
+      // Variant price wins for the variant line; product price for the plain line.
+      expect(data.items.create[0].price.toString()).toBe('29.99');
+      expect(data.items.create[1].price.toString()).toBe('9.99');
+
+      // subtotal = 2 × 29.99 + 1 × 9.99 = 69.97; total mirrors subtotal in the MVP.
+      expect(data.subtotal.toString()).toBe('69.97');
+      expect(data.total.toString()).toBe('69.97');
+
+      // The originating cart is emptied so it cannot be ordered twice.
+      expect(tx.cartItem.deleteMany).toHaveBeenCalledWith({ where: { cartId: 'cart-uuid-1' } });
+    });
+
+    it('zero-pads sub-dollar cents without float drift', async () => {
+      const tx = makeTx();
+      tx.order.create.mockResolvedValue({ id: 'order-1', items: [] });
+      tx.productVariant.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+
+      // Single plain line at 9.05 → 905 cents → "9.05" (exercises the pad branch).
+      const params: CreateOrderParams = {
+        ...baseParams,
+        cartItems: [
+          {
+            ...noVariantItem,
+            quantity: 1,
+            product: { ...noVariantItem.product, price: { toString: () => '9.05' } as never },
+          },
+        ],
+      };
+
+      await repository.createFromCart(params);
+
+      const { data } = tx.order.create.mock.calls[0][0] as {
+        data: { subtotal: { toString(): string } };
+      };
+      expect(data.subtotal.toString()).toBe('9.05');
+    });
+  });
+
   // ─── cancelAndRestock — release reserved stock (WARNING / TASK-054) ────────
 
   describe('cancelAndRestock', () => {

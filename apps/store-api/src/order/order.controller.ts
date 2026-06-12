@@ -20,6 +20,7 @@ import {
   ApiExtraModels,
   getSchemaPath,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { OrderService, PaginationMeta } from './order.service';
 import { OrderEntity, OrderItemEntity } from './entities';
 import { CreateOrderDto, OrderListQueryDto } from './dto';
@@ -55,6 +56,9 @@ export class OrderController {
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  // Order placement mutates stock and dispatches mail — far more expensive than a
+  // read, and a natural abuse target. Cap it well below the global 100/60s.
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: 'Create order from cart', operationId: 'createOrder' })
   @ApiResponse({
     status: 201,
@@ -162,6 +166,9 @@ export class OrderController {
    */
   @Patch(':orderId/confirm-payment')
   @Roles('ADMIN')
+  // Admin-only state transition that confirms an order; throttle to blunt any
+  // scripted misuse even from an authenticated admin token.
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @ApiOperation({
     summary: 'Mark payment received and confirm order (admin)',
     operationId: 'confirmOrderPayment',

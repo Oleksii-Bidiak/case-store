@@ -290,6 +290,20 @@ describe('OrderController (e2e)', () => {
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
+    it('should return 400 when the nested shippingAddress is incomplete', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${token}`)
+        // shippingAddress is present but missing required nested fields
+        // (address1, city, postalCode, country) — nested validation must reject it.
+        .send({ shippingAddress: { firstName: 'Olena' } })
+        .expect(400);
+
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
     it('should return 404 when the user has no cart', async () => {
       const token = generateAccessToken(userA.id, userA.role);
       cartRepositoryMock.findByUserId.mockResolvedValue(null);

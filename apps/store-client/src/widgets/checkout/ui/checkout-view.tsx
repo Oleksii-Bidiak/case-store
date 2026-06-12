@@ -12,7 +12,7 @@ import {
   checkoutSchema,
   type CheckoutFormValues,
 } from "@/features/checkout";
-import { CartSkeleton } from "@/widgets/cart";
+import { CheckoutSkeleton } from "@/shared/ui";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 
 /**
@@ -70,7 +70,7 @@ export function CheckoutView() {
   }, [cartIsEmpty, router]);
 
   if (isInitializing || !isAuthenticated || isCartLoading || cartIsEmpty) {
-    return <CartSkeleton />;
+    return <CheckoutSkeleton />;
   }
 
   return (
