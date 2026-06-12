@@ -12,6 +12,7 @@ import { ProductModule } from './product';
 import { CategoryModule } from './category';
 import { CartModule } from './cart';
 import { OrderModule } from './order';
+import { MailModule } from './mail';
 import { HttpExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
 import { validateEnv } from './config/env.validation';
@@ -71,6 +72,9 @@ import { validateEnv } from './config/env.validation';
 
     // Orders
     OrderModule,
+
+    // Transactional email (global — provides MailService everywhere)
+    MailModule,
   ],
   controllers: [AppController],
   providers: [

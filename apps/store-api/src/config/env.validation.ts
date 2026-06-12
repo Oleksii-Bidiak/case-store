@@ -53,6 +53,38 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   CORS_ORIGINS?: string;
+
+  // ─── Mail (transactional email) ───────────────────────────────────────────
+  // All optional: the app boots without SMTP credentials. When MAIL_ENABLED is
+  // not "true", MailService is a no-op and never reads the SMTP_* vars.
+
+  @IsOptional()
+  @IsString()
+  MAIL_ENABLED?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_HOST?: string;
+
+  @IsOptional()
+  @IsInt()
+  SMTP_PORT?: number;
+
+  @IsOptional()
+  @IsString()
+  SMTP_SECURE?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_USER?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_PASS?: string;
+
+  @IsOptional()
+  @IsString()
+  MAIL_FROM?: string;
 }
 
 /**

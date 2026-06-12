@@ -1,9 +1,9 @@
 # Plan 024: Order Confirmation Emails
 
-> **Status:** To Do
+> **Status:** Done
 > **Phase:** Phase 3 — Checkout & Orders
 > **Created:** 2026-06-11
-> **Last Updated:** 2026-06-11
+> **Last Updated:** 2026-06-12
 > **BACKLOG task:** TASK-037
 
 ## Overview

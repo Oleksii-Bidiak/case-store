@@ -11,6 +11,7 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CartRepository, CartWithItems } from '../src/cart/cart.repository';
 import { OrderRepository } from '../src/order/order.repository';
+import { MailService } from '../src/mail/mail.service';
 import type { OrderWithItems } from '../src/order/order.types';
 import { PrismaService } from '../src/prisma';
 
@@ -41,6 +42,7 @@ describe('OrderController (e2e)', () => {
     findByUserId: jest.fn(),
     findById: jest.fn(),
     updateStatus: jest.fn(),
+    cancelAndRestock: jest.fn(),
     updatePaymentStatus: jest.fn(),
     markPaid: jest.fn(),
   };
@@ -76,6 +78,12 @@ describe('OrderController (e2e)', () => {
     update: jest.fn(),
     deactivate: jest.fn(),
     activate: jest.fn(),
+  };
+
+  // MailService is mocked so the order-confirmation dispatch in createOrder
+  // never attempts a real SMTP connection during e2e.
+  const mailServiceMock = {
+    sendOrderConfirmation: jest.fn().mockResolvedValue(undefined),
   };
 
   const prismaServiceMock = {
@@ -204,6 +212,8 @@ describe('OrderController (e2e)', () => {
       .useValue(cartRepositoryMock)
       .overrideProvider(OrderRepository)
       .useValue(orderRepositoryMock)
+      .overrideProvider(MailService)
+      .useValue(mailServiceMock)
       .overrideProvider(APP_GUARD)
       .useClass(ThrottlerGuardPassThrough)
       .compile();
@@ -240,6 +250,11 @@ describe('OrderController (e2e)', () => {
       const token = generateAccessToken(userA.id, userA.role);
       cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+      userRepositoryMock.findById.mockResolvedValue({
+        id: userA.id,
+        email: 'usera@example.com',
+        firstName: 'User',
+      });
 
       const response = await request(app.getHttpServer())
         .post('/api/orders')
@@ -251,6 +266,9 @@ describe('OrderController (e2e)', () => {
       expect(response.body.data.status).toBe(OrderStatus.PENDING);
       expect(response.body.data.items).toHaveLength(1);
       expect(response.body.data.total).toBe('59.98');
+      expect(mailServiceMock.sendOrderConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'usera@example.com' }),
+      );
     });
 
     it('should return 401 without a JWT', async () => {
@@ -380,7 +398,7 @@ describe('OrderController (e2e)', () => {
     it('should cancel a PENDING order and return 200', async () => {
       const token = generateAccessToken(userA.id, userA.role);
       orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.PENDING }));
-      orderRepositoryMock.updateStatus.mockResolvedValue(
+      orderRepositoryMock.cancelAndRestock.mockResolvedValue(
         makeOrder({ status: OrderStatus.CANCELLED }),
       );
 
@@ -390,10 +408,7 @@ describe('OrderController (e2e)', () => {
         .expect(200);
 
       expect(response.body.data.status).toBe(OrderStatus.CANCELLED);
-      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
-        'order-e2e-1',
-        OrderStatus.CANCELLED,
-      );
+      expect(orderRepositoryMock.cancelAndRestock).toHaveBeenCalledWith('order-e2e-1');
     });
 
     it('should return 409 when cancelling a CONFIRMED order', async () => {
@@ -405,7 +420,7 @@ describe('OrderController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(409);
 
-      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
     });
 
     it('should return 404 when the order does not exist', async () => {
