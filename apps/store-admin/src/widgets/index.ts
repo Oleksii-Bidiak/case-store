@@ -11,3 +11,13 @@ export { AdminOrderTable, AdminOrderTableSkeleton } from "./order-list";
 export { OrderDetailView, OrderDetailSkeleton } from "./order-detail";
 export { AdminUserTable, AdminUserTableSkeleton } from "./user-list";
 export { UserDetailView, UserDetailSkeleton } from "./user-detail";
+export {
+  AdminDashboardStats,
+  AdminDashboardStatsSkeleton,
+} from "./dashboard-stats";
+export {
+  DashboardCharts,
+  RevenueTrendChart,
+  OrdersByStatusChart,
+} from "./dashboard-charts";
+export { DashboardLowStockTable } from "./dashboard-low-stock";

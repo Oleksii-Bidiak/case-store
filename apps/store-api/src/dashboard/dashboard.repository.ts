@@ -1,0 +1,233 @@
+import { Injectable } from '@nestjs/common';
+import { OrderStatus } from '@prisma/client';
+import { PrismaService } from '../prisma';
+import {
+  DASHBOARD_WINDOW_DAYS,
+  LOW_STOCK_LIMIT,
+  LOW_STOCK_THRESHOLD,
+  TOP_PRODUCTS_LIMIT,
+  type DailyDataPoint,
+  type DashboardSummary,
+  type LowStockVariant,
+  type OrderStatusCount,
+  type TopProduct,
+} from './dashboard.types';
+
+/**
+ * Order statuses that do NOT count toward revenue. Cancelled and refunded
+ * orders represent reversed money, so they are excluded from every revenue
+ * aggregate.
+ */
+const NON_REVENUE_STATUSES: OrderStatus[] = [OrderStatus.CANCELLED, OrderStatus.REFUNDED];
+
+/** Raw-query row shape for the gap-filled daily series. */
+interface DailyRow {
+  date: string;
+  value: number;
+}
+
+/** Raw-query row shape for the top-products query. */
+interface TopProductRow {
+  productId: string;
+  name: string;
+  totalRevenue: number;
+}
+
+/**
+ * Read-only repository assembling all admin-dashboard metrics from existing
+ * tables. No writes, no migrations — every method is an aggregate query.
+ *
+ * Time-series methods use raw SQL with PostgreSQL `generate_series` +
+ * `DATE_TRUNC` so the returned series always spans the full window (missing
+ * days come back as 0 rather than gaps). The project is PostgreSQL-only across
+ * all environments (Docker Compose dev + `store_test` e2e DB), so these raw
+ * queries are safe — there is no SQLite fallback to consider.
+ */
+@Injectable()
+export class DashboardRepository {
+  constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Run every metric query in parallel and assemble the summary payload.
+   */
+  async getSummary(windowDays: number = DASHBOARD_WINDOW_DAYS): Promise<DashboardSummary> {
+    const windowStart = this.windowStart(windowDays);
+
+    const [
+      totalRevenue,
+      revenueLast30Days,
+      revenueByDay,
+      totalOrders,
+      ordersByStatus,
+      ordersByDay,
+      totalUsers,
+      newUsersByDay,
+      totalProducts,
+      activeProducts,
+      topProducts,
+      lowStockVariants,
+    ] = await Promise.all([
+      this.getTotalRevenue(),
+      this.getRevenueSince(windowStart),
+      this.getRevenueByDay(windowDays),
+      this.prisma.order.count(),
+      this.getOrderCountByStatus(),
+      this.getOrdersByDay(windowDays),
+      this.prisma.user.count(),
+      this.getNewUsersByDay(windowDays),
+      this.prisma.product.count(),
+      this.prisma.product.count({ where: { isActive: true } }),
+      this.getTopProducts(TOP_PRODUCTS_LIMIT),
+      this.getLowStockVariants(LOW_STOCK_THRESHOLD, LOW_STOCK_LIMIT),
+    ]);
+
+    return {
+      revenue: { totalRevenue, revenueLast30Days, revenueByDay },
+      orders: { totalOrders, ordersByStatus, ordersByDay },
+      users: { totalUsers, newUsersByDay },
+      products: { totalProducts, activeProducts, topProducts },
+      inventory: { lowStockVariants },
+    };
+  }
+
+  /** Start of the rolling window (midnight, `windowDays - 1` days ago). */
+  private windowStart(windowDays: number): Date {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - (windowDays - 1));
+    return start;
+  }
+
+  /** Lifetime revenue: sum of `Order.total` excluding cancelled/refunded. */
+  private async getTotalRevenue(): Promise<number> {
+    const result = await this.prisma.order.aggregate({
+      _sum: { total: true },
+      where: { status: { notIn: NON_REVENUE_STATUSES } },
+    });
+    return Number(result._sum.total ?? 0);
+  }
+
+  /** Revenue since a given date, excluding cancelled/refunded. */
+  private async getRevenueSince(since: Date): Promise<number> {
+    const result = await this.prisma.order.aggregate({
+      _sum: { total: true },
+      where: { status: { notIn: NON_REVENUE_STATUSES }, createdAt: { gte: since } },
+    });
+    return Number(result._sum.total ?? 0);
+  }
+
+  /** Order counts grouped by status. */
+  private async getOrderCountByStatus(): Promise<OrderStatusCount[]> {
+    const grouped = await this.prisma.order.groupBy({
+      by: ['status'],
+      _count: { id: true },
+    });
+    return grouped.map((row) => ({ status: row.status, count: row._count.id }));
+  }
+
+  /**
+   * Daily revenue for the last `windowDays`, gap-filled to a complete series.
+   * Cancelled/refunded orders are excluded to match the revenue definition.
+   */
+  private async getRevenueByDay(windowDays: number): Promise<DailyDataPoint[]> {
+    const rows = await this.prisma.$queryRaw<DailyRow[]>`
+      SELECT TO_CHAR(d.day, 'YYYY-MM-DD') AS date,
+             COALESCE(SUM(o.total), 0)::float8 AS value
+      FROM generate_series(
+             DATE_TRUNC('day', NOW()) - MAKE_INTERVAL(days => ${windowDays - 1}::int),
+             DATE_TRUNC('day', NOW()),
+             INTERVAL '1 day'
+           ) AS d(day)
+      LEFT JOIN orders o
+        ON DATE_TRUNC('day', o.created_at) = d.day
+        AND o.status NOT IN ('CANCELLED', 'REFUNDED')
+      GROUP BY d.day
+      ORDER BY d.day ASC
+    `;
+    return this.normalizeSeries(rows);
+  }
+
+  /** Daily order count for the last `windowDays`, gap-filled. */
+  private async getOrdersByDay(windowDays: number): Promise<DailyDataPoint[]> {
+    const rows = await this.prisma.$queryRaw<DailyRow[]>`
+      SELECT TO_CHAR(d.day, 'YYYY-MM-DD') AS date,
+             COUNT(o.id)::int AS value
+      FROM generate_series(
+             DATE_TRUNC('day', NOW()) - MAKE_INTERVAL(days => ${windowDays - 1}::int),
+             DATE_TRUNC('day', NOW()),
+             INTERVAL '1 day'
+           ) AS d(day)
+      LEFT JOIN orders o
+        ON DATE_TRUNC('day', o.created_at) = d.day
+      GROUP BY d.day
+      ORDER BY d.day ASC
+    `;
+    return this.normalizeSeries(rows);
+  }
+
+  /** Daily new-user registrations for the last `windowDays`, gap-filled. */
+  private async getNewUsersByDay(windowDays: number): Promise<DailyDataPoint[]> {
+    const rows = await this.prisma.$queryRaw<DailyRow[]>`
+      SELECT TO_CHAR(d.day, 'YYYY-MM-DD') AS date,
+             COUNT(u.id)::int AS value
+      FROM generate_series(
+             DATE_TRUNC('day', NOW()) - MAKE_INTERVAL(days => ${windowDays - 1}::int),
+             DATE_TRUNC('day', NOW()),
+             INTERVAL '1 day'
+           ) AS d(day)
+      LEFT JOIN users u
+        ON DATE_TRUNC('day', u.created_at) = d.day
+      GROUP BY d.day
+      ORDER BY d.day ASC
+    `;
+    return this.normalizeSeries(rows);
+  }
+
+  /**
+   * Top products by total revenue earned.
+   *
+   * Revenue is `SUM(price * quantity)` — multiplying by quantity matters, since
+   * a line of 3 units at $10 earns $30, not $10. Prisma's `groupBy` can only
+   * `_sum` a single column, so a raw query is used. The product name is joined
+   * in the same query (no second lookup, no N+1).
+   */
+  private async getTopProducts(limit: number): Promise<TopProduct[]> {
+    const rows = await this.prisma.$queryRaw<TopProductRow[]>`
+      SELECT oi.product_id AS "productId",
+             p.name AS name,
+             SUM(oi.price * oi.quantity)::float8 AS "totalRevenue"
+      FROM order_items oi
+      JOIN products p ON p.id = oi.product_id
+      GROUP BY oi.product_id, p.name
+      ORDER BY "totalRevenue" DESC
+      LIMIT ${limit}
+    `;
+    return rows.map((row) => ({
+      productId: row.productId,
+      name: row.name,
+      totalRevenue: Number(row.totalRevenue),
+    }));
+  }
+
+  /** Active variants with stock in `(0, threshold]`, lowest first. */
+  private async getLowStockVariants(threshold: number, limit: number): Promise<LowStockVariant[]> {
+    const variants = await this.prisma.productVariant.findMany({
+      where: { stock: { gt: 0, lte: threshold }, isActive: true },
+      orderBy: { stock: 'asc' },
+      take: limit,
+      include: { product: { select: { id: true, name: true } } },
+    });
+    return variants.map((variant) => ({
+      variantId: variant.id,
+      variantName: variant.name,
+      productId: variant.product.id,
+      productName: variant.product.name,
+      stock: variant.stock,
+    }));
+  }
+
+  /** Coerce raw-query numeric columns to JS numbers defensively. */
+  private normalizeSeries(rows: DailyRow[]): DailyDataPoint[] {
+    return rows.map((row) => ({ date: row.date, value: Number(row.value) }));
+  }
+}

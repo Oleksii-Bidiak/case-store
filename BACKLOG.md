@@ -336,7 +336,17 @@
 | TASK-042-H | Fix AdminSidebar Users link from `#` to `/users` | ✅ | docs/plans/029-admin-user-management.md |
 | TASK-042-I | Add e2e tests for admin user endpoints (401/403/200 guards, search/filter, ban/unban, 404) | ✅ | docs/plans/029-admin-user-management.md |
 | TASK-042-J | Build / lint / typecheck ✅ (api+admin build, 230 unit + 156 e2e green); manual smoke pending running app | 🔄 | docs/plans/029-admin-user-management.md |
-| TASK-043 | Admin Dashboard (metrics, charts) | ⬜ | — |
+| TASK-043 | Admin Dashboard (metrics, charts) | ✅ | docs/plans/030-admin-dashboard.md |
+| TASK-043-A | Create DashboardModule backend (repository + service + controller + all Swagger-decorated DTOs; `GET /api/admin/dashboard/summary` protected by AdminGuard; revenue/orders/users day-series via `$queryRaw` + `generate_series` gap-fill; top-products via `SUM(price*quantity)`) | ✅ | docs/plans/030-admin-dashboard.md |
+| TASK-043-B | Add backend e2e tests for the dashboard endpoint (401/403/200 guards + response shape + empty-store case) | ✅ | docs/plans/030-admin-dashboard.md |
+| TASK-043-C | Regenerate Orval API hooks for store-admin (typed DashboardSummaryResponse + useAdminDashboardControllerGetSummary hook; generated dir `admin-dashboard`) | ✅ | docs/plans/030-admin-dashboard.md |
+| TASK-043-D | Install recharts as a production dependency in apps/store-admin (used **recharts ^3.8** — native React 19 support, no `--legacy-peer-deps` needed; plan assumed 2.x) | ✅ | docs/plans/030-admin-dashboard.md |
+| TASK-043-E | Create entities/dashboard barrel slice in store-admin | ✅ | docs/plans/030-admin-dashboard.md |
+| TASK-043-F | Create widgets/dashboard-stats slice (AdminDashboardStats stat cards + Skeleton) | ✅ | docs/plans/030-admin-dashboard.md |
+| TASK-043-G | Create widgets/dashboard-charts slice (RevenueTrendChart + OrdersByStatusChart + DashboardCharts wrapper) | ✅ | docs/plans/030-admin-dashboard.md |
+| TASK-043-H | Create widgets/dashboard-low-stock slice (DashboardLowStockTable with stock-level badges) | ✅ | docs/plans/030-admin-dashboard.md |
+| TASK-043-I | Rewrite app/(dashboard)/page.tsx with live data + app-layer DashboardView client orchestrator (avoids widget→widget lateral import) | ✅ | docs/plans/030-admin-dashboard.md |
+| TASK-043-J | Build / lint / typecheck ✅ (all workspaces; 230 unit + 160 e2e green); manual smoke pending running app + live DB (raw-SQL aggregations) | 🔄 | docs/plans/030-admin-dashboard.md |
 
 ---
 

@@ -14,6 +14,7 @@ export * from "./generated/users/users";
 export * from "./generated/products/products";
 export * from "./generated/categories/categories";
 export * from "./generated/admin-orders/admin-orders";
+export * from "./generated/admin-dashboard/admin-dashboard";
 export * from "./generated/cart/cart";
 
 // Generated DTO / entity types
