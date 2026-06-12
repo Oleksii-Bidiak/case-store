@@ -8,6 +8,8 @@ import {
 import { OrderStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { CartRepository } from '../cart/cart.repository';
+import { UserRepository } from '../user/user.repository';
+import { MailService } from '../mail/mail.service';
 import { OrderEntity } from './entities';
 import type { CreateOrderDto, OrderListQueryDto } from './dto';
 
@@ -40,6 +42,8 @@ export class OrderService {
   constructor(
     private readonly orderRepository: OrderRepository,
     private readonly cartRepository: CartRepository,
+    private readonly userRepository: UserRepository,
+    private readonly mailService: MailService,
   ) {}
 
   /**
@@ -81,7 +85,30 @@ export class OrderService {
 
     this.logger.log(`Order ${order.id} created for user ${userId}`);
 
-    return OrderEntity.fromPrisma(order);
+    const orderEntity = OrderEntity.fromPrisma(order);
+
+    // Dispatch the confirmation email as a fault-isolated side-effect. The order
+    // is already persisted and is the source of truth — a mail failure (SMTP
+    // down, null user, template crash) must never roll back the order or surface
+    // as an HTTP error. Any error is caught and logged; createOrder always
+    // returns the created order.
+    try {
+      const user = await this.userRepository.findById(userId);
+      if (user) {
+        await this.mailService.sendOrderConfirmation({
+          to: user.email,
+          order: orderEntity,
+          customerName: user.firstName ?? undefined,
+        });
+        this.logger.log(`Order confirmation email sent to ${user.email} for order ${order.id}`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `Failed to send order confirmation email for order ${order.id}: ${String(err)}`,
+      );
+    }
+
+    return orderEntity;
   }
 
   /**

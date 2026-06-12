@@ -5,6 +5,9 @@ import { OrderRepository } from './order.repository';
 import { OrderService } from './order.service';
 import { OrderEntity } from './entities';
 import { CartRepository, CartWithItems } from '../cart/cart.repository';
+import { UserRepository } from '../user/user.repository';
+import { MailService } from '../mail/mail.service';
+import type { User } from '@prisma/client';
 import type { OrderWithItems } from './order.types';
 import type { CreateOrderDto } from './dto';
 
@@ -136,6 +139,21 @@ const cartRepositoryMock = {
   findByUserId: jest.fn(),
 };
 
+const userRepositoryMock = {
+  findById: jest.fn(),
+};
+
+const mailServiceMock = {
+  sendOrderConfirmation: jest.fn(),
+};
+
+const recipient = {
+  id: USER_ID,
+  email: 'olena@example.com',
+  firstName: 'Olena',
+  lastName: 'Shevchenko',
+} as User;
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('OrderService', () => {
@@ -149,6 +167,8 @@ describe('OrderService', () => {
         OrderService,
         { provide: OrderRepository, useValue: orderRepositoryMock },
         { provide: CartRepository, useValue: cartRepositoryMock },
+        { provide: UserRepository, useValue: userRepositoryMock },
+        { provide: MailService, useValue: mailServiceMock },
       ],
     }).compile();
 
@@ -204,6 +224,49 @@ describe('OrderService', () => {
 
       await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(BadRequestException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── createOrder → email dispatch (fault-isolated side-effect) ──────────────
+
+  describe('createOrder — email dispatch', () => {
+    beforeEach(() => {
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+    });
+
+    it('sends a confirmation email to the recipient after a successful create', async () => {
+      userRepositoryMock.findById.mockResolvedValue(recipient);
+
+      const result = await service.createOrder(USER_ID, createDto);
+
+      expect(userRepositoryMock.findById).toHaveBeenCalledWith(USER_ID);
+      expect(mailServiceMock.sendOrderConfirmation).toHaveBeenCalledTimes(1);
+      expect(mailServiceMock.sendOrderConfirmation).toHaveBeenCalledWith({
+        to: recipient.email,
+        order: result,
+        customerName: recipient.firstName,
+      });
+      expect(result).toBeInstanceOf(OrderEntity);
+    });
+
+    it('still resolves with the order when the email send rejects (fault isolation)', async () => {
+      userRepositoryMock.findById.mockResolvedValue(recipient);
+      mailServiceMock.sendOrderConfirmation.mockRejectedValue(new Error('SMTP unavailable'));
+
+      const result = await service.createOrder(USER_ID, createDto);
+
+      expect(result).toBeInstanceOf(OrderEntity);
+      expect(result.id).toBe('order-uuid-1');
+    });
+
+    it('does not attempt an email when the recipient user is not found', async () => {
+      userRepositoryMock.findById.mockResolvedValue(null);
+
+      const result = await service.createOrder(USER_ID, createDto);
+
+      expect(mailServiceMock.sendOrderConfirmation).not.toHaveBeenCalled();
+      expect(result).toBeInstanceOf(OrderEntity);
     });
   });
 

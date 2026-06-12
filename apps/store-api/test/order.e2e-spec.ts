@@ -11,6 +11,7 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CartRepository, CartWithItems } from '../src/cart/cart.repository';
 import { OrderRepository } from '../src/order/order.repository';
+import { MailService } from '../src/mail/mail.service';
 import type { OrderWithItems } from '../src/order/order.types';
 import { PrismaService } from '../src/prisma';
 
@@ -76,6 +77,12 @@ describe('OrderController (e2e)', () => {
     update: jest.fn(),
     deactivate: jest.fn(),
     activate: jest.fn(),
+  };
+
+  // MailService is mocked so the order-confirmation dispatch in createOrder
+  // never attempts a real SMTP connection during e2e.
+  const mailServiceMock = {
+    sendOrderConfirmation: jest.fn().mockResolvedValue(undefined),
   };
 
   const prismaServiceMock = {
@@ -204,6 +211,8 @@ describe('OrderController (e2e)', () => {
       .useValue(cartRepositoryMock)
       .overrideProvider(OrderRepository)
       .useValue(orderRepositoryMock)
+      .overrideProvider(MailService)
+      .useValue(mailServiceMock)
       .overrideProvider(APP_GUARD)
       .useClass(ThrottlerGuardPassThrough)
       .compile();
@@ -240,6 +249,11 @@ describe('OrderController (e2e)', () => {
       const token = generateAccessToken(userA.id, userA.role);
       cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+      userRepositoryMock.findById.mockResolvedValue({
+        id: userA.id,
+        email: 'usera@example.com',
+        firstName: 'User',
+      });
 
       const response = await request(app.getHttpServer())
         .post('/api/orders')
@@ -251,6 +265,9 @@ describe('OrderController (e2e)', () => {
       expect(response.body.data.status).toBe(OrderStatus.PENDING);
       expect(response.body.data.items).toHaveLength(1);
       expect(response.body.data.total).toBe('59.98');
+      expect(mailServiceMock.sendOrderConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'usera@example.com' }),
+      );
     });
 
     it('should return 401 without a JWT', async () => {

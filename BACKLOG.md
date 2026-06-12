@@ -162,24 +162,25 @@
 
 ### Guest Cart Backend (Plan 017)
 
-| Task ID    | Description                                                                                                                                                         | Status | Plan                                 |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------ |
-| TASK-051   | Guest cart backend — nullable userId, cartToken cookie, optional-auth, merge on login                                                                               | 🔄     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-A | Prisma migration: nullable Cart.userId + unique token column (applied — migrate status clean)                                                                       | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-B | Implement OptionalJwtAuthGuard (AuthGuard extension — no throw on missing JWT)                                                                                      | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-C | Implement CartIdentityInterceptor + @CartIdentity() decorator (resolves userId or token)                                                                            | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-D | Update CartRepository: findByToken, findOrCreate(identity), assignCartToUser, addItem by cartId                                                                     | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-E | Update CartService: dual-identity signatures + mergeGuestCart() (TDD)                                                                                               | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-F | Update CartController: remove JwtAuthGuard, add OptionalJwtAuthGuard + CartIdentityInterceptor                                                                      | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-G | Update CartModule: register new providers (CartIdentityInterceptor, ConfigModule)                                                                                   | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-H | Wire cart-merge into AuthController login + register (import CartModule into AuthModule)                                                                            | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-I | E2E tests: guest cart, authenticated cart, merge on login, quantity clamp, merge failure (DB)                                                                       | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-J | Regenerate Orval API hooks (store-client + store-admin) after cart controller changes                                                                               | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-K | Review WARN#1: make mergeGuestCart transactional; clear cartToken cookie only on success                                                                            | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-L | Review WARN#2: handle findOrCreate vs assignCartToUser race (P2002) in the merge transaction                                                                        | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-M | Review: unit tests for guard/interceptor/merge-failure + mixed overlap/new/delete merge case                                                                        | ✅     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-N | Review WARN#4: migration applied + guest/merge e2e done; manual QA pending (docs/manual-qa-phase2)                                                                  | 🔄     | docs/plans/017-guest-cart-backend.md |
-| TASK-051-O | Real-DB integration harness (test:int vs isolated store_test) + CI job; caught & fixed null-variant cart-line upsert (Prisma rejects null in compound-unique where) | ✅     | docs/plans/017-guest-cart-backend.md |
+| Task ID    | Description                                                                                         | Status | Plan                                 |
+| ---------- | --------------------------------------------------------------------------------------------------- | ------ | ------------------------------------ |
+| TASK-051   | Guest cart backend — nullable userId, cartToken cookie, optional-auth, merge on login               | 🔄     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-A | Prisma migration: nullable Cart.userId + unique token column (applied — migrate status clean)       | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-B | Implement OptionalJwtAuthGuard (AuthGuard extension — no throw on missing JWT)                      | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-C | Implement CartIdentityInterceptor + @CartIdentity() decorator (resolves userId or token)            | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-D | Update CartRepository: findByToken, findOrCreate(identity), assignCartToUser, addItem by cartId     | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-E | Update CartService: dual-identity signatures + mergeGuestCart() (TDD)                               | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-F | Update CartController: remove JwtAuthGuard, add OptionalJwtAuthGuard + CartIdentityInterceptor      | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-G | Update CartModule: register new providers (CartIdentityInterceptor, ConfigModule)                   | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-H | Wire cart-merge into AuthController login + register (import CartModule into AuthModule)            | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-I | E2E tests: guest cart, authenticated cart, merge on login, quantity clamp, merge failure (DB)       | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-J | Regenerate Orval API hooks (store-client + store-admin) after cart controller changes               | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-K | Review WARN#1: make mergeGuestCart transactional; clear cartToken cookie only on success            | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-L | Review WARN#2: handle findOrCreate vs assignCartToUser race (P2002) in the merge transaction        | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-M | Review: unit tests for guard/interceptor/merge-failure + mixed overlap/new/delete merge case        | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-N | Review WARN#4: migration applied + guest/merge e2e done; manual QA pending (docs/manual-qa-phase2)  | 🔄     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-O | Real-DB integration harness (test:int vs isolated store_test) + CI job; caught & fixed null-variant | ✅     | docs/plans/017-guest-cart-backend.md |
+| TASK-051-O | cart-line upsert (Prisma rejects null in compound-unique where)                                     |        | docs/plans/017-guest-cart-backend.md |
 
 ### Storefront Auth — store-client (Plan 018)
 
@@ -252,14 +253,14 @@
 | TASK-036-H | Create widgets/order-confirmation/index.ts barrel + update widgets/index.ts                                                                                                                  | ✅     | docs/plans/023-order-confirmation-page.md   |
 | TASK-036-I | Rewrite app/orders/[id]/confirmation/page.tsx (Server Component; generateMetadata; Suspense wrap)                                                                                            | ✅     | docs/plans/023-order-confirmation-page.md   |
 | TASK-036-J | Build / lint / typecheck ✅; manual smoke test pending running app                                                                                                                           | 🔄     | docs/plans/023-order-confirmation-page.md   |
-| TASK-037   | Set up order confirmation emails                                                                                                                                                             | ⬜     | docs/plans/024-order-confirmation-emails.md |
-| TASK-037-A | Install `nodemailer` + `@types/nodemailer`; add optional mail env vars to `env.validation.ts`; create `.env.example`                                                                         | ⬜     | docs/plans/024-order-confirmation-emails.md |
-| TASK-037-B | Create pure order-confirmation template builder `{ subject, html, text }` with TDD (Red → Green)                                                                                             | ⬜     | docs/plans/024-order-confirmation-emails.md |
-| TASK-037-C | Implement `MailService` (nodemailer transport from config; `sendOrderConfirmation`; no-op path; logging) + unit tests                                                                        | ⬜     | docs/plans/024-order-confirmation-emails.md |
-| TASK-037-D | Create global `MailModule` + barrel `index.ts`; register in `AppModule`                                                                                                                      | ⬜     | docs/plans/024-order-confirmation-emails.md |
-| TASK-037-E | Export `UserRepository` from `UserModule`; add `UserModule` (+ `MailModule`) to `OrderModule` imports                                                                                        | ⬜     | docs/plans/024-order-confirmation-emails.md |
-| TASK-037-F | Hook dispatch into `OrderService.createOrder` (fetch recipient, fault-isolated try/catch); extend `order.service.spec.ts` (dispatch-called + failure-does-not-break-order + null-user cases) | ⬜     | docs/plans/024-order-confirmation-emails.md |
-| TASK-037-H | Build / lint / typecheck / unit + e2e verification gate (mock `MailService` in e2e; dev SMTP note)                                                                                           | ⬜     | docs/plans/024-order-confirmation-emails.md |
+| TASK-037   | Set up order confirmation emails                                                                                                                                                             | ✅     | docs/plans/024-order-confirmation-emails.md |
+| TASK-037-A | Install `nodemailer` + `@types/nodemailer`; add optional mail env vars to `env.validation.ts`; create `.env.example`                                                                         | ✅     | docs/plans/024-order-confirmation-emails.md |
+| TASK-037-B | Create pure order-confirmation template builder `{ subject, html, text }` with TDD (Red → Green)                                                                                             | ✅     | docs/plans/024-order-confirmation-emails.md |
+| TASK-037-C | Implement `MailService` (nodemailer transport from config; `sendOrderConfirmation`; no-op path; logging) + unit tests                                                                        | ✅     | docs/plans/024-order-confirmation-emails.md |
+| TASK-037-D | Create global `MailModule` + barrel `index.ts`; register in `AppModule`                                                                                                                      | ✅     | docs/plans/024-order-confirmation-emails.md |
+| TASK-037-E | Export `UserRepository` from `UserModule`; add `UserModule` (+ `MailModule`) to `OrderModule` imports                                                                                        | ✅     | docs/plans/024-order-confirmation-emails.md |
+| TASK-037-F | Hook dispatch into `OrderService.createOrder` (fetch recipient, fault-isolated try/catch); extend `order.service.spec.ts` (dispatch-called + failure-does-not-break-order + null-user cases) | ✅     | docs/plans/024-order-confirmation-emails.md |
+| TASK-037-H | Build / lint / typecheck / unit + e2e verification gate (mock `MailService` in e2e; dev SMTP note)                                                                                           | ✅     | docs/plans/024-order-confirmation-emails.md |
 
 ---
 
