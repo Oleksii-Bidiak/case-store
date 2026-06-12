@@ -1,5 +1,10 @@
 // Shared API — Axios instance, custom mutator, and Orval-generated hooks
-export { api, customInstance } from "./instance";
+export {
+  api,
+  customInstance,
+  getAccessToken,
+  setAccessToken,
+} from "./instance";
 export type { ErrorType, BodyType } from "./instance";
 
 // Orval-generated endpoint hooks, grouped by API tag.

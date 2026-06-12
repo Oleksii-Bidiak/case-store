@@ -1,4 +1,8 @@
-import Axios, { AxiosError, AxiosRequestConfig } from "axios";
+import Axios, {
+  AxiosError,
+  AxiosRequestConfig,
+  InternalAxiosRequestConfig,
+} from "axios";
 
 /**
  * Pre-configured Axios instance for communicating with the store-api backend.
@@ -6,6 +10,9 @@ import Axios, { AxiosError, AxiosRequestConfig } from "axios";
  * - baseURL: reads from NEXT_PUBLIC_API_URL env var (defaults to http://localhost:3001/api)
  * - withCredentials: enabled for cookie-based auth (refresh tokens)
  * - Content-Type: application/json by default
+ *
+ * Note: the baseURL already includes the `/api` prefix, so endpoint paths here
+ * are written without it (e.g. `/auth/refresh`).
  */
 export const api = Axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api",
@@ -15,10 +22,85 @@ export const api = Axios.create({
   },
 });
 
-// TODO(auth): add a request interceptor that injects
-// `Authorization: Bearer <accessToken>` for admin-protected endpoints once the
-// admin login flow exists. Refresh tokens already travel via HttpOnly cookie
-// (withCredentials: true); only the access token needs wiring here.
+// ─── In-memory access token ──────────────────────────────────────────────────
+// The JWT access token lives only in memory (never localStorage) to avoid XSS
+// theft. The AuthProvider restores it on load via the HttpOnly refresh cookie.
+
+let accessToken: string | null = null;
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+}
+
+// ─── Request interceptor: attach the bearer token ────────────────────────────
+
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  if (accessToken) {
+    config.headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+  return config;
+});
+
+// ─── Response interceptor: refresh the token once on 401 and retry ───────────
+
+/** True for auth endpoints that must never trigger the refresh-retry loop. */
+function isAuthEndpoint(url: string | undefined): boolean {
+  return !!url && url.includes("/auth/");
+}
+
+// Single in-flight refresh shared across concurrent 401s (avoids a stampede).
+let refreshPromise: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = api
+      .post<{ data?: { accessToken?: string } }>("/auth/refresh")
+      .then((response) => response.data?.data?.accessToken ?? null)
+      .catch(() => null)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    const originalRequest = error.config as
+      | (AxiosRequestConfig & { _retry?: boolean })
+      | undefined;
+
+    if (
+      error.response?.status === 401 &&
+      originalRequest &&
+      !originalRequest._retry &&
+      !isAuthEndpoint(originalRequest.url)
+    ) {
+      originalRequest._retry = true;
+
+      const newToken = await refreshAccessToken();
+
+      if (newToken) {
+        setAccessToken(newToken);
+        originalRequest.headers = {
+          ...originalRequest.headers,
+          Authorization: `Bearer ${newToken}`,
+        };
+        return api(originalRequest);
+      }
+
+      // Refresh failed — drop the stale token; caller handles the rejection.
+      setAccessToken(null);
+    }
+
+    return Promise.reject(error);
+  },
+);
 
 /**
  * Custom instance function for Orval-generated API calls.

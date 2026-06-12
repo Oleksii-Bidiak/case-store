@@ -21,6 +21,7 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { UserRole } from '@prisma/client';
 import { OrderService, PaginationMeta } from './order.service';
 import { OrderEntity, OrderItemEntity } from './entities';
 import { CreateOrderDto, OrderListQueryDto } from './dto';
@@ -165,7 +166,7 @@ export class OrderController {
    * payment webhook until Stripe integration (TASK-034) lands.
    */
   @Patch(':orderId/confirm-payment')
-  @Roles('ADMIN')
+  @Roles(UserRole.ADMIN)
   // Admin-only state transition that confirms an order; throttle to blunt any
   // scripted misuse even from an authenticated admin token.
   @Throttle({ default: { limit: 20, ttl: 60000 } })

@@ -8,6 +8,7 @@ import {
   ApiExtraModels,
   getSchemaPath,
 } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
 import { UserService } from './user.service';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
@@ -133,7 +134,7 @@ export class UserController {
    */
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles(UserRole.ADMIN)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'List all users (admin)' })
   @ApiResponse({
@@ -155,7 +156,7 @@ export class UserController {
    */
   @Get(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles(UserRole.ADMIN)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get user by ID (admin)' })
   @ApiParam({ name: 'id', description: 'User UUID' })
@@ -185,7 +186,7 @@ export class UserController {
    */
   @Patch(':id/deactivate')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles(UserRole.ADMIN)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Deactivate user (admin)' })
   @ApiParam({ name: 'id', description: 'User UUID' })
@@ -215,7 +216,7 @@ export class UserController {
    */
   @Patch(':id/activate')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles(UserRole.ADMIN)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Activate user (admin)' })
   @ApiParam({ name: 'id', description: 'User UUID' })

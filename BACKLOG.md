@@ -279,14 +279,25 @@
 
 ## Phase 4: Admin Panel
 
-| Task ID  | Description                             | Status | Plan |
-| -------- | --------------------------------------- | ------ | ---- |
-| TASK-038 | Implement RBAC (admin roles)            | ⬜     | —    |
-| TASK-039 | Admin Product management (CRUD)         | ⬜     | —    |
-| TASK-040 | Admin Category management (CRUD)        | ⬜     | —    |
-| TASK-041 | Admin Order management (status updates) | ⬜     | —    |
-| TASK-042 | Admin User management (view, ban)       | ⬜     | —    |
-| TASK-043 | Admin Dashboard (metrics, charts)       | ⬜     | —    |
+| Task ID    | Description                                                                   | Status | Plan                               |
+| ---------- | ----------------------------------------------------------------------------- | ------ | ---------------------------------- |
+| TASK-038   | Implement RBAC (admin roles)                                                  | ✅     | docs/plans/025-rbac-admin-roles.md |
+| TASK-038-A | Harden RolesGuard and Roles decorator with UserRole enum + unit tests         | ✅     | docs/plans/025-rbac-admin-roles.md |
+| TASK-038-B | Create AdminGuard convenience guard + unit tests + refactor two controllers   | ✅     | docs/plans/025-rbac-admin-roles.md |
+| TASK-038-C | Add e2e guard-behaviour tests (401 vs 403 on admin endpoints)                 | ✅     | docs/plans/025-rbac-admin-roles.md |
+| TASK-038-D | Add admin seed data and document admin provisioning in .env.example           | ✅     | docs/plans/025-rbac-admin-roles.md |
+| TASK-038-E | Implement store-admin entities/session (AuthProvider, useAuth, useAdminAuth)  | ✅     | docs/plans/025-rbac-admin-roles.md |
+| TASK-038-F | Implement store-admin Axios Bearer interceptor + 401 refresh retry            | ✅     | docs/plans/025-rbac-admin-roles.md |
+| TASK-038-G | Implement store-admin features/admin-auth (LoginForm + LogoutButton)          | ✅     | docs/plans/025-rbac-admin-roles.md |
+| TASK-038-H | Add store-admin login page route and AdminShellGuard auth gate in root layout | ✅     | docs/plans/025-rbac-admin-roles.md |
+| TASK-038-I | Update AdminHeader with user identity and LogoutButton                        | ✅     | docs/plans/025-rbac-admin-roles.md |
+| TASK-038-J | Regenerate Orval API hooks for store-admin                                    | ✅     | docs/plans/025-rbac-admin-roles.md |
+| TASK-038-K | Build / lint / typecheck / unit + e2e verification gate                       | ✅     | docs/plans/025-rbac-admin-roles.md |
+| TASK-039   | Admin Product management (CRUD)                                               | ⬜     | —                                  |
+| TASK-040   | Admin Category management (CRUD)                                              | ⬜     | —                                  |
+| TASK-041   | Admin Order management (status updates)                                       | ⬜     | —                                  |
+| TASK-042   | Admin User management (view, ban)                                             | ⬜     | —                                  |
+| TASK-043   | Admin Dashboard (metrics, charts)                                             | ⬜     | —                                  |
 
 ---
 

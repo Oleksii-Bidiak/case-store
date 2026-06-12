@@ -10,8 +10,7 @@ import {
 } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { CreateProductDto, UpdateProductDto, ProductListQueryDto } from './dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles } from '../auth/decorators';
+import { AdminGuard } from '../auth/guards';
 import {
   ProductEntity,
   ProductVariantEntity,
@@ -155,8 +154,7 @@ export class ProductController {
    * Slug is auto-generated from name if not provided.
    */
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @UseGuards(AdminGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Create a product (admin)' })
   @ApiResponse({ status: 201, description: 'Product created', type: ProductResponseEnvelope })
@@ -175,8 +173,7 @@ export class ProductController {
    * Only provided fields will be updated.
    */
   @Put(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @UseGuards(AdminGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Update a product (admin)' })
   @ApiParam({ name: 'id', description: 'Product UUID' })
@@ -196,8 +193,7 @@ export class ProductController {
    * Deactivates a product (sets isActive = false). Admin-only endpoint.
    */
   @Patch(':id/deactivate')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @UseGuards(AdminGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Deactivate a product (admin)' })
   @ApiParam({ name: 'id', description: 'Product UUID' })
@@ -216,8 +212,7 @@ export class ProductController {
    * Activates a product (sets isActive = true). Admin-only endpoint.
    */
   @Patch(':id/activate')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @UseGuards(AdminGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Activate a product (admin)' })
   @ApiParam({ name: 'id', description: 'Product UUID' })

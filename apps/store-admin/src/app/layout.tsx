@@ -1,8 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Providers } from "./providers";
-import { AdminSidebar } from "@/widgets/admin-shell";
-import { AdminHeader } from "@/widgets/admin-shell";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -37,15 +35,9 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground">
-        <Providers>
-          <div className="flex h-screen overflow-hidden">
-            <AdminSidebar />
-            <div className="flex flex-1 flex-col overflow-hidden">
-              <AdminHeader />
-              <main className="flex-1 overflow-y-auto p-6">{children}</main>
-            </div>
-          </div>
-        </Providers>
+        {/* Root layout stays minimal: route groups supply their own chrome —
+            (dashboard) renders the guarded admin shell, (auth) a bare page. */}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

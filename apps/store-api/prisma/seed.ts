@@ -15,14 +15,21 @@ function slugify(text: string): string {
 // ─── Seed Data ──────────────────────────────────────────────────────────────
 
 async function seedUsers(prisma: PrismaClient) {
-  const adminPasswordHash = await argon2.hash('Admin123!');
+  // Admin credentials are configurable via env (ADMIN_SEED_EMAIL /
+  // ADMIN_SEED_PASSWORD) and fall back to the dev defaults below. The upsert is
+  // idempotent and re-asserts the ADMIN role on every run. To promote an
+  // already-registered user instead of seeding a new one, run:
+  //   UPDATE users SET role='ADMIN' WHERE email='<email>';
+  const adminEmail = process.env.ADMIN_SEED_EMAIL ?? 'admin@store.com';
+  const adminPassword = process.env.ADMIN_SEED_PASSWORD ?? 'Admin123!';
+  const adminPasswordHash = await argon2.hash(adminPassword);
   const customerPasswordHash = await argon2.hash('Customer123!');
 
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@store.com' },
-    update: {},
+    where: { email: adminEmail },
+    update: { role: 'ADMIN', isActive: true },
     create: {
-      email: 'admin@store.com',
+      email: adminEmail,
       passwordHash: adminPasswordHash,
       firstName: 'Admin',
       lastName: 'Store',

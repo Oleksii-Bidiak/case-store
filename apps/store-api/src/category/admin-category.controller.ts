@@ -2,8 +2,7 @@ import { Controller, Get, Post, Put, Patch, Param, Body, Query, UseGuards } from
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { CategoryService } from './category.service';
 import { CreateCategoryDto, UpdateCategoryDto, CategoryListQueryDto } from './dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles } from '../auth/decorators';
+import { AdminGuard } from '../auth/guards';
 import { CategoryEntity, CategoryWithCountEntity } from './entities';
 
 /**
@@ -39,8 +38,7 @@ interface CategoryListWithCountResponse {
  */
 @ApiTags('Categories')
 @Controller('admin/categories')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN')
+@UseGuards(AdminGuard)
 export class AdminCategoryController {
   constructor(private readonly categoryService: CategoryService) {}
 

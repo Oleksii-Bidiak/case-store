@@ -13,10 +13,11 @@ export { LoginDto } from './dto/login.dto';
 export { JwtAuthGuard } from './guards/jwt-auth.guard';
 export { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 export { RolesGuard } from './guards/roles.guard';
+export { AdminGuard } from './guards/admin.guard';
 
 // Decorators
 export { CurrentUser } from './decorators/current-user.decorator';
-export { Roles } from './decorators/roles.decorator';
+export { Roles, ROLES_KEY } from './decorators/roles.decorator';
 
 // Strategies
 export { JwtAccessStrategy } from './strategies/jwt-access.strategy';

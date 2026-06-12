@@ -1,14 +1,20 @@
 "use client";
 
-import { Bell, Search } from "lucide-react";
+import { Search, UserCircle } from "lucide-react";
 import { Input } from "@/shared/ui/input";
-import { Button } from "@/shared/ui/button";
+import { useAuth } from "@/entities/session";
+import { LogoutButton } from "@/features/admin-auth";
 
 /**
- * Admin header bar — placeholder with search and notification bell.
- * Full implementation with user menu and notifications in Phase 4.
+ * Admin header bar — search, the signed-in admin's identity, and sign-out.
+ *
+ * The JWT carries only `{ sub, role }`, so the identity falls back to a generic
+ * "Admin" label (with the user id as a tooltip). Showing the admin's email
+ * would require a profile fetch — deferred per plan 025 §11.
  */
 export function AdminHeader() {
+  const { userId } = useAuth();
+
   return (
     <header className="flex h-16 items-center justify-between border-b border-border px-6">
       <div className="flex items-center gap-4">
@@ -21,9 +27,16 @@ export function AdminHeader() {
           <Input placeholder="Search..." className="w-64 pl-9" type="search" />
         </div>
 
-        <Button variant="ghost" size="icon" aria-label="Notifications">
-          <Bell className="size-4" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <span
+            className="flex items-center gap-2 text-sm font-medium text-foreground"
+            title={userId ?? undefined}
+          >
+            <UserCircle className="size-5 text-muted-foreground" />
+            <span className="hidden sm:inline">Admin</span>
+          </span>
+          <LogoutButton />
+        </div>
       </div>
     </header>
   );
