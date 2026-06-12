@@ -262,6 +262,19 @@
 | TASK-037-F | Hook dispatch into `OrderService.createOrder` (fetch recipient, fault-isolated try/catch); extend `order.service.spec.ts` (dispatch-called + failure-does-not-break-order + null-user cases) | ✅     | docs/plans/024-order-confirmation-emails.md |
 | TASK-037-H | Build / lint / typecheck / unit + e2e verification gate (mock `MailService` in e2e; dev SMTP note)                                                                                           | ✅     | docs/plans/024-order-confirmation-emails.md |
 
+### Phase 3 — code-review follow-ups (`docs/manual-qa-phase3.md`)
+
+| Task ID  | Description                                                                                                                                                                                    | Status | Plan                 |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | -------------------- |
+| TASK-053 | **CRITICAL** — Prevent stock oversell: conditional `updateMany` decrement (`WHERE stock >= qty`) in `OrderRepository.createFromCart`; throw `ConflictException`→rollback when no row affected  | ✅     | review b42f12c..HEAD |
+| TASK-054 | **WARNING** — Restock variant lines on order cancel: `OrderRepository.cancelAndRestock` (atomic CANCELLED + stock increment); `OrderService.cancelOrder` uses it (manual flow, no Stripe)      | ✅     | review b42f12c..HEAD |
+| TASK-055 | **WARNING** — Add `CHECK (stock >= 0)` DB constraint on `ProductVariant.stock` via Prisma migration (defence in depth behind TASK-053)                                                         | ⬜     | review b42f12c..HEAD |
+| TASK-056 | **WARNING** — Endpoint-specific `@Throttle` on `POST /api/orders` (and `confirm-payment`) tighter than the global 100/60s                                                                      | ⬜     | review b42f12c..HEAD |
+| TASK-057 | **WARNING** — Derive order `subtotal` by summing the persisted `order_items` rows (single source of truth) instead of a parallel pass over cart prices                                         | ⬜     | review b42f12c..HEAD |
+| TASK-058 | **WARNING** — Add `OrderRepository.createFromCart` unit/integration coverage (snapshot, cents math, conditional decrement, transaction rollback)                                               | 🔄     | review b42f12c..HEAD |
+| TASK-059 | **WARNING** — FSD: move `CheckoutView`'s skeleton out of `widgets/cart` into `shared/ui` (remove widget→widget lateral import)                                                                 | ⬜     | review b42f12c..HEAD |
+| TASK-060 | **SUGGESTION** — Structured Pino email-failure log (`{ err, orderId }`); Swagger `Orders` tag; explicit `total` formula; 404-vs-transient on confirmation page; e2e for invalid nested address | ⬜     | review b42f12c..HEAD |
+
 ---
 
 ## Phase 4: Admin Panel
