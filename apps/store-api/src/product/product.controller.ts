@@ -91,6 +91,7 @@ type ProductDetailResponse = {
  *   GET  /products/:slug     — Get product detail by slug
  *
  * Admin endpoints (ADMIN role required):
+ *   GET    /products/admin/:id    — Get a product by UUID (for edit forms)
  *   POST   /products              — Create a new product
  *   PUT    /products/:id          — Update a product
  *   PATCH  /products/:id/deactivate — Deactivate a product
@@ -145,6 +146,28 @@ export class ProductController {
   @ApiResponse({ status: 404, description: 'Product not found' })
   async findBySlug(@Param('slug') slug: string): Promise<ProductDetailResponse> {
     return this.productService.findBySlug(slug);
+  }
+
+  /**
+   * GET /api/products/admin/:id
+   *
+   * Returns a single product by UUID. Admin-only endpoint.
+   * Used to pre-populate the admin edit form (admin routes are ID-based, not
+   * slug-based). A dedicated `admin/` prefix avoids colliding with the public
+   * `GET /products/:slug` route.
+   */
+  @Get('admin/:id')
+  @UseGuards(AdminGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Get product by ID (admin)', operationId: 'productControllerFindById' })
+  @ApiParam({ name: 'id', description: 'Product UUID' })
+  @ApiResponse({ status: 200, description: 'Product detail', type: ProductResponseEnvelope })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async findById(@Param('id') id: string): Promise<ProductResponse> {
+    const product = await this.productService.findById(id);
+
+    return { data: product };
   }
 
   /**
