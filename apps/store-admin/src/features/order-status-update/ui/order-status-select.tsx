@@ -1,0 +1,91 @@
+"use client";
+
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import {
+  getAdminOrderControllerFindAllQueryKey,
+  getAdminOrderControllerFindByIdQueryKey,
+  useAdminOrderControllerUpdateStatus,
+  type UpdateOrderStatusDto,
+} from "@/entities/order";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/shared/ui";
+import { getAllowedTransitions } from "../model/transitions";
+
+interface OrderStatusSelectProps {
+  orderId: string;
+  currentStatus: string;
+}
+
+/**
+ * Status-transition control for the order detail page.
+ *
+ * Offers only the valid next statuses for the order's current status (see
+ * {@link getAllowedTransitions}). Terminal statuses render an inline note
+ * instead of a select. On success it invalidates both the admin order list and
+ * this order's detail query so every view reflects the new status.
+ */
+export function OrderStatusSelect({
+  orderId,
+  currentStatus,
+}: OrderStatusSelectProps) {
+  const queryClient = useQueryClient();
+  const updateStatus = useAdminOrderControllerUpdateStatus();
+
+  const allowed = getAllowedTransitions(currentStatus);
+
+  if (allowed.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No further transitions available
+      </p>
+    );
+  }
+
+  const handleChange = (value: string) => {
+    updateStatus.mutate(
+      {
+        orderId,
+        data: { status: value as UpdateOrderStatusDto["status"] },
+      },
+      {
+        onSuccess: () => {
+          void queryClient.invalidateQueries({
+            queryKey: getAdminOrderControllerFindAllQueryKey(),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: getAdminOrderControllerFindByIdQueryKey(orderId),
+          });
+          toast.success(`Order status updated to ${value}`);
+        },
+        onError: () => {
+          toast.error("Failed to update order status");
+        },
+      },
+    );
+  };
+
+  return (
+    <Select
+      value=""
+      onValueChange={handleChange}
+      disabled={updateStatus.isPending}
+    >
+      <SelectTrigger className="w-56" aria-label="Update order status">
+        <SelectValue placeholder="Change status…" />
+      </SelectTrigger>
+      <SelectContent>
+        {allowed.map((status) => (
+          <SelectItem key={status} value={status}>
+            {status}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}

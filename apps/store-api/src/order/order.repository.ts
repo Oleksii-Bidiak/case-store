@@ -2,7 +2,7 @@ import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { Prisma, OrderStatus, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import type { CreateOrderParams, OrderWithItems } from './order.types';
-import type { OrderListQueryDto } from './dto';
+import type { OrderListQueryDto, AdminOrderListQueryDto } from './dto';
 
 /**
  * Shared Prisma include clause for order queries. Always fetches the order
@@ -137,6 +137,42 @@ export class OrderRepository {
     const where: Prisma.OrderWhereInput = {
       userId,
       ...(query.status ? { status: query.status } : {}),
+    };
+
+    const [total, orders] = await this.prisma.$transaction([
+      this.prisma.order.count({ where }),
+      this.prisma.order.findMany({
+        where,
+        include: ORDERS_INCLUDE,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ]);
+
+    return { orders: orders as OrderWithItems[], total };
+  }
+
+  /**
+   * Admin — find orders across ALL users, newest first, with optional
+   * `userId`, `status`, and created-at date-range filters plus pagination.
+   * Runs the count and page query in a single transaction. Unlike
+   * {@link findByUserId} this is not user-scoped.
+   */
+  async findAll(
+    query: AdminOrderListQueryDto,
+  ): Promise<{ orders: OrderWithItems[]; total: number }> {
+    const page = query.page ?? DEFAULT_PAGE;
+    const limit = query.limit ?? DEFAULT_LIMIT;
+
+    const createdAt: Prisma.DateTimeFilter = {};
+    if (query.dateFrom) createdAt.gte = new Date(query.dateFrom);
+    if (query.dateTo) createdAt.lte = new Date(query.dateTo);
+
+    const where: Prisma.OrderWhereInput = {
+      ...(query.userId ? { userId: query.userId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.dateFrom || query.dateTo ? { createdAt } : {}),
     };
 
     const [total, orders] = await this.prisma.$transaction([

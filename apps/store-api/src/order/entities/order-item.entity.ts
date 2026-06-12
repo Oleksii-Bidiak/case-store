@@ -24,6 +24,7 @@ export class OrderItemEntity {
 
   @ApiProperty({
     description: 'Product variant ID (null if no variant)',
+    type: String,
     example: '550e8400-e29b-41d4-a716-446655440002',
     nullable: true,
   })
@@ -37,6 +38,7 @@ export class OrderItemEntity {
 
   @ApiProperty({
     description: 'Variant name at the time of purchase (null if no variant)',
+    type: String,
     example: 'Black / iPhone 15 Pro',
     nullable: true,
   })

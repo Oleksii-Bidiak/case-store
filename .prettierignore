@@ -1,0 +1,5 @@
+# BACKLOG.md uses hand-maintained Markdown tables with wide status emoji
+# (✅ 🔄 ⬜ ❌ ⏭️). Prettier measures those emoji as 1 column while editors
+# render them as 2, so its auto-padding misaligns every status row. Keep it
+# out of Prettier so the compact, drift-free table format stays put.
+BACKLOG.md

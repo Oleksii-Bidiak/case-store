@@ -65,7 +65,12 @@ export class OrderEntity {
   })
   billingAddress!: ShippingAddressData | null;
 
-  @ApiProperty({ description: 'Customer notes', nullable: true, example: 'Leave at the door' })
+  @ApiProperty({
+    description: 'Customer notes',
+    type: String,
+    nullable: true,
+    example: 'Leave at the door',
+  })
   notes!: string | null;
 
   @ApiProperty({ description: 'Order line items', type: [OrderItemEntity] })

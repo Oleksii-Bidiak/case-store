@@ -3,6 +3,7 @@
 import {
   LayoutDashboard,
   Package,
+  Tag,
   ShoppingCart,
   Users,
   Settings,
@@ -15,7 +16,8 @@ import { cn } from "@/shared/lib/utils";
 const navItems = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Products", href: "/products", icon: Package },
-  { label: "Orders", href: "#", icon: ShoppingCart },
+  { label: "Categories", href: "/categories", icon: Tag },
+  { label: "Orders", href: "/orders", icon: ShoppingCart },
   { label: "Users", href: "#", icon: Users },
 ];
 

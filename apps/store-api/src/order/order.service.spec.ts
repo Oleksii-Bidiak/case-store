@@ -130,6 +130,7 @@ const makeOrder = (overrides: Partial<OrderWithItems> = {}): OrderWithItems => (
 const orderRepositoryMock = {
   createFromCart: jest.fn(),
   findByUserId: jest.fn(),
+  findAll: jest.fn(),
   findById: jest.fn(),
   updateStatus: jest.fn(),
   cancelAndRestock: jest.fn(),
@@ -420,6 +421,7 @@ describe('OrderService', () => {
 
   describe('updateStatus', () => {
     it('should update the order status without an ownership check', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.PENDING }));
       orderRepositoryMock.updateStatus.mockResolvedValue(
         makeOrder({ status: OrderStatus.CONFIRMED }),
       );
@@ -431,6 +433,76 @@ describe('OrderService', () => {
         OrderStatus.CONFIRMED,
       );
       expect(result.status).toBe(OrderStatus.CONFIRMED);
+    });
+
+    it('should throw NotFoundException when the order does not exist', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.updateStatus('missing', OrderStatus.CONFIRMED)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── adminGetAllOrders (admin) ──────────────────────────────────────────────
+
+  describe('adminGetAllOrders', () => {
+    it('should return a paginated list of all users orders with data and meta', async () => {
+      orderRepositoryMock.findAll.mockResolvedValue({
+        orders: [makeOrder(), makeOrder({ userId: OTHER_USER_ID })],
+        total: 2,
+      });
+
+      const result = await service.adminGetAllOrders({});
+
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0]).toBeInstanceOf(OrderEntity);
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 10, totalPages: 1 });
+    });
+
+    it('should pass the query (status, userId, date range, pagination) to the repository', async () => {
+      orderRepositoryMock.findAll.mockResolvedValue({ orders: [], total: 0 });
+      const query = {
+        status: OrderStatus.SHIPPED,
+        userId: OTHER_USER_ID,
+        dateFrom: '2026-01-01',
+        dateTo: '2026-12-31',
+        page: 2,
+        limit: 5,
+      };
+
+      await service.adminGetAllOrders(query);
+
+      expect(orderRepositoryMock.findAll).toHaveBeenCalledWith(query);
+    });
+
+    it('should compute totalPages from total and limit', async () => {
+      orderRepositoryMock.findAll.mockResolvedValue({ orders: [], total: 23 });
+
+      const result = await service.adminGetAllOrders({ limit: 10 });
+
+      expect(result.meta).toEqual({ total: 23, page: 1, limit: 10, totalPages: 3 });
+    });
+  });
+
+  // ─── adminGetOrder (admin) ──────────────────────────────────────────────────
+
+  describe('adminGetOrder', () => {
+    it('should return any order by ID without an ownership check', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: OTHER_USER_ID }));
+
+      const result = await service.adminGetOrder('order-uuid-1');
+
+      expect(result).toBeInstanceOf(OrderEntity);
+      expect(result.id).toBe('order-uuid-1');
+      expect(result.userId).toBe(OTHER_USER_ID);
+    });
+
+    it('should throw NotFoundException when the order does not exist', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.adminGetOrder('missing')).rejects.toThrow(NotFoundException);
     });
   });
 });

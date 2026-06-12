@@ -40,6 +40,7 @@ describe('OrderController (e2e)', () => {
   const orderRepositoryMock = {
     createFromCart: jest.fn(),
     findByUserId: jest.fn(),
+    findAll: jest.fn(),
     findById: jest.fn(),
     updateStatus: jest.fn(),
     cancelAndRestock: jest.fn(),
@@ -508,6 +509,180 @@ describe('OrderController (e2e)', () => {
     it('should return 401 without a JWT', async () => {
       await request(app.getHttpServer())
         .patch('/api/orders/order-e2e-1/confirm-payment')
+        .expect(401);
+    });
+  });
+
+  // ─── GET /api/admin/orders (admin) ──────────────────────────────────────────────
+
+  describe('GET /api/admin/orders', () => {
+    it('should return 200 with all users orders for an admin', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAll.mockResolvedValue({
+        orders: [makeOrder(), makeOrder({ id: 'order-e2e-2', userId: userB.id })],
+        total: 2,
+      });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data).toHaveLength(2);
+      expect(response.body.meta).toEqual({ total: 2, page: 1, limit: 10, totalPages: 1 });
+    });
+
+    it('should pass status, userId and date filters to the repository', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAll.mockResolvedValue({ orders: [], total: 0 });
+      // userId filter is validated as a UUID, so use a real UUID here.
+      const filterUserId = '550e8400-e29b-41d4-a716-446655440000';
+
+      await request(app.getHttpServer())
+        .get(`/api/admin/orders?status=SHIPPED&userId=${filterUserId}&dateFrom=2026-01-01`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(orderRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: OrderStatus.SHIPPED,
+          userId: filterUserId,
+          dateFrom: '2026-01-01',
+        }),
+      );
+    });
+
+    it('should return 400 for an invalid userId filter', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders?userId=not-a-uuid')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+
+      expect(orderRepositoryMock.findAll).not.toHaveBeenCalled();
+    });
+
+    it('should return 403 for a non-admin user', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      expect(orderRepositoryMock.findAll).not.toHaveBeenCalled();
+    });
+
+    it('should return 401 without a JWT', async () => {
+      await request(app.getHttpServer()).get('/api/admin/orders').expect(401);
+    });
+  });
+
+  // ─── GET /api/admin/orders/:orderId (admin) ─────────────────────────────────────
+
+  describe('GET /api/admin/orders/:orderId', () => {
+    it('should return 200 for any order regardless of owner (admin)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: userB.id }));
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expectOrderShape(response.body);
+      expect(response.body.data.userId).toBe(userB.id);
+    });
+
+    it('should return 404 when the order does not exist', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/nonexistent-uuid')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('should return 403 for a non-admin user', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('should return 401 without a JWT', async () => {
+      await request(app.getHttpServer()).get('/api/admin/orders/order-e2e-1').expect(401);
+    });
+  });
+
+  // ─── PATCH /api/admin/orders/:orderId/status (admin) ────────────────────────────
+
+  describe('PATCH /api/admin/orders/:orderId/status', () => {
+    it('should update the order status for an admin (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.CONFIRMED }));
+      orderRepositoryMock.updateStatus.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PROCESSING }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.PROCESSING })
+        .expect(200);
+
+      expect(response.body.data.status).toBe(OrderStatus.PROCESSING);
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-e2e-1',
+        OrderStatus.PROCESSING,
+      );
+    });
+
+    it('should return 400 for an invalid status value', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: 'NOT_A_STATUS' })
+        .expect(400);
+
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('should return 404 when the order does not exist', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/nonexistent-uuid/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.PROCESSING })
+        .expect(404);
+
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('should return 403 for a non-admin user', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.PROCESSING })
+        .expect(403);
+
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('should return 401 without a JWT', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .send({ status: OrderStatus.PROCESSING })
         .expect(401);
     });
   });

@@ -4,13 +4,14 @@ import { UserModule } from '../user';
 import { OrderRepository } from './order.repository';
 import { OrderService } from './order.service';
 import { OrderController } from './order.controller';
+import { AdminOrderController } from './admin-order.controller';
 
 @Module({
   // UserModule provides UserRepository (recipient lookup for confirmation
   // email). MailService comes from the global MailModule, so it is not listed
   // here.
   imports: [CartModule, UserModule],
-  controllers: [OrderController],
+  controllers: [OrderController, AdminOrderController],
   providers: [OrderRepository, OrderService],
   exports: [OrderService],
 })

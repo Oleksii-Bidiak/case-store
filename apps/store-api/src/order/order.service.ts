@@ -11,7 +11,7 @@ import { CartRepository } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
 import { MailService } from '../mail/mail.service';
 import { OrderEntity } from './entities';
-import type { CreateOrderDto, OrderListQueryDto } from './dto';
+import type { CreateOrderDto, OrderListQueryDto, AdminOrderListQueryDto } from './dto';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
@@ -132,6 +132,41 @@ export class OrderService {
   }
 
   /**
+   * Admin — list orders across ALL users (paginated, newest first) with
+   * optional `userId`, `status`, and created-at date-range filters. No
+   * ownership scoping; authorization (ADMIN role) is enforced at the controller.
+   */
+  async adminGetAllOrders(
+    query: AdminOrderListQueryDto,
+  ): Promise<{ data: OrderEntity[]; meta: PaginationMeta }> {
+    const page = query.page ?? DEFAULT_PAGE;
+    const limit = query.limit ?? DEFAULT_LIMIT;
+
+    const { orders, total } = await this.orderRepository.findAll(query);
+
+    return {
+      data: orders.map((order) => OrderEntity.fromPrisma(order)),
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  /**
+   * Admin — get any single order by ID with no ownership check. Authorization
+   * (ADMIN role) is enforced at the controller.
+   *
+   * @throws NotFoundException when the order does not exist.
+   */
+  async adminGetOrder(orderId: string): Promise<OrderEntity> {
+    const order = await this.orderRepository.findById(orderId);
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return OrderEntity.fromPrisma(order);
+  }
+
+  /**
    * Get a single order owned by the user.
    *
    * @throws NotFoundException when the order does not exist or belongs to a
@@ -207,8 +242,17 @@ export class OrderService {
    * Internal — update an order's status without an ownership check.
    * Used by the payment webhook handler (TASK-034) and admin order management
    * (TASK-041).
+   *
+   * @throws NotFoundException when the order does not exist (so admin callers
+   *   get a clean 404 rather than a Prisma "record not found" 500).
    */
   async updateStatus(orderId: string, status: OrderStatus): Promise<OrderEntity> {
+    const existing = await this.orderRepository.findById(orderId);
+
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+
     const order = await this.orderRepository.updateStatus(orderId, status);
     return OrderEntity.fromPrisma(order);
   }
