@@ -8,11 +8,13 @@ import {
   Settings,
 } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Separator } from "@/shared/ui/separator";
+import { cn } from "@/shared/lib/utils";
 
 const navItems = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Products", href: "#", icon: Package },
+  { label: "Products", href: "/products", icon: Package },
   { label: "Orders", href: "#", icon: ShoppingCart },
   { label: "Users", href: "#", icon: Users },
 ];
@@ -20,10 +22,21 @@ const navItems = [
 const bottomNavItems = [{ label: "Settings", href: "#", icon: Settings }];
 
 /**
- * Admin sidebar navigation — placeholder with navigation structure.
- * Full implementation with active states and RBAC in Phase 4.
+ * Determine whether a nav item is the active route.
+ * The dashboard ("/") matches exactly; section links match their sub-routes.
+ */
+function isNavItemActive(pathname: string, href: string): boolean {
+  if (href === "#") return false;
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/**
+ * Admin sidebar navigation with active-route highlighting.
  */
 export function AdminSidebar() {
+  const pathname = usePathname();
+
   return (
     <aside className="flex h-screen w-64 flex-col border-r border-border bg-card">
       {/* Brand */}
@@ -40,7 +53,15 @@ export function AdminSidebar() {
           <Link
             key={item.label}
             href={item.href}
-            className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            aria-current={
+              isNavItemActive(pathname, item.href) ? "page" : undefined
+            }
+            className={cn(
+              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
+              isNavItemActive(pathname, item.href)
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground",
+            )}
           >
             <item.icon className="size-4" />
             {item.label}
@@ -56,7 +77,15 @@ export function AdminSidebar() {
           <Link
             key={item.label}
             href={item.href}
-            className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            aria-current={
+              isNavItemActive(pathname, item.href) ? "page" : undefined
+            }
+            className={cn(
+              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
+              isNavItemActive(pathname, item.href)
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground",
+            )}
           >
             <item.icon className="size-4" />
             {item.label}
