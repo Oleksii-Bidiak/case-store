@@ -69,6 +69,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Reject deactivated (banned) accounts — they must not obtain new tokens.
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is deactivated');
+    }
+
     // Generate and return token pair
     return this.generateTokenPair(user.id, user.role);
   }
@@ -99,6 +104,12 @@ export class AuthService {
     // Check if token is expired
     if (storedToken.expiresAt < new Date()) {
       throw new UnauthorizedException('Refresh token has expired');
+    }
+
+    // Reject deactivated (banned) accounts — a valid refresh token must not let
+    // a banned user keep rotating into fresh access tokens.
+    if (!storedToken.user.isActive) {
+      throw new UnauthorizedException('Account is deactivated');
     }
 
     // Revoke the old refresh token (rotation)

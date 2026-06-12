@@ -1,10 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import { NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { UserRepository, UpdateUserInput } from './user.repository';
 import { UserService } from './user.service';
 import { UserEntity } from './entities';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
+import { AuthRepository } from '../auth/auth.repository';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -46,6 +47,12 @@ const userRepositoryMock = {
   activate: jest.fn(),
 };
 
+// AuthRepository is injected into UserService so a ban can revoke all of the
+// banned user's refresh tokens.
+const authRepositoryMock = {
+  revokeAllUserTokens: jest.fn(),
+};
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('UserService', () => {
@@ -56,12 +63,18 @@ describe('UserService', () => {
     jest.clearAllMocks();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [UserService, { provide: UserRepository, useValue: userRepositoryMock }],
+      providers: [
+        UserService,
+        { provide: UserRepository, useValue: userRepositoryMock },
+        { provide: AuthRepository, useValue: authRepositoryMock },
+      ],
     }).compile();
 
     service = module.get<UserService>(UserService);
     repository = module.get(UserRepository) as jest.Mocked<UserRepository>;
   });
+
+  const ADMIN_ID = 'admin-uuid-1';
 
   // ─── getProfile ─────────────────────────────────────────────────────────────
 
@@ -290,7 +303,7 @@ describe('UserService', () => {
       repository.findById.mockResolvedValue(mockUser);
       repository.deactivate.mockResolvedValue(mockDeactivatedUser);
 
-      const result = await service.deactivateUser('user-uuid-2');
+      const result = await service.deactivateUser('user-uuid-2', ADMIN_ID);
 
       expect(result).toBeInstanceOf(UserEntity);
       expect(result.isActive).toBe(false);
@@ -298,10 +311,40 @@ describe('UserService', () => {
       expect(repository.deactivate).toHaveBeenCalledWith('user-uuid-2');
     });
 
+    it('should revoke all of the banned user refresh tokens after deactivation', async () => {
+      repository.findById.mockResolvedValue(mockUser);
+      repository.deactivate.mockResolvedValue(mockDeactivatedUser);
+
+      await service.deactivateUser('user-uuid-2', ADMIN_ID);
+
+      expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith('user-uuid-2');
+    });
+
+    it('should revoke tokens even when the user is already deactivated (idempotent re-ban)', async () => {
+      repository.findById.mockResolvedValue(mockDeactivatedUser);
+      repository.deactivate.mockResolvedValue(mockDeactivatedUser);
+
+      await service.deactivateUser('user-uuid-2', ADMIN_ID);
+
+      expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith('user-uuid-2');
+    });
+
+    it('should throw ForbiddenException when an admin tries to deactivate their own account', async () => {
+      await expect(service.deactivateUser(ADMIN_ID, ADMIN_ID)).rejects.toThrow(
+        new ForbiddenException('Cannot deactivate your own account'),
+      );
+
+      expect(repository.findById).not.toHaveBeenCalled();
+      expect(repository.deactivate).not.toHaveBeenCalled();
+      expect(authRepositoryMock.revokeAllUserTokens).not.toHaveBeenCalled();
+    });
+
     it('should throw NotFoundException when user is not found', async () => {
       repository.findById.mockResolvedValue(null);
 
-      await expect(service.deactivateUser('nonexistent-id')).rejects.toThrow(NotFoundException);
+      await expect(service.deactivateUser('nonexistent-id', ADMIN_ID)).rejects.toThrow(
+        NotFoundException,
+      );
       expect(repository.deactivate).not.toHaveBeenCalled();
     });
   });

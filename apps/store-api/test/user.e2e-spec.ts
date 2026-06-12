@@ -439,6 +439,19 @@ describe('UserController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
     });
+
+    it('should return 403 when an admin tries to deactivate their own account', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      const response = await request(app.getHttpServer())
+        .patch(`/api/users/${testAdmin.id}/deactivate`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      expect(response.body.message).toBe('Cannot deactivate your own account');
+      // Self-ban is rejected before any repository work.
+      expect(userRepositoryMock.deactivate).not.toHaveBeenCalled();
+    });
   });
 
   // ─── PATCH /api/users/:id/activate (admin) ──────────────────────────────────

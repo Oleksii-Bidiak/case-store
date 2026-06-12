@@ -3,6 +3,8 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { JwtService } from '@nestjs/jwt';
+import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
@@ -29,6 +31,7 @@ class ThrottlerGuardPassThrough extends ThrottlerGuard {
 
 describe('AuthController (e2e)', () => {
   let app: INestApplication;
+  let jwtService: JwtService;
 
   // Mock AuthRepository — clean architecture boundary
   const authRepositoryMock = {
@@ -86,6 +89,11 @@ describe('AuthController (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
+    jwtService = moduleFixture.get<JwtService>(JwtService);
+
+    // Refresh token is read from an HttpOnly cookie — mirror main.ts so the
+    // JwtRefreshStrategy can extract it from req.cookies.
+    app.use(cookieParser());
 
     app.useGlobalPipes(
       new ValidationPipe({
@@ -261,6 +269,69 @@ describe('AuthController (e2e)', () => {
   describe('POST /api/auth/refresh', () => {
     it('should return 401 when refreshing without a token', async () => {
       await request(app.getHttpServer()).post('/api/auth/refresh').expect(401);
+    });
+  });
+
+  // ─── Deactivated user — authentication blocked (TASK-063) ────────────────────
+
+  describe('Deactivated user — authentication blocked', () => {
+    it('should return 401 when a deactivated user logs in with valid credentials', async () => {
+      const passwordHash = await argon2.hash(testUser.password);
+
+      authRepositoryMock.findByEmail.mockResolvedValue({
+        id: 'banned-user-1',
+        email: testUser.email,
+        passwordHash,
+        role: 'CUSTOMER',
+        isActive: false,
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: testUser.email, password: testUser.password })
+        .expect(401);
+
+      expect(response.body.message).toBe('Account is deactivated');
+      // A banned user must never be issued tokens.
+      expect(authRepositoryMock.saveRefreshToken).not.toHaveBeenCalled();
+    });
+
+    it("should return 401 when refreshing with a deactivated user's token", async () => {
+      // Mint a validly-signed refresh JWT directly (no register call — that
+      // would consume the register @Throttle budget and is unnecessary here).
+      const refreshJwt = jwtService.sign(
+        { sub: 'user-e2e-1', role: 'CUSTOMER', type: 'refresh' },
+        { secret: process.env.JWT_REFRESH_SECRET, expiresIn: '7d' },
+      );
+
+      // The token is valid and unexpired, but its owner is now deactivated.
+      authRepositoryMock.findRefreshToken.mockResolvedValue({
+        id: 'rt-e2e-1',
+        token: 'hashed',
+        userId: 'user-e2e-1',
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        isRevoked: false,
+        createdAt: new Date(),
+        user: {
+          id: 'user-e2e-1',
+          email: testUser.email,
+          passwordHash: 'hash',
+          firstName: null,
+          lastName: null,
+          phone: null,
+          role: 'CUSTOMER',
+          isActive: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/auth/refresh')
+        .set('Cookie', `refreshToken=${refreshJwt}`)
+        .expect(401);
+
+      expect(response.body.message).toBe('Account is deactivated');
     });
   });
 

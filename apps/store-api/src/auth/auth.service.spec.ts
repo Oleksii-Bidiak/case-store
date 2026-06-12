@@ -199,6 +199,18 @@ describe('AuthService', () => {
       expect(argon2.verify).toHaveBeenCalledWith(mockUser.passwordHash, loginPassword);
       expect(authRepository.saveRefreshToken).toHaveBeenCalled();
     });
+
+    it('should throw UnauthorizedException when the account is deactivated', async () => {
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, isActive: false });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(
+        new UnauthorizedException('Account is deactivated'),
+      );
+
+      // A deactivated user must never receive new tokens.
+      expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
+    });
   });
 
   // ─── refreshToken ───────────────────────────────────────────────────────────
@@ -258,6 +270,20 @@ describe('AuthService', () => {
 
       // New refresh token must be persisted
       expect(authRepository.saveRefreshToken).toHaveBeenCalled();
+    });
+
+    it('should throw UnauthorizedException when the token owner is deactivated', async () => {
+      authRepository.findRefreshToken.mockResolvedValue({
+        ...mockRefreshTokenRecord,
+        user: { ...mockUser, isActive: false },
+      });
+
+      await expect(service.refreshToken('refresh-token-value')).rejects.toThrow(
+        new UnauthorizedException('Account is deactivated'),
+      );
+
+      // No rotation / new token issuance for a banned user.
+      expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
     });
   });
 

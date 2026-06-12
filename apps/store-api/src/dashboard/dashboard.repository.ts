@@ -90,7 +90,18 @@ export class DashboardRepository {
     };
   }
 
-  /** Start of the rolling window (midnight, `windowDays - 1` days ago). */
+  /**
+   * Start of the rolling window (midnight, `windowDays - 1` days ago).
+   *
+   * NOTE — timezone alignment: this uses the Node.js server's local timezone
+   * (`new Date()` + `setHours(0,0,0,0)`), while the SQL series anchor
+   * `DATE_TRUNC('day', NOW())` uses the PostgreSQL session timezone (UTC under
+   * Docker Compose). When both the server and the DB run UTC — the standard
+   * deployment here — the two coincide and the 30-day window is consistent.
+   * If either is reconfigured to a non-UTC zone the boundaries can diverge by
+   * up to ~24h. MVP assumption: both run UTC. To make this fully robust, drive
+   * both the JS filter and the SQL series from a single UTC timestamp.
+   */
   private windowStart(windowDays: number): Date {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
@@ -190,6 +201,12 @@ export class DashboardRepository {
    * a line of 3 units at $10 earns $30, not $10. Prisma's `groupBy` can only
    * `_sum` a single column, so a raw query is used. The product name is joined
    * in the same query (no second lookup, no N+1).
+   *
+   * Only items from revenue-bearing orders count: the `INNER JOIN orders`
+   * excludes CANCELLED/REFUNDED orders so top-products revenue stays consistent
+   * with `getTotalRevenue` (the {@link NON_REVENUE_STATUSES} list — enumerated
+   * as string literals here because `$queryRaw` cannot safely interpolate an
+   * array into a SQL `IN (...)` list).
    */
   private async getTopProducts(limit: number): Promise<TopProduct[]> {
     const rows = await this.prisma.$queryRaw<TopProductRow[]>`
@@ -197,6 +214,9 @@ export class DashboardRepository {
              p.name AS name,
              SUM(oi.price * oi.quantity)::float8 AS "totalRevenue"
       FROM order_items oi
+      INNER JOIN orders o
+        ON o.id = oi.order_id
+        AND o.status NOT IN ('CANCELLED', 'REFUNDED')
       JOIN products p ON p.id = oi.product_id
       GROUP BY oi.product_id, p.name
       ORDER BY "totalRevenue" DESC

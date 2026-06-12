@@ -8,12 +8,10 @@ import {
   ApiProperty,
   ApiExtraModels,
 } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { UserService } from './user.service';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { JwtAuthGuard, AdminGuard } from '../auth/guards';
 import { CurrentUser } from '../auth/decorators';
-import { Roles } from '../auth/decorators';
 import { UserEntity } from './entities';
 
 /**
@@ -134,8 +132,7 @@ export class UserController {
    * Admin-only endpoint.
    */
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(AdminGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'List all users (admin)' })
   @ApiResponse({
@@ -156,8 +153,7 @@ export class UserController {
    * Admin-only endpoint.
    */
   @Get(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(AdminGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get user by ID (admin)' })
   @ApiParam({ name: 'id', description: 'User UUID' })
@@ -181,8 +177,7 @@ export class UserController {
    * Admin-only endpoint.
    */
   @Patch(':id/deactivate')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(AdminGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Deactivate user (admin)' })
   @ApiParam({ name: 'id', description: 'User UUID' })
@@ -192,9 +187,15 @@ export class UserController {
     type: UserResponseEnvelope,
   })
   @ApiResponse({ status: 404, description: 'User not found' })
-  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  async deactivateUser(@Param('id') id: string): Promise<UserResponse> {
-    const user = await this.userService.deactivateUser(id);
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — admin access required, or cannot deactivate your own account',
+  })
+  async deactivateUser(
+    @Param('id') id: string,
+    @CurrentUser('id') adminId: string,
+  ): Promise<UserResponse> {
+    const user = await this.userService.deactivateUser(id, adminId);
 
     return { data: user };
   }
@@ -206,8 +207,7 @@ export class UserController {
    * Admin-only endpoint.
    */
   @Patch(':id/activate')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(AdminGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Activate user (admin)' })
   @ApiParam({ name: 'id', description: 'User UUID' })

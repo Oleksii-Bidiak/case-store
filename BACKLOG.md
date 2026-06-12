@@ -348,6 +348,18 @@
 | TASK-043-I | Rewrite app/(dashboard)/page.tsx with live data + app-layer DashboardView client orchestrator (avoids widget→widget lateral import) | ✅ | docs/plans/030-admin-dashboard.md |
 | TASK-043-J | Build / lint / typecheck ✅ (all workspaces; 230 unit + 160 e2e green); manual smoke pending running app + live DB (raw-SQL aggregations) | 🔄 | docs/plans/030-admin-dashboard.md |
 
+### Phase 4 — code-review follow-ups (`docs/plans/031-phase4-review-followups.md`)
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-061 | **HIGH** — Enforce `isActive` in authentication: `AuthService.login()` and `AuthService.refreshToken()` must throw `UnauthorizedException` when the resolved user has `isActive === false`. TDD: extend `auth.service.spec.ts` first. | ✅ | docs/plans/031-phase4-review-followups.md |
+| TASK-062 | **HIGH** — Revoke sessions on ban: `UserService.deactivateUser()` must call `authRepository.revokeAllUserTokens(userId)` after deactivation. Wire by importing `AuthModule` into `UserModule` (AuthModule already exports AuthRepository). TDD: unit-test revocation call. | ✅ | docs/plans/031-phase4-review-followups.md |
+| TASK-063 | **HIGH** — E2E coverage — banned user cannot authenticate: extend `auth.e2e-spec.ts` with specs asserting login-with-deactivated-user → 401 and refresh-with-deactivated-user-token → 401. Mirror existing mocked-repository e2e pattern. | ✅ | docs/plans/031-phase4-review-followups.md |
+| TASK-064 | **MEDIUM** — Fix top-products revenue: `DashboardRepository.getTopProducts` raw SQL must `INNER JOIN orders` and exclude `CANCELLED`/`REFUNDED` so product revenue is consistent with the revenue metric definition. | ✅ | docs/plans/031-phase4-review-followups.md |
+| TASK-065 | **MEDIUM** — Backend self-ban prevention: `UserController`/`UserService.deactivateUser` must accept `adminId` (via `@CurrentUser('id')`) and throw `ForbiddenException` when `adminId === targetId`. TDD + e2e (admin deactivates self → 403). | ✅ | docs/plans/031-phase4-review-followups.md |
+| TASK-066 | **MEDIUM** — Dashboard raw-SQL real-DB integration spec: add `test/dashboard.repository.int-spec.ts` under the `test:int` harness asserting `generate_series` gap-fill, `SUM(price*quantity)` top-products with CANCELLED exclusion, and low-stock query. | 🔄 | docs/plans/031-phase4-review-followups.md |
+| TASK-067 | **LOW** — Consistency cleanup: (a) migrate `UserController` admin endpoints from `JwtAuthGuard + RolesGuard + @Roles(ADMIN)` to `@UseGuards(AdminGuard)`; (b) add explicit timezone alignment comment to `DashboardRepository.windowStart` documenting UTC assumption. | ✅ | docs/plans/031-phase4-review-followups.md |
+
 ---
 
 ## Phase 5: Polish & Production

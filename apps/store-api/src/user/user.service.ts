@@ -1,5 +1,11 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { UserRepository, UpdateUserInput, FindAllParams } from './user.repository';
+import { AuthRepository } from '../auth/auth.repository';
 import { UserEntity } from './entities';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
 
@@ -23,7 +29,10 @@ interface PaginatedUsersResponse {
 
 @Injectable()
 export class UserService {
-  constructor(private readonly userRepository: UserRepository) {}
+  constructor(
+    private readonly userRepository: UserRepository,
+    private readonly authRepository: AuthRepository,
+  ) {}
 
   /**
    * Get the profile of the authenticated user.
@@ -131,9 +140,21 @@ export class UserService {
 
   /**
    * Deactivate a user by setting isActive = false (admin-only).
-   * Throws NotFoundException if the user does not exist.
+   *
+   * Banning a user also revokes all of their refresh tokens so existing
+   * sessions cannot outlive the ban (the access token still works until it
+   * expires — at most JWT_EXPIRATION, 15m — but no new tokens can be minted).
+   *
+   * @param id      the target user to deactivate
+   * @param adminId the calling admin's own id — an admin cannot ban themselves
+   * @throws ForbiddenException when an admin targets their own account
+   * @throws NotFoundException when the target user does not exist
    */
-  async deactivateUser(id: string): Promise<UserEntity> {
+  async deactivateUser(id: string, adminId: string): Promise<UserEntity> {
+    if (id === adminId) {
+      throw new ForbiddenException('Cannot deactivate your own account');
+    }
+
     const user = await this.userRepository.findById(id);
 
     if (!user) {
@@ -141,6 +162,10 @@ export class UserService {
     }
 
     const deactivatedUser = await this.userRepository.deactivate(id);
+
+    // Kill every active session for the banned user (idempotent — revokes only
+    // non-revoked tokens).
+    await this.authRepository.revokeAllUserTokens(id);
 
     return UserEntity.fromPrisma(deactivatedUser);
   }
