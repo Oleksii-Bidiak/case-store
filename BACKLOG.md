@@ -325,7 +325,17 @@
 | TASK-041-G | Create app route pages for order management (list, [id] detail) | ✅ | docs/plans/028-admin-order-management.md |
 | TASK-041-H | Fix AdminSidebar Orders link from `#` to `/orders` | ✅ | docs/plans/028-admin-order-management.md |
 | TASK-041-I | Build / lint / typecheck / unit + e2e verification gate (manual smoke pending) | 🔄 | docs/plans/028-admin-order-management.md |
-| TASK-042 | Admin User management (view, ban) | ⬜ | — |
+| TASK-042 | Admin User management (view, ban) | ✅ | docs/plans/029-admin-user-management.md |
+| TASK-042-A | Fix Swagger @ApiProperty types on UserEntity nullable fields + UserController envelopes; export swagger.json with typed UserListResponseEnvelope | ✅ | docs/plans/029-admin-user-management.md |
+| TASK-042-B | Regenerate Orval hooks for store-admin (typed UserListResponseEnvelope + corrected nullable string fields) | ✅ | docs/plans/029-admin-user-management.md |
+| TASK-042-C | Create entities/user barrel slice in store-admin | ✅ | docs/plans/029-admin-user-management.md |
+| TASK-042-D | Create features/user-ban-toggle slice (activate/deactivate button + sonner toast + query invalidation + self-ban UI guard) | ✅ | docs/plans/029-admin-user-management.md |
+| TASK-042-E | Create widgets/user-list slice (AdminUserTable + search/role/status filters + pagination + skeleton) | ✅ | docs/plans/029-admin-user-management.md |
+| TASK-042-F | Create widgets/user-detail slice (UserDetailView + UserDetailSkeleton + 404→redirect) | ✅ | docs/plans/029-admin-user-management.md |
+| TASK-042-G | Create app route pages for user management (list + [id] detail, Next.js 15 await params) | ✅ | docs/plans/029-admin-user-management.md |
+| TASK-042-H | Fix AdminSidebar Users link from `#` to `/users` | ✅ | docs/plans/029-admin-user-management.md |
+| TASK-042-I | Add e2e tests for admin user endpoints (401/403/200 guards, search/filter, ban/unban, 404) | ✅ | docs/plans/029-admin-user-management.md |
+| TASK-042-J | Build / lint / typecheck ✅ (api+admin build, 230 unit + 156 e2e green); manual smoke pending running app | 🔄 | docs/plans/029-admin-user-management.md |
 | TASK-043 | Admin Dashboard (metrics, charts) | ⬜ | — |
 
 ---

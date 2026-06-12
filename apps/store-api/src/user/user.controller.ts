@@ -5,8 +5,8 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiParam,
+  ApiProperty,
   ApiExtraModels,
-  getSchemaPath,
 } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { UserService } from './user.service';
@@ -20,6 +20,7 @@ import { UserEntity } from './entities';
  * Response envelope for a single user.
  */
 class UserResponseEnvelope {
+  @ApiProperty({ type: UserEntity })
   data!: UserEntity;
 }
 
@@ -27,9 +28,16 @@ class UserResponseEnvelope {
  * Pagination metadata.
  */
 class PaginationMeta {
+  @ApiProperty({ type: Number, example: 100 })
   total!: number;
+
+  @ApiProperty({ type: Number, example: 1 })
   page!: number;
+
+  @ApiProperty({ type: Number, example: 20 })
   limit!: number;
+
+  @ApiProperty({ type: Number, example: 5 })
   totalPages!: number;
 }
 
@@ -37,7 +45,10 @@ class PaginationMeta {
  * Response envelope for a paginated user list.
  */
 class UserListResponseEnvelope {
+  @ApiProperty({ type: [UserEntity] })
   data!: UserEntity[];
+
+  @ApiProperty({ type: PaginationMeta })
   meta!: PaginationMeta;
 }
 
@@ -79,12 +90,7 @@ export class UserController {
   @ApiResponse({
     status: 200,
     description: 'User profile retrieved',
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(UserResponseEnvelope) },
-        { properties: { data: { $ref: getSchemaPath(UserEntity) } } },
-      ],
-    },
+    type: UserResponseEnvelope,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getProfile(@CurrentUser('id') userId: string): Promise<UserResponse> {
@@ -107,12 +113,7 @@ export class UserController {
   @ApiResponse({
     status: 200,
     description: 'Profile updated',
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(UserResponseEnvelope) },
-        { properties: { data: { $ref: getSchemaPath(UserEntity) } } },
-      ],
-    },
+    type: UserResponseEnvelope,
   })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
@@ -163,12 +164,7 @@ export class UserController {
   @ApiResponse({
     status: 200,
     description: 'User found',
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(UserResponseEnvelope) },
-        { properties: { data: { $ref: getSchemaPath(UserEntity) } } },
-      ],
-    },
+    type: UserResponseEnvelope,
   })
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
@@ -193,12 +189,7 @@ export class UserController {
   @ApiResponse({
     status: 200,
     description: 'User deactivated',
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(UserResponseEnvelope) },
-        { properties: { data: { $ref: getSchemaPath(UserEntity) } } },
-      ],
-    },
+    type: UserResponseEnvelope,
   })
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
@@ -223,12 +214,7 @@ export class UserController {
   @ApiResponse({
     status: 200,
     description: 'User activated',
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(UserResponseEnvelope) },
-        { properties: { data: { $ref: getSchemaPath(UserEntity) } } },
-      ],
-    },
+    type: UserResponseEnvelope,
   })
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })

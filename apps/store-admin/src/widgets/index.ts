@@ -9,3 +9,5 @@ export {
 export { CreateCategoryView, EditCategoryView } from "./category-form-view";
 export { AdminOrderTable, AdminOrderTableSkeleton } from "./order-list";
 export { OrderDetailView, OrderDetailSkeleton } from "./order-detail";
+export { AdminUserTable, AdminUserTableSkeleton } from "./user-list";
+export { UserDetailView, UserDetailSkeleton } from "./user-detail";

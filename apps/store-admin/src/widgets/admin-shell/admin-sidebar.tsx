@@ -18,7 +18,7 @@ const navItems = [
   { label: "Products", href: "/products", icon: Package },
   { label: "Categories", href: "/categories", icon: Tag },
   { label: "Orders", href: "/orders", icon: ShoppingCart },
-  { label: "Users", href: "#", icon: Users },
+  { label: "Users", href: "/users", icon: Users },
 ];
 
 const bottomNavItems = [{ label: "Settings", href: "#", icon: Settings }];

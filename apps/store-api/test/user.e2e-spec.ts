@@ -299,6 +299,46 @@ describe('UserController (e2e)', () => {
       expect(response.body.meta).toHaveProperty('totalPages');
       expect(Array.isArray(response.body.data)).toBe(true);
     });
+
+    it('should pass the search filter to the repository and return matching users', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      userRepositoryMock.findAll.mockResolvedValue({
+        users: [testUser],
+        total: 1,
+      });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/users?search=e2e-user')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(userRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ search: 'e2e-user' }),
+      );
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.data[0].email).toBe(testUser.email);
+    });
+
+    it('should filter by role=CUSTOMER and return only customers', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      userRepositoryMock.findAll.mockResolvedValue({
+        users: [testUser],
+        total: 1,
+      });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/users?role=CUSTOMER')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(userRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'CUSTOMER' }),
+      );
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.data[0].role).toBe('CUSTOMER');
+    });
   });
 
   // ─── GET /api/users/:id (admin) ─────────────────────────────────────────────

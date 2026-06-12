@@ -21,13 +21,31 @@ export class UserEntity {
   @ApiProperty({ description: 'User email address', example: 'user@example.com' })
   email!: string;
 
-  @ApiProperty({ description: 'User first name', example: 'John', required: false })
+  @ApiProperty({
+    description: 'User first name',
+    example: 'John',
+    required: false,
+    nullable: true,
+    type: String,
+  })
   firstName!: string | null;
 
-  @ApiProperty({ description: 'User last name', example: 'Doe', required: false })
+  @ApiProperty({
+    description: 'User last name',
+    example: 'Doe',
+    required: false,
+    nullable: true,
+    type: String,
+  })
   lastName!: string | null;
 
-  @ApiProperty({ description: 'User phone number', example: '+380991234567', required: false })
+  @ApiProperty({
+    description: 'User phone number',
+    example: '+380991234567',
+    required: false,
+    nullable: true,
+    type: String,
+  })
   phone!: string | null;
 
   @ApiProperty({ description: 'User role', example: 'CUSTOMER', enum: ['CUSTOMER', 'ADMIN'] })
