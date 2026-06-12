@@ -42,6 +42,7 @@ describe('OrderController (e2e)', () => {
     findByUserId: jest.fn(),
     findById: jest.fn(),
     updateStatus: jest.fn(),
+    cancelAndRestock: jest.fn(),
     updatePaymentStatus: jest.fn(),
     markPaid: jest.fn(),
   };
@@ -397,7 +398,7 @@ describe('OrderController (e2e)', () => {
     it('should cancel a PENDING order and return 200', async () => {
       const token = generateAccessToken(userA.id, userA.role);
       orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.PENDING }));
-      orderRepositoryMock.updateStatus.mockResolvedValue(
+      orderRepositoryMock.cancelAndRestock.mockResolvedValue(
         makeOrder({ status: OrderStatus.CANCELLED }),
       );
 
@@ -407,10 +408,7 @@ describe('OrderController (e2e)', () => {
         .expect(200);
 
       expect(response.body.data.status).toBe(OrderStatus.CANCELLED);
-      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
-        'order-e2e-1',
-        OrderStatus.CANCELLED,
-      );
+      expect(orderRepositoryMock.cancelAndRestock).toHaveBeenCalledWith('order-e2e-1');
     });
 
     it('should return 409 when cancelling a CONFIRMED order', async () => {
@@ -422,7 +420,7 @@ describe('OrderController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(409);
 
-      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
     });
 
     it('should return 404 when the order does not exist', async () => {

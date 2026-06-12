@@ -163,9 +163,11 @@ export class OrderService {
       throw new ConflictException('Only PENDING orders can be cancelled');
     }
 
-    const cancelled = await this.orderRepository.updateStatus(orderId, OrderStatus.CANCELLED);
+    // cancelAndRestock flips the order to CANCELLED and returns the reserved
+    // stock to inventory atomically (stock was decremented at creation).
+    const cancelled = await this.orderRepository.cancelAndRestock(orderId);
 
-    this.logger.log(`Order ${orderId} cancelled by user ${userId}`);
+    this.logger.log(`Order ${orderId} cancelled by user ${userId}; reserved stock released`);
 
     return OrderEntity.fromPrisma(cancelled);
   }

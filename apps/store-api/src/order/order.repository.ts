@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { Prisma, OrderStatus, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import type { CreateOrderParams, OrderWithItems } from './order.types';
@@ -40,8 +40,17 @@ export class OrderRepository {
    *   1. Snapshot each cart line's unit price and compute the subtotal.
    *   2. Create the order with its nested items.
    *   3. Clear the originating cart.
-   *   4. Decrement stock for each variant line.
+   *   4. Atomically decrement stock for each variant line, guarding against
+   *      overselling under concurrency (see below).
    * Either the whole block commits or nothing does — there is no partial state.
+   *
+   * @throws ConflictException when a variant has insufficient stock at commit
+   *   time. The service performs an early best-effort check, but that read is
+   *   a TOCTOU window: two concurrent orders for the last unit could both pass
+   *   it. The authoritative guard is the conditional `updateMany` below
+   *   (`WHERE stock >= quantity`) — if it affects zero rows the stock is gone,
+   *   so we throw and the whole transaction rolls back. This is what keeps
+   *   stock from ever going negative.
    */
   async createFromCart(params: CreateOrderParams): Promise<OrderWithItems> {
     const { userId, cartId, cartItems, shippingAddress, billingAddress, notes } = params;
@@ -85,14 +94,22 @@ export class OrderRepository {
       // Empty the originating cart so it cannot be ordered twice.
       await tx.cartItem.deleteMany({ where: { cartId } });
 
-      // Best-effort inventory decrement for variant lines (final authority is
-      // the checkout/payment flow in a later phase).
+      // Authoritative inventory decrement for variant lines. The conditional
+      // `WHERE stock >= quantity` makes this safe under concurrency: if a
+      // racing order already consumed the stock, `count` is 0 and we throw,
+      // rolling back the whole transaction (no order, no cart clear, no
+      // partial decrement). Stock can therefore never go negative.
       for (const item of cartItems) {
         if (item.variantId) {
-          await tx.productVariant.update({
-            where: { id: item.variantId },
+          const { count } = await tx.productVariant.updateMany({
+            where: { id: item.variantId, stock: { gte: item.quantity } },
             data: { stock: { decrement: item.quantity } },
           });
+          if (count === 0) {
+            throw new ConflictException(
+              `Insufficient stock for "${item.product.name}" — please review your cart`,
+            );
+          }
         }
       }
 
@@ -150,6 +167,41 @@ export class OrderRepository {
       where: { id: orderId },
       data: { status },
       include: ORDERS_INCLUDE,
+    }) as Promise<OrderWithItems>;
+  }
+
+  /**
+   * Cancel an order and return the reserved stock to inventory in a single
+   * transaction. Stock is decremented when an order is created (PENDING), so a
+   * cancellation must give it back, otherwise abandoned/cancelled orders would
+   * permanently erode availability. Cancellation is only permitted from PENDING
+   * (enforced by the service), and PENDING orders always hold a decrement, so
+   * the increment here is exactly symmetric to {@link createFromCart}.
+   *
+   * Until Stripe (TASK-034) lands this is the manual counterpart to the admin
+   * `confirm-payment` action: confirm keeps the stock, cancel releases it.
+   */
+  cancelAndRestock(orderId: string): Promise<OrderWithItems> {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: ORDERS_INCLUDE,
+      });
+
+      for (const item of order.items) {
+        if (item.variantId) {
+          await tx.productVariant.update({
+            where: { id: item.variantId },
+            data: { stock: { increment: item.quantity } },
+          });
+        }
+      }
+
+      return tx.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.CANCELLED },
+        include: ORDERS_INCLUDE,
+      });
     }) as Promise<OrderWithItems>;
   }
 

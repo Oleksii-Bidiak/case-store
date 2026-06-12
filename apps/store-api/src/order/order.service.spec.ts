@@ -131,6 +131,7 @@ const orderRepositoryMock = {
   findByUserId: jest.fn(),
   findById: jest.fn(),
   updateStatus: jest.fn(),
+  cancelAndRestock: jest.fn(),
   updatePaymentStatus: jest.fn(),
   markPaid: jest.fn(),
 };
@@ -329,18 +330,15 @@ describe('OrderService', () => {
   // ─── cancelOrder ──────────────────────────────────────────────────────────
 
   describe('cancelOrder', () => {
-    it('should cancel a PENDING order owned by the user', async () => {
+    it('should cancel a PENDING order owned by the user and release reserved stock', async () => {
       orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.PENDING }));
-      orderRepositoryMock.updateStatus.mockResolvedValue(
+      orderRepositoryMock.cancelAndRestock.mockResolvedValue(
         makeOrder({ status: OrderStatus.CANCELLED }),
       );
 
       const result = await service.cancelOrder(USER_ID, 'order-uuid-1');
 
-      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
-        'order-uuid-1',
-        OrderStatus.CANCELLED,
-      );
+      expect(orderRepositoryMock.cancelAndRestock).toHaveBeenCalledWith('order-uuid-1');
       expect(result.status).toBe(OrderStatus.CANCELLED);
     });
 
@@ -348,14 +346,14 @@ describe('OrderService', () => {
       orderRepositoryMock.findById.mockResolvedValue(null);
 
       await expect(service.cancelOrder(USER_ID, 'missing')).rejects.toThrow(NotFoundException);
-      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when the order belongs to another user', async () => {
       orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: OTHER_USER_ID }));
 
       await expect(service.cancelOrder(USER_ID, 'order-uuid-1')).rejects.toThrow(NotFoundException);
-      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -367,7 +365,7 @@ describe('OrderService', () => {
       orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status }));
 
       await expect(service.cancelOrder(USER_ID, 'order-uuid-1')).rejects.toThrow(ConflictException);
-      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
     });
   });
 
