@@ -14,6 +14,7 @@ import { CartModule } from './cart';
 import { OrderModule } from './order';
 import { DashboardModule } from './dashboard';
 import { MailModule } from './mail';
+import { RedisCacheModule } from './cache';
 import { HttpExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
 import { validateEnv } from './config/env.validation';
@@ -79,6 +80,9 @@ import { validateEnv } from './config/env.validation';
 
     // Transactional email (global — provides MailService everywhere)
     MailModule,
+
+    // Redis cache layer (global — provides CacheService everywhere)
+    RedisCacheModule,
   ],
   controllers: [AppController],
   providers: [

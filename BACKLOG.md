@@ -366,7 +366,17 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-044 | Redis caching for product listings | ⬜ | — |
+| TASK-044 | Redis caching for product listings | ✅ | docs/plans/032-redis-product-caching.md |
+| TASK-044-A | Install @nestjs/cache-manager + cache-manager-ioredis-yet dependencies | ✅ | docs/plans/032-redis-product-caching.md |
+| TASK-044-B | Extend env.validation.ts with Redis env vars (REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_CACHE_TTL_SECONDS) | ✅ | docs/plans/032-redis-product-caching.md |
+| TASK-044-C | Implement cache-key builder utility (TDD) — buildProductListKey pure function + spec | ✅ | docs/plans/032-redis-product-caching.md |
+| TASK-044-D | Implement CacheService wrapper (TDD) — get/set/del/delByPrefix with graceful degradation + spec | ✅ | docs/plans/032-redis-product-caching.md |
+| TASK-044-E | Create global RedisCacheModule; register in AppModule; conditional ioredis vs in-memory store | ✅ | docs/plans/032-redis-product-caching.md |
+| TASK-044-F | Integrate cache-aside reads into ProductService (findAll, findBySlug, findById) + extend product.service.spec.ts | ✅ | docs/plans/032-redis-product-caching.md |
+| TASK-044-G | Add cache invalidation on product writes (create, update, deactivate, activate) + extend spec | ✅ | docs/plans/032-redis-product-caching.md |
+| TASK-044-H | Add cache invalidation in OrderRepository for stock mutations (createFromCart, cancelAndRestock) + extend spec | ✅ | docs/plans/032-redis-product-caching.md |
+| TASK-044-I | Real-Redis integration spec under test:int harness (hit/miss/invalidation/degradation) — spec written; ▶ run pending Docker Redis up | 🔄 | docs/plans/032-redis-product-caching.md |
+| TASK-044-J | Verification gate — build / lint / typecheck ✅; 268 unit + 163 e2e green; api+client+admin builds ✅; no Orval files modified | ✅ | docs/plans/032-redis-product-caching.md |
 | TASK-045 | Dynamic sitemap.xml + Schema.org microdata | ⬜ | — |
 | TASK-046 | Rate limiting + Helmet + CSRF protection | ⬜ | — |
 | TASK-047 | Pino structured logging | ⬜ | — |

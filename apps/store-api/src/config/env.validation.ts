@@ -85,6 +85,26 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   MAIL_FROM?: string;
+
+  // ─── Redis / Cache ──────────────────────────────────────────────────────────
+  // All optional: when REDIS_HOST is absent the cache falls back to an in-memory
+  // store, so the app boots and serves requests without a Redis dependency.
+
+  @IsOptional()
+  @IsString()
+  REDIS_HOST?: string;
+
+  @IsOptional()
+  @IsInt()
+  REDIS_PORT?: number;
+
+  @IsOptional()
+  @IsString()
+  REDIS_PASSWORD?: string;
+
+  @IsOptional()
+  @IsInt()
+  REDIS_CACHE_TTL_SECONDS?: number;
 }
 
 /**

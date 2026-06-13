@@ -2,8 +2,23 @@ import { ConflictException } from '@nestjs/common';
 import { OrderStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { PrismaService } from '../prisma';
+import {
+  CacheService,
+  productDetailIdKey,
+  productDetailSlugKey,
+  PRODUCT_LIST_PREFIX,
+} from '../cache';
 import type { CreateOrderParams } from './order.types';
 import type { CartWithItems } from '../cart/cart.repository';
+
+// ─── CacheService mock ────────────────────────────────────────────────────────
+
+const cacheMock = {
+  get: jest.fn().mockResolvedValue(null),
+  set: jest.fn().mockResolvedValue(undefined),
+  del: jest.fn().mockResolvedValue(undefined),
+  delByPrefix: jest.fn().mockResolvedValue(undefined),
+};
 
 // ─── Prisma mock ────────────────────────────────────────────────────────────
 
@@ -89,7 +104,14 @@ describe('OrderRepository', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    repository = new OrderRepository(prismaMock as unknown as PrismaService);
+    cacheMock.get.mockResolvedValue(null);
+    cacheMock.set.mockResolvedValue(undefined);
+    cacheMock.del.mockResolvedValue(undefined);
+    cacheMock.delByPrefix.mockResolvedValue(undefined);
+    repository = new OrderRepository(
+      prismaMock as unknown as PrismaService,
+      cacheMock as unknown as CacheService,
+    );
   });
 
   // ─── createFromCart — stock decrement guard (CRITICAL / TASK-053) ──────────
@@ -212,6 +234,51 @@ describe('OrderRepository', () => {
         data: { status: OrderStatus.CANCELLED },
         include: expect.any(Object),
       });
+    });
+  });
+
+  // ─── cache invalidation on stock mutations (TASK-044-H) ────────────────────
+
+  describe('cache invalidation', () => {
+    it('createFromCart evicts list pages and per-product detail caches after commit', async () => {
+      const tx = makeTx();
+      tx.order.create.mockResolvedValue({
+        id: 'order-1',
+        items: [
+          { productId: 'product-uuid-1', product: { slug: 'iphone-15-pro-case' } },
+          { productId: 'product-uuid-2', product: { slug: 'screen-protector' } },
+        ],
+      });
+      tx.productVariant.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+
+      await repository.createFromCart(baseParams);
+
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.del).toHaveBeenCalledWith(productDetailSlugKey('iphone-15-pro-case'));
+      expect(cacheMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
+      expect(cacheMock.del).toHaveBeenCalledWith(productDetailSlugKey('screen-protector'));
+      expect(cacheMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-2'));
+    });
+
+    it('cancelAndRestock evicts list pages and per-product detail caches after commit', async () => {
+      const tx = makeTx();
+      tx.order.findUniqueOrThrow.mockResolvedValue({
+        id: 'order-1',
+        items: [{ variantId: 'variant-uuid-1', quantity: 2 }],
+      });
+      tx.order.update.mockResolvedValue({
+        id: 'order-1',
+        status: OrderStatus.CANCELLED,
+        items: [{ productId: 'product-uuid-1', product: { slug: 'iphone-15-pro-case' } }],
+      });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+
+      await repository.cancelAndRestock('order-1');
+
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.del).toHaveBeenCalledWith(productDetailSlugKey('iphone-15-pro-case'));
+      expect(cacheMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
     });
   });
 });

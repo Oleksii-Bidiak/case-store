@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   ProductRepository,
   CreateProductInput,
@@ -13,6 +14,16 @@ import {
 } from './entities';
 import { ProductListQueryDto } from './dto';
 import { generateSlug } from '../common/utils';
+import {
+  CacheService,
+  buildProductListKey,
+  productDetailIdKey,
+  productDetailSlugKey,
+  PRODUCT_LIST_PREFIX,
+} from '../cache';
+
+/** Fallback TTL (seconds) when REDIS_CACHE_TTL_SECONDS is not configured. */
+const DEFAULT_CACHE_TTL_SECONDS = 300;
 
 /**
  * Pagination metadata returned alongside paginated results.
@@ -42,13 +53,29 @@ interface ProductDetailResponse {
   images: ProductImageEntity[];
 }
 
+/**
+ * Cache invalidation obligation: ANY method that mutates product data MUST
+ * evict the affected cache entries after the write, otherwise stale data is
+ * served until the TTL expires. Use {@link ProductService.evictProductDetail}
+ * for detail keys and `delByPrefix(PRODUCT_LIST_PREFIX)` for list pages.
+ */
 @Injectable()
 export class ProductService {
-  constructor(private readonly productRepository: ProductRepository) {}
+  private readonly cacheTtlSeconds: number;
+
+  constructor(
+    private readonly productRepository: ProductRepository,
+    private readonly cache: CacheService,
+    private readonly config: ConfigService,
+  ) {
+    this.cacheTtlSeconds =
+      this.config.get<number>('REDIS_CACHE_TTL_SECONDS') ?? DEFAULT_CACHE_TTL_SECONDS;
+  }
 
   /**
    * Get a paginated list of products with optional filtering.
    * Public endpoint — defaults to showing only active products.
+   * Cache-aside: a cache hit skips the database entirely.
    */
   async findAll(query: ProductListQueryDto): Promise<PaginatedProductsResponse> {
     const params: FindAllParams = {
@@ -63,10 +90,16 @@ export class ProductService {
       sortOrder: query.sortOrder ?? 'desc',
     };
 
+    const cacheKey = buildProductListKey(params);
+    const cached = await this.cache.get<PaginatedProductsResponse>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const { products, total } = await this.productRepository.findAll(params);
     const totalPages = Math.ceil(total / params.limit);
 
-    return {
+    const response: PaginatedProductsResponse = {
       data: products.map((product) => ProductEntity.fromPrisma(product)),
       meta: {
         total,
@@ -75,40 +108,60 @@ export class ProductService {
         totalPages,
       },
     };
+
+    await this.cache.set(cacheKey, response, this.cacheTtlSeconds);
+    return response;
   }
 
   /**
    * Get a product by slug with its category, variants, and images.
    * Public endpoint — used for product detail pages.
-   * Throws NotFoundException if the product is not found.
+   * Cache-aside; throws NotFoundException if the product is not found.
    */
   async findBySlug(slug: string): Promise<ProductDetailResponse> {
+    const cacheKey = productDetailSlugKey(slug);
+    const cached = await this.cache.get<ProductDetailResponse>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const product = await this.productRepository.findBySlugWithRelations(slug);
 
     if (!product) {
       throw new NotFoundException('Product not found');
     }
 
-    return {
+    const response: ProductDetailResponse = {
       data: ProductEntity.fromPrisma(product),
       category: ProductCategoryEntity.fromPrisma(product.category),
       variants: product.variants.map((v) => ProductVariantEntity.fromPrisma(v)),
       images: product.images.map((img) => ProductImageEntity.fromPrisma(img)),
     };
+
+    await this.cache.set(cacheKey, response, this.cacheTtlSeconds);
+    return response;
   }
 
   /**
    * Get a product by ID (admin-only).
-   * Throws NotFoundException if the product is not found.
+   * Cache-aside; throws NotFoundException if the product is not found.
    */
   async findById(id: string): Promise<ProductEntity> {
+    const cacheKey = productDetailIdKey(id);
+    const cached = await this.cache.get<ProductEntity>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const product = await this.productRepository.findById(id);
 
     if (!product) {
       throw new NotFoundException('Product not found');
     }
 
-    return ProductEntity.fromPrisma(product);
+    const entity = ProductEntity.fromPrisma(product);
+    await this.cache.set(cacheKey, entity, this.cacheTtlSeconds);
+    return entity;
   }
 
   /**
@@ -139,6 +192,9 @@ export class ProductService {
       ...input,
       slug,
     });
+
+    // A new product may appear on any list page — bust every list cache entry.
+    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
 
     return ProductEntity.fromPrisma(product);
   }
@@ -175,6 +231,14 @@ export class ProductService {
 
     const updatedProduct = await this.productRepository.update(id, input);
 
+    // Evict list pages and both detail variants. The slug may have changed, so
+    // evict the OLD slug captured above; if it changed, also evict the new one.
+    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.evictProductDetail(id, product.slug);
+    if (input.slug !== undefined && input.slug !== product.slug) {
+      await this.cache.del(productDetailSlugKey(input.slug));
+    }
+
     return ProductEntity.fromPrisma(updatedProduct);
   }
 
@@ -190,6 +254,9 @@ export class ProductService {
     }
 
     const deactivatedProduct = await this.productRepository.deactivate(id);
+
+    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.evictProductDetail(id, product.slug);
 
     return ProductEntity.fromPrisma(deactivatedProduct);
   }
@@ -207,6 +274,18 @@ export class ProductService {
 
     const activatedProduct = await this.productRepository.activate(id);
 
+    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.evictProductDetail(id, product.slug);
+
     return ProductEntity.fromPrisma(activatedProduct);
+  }
+
+  /**
+   * Evict both detail cache variants (by id and by slug) for a product. Cache
+   * errors are swallowed inside CacheService, so this never affects the caller.
+   */
+  private async evictProductDetail(id: string, slug: string): Promise<void> {
+    await this.cache.del(productDetailIdKey(id));
+    await this.cache.del(productDetailSlugKey(slug));
   }
 }

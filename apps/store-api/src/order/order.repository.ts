@@ -1,7 +1,13 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { Prisma, OrderStatus, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
-import type { CreateOrderParams, OrderWithItems } from './order.types';
+import {
+  CacheService,
+  productDetailIdKey,
+  productDetailSlugKey,
+  PRODUCT_LIST_PREFIX,
+} from '../cache';
+import type { CreateOrderParams, OrderWithItems, OrderItemRow } from './order.types';
 import type { OrderListQueryDto, AdminOrderListQueryDto } from './dto';
 
 /**
@@ -33,7 +39,10 @@ const DEFAULT_LIMIT = 10;
 export class OrderRepository {
   private readonly logger = new Logger(OrderRepository.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
+  ) {}
 
   /**
    * Create an order from a cart inside a single transaction:
@@ -120,6 +129,11 @@ export class OrderRepository {
 
       return created;
     });
+
+    // Stock for the ordered variants just changed — evict their detail caches
+    // (variant stock is rendered on detail pages) and all list pages. Eviction
+    // errors are swallowed inside CacheService, so they never affect the order.
+    await this.evictProductCaches((order as OrderWithItems).items);
 
     return order as OrderWithItems;
   }
@@ -222,8 +236,8 @@ export class OrderRepository {
    * Until Stripe (TASK-034) lands this is the manual counterpart to the admin
    * `confirm-payment` action: confirm keeps the stock, cancel releases it.
    */
-  cancelAndRestock(orderId: string): Promise<OrderWithItems> {
-    return this.prisma.$transaction(async (tx) => {
+  async cancelAndRestock(orderId: string): Promise<OrderWithItems> {
+    const updated = (await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: ORDERS_INCLUDE,
@@ -243,7 +257,12 @@ export class OrderRepository {
         data: { status: OrderStatus.CANCELLED },
         include: ORDERS_INCLUDE,
       });
-    }) as Promise<OrderWithItems>;
+    })) as OrderWithItems;
+
+    // Restock changed variant stock — evict the same caches as createFromCart.
+    await this.evictProductCaches(updated.items);
+
+    return updated;
   }
 
   /**
@@ -270,6 +289,22 @@ export class OrderRepository {
       data: { paymentStatus: PaymentStatus.PAID, status: OrderStatus.CONFIRMED },
       include: ORDERS_INCLUDE,
     }) as Promise<OrderWithItems>;
+  }
+
+  /**
+   * Evict the product caches affected by a stock change: every list page plus
+   * the detail (by slug and by id) of each product in the order. Called after a
+   * stock decrement (createFromCart) or increment (cancelAndRestock).
+   */
+  private async evictProductCaches(items: OrderItemRow[]): Promise<void> {
+    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    const seen = new Set<string>();
+    for (const item of items) {
+      if (seen.has(item.productId)) continue;
+      seen.add(item.productId);
+      await this.cache.del(productDetailSlugKey(item.product.slug));
+      await this.cache.del(productDetailIdKey(item.productId));
+    }
   }
 }
 

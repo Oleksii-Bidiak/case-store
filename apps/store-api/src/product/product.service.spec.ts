@@ -1,9 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ProductRepository, CreateProductInput, UpdateProductInput } from './product.repository';
 import { ProductService } from './product.service';
 import { ProductEntity } from './entities';
 import { ProductListQueryDto } from './dto';
+import {
+  CacheService,
+  buildProductListKey,
+  productDetailIdKey,
+  productDetailSlugKey,
+  PRODUCT_LIST_PREFIX,
+} from '../cache';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -43,6 +51,21 @@ const productRepositoryMock = {
   activate: jest.fn(),
 };
 
+// ─── CacheService mock ────────────────────────────────────────────────────────
+// Defaults: get → null (cache miss), all writes resolve. Individual tests
+// override `get` to simulate a HIT or a backend error.
+
+const cacheServiceMock = {
+  get: jest.fn().mockResolvedValue(null),
+  set: jest.fn().mockResolvedValue(undefined),
+  del: jest.fn().mockResolvedValue(undefined),
+  delByPrefix: jest.fn().mockResolvedValue(undefined),
+};
+
+const configServiceMock = {
+  get: jest.fn().mockReturnValue(300),
+};
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('ProductService', () => {
@@ -50,9 +73,20 @@ describe('ProductService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Restore default mock implementations cleared by clearAllMocks.
+    cacheServiceMock.get.mockResolvedValue(null);
+    cacheServiceMock.set.mockResolvedValue(undefined);
+    cacheServiceMock.del.mockResolvedValue(undefined);
+    cacheServiceMock.delByPrefix.mockResolvedValue(undefined);
+    configServiceMock.get.mockReturnValue(300);
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ProductService, { provide: ProductRepository, useValue: productRepositoryMock }],
+      providers: [
+        ProductService,
+        { provide: ProductRepository, useValue: productRepositoryMock },
+        { provide: CacheService, useValue: cacheServiceMock },
+        { provide: ConfigService, useValue: configServiceMock },
+      ],
     }).compile();
 
     service = module.get<ProductService>(ProductService);
@@ -401,6 +435,185 @@ describe('ProductService', () => {
 
       await expect(service.activate('nonexistent-id')).rejects.toThrow(NotFoundException);
       expect(productRepositoryMock.activate).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── caching (cache-aside reads) ──────────────────────────────────────────────
+
+  describe('caching — findAll', () => {
+    const query: ProductListQueryDto = { page: 1, limit: 20 };
+
+    it('returns the cached value on HIT without querying the repository', async () => {
+      const cachedResponse = { data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } };
+      cacheServiceMock.get.mockResolvedValue(cachedResponse);
+
+      const result = await service.findAll(query);
+
+      expect(result).toBe(cachedResponse);
+      expect(productRepositoryMock.findAll).not.toHaveBeenCalled();
+      expect(cacheServiceMock.set).not.toHaveBeenCalled();
+    });
+
+    it('queries the repository and caches the result on MISS', async () => {
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findAll.mockResolvedValue({ products: [mockProduct], total: 1 });
+
+      const result = await service.findAll(query);
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledTimes(1);
+      const expectedKey = buildProductListKey({
+        page: 1,
+        limit: 20,
+        categoryId: undefined,
+        isActive: undefined,
+        minPrice: undefined,
+        maxPrice: undefined,
+        search: undefined,
+        sortBy: 'createdAt',
+        sortOrder: 'desc',
+      });
+      expect(cacheServiceMock.get).toHaveBeenCalledWith(expectedKey);
+      expect(cacheServiceMock.set).toHaveBeenCalledWith(expectedKey, result, 300);
+    });
+
+    it('falls through to the DB when the cache errors (get returns null)', async () => {
+      // CacheService.get swallows errors and returns null, so the service simply
+      // sees a miss and queries the DB.
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.findAll(query);
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('caching — findBySlug', () => {
+    const slug = 'iphone-15-pro-case-clear-magsafe';
+    const productWithRelations = {
+      ...mockProduct,
+      category: { id: 'cat-1', name: 'Phone Cases', slug: 'phone-cases' },
+      variants: [],
+      images: [],
+    };
+
+    it('returns the cached value on HIT without querying the repository', async () => {
+      const cached = { data: {}, category: {}, variants: [], images: [] };
+      cacheServiceMock.get.mockResolvedValue(cached);
+
+      const result = await service.findBySlug(slug);
+
+      expect(result).toBe(cached);
+      expect(productRepositoryMock.findBySlugWithRelations).not.toHaveBeenCalled();
+    });
+
+    it('queries and caches under the slug detail key on MISS', async () => {
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(productWithRelations);
+
+      const result = await service.findBySlug(slug);
+
+      expect(cacheServiceMock.get).toHaveBeenCalledWith(productDetailSlugKey(slug));
+      expect(cacheServiceMock.set).toHaveBeenCalledWith(productDetailSlugKey(slug), result, 300);
+    });
+
+    it('does not cache a not-found result', async () => {
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(null);
+
+      await expect(service.findBySlug('missing')).rejects.toThrow(NotFoundException);
+      expect(cacheServiceMock.set).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('caching — findById', () => {
+    it('returns the cached value on HIT without querying the repository', async () => {
+      const cached = ProductEntity.fromPrisma(mockProduct);
+      cacheServiceMock.get.mockResolvedValue(cached);
+
+      const result = await service.findById('product-uuid-1');
+
+      expect(result).toBe(cached);
+      expect(productRepositoryMock.findById).not.toHaveBeenCalled();
+    });
+
+    it('queries and caches under the id detail key on MISS', async () => {
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+
+      const result = await service.findById('product-uuid-1');
+
+      expect(cacheServiceMock.get).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
+      expect(cacheServiceMock.set).toHaveBeenCalledWith(
+        productDetailIdKey('product-uuid-1'),
+        result,
+        300,
+      );
+    });
+  });
+
+  // ─── cache invalidation (writes) ──────────────────────────────────────────────
+
+  describe('cache invalidation', () => {
+    it('create evicts all list pages', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockResolvedValue(mockProduct);
+
+      await service.create({
+        name: 'New Product',
+        slug: 'new-product',
+        price: 10,
+        categoryId: 'category-uuid-1',
+      });
+
+      expect(cacheServiceMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+    });
+
+    it('update evicts list pages and both detail variants (slug unchanged)', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.update.mockResolvedValue(mockProduct);
+
+      await service.update('product-uuid-1', { name: 'Renamed' });
+
+      expect(cacheServiceMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey(mockProduct.slug));
+    });
+
+    it('update also evicts the new slug key when the slug changes', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.update.mockResolvedValue({ ...mockProduct, slug: 'brand-new-slug' });
+
+      await service.update('product-uuid-1', { slug: 'brand-new-slug' });
+
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey(mockProduct.slug));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey('brand-new-slug'));
+    });
+
+    it('deactivate evicts list pages and both detail variants', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.deactivate.mockResolvedValue(mockInactiveProduct);
+
+      await service.deactivate('product-uuid-1');
+
+      expect(cacheServiceMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey(mockProduct.slug));
+    });
+
+    it('activate evicts list pages and both detail variants', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockInactiveProduct);
+      productRepositoryMock.activate.mockResolvedValue({ ...mockInactiveProduct, isActive: true });
+
+      await service.activate('product-uuid-2');
+
+      expect(cacheServiceMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-2'));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(
+        productDetailSlugKey(mockInactiveProduct.slug),
+      );
     });
   });
 });
