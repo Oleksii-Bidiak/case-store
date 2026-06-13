@@ -387,7 +387,14 @@
 | TASK-045-G | Update app/layout.tsx — add metadataBase + title template + OpenGraph defaults | ✅ | docs/plans/033-seo-sitemap-schema.md |
 | TASK-045-H | Inject JSON-LD into product detail page (Product + BreadcrumbList + extended generateMetadata with canonical/OG), product list page (BreadcrumbList), and home page (Organization + WebSite) | ✅ | docs/plans/033-seo-sitemap-schema.md |
 | TASK-045-I | Verification gate — build / lint / typecheck / unit tests ✅; robots.txt + sitemap.xml fallback verified via running server; JSON-LD in product HTML pending running API | 🔄 | docs/plans/033-seo-sitemap-schema.md |
-| TASK-046 | Rate limiting + Helmet + CSRF protection | ⬜ | — |
+| TASK-046 | Rate limiting + Helmet + CSRF protection | ✅ | docs/plans/034-security-hardening-csrf.md |
+| TASK-046-A | Install dependencies — `ioredis` (direct); `csrf-csrf` rejected (ESM-only, CJS-incompatible) → manual signed double-submit; `@nestjs/throttler-storage-redis` does not exist + canonical pkg deprecated → custom Redis throttler storage | ✅ | docs/plans/034-security-hardening-csrf.md |
+| TASK-046-B | Extend env.validation.ts with `CSRF_SECRET` (@IsOptional @MinLength(32)); .env.example blocked by .env* permission guard — documented in env.validation.ts comments | ✅ | docs/plans/034-security-hardening-csrf.md |
+| TASK-046-C | Harden Helmet (extracted to config/security.config.ts) — prod CSP + HSTS 1y + referrer-policy; Swagger UI CSP exception in dev; + unit test | ✅ | docs/plans/034-security-hardening-csrf.md |
+| TASK-046-D | Tune throttler — ThrottlerModule.forRootAsync with custom RedisThrottlerStorage (Lua, fail-open) when REDIS_HOST set; @Throttle on POST /api/auth/refresh; + unit tests | ✅ | docs/plans/034-security-hardening-csrf.md |
+| TASK-046-E | Manual signed double-submit CSRF — csrf.util + CsrfService.protect middleware + GET /api/csrf-token + CsrfModule; Bearer-auth requests exempt; 19 unit tests (TDD) | ✅ | docs/plans/034-security-hardening-csrf.md |
+| TASK-046-F | Wire CsrfService.protect to /api/auth/refresh + /api/cart in main.ts + import CsrfModule; store-client + store-admin instance.ts add lazy CSRF token + X-Requested-With (no Orval files touched) | ✅ | docs/plans/034-security-hardening-csrf.md |
+| TASK-046-G | Input audit — @MaxLength added to RegisterDto + AddressDto free-text fields (product/category already capped); security.e2e-spec.ts (CSRF 403/pass, Bearer exempt, Helmet headers, live 429); full gate: 296 unit + 170 e2e ✅, api+client+admin build/lint/typecheck ✅, no Orval files modified | ✅ | docs/plans/034-security-hardening-csrf.md |
 | TASK-047 | Pino structured logging | ⬜ | — |
 | TASK-048 | Sentry integration (frontend + backend) | ⬜ | — |
 | TASK-049 | Abandoned cart detection + email follow-up | ⬜ | — |

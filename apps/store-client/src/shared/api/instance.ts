@@ -33,12 +33,73 @@ export function setAccessToken(token: string | null): void {
   accessToken = token;
 }
 
-// ─── Request interceptor: attach the bearer token ────────────────────────────
+// ─── CSRF (signed double-submit cookie) ──────────────────────────────────────
+// The backend protects cookie-authenticated, state-changing routes (refresh,
+// cart mutations) with a CSRF token delivered in a readable cookie. We read the
+// cookie and echo it back in the `x-csrf-token` header on mutating requests.
+// If the cookie is missing, we lazily fetch one from GET /api/csrf-token first.
 
-api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+const CSRF_COOKIE_NAMES = ["__Host-csrf", "csrf"];
+const CSRF_TOKEN_PATH = "/api/csrf-token";
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function readCsrfCookie(): string | null {
+  if (typeof document === "undefined") {
+    return null; // SSR — no cookie jar
+  }
+  for (const name of CSRF_COOKIE_NAMES) {
+    const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+    if (match) {
+      return decodeURIComponent(match[1]);
+    }
+  }
+  return null;
+}
+
+// Single in-flight token fetch shared across concurrent mutations.
+let csrfPromise: Promise<string | null> | null = null;
+
+async function ensureCsrfToken(): Promise<string | null> {
+  const existing = readCsrfCookie();
+  if (existing) {
+    return existing;
+  }
+  if (!csrfPromise) {
+    csrfPromise = api
+      .get<{ data?: { csrfToken?: string } }>(CSRF_TOKEN_PATH)
+      .then((response) => response.data?.data?.csrfToken ?? null)
+      .catch(() => null)
+      .finally(() => {
+        csrfPromise = null;
+      });
+  }
+  return csrfPromise;
+}
+
+// ─── Request interceptor: attach the bearer + CSRF tokens ────────────────────
+
+api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   if (accessToken) {
     config.headers.set("Authorization", `Bearer ${accessToken}`);
   }
+
+  // Complementary CSRF signal (cross-site requests cannot set custom headers).
+  config.headers.set("X-Requested-With", "XMLHttpRequest");
+
+  // CSRF is only needed for cookie-authenticated requests. When a Bearer token
+  // is present the backend exempts the request (an attacker cannot set that
+  // header cross-site), so we skip the token fetch to avoid a redundant call.
+  const method = config.method?.toUpperCase();
+  const isMutation = !!method && MUTATING_METHODS.has(method);
+  const isCsrfFetch = config.url?.includes("/csrf-token") ?? false;
+
+  if (isMutation && !isCsrfFetch && !accessToken) {
+    const csrfToken = await ensureCsrfToken();
+    if (csrfToken) {
+      config.headers.set("x-csrf-token", csrfToken);
+    }
+  }
+
   return config;
 });
 

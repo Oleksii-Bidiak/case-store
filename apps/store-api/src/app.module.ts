@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
@@ -15,6 +15,8 @@ import { OrderModule } from './order';
 import { DashboardModule } from './dashboard';
 import { MailModule } from './mail';
 import { RedisCacheModule } from './cache';
+import { CsrfModule } from './csrf';
+import { buildThrottlerOptions } from './throttler';
 import { HttpExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
 import { validateEnv } from './config/env.validation';
@@ -29,13 +31,13 @@ import { validateEnv } from './config/env.validation';
       validate: validateEnv,
     }),
 
-    // Rate limiting
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000,
-        limit: 100,
-      },
-    ]),
+    // Rate limiting — uses a shared Redis store when REDIS_HOST is set
+    // (multi-instance correctness), otherwise an in-memory store.
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: buildThrottlerOptions,
+    }),
 
     // Structured logging with Pino
     LoggerModule.forRoot({
@@ -83,6 +85,9 @@ import { validateEnv } from './config/env.validation';
 
     // Redis cache layer (global — provides CacheService everywhere)
     RedisCacheModule,
+
+    // CSRF protection (provides CsrfService + GET /api/csrf-token)
+    CsrfModule,
   ],
   controllers: [AppController],
   providers: [

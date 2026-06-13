@@ -105,6 +105,17 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsInt()
   REDIS_CACHE_TTL_SECONDS?: number;
+
+  // ─── CSRF ─────────────────────────────────────────────────────────────────
+  // Optional so the app boots in development with a weak built-in default.
+  // REQUIRED in production: bootstrap() logs a warning when NODE_ENV is
+  // production and this is unset. When set it must be at least 32 characters —
+  // the secret is the HMAC key that signs the double-submit CSRF token.
+
+  @IsOptional()
+  @IsString()
+  @MinLength(32, { message: 'CSRF_SECRET must be at least 32 characters when set' })
+  CSRF_SECRET?: string;
 }
 
 /**
