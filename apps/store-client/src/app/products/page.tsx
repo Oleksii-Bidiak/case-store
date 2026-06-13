@@ -2,9 +2,12 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { ProductListView, ProductListSkeleton } from "@/widgets";
 import type { ProductControllerFindAllParams } from "@/entities/product";
+import { JsonLd } from "@/shared/ui";
+import { buildBreadcrumbSchema } from "@/shared/lib/schema";
+import { SITE_URL } from "@/shared/config";
 
 export const metadata: Metadata = {
-  title: "Products | MobileStore",
+  title: "Products",
   description:
     "Browse all mobile accessories — filter by category, price, and keyword, and sort to find exactly what you need.",
 };
@@ -39,6 +42,12 @@ export default async function ProductsPage({
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-8">
+      <JsonLd
+        schema={buildBreadcrumbSchema([
+          { name: "Home", item: SITE_URL },
+          { name: "Products", item: `${SITE_URL}/products` },
+        ])}
+      />
       <h1 className="mb-8 text-3xl font-bold tracking-tight text-foreground">
         All Products
       </h1>

@@ -377,7 +377,16 @@
 | TASK-044-H | Add cache invalidation in OrderRepository for stock mutations (createFromCart, cancelAndRestock) + extend spec | ✅ | docs/plans/032-redis-product-caching.md |
 | TASK-044-I | Real-Redis integration spec under test:int harness (hit/miss/invalidation/degradation) — spec written; ▶ run pending Docker Redis up | 🔄 | docs/plans/032-redis-product-caching.md |
 | TASK-044-J | Verification gate — build / lint / typecheck ✅; 268 unit + 163 e2e green; api+client+admin builds ✅; no Orval files modified | ✅ | docs/plans/032-redis-product-caching.md |
-| TASK-045 | Dynamic sitemap.xml + Schema.org microdata | ⬜ | — |
+| TASK-045 | Dynamic sitemap.xml + Schema.org microdata | ✅ | docs/plans/033-seo-sitemap-schema.md |
+| TASK-045-A | Add NEXT_PUBLIC_SITE_URL + NEXT_PUBLIC_CURRENCY env vars; create shared/config/site.ts (SITE_URL, CURRENCY, SITE_NAME constants) | ✅ | docs/plans/033-seo-sitemap-schema.md |
+| TASK-045-B | Create shared/lib/schema builder functions (buildProductSchema, buildBreadcrumbSchema, buildOrganizationSchema, buildWebSiteSchema) + unit tests (TDD Red→Green) | ✅ | docs/plans/033-seo-sitemap-schema.md |
+| TASK-045-C | Create shared/ui/JsonLd dumb Server Component (XSS-safe dangerouslySetInnerHTML — escapes `<`/`>`/`&` to unicode) | ✅ | docs/plans/033-seo-sitemap-schema.md |
+| TASK-045-D | Create shared/lib/schema/fetchAllProducts.ts server-side paginator using Orval plain fetcher (no hooks, no manual axios) | ✅ | docs/plans/033-seo-sitemap-schema.md |
+| TASK-045-E | Add app/robots.ts (MetadataRoute.Robots — disallow cart/checkout/orders/login/register, point to sitemap) | ✅ | docs/plans/033-seo-sitemap-schema.md |
+| TASK-045-F | Add app/sitemap.ts (MetadataRoute.Sitemap — force-dynamic; static routes + dynamic product pages; graceful fallback on fetch error) | ✅ | docs/plans/033-seo-sitemap-schema.md |
+| TASK-045-G | Update app/layout.tsx — add metadataBase + title template + OpenGraph defaults | ✅ | docs/plans/033-seo-sitemap-schema.md |
+| TASK-045-H | Inject JSON-LD into product detail page (Product + BreadcrumbList + extended generateMetadata with canonical/OG), product list page (BreadcrumbList), and home page (Organization + WebSite) | ✅ | docs/plans/033-seo-sitemap-schema.md |
+| TASK-045-I | Verification gate — build / lint / typecheck / unit tests ✅; robots.txt + sitemap.xml fallback verified via running server; JSON-LD in product HTML pending running API | 🔄 | docs/plans/033-seo-sitemap-schema.md |
 | TASK-046 | Rate limiting + Helmet + CSRF protection | ⬜ | — |
 | TASK-047 | Pino structured logging | ⬜ | — |
 | TASK-048 | Sentry integration (frontend + backend) | ⬜ | — |

@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { Providers } from "./providers";
 import { HeaderAuth } from "@/widgets/header";
-import { PRIMARY_COLOR } from "@/shared/config";
+import { PRIMARY_COLOR, SITE_URL, SITE_NAME } from "@/shared/config";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -23,9 +23,18 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Mobile Accessories Store",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Mobile Accessories Store",
+    template: `%s | ${SITE_NAME}`,
+  },
   description:
     "Your one-stop shop for mobile phone accessories — cases, chargers, screen protectors, and more.",
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    url: SITE_URL,
+  },
 };
 
 export default function RootLayout({

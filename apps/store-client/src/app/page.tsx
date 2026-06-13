@@ -7,9 +7,15 @@ import {
   ProductGrid,
   ProductGridSkeleton,
 } from "@/widgets";
+import { JsonLd } from "@/shared/ui";
+import {
+  buildOrganizationSchema,
+  buildWebSiteSchema,
+} from "@/shared/lib/schema";
+import { SITE_URL, SITE_NAME } from "@/shared/config";
 
 export const metadata: Metadata = {
-  title: "Home | MobileStore",
+  title: "Home",
   description:
     "Discover premium mobile accessories — cases, chargers, screen protectors and more.",
 };
@@ -17,6 +23,8 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <div className="flex flex-col gap-16 pb-16">
+      <JsonLd schema={buildOrganizationSchema(SITE_URL, SITE_NAME)} />
+      <JsonLd schema={buildWebSiteSchema(SITE_URL, SITE_NAME)} />
       <HeroBanner />
 
       <section
