@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
 import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
 import { AuthTokens } from './entities';
@@ -98,12 +99,21 @@ describe('AuthService', () => {
       verifyAsync: jest.fn(),
     };
 
+    const pinoLoggerMock = {
+      info: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+      setContext: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
         { provide: AuthRepository, useValue: authRepositoryMock },
         { provide: JwtService, useValue: jwtServiceMock },
         { provide: ConfigService, useValue: configMock },
+        { provide: PinoLogger, useValue: pinoLoggerMock },
       ],
     }).compile();
 

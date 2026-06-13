@@ -395,7 +395,14 @@
 | TASK-046-E | Manual signed double-submit CSRF — csrf.util + CsrfService.protect middleware + GET /api/csrf-token + CsrfModule; Bearer-auth requests exempt; 19 unit tests (TDD) | ✅ | docs/plans/034-security-hardening-csrf.md |
 | TASK-046-F | Wire CsrfService.protect to /api/auth/refresh + /api/cart in main.ts + import CsrfModule; store-client + store-admin instance.ts add lazy CSRF token + X-Requested-With (no Orval files touched) | ✅ | docs/plans/034-security-hardening-csrf.md |
 | TASK-046-G | Input audit — @MaxLength added to RegisterDto + AddressDto free-text fields (product/category already capped); security.e2e-spec.ts (CSRF 403/pass, Bearer exempt, Helmet headers, live 429); full gate: 296 unit + 170 e2e ✅, api+client+admin build/lint/typecheck ✅, no Orval files modified | ✅ | docs/plans/034-security-hardening-csrf.md |
-| TASK-047 | Pino structured logging | ⬜ | — |
+| TASK-047 | Pino structured logging — production-grade hardening (redaction, correlation IDs, serializers, async config, structured events) | ✅ | docs/plans/035-pino-structured-logging.md |
+| TASK-047-A | Extend `env.validation.ts` with `LOG_LEVEL`; migrate `LoggerModule.forRoot` to `forRootAsync` reading config from `ConfigService` | ✅ | docs/plans/035-pino-structured-logging.md |
+| TASK-047-B | Extract `buildPinoHttpOptions` factory to `pino.config.ts`; add `pino redact` for 9 sensitive paths (TDD Red→Green) | ✅ | docs/plans/035-pino-structured-logging.md |
+| TASK-047-C | Add `genReqId` (reuse `X-Request-Id` header or UUID; reflects ID on response via `res.setHeader`); add custom `req`/`res`/`err` serializers (TDD Red→Green) | ✅ | docs/plans/035-pino-structured-logging.md |
+| TASK-047-D | Resolve double-logging — retire success-path `logger.info` from `LoggingInterceptor`; add `autoLogging.ignore` for `/health`; write interceptor unit tests | ✅ | docs/plans/035-pino-structured-logging.md |
+| TASK-047-E | Convert string-interpolated service logs to structured `{ event, ...fields }` form in `order.service.ts`; inject `PinoLogger` into `auth.service.ts` + add `user.registered` event log | ✅ | docs/plans/035-pino-structured-logging.md |
+| TASK-047-F | Migrate `CacheService` and `MailService` from built-in `new Logger(...)` to injected `PinoLogger` (+ `setContext`, matching the repo convention) for consistent JSON output | ✅ | docs/plans/035-pino-structured-logging.md |
+| TASK-047-G | Verification gate — build / lint / typecheck / unit + e2e green; no Orval files modified; manual smoke: `X-Request-Id` header present, password redacted in logs | ✅ | docs/plans/035-pino-structured-logging.md |
 | TASK-048 | Sentry integration (frontend + backend) | ⬜ | — |
 | TASK-049 | Abandoned cart detection + email follow-up | ⬜ | — |
 | TASK-050 | GA4 e-commerce events | ⬜ | — |

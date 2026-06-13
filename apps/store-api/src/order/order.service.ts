@@ -84,7 +84,7 @@ export class OrderService {
       notes: dto.notes,
     });
 
-    this.logger.info(`Order ${order.id} created for user ${userId}`);
+    this.logger.info({ event: 'order.created', orderId: order.id, userId }, 'Order created');
 
     const orderEntity = OrderEntity.fromPrisma(order);
 
@@ -101,7 +101,10 @@ export class OrderService {
           order: orderEntity,
           customerName: user.firstName ?? undefined,
         });
-        this.logger.info(`Order confirmation email sent to ${user.email} for order ${order.id}`);
+        this.logger.info(
+          { event: 'order.email_sent', orderId: order.id, to: user.email },
+          'Order confirmation email sent',
+        );
       }
     } catch (err) {
       // Structured fields ({ err, orderId }) so the failure is queryable in log
@@ -203,7 +206,10 @@ export class OrderService {
     // stock to inventory atomically (stock was decremented at creation).
     const cancelled = await this.orderRepository.cancelAndRestock(orderId);
 
-    this.logger.info(`Order ${orderId} cancelled by user ${userId}; reserved stock released`);
+    this.logger.info(
+      { event: 'order.cancelled', orderId, userId },
+      'Order cancelled; reserved stock released',
+    );
 
     return OrderEntity.fromPrisma(cancelled);
   }
@@ -233,7 +239,10 @@ export class OrderService {
 
     const paid = await this.orderRepository.markPaid(orderId);
 
-    this.logger.info(`Order ${orderId} marked PAID and CONFIRMED (admin)`);
+    this.logger.info(
+      { event: 'order.status_updated', orderId, status: 'CONFIRMED' },
+      'Order marked PAID and CONFIRMED',
+    );
 
     return OrderEntity.fromPrisma(paid);
   }

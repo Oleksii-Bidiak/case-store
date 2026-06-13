@@ -1,5 +1,6 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { PinoLogger } from 'nestjs-pino';
 import type { Cache } from 'cache-manager';
 
 /**
@@ -35,9 +36,12 @@ interface ScanCapableClient {
  */
 @Injectable()
 export class CacheService {
-  private readonly logger = new Logger(CacheService.name);
-
-  constructor(@Inject(CACHE_MANAGER) private readonly cacheManager: Cache) {}
+  constructor(
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(CacheService.name);
+  }
 
   /** Get a cached value, or `null` on miss or any backend error. */
   async get<T>(key: string): Promise<T | null> {

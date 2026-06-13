@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { createTransport } from 'nodemailer';
+import type { PinoLogger } from 'nestjs-pino';
 import { MailService } from './mail.service';
 import type { OrderEntity } from '../order/entities';
 
@@ -36,6 +37,17 @@ function makeConfig(values: Record<string, unknown>): ConfigService {
   } as unknown as ConfigService;
 }
 
+/** No-op PinoLogger stub. */
+function makeLogger(): PinoLogger {
+  return {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    setContext: jest.fn(),
+  } as unknown as PinoLogger;
+}
+
 const enabledConfig = (): Record<string, unknown> => ({
   MAIL_ENABLED: 'true',
   MAIL_FROM: 'MobileStore <no-reply@example.com>',
@@ -57,7 +69,7 @@ describe('MailService', () => {
 
   describe('when MAIL_ENABLED is "true"', () => {
     it('creates a transport and sends a message with the correct to/subject/html', async () => {
-      const service = new MailService(makeConfig(enabledConfig()));
+      const service = new MailService(makeConfig(enabledConfig()), makeLogger());
 
       await service.sendOrderConfirmation({
         to: 'customer@example.com',
@@ -79,7 +91,7 @@ describe('MailService', () => {
     });
 
     it('passes SMTP auth credentials to the transport', async () => {
-      const service = new MailService(makeConfig(enabledConfig()));
+      const service = new MailService(makeConfig(enabledConfig()), makeLogger());
 
       await service.sendOrderConfirmation({ to: 'c@example.com', order });
 
@@ -94,7 +106,7 @@ describe('MailService', () => {
     });
 
     it('does not throw when sending succeeds', async () => {
-      const service = new MailService(makeConfig(enabledConfig()));
+      const service = new MailService(makeConfig(enabledConfig()), makeLogger());
 
       await expect(
         service.sendOrderConfirmation({ to: 'c@example.com', order }),
@@ -104,7 +116,7 @@ describe('MailService', () => {
 
   describe('when MAIL_ENABLED is not "true"', () => {
     it('does not create a transport or send anything', async () => {
-      const service = new MailService(makeConfig({ MAIL_ENABLED: 'false' }));
+      const service = new MailService(makeConfig({ MAIL_ENABLED: 'false' }), makeLogger());
 
       await service.sendOrderConfirmation({ to: 'c@example.com', order });
 
@@ -113,7 +125,7 @@ describe('MailService', () => {
     });
 
     it('resolves without throwing (no-op)', async () => {
-      const service = new MailService(makeConfig({}));
+      const service = new MailService(makeConfig({}), makeLogger());
 
       await expect(
         service.sendOrderConfirmation({ to: 'c@example.com', order }),

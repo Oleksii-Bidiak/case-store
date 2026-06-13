@@ -116,6 +116,18 @@ export class EnvironmentVariables {
   @IsString()
   @MinLength(32, { message: 'CSRF_SECRET must be at least 32 characters when set' })
   CSRF_SECRET?: string;
+
+  // ─── Logging ──────────────────────────────────────────────────────────────
+  // Optional Pino log-level override. Accepted values (pino levels):
+  // `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `silent`.
+  // When unset the level defaults to `debug` in development and `info` in
+  // production, so operators can quieten or widen logs (e.g. LOG_LEVEL=warn in
+  // production) without a NODE_ENV or code change. Not validated against the
+  // enum so a future custom level is not rejected at startup.
+
+  @IsOptional()
+  @IsString()
+  LOG_LEVEL?: string;
 }
 
 /**

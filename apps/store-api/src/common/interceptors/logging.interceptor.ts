@@ -3,6 +3,14 @@ import { PinoLogger } from 'nestjs-pino';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
+/**
+ * Request-level success logging (method, url, statusCode, responseTime) is
+ * handled by pino-http `autoLogging` (configured in config/pino.config.ts),
+ * which is the single source of truth for the per-request log line and carries
+ * the correlation `reqId`. This interceptor only adds richer ERROR context
+ * (4xx/5xx with statusCode + duration) that the autoLogging line does not
+ * surface — so it intentionally has no success-path log.
+ */
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   constructor(private readonly logger: PinoLogger) {
@@ -16,12 +24,6 @@ export class LoggingInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       tap({
-        next: () => {
-          const response = context.switchToHttp().getResponse();
-          const { statusCode } = response;
-          const duration = Date.now() - now;
-          this.logger.info(`${method} ${url} ${statusCode} — ${duration}ms`);
-        },
         error: (error) => {
           const duration = Date.now() - now;
           this.logger.error(

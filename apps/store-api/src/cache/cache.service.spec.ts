@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { PinoLogger } from 'nestjs-pino';
 import { CacheService } from './cache.service';
 
 describe('CacheService', () => {
@@ -18,8 +19,20 @@ describe('CacheService', () => {
       del: jest.fn(),
     };
 
+    const pinoLoggerMock = {
+      info: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+      setContext: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
-      providers: [CacheService, { provide: CACHE_MANAGER, useValue: cacheManagerMock }],
+      providers: [
+        CacheService,
+        { provide: CACHE_MANAGER, useValue: cacheManagerMock },
+        { provide: PinoLogger, useValue: pinoLoggerMock },
+      ],
     }).compile();
 
     service = module.get<CacheService>(CacheService);

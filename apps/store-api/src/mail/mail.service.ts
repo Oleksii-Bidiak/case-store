@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PinoLogger } from 'nestjs-pino';
 import { createTransport, type Transporter } from 'nodemailer';
 import type { OrderEntity } from '../order/entities';
 import {
@@ -25,12 +26,15 @@ export interface SendOrderConfirmationParams {
  */
 @Injectable()
 export class MailService {
-  private readonly logger = new Logger(MailService.name);
   private readonly enabled: boolean;
   private readonly from: string | undefined;
   private transporter?: Transporter;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(MailService.name);
     this.enabled = this.config.get<string>('MAIL_ENABLED') === 'true';
     this.from = this.config.get<string>('MAIL_FROM');
   }

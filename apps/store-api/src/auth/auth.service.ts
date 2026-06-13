@@ -1,6 +1,7 @@
 import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { PinoLogger } from 'nestjs-pino';
 import * as argon2 from 'argon2';
 import { AuthRepository, CreateUserInput } from './auth.repository';
 import { AuthTokens } from './entities';
@@ -17,7 +18,10 @@ export class AuthService {
     private readonly authRepository: AuthRepository,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly logger: PinoLogger,
   ) {
+    this.logger.setContext(AuthService.name);
+
     // Secrets are required — never fall back to a default (env is validated at startup)
     this.jwtSecret = this.configService.getOrThrow<string>('JWT_SECRET');
     this.jwtRefreshSecret = this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
@@ -47,6 +51,12 @@ export class AuthService {
       lastName: dto.lastName,
     };
     const user = await this.authRepository.createUser(createUserInput);
+
+    // Critical business event — never log the password/hash.
+    this.logger.info(
+      { event: 'user.registered', userId: user.id, email: dto.email },
+      'User registered',
+    );
 
     // Generate and return token pair
     return this.generateTokenPair(user.id, user.role);

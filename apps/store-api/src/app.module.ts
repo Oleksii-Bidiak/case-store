@@ -20,6 +20,7 @@ import { buildThrottlerOptions } from './throttler';
 import { HttpExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
 import { validateEnv } from './config/env.validation';
+import { buildPinoHttpOptions } from './config/pino.config';
 
 @Module({
   imports: [
@@ -39,21 +40,13 @@ import { validateEnv } from './config/env.validation';
       useFactory: buildThrottlerOptions,
     }),
 
-    // Structured logging with Pino
-    LoggerModule.forRoot({
-      pinoHttp: {
-        transport:
-          process.env.NODE_ENV !== 'production'
-            ? {
-                target: 'pino-pretty',
-                options: {
-                  colorize: true,
-                  singleLine: true,
-                },
-              }
-            : undefined,
-        level: process.env.NODE_ENV !== 'production' ? 'debug' : 'info',
-      },
+    // Structured logging with Pino — config (level, redaction, request-id
+    // correlation, serializers, health-probe silencing) is built from
+    // ConfigService in buildPinoHttpOptions (config/pino.config.ts).
+    LoggerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: buildPinoHttpOptions,
     }),
 
     // Database
