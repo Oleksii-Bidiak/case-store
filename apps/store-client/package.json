@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@store/eslint-config": "^0.1.0",
+    "@store/orval-config": "^0.1.0",
     "@store/typescript-config": "^0.1.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",

@@ -419,7 +419,11 @@
 | TASK-054-C | Bump `@nestjs/cli` to `^11.0.0` and `@nestjs/schematics` to `^11.0.0` (devDependencies only) to clear `DEP0190` child-process shell warning; verify `nest build` and `start:dev` are warning-free | ✅ | docs/plans/036-monorepo-architecture-review.md |
 | TASK-054-D | Directory layout and workspace boundary audit: assess shared config placement, Orval config duplication across frontends, Docker Compose path dependencies; document findings; add new BACKLOG entries for any actionable items | ✅ | docs/plans/036-monorepo-architecture-review.md |
 | TASK-054-E | Verification gate: `typecheck` / `build` / `lint` / `test` / `test:e2e` all green after A–D; smoke-test new root `db:*` and `generate:api` scripts; confirm no Orval-generated files changed; confirm no `DEP0190` warning | ✅ | docs/plans/036-monorepo-architecture-review.md |
-| TASK-058 | (from TASK-054-D) Consolidate the near-identical `orval.config.ts` files (differ only by project key) into a shared factory under `packages/`; low priority | ⬜ | docs/plans/036-monorepo-architecture-review.md |
+| TASK-058 | (from TASK-054-D) Consolidate the near-identical `orval.config.ts` files (differ only by project key) into a shared `@store/orval-config` factory under `packages/`; low priority | ✅ | docs/plans/037-orval-config-consolidation.md |
+| TASK-058-A | Create `packages/orval-config` workspace package with `createOrvalConfig` factory (hand-authored CJS `index.js` + `index.d.ts`, no build step — matches `@store/eslint-config` convention) | ✅ | docs/plans/037-orval-config-consolidation.md |
+| TASK-058-B | Add `@store/orval-config` as devDependency to `apps/store-client` and `apps/store-admin`; verify workspace symlink | ✅ | docs/plans/037-orval-config-consolidation.md |
+| TASK-058-C | Rewrite both `orval.config.ts` files to call `createOrvalConfig({ name })` factory | ✅ | docs/plans/037-orval-config-consolidation.md |
+| TASK-058-D | Verification gate: zero diff in `**/shared/api/generated/**` after `npm run generate:api`; typecheck / build / lint green | ✅ | docs/plans/037-orval-config-consolidation.md |
 | TASK-059 | (from TASK-054-D) Align the divergent `/api` baseURL convention between `store-client` and `store-admin` `shared/api/instance.ts` (one prefixes paths with `/api`, the other bakes it into `baseURL`); refactor with care for auth/CSRF flows; low priority | ⬜ | docs/plans/036-monorepo-architecture-review.md |
 
 ---
