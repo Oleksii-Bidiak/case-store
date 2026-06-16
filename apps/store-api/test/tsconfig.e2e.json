@@ -2,23 +2,12 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "../tsconfig.json",
   "compilerOptions": {
-    "module": "node16",
-    "moduleResolution": "node16",
+    "noEmit": true,
     "isolatedModules": true,
-    "declaration": true,
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
-    "esModuleInterop": true,
-    "target": "ES2021",
-    "lib": ["ES2021"],
-    "outDir": "./dist",
     "rootDir": ".",
     "paths": {
       "@/*": ["../src/*"]
     },
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
     "types": ["jest", "node"]
   },
   "include": ["../src/**/*", "./**/*"]
