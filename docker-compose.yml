@@ -12,7 +12,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-store_dev}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-store_dev}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,11 +30,25 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    environment:
+      # Passed into the container so the entrypoint shell can decide whether to
+      # enable auth. Empty by default (local dev) → Redis starts without a password.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    # Only append --requirepass when REDIS_PASSWORD is non-empty. The previous
+    # `--requirepass ${REDIS_PASSWORD:-}` form passed a bare flag with no value
+    # when the var was unset, crashing Redis ("'requirepass' wrong number of
+    # arguments"). `$$` defers expansion to the container shell.
+    command: >
+      sh -c 'redis-server --appendonly yes
+      $${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}'
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        [
+          "CMD-SHELL",
+          'redis-cli $${REDIS_PASSWORD:+-a "$$REDIS_PASSWORD"} ping | grep -q PONG',
+        ]
       interval: 10s
       timeout: 5s
       retries: 5

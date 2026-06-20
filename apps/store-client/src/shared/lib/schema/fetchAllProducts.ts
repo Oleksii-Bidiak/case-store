@@ -1,7 +1,10 @@
 import { productControllerFindAll } from "@/shared/api/generated/products/products";
 import type { ProductEntity } from "@/shared/api/generated/models";
 
-const PAGE_SIZE = 200;
+// Must not exceed the API's max `limit` (100) — a larger value makes the very
+// first page request fail with 400 "Limit must be at most 100", which would
+// throw out of fetchAllActiveProducts and collapse the sitemap to static-only.
+const PAGE_SIZE = 100;
 
 /**
  * Fetch every ACTIVE product across all pages using the Orval plain fetcher
