@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ProductImageEntity } from "@/entities/product";
+import { ProductThumb } from "@/shared/ui";
 
 interface ProductImageGalleryProps {
   images: ProductImageEntity[];
@@ -17,38 +18,41 @@ function altText(image: ProductImageEntity, fallback: string): string {
 
 /**
  * ProductImageGallery — main image with a clickable thumbnail strip.
- * Selecting a thumbnail swaps the main image. Handles the empty-image case
- * with a muted placeholder.
+ * Selecting a thumbnail swaps the main image. Images that fail to load (or a
+ * product with none) fall back to a styled gradient placeholder so the page
+ * never shows a broken-image icon.
  */
 export function ProductImageGallery({
   images,
   altFallback,
 }: ProductImageGalleryProps) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [failed, setFailed] = useState<Record<string, boolean>>({});
 
-  if (images.length === 0) {
-    return (
-      <div
-        role="img"
-        aria-label="No image available"
-        className="flex aspect-square w-full items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground"
-      >
-        No image available
-      </div>
-    );
-  }
+  const markFailed = (id: string) =>
+    setFailed((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
 
   const activeImage = images[activeIndex] ?? images[0];
+  const showPlaceholder = !activeImage || failed[activeImage.id];
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="aspect-square w-full overflow-hidden rounded-lg bg-muted">
-        {/* eslint-disable-next-line @next/next/no-img-element -- Next <Image> deferred to Phase 5 (needs dimensions + CDN) */}
-        <img
-          src={activeImage.url}
-          alt={altText(activeImage, altFallback)}
-          className="size-full object-cover"
-        />
+      <div className="aspect-square w-full overflow-hidden rounded-xl border border-border bg-muted">
+        {showPlaceholder ? (
+          <ProductThumb
+            name={altFallback}
+            className="size-full"
+            initialClassName="text-7xl"
+          />
+        ) : (
+          /* eslint-disable-next-line @next/next/no-img-element -- Next <Image> deferred to Phase 5 (needs dimensions + CDN) */
+          <img
+            src={activeImage.url}
+            alt={altText(activeImage, altFallback)}
+            onError={() => markFailed(activeImage.id)}
+            className="size-full object-cover"
+          />
+        )}
       </div>
 
       {images.length > 1 && (
@@ -62,19 +66,28 @@ export function ProductImageGallery({
                   aria-pressed={isActive}
                   aria-label={`Show image ${index + 1}`}
                   onClick={() => setActiveIndex(index)}
-                  className={`size-16 shrink-0 overflow-hidden rounded-md border-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  className={`size-16 shrink-0 overflow-hidden rounded-lg border-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     isActive ? "border-primary" : "border-border"
                   }`}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element -- see above */}
-                  <img
-                    src={image.url}
-                    alt={altText(
-                      image,
-                      `${altFallback} thumbnail ${index + 1}`,
-                    )}
-                    className="size-full object-cover"
-                  />
+                  {failed[image.id] ? (
+                    <ProductThumb
+                      name={`${altFallback} ${index + 1}`}
+                      className="size-full"
+                      initialClassName="text-lg"
+                    />
+                  ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element -- see above */
+                    <img
+                      src={image.url}
+                      alt={altText(
+                        image,
+                        `${altFallback} thumbnail ${index + 1}`,
+                      )}
+                      onError={() => markFailed(image.id)}
+                      className="size-full object-cover"
+                    />
+                  )}
                 </button>
               </li>
             );

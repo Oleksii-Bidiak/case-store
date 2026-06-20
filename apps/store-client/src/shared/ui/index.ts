@@ -44,5 +44,6 @@ export { Toaster } from "./sonner";
 export { Skeleton } from "./skeleton";
 export { CheckoutSkeleton } from "./checkout-skeleton";
 export { ProductCard } from "./product-card";
+export { ProductThumb } from "./product-thumb";
 export { RatingStars } from "./rating-stars";
 export { JsonLd } from "./json-ld";

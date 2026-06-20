@@ -14,6 +14,7 @@ import { ProductStockIndicator } from "./product-stock-indicator";
 import { ProductTrustBadges } from "./product-trust-badges";
 import { ProductSpecsTabs } from "./product-specs-tabs";
 import { ProductRelated } from "./product-related";
+import { MobileAtcBar } from "./mobile-atc-bar";
 
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
@@ -71,7 +72,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
     Number(product.compareAtPrice) > Number(displayPrice);
 
   return (
-    <article className="flex flex-col gap-8">
+    <article className="flex flex-col gap-8 pb-24 md:pb-0">
       <nav aria-label={dict.product.breadcrumbAria}>
         <ol className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <li>
@@ -105,7 +106,9 @@ export function ProductDetailView({ slug }: { slug: string }) {
         <ProductImageGallery images={sortedImages} altFallback={product.name} />
 
         <div className="flex flex-col gap-6">
-          <h1 className="text-2xl font-bold text-foreground">{product.name}</h1>
+          <h1 className="font-display text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
+            {product.name}
+          </h1>
 
           <RatingStars
             average={product.ratingAverage}
@@ -114,7 +117,9 @@ export function ProductDetailView({ slug }: { slug: string }) {
           />
 
           <div className="flex items-center gap-3">
-            <p className="text-2xl font-semibold text-foreground">
+            <p
+              className={`font-display text-3xl font-extrabold tracking-tight ${onSale ? "text-sale" : "text-foreground"}`}
+            >
               {formatMoney(displayPrice)}
             </p>
             {onSale && product.compareAtPrice && (
@@ -155,6 +160,13 @@ export function ProductDetailView({ slug }: { slug: string }) {
       <ProductSpecsTabs description={product.description ?? null} />
 
       <ProductRelated categoryId={category.id} excludeId={product.id} />
+
+      <MobileAtcBar
+        productId={product.id}
+        variantId={effectiveVariantId}
+        price={displayPrice}
+        disabled={selectedVariant?.stock === 0}
+      />
     </article>
   );
 }

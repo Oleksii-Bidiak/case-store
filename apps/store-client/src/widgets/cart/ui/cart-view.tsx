@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ShoppingBag } from "lucide-react";
 import { useGetCart } from "@/entities/cart";
 import { dict } from "@/shared/config";
 import { CartItemRow } from "./cart-item-row";
@@ -46,9 +46,12 @@ export function CartView() {
         aria-labelledby="empty-cart-heading"
         className="flex flex-col items-center gap-4 py-16 text-center"
       >
+        <span className="flex size-20 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <ShoppingBag className="size-9" aria-hidden="true" />
+        </span>
         <h2
           id="empty-cart-heading"
-          className="text-xl font-semibold text-foreground"
+          className="font-display text-2xl font-bold text-foreground"
         >
           {dict.cart.emptyHeading}
         </h2>
@@ -66,7 +69,7 @@ export function CartView() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">
+        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           {dict.cart.title}
         </h1>
         <p className="text-sm text-muted-foreground">

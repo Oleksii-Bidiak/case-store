@@ -2,32 +2,12 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ImageIcon } from "lucide-react";
 import type { ProductEntity } from "@/shared/api/generated/models";
-import { formatMoney } from "@/shared/lib";
+import { formatMoney, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { Badge } from "./badge";
 import { RatingStars } from "./rating-stars";
 
 const NEW_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-
-// Stable placeholder gradients — picked deterministically from the product
-// name so every card gets a consistent, intentional-looking backdrop instead
-// of an empty grey box. Tailwind classes (not raw hex) keep tokens centralised.
-const PLACEHOLDER_GRADIENTS = [
-  "from-indigo-100 to-sky-100 text-indigo-300",
-  "from-rose-100 to-orange-100 text-rose-300",
-  "from-emerald-100 to-teal-100 text-emerald-300",
-  "from-violet-100 to-fuchsia-100 text-violet-300",
-  "from-amber-100 to-yellow-100 text-amber-400",
-  "from-cyan-100 to-blue-100 text-cyan-300",
-] as const;
-
-function pickGradient(seed: string): string {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = (hash * 31 + seed.charCodeAt(i)) | 0;
-  }
-  return PLACEHOLDER_GRADIENTS[Math.abs(hash) % PLACEHOLDER_GRADIENTS.length];
-}
 
 /**
  * ProductCard — "dumb" presentational card for a single product.
@@ -68,7 +48,7 @@ export function ProductCard({
   // eslint-disable-next-line react-hooks/purity -- recency badge needs current time
   const isNew = Date.now() - createdMs < NEW_WINDOW_MS;
 
-  const gradient = pickGradient(product.slug || product.name);
+  const gradient = pickProductGradient(product.slug || product.name);
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-[var(--shadow-lift)]">

@@ -12,7 +12,7 @@ import {
   checkoutSchema,
   type CheckoutFormValues,
 } from "@/features/checkout";
-import { Button, CheckoutSkeleton } from "@/shared/ui";
+import { Button, CheckoutSkeleton, Textarea } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { CheckoutStepIndicator } from "./checkout-step-indicator";
@@ -78,7 +78,7 @@ export function CheckoutView() {
   return (
     <div className="flex flex-col gap-8 lg:grid lg:grid-cols-3">
       <section className="lg:col-span-2">
-        <h1 className="mb-6 text-2xl font-bold text-foreground">
+        <h1 className="mb-6 font-display text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
           {dict.checkout.title}
         </h1>
 
@@ -124,11 +124,10 @@ export function CheckoutView() {
                 {dict.common.optional}
               </span>
             </label>
-            <textarea
+            <Textarea
               id="checkout-notes"
               rows={3}
               maxLength={500}
-              className="rounded-lg border border-border bg-background px-3 py-2 text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               {...register("notes")}
             />
             <span className="self-end text-xs text-muted-foreground">
