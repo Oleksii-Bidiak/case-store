@@ -73,9 +73,27 @@ export class ProductEntity {
   @ApiProperty({ description: 'Last update timestamp', example: '2024-01-01T00:00:00.000Z' })
   updatedAt!: Date;
 
+  @ApiProperty({
+    description: 'Average approved-review rating (1–5), or null when there are no reviews',
+    example: 4.5,
+    type: Number,
+    nullable: true,
+  })
+  ratingAverage!: number | null;
+
+  @ApiProperty({
+    description: 'Number of approved reviews this product has',
+    example: 128,
+  })
+  ratingCount!: number;
+
   /**
    * Create a ProductEntity from a Prisma Product model.
    * Converts Decimal fields to strings and strips out relation fields.
+   *
+   * `ratingAverage` / `ratingCount` are optional: list and detail queries
+   * enrich the product with review aggregates, while admin/mutation paths
+   * (create, update, findById) omit them and default to "no reviews".
    */
   static fromPrisma(product: {
     id: string;
@@ -89,6 +107,8 @@ export class ProductEntity {
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
+    ratingAverage?: number | null;
+    ratingCount?: number;
   }): ProductEntity {
     const entity = new ProductEntity();
     entity.id = product.id;
@@ -102,6 +122,9 @@ export class ProductEntity {
     entity.isActive = product.isActive;
     entity.createdAt = product.createdAt;
     entity.updatedAt = product.updatedAt;
+    entity.ratingAverage =
+      product.ratingAverage != null ? Math.round(product.ratingAverage * 10) / 10 : null;
+    entity.ratingCount = product.ratingCount ?? 0;
     return entity;
   }
 }
