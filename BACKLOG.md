@@ -482,6 +482,58 @@
 
 ---
 
+## Storefront Commerce Gaps — feature-parity audit (2026-06-21)
+
+> Checklist of what the storefront is **missing vs the Ukrainian benchmark shops**
+> (ivan-chohol.ua, ktc.ua, ash-mobile.com.ua). The architecture/backend is ahead of
+> these shops; the gaps are conversion-driving **commerce features and visual depth**.
+> Design work should go through the new `designer` agent + `docs/design-system.md`, and
+> verify visually via `npm run screenshots -w apps/store-client`.
+> Items already tracked elsewhere are cross-referenced, not duplicated.
+
+### 🔴 Critical — blocks premium look & conversion
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-073 | **Product images (backend + frontend).** `ProductEntity` exposes no image data, so cards/PDP show placeholders and `next/image` can't be wired. Add `ProductImage` model (url, alt, sortOrder, isPrimary) + variant images, admin upload, expose on list + detail API, regen Orval. **Unblocks TASK-068-C/-F.** Highest-impact gap for an accessories store. | ⬜ | — |
+| TASK-074 | **Image hosting + `next/image` optimization.** Configure remote image host/CDN (`next.config` `images.remotePatterns`), responsive `sizes`, blur placeholder; swap all `<img>`/`bg` placeholders to `next/image`. Depends on TASK-073. | ⬜ | — |
+| TASK-075 | **Header search with autocomplete.** Inline search in header (deferred in TASK-068-B) + suggestions dropdown (product/category hits, debounced) backed by a search endpoint. Consider Meilisearch later (typo-tolerance, per requirements.md). | ⬜ | — |
+
+### 🟠 High — expected commerce features users look for
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-076 | **Wishlist / favorites ("Список бажань").** Heart toggle on cards + PDP, dedicated page, header count badge. Backend Wishlist model (guest via cookie, merge on login — mirror guest-cart pattern) + Orval. | ⬜ | — |
+| TASK-077 | **Variant/color dots on product card + quick-add.** Surface variant (color/model) summary on the list API so cards show selectable color dots and a hover "add to cart" overlay (the other half of deferred TASK-068-C). | ⬜ | — |
+| TASK-078 | **Product reviews — write flow + moderation.** Ratings are aggregated/read-only today; add authenticated review submission (rating + text + verified-purchase check), display list with pagination on PDP, and admin moderation queue (approve/reject). | ⬜ | — |
+| TASK-079 | **Promo codes / coupons at checkout.** Discount-code model + validation (percent/fixed, min-spend, expiry, usage caps), apply field in cart/checkout, reflected in totals; admin CRUD. | ⬜ | — |
+| TASK-080 | **Delivery method + Nova Poshta selector.** Delivery options (courier / branch pickup) with city + branch autocomplete, delivery cost + ETA shown in checkout and as "Відправимо завтра"-style hints on cards. | ⬜ | — |
+| TASK-081 | **Payment integration (real).** Already tracked as **TASK-034** (Stripe stub ⬜). For UA market also plan card/installment providers (LiqPay/Fondy/Mono "оплата частинами"). | ⬜ | docs/plans/021-payment-integration.md |
+
+### 🟡 Medium — polish, discovery & trust
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-082 | **Mega-menu / full catalog tree in header.** Hover/click catalog panel with category hierarchy + featured links (benchmark shops lead with this). | ⬜ | — |
+| TASK-083 | **Category tile images** on homepage (deferred in TASK-068-D — needs a `Category.image` field + admin upload). | ⬜ | — |
+| TASK-084 | **Mobile filter drawer + sort relocation** (deferred in TASK-068-E): filters in a `Sheet` on mobile, sort control moved above the grid. | ⬜ | — |
+| TASK-085 | **Product comparison ("Порівняння").** Compare toggle on cards + side-by-side specs page. | ⬜ | — |
+| TASK-086 | **Quick-view modal** from product cards (Dialog with gallery + key info + add-to-cart) to shorten path to purchase. | ⬜ | — |
+| TASK-087 | **Recently viewed products** strip (localStorage-backed) on PDP/home. | ⬜ | — |
+| TASK-088 | **Bestseller / "Хіт продажу" badge** driven by sales data (extends existing Sale/New badges). | ⬜ | — |
+| TASK-089 | **Contact & social bar.** Top bar with phone + working hours + Viber/Telegram/Instagram links; reinforces trust like the benchmark shops. | ⬜ | — |
+| TASK-090 | **Newsletter signup** (footer) + **cookie-consent banner** (UA/GDPR) — also a prerequisite for compliant GA4 (TASK-050) and Pixel. | ⬜ | — |
+
+### Already tracked (analytics / errors / marketing)
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-048 | Sentry integration (frontend + backend) | ⬜ | — |
+| TASK-049 | Abandoned cart detection + email follow-up | ⬜ | — |
+| TASK-050 | GA4 e-commerce events (depends on cookie consent — TASK-090) | ⬜ | — |
+
+---
+
 ## How to Update This File
 
 ### When starting a task:

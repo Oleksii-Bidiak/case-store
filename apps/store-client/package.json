@@ -11,7 +11,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "jest",
-    "generate:api": "orval --config orval.config.ts"
+    "generate:api": "orval --config orval.config.ts",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -43,6 +44,7 @@
     "eslint-config-next": "16.2.4",
     "eslint-plugin-import": "^2.31.0",
     "orval": "^8.9.1",
+    "playwright": "^1.61.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -47,10 +47,20 @@ export interface UpdateProductInput {
 }
 
 /**
- * Result of a paginated product query.
+ * Aggregated approved-review rating for a product. `ratingAverage` is null
+ * when the product has no approved reviews.
+ */
+export interface ProductRating {
+  ratingAverage: number | null;
+  ratingCount: number;
+}
+
+/**
+ * Result of a paginated product query. Each product is enriched with its
+ * approved-review aggregate so the storefront can render star ratings.
  */
 export interface PaginatedProductsResult {
-  products: Product[];
+  products: (Product & ProductRating)[];
   total: number;
 }
 
@@ -59,24 +69,25 @@ export interface PaginatedProductsResult {
  * Used for the product detail endpoint.
  */
 export interface ProductWithRelations {
-  product: Product & {
-    category: { id: string; name: string; slug: string };
-    variants: Array<{
-      id: string;
-      name: string;
-      sku: string | null;
-      price: { toString(): string };
-      stock: number;
-      attributes: unknown;
-      isActive: boolean;
-    }>;
-    images: Array<{
-      id: string;
-      url: string;
-      alt: string | null;
-      sortOrder: number;
-    }>;
-  };
+  product: Product &
+    ProductRating & {
+      category: { id: string; name: string; slug: string };
+      variants: Array<{
+        id: string;
+        name: string;
+        sku: string | null;
+        price: { toString(): string };
+        stock: number;
+        attributes: unknown;
+        isActive: boolean;
+      }>;
+      images: Array<{
+        id: string;
+        url: string;
+        alt: string | null;
+        sortOrder: number;
+      }>;
+    };
 }
 
 @Injectable()
@@ -84,6 +95,29 @@ export class ProductRepository {
   private readonly logger = new Logger(ProductRepository.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Aggregate approved-review ratings for a set of products in a single query.
+   * Returns a map keyed by product id; products with no approved reviews are
+   * absent from the map (callers default them to `{ null, 0 }`).
+   */
+  private async getRatingsByProductId(productIds: string[]): Promise<Map<string, ProductRating>> {
+    if (productIds.length === 0) {
+      return new Map();
+    }
+    const groups = await this.prisma.review.groupBy({
+      by: ['productId'],
+      where: { productId: { in: productIds }, isActive: true },
+      _avg: { rating: true },
+      _count: { rating: true },
+    });
+    return new Map(
+      groups.map((g) => [
+        g.productId,
+        { ratingAverage: g._avg.rating, ratingCount: g._count.rating },
+      ]),
+    );
+  }
 
   /**
    * Find a product by ID.
@@ -113,8 +147,8 @@ export class ProductRepository {
    * Find a product by slug with its category, variants, and images.
    * Used for the public product detail endpoint.
    */
-  findBySlugWithRelations(slug: string): Promise<ProductWithRelations['product'] | null> {
-    return this.prisma.product.findUnique({
+  async findBySlugWithRelations(slug: string): Promise<ProductWithRelations['product'] | null> {
+    const product = await this.prisma.product.findUnique({
       where: { slug },
       include: {
         category: {
@@ -144,6 +178,18 @@ export class ProductRepository {
         },
       },
     });
+
+    if (!product) {
+      return null;
+    }
+
+    const ratings = await this.getRatingsByProductId([product.id]);
+    const rating = ratings.get(product.id);
+    return {
+      ...product,
+      ratingAverage: rating?.ratingAverage ?? null,
+      ratingCount: rating?.ratingCount ?? 0,
+    };
   }
 
   /**
@@ -217,7 +263,17 @@ export class ProductRepository {
       this.prisma.product.count({ where }),
     ]);
 
-    return { products, total };
+    const ratings = await this.getRatingsByProductId(products.map((p) => p.id));
+    const enriched = products.map((product) => {
+      const rating = ratings.get(product.id);
+      return {
+        ...product,
+        ratingAverage: rating?.ratingAverage ?? null,
+        ratingCount: rating?.ratingCount ?? 0,
+      };
+    });
+
+    return { products: enriched, total };
   }
 
   /**

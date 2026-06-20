@@ -70,12 +70,20 @@ export const dict = {
     cta: "Перейти до каталогу",
     ctaSecondary: "Переглянути новинки",
     badge: "Новинки сезону",
+    highlights: {
+      cases: "Чохли та захист",
+      charging: "Швидка зарядка",
+      audio: "Аудіо та гаджети",
+    },
+    ratingBadge: "4.8 середній рейтинг",
   },
 
   catalog: {
     categories: "Категорії товарів",
     latestProducts: "Рекомендовані товари",
     allProducts: "Всі товари",
+    allProductsSubtitle:
+      "Аксесуари для смартфонів на будь-який бюджет — від базових до преміум.",
     categoriesError: "Не вдалося завантажити категорії. Спробуйте пізніше.",
     noCategories: "Категорій поки немає.",
     categoriesAria: "Категорії товарів",
@@ -112,6 +120,8 @@ export const dict = {
   product: {
     saleBadge: "Розпродаж",
     newBadge: "Новинка",
+    ratingAria: (average: number, count: number) =>
+      `Рейтинг ${average.toFixed(1)} з 5 на основі ${count} відгуків`,
     chooseVariant: "Оберіть варіант",
     outOfStock: "Немає в наявності",
     inStock: (n: number) => `В наявності (${n})`,

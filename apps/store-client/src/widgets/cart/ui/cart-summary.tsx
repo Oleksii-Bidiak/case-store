@@ -58,9 +58,11 @@ export function CartSummary({ totals }: { totals: CartTotals }) {
 
       <Separator />
 
-      <div className="flex items-center justify-between font-semibold text-foreground">
+      <div className="flex items-baseline justify-between font-semibold text-foreground">
         <span>{dict.cart.total}</span>
-        <span>{formatMoney(totals.subtotal)}</span>
+        <span className="font-display text-xl font-bold tracking-tight">
+          {formatMoney(totals.subtotal)}
+        </span>
       </div>
 
       <p className="flex items-center gap-2 text-xs text-muted-foreground">

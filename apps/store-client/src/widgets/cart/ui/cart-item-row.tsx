@@ -10,6 +10,7 @@ import {
 } from "@/entities/cart";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
+import { ProductThumb } from "@/shared/ui";
 
 const MAX_QUANTITY = 99;
 
@@ -70,20 +71,27 @@ export function CartItemRow({ item }: { item: CartItemEntity }) {
       }`}
     >
       <div className="flex items-start justify-between gap-4">
-        <div className="flex flex-col">
-          <p className="font-medium text-foreground">{item.productName}</p>
-          {variantName && (
-            <p className="text-sm text-muted-foreground">{variantName}</p>
-          )}
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-sm text-foreground">
-              {formatMoney(item.price)}
-            </span>
-            {onSale && compareAtPrice && (
-              <span className="text-xs text-muted-foreground line-through">
-                {formatMoney(compareAtPrice)}
-              </span>
+        <div className="flex items-start gap-3">
+          <ProductThumb
+            name={item.productName}
+            className="size-16 shrink-0 rounded-lg"
+            initialClassName="text-xl"
+          />
+          <div className="flex flex-col">
+            <p className="font-medium text-foreground">{item.productName}</p>
+            {variantName && (
+              <p className="text-sm text-muted-foreground">{variantName}</p>
             )}
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-sm text-foreground">
+                {formatMoney(item.price)}
+              </span>
+              {onSale && compareAtPrice && (
+                <span className="text-xs text-muted-foreground line-through">
+                  {formatMoney(compareAtPrice)}
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <p className="shrink-0 font-semibold text-foreground">
