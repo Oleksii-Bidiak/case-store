@@ -33,13 +33,19 @@
       {
         "matcher": "Edit|Write",
         "hooks": [
-          { "type": "command", "command": "node .claude/hooks/guard-edits.js" }
+          {
+            "type": "command",
+            "command": "node .claude/hooks/guard-edits.js"
+          }
         ]
       },
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "node .claude/hooks/guard-bash.js" }
+          {
+            "type": "command",
+            "command": "node .claude/hooks/guard-bash.js"
+          }
         ]
       }
     ],
@@ -54,5 +60,8 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "andrej-karpathy-skills@karpathy-skills": true
   }
 }

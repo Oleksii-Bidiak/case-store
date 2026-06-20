@@ -7,15 +7,17 @@ import Axios, {
 /**
  * Pre-configured Axios instance for communicating with the store-api backend.
  *
- * - baseURL: reads from NEXT_PUBLIC_API_URL env var (defaults to http://localhost:3001/api)
+ * - baseURL: reads from NEXT_PUBLIC_API_URL env var (defaults to http://localhost:3001)
  * - withCredentials: enabled for cookie-based auth (refresh tokens)
  * - Content-Type: application/json by default
  *
- * Note: the baseURL already includes the `/api` prefix, so endpoint paths here
- * are written without it (e.g. `/auth/refresh`).
+ * Note: the backend mounts every route under the `/api` global prefix, and Axios
+ * builds the request URL by concatenating baseURL + path. The baseURL is therefore
+ * the bare origin (no `/api`), and every endpoint path carries `/api` itself
+ * (e.g. `/api/auth/refresh`) — matching the Orval-generated paths.
  */
 export const api = Axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api",
+  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001",
   withCredentials: true,
   headers: {
     "Content-Type": "application/json",
@@ -40,11 +42,10 @@ export function setAccessToken(token: string | null): void {
 // The backend protects cookie-authenticated, state-changing routes (refresh,
 // cart mutations) with a CSRF token delivered in a readable cookie. We read the
 // cookie and echo it back in the `x-csrf-token` header on mutating requests.
-// If the cookie is missing, we lazily fetch one first. Note: the baseURL above
-// already includes `/api`, so the token path is written without it.
+// If the cookie is missing, we lazily fetch one from GET /api/csrf-token first.
 
 const CSRF_COOKIE_NAMES = ["__Host-csrf", "csrf"];
-const CSRF_TOKEN_PATH = "/csrf-token";
+const CSRF_TOKEN_PATH = "/api/csrf-token";
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 function readCsrfCookie(): string | null {
@@ -120,7 +121,7 @@ let refreshPromise: Promise<string | null> | null = null;
 async function refreshAccessToken(): Promise<string | null> {
   if (!refreshPromise) {
     refreshPromise = api
-      .post<{ data?: { accessToken?: string } }>("/auth/refresh")
+      .post<{ data?: { accessToken?: string } }>("/api/auth/refresh")
       .then((response) => response.data?.data?.accessToken ?? null)
       .catch(() => null)
       .finally(() => {
