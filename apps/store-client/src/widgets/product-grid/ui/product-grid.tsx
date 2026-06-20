@@ -2,6 +2,7 @@
 
 import { useProductControllerFindAll } from "@/entities/product";
 import { ProductCard } from "@/shared/ui";
+import { AddToCartButton } from "@/features/add-to-cart";
 import { ProductGridSkeleton } from "./product-grid-skeleton";
 
 /**
@@ -37,7 +38,11 @@ export function ProductGrid() {
   return (
     <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
       {products.map((product) => (
-        <ProductCard key={product.id} product={product} />
+        <ProductCard
+          key={product.id}
+          product={product}
+          action={<AddToCartButton productId={product.id} compact />}
+        />
       ))}
     </div>
   );

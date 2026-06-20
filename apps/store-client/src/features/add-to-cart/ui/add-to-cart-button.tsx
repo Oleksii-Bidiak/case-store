@@ -2,7 +2,9 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { ShoppingCart } from "lucide-react";
 import { getGetCartQueryKey, useAddToCart } from "@/entities/cart";
+import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
 interface AddToCartButtonProps {
@@ -11,6 +13,12 @@ interface AddToCartButtonProps {
   quantity?: number;
   disabled?: boolean;
   className?: string;
+  /**
+   * Compact rendering for product cards — a smaller pill with a cart icon and
+   * toast-only error feedback (no inline alert, to keep card heights stable).
+   * Default rendering (large block button) is unchanged for the PDP.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -24,6 +32,7 @@ export function AddToCartButton({
   quantity = 1,
   disabled = false,
   className = "",
+  compact = false,
 }: AddToCartButtonProps) {
   const queryClient = useQueryClient();
 
@@ -32,6 +41,9 @@ export function AddToCartButton({
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
         toast.success(dict.addToCart.added);
+      },
+      onError: () => {
+        if (compact) toast.error(dict.addToCart.error);
       },
     },
   });
@@ -47,6 +59,22 @@ export function AddToCartButton({
     : addToCart.isSuccess
       ? dict.addToCart.added
       : dict.addToCart.idle;
+
+  if (compact) {
+    return (
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={handleClick}
+        disabled={disabled || addToCart.isPending}
+        className={`w-full font-semibold transition-colors hover:bg-primary hover:text-primary-foreground hover:border-primary ${className}`}
+      >
+        <ShoppingCart aria-hidden="true" />
+        {label}
+      </Button>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-2">

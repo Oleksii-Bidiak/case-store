@@ -6,6 +6,7 @@ import {
   type ProductControllerFindAllParams,
 } from "@/entities/product";
 import { ProductCard } from "@/shared/ui";
+import { AddToCartButton } from "@/features/add-to-cart";
 import { dict } from "@/shared/config";
 import { ProductListSkeleton } from "./product-list-skeleton";
 import { Pagination } from "./pagination";
@@ -64,7 +65,11 @@ export function ProductList({ params, buildPageHref }: ProductListProps) {
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {products.map((product) => (
-          <ProductCard key={product.id} product={product} />
+          <ProductCard
+            key={product.id}
+            product={product}
+            action={<AddToCartButton productId={product.id} compact />}
+          />
         ))}
       </div>
 

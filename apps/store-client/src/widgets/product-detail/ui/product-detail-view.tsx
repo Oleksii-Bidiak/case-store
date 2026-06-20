@@ -6,7 +6,7 @@ import { useProductControllerFindBySlug } from "@/entities/product";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
-import { Badge } from "@/shared/ui";
+import { Badge, RatingStars } from "@/shared/ui";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
 import { ProductImageGallery } from "./product-image-gallery";
 import { ProductVariantSelector } from "./product-variant-selector";
@@ -106,6 +106,12 @@ export function ProductDetailView({ slug }: { slug: string }) {
 
         <div className="flex flex-col gap-6">
           <h1 className="text-2xl font-bold text-foreground">{product.name}</h1>
+
+          <RatingStars
+            average={product.ratingAverage}
+            count={product.ratingCount}
+            size="md"
+          />
 
           <div className="flex items-center gap-3">
             <p className="text-2xl font-semibold text-foreground">

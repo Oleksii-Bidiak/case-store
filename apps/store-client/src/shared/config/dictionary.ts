@@ -112,6 +112,8 @@ export const dict = {
   product: {
     saleBadge: "Розпродаж",
     newBadge: "Новинка",
+    ratingAria: (average: number, count: number) =>
+      `Рейтинг ${average.toFixed(1)} з 5 на основі ${count} відгуків`,
     chooseVariant: "Оберіть варіант",
     outOfStock: "Немає в наявності",
     inStock: (n: number) => `В наявності (${n})`,
