@@ -364,48 +364,6 @@
 
 ## Phase 5: Polish & Production
 
-### Localization (UK / UAH) — store-client + store-api mail — CRITICAL, runs BEFORE plan 039 (UI/UX Redesign)
-
-> **Depends on:** none — starts immediately
-> **Blocks:** TASK-068 and all sub-tasks (039 redesign MUST NOT begin until TASK-069-M is ✅)
-
-| Task ID | Description | Status | Plan |
-| --- | --- | --- | --- |
-| TASK-069 | **Parent: Localize storefront to Ukrainian (uk) and UAH currency (₴)** — central `formatMoney` utility + env var; typed dictionary; translate all 30 files; `<html lang="uk">`; locale dates; email translation | ⬜ | docs/plans/040-uk-localization-uah-currency.md |
-| TASK-069-A | Replace 6 scattered `priceFormatter`/`formatPrice` duplicates with shared `formatMoney` from `shared/lib` | ⬜ | docs/plans/040-uk-localization-uah-currency.md |
-| TASK-069-B | Create `shared/config/dictionary.ts` — typed Ukrainian string dictionary (130+ strings across all slices) | ⬜ | docs/plans/040-uk-localization-uah-currency.md |
-| TASK-069-C | Translate header, nav, footer, root layout (`<html lang="uk">`, `openGraph.locale: 'uk_UA'`, Ukrainian metadata) | ⬜ | docs/plans/040-uk-localization-uah-currency.md |
-| TASK-069-D | Translate homepage (hero banner, category nav, section headings, metadata) | ⬜ | docs/plans/040-uk-localization-uah-currency.md |
-| TASK-069-E | Translate product catalog page + filter panel (all filter labels, sort options, empty state, product count, "Sale" badge) | ⬜ | docs/plans/040-uk-localization-uah-currency.md |
-| TASK-069-F | Translate PDP: breadcrumbs, "Description", "SKU:", variant selector, AddToCartButton, error states | ⬜ | docs/plans/040-uk-localization-uah-currency.md |
-| TASK-069-G | Translate cart page: empty state, item row aria-labels, "Remove", CartSummary totals, confirm dialog, "Proceed to Checkout" | ⬜ | docs/plans/040-uk-localization-uah-currency.md |
-| TASK-069-H | Translate checkout page + Ukrainianize all zod validation messages in `checkout-schema.ts` (TDD: update spec first) | ⬜ | docs/plans/040-uk-localization-uah-currency.md |
-| TASK-069-I | Translate order confirmation page; locale dates to `"uk-UA"` (`Intl.DateTimeFormat`); totals breakdown labels | ⬜ | docs/plans/040-uk-localization-uah-currency.md |
-| TASK-069-J | Translate login + register forms: field labels, zod validation messages, buttons, error messages | ⬜ | docs/plans/040-uk-localization-uah-currency.md |
-| TASK-069-K | SEO audit: confirm `<html lang="uk">`, `openGraph.locale: 'uk_UA'`, update `CURRENCY` fallback to `"UAH"` in `site.ts` | ⬜ | docs/plans/040-uk-localization-uah-currency.md |
-| TASK-069-L | Ukrainianize order-confirmation email template (store-api): Ukrainian subject/copy + `₴` formatter (TDD: spec first) | ⬜ | docs/plans/040-uk-localization-uah-currency.md |
-| TASK-069-M | Verification gate: build/typecheck/lint/unit tests all green; grep confirms zero `en-US`/`USD` formatters remain; manual visual pass of all pages | ⬜ | docs/plans/040-uk-localization-uah-currency.md |
-
----
-
-### UI/UX Redesign — store-client storefront
-
-> **Depends on:** TASK-069-M must be ✅ before any task in this section begins
-
-| Task ID | Description | Status | Plan |
-| --- | --- | --- | --- |
-| TASK-068 | **Storefront UI/UX Redesign — parent task** (storefront currently "жахливий"; full visual/UX overhaul benchmarked against ivan-chohol.ua and ktc.ua) | ⬜ | docs/plans/039-storefront-ui-ux-redesign.md |
-| TASK-068-A | Design Token Refresh + shadcn/ui Bootstrap: update `globals.css` with `--color-sale`, `--color-success`, `--color-warning`, updated primary (#4f46e5), tighter radius, shadow scale; run `npx shadcn@latest init`; copy Button/Badge/Input/Select/Dialog/Tabs/Sheet/Sonner/Separator into `shared/ui/` | ⬜ | docs/plans/039-storefront-ui-ux-redesign.md |
-| TASK-068-B | Header Redesign: sticky header, live cart item-count badge, desktop search bar, shadcn Sheet mobile slide-out menu, brand logo mark | ⬜ | docs/plans/039-storefront-ui-ux-redesign.md |
-| TASK-068-C | Product Card Redesign: `next/image`, Sale/New `Badge` chips, hover ATC overlay, out-of-stock grey state, shadow-card elevation on hover | ⬜ | docs/plans/039-storefront-ui-ux-redesign.md |
-| TASK-068-D | Homepage Redesign: richer HeroBanner (gradient/image, dual CTA), category tiles with images/icons, trust strip (shipping/returns/secure/support), rename "Latest" → "Featured" | ⬜ | docs/plans/039-storefront-ui-ux-redesign.md |
-| TASK-068-E | Product List / Filter Panel Redesign: shadcn Select/Input in filters, active-filter chips above grid, sort control above grid, mobile filter Sheet drawer | ⬜ | docs/plans/039-storefront-ui-ux-redesign.md |
-| TASK-068-F | PDP Redesign: stock indicator (success/warning/destructive), key-specs bullets, description/specs shadcn Tabs, trust badges near ATC, related products row, mobile sticky ATC bar (IntersectionObserver), `next/image` in gallery | ⬜ | docs/plans/039-storefront-ui-ux-redesign.md |
-| TASK-068-G | Cart Page Redesign: shadcn Dialog for clear-cart (replace `window.confirm`), CartSummary trust strip + shipping notice, Button/Input primitives in CartItemRow, richer empty state | ⬜ | docs/plans/039-storefront-ui-ux-redesign.md |
-| TASK-068-H | Checkout Visual Polish: shadcn Input in address form, visual step indicator (Address → Review → Confirm), delivery ETA in order summary, auth-layout card polish | ⬜ | docs/plans/039-storefront-ui-ux-redesign.md |
-| TASK-068-I | Footer Redesign: 4-column layout (Shop/Support/Company/Contact), payment-method icon strip, Lucide trust icons, responsive 1→2→4 col, `bg-card` background | ⬜ | docs/plans/039-storefront-ui-ux-redesign.md |
-| TASK-068-J | Mobile / A11y Pass + Toast System: Sonner provider in `providers.tsx`, ATC success toast, skip-nav link, manual 375px audit, focus-visible ring audit across all interactive elements | ⬜ | docs/plans/039-storefront-ui-ux-redesign.md |
-
 ### Production Features
 
 | Task ID | Description | Status | Plan |
@@ -513,10 +471,14 @@
 
 ### Bugfixes (from 2026-06-20 manual QA pass — `docs/manual-qa-master.md`)
 
+> Renumbered from TASK-069/070 → TASK-071/072 to avoid collision with the
+> localization plan (TASK-069) and redesign (TASK-068). `docs/manual-qa-master.md`
+> still references the original 069/070 labels for these two fixes.
+
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-069 | **HIGH (SEO)** — `sitemap.xml` contains zero product routes against a live API. `apps/store-client/src/shared/lib/schema/fetchAllProducts.ts` used `PAGE_SIZE = 200`, but `GET /api/products` caps `limit` at 100, so the first page request returns `400 "Limit must be at most 100"`; `fetchAllActiveProducts` throws and the sitemap silently falls back to static-only routes. Fix: `PAGE_SIZE = 100`. Verified via curl: API live with 13 active products, yet sitemap emitted only `/` + `/products`. | ✅ | docs/manual-qa-master.md |
-| TASK-070 | **MEDIUM (DevOps)** — `docker compose up -d redis` crash-loops with `FATAL CONFIG FILE ERROR ... 'requirepass' wrong number of arguments`. `docker-compose.yml` used `--requirepass ${REDIS_PASSWORD:-}`, which passes a bare `--requirepass` flag with no value when `REDIS_PASSWORD` is unset (the default). Blocks §C5 Redis QA out of the box. Fix: pass `REDIS_PASSWORD` into the container env and only append `--requirepass` when non-empty (shell `${VAR:+…}`), plus matching auth-aware healthcheck. | ✅ | docs/manual-qa-master.md |
+| TASK-071 | **HIGH (SEO)** — `sitemap.xml` contains zero product routes against a live API. `apps/store-client/src/shared/lib/schema/fetchAllProducts.ts` used `PAGE_SIZE = 200`, but `GET /api/products` caps `limit` at 100, so the first page request returns `400 "Limit must be at most 100"`; `fetchAllActiveProducts` throws and the sitemap silently falls back to static-only routes. Fix: `PAGE_SIZE = 100`. Verified via curl: API live with 13 active products, yet sitemap emitted only `/` + `/products`. | ✅ | docs/manual-qa-master.md |
+| TASK-072 | **MEDIUM (DevOps)** — `docker compose up -d redis` crash-loops with `FATAL CONFIG FILE ERROR ... 'requirepass' wrong number of arguments`. `docker-compose.yml` used `--requirepass ${REDIS_PASSWORD:-}`, which passes a bare `--requirepass` flag with no value when `REDIS_PASSWORD` is unset (the default). Blocks §C5 Redis QA out of the box. Fix: pass `REDIS_PASSWORD` into the container env and only append `--requirepass` when non-empty (shell `${VAR:+…}`), plus matching auth-aware healthcheck. | ✅ | docs/manual-qa-master.md |
 
 ---
 
