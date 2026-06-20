@@ -4,19 +4,16 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useProductControllerFindBySlug } from "@/entities/product";
 import { AddToCartButton } from "@/features/add-to-cart";
+import { formatMoney } from "@/shared/lib";
+import { dict } from "@/shared/config";
+import { Badge } from "@/shared/ui";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
 import { ProductImageGallery } from "./product-image-gallery";
 import { ProductVariantSelector } from "./product-variant-selector";
-
-const priceFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
-
-function formatPrice(value: string): string {
-  const amount = Number(value);
-  return Number.isFinite(amount) ? priceFormatter.format(amount) : value;
-}
+import { ProductStockIndicator } from "./product-stock-indicator";
+import { ProductTrustBadges } from "./product-trust-badges";
+import { ProductSpecsTabs } from "./product-specs-tabs";
+import { ProductRelated } from "./product-related";
 
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
@@ -48,11 +45,10 @@ export function ProductDetailView({ slug }: { slug: string }) {
     return (
       <div className="flex flex-col items-start gap-4">
         <p role="alert" className="text-destructive">
-          Sorry, we couldn&apos;t load this product. It may no longer be
-          available.
+          {dict.product.loadError}
         </p>
         <Link href="/products" className="text-primary underline">
-          Go back to products
+          {dict.product.backToProducts}
         </Link>
       </div>
     );
@@ -76,17 +72,17 @@ export function ProductDetailView({ slug }: { slug: string }) {
 
   return (
     <article className="flex flex-col gap-8">
-      <nav aria-label="Breadcrumb">
+      <nav aria-label={dict.product.breadcrumbAria}>
         <ol className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <li>
             <Link href="/" className="hover:text-primary">
-              Home
+              {dict.product.breadcrumbHome}
             </Link>
           </li>
           <li aria-hidden="true">/</li>
           <li>
             <Link href="/products" className="hover:text-primary">
-              Products
+              {dict.product.breadcrumbProducts}
             </Link>
           </li>
           <li aria-hidden="true">/</li>
@@ -113,22 +109,24 @@ export function ProductDetailView({ slug }: { slug: string }) {
 
           <div className="flex items-center gap-3">
             <p className="text-2xl font-semibold text-foreground">
-              {formatPrice(displayPrice)}
+              {formatMoney(displayPrice)}
             </p>
             {onSale && product.compareAtPrice && (
               <>
                 <p className="text-base text-muted-foreground line-through">
-                  {formatPrice(product.compareAtPrice)}
+                  {formatMoney(product.compareAtPrice)}
                 </p>
-                <span className="rounded-md bg-destructive px-2 py-0.5 text-xs font-semibold text-destructive-foreground">
-                  Sale
-                </span>
+                <Badge variant="sale">{dict.product.saleBadge}</Badge>
               </>
             )}
           </div>
 
+          <ProductStockIndicator stock={selectedVariant?.stock ?? null} />
+
           {typeof product.sku === "string" && product.sku.length > 0 && (
-            <p className="text-sm text-muted-foreground">SKU: {product.sku}</p>
+            <p className="text-sm text-muted-foreground">
+              {dict.product.sku} {product.sku}
+            </p>
           )}
 
           <ProductVariantSelector
@@ -138,28 +136,19 @@ export function ProductDetailView({ slug }: { slug: string }) {
             basePrice={product.price}
           />
 
-          {typeof product.description === "string" &&
-            product.description.length > 0 && (
-              <section aria-labelledby="product-description-heading">
-                <h2
-                  id="product-description-heading"
-                  className="mb-2 text-lg font-semibold text-foreground"
-                >
-                  Description
-                </h2>
-                <p className="whitespace-pre-line text-sm text-muted-foreground">
-                  {product.description}
-                </p>
-              </section>
-            )}
-
           <AddToCartButton
             productId={product.id}
             variantId={effectiveVariantId}
             disabled={selectedVariant?.stock === 0}
           />
+
+          <ProductTrustBadges />
         </div>
       </div>
+
+      <ProductSpecsTabs description={product.description ?? null} />
+
+      <ProductRelated categoryId={category.id} excludeId={product.id} />
     </article>
   );
 }

@@ -9,10 +9,11 @@ import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth, useAuthControllerLogin } from "@/entities/session";
 import { getGetCartQueryKey } from "@/entities/cart";
+import { dict } from "@/shared/config";
 
 const loginSchema = z.object({
-  email: z.string().email("Enter a valid email address"),
-  password: z.string().min(1, "Password is required"),
+  email: z.string().email(dict.auth.login.validationEmail),
+  password: z.string().min(1, dict.auth.login.validationPassword),
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
@@ -68,9 +69,9 @@ export function LoginForm() {
   const status = login.error?.response?.status;
   const errorMessage =
     status === 401
-      ? "Invalid email or password."
+      ? dict.auth.login.errorInvalid
       : login.isError
-        ? "Something went wrong. Please try again."
+        ? dict.common.genericError
         : null;
 
   return (
@@ -84,7 +85,7 @@ export function LoginForm() {
           htmlFor="login-email"
           className="text-sm font-medium text-foreground"
         >
-          Email
+          {dict.auth.login.email}
         </label>
         <input
           id="login-email"
@@ -105,7 +106,7 @@ export function LoginForm() {
           htmlFor="login-password"
           className="text-sm font-medium text-foreground"
         >
-          Password
+          {dict.auth.login.password}
         </label>
         <input
           id="login-password"
@@ -132,13 +133,13 @@ export function LoginForm() {
         disabled={login.isPending}
         className="rounded-lg bg-primary px-4 py-2 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
       >
-        {login.isPending ? "Signing in…" : "Sign in"}
+        {login.isPending ? dict.auth.login.submitting : dict.auth.login.submit}
       </button>
 
       <p className="text-sm text-muted-foreground">
-        Don&apos;t have an account?{" "}
+        {dict.auth.login.noAccount}{" "}
         <Link href="/register" className="text-primary hover:underline">
-          Register
+          {dict.auth.login.registerLink}
         </Link>
       </p>
     </form>

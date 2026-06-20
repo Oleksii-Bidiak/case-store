@@ -1,19 +1,12 @@
+import { formatMoney } from "@/shared/lib";
+import { dict } from "@/shared/config";
+
 interface OrderTotalsBreakdownProps {
   subtotal: string;
   discount: string;
   shippingCost: string;
   tax: string;
   total: string;
-}
-
-const priceFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
-
-function formatPrice(value: string): string {
-  const amount = Number(value);
-  return Number.isFinite(amount) ? priceFormatter.format(amount) : value;
 }
 
 /** Gate optional rows — uses Number() only for the zero-check, never for display. */
@@ -35,39 +28,41 @@ export function OrderTotalsBreakdown({
 }: OrderTotalsBreakdownProps) {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-6 text-card-foreground">
-      <h2 className="text-lg font-semibold text-foreground">Order Summary</h2>
+      <h2 className="text-lg font-semibold text-foreground">
+        {dict.order.totalsTitle}
+      </h2>
 
       <div className="flex items-center justify-between text-sm text-foreground">
-        <span>Subtotal</span>
-        <span>{formatPrice(subtotal)}</span>
+        <span>{dict.order.subtotal}</span>
+        <span>{formatMoney(subtotal)}</span>
       </div>
 
       {isNonZero(discount) && (
         <div className="flex items-center justify-between text-sm text-foreground">
-          <span>Discount</span>
-          <span>–{formatPrice(discount)}</span>
+          <span>{dict.order.discount}</span>
+          <span>–{formatMoney(discount)}</span>
         </div>
       )}
 
       {isNonZero(shippingCost) && (
         <div className="flex items-center justify-between text-sm text-foreground">
-          <span>Shipping</span>
-          <span>{formatPrice(shippingCost)}</span>
+          <span>{dict.order.shipping}</span>
+          <span>{formatMoney(shippingCost)}</span>
         </div>
       )}
 
       {isNonZero(tax) && (
         <div className="flex items-center justify-between text-sm text-foreground">
-          <span>Tax</span>
-          <span>{formatPrice(tax)}</span>
+          <span>{dict.order.tax}</span>
+          <span>{formatMoney(tax)}</span>
         </div>
       )}
 
       <hr className="border-border" />
 
       <div className="flex items-center justify-between font-semibold text-foreground">
-        <span>Total</span>
-        <span>{formatPrice(total)}</span>
+        <span>{dict.order.total}</span>
+        <span>{formatMoney(total)}</span>
       </div>
     </div>
   );

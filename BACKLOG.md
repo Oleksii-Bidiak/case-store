@@ -407,6 +407,45 @@
 | TASK-049 | Abandoned cart detection + email follow-up | ⬜ | — |
 | TASK-050 | GA4 e-commerce events | ⬜ | — |
 
+### Localization (UA / UAH) — Plan 040
+
+> **Critical / sequenced first:** completes before the UI/UX Redesign (TASK-068) so the redesign consumes Ukrainian strings from the start.
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-069 | Central money formatter `formatMoney` (uk-UA / UAH, TDD) + `shared/lib` barrel; `NEXT_PUBLIC_CURRENCY=UAH` (`.env*` blocked by guard — `site.ts` default covers it) | ✅ | docs/plans/040-uk-localization-uah-currency.md |
+| TASK-069-A | Replace 8 scattered `en-US`/`USD` `priceFormatter` duplicates with `formatMoney` | ✅ | docs/plans/040-uk-localization-uah-currency.md |
+| TASK-069-B | Ukrainian typed string dictionary `shared/config/dictionary.ts` (+ barrel re-export) | ✅ | docs/plans/040-uk-localization-uah-currency.md |
+| TASK-069-C | Translate header / nav / footer / root layout; `<html lang="uk">`; OG `locale: uk_UA` | ✅ | docs/plans/040-uk-localization-uah-currency.md |
+| TASK-069-D | Translate homepage (hero, category-nav, section headings, metadata) | ✅ | docs/plans/040-uk-localization-uah-currency.md |
+| TASK-069-E | Translate product catalog + filter panel + product card | ✅ | docs/plans/040-uk-localization-uah-currency.md |
+| TASK-069-F | Translate product detail page (breadcrumb, variants, stock, add-to-cart) | ✅ | docs/plans/040-uk-localization-uah-currency.md |
+| TASK-069-G | Translate cart page (view, item row, summary; neutral plural phrasing) | ✅ | docs/plans/040-uk-localization-uah-currency.md |
+| TASK-069-H | Translate checkout + zod validation messages (TDD) + address form | ✅ | docs/plans/040-uk-localization-uah-currency.md |
+| TASK-069-I | Translate order confirmation + locale dates (`uk-UA`) | ✅ | docs/plans/040-uk-localization-uah-currency.md |
+| TASK-069-J | Translate auth forms (login/register) + zod messages + page metadata | ✅ | docs/plans/040-uk-localization-uah-currency.md |
+| TASK-069-K | SEO metadata audit + `site.ts` `CURRENCY` default → `UAH`; schema test fixture → UAH | ✅ | docs/plans/040-uk-localization-uah-currency.md |
+| TASK-069-L | Ukrainianize order-confirmation email (store-api, ₴ formatter, `lang="uk"`, TDD) | ✅ | docs/plans/040-uk-localization-uah-currency.md |
+| TASK-069-M | Verification gate — typecheck / lint / build all 3 workspaces; store-api 328 unit + store-client 21 unit + email 15 specs green; manual visual pass pending running stack | 🔄 | docs/plans/040-uk-localization-uah-currency.md |
+
+### UI/UX Redesign — Plan 039
+
+> **Depends on:** TASK-069 (localization) must be ✅ before starting — redesigned components are built with Ukrainian copy.
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-068 | Storefront UI/UX redesign — parent (core delivered; some per-task polish deferred) | 🔄 | docs/plans/039-storefront-ui-ux-redesign.md |
+| TASK-068-A | Design-token refresh (sale/success/warning/secondary, indigo primary, radius, shadows) + shadcn/ui bootstrap (Button/Badge/Input/Label/Textarea/Select/Dialog/Sheet/Tabs/Sonner/Separator copied from store-admin; `components.json`; deps added) | ✅ | docs/plans/039-storefront-ui-ux-redesign.md |
+| TASK-068-B | Header redesign — sticky + backdrop, live cart-count badge, mobile Sheet menu, Button-based auth. Deferred: inline header search input | 🔄 | docs/plans/039-storefront-ui-ux-redesign.md |
+| TASK-068-C | Product card — Sale/New badge chips, hover elevation, sale-priced styling, image-ready placeholder. **Blocked:** real image + hover-ATC overlay need API fields (ProductEntity has no image/variant data) | 🔄 | docs/plans/039-storefront-ui-ux-redesign.md |
+| TASK-068-D | Homepage — gradient hero w/ badge + dual CTA, 4-item trust strip, "Featured" rename. Deferred: category-tile images (no category image field) | 🔄 | docs/plans/039-storefront-ui-ux-redesign.md |
+| TASK-068-E | Filters — shadcn Select/Input/Label primitives + active-filter chips strip above grid. Deferred: mobile filter drawer (Sheet), sort relocation above grid | 🔄 | docs/plans/039-storefront-ui-ux-redesign.md |
+| TASK-068-F | PDP — stock indicator (in/low/out via tokens), trust-badge strip, Description/Specs/Reviews Tabs, related-products row. Deferred: `next/image` swap (image host not configured), mobile sticky ATC bar | 🔄 | docs/plans/039-storefront-ui-ux-redesign.md |
+| TASK-068-G | Cart — accessible Dialog replaces `window.confirm`, secure-checkout + shipping trust lines, continue-shopping link. Deferred: cart-item-row Button/Input primitive swap | 🔄 | docs/plans/039-storefront-ui-ux-redesign.md |
+| TASK-068-H | Checkout — 3-step visual stepper, shadcn Input/Label + Button, delivery-ETA line. Deferred: (auth) layout card polish | 🔄 | docs/plans/039-storefront-ui-ux-redesign.md |
+| TASK-068-I | Footer redesign — multi-column (Shop/Support/Contact), trust-icon strip, payment icons, responsive | ✅ | docs/plans/039-storefront-ui-ux-redesign.md |
+| TASK-068-J | Toast (Sonner) provider mounted + AddToCart success toast + skip-nav link + `id=main-content`. Deferred: full focus-ring audit, error→toast migration | 🔄 | docs/plans/039-storefront-ui-ux-redesign.md |
+
 ---
 
 ## Tech Debt & Architecture Review

@@ -1,9 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
 import { Providers } from "./providers";
-import { HeaderAuth } from "@/widgets/header";
-import { PRIMARY_COLOR, SITE_URL, SITE_NAME } from "@/shared/config";
+import { Header } from "@/widgets/header";
+import { Footer } from "@/widgets";
+import { PRIMARY_COLOR, SITE_URL, SITE_NAME, dict } from "@/shared/config";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -25,15 +25,15 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Mobile Accessories Store",
+    default: dict.meta.rootTitle,
     template: `%s | ${SITE_NAME}`,
   },
-  description:
-    "Your one-stop shop for mobile phone accessories — cases, chargers, screen protectors, and more.",
+  description: dict.meta.rootDescription,
   openGraph: {
     type: "website",
     siteName: SITE_NAME,
     url: SITE_URL,
+    locale: "uk_UA",
   },
 };
 
@@ -44,45 +44,22 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="uk"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <Providers>
-          <header className="border-b border-border">
-            <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4">
-              <Link href="/" className="text-xl font-bold text-primary">
-                MobileStore
-              </Link>
-              <nav
-                className="flex items-center gap-4 text-sm"
-                aria-label="Primary"
-              >
-                <Link
-                  href="/products"
-                  className="text-foreground hover:text-primary"
-                >
-                  Products
-                </Link>
-                <Link
-                  href="/cart"
-                  className="text-foreground hover:text-primary"
-                >
-                  Cart
-                </Link>
-                <HeaderAuth />
-              </nav>
-            </div>
-          </header>
-          <main className="flex-1">{children}</main>
-          <footer className="border-t border-border">
-            <div className="mx-auto flex h-16 max-w-7xl items-center px-4">
-              <p className="text-sm text-muted-foreground">
-                &copy; {new Date().getFullYear()} MobileStore. All rights
-                reserved.
-              </p>
-            </div>
-          </footer>
+          <a
+            href="#main-content"
+            className="sr-only z-[100] rounded-md bg-primary px-4 py-2 text-primary-foreground focus:not-sr-only focus:absolute focus:left-4 focus:top-4"
+          >
+            {dict.nav.skipToContent}
+          </a>
+          <Header />
+          <main id="main-content" className="flex-1">
+            {children}
+          </main>
+          <Footer />
         </Providers>
       </body>
     </html>

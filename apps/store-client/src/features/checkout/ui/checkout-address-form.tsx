@@ -2,10 +2,9 @@
 
 import type { UseFormRegister, FieldErrors } from "react-hook-form";
 import type { AddressDto } from "@/entities/order";
+import { dict } from "@/shared/config";
+import { Input, Label } from "@/shared/ui";
 import type { CheckoutFormValues } from "../model/checkout-schema";
-
-const fieldClass =
-  "rounded-lg border border-border bg-background px-3 py-2 text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 type AddressFieldName = keyof AddressDto;
 
@@ -21,61 +20,66 @@ interface AddressFieldConfig {
 const ADDRESS_FIELDS: AddressFieldConfig[] = [
   {
     name: "firstName",
-    label: "First name",
+    label: dict.checkout.fields.firstName,
     required: true,
     autoComplete: "given-name",
   },
   {
     name: "lastName",
-    label: "Last name",
+    label: dict.checkout.fields.lastName,
     required: true,
     autoComplete: "family-name",
   },
   {
     name: "company",
-    label: "Company",
+    label: dict.checkout.fields.company,
     required: false,
     autoComplete: "organization",
   },
   {
     name: "address1",
-    label: "Address line 1",
+    label: dict.checkout.fields.address1,
     required: true,
     autoComplete: "address-line1",
   },
   {
     name: "address2",
-    label: "Address line 2",
+    label: dict.checkout.fields.address2,
     required: false,
     autoComplete: "address-line2",
   },
   {
     name: "city",
-    label: "City",
+    label: dict.checkout.fields.city,
     required: true,
     autoComplete: "address-level2",
   },
   {
     name: "state",
-    label: "State / region",
+    label: dict.checkout.fields.state,
     required: false,
     autoComplete: "address-level1",
   },
   {
     name: "postalCode",
-    label: "Postal code",
+    label: dict.checkout.fields.postalCode,
     required: true,
     autoComplete: "postal-code",
   },
   {
     name: "country",
-    label: "Country",
+    label: dict.checkout.fields.country,
     required: true,
     autoComplete: "country",
     maxLength: 2,
-    placeholder: "e.g. UA",
+    placeholder: dict.checkout.countryPlaceholder,
   },
-  { name: "phone", label: "Phone", required: false, autoComplete: "tel" },
+  {
+    name: "phone",
+    label: dict.checkout.fields.phone,
+    required: false,
+    autoComplete: "tel",
+  },
 ];
 
 interface CheckoutAddressFormProps {
@@ -109,22 +113,21 @@ export function CheckoutAddressForm({
           const id = `${prefix}-${field.name}`;
           const message = fieldErrors?.[field.name]?.message;
           return (
-            <div key={field.name} className="flex flex-col gap-1">
-              <label
-                htmlFor={id}
-                className="text-sm font-medium text-foreground"
-              >
+            <div key={field.name} className="flex flex-col gap-1.5">
+              <Label htmlFor={id}>
                 {field.label}
                 {!field.required && (
-                  <span className="text-muted-foreground"> (optional)</span>
+                  <span className="font-normal text-muted-foreground">
+                    {dict.common.optional}
+                  </span>
                 )}
-              </label>
-              <input
+              </Label>
+              <Input
                 id={id}
                 autoComplete={field.autoComplete}
                 maxLength={field.maxLength}
                 placeholder={field.placeholder}
-                className={fieldClass}
+                aria-invalid={message ? true : undefined}
                 {...register(`${prefix}.${field.name}`)}
               />
               {message && (

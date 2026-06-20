@@ -13,8 +13,10 @@ export const SITE_URL =
   "http://localhost:3000";
 
 // ISO 4217 currency code emitted as Schema.org offers.priceCurrency. Defaults to
-// USD; set NEXT_PUBLIC_CURRENCY (e.g. UAH) to match your market.
-export const CURRENCY = process.env.NEXT_PUBLIC_CURRENCY ?? "USD";
+// UAH (Ukrainian hryvnia) — the storefront's market. The customer-facing UI
+// always renders prices in UAH via shared/lib formatMoney; this constant only
+// feeds structured data. Override with NEXT_PUBLIC_CURRENCY for another market.
+export const CURRENCY = process.env.NEXT_PUBLIC_CURRENCY ?? "UAH";
 
 // Human-readable brand / site name used in <title> templates and structured data.
 export const SITE_NAME = "MobileStore";

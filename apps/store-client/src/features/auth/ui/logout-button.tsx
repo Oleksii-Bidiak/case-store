@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth, useAuthControllerLogout } from "@/entities/session";
+import { dict } from "@/shared/config";
 
 /** LogoutButton — ends the session (best-effort server logout). */
 export function LogoutButton() {
@@ -32,7 +33,9 @@ export function LogoutButton() {
       disabled={logout.isPending}
       className="rounded-lg border border-border px-3 py-1.5 text-sm text-foreground hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
     >
-      {logout.isPending ? "Signing out…" : "Sign out"}
+      {logout.isPending
+        ? dict.auth.logout.signingOut
+        : dict.auth.logout.signOut}
     </button>
   );
 }

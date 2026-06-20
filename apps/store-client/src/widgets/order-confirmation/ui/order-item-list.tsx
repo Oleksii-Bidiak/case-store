@@ -1,17 +1,9 @@
 import type { OrderItemEntity } from "@/entities/order";
+import { formatMoney } from "@/shared/lib";
+import { dict } from "@/shared/config";
 
 interface OrderItemListProps {
   items: OrderItemEntity[];
-}
-
-const priceFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
-
-function formatPrice(value: string): string {
-  const amount = Number(value);
-  return Number.isFinite(amount) ? priceFormatter.format(amount) : value;
 }
 
 /** Narrow the loosely-typed generated nullable string fields to a usable string. */
@@ -27,7 +19,9 @@ function asString(value: unknown): string | null {
 export function OrderItemList({ items }: OrderItemListProps) {
   return (
     <section className="flex flex-col gap-4">
-      <h2 className="text-xl font-semibold text-foreground">Items Ordered</h2>
+      <h2 className="text-xl font-semibold text-foreground">
+        {dict.order.itemsOrdered}
+      </h2>
 
       <ul className="flex flex-col gap-4">
         {items.map((item) => {
@@ -43,11 +37,11 @@ export function OrderItemList({ items }: OrderItemListProps) {
                   <span className="text-muted-foreground">{variantName}</span>
                 )}
                 <span className="text-muted-foreground">
-                  {item.quantity} × {formatPrice(item.price)}
+                  {item.quantity} × {formatMoney(item.price)}
                 </span>
               </div>
               <span className="font-medium text-foreground">
-                {formatPrice(item.lineTotal)}
+                {formatMoney(item.lineTotal)}
               </span>
             </li>
           );

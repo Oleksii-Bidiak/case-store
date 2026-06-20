@@ -88,7 +88,7 @@ const variant = (
 });
 
 describe("buildProductSchema", () => {
-  const opts = { siteUrl: SITE, currency: "USD", brandName: "MobileStore" };
+  const opts = { siteUrl: SITE, currency: "UAH", brandName: "MobileStore" };
 
   it("emits a Product node with name, sku, description, brand and image array", () => {
     const schema = buildProductSchema({
@@ -119,7 +119,7 @@ describe("buildProductSchema", () => {
     });
     const offer = schema.offers as Record<string, unknown>;
     expect(offer["@type"]).toBe("Offer");
-    expect(offer.priceCurrency).toBe("USD");
+    expect(offer.priceCurrency).toBe("UAH");
     expect(offer.price).toBe("9.99");
     expect(offer.url).toBe(`${SITE}/products/iphone-15-case`);
     expect(offer.availability).toBe("https://schema.org/InStock");

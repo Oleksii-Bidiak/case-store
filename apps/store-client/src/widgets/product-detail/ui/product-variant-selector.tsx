@@ -1,6 +1,8 @@
 "use client";
 
 import type { ProductVariantEntity } from "@/entities/product";
+import { formatMoney } from "@/shared/lib";
+import { dict } from "@/shared/config";
 
 interface ProductVariantSelectorProps {
   variants: ProductVariantEntity[];
@@ -8,16 +10,6 @@ interface ProductVariantSelectorProps {
   onVariantChange: (variantId: string) => void;
   /** Base product price, used to decide whether to surface a variant's price. */
   basePrice: string;
-}
-
-const priceFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
-
-function formatPrice(value: string): string {
-  const amount = Number(value);
-  return Number.isFinite(amount) ? priceFormatter.format(amount) : value;
 }
 
 /**
@@ -40,7 +32,7 @@ export function ProductVariantSelector({
   return (
     <fieldset className="flex flex-col gap-3">
       <legend className="mb-2 text-sm font-medium text-foreground">
-        Choose a variant
+        {dict.product.chooseVariant}
       </legend>
       <div className="flex flex-wrap gap-2">
         {activeVariants.map((variant) => {
@@ -66,7 +58,7 @@ export function ProductVariantSelector({
               </span>
               {showPrice && (
                 <span className="text-sm text-muted-foreground">
-                  {formatPrice(variant.price)}
+                  {formatMoney(variant.price)}
                 </span>
               )}
               <span
@@ -74,7 +66,9 @@ export function ProductVariantSelector({
                   outOfStock ? "text-destructive" : "text-muted-foreground"
                 }`}
               >
-                {outOfStock ? "Out of stock" : `In stock (${variant.stock})`}
+                {outOfStock
+                  ? dict.product.outOfStock
+                  : dict.product.inStock(variant.stock)}
               </span>
             </button>
           );

@@ -6,6 +6,7 @@ import {
   type ProductControllerFindAllParams,
 } from "@/entities/product";
 import { ProductCard } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import { ProductListSkeleton } from "./product-list-skeleton";
 import { Pagination } from "./pagination";
 
@@ -31,7 +32,7 @@ export function ProductList({ params, buildPageHref }: ProductListProps) {
   if (isError) {
     return (
       <p role="alert" className="text-sm text-destructive">
-        Failed to load products. Please try again later.
+        {dict.catalog.productsError}
       </p>
     );
   }
@@ -43,13 +44,13 @@ export function ProductList({ params, buildPageHref }: ProductListProps) {
     return (
       <div className="rounded-lg border border-border bg-card p-8 text-center">
         <p className="text-sm text-muted-foreground">
-          No products match your filters.
+          {dict.catalog.emptyHeading}
         </p>
         <Link
           href="/products"
           className="mt-2 inline-block text-sm font-medium text-primary hover:underline"
         >
-          Clear filters
+          {dict.catalog.clearFilters}
         </Link>
       </div>
     );
@@ -58,7 +59,7 @@ export function ProductList({ params, buildPageHref }: ProductListProps) {
   return (
     <div className="flex flex-col gap-6">
       <p aria-live="polite" className="text-sm text-muted-foreground">
-        {meta?.total ?? products.length} products found
+        {dict.catalog.countFound(meta?.total ?? products.length)}
       </p>
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">

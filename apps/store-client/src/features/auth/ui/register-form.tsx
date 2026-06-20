@@ -8,17 +8,18 @@ import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth, useAuthControllerRegister } from "@/entities/session";
 import { getGetCartQueryKey } from "@/entities/cart";
+import { dict } from "@/shared/config";
 
 const registerSchema = z
   .object({
-    email: z.string().email("Enter a valid email address"),
-    firstName: z.string().min(1, "First name is required"),
-    lastName: z.string().min(1, "Last name is required"),
-    password: z.string().min(8, "Password must be at least 8 characters"),
+    email: z.string().email(dict.auth.register.validationEmail),
+    firstName: z.string().min(1, dict.auth.register.validationFirstName),
+    lastName: z.string().min(1, dict.auth.register.validationLastName),
+    password: z.string().min(8, dict.auth.register.validationPassword),
     passwordConfirm: z.string(),
   })
   .refine((data) => data.password === data.passwordConfirm, {
-    message: "Passwords do not match",
+    message: dict.auth.register.validationPasswordMatch,
     path: ["passwordConfirm"],
   });
 
@@ -67,9 +68,9 @@ export function RegisterForm() {
   const status = registerUser.error?.response?.status;
   const errorMessage =
     status === 409
-      ? "That email is already registered."
+      ? dict.auth.register.errorConflict
       : registerUser.isError
-        ? "Something went wrong. Please try again."
+        ? dict.common.genericError
         : null;
 
   return (
@@ -83,7 +84,7 @@ export function RegisterForm() {
           htmlFor="reg-email"
           className="text-sm font-medium text-foreground"
         >
-          Email
+          {dict.auth.register.email}
         </label>
         <input
           id="reg-email"
@@ -105,7 +106,7 @@ export function RegisterForm() {
             htmlFor="reg-first"
             className="text-sm font-medium text-foreground"
           >
-            First name
+            {dict.auth.register.firstName}
           </label>
           <input
             id="reg-first"
@@ -125,7 +126,7 @@ export function RegisterForm() {
             htmlFor="reg-last"
             className="text-sm font-medium text-foreground"
           >
-            Last name
+            {dict.auth.register.lastName}
           </label>
           <input
             id="reg-last"
@@ -147,7 +148,7 @@ export function RegisterForm() {
           htmlFor="reg-password"
           className="text-sm font-medium text-foreground"
         >
-          Password
+          {dict.auth.register.password}
         </label>
         <input
           id="reg-password"
@@ -168,7 +169,7 @@ export function RegisterForm() {
           htmlFor="reg-password-confirm"
           className="text-sm font-medium text-foreground"
         >
-          Confirm password
+          {dict.auth.register.confirmPassword}
         </label>
         <input
           id="reg-password-confirm"
@@ -195,13 +196,15 @@ export function RegisterForm() {
         disabled={registerUser.isPending}
         className="rounded-lg bg-primary px-4 py-2 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
       >
-        {registerUser.isPending ? "Creating…" : "Create account"}
+        {registerUser.isPending
+          ? dict.auth.register.submitting
+          : dict.auth.register.submit}
       </button>
 
       <p className="text-sm text-muted-foreground">
-        Already have an account?{" "}
+        {dict.auth.register.haveAccount}{" "}
         <Link href="/login" className="text-primary hover:underline">
-          Sign in
+          {dict.auth.register.signInLink}
         </Link>
       </p>
     </form>

@@ -1,4 +1,5 @@
 import { checkoutSchema } from "./checkout-schema";
+import { dict } from "@/shared/config";
 
 const validAddress = {
   firstName: "Olena",
@@ -41,7 +42,7 @@ describe("checkoutSchema", () => {
       const issue = result.error.issues.find(
         (i) => i.path.join(".") === "shippingAddress.firstName",
       );
-      expect(issue?.message).toBe("First name is required");
+      expect(issue?.message).toBe(dict.checkout.validation.firstName);
     }
   });
 
@@ -56,7 +57,7 @@ describe("checkoutSchema", () => {
       const issue = result.error.issues.find(
         (i) => i.path.join(".") === "shippingAddress.country",
       );
-      expect(issue?.message).toBe("Country must be a 2-letter ISO code");
+      expect(issue?.message).toBe(dict.checkout.validation.country);
     }
   });
 
@@ -72,7 +73,7 @@ describe("checkoutSchema", () => {
       const issue = result.error.issues.find(
         (i) => i.path.join(".") === "notes",
       );
-      expect(issue?.message).toBe("Notes must be 500 characters or fewer");
+      expect(issue?.message).toBe(dict.checkout.validation.notesMax);
     }
   });
 
@@ -87,9 +88,7 @@ describe("checkoutSchema", () => {
       const issue = result.error.issues.find(
         (i) => i.path.join(".") === "billingAddress",
       );
-      expect(issue?.message).toBe(
-        "Billing address is required when it differs from shipping.",
-      );
+      expect(issue?.message).toBe(dict.checkout.validation.billingRequired);
     }
   });
 

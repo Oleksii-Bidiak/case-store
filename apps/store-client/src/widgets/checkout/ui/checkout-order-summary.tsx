@@ -2,16 +2,8 @@
 
 import { useGetCart } from "@/entities/cart";
 import { Skeleton } from "@/shared/ui";
-
-const priceFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
-
-function formatPrice(value: string): string {
-  const amount = Number(value);
-  return Number.isFinite(amount) ? priceFormatter.format(amount) : value;
-}
+import { formatMoney } from "@/shared/lib";
+import { dict } from "@/shared/config";
 
 /** Narrow the loosely-typed generated nullable string fields to a usable string. */
 function asString(value: unknown): string | null {
@@ -41,7 +33,7 @@ export function CheckoutOrderSummary() {
   if (isError) {
     return (
       <p role="alert" className="text-sm text-destructive">
-        Could not load cart summary.
+        {dict.checkout.summaryError}
       </p>
     );
   }
@@ -51,7 +43,9 @@ export function CheckoutOrderSummary() {
 
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-6 text-card-foreground">
-      <h2 className="text-lg font-semibold text-foreground">Order Summary</h2>
+      <h2 className="text-lg font-semibold text-foreground">
+        {dict.checkout.summaryTitle}
+      </h2>
 
       <ul className="flex flex-col gap-3">
         {items.map((item) => {
@@ -67,11 +61,11 @@ export function CheckoutOrderSummary() {
                   <span className="text-muted-foreground">{variantName}</span>
                 )}
                 <span className="text-muted-foreground">
-                  {item.quantity} × {formatPrice(item.price)}
+                  {item.quantity} × {formatMoney(item.price)}
                 </span>
               </div>
               <span className="text-foreground">
-                {formatPrice(item.lineTotal)}
+                {formatMoney(item.lineTotal)}
               </span>
             </li>
           );
@@ -81,12 +75,21 @@ export function CheckoutOrderSummary() {
       <hr className="border-border" />
 
       <div className="flex items-center justify-between font-semibold text-foreground">
-        <span>Subtotal</span>
-        <span>{formatPrice(cart?.totals.subtotal ?? "0")}</span>
+        <span>{dict.checkout.subtotal}</span>
+        <span>{formatMoney(cart?.totals.subtotal ?? "0")}</span>
+      </div>
+
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-muted-foreground">
+          {dict.checkout.deliveryEstimateLabel}
+        </span>
+        <span className="text-foreground">
+          {dict.checkout.deliveryEstimateValue}
+        </span>
       </div>
 
       <p className="text-sm text-muted-foreground">
-        Prices shown reflect your cart at this moment.
+        {dict.checkout.pricesDisclaimer}
       </p>
     </div>
   );

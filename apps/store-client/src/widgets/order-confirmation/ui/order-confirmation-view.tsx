@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/entities/session";
 import { useGetOrder } from "@/entities/order";
+import { dict } from "@/shared/config";
 import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
 import { OrderItemList } from "./order-item-list";
@@ -58,17 +59,15 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
     return (
       <div role="alert" className="flex flex-col items-start gap-4 py-16">
         <h1 className="text-2xl font-bold text-foreground">
-          Something went wrong
+          {dict.order.somethingWrong}
         </h1>
-        <p className="text-muted-foreground">
-          We couldn&apos;t load your order right now. Please try again.
-        </p>
+        <p className="text-muted-foreground">{dict.order.loadErrorBody}</p>
         <button
           type="button"
           onClick={() => void refetch()}
           className={primaryCta}
         >
-          Try again
+          {dict.common.tryAgain}
         </button>
       </div>
     );
@@ -80,13 +79,11 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
     return (
       <div role="alert" className="flex flex-col items-start gap-4 py-16">
         <h1 className="text-2xl font-bold text-foreground">
-          We couldn&apos;t find that order
+          {dict.order.notFoundHeading}
         </h1>
-        <p className="text-muted-foreground">
-          The order may not exist or may belong to a different account.
-        </p>
+        <p className="text-muted-foreground">{dict.order.notFoundBody}</p>
         <Link href="/" className={primaryCta}>
-          Go to home page
+          {dict.common.goHome}
         </Link>
       </div>
     );
@@ -125,7 +122,7 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
           {notes && (
             <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-6">
               <h2 className="text-lg font-semibold text-foreground">
-                Order Notes
+                {dict.order.notesTitle}
               </h2>
               <p className="text-sm text-muted-foreground">{notes}</p>
             </div>
@@ -135,7 +132,7 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
 
       <div className="flex flex-wrap gap-4">
         <Link href="/" className={primaryCta}>
-          Continue shopping
+          {dict.common.continueShopping}
         </Link>
       </div>
     </div>

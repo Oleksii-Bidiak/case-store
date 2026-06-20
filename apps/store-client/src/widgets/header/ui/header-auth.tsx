@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useAuth } from "@/entities/session";
 import { LogoutButton } from "@/features/auth";
-import { Skeleton } from "@/shared/ui";
+import { Button, Skeleton } from "@/shared/ui";
+import { dict } from "@/shared/config";
 
 /**
  * HeaderAuth — auth state area for the site header. Shows a skeleton while the
@@ -19,26 +20,23 @@ export function HeaderAuth() {
 
   if (!isAuthenticated) {
     return (
-      <nav className="flex items-center gap-4 text-sm" aria-label="Account">
-        <Link
-          href="/login"
-          className="text-foreground hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          Sign in
-        </Link>
-        <Link
-          href="/register"
-          className="rounded-lg bg-primary px-3 py-1.5 font-medium text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          Register
-        </Link>
+      <nav
+        className="flex items-center gap-2 text-sm sm:gap-3"
+        aria-label={dict.nav.accountAria}
+      >
+        <Button variant="ghost" size="sm" asChild>
+          <Link href="/login">{dict.header.signIn}</Link>
+        </Button>
+        <Button size="sm" asChild className="hidden sm:inline-flex">
+          <Link href="/register">{dict.header.register}</Link>
+        </Button>
       </nav>
     );
   }
 
   return (
     <div className="flex items-center gap-3 text-sm">
-      <span className="text-muted-foreground">My account</span>
+      <span className="text-muted-foreground">{dict.header.myAccount}</span>
       <LogoutButton />
     </div>
   );

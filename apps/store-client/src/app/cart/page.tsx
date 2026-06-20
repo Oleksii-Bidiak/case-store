@@ -1,10 +1,11 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { CartView, CartSkeleton } from "@/widgets";
+import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
-  title: "Cart | MobileStore",
-  description: "Review and manage items in your shopping cart.",
+  title: dict.meta.cartTitle,
+  description: dict.meta.cartDescription,
 };
 
 export default function CartPage() {

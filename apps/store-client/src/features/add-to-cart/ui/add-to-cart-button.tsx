@@ -1,7 +1,9 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { getGetCartQueryKey, useAddToCart } from "@/entities/cart";
+import { dict } from "@/shared/config";
 
 interface AddToCartButtonProps {
   productId: string;
@@ -27,8 +29,10 @@ export function AddToCartButton({
 
   const addToCart = useAddToCart({
     mutation: {
-      onSuccess: () =>
-        queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() }),
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
+        toast.success(dict.addToCart.added);
+      },
     },
   });
 
@@ -39,10 +43,10 @@ export function AddToCartButton({
   };
 
   const label = addToCart.isPending
-    ? "Adding…"
+    ? dict.addToCart.adding
     : addToCart.isSuccess
-      ? "Added ✓"
-      : "Add to Cart";
+      ? dict.addToCart.added
+      : dict.addToCart.idle;
 
   return (
     <div className="flex flex-col gap-2">
@@ -56,7 +60,7 @@ export function AddToCartButton({
       </button>
       {addToCart.isError && (
         <p role="alert" className="text-sm text-destructive">
-          Could not add this item. Please try again.
+          {dict.addToCart.error}
         </p>
       )}
     </div>

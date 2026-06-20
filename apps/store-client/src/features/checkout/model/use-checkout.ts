@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCreateOrder, type CreateOrderDto } from "@/entities/order";
 import { getGetCartQueryKey } from "@/entities/cart";
+import { dict } from "@/shared/config";
 import type { CheckoutFormValues } from "./checkout-schema";
 
 /**
@@ -42,9 +43,9 @@ export function useCheckout() {
   const status = mutation.error?.response?.status;
   const errorMessage =
     status === 400
-      ? "Some items may no longer be available. Please review your cart."
+      ? dict.checkout.error400
       : mutation.isError
-        ? "Something went wrong. Please try again."
+        ? dict.common.genericError
         : null;
 
   return {

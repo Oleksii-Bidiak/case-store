@@ -8,9 +8,14 @@
   --color-background: #ffffff;
   --color-foreground: #0f172a;
 
-  /* Primary — main brand color (buttons, links) */
-  --color-primary: #2563eb;
+  /* Primary — main brand color (buttons, links). Warmer indigo for a retail
+     feel rather than the generic SaaS blue. */
+  --color-primary: #4f46e5;
   --color-primary-foreground: #ffffff;
+
+  /* Secondary — secondary CTAs (e.g. "View details") */
+  --color-secondary: #f4f4f5;
+  --color-secondary-foreground: #18181b;
 
   /* Muted — subtle backgrounds, secondary text */
   --color-muted: #f1f5f9;
@@ -24,6 +29,18 @@
   --color-destructive: #ef4444;
   --color-destructive-foreground: #ffffff;
 
+  /* Sale — promotional / discount accent (vivid rose) */
+  --color-sale: #e11d48;
+  --color-sale-foreground: #ffffff;
+
+  /* Success — in stock, order confirmed */
+  --color-success: #16a34a;
+  --color-success-foreground: #ffffff;
+
+  /* Warning — low stock */
+  --color-warning: #d97706;
+  --color-warning-foreground: #ffffff;
+
   /* Card — card and popover backgrounds */
   --color-card: #ffffff;
   --color-card-foreground: #0f172a;
@@ -35,10 +52,18 @@
   /* Border & Input */
   --color-border: #e2e8f0;
   --color-input: #e2e8f0;
-  --color-ring: #2563eb;
+  --color-ring: #4f46e5;
 
-  /* Radius */
-  --radius: 0.5rem;
+  /* Overlay */
+  --color-overlay: rgba(0, 0, 0, 0.8);
+
+  /* Radius — tighter for a crisper retail feel */
+  --radius: 0.375rem;
+
+  /* Elevation */
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+  --shadow-elevated:
+    0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.06);
 }
 
 /* ─────────────────────────────────────────────
@@ -51,8 +76,12 @@
     --color-foreground: #ededed;
 
     /* Primary */
-    --color-primary: #3b82f6;
+    --color-primary: #6366f1;
     --color-primary-foreground: #ffffff;
+
+    /* Secondary */
+    --color-secondary: #1e293b;
+    --color-secondary-foreground: #ededed;
 
     /* Muted */
     --color-muted: #1e293b;
@@ -66,6 +95,14 @@
     --color-destructive: #dc2626;
     --color-destructive-foreground: #ffffff;
 
+    /* Sale / Success / Warning */
+    --color-sale: #f43f5e;
+    --color-sale-foreground: #ffffff;
+    --color-success: #22c55e;
+    --color-success-foreground: #052e16;
+    --color-warning: #f59e0b;
+    --color-warning-foreground: #271100;
+
     /* Card */
     --color-card: #0f0f0f;
     --color-card-foreground: #ededed;
@@ -77,10 +114,13 @@
     /* Border & Input */
     --color-border: #334155;
     --color-input: #334155;
-    --color-ring: #3b82f6;
+    --color-ring: #6366f1;
+
+    /* Overlay */
+    --color-overlay: rgba(0, 0, 0, 0.8);
 
     /* Radius */
-    --radius: 0.5rem;
+    --radius: 0.375rem;
   }
 }
 
@@ -95,12 +135,20 @@
   --color-foreground: var(--color-foreground);
   --color-primary: var(--color-primary);
   --color-primary-foreground: var(--color-primary-foreground);
+  --color-secondary: var(--color-secondary);
+  --color-secondary-foreground: var(--color-secondary-foreground);
   --color-muted: var(--color-muted);
   --color-muted-foreground: var(--color-muted-foreground);
   --color-accent: var(--color-accent);
   --color-accent-foreground: var(--color-accent-foreground);
   --color-destructive: var(--color-destructive);
   --color-destructive-foreground: var(--color-destructive-foreground);
+  --color-sale: var(--color-sale);
+  --color-sale-foreground: var(--color-sale-foreground);
+  --color-success: var(--color-success);
+  --color-success-foreground: var(--color-success-foreground);
+  --color-warning: var(--color-warning);
+  --color-warning-foreground: var(--color-warning-foreground);
   --color-card: var(--color-card);
   --color-card-foreground: var(--color-card-foreground);
   --color-popover: var(--color-popover);
@@ -108,6 +156,11 @@
   --color-border: var(--color-border);
   --color-input: var(--color-input);
   --color-ring: var(--color-ring);
+  --color-overlay: var(--color-overlay);
+
+  /* Elevation */
+  --shadow-card: var(--shadow-card);
+  --shadow-elevated: var(--shadow-elevated);
 
   /* Radius */
   --radius-sm: calc(var(--radius) - 4px);

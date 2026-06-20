@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import {
   HeroBanner,
+  TrustStrip,
   CategoryNav,
   CategoryNavSkeleton,
   ProductGrid,
@@ -12,12 +13,11 @@ import {
   buildOrganizationSchema,
   buildWebSiteSchema,
 } from "@/shared/lib/schema";
-import { SITE_URL, SITE_NAME } from "@/shared/config";
+import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
 
 export const metadata: Metadata = {
-  title: "Home",
-  description:
-    "Discover premium mobile accessories — cases, chargers, screen protectors and more.",
+  title: dict.meta.homeTitle,
+  description: dict.meta.homeDescription,
 };
 
 export default function HomePage() {
@@ -26,6 +26,7 @@ export default function HomePage() {
       <JsonLd schema={buildOrganizationSchema(SITE_URL, SITE_NAME)} />
       <JsonLd schema={buildWebSiteSchema(SITE_URL, SITE_NAME)} />
       <HeroBanner />
+      <TrustStrip />
 
       <section
         aria-labelledby="categories-heading"
@@ -35,7 +36,7 @@ export default function HomePage() {
           id="categories-heading"
           className="mb-6 text-2xl font-bold tracking-tight text-foreground"
         >
-          Shop by Category
+          {dict.catalog.categories}
         </h2>
         <Suspense fallback={<CategoryNavSkeleton />}>
           <CategoryNav />
@@ -50,7 +51,7 @@ export default function HomePage() {
           id="latest-products-heading"
           className="mb-6 text-2xl font-bold tracking-tight text-foreground"
         >
-          Latest Products
+          {dict.catalog.latestProducts}
         </h2>
         <Suspense fallback={<ProductGridSkeleton />}>
           <ProductGrid />

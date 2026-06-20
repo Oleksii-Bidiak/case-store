@@ -12,8 +12,10 @@ import {
   checkoutSchema,
   type CheckoutFormValues,
 } from "@/features/checkout";
-import { CheckoutSkeleton } from "@/shared/ui";
+import { Button, CheckoutSkeleton } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
+import { CheckoutStepIndicator } from "./checkout-step-indicator";
 
 /**
  * CheckoutView — client orchestrator for the `/checkout` route.
@@ -76,7 +78,11 @@ export function CheckoutView() {
   return (
     <div className="flex flex-col gap-8 lg:grid lg:grid-cols-3">
       <section className="lg:col-span-2">
-        <h1 className="mb-6 text-2xl font-bold text-foreground">Checkout</h1>
+        <h1 className="mb-6 text-2xl font-bold text-foreground">
+          {dict.checkout.title}
+        </h1>
+
+        <CheckoutStepIndicator current={1} />
 
         <form
           onSubmit={handleSubmit(submitOrder)}
@@ -85,7 +91,7 @@ export function CheckoutView() {
         >
           <CheckoutAddressForm
             prefix="shippingAddress"
-            legend="Shipping address"
+            legend={dict.checkout.shippingAddress}
             register={register}
             errors={errors}
           />
@@ -96,13 +102,13 @@ export function CheckoutView() {
               className="h-4 w-4 rounded border-border"
               {...register("billingSameAsShipping")}
             />
-            Billing address same as shipping
+            {dict.checkout.billingSame}
           </label>
 
           {!billingSameAsShipping && (
             <CheckoutAddressForm
               prefix="billingAddress"
-              legend="Billing address"
+              legend={dict.checkout.billingAddress}
               register={register}
               errors={errors}
             />
@@ -113,8 +119,10 @@ export function CheckoutView() {
               htmlFor="checkout-notes"
               className="text-sm font-medium text-foreground"
             >
-              Order notes{" "}
-              <span className="text-muted-foreground">(optional)</span>
+              {dict.checkout.orderNotes}{" "}
+              <span className="text-muted-foreground">
+                {dict.common.optional}
+              </span>
             </label>
             <textarea
               id="checkout-notes"
@@ -139,13 +147,14 @@ export function CheckoutView() {
             </p>
           )}
 
-          <button
+          <Button
             type="submit"
+            size="lg"
             disabled={isPending}
-            className="self-start rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            className="self-start"
           >
-            {isPending ? "Placing order…" : "Place order"}
-          </button>
+            {isPending ? dict.checkout.placingOrder : dict.checkout.placeOrder}
+          </Button>
         </form>
       </section>
 

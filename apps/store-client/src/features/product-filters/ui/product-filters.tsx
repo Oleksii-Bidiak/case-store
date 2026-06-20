@@ -2,6 +2,17 @@
 
 import type { CategoryEntity } from "@/entities/category";
 import type { ProductControllerFindAllParams } from "@/entities/product";
+import { dict } from "@/shared/config";
+import {
+  Button,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/shared/ui";
 import { SearchInput } from "./search-input";
 
 interface ProductFiltersProps {
@@ -18,14 +29,15 @@ interface ProductFiltersProps {
 }
 
 const SORT_OPTIONS = [
-  { value: "createdAt:desc", label: "Newest" },
-  { value: "price:asc", label: "Price: Low to High" },
-  { value: "price:desc", label: "Price: High to Low" },
-  { value: "name:asc", label: "Name: A–Z" },
+  { value: "createdAt:desc", label: dict.filters.sort.newest },
+  { value: "price:asc", label: dict.filters.sort.priceAsc },
+  { value: "price:desc", label: dict.filters.sort.priceDesc },
+  { value: "name:asc", label: dict.filters.sort.nameAsc },
 ];
 
-const inputClass =
-  "rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+// Radix Select cannot use an empty-string item value, so the "all categories"
+// option uses this sentinel and maps back to `undefined` on change.
+const ALL_CATEGORIES = "all";
 
 /**
  * Filter panel for the product list page: search, category, price range, and
@@ -37,17 +49,11 @@ export function ProductFilters({
   onFilterChange,
 }: ProductFiltersProps) {
   const currentSort = `${currentParams.sortBy ?? "createdAt"}:${currentParams.sortOrder ?? "desc"}`;
-  const hasActiveFilters = Boolean(
-    currentParams.categoryId ||
-    currentParams.search ||
-    currentParams.minPrice != null ||
-    currentParams.maxPrice != null,
-  );
 
   return (
     <fieldset className="flex flex-col gap-5 rounded-lg border border-border bg-card p-4">
       <legend className="px-1 text-base font-semibold text-card-foreground">
-        Filters
+        {dict.filters.legend}
       </legend>
 
       <SearchInput
@@ -56,113 +62,113 @@ export function ProductFilters({
         onSearch={(value) => onFilterChange({ search: value })}
       />
 
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="filter-category"
-          className="text-sm font-medium text-foreground"
-        >
-          Category
-        </label>
-        <select
-          id="filter-category"
-          value={currentParams.categoryId ?? ""}
-          onChange={(event) =>
-            onFilterChange({ categoryId: event.target.value || undefined })
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="filter-category">{dict.filters.category}</Label>
+        <Select
+          value={currentParams.categoryId ?? ALL_CATEGORIES}
+          onValueChange={(value) =>
+            onFilterChange({
+              categoryId: value === ALL_CATEGORIES ? undefined : value,
+            })
           }
-          className={inputClass}
         >
-          <option value="">All categories</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger id="filter-category" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_CATEGORIES}>
+              {dict.filters.allCategories}
+            </SelectItem>
+            {categories.map((category) => (
+              <SelectItem key={category.id} value={category.id}>
+                {category.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <span className="text-sm font-medium text-foreground">Price range</span>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium text-foreground">
+          {dict.filters.priceRange}
+        </span>
         <div className="flex items-center gap-2">
-          <label htmlFor="filter-min-price" className="sr-only">
-            Minimum price
-          </label>
-          <input
+          <Label htmlFor="filter-min-price" className="sr-only">
+            {dict.filters.minPrice}
+          </Label>
+          <Input
             key={`min-${currentParams.minPrice ?? ""}`}
             id="filter-min-price"
             type="number"
             min="0"
             step="0.01"
             inputMode="decimal"
-            placeholder="Min"
+            placeholder={dict.filters.minPlaceholder}
             defaultValue={currentParams.minPrice ?? ""}
             onBlur={(event) =>
               onFilterChange({ minPrice: event.target.value || undefined })
             }
-            className={`${inputClass} w-full`}
           />
           <span aria-hidden="true" className="text-muted-foreground">
             –
           </span>
-          <label htmlFor="filter-max-price" className="sr-only">
-            Maximum price
-          </label>
-          <input
+          <Label htmlFor="filter-max-price" className="sr-only">
+            {dict.filters.maxPrice}
+          </Label>
+          <Input
             key={`max-${currentParams.maxPrice ?? ""}`}
             id="filter-max-price"
             type="number"
             min="0"
             step="0.01"
             inputMode="decimal"
-            placeholder="Max"
+            placeholder={dict.filters.maxPlaceholder}
             defaultValue={currentParams.maxPrice ?? ""}
             onBlur={(event) =>
               onFilterChange({ maxPrice: event.target.value || undefined })
             }
-            className={`${inputClass} w-full`}
           />
         </div>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="filter-sort"
-          className="text-sm font-medium text-foreground"
-        >
-          Sort by
-        </label>
-        <select
-          id="filter-sort"
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="filter-sort">{dict.filters.sortBy}</Label>
+        <Select
           value={currentSort}
-          onChange={(event) => {
-            const [sortBy, sortOrder] = event.target.value.split(":");
+          onValueChange={(value) => {
+            const [sortBy, sortOrder] = value.split(":");
             onFilterChange({ sortBy, sortOrder });
           }}
-          className={inputClass}
         >
-          {SORT_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger id="filter-sort" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SORT_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      {hasActiveFilters && (
-        <button
-          type="button"
-          onClick={() =>
-            onFilterChange({
-              categoryId: undefined,
-              search: undefined,
-              minPrice: undefined,
-              maxPrice: undefined,
-            })
-          }
-          className="self-start rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          Clear filters
-        </button>
-      )}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="self-start"
+        onClick={() =>
+          onFilterChange({
+            categoryId: undefined,
+            search: undefined,
+            minPrice: undefined,
+            maxPrice: undefined,
+          })
+        }
+      >
+        {dict.filters.clear}
+      </Button>
     </fieldset>
   );
 }

@@ -2,10 +2,11 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { CheckoutView } from "@/widgets";
 import { CheckoutSkeleton } from "@/shared/ui";
+import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
-  title: "Checkout | MobileStore",
-  description: "Complete your purchase.",
+  title: dict.meta.checkoutTitle,
+  description: dict.meta.checkoutDescription,
 };
 
 export default function CheckoutPage() {

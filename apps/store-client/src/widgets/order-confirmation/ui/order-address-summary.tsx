@@ -2,6 +2,7 @@ import type {
   OrderEntityShippingAddress,
   OrderEntityBillingAddress,
 } from "@/entities/order";
+import { dict } from "@/shared/config";
 
 interface OrderAddressSummaryProps {
   shippingAddress: OrderEntityShippingAddress; // { [key: string]: unknown } | null
@@ -73,8 +74,10 @@ export function OrderAddressSummary({
 
   return (
     <div className="flex flex-col gap-6">
-      <AddressBlock title="Shipping Address" address={shipping} />
-      {billing && <AddressBlock title="Billing Address" address={billing} />}
+      <AddressBlock title={dict.order.shippingAddress} address={shipping} />
+      {billing && (
+        <AddressBlock title={dict.order.billingAddress} address={billing} />
+      )}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { ProductDetailView, ProductDetailSkeleton } from "@/widgets";
 import { productControllerFindBySlug } from "@/shared/api/generated/products/products";
 import { JsonLd } from "@/shared/ui";
 import { buildProductSchema, buildBreadcrumbSchema } from "@/shared/lib/schema";
-import { SITE_URL, SITE_NAME, CURRENCY } from "@/shared/config";
+import { SITE_URL, SITE_NAME, CURRENCY, dict } from "@/shared/config";
 
 interface ProductDetailPageProps {
   params: Promise<{ slug: string }>;
@@ -20,7 +20,7 @@ export async function generateMetadata({
     const description =
       typeof product.description === "string" && product.description.length > 0
         ? product.description
-        : "View product details.";
+        : dict.meta.productFallbackDescription;
     const canonical = `${SITE_URL}/products/${product.slug}`;
     const firstImage = images[0]?.url;
 
@@ -37,7 +37,7 @@ export async function generateMetadata({
       },
     };
   } catch {
-    return { title: "Product" };
+    return { title: dict.meta.productFallbackTitle };
   }
 }
 
@@ -92,8 +92,8 @@ async function buildProductPageSchemas(slug: string): Promise<{
         brandName: SITE_NAME,
       }),
       breadcrumb: buildBreadcrumbSchema([
-        { name: "Home", item: SITE_URL },
-        { name: "Products", item: `${SITE_URL}/products` },
+        { name: dict.product.breadcrumbHome, item: SITE_URL },
+        { name: dict.product.breadcrumbProducts, item: `${SITE_URL}/products` },
         {
           name: category.name,
           item: `${SITE_URL}/products?categoryId=${category.id}`,

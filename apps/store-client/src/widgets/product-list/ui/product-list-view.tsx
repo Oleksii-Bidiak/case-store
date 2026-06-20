@@ -4,7 +4,7 @@ import { useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCategoryControllerGetRootCategories } from "@/entities/category";
 import type { ProductControllerFindAllParams } from "@/entities/product";
-import { ProductFilters } from "@/features/product-filters";
+import { ProductFilters, ActiveFilterChips } from "@/features/product-filters";
 import { ProductList } from "./product-list";
 
 interface ProductListViewProps {
@@ -84,6 +84,11 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
         />
       </aside>
       <div>
+        <ActiveFilterChips
+          categories={categories}
+          currentParams={params}
+          onFilterChange={applyFilters}
+        />
         <ProductList params={params} buildPageHref={buildPageHref} />
       </div>
     </div>

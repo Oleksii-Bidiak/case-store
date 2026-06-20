@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCategoryControllerGetRootCategories } from "@/entities/category";
+import { dict } from "@/shared/config";
 import { CategoryNavSkeleton } from "./category-nav-skeleton";
 
 /**
@@ -22,7 +23,7 @@ export function CategoryNav() {
   if (isError) {
     return (
       <p role="alert" className="text-sm text-destructive">
-        Failed to load categories. Please try again later.
+        {dict.catalog.categoriesError}
       </p>
     );
   }
@@ -30,11 +31,15 @@ export function CategoryNav() {
   const categories = data?.data ?? [];
 
   if (categories.length === 0) {
-    return <p className="text-sm text-muted-foreground">No categories yet.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {dict.catalog.noCategories}
+      </p>
+    );
   }
 
   return (
-    <nav aria-label="Product categories">
+    <nav aria-label={dict.catalog.categoriesAria}>
       <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {categories.map((category) => (
           <li key={category.id}>

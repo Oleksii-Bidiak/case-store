@@ -70,7 +70,7 @@ function escapeHtml(value: string): string {
 }
 
 function formatMoney(value: string): string {
-  return `$${value}`;
+  return `${value} ₴`;
 }
 
 function fullName(address: OrderConfirmationAddress): string {
@@ -98,7 +98,7 @@ function itemLabel(item: OrderConfirmationItem): string {
 
 function renderItemsHtml(items: OrderConfirmationItem[]): string {
   if (items.length === 0) {
-    return '<tr><td colspan="3" style="padding:8px;color:#64748b;">No items.</td></tr>';
+    return '<tr><td colspan="3" style="padding:8px;color:#64748b;">Немає товарів.</td></tr>';
   }
   return items
     .map((item) => {
@@ -119,11 +119,11 @@ function renderTotalsHtml(order: OrderConfirmationParams['order']): string {
   <td style="padding:4px 8px;text-align:right;${strong ? 'font-weight:bold;font-size:16px;' : ''}">${formatMoney(value)}</td>
 </tr>`;
 
-  const rows = [row('Subtotal', order.subtotal)];
-  if (parseFloat(order.discount) > 0) rows.push(row('Discount', `-${order.discount}`));
-  if (parseFloat(order.shippingCost) > 0) rows.push(row('Shipping', order.shippingCost));
-  if (parseFloat(order.tax) > 0) rows.push(row('Tax', order.tax));
-  rows.push(row('Total', order.total, true));
+  const rows = [row('Сума', order.subtotal)];
+  if (parseFloat(order.discount) > 0) rows.push(row('Знижка', `-${order.discount}`));
+  if (parseFloat(order.shippingCost) > 0) rows.push(row('Доставка', order.shippingCost));
+  if (parseFloat(order.tax) > 0) rows.push(row('Податок', order.tax));
+  rows.push(row('Разом', order.total, true));
   return rows.join('\n');
 }
 
@@ -132,7 +132,7 @@ function renderAddressHtml(address: OrderConfirmationAddress | null): string {
   const lines = addressLines(address)
     .map((l) => escapeHtml(l))
     .join('<br />');
-  return `<h3 style="margin:24px 0 8px;font-size:16px;">Shipping to</h3>
+  return `<h3 style="margin:24px 0 8px;font-size:16px;">Адреса доставки</h3>
 <p style="margin:0;color:#334155;line-height:1.5;">${lines}</p>`;
 }
 
@@ -141,19 +141,19 @@ function renderHtml(params: OrderConfirmationParams): string {
   const greetingName = params.customerName ? ` ${escapeHtml(params.customerName)}` : '';
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="uk">
 <body style="margin:0;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#0f172a;background:#f8fafc;">
   <div style="max-width:600px;margin:0 auto;background:#ffffff;padding:32px;border-radius:12px;">
-    <h1 style="margin:0 0 8px;font-size:22px;">Thank you for your order${greetingName}!</h1>
+    <h1 style="margin:0 0 8px;font-size:22px;">Дякуємо за ваше замовлення${greetingName}!</h1>
     <p style="margin:0 0 16px;color:#475569;">
-      Your order <strong>#${orderNumber(order.id)}</strong> has been received and is being processed.
+      Ваше замовлення <strong>#${orderNumber(order.id)}</strong> отримано та обробляється.
     </p>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;">
       <thead>
         <tr>
-          <th style="padding:8px;text-align:left;border-bottom:2px solid #cbd5e1;">Item</th>
-          <th style="padding:8px;text-align:center;border-bottom:2px solid #cbd5e1;">Qty</th>
-          <th style="padding:8px;text-align:right;border-bottom:2px solid #cbd5e1;">Total</th>
+          <th style="padding:8px;text-align:left;border-bottom:2px solid #cbd5e1;">Товар</th>
+          <th style="padding:8px;text-align:center;border-bottom:2px solid #cbd5e1;">Кіл.</th>
+          <th style="padding:8px;text-align:right;border-bottom:2px solid #cbd5e1;">Разом</th>
         </tr>
       </thead>
       <tbody>
@@ -167,7 +167,7 @@ ${renderTotalsHtml(order)}
     </table>
     ${renderAddressHtml(order.shippingAddress)}
     <p style="margin:24px 0 0;color:#94a3b8;font-size:13px;">
-      If you have any questions about your order, just reply to this email.
+      Якщо у вас є запитання щодо замовлення, просто дайте відповідь на цей лист.
     </p>
   </div>
 </body>
@@ -177,19 +177,19 @@ ${renderTotalsHtml(order)}
 // ─── Plain-text rendering ────────────────────────────────────────────────────
 
 function renderItemsText(items: OrderConfirmationItem[]): string {
-  if (items.length === 0) return 'No items.';
+  if (items.length === 0) return 'Немає товарів.';
   return items
     .map((item) => `- ${itemLabel(item)} x${item.quantity} — ${formatMoney(item.lineTotal)}`)
     .join('\n');
 }
 
 function renderTotalsText(order: OrderConfirmationParams['order']): string {
-  const lines = [`Subtotal: ${formatMoney(order.subtotal)}`];
-  if (parseFloat(order.discount) > 0) lines.push(`Discount: -${formatMoney(order.discount)}`);
+  const lines = [`Сума: ${formatMoney(order.subtotal)}`];
+  if (parseFloat(order.discount) > 0) lines.push(`Знижка: -${formatMoney(order.discount)}`);
   if (parseFloat(order.shippingCost) > 0)
-    lines.push(`Shipping: ${formatMoney(order.shippingCost)}`);
-  if (parseFloat(order.tax) > 0) lines.push(`Tax: ${formatMoney(order.tax)}`);
-  lines.push(`Total: ${formatMoney(order.total)}`);
+    lines.push(`Доставка: ${formatMoney(order.shippingCost)}`);
+  if (parseFloat(order.tax) > 0) lines.push(`Податок: ${formatMoney(order.tax)}`);
+  lines.push(`Разом: ${formatMoney(order.total)}`);
   return lines.join('\n');
 }
 
@@ -198,20 +198,20 @@ function renderText(params: OrderConfirmationParams): string {
   const greetingName = params.customerName ? ` ${params.customerName}` : '';
 
   const sections = [
-    `Thank you for your order${greetingName}!`,
-    `Your order #${orderNumber(order.id)} has been received and is being processed.`,
+    `Дякуємо за ваше замовлення${greetingName}!`,
+    `Ваше замовлення #${orderNumber(order.id)} отримано та обробляється.`,
     '',
-    'Items:',
+    'Товари:',
     renderItemsText(order.items),
     '',
     renderTotalsText(order),
   ];
 
   if (order.shippingAddress) {
-    sections.push('', 'Shipping to:', addressLines(order.shippingAddress).join('\n'));
+    sections.push('', 'Адреса доставки:', addressLines(order.shippingAddress).join('\n'));
   }
 
-  sections.push('', 'If you have any questions about your order, just reply to this email.');
+  sections.push('', 'Якщо у вас є запитання щодо замовлення, просто дайте відповідь на цей лист.');
   return sections.join('\n');
 }
 
@@ -221,7 +221,7 @@ function renderText(params: OrderConfirmationParams): string {
  */
 export function buildOrderConfirmationEmail(params: OrderConfirmationParams): MailTemplate {
   return {
-    subject: `Order #${orderNumber(params.order.id)} confirmed`,
+    subject: `Замовлення #${orderNumber(params.order.id)} підтверджено`,
     html: renderHtml(params),
     text: renderText(params),
   };

@@ -2,6 +2,7 @@ import type {
   OrderEntityStatus,
   OrderEntityPaymentStatus,
 } from "@/entities/order";
+import { dict } from "@/shared/config";
 
 interface OrderConfirmationHeaderProps {
   orderId: string;
@@ -24,7 +25,7 @@ const STATUS_BADGE: Record<string, string> = {
   FAILED: "bg-destructive/10 text-destructive",
 };
 
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
+const dateFormatter = new Intl.DateTimeFormat("uk-UA", {
   year: "numeric",
   month: "long",
   day: "numeric",
@@ -56,37 +57,37 @@ export function OrderConfirmationHeader({
   return (
     <header className="flex flex-col gap-3">
       <h1 className="text-3xl font-bold text-foreground">
-        Thank you for your order!
+        {dict.order.thankYou}
       </h1>
 
       <dl className="flex flex-col gap-1 text-sm">
         <div className="flex gap-2">
-          <dt className="text-muted-foreground">Order number:</dt>
+          <dt className="text-muted-foreground">{dict.order.orderNumber}</dt>
           <dd className="font-medium text-foreground">#{orderNumber}</dd>
         </div>
         <div className="flex gap-2">
-          <dt className="text-muted-foreground">Placed on:</dt>
+          <dt className="text-muted-foreground">{dict.order.placedOn}</dt>
           <dd className="text-foreground">{formatDate(createdAt)}</dd>
         </div>
       </dl>
 
       <dl className="flex flex-wrap items-center gap-2">
-        <dt className="sr-only">Order status</dt>
+        <dt className="sr-only">{dict.order.orderStatusSr}</dt>
         <dd>
           <span
-            aria-label={`Order status: ${status}`}
+            aria-label={dict.order.orderStatusAria(status)}
             className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${badgeClass(status)}`}
           >
             {status}
           </span>
         </dd>
-        <dt className="sr-only">Payment status</dt>
+        <dt className="sr-only">{dict.order.paymentStatusSr}</dt>
         <dd>
           <span
-            aria-label={`Payment status: ${paymentStatus}`}
+            aria-label={dict.order.paymentStatusAria(paymentStatus)}
             className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${badgeClass(paymentStatus)}`}
           >
-            Payment: {paymentStatus}
+            {dict.order.paymentLabel(paymentStatus)}
           </span>
         </dd>
       </dl>

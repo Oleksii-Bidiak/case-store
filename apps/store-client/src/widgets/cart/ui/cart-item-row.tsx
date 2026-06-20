@@ -8,18 +8,10 @@ import {
   useUpdateCartItem,
   type CartItemEntity,
 } from "@/entities/cart";
+import { formatMoney } from "@/shared/lib";
+import { dict } from "@/shared/config";
 
 const MAX_QUANTITY = 99;
-
-const priceFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
-
-function formatPrice(value: string): string {
-  const amount = Number(value);
-  return Number.isFinite(amount) ? priceFormatter.format(amount) : value;
-}
 
 /** Coerce a loosely-typed generated string field to a usable string. */
 function asString(value: unknown): string | null {
@@ -85,17 +77,17 @@ export function CartItemRow({ item }: { item: CartItemEntity }) {
           )}
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-sm text-foreground">
-              {formatPrice(item.price)}
+              {formatMoney(item.price)}
             </span>
             {onSale && compareAtPrice && (
               <span className="text-xs text-muted-foreground line-through">
-                {formatPrice(compareAtPrice)}
+                {formatMoney(compareAtPrice)}
               </span>
             )}
           </div>
         </div>
         <p className="shrink-0 font-semibold text-foreground">
-          {formatPrice(item.lineTotal)}
+          {formatMoney(item.lineTotal)}
         </p>
       </div>
 
@@ -103,7 +95,9 @@ export function CartItemRow({ item }: { item: CartItemEntity }) {
         <div className="flex items-center rounded-lg border border-border">
           <button
             type="button"
-            aria-label={qty <= 1 ? "Remove item" : "Decrease quantity"}
+            aria-label={
+              qty <= 1 ? dict.cart.removeItemAria : dict.cart.decreaseAria
+            }
             onClick={() =>
               qty <= 1
                 ? removeItem.mutate({ itemId: item.id })
@@ -115,7 +109,7 @@ export function CartItemRow({ item }: { item: CartItemEntity }) {
           </button>
           <input
             type="number"
-            aria-label="Quantity"
+            aria-label={dict.cart.quantityAria}
             min={1}
             max={maxQty}
             value={qty}
@@ -125,7 +119,7 @@ export function CartItemRow({ item }: { item: CartItemEntity }) {
           />
           <button
             type="button"
-            aria-label="Increase quantity"
+            aria-label={dict.cart.increaseAria}
             disabled={qty >= maxQty || item.stock === 0}
             onClick={() => commit(qty + 1)}
             className="px-3 py-1.5 text-foreground hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
@@ -136,17 +130,17 @@ export function CartItemRow({ item }: { item: CartItemEntity }) {
 
         <button
           type="button"
-          aria-label={`Remove ${item.productName} from cart`}
+          aria-label={dict.cart.removeNamedAria(item.productName)}
           onClick={() => removeItem.mutate({ itemId: item.id })}
           className="text-sm text-destructive hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          Remove
+          {dict.cart.remove}
         </button>
       </div>
 
       {error && (
         <p role="alert" className="text-sm text-destructive">
-          Could not update this item. Please try again.
+          {dict.cart.updateError}
         </p>
       )}
     </li>

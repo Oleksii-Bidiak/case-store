@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { dict } from "@/shared/config";
+import { Input, Label } from "@/shared/ui";
 
 interface SearchInputProps {
   /**
@@ -36,21 +38,15 @@ export function SearchInput({ initialValue = "", onSearch }: SearchInputProps) {
   }, [value, initialValue, onSearch]);
 
   return (
-    <div className="flex flex-col gap-1">
-      <label
-        htmlFor="filter-search"
-        className="text-sm font-medium text-foreground"
-      >
-        Search
-      </label>
-      <input
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor="filter-search">{dict.filters.searchLabel}</Label>
+      <Input
         id="filter-search"
         type="search"
         value={value}
         onChange={(event) => setValue(event.target.value)}
-        placeholder="Search products…"
-        aria-label="Search products"
-        className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        placeholder={dict.filters.searchPlaceholder}
+        aria-label={dict.filters.searchAria}
       />
     </div>
   );

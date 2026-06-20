@@ -4,12 +4,11 @@ import { ProductListView, ProductListSkeleton } from "@/widgets";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
-import { SITE_URL } from "@/shared/config";
+import { SITE_URL, dict } from "@/shared/config";
 
 export const metadata: Metadata = {
-  title: "Products",
-  description:
-    "Browse all mobile accessories — filter by category, price, and keyword, and sort to find exactly what you need.",
+  title: dict.meta.productsTitle,
+  description: dict.meta.productsDescription,
 };
 
 /** Take the first value when a query param appears more than once. */
@@ -44,12 +43,15 @@ export default async function ProductsPage({
     <div className="mx-auto w-full max-w-7xl px-4 py-8">
       <JsonLd
         schema={buildBreadcrumbSchema([
-          { name: "Home", item: SITE_URL },
-          { name: "Products", item: `${SITE_URL}/products` },
+          { name: dict.product.breadcrumbHome, item: SITE_URL },
+          {
+            name: dict.product.breadcrumbProducts,
+            item: `${SITE_URL}/products`,
+          },
         ])}
       />
       <h1 className="mb-8 text-3xl font-bold tracking-tight text-foreground">
-        All Products
+        {dict.catalog.allProducts}
       </h1>
       <Suspense fallback={<ProductListSkeleton />}>
         <ProductListView initialParams={initialParams} />

@@ -52,6 +52,40 @@ describe('buildOrderConfirmationEmail', () => {
       const { subject } = buildOrderConfirmationEmail(baseParams());
       expect(subject).toContain('550E8400');
     });
+
+    it('is written in Ukrainian', () => {
+      const { subject } = buildOrderConfirmationEmail(baseParams());
+      expect(subject).toContain('підтверджено');
+    });
+  });
+
+  describe('Ukrainian localization', () => {
+    it('renders the heading and order-received copy in Ukrainian', () => {
+      const { html, text } = buildOrderConfirmationEmail(baseParams());
+      expect(html).toContain('Дякуємо за ваше замовлення');
+      expect(html).toContain('отримано');
+      expect(text).toContain('Дякуємо за ваше замовлення');
+    });
+
+    it('uses the ₴ hryvnia symbol for money and no $ sign', () => {
+      const { html, text } = buildOrderConfirmationEmail(baseParams());
+      expect(html).toContain('₴');
+      expect(html).not.toContain('$');
+      expect(text).toContain('₴');
+      expect(text).not.toContain('$');
+    });
+
+    it('localizes the table headers and totals labels', () => {
+      const { html } = buildOrderConfirmationEmail(baseParams());
+      expect(html).toContain('Товар');
+      expect(html).toContain('Разом');
+    });
+
+    it('declares the HTML document language as uk', () => {
+      const { html } = buildOrderConfirmationEmail(baseParams());
+      expect(html).toContain('lang="uk"');
+      expect(html).not.toContain('lang="en"');
+    });
   });
 
   describe('html body', () => {
