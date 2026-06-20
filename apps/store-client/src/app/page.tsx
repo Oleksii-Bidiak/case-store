@@ -34,7 +34,7 @@ export default function HomePage() {
       >
         <h2
           id="categories-heading"
-          className="mb-6 text-2xl font-bold tracking-tight text-foreground"
+          className="mb-6 font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl"
         >
           {dict.catalog.categories}
         </h2>
@@ -49,7 +49,7 @@ export default function HomePage() {
       >
         <h2
           id="latest-products-heading"
-          className="mb-6 text-2xl font-bold tracking-tight text-foreground"
+          className="mb-6 font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl"
         >
           {dict.catalog.latestProducts}
         </h2>

@@ -50,9 +50,14 @@ export default async function ProductsPage({
           },
         ])}
       />
-      <h1 className="mb-8 text-3xl font-bold tracking-tight text-foreground">
-        {dict.catalog.allProducts}
-      </h1>
+      <div className="mb-8">
+        <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">
+          {dict.catalog.allProducts}
+        </h1>
+        <p className="mt-2 max-w-2xl text-muted-foreground">
+          {dict.catalog.allProductsSubtitle}
+        </p>
+      </div>
       <Suspense fallback={<ProductListSkeleton />}>
         <ProductListView initialParams={initialParams} />
       </Suspense>

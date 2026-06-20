@@ -7,8 +7,8 @@ export function CategoryNavSkeleton() {
       className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4"
       aria-hidden="true"
     >
-      {Array.from({ length: 6 }).map((_, i) => (
-        <Skeleton key={i} className="h-32 w-full" />
+      {Array.from({ length: 4 }).map((_, i) => (
+        <Skeleton key={i} className="h-44 w-full rounded-xl" />
       ))}
     </div>
   );
