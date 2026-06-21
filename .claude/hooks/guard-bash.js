@@ -21,10 +21,21 @@ process.stdin.on('end', () => {
   const cmd = (payload?.tool_input?.command || '').trim();
   if (!cmd) process.exit(0);
 
-  // Block printing .env secrets
-  if (/\b(cat|type|Get-Content|gc)\b[^|;&]*\.env(\b|\.)/i.test(cmd)) {
+  // Block printing/reading .env secrets via any common reader (cat/grep/head/less/awk/…),
+  // including piped forms like `cat .env | grep X` or `grep KEY .env`.
+  // Safe sample variants (.env.example/.sample/.template/.dist) are allowed.
+  const withoutSafeEnv = cmd.replace(
+    /\.env\.(example|sample|template|dist)\b/gi,
+    ''
+  );
+  const mentionsRealEnv = /\.env(\b|\.)/i.test(withoutSafeEnv);
+  const usesFileReader =
+    /\b(cat|type|Get-Content|gc|less|more|head|tail|tac|nl|od|xxd|hexdump|strings|grep|egrep|rg|awk|sed|printf)\b/i.test(
+      cmd
+    ) || /(^|[\s;&|])\.\s+\S*\.env/i.test(cmd); // POSIX `.`/source builtin
+  if (mentionsRealEnv && usesFileReader) {
     console.error(
-      'Blocked: do not print .env files — they contain secrets. Read .env.example instead.'
+      'Blocked: do not print/read .env files — they contain secrets. Use .env.example instead.'
     );
     process.exit(2);
   }
@@ -38,9 +49,20 @@ process.stdin.on('end', () => {
         encoding: 'utf8',
       }).trim();
     } catch {
-      process.exit(0); // not a git repo / detached — let it through
+      process.exit(0); // not a git repo — let it through
     }
-    if (branch === 'main') {
+    let onMain = branch === 'main';
+    // Detached HEAD sitting on the same commit as `main` is effectively committing to main.
+    if (!onMain && branch === 'HEAD') {
+      try {
+        const head = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+        const main = execSync('git rev-parse main', { encoding: 'utf8' }).trim();
+        if (head && head === main) onMain = true;
+      } catch {
+        /* `main` not present locally — nothing to compare, allow */
+      }
+    }
+    if (onMain) {
       console.error(
         'Blocked: you are on `main`. Per GitFlow, commit/push on a feature/fix branch ' +
           'and merge into `develop` via PR. Create one: `git checkout -b feature/NNN-name`.'

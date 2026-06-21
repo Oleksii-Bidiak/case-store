@@ -57,7 +57,6 @@ model User {
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
-  deletedAt    DateTime? @map("deleted_at")
 
   refreshTokens RefreshToken[]
   orders        Order[]
@@ -97,7 +96,7 @@ import { JwtService } from "@nestjs/jwt";
 import { AuthRepository } from "./auth.repository";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
-import * as bcrypt from "bcrypt";
+import * as argon2 from "argon2";
 
 @Injectable()
 export class AuthService {
@@ -110,7 +109,7 @@ export class AuthService {
     const existing = await this.authRepository.findByEmail(dto.email);
     if (existing) throw new ConflictException("Email already registered");
 
-    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const passwordHash = await argon2.hash(dto.password);
     const user = await this.authRepository.createUser({
       email: dto.email,
       passwordHash,
@@ -125,12 +124,16 @@ export class AuthService {
     const user = await this.authRepository.findByEmail(dto.email);
     if (!user) throw new UnauthorizedException("Invalid credentials");
 
-    const isPasswordValid = await bcrypt.compare(
-      dto.password,
+    const isPasswordValid = await argon2.verify(
       user.passwordHash,
+      dto.password,
     );
     if (!isPasswordValid)
       throw new UnauthorizedException("Invalid credentials");
+
+    // Reject deactivated (banned) accounts — they must not obtain new tokens.
+    if (!user.isActive)
+      throw new UnauthorizedException("Account is deactivated");
 
     return this.generateTokenPair(user.id, user.role);
   }
@@ -487,7 +490,6 @@ JWT_SECRET=your-jwt-secret-min-32-chars
 JWT_REFRESH_SECRET=your-refresh-secret-min-32-chars
 JWT_EXPIRATION=15m
 JWT_REFRESH_EXPIRATION=7d
-BCRYPT_SALT_ROUNDS=12
 CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 PORT=3000
 ```
@@ -495,7 +497,7 @@ PORT=3000
 ## Rules
 
 - ALWAYS use HttpOnly cookies for refresh tokens вЂ” never expose them to JavaScript.
-- ALWAYS use `bcrypt` with salt rounds >= 12 for password hashing.
+- ALWAYS use `argon2` (argon2id, the library default) for password hashing — `argon2.hash(password)` / `argon2.verify(hash, password)`. This is what the live `auth.service.ts` uses.
 - ALWAYS rotate refresh tokens on every use вЂ” revoke the old one and issue a new pair.
 - ALWAYS use `ValidationPipe` with `whitelist: true` and `forbidNonWhitelisted: true` globally.
 - ALWAYS use `@UseGuards(JwtAuthGuard)` on protected endpoints.

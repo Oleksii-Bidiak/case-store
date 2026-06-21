@@ -1,0 +1,4 @@
+# Local quality gate before pushing — catch type errors before CI does.
+# Runs `tsc --noEmit` across all workspaces. Skip in a pinch with `git push --no-verify`.
+echo "pre-push: running typecheck across workspaces…"
+npm run typecheck

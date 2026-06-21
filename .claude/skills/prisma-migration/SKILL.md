@@ -57,10 +57,16 @@ npx prisma <command> --schema=apps/store-api/prisma/schema.prisma
 - Always include `createdAt DateTime @default(now())` and `updatedAt DateTime @updatedAt`
 - Use `@default(now())` not application-level date assignment
 
-### Soft Delete
+### Deactivation / Soft Delete
 
-- Prefer soft deletes for user-facing content: `deletedAt DateTime?`
-- Add `@@unique` constraints that include `deletedAt` for uniqueness on active records
+- **Current convention:** this project uses an **`isActive Boolean @default(true)`** flag on
+  user-facing models (`User`, `Product`, `Category`, `ProductVariant`, `Review`) for
+  hide/deactivate, plus **hard deletes** for real removal. There is **no `deletedAt`** column
+  anywhere in the schema today — do not assume one exists.
+- **Roadmap (not yet implemented):** `deletedAt DateTime?` soft deletes are a planned
+  improvement (backlog TASK-104). If/when adopted, add `@@unique` constraints that include
+  `deletedAt` so uniqueness applies only to active records. Until then, match the existing
+  `isActive` pattern.
 
 ### Enum Fields
 
@@ -93,12 +99,14 @@ model Product {
   reviews         Review[]
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
-  deletedAt       DateTime?
 
-  @@unique([slug, deletedAt])
+  @@index([isActive])
   @@map("products")
 }
 ```
+
+> Note: this mirrors the live schema's `isActive`-based deactivation (no `deletedAt`). The
+> real `Product` model uses `slug String @unique` directly.
 
 ## Migration Workflow
 
@@ -208,7 +216,7 @@ Run: `npx prisma db seed`
 - ALWAYS add `@@map` to use snake_case table names in the database.
 - ALWAYS include `createdAt` and `updatedAt` timestamps on every model.
 - NEVER use `@db.Decimal` without specifying precision (use `@db.Decimal(10, 2)` for prices).
-- PREFER soft deletes (`deletedAt DateTime?`) for user-facing content.
+- MATCH the existing **`isActive Boolean`** deactivation pattern on user-facing models; the schema has **no `deletedAt`** today (soft deletes are roadmap TASK-104, not current).
 - NEVER use `onDelete: Cascade` on relationships that cross aggregate boundaries.
 - ALWAYS name migrations descriptively in kebab-case.
 - NEVER use `prisma db push` in production вЂ” always use `prisma migrate deploy`.

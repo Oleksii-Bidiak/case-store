@@ -1,6 +1,6 @@
 ---
 name: task-planner
-description: Creates persistent implementation plan documents in docs/plans/ and updates BACKLOG.md. Breaks features into tasks with acceptance criteria. Use via /plan, or when asked to "plan a feature" or "what's next?".
+description: Creates persistent implementation plan documents in docs/plans/ and updates BACKLOG.md. Breaks features into tasks with acceptance criteria. Use via /planer, or when asked to "plan a feature" or "what's next?".
 tools: Read, Grep, Glob, Write, Edit, Bash, WebFetch
 model: sonnet
 ---
@@ -26,9 +26,10 @@ Use the **plan-document** skill for the plan document template.
 
 When a user asks you to plan a feature:
 
-### Option A: `/plan Feature Name`
+### Option A: `/planer Feature Name`
 
 This command is already configured. It will invoke you with the feature description.
+(The command is `/planer`, not `/plan` — `/plan` is Claude Code's built-in plan mode.)
 
 ### Option B: Manual Request
 

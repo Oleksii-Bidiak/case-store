@@ -15,16 +15,31 @@ Clean Architecture, Prisma/PostgreSQL), `apps/store-client` & `apps/store-admin`
 - **code-reviewer** — read-only security / Clean Architecture / FSD review.
 - **task-planner** — writes `docs/plans/NNN-*.md` and maintains `BACKLOG.md`.
 - **git-helper** — explains git/GitFlow, never executes mutating git commands.
+- **designer** — UI/UX design + frontend implementation for the `store-client` storefront
+  (visual polish, layout, design-system work via `docs/design-system.md`); not for backend/API.
 
 ## Available commands (`.claude/commands/`)
 
-`/dev` `/build` `/test` `/lint` `/review` `/plan <feature>` `/next`
+`/dev` `/build` `/test` `/lint` `/review` `/planer <feature>` `/next`
 `/commit` `/git-help` `/db-push` `/db-migrate <name>` `/db-seed` `/db-studio` `/generate-api`
+
+> Note: the custom planning command is `/planer` (not `/plan`) — `/plan` is left to Claude
+> Code's built-in plan mode and is intentionally not overridden.
 
 ## Available skills (`.claude/skills/`)
 
-`api-contract` `auth-security` `frontend-testing` `fsd-component` `nestjs-module`
-`nextjs-app-router` `observability` `plan-document` `prisma-migration` `tdd`
+Invoke the matching skill when its area comes up:
+
+- **api-contract** — Swagger decorators ↔ Orval hook generation; the API contract pipeline.
+- **auth-security** — JWT/refresh, guards, RBAC, Helmet/CORS/CSRF, rate limiting (Argon2 hashing).
+- **frontend-testing** — frontend tests (current: Jest/ts-jest logic tests; RTL+MSW is target state).
+- **fsd-component** — building/placing a component within FSD layers + import-direction rules.
+- **nestjs-module** — scaffolding a backend feature module (controller→service→repository).
+- **nextjs-app-router** — App Router routing, server/client components, metadata/SEO.
+- **observability** — Pino structured logging + Sentry error tracking.
+- **plan-document** — writing a `docs/plans/NNN-*.md` and keeping `BACKLOG.md` in sync.
+- **prisma-migration** — schema changes + migrations (note: `isActive` deactivation, no soft deletes).
+- **tdd** — Red→Green→Refactor discipline for critical modules.
 
 ## Workflow reminders
 

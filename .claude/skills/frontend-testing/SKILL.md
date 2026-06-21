@@ -1,6 +1,6 @@
 ﻿---
 name: frontend-testing
-description: Test React/Next.js components and hooks using React Testing Library, Vitest, and MSW. Covers component testing, hook testing, and integration patterns for FSD architecture.
+description: Test React/Next.js frontends. CURRENT setup is Jest + ts-jest (pure-logic unit tests). Component/hook testing with React Testing Library + MSW is documented here as the TARGET state, not yet wired up.
 license: MIT
 compatibility: claude-code
 metadata:
@@ -10,56 +10,92 @@ metadata:
 
 ## What I Do
 
-I provide testing patterns for React/Next.js frontend components and hooks using React Testing Library, Vitest, and MSW (Mock Service Worker), following FSD architecture conventions.
+I provide testing patterns for the React/Next.js frontends. **The current, working setup is
+Jest + `ts-jest` for pure-logic unit tests** (zod schemas, formatters, pure helpers). The
+React Testing Library + MSW component/hook patterns below are the **target state we are
+moving toward** — they are not wired up yet.
 
 ## When to Use Me
 
-Use me when writing tests for components, hooks, or pages in `apps/store-client/src/` or `apps/store-admin/src/`.
+Use me when writing tests for `apps/store-client/src/` or `apps/store-admin/src/`.
+
+> ⚠️ **Current reality (verify before assuming):**
+>
+> - `apps/store-client` runs **Jest** via `ts-jest` (`jest.config.cjs`), `testEnvironment: "node"`,
+>   matching only `**/*.test.ts` — i.e. **pure-logic tests only, no React rendering**. RTL,
+>   MSW, jsdom and `@testing-library/*` are **not installed**.
+> - `apps/store-admin` has **no test setup at all** (`"test": "echo 'No tests yet'"`).
+>   Adopting the component/integration patterns below requires first installing the libraries
+>   and switching to a `jsdom` environment (tracked as the frontend test-harness roadmap item).
 
 ## Testing Stack
 
+### Current (in use)
+
+| Tool        | Purpose                                            |
+| ----------- | -------------------------------------------------- |
+| **Jest**    | Test runner                                        |
+| **ts-jest** | TypeScript transform (`isolatedModules`, node env) |
+
+### Target (not yet wired up)
+
 | Tool                                 | Purpose                                                  |
 | ------------------------------------ | -------------------------------------------------------- |
-| **Vitest**                           | Test runner (Jest-compatible API, native ESM)            |
 | **React Testing Library**            | Component testing (render, query, interact)              |
 | **@testing-library/jest-dom**        | Custom DOM matchers (`toBeVisible`, `toHaveTextContent`) |
+| **jest-environment-jsdom**           | DOM environment for component tests                      |
 | **MSW**                              | API mocking for integration tests                        |
 | **@tanstack/react-query** test utils | Query hook testing                                       |
 
 ## Setup
 
-### Vitest Config
+### Current Jest config (`apps/store-client/jest.config.cjs`)
 
-```typescript
-// apps/store-client/vitest.config.ts
-import { defineConfig } from "vitest/config";
-import path from "path";
-
-export default defineConfig({
-  test: {
-    environment: "jsdom",
-    globals: true,
-    setupFiles: ["./src/shared/test/setup.ts"],
-    include: ["src/**/*.test.{ts,tsx}"],
-    coverage: {
-      provider: "v8",
-      reporter: ["text", "json", "html"],
-      include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/shared/api/generated/**", "src/**/*.d.ts"],
-    },
+```javascript
+// Pure-logic unit tests only (e.g. zod schemas). React component / integration
+// coverage is deferred to a future suite (jsdom + RTL + MSW — see Target below).
+module.exports = {
+  rootDir: "src",
+  testEnvironment: "node",
+  testMatch: ["**/*.test.ts"],
+  moduleFileExtensions: ["ts", "tsx", "js", "json"],
+  moduleNameMapper: { "^@/(.*)$": "<rootDir>/$1" },
+  transform: {
+    "^.+\\.tsx?$": [
+      "ts-jest",
+      {
+        isolatedModules: true,
+        tsconfig: {
+          module: "commonjs",
+          target: "es2020",
+          esModuleInterop: true,
+          jsx: "react-jsx",
+          skipLibCheck: true,
+          verbatimModuleSyntax: false,
+        },
+      },
+    ],
   },
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
-  },
-});
+};
 ```
 
-### Test Setup
+The current, idiomatic test is a **pure-logic** spec — see the real example in
+`src/features/checkout/model/checkout-schema.test.ts` (zod validation) and the
+"Zod Validation Testing" section below. These run today with `npm run test -w apps/store-client`.
+
+---
+
+### Target component-test setup (not yet adopted)
+
+> Everything from here until "Zod Validation Testing" describes the **target** RTL + MSW
+> setup. To enable it: install `@testing-library/react`, `@testing-library/user-event`,
+> `@testing-library/jest-dom`, `jest-environment-jsdom`, `msw`; switch `testEnvironment` to
+> `"jsdom"`; broaden `testMatch` to `**/*.test.{ts,tsx}`; add a `setupFilesAfterEnv` file.
+
+### Test Setup (target)
 
 ```typescript
-// src/shared/test/setup.ts
+// src/shared/test/setup.ts (jest setupFilesAfterEnv)
 import "@testing-library/jest-dom";
 import { server } from "./msw-server";
 
@@ -68,7 +104,7 @@ afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 ```
 
-### MSW Server
+### MSW Server (target)
 
 ```typescript
 // src/shared/test/msw-server.ts
@@ -129,10 +165,10 @@ describe('Button', () => {
   });
 
   it('calls onClick when clicked', async () => {
-    const onClick = vi.fn();
+    const onClick = jest.fn();
     render(<Button onClick={onClick}>Click me</Button>);
     await userEvent.click(screen.getByRole('button'));
-    expect(onClick).toHaveBeenCalledOnce();
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   it('is disabled when disabled prop is true', () => {
@@ -323,29 +359,33 @@ describe("checkoutSchema", () => {
 ## Test Commands
 
 ```bash
-# All frontend tests
+# All frontend tests (Jest)
 npm run test -w apps/store-client
-npm run test -w apps/store-admin
+npm run test -w apps/store-admin   # currently a no-op until a harness is added
 
 # Watch mode
-npx vitest --config apps/store-client/vitest.config.ts --watch
+npx jest --watch -c apps/store-client/jest.config.cjs
 
 # Single file
-npx vitest run src/features/add-to-cart/ui/add-to-cart-button.test.tsx
+npx jest -c apps/store-client/jest.config.cjs src/features/checkout/model/checkout-schema.test.ts
 
 # Coverage
-npx vitest run --coverage
+npx jest -c apps/store-client/jest.config.cjs --coverage
 ```
 
 ## Rules
 
 - ALWAYS test user behavior, not implementation details.
+- ALWAYS use `jest.fn()` for mock callbacks (this repo runs **Jest**, not Vitest — there is no `vi`).
+- ALWAYS place test files next to the source file: `checkout-schema.ts` → `checkout-schema.test.ts`.
+- The runner is **Jest + ts-jest** today; pure-logic specs (`*.test.ts`) run in a `node` env.
+- ALWAYS test loading, error, and empty states (once component tests are enabled).
+- NEVER test internal component state — test what the user sees and does.
+
+**Target-state rules (apply once RTL + MSW are wired up):**
+
 - ALWAYS use `screen.getByRole()` and `screen.getByText()` over `getByTestId()`.
-- ALWAYS mock API calls with MSW вЂ” never mock fetch/axios directly.
+- ALWAYS mock API calls with MSW — never mock fetch/axios directly.
 - ALWAYS wrap hook tests with `QueryClientProvider` when testing TanStack Query hooks.
-- ALWAYS test loading, error, and empty states.
 - ALWAYS test accessibility: keyboard navigation, ARIA attributes, screen-reader text.
-- NEVER test internal component state вЂ” test what the user sees and does.
-- NEVER import from `shared/api/generated/` in test files вЂ” use MSW handlers instead.
-- ALWAYS use `vi.fn()` for mock callbacks, not `jest.fn()`.
-- ALWAYS place test files next to the source file: `button.tsx` в†’ `button.test.tsx`.
+- NEVER import from `shared/api/generated/` in test files — use MSW handlers instead.
