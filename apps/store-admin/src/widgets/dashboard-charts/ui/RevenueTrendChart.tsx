@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import type { DailyDataPointDto } from "@/entities/dashboard";
+import { dict } from "@/shared/config";
 
 interface RevenueTrendChartProps {
   data: DailyDataPointDto[];
@@ -28,7 +29,7 @@ export function RevenueTrendChart({ data }: RevenueTrendChartProps) {
   return (
     <div className="rounded-lg border border-border bg-card p-6">
       <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-        Revenue (30 days)
+        {dict.dashboard.revenueTrend}
       </h3>
       <ResponsiveContainer width="100%" height={240}>
         <LineChart
@@ -43,14 +44,19 @@ export function RevenueTrendChart({ data }: RevenueTrendChartProps) {
             stroke="var(--color-muted-foreground)"
           />
           <YAxis
-            tickFormatter={(value: number) => `$${value.toFixed(0)}`}
+            tickFormatter={(value: number) => `₴${value.toFixed(0)}`}
             tick={{ fontSize: 12 }}
             stroke="var(--color-muted-foreground)"
             width={56}
           />
           <Tooltip
-            formatter={(value) => [`$${Number(value).toFixed(2)}`, "Revenue"]}
-            labelFormatter={(label) => `Date: ${String(label)}`}
+            formatter={(value) => [
+              `₴${Number(value).toFixed(2)}`,
+              dict.dashboard.revenueTooltip,
+            ]}
+            labelFormatter={(label) =>
+              `${dict.dashboard.date}: ${String(label)}`
+            }
           />
           <Line
             type="monotone"

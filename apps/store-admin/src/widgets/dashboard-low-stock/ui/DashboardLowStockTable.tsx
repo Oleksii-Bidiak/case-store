@@ -8,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 
 interface DashboardLowStockTableProps {
   variants: LowStockVariantDto[];
@@ -24,14 +25,14 @@ export function DashboardLowStockTable({
   return (
     <div className="rounded-lg border border-border bg-card p-6">
       <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-        Low Stock Alerts
+        {dict.dashboard.lowStock}
       </h3>
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Product</TableHead>
-            <TableHead>Variant</TableHead>
-            <TableHead className="text-right">Stock</TableHead>
+            <TableHead>{dict.dashboard.product}</TableHead>
+            <TableHead>{dict.dashboard.variant}</TableHead>
+            <TableHead className="text-right">{dict.dashboard.stock}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -41,7 +42,7 @@ export function DashboardLowStockTable({
                 colSpan={3}
                 className="py-6 text-center text-sm text-muted-foreground"
               >
-                No low-stock variants.
+                {dict.dashboard.noLowStock}
               </TableCell>
             </TableRow>
           ) : (

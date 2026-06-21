@@ -1,12 +1,14 @@
 import type { DashboardSummaryResponse } from "@/entities/dashboard";
+import { dict } from "@/shared/config";
 
 interface AdminDashboardStatsProps {
   summary: DashboardSummaryResponse;
 }
 
-const currencyFormatter = new Intl.NumberFormat("en-US", {
+const currencyFormatter = new Intl.NumberFormat("uk-UA", {
   style: "currency",
-  currency: "USD",
+  currency: "UAH",
+  maximumFractionDigits: 0,
 });
 
 interface StatCardProps {
@@ -37,24 +39,24 @@ export function AdminDashboardStats({ summary }: AdminDashboardStatsProps) {
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       <StatCard
-        label="Total Revenue"
+        label={dict.dashboard.totalRevenue}
         value={currencyFormatter.format(summary.revenue.totalRevenue)}
-        subText="Lifetime (excl. cancelled / refunded)"
+        subText={dict.dashboard.revenueLifetime}
       />
       <StatCard
-        label="Revenue (30 days)"
+        label={dict.dashboard.revenue30}
         value={currencyFormatter.format(summary.revenue.revenueLast30Days)}
-        subText="Last 30 days"
+        subText={dict.dashboard.last30}
       />
       <StatCard
-        label="Total Orders"
+        label={dict.dashboard.totalOrders}
         value={String(summary.orders.totalOrders)}
-        subText={`${pendingOrders} awaiting fulfilment`}
+        subText={dict.dashboard.awaitingFulfilment(pendingOrders)}
       />
       <StatCard
-        label="Total Users"
+        label={dict.dashboard.totalUsers}
         value={String(summary.users.totalUsers)}
-        subText="Registered customers"
+        subText={dict.dashboard.registeredCustomers}
       />
     </div>
   );

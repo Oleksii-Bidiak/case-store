@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import type { OrderStatusCountDto } from "@/entities/dashboard";
+import { dict } from "@/shared/config";
 
 interface OrdersByStatusChartProps {
   data: OrderStatusCountDto[];
@@ -23,7 +24,7 @@ export function OrdersByStatusChart({ data }: OrdersByStatusChartProps) {
   return (
     <div className="rounded-lg border border-border bg-card p-6">
       <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-        Orders by Status
+        {dict.dashboard.ordersByStatus}
       </h3>
       <ResponsiveContainer width="100%" height={240}>
         <BarChart
@@ -46,7 +47,9 @@ export function OrdersByStatusChart({ data }: OrdersByStatusChartProps) {
             stroke="var(--color-muted-foreground)"
             width={40}
           />
-          <Tooltip formatter={(value) => [String(value), "Orders"]} />
+          <Tooltip
+            formatter={(value) => [String(value), dict.dashboard.ordersTooltip]}
+          />
           <Bar
             dataKey="count"
             fill="var(--color-primary)"

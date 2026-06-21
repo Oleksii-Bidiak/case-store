@@ -9,8 +9,9 @@ import {
   DashboardLowStockTable,
 } from "@/widgets";
 import { Button, Separator } from "@/shared/ui";
+import { dict } from "@/shared/config";
 
-const timeFormatter = new Intl.DateTimeFormat("en-US", {
+const timeFormatter = new Intl.DateTimeFormat("uk-UA", {
   hour: "2-digit",
   minute: "2-digit",
 });
@@ -27,10 +28,14 @@ export function DashboardView() {
   return (
     <div>
       <section className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-2xl font-bold text-foreground">Dashboard</h2>
+        <h2 className="text-2xl font-bold text-foreground">
+          {dict.dashboard.heading}
+        </h2>
         {data ? (
           <p className="text-xs text-muted-foreground">
-            Updated {timeFormatter.format(new Date(dataUpdatedAt))}
+            {dict.dashboard.updatedAt(
+              timeFormatter.format(new Date(dataUpdatedAt)),
+            )}
           </p>
         ) : null}
       </section>
@@ -41,7 +46,7 @@ export function DashboardView() {
         <AdminDashboardStatsSkeleton />
       ) : isError || !data ? (
         <p role="alert" className="text-sm text-destructive">
-          Failed to load dashboard metrics. Please try again.
+          {dict.dashboard.loadError}
         </p>
       ) : (
         <>
@@ -60,16 +65,18 @@ export function DashboardView() {
       <Separator className="my-6" />
 
       <section>
-        <h3 className="text-lg font-semibold text-foreground">Quick Actions</h3>
+        <h3 className="text-lg font-semibold text-foreground">
+          {dict.dashboard.quickActions}
+        </h3>
         <div className="mt-4 flex flex-wrap gap-3">
           <Button asChild>
-            <Link href="/products/new">Add Product</Link>
+            <Link href="/products/new">{dict.dashboard.addProduct}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/orders">View Orders</Link>
+            <Link href="/orders">{dict.dashboard.viewOrders}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/users">Manage Users</Link>
+            <Link href="/users">{dict.dashboard.manageUsers}</Link>
           </Button>
         </div>
       </section>
