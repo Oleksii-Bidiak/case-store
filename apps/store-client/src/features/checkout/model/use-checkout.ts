@@ -31,10 +31,16 @@ export function useCheckout() {
 
   const submitOrder = (values: CheckoutFormValues) => {
     const dto: CreateOrderDto = {
-      shippingAddress: values.shippingAddress,
-      billingAddress: values.billingSameAsShipping
-        ? undefined
-        : values.billingAddress,
+      shippingAddress: {
+        firstName: values.firstName,
+        lastName: values.lastName,
+        phone: values.phone,
+        city: values.city,
+        // The free-text delivery address / Nova Poshta branch maps to address1;
+        // country is fixed to UA for the manual-delivery MVP.
+        address1: values.deliveryAddress,
+        country: "UA",
+      },
       notes: values.notes || undefined,
     };
     mutation.mutate({ data: dto });

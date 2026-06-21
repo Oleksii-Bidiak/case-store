@@ -2,45 +2,30 @@ import { z } from "zod";
 import { dict } from "@/shared/config";
 
 /**
- * Address schema — mirrors the backend `AddressDto` validation rules.
- * Optional fields (company, address2, state, phone) use `.optional()`; `country`
- * must be a 2-letter ISO-3166-1 alpha-2 code.
+ * Checkout form schema — simplified for the Ukrainian market (manual delivery
+ * for now; Nova Poshta API is a future integration). We collect the minimum a
+ * human needs to fulfil an order by hand: recipient name, a contact phone,
+ * the city, and a free-text delivery address / Nova Poshta branch.
+ *
+ * These flat fields are mapped onto the backend `AddressDto` in `useCheckout`
+ * (`deliveryAddress` → `address1`, `country` hard-set to `"UA"`). There is no
+ * separate billing address in the MVP. `notes` is capped at 500 chars to match
+ * the backend DTO.
+ *
+ * UA phone: accept `+380…`, `0…` and common separators; require ≥ 10 digits.
  */
-export const addressSchema = z.object({
+const phoneRegex = /^\+?[\d\s()-]{10,20}$/;
+
+export const checkoutSchema = z.object({
   firstName: z.string().min(1, dict.checkout.validation.firstName),
   lastName: z.string().min(1, dict.checkout.validation.lastName),
-  company: z.string().optional(),
-  address1: z.string().min(1, dict.checkout.validation.address1),
-  address2: z.string().optional(),
+  phone: z
+    .string()
+    .min(1, dict.checkout.validation.phone)
+    .regex(phoneRegex, dict.checkout.validation.phone),
   city: z.string().min(1, dict.checkout.validation.city),
-  state: z.string().optional(),
-  postalCode: z.string().min(1, dict.checkout.validation.postalCode),
-  country: z.string().length(2, dict.checkout.validation.country),
-  phone: z.string().optional(),
+  deliveryAddress: z.string().min(1, dict.checkout.validation.deliveryAddress),
+  notes: z.string().max(500, dict.checkout.validation.notesMax).optional(),
 });
-
-/**
- * Checkout form schema. `billingSameAsShipping` is supplied a `true` default by
- * the form's `defaultValues` (kept off the schema so the zod input and output
- * types match for react-hook-form). When it is `false` a separate
- * `billingAddress` becomes required (enforced via `superRefine`). `notes` is
- * capped at 500 characters to match the backend DTO.
- */
-export const checkoutSchema = z
-  .object({
-    shippingAddress: addressSchema,
-    billingSameAsShipping: z.boolean(),
-    billingAddress: addressSchema.optional(),
-    notes: z.string().max(500, dict.checkout.validation.notesMax).optional(),
-  })
-  .superRefine((data, ctx) => {
-    if (!data.billingSameAsShipping && !data.billingAddress) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["billingAddress"],
-        message: dict.checkout.validation.billingRequired,
-      });
-    }
-  });
 
 export type CheckoutFormValues = z.infer<typeof checkoutSchema>;

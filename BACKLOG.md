@@ -29,7 +29,8 @@
 | Real-Redis cache hit/miss/invalidation int run | TASK-044-I | needs Docker Redis up |
 | Dashboard raw-SQL real-DB int-spec run | TASK-066 | needs `test:int` DB |
 | JSON-LD present in product HTML | TASK-045-I | needs live API |
-| Admin login + silent refresh + CSRF path smoke | TASK-059-B | needs running stack |
+| Admin login + silent refresh + CSRF path smoke | TASK-059-B / TASK-112 | refresh-path bug now fixed; live smoke still pending a running stack |
+| Checkout end-to-end (UA form) + order-confirmation render | TASK-111 | needs running stack |
 
 ---
 
@@ -62,6 +63,12 @@
 | --- | --- | --- | --- |
 | TASK-100 | Add `npm run build` step to CI (`.github/workflows/ci.yml`) — catches Orval drift / tree-shake failures pre-merge | ⬜ | — |
 | TASK-101 | Run the *Pending manual QA* list to closure (Redis int, dashboard int, JSON-LD live, admin CSRF smoke) | ⬜ | — |
+| TASK-107 | **[CRITICAL BUG + REDESIGN]** Relax `AddressDto` — `phone` required, `country` optional (defaults 'UA'), `postalCode`/`state`/`address2`/`company` optional, raise `address1` limit; no Prisma migration | ✅ | docs/plans/043-checkout-ua-redesign.md |
+| TASK-108 | Redesign checkout form for UA market — new zod schema (firstName/lastName/phone/city/deliveryAddress/notes), simplified `CheckoutAddressForm`, remove billing toggle, add `onInvalid` focus handler to fix silent dead submit | ✅ | docs/plans/043-checkout-ua-redesign.md |
+| TASK-109 | Regenerate Orval API client after `AddressDto` relaxation (`npm run generate:api`) | ✅ | docs/plans/043-checkout-ua-redesign.md |
+| TASK-110 | Update order e2e fixture — add `phone` to `validAddress`, add negative test for missing `phone` | ✅ | docs/plans/043-checkout-ua-redesign.md |
+| TASK-111 | Smoke-verify order-confirmation page with new address shape; re-verify §A5/Режим A points 3–5 in manual-qa-master.md | ⬜ | docs/plans/043-checkout-ua-redesign.md |
+| TASK-112 | **[BUG]** Fix store-admin logout-on-reload — mount-time silent refresh called `/auth/refresh` (missing `/api`); session lost on F5. One-line path fix (closes TASK-059-B) | ✅ | — |
 
 ### Phase B — Reliability & observability *(quality)*
 
@@ -123,7 +130,7 @@
   manual visual QA remains, mark ✅ and add a line to *Pending manual QA*.
 - **Block a task:** change to ❌ with a note. **Park a task:** 🅿️ with a one-line reason.
 - **New task IDs:** use a single monotonic counter — next free integer above the current max
-  (currently TASK-106; TASK-091 and below are historical). Never reuse an old ID.
+  (currently TASK-111; TASK-091 and below are historical). Never reuse an old ID.
 - **Plans:** add the `docs/plans/NNN-*.md` path in the Plan column when one is written.
 - **Finishing a parent:** move its detailed sub-tasks into `docs/backlog-archive.md` and leave a
   one-row summary under *Completed*.

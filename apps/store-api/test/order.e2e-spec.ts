@@ -108,9 +108,9 @@ describe('OrderController (e2e)', () => {
   const validAddress = {
     firstName: 'Olena',
     lastName: 'Shevchenko',
-    address1: 'vul. Khreshchatyk 1',
+    phone: '+380501234567',
+    address1: 'Нова Пошта, відділення №12',
     city: 'Kyiv',
-    postalCode: '01001',
     country: 'UA',
   };
 
@@ -298,8 +298,28 @@ describe('OrderController (e2e)', () => {
         .post('/api/orders')
         .set('Authorization', `Bearer ${token}`)
         // shippingAddress is present but missing required nested fields
-        // (address1, city, postalCode, country) — nested validation must reject it.
+        // (lastName, phone, address1, city) — nested validation must reject it.
         .send({ shippingAddress: { firstName: 'Olena' } })
+        .expect(400);
+
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when shippingAddress is missing the required phone', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      const addressWithoutPhone = {
+        firstName: validAddress.firstName,
+        lastName: validAddress.lastName,
+        address1: validAddress.address1,
+        city: validAddress.city,
+        country: validAddress.country,
+      };
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ shippingAddress: addressWithoutPhone })
         .expect(400);
 
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();

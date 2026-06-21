@@ -90,9 +90,9 @@ const baseParams: CreateOrderParams = {
   shippingAddress: {
     firstName: 'Olena',
     lastName: 'Shevchenko',
-    address1: 'vul. Khreshchatyk 1',
+    phone: '+380501234567',
+    address1: 'Нова Пошта, відділення №12',
     city: 'Kyiv',
-    postalCode: '01001',
     country: 'UA',
   },
 };

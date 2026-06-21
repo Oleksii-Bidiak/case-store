@@ -7,6 +7,13 @@ import { IsString, IsNotEmpty, IsOptional, Length, MaxLength } from 'class-valid
  * Mirrors the `Address` Prisma model fields but is stored as a JSON snapshot
  * on the order (not linked to the `addresses` table), so the order record is
  * immutable even if the user later edits their saved addresses.
+ *
+ * Tuned for the Ukrainian market (manual delivery for now — Nova Poshta API is
+ * TASK-080): the only required fields are `firstName`, `lastName`, `phone`,
+ * `city` and `address1` (which carries the free-text delivery address / Nova
+ * Poshta branch). `postalCode`, `state`, `country`, `company` and `address2`
+ * are optional so the simplified storefront form validates. `country` defaults
+ * to `UA` on the client.
  */
 export class AddressDto {
   @ApiProperty({ description: 'Recipient first name', example: 'Olena' })
@@ -27,10 +34,13 @@ export class AddressDto {
   @MaxLength(200)
   company?: string;
 
-  @ApiProperty({ description: 'Address line 1', example: 'vul. Khreshchatyk 1' })
+  @ApiProperty({
+    description: 'Delivery address — street address or Nova Poshta branch (free text)',
+    example: 'Нова Пошта, відділення №12',
+  })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(255)
+  @MaxLength(500)
   address1!: string;
 
   @ApiProperty({ description: 'Address line 2', required: false, example: 'Apt. 12' })
@@ -51,20 +61,25 @@ export class AddressDto {
   @MaxLength(100)
   state?: string;
 
-  @ApiProperty({ description: 'Postal code', example: '01001' })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(20)
-  postalCode!: string;
-
-  @ApiProperty({ description: 'ISO-3166-1 alpha-2 country code', example: 'UA' })
-  @IsString()
-  @Length(2, 2)
-  country!: string;
-
-  @ApiProperty({ description: 'Contact phone', required: false, example: '+380501234567' })
+  @ApiProperty({ description: 'Postal code', required: false, example: '01001' })
   @IsString()
   @IsOptional()
+  @MaxLength(20)
+  postalCode?: string;
+
+  @ApiProperty({
+    description: 'ISO-3166-1 alpha-2 country code (defaults to UA)',
+    required: false,
+    example: 'UA',
+  })
+  @IsString()
+  @IsOptional()
+  @Length(2, 2)
+  country?: string;
+
+  @ApiProperty({ description: 'Contact phone', example: '+380501234567' })
+  @IsString()
+  @IsNotEmpty()
   @MaxLength(30)
-  phone?: string;
+  phone!: string;
 }

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuth } from "@/entities/session";
 import { useGetCart } from "@/entities/cart";
@@ -42,17 +42,22 @@ export function CheckoutView() {
     register,
     handleSubmit,
     control,
+    setFocus,
     formState: { errors },
   } = useForm<CheckoutFormValues>({
     resolver: zodResolver(checkoutSchema),
-    defaultValues: { billingSameAsShipping: true },
   });
 
-  const billingSameAsShipping = useWatch({
-    control,
-    name: "billingSameAsShipping",
-  });
   const notes = useWatch({ control, name: "notes" }) ?? "";
+
+  // Surface a blocked submit instead of failing silently: focus the first
+  // invalid field so the user sees exactly what needs fixing.
+  const focusFirstError = (formErrors: FieldErrors<CheckoutFormValues>) => {
+    const first = Object.keys(formErrors)[0] as
+      | keyof CheckoutFormValues
+      | undefined;
+    if (first) setFocus(first);
+  };
 
   const items = data?.data?.items ?? [];
   const cartIsEmpty = isAuthenticated && !isCartLoading && items.length === 0;
@@ -85,34 +90,15 @@ export function CheckoutView() {
         <CheckoutStepIndicator current={1} />
 
         <form
-          onSubmit={handleSubmit(submitOrder)}
+          onSubmit={handleSubmit(submitOrder, focusFirstError)}
           className="flex flex-col gap-8"
           noValidate
         >
           <CheckoutAddressForm
-            prefix="shippingAddress"
             legend={dict.checkout.shippingAddress}
             register={register}
             errors={errors}
           />
-
-          <label className="flex items-center gap-2 text-sm text-foreground">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-border"
-              {...register("billingSameAsShipping")}
-            />
-            {dict.checkout.billingSame}
-          </label>
-
-          {!billingSameAsShipping && (
-            <CheckoutAddressForm
-              prefix="billingAddress"
-              legend={dict.checkout.billingAddress}
-              register={register}
-              errors={errors}
-            />
-          )}
 
           <div className="flex flex-col gap-1">
             <label
