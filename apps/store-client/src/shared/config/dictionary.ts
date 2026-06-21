@@ -266,6 +266,37 @@ export const dict = {
     notFoundBody: "Замовлення не існує або належить іншому акаунту.",
   },
 
+  account: {
+    title: "Мій акаунт",
+    profileHeading: "Профіль",
+    email: "Електронна пошта",
+    firstName: "Ім'я",
+    lastName: "Прізвище",
+    phone: "Телефон",
+    save: "Зберегти зміни",
+    saving: "Збереження…",
+    saved: "Профіль оновлено",
+    updateError: "Не вдалося оновити профіль. Спробуйте ще раз.",
+    ordersLink: "Мої замовлення",
+    ordersLinkDesc: "Переглянути історію замовлень",
+    signOut: "Вийти",
+    loadError: "Не вдалося завантажити профіль.",
+    phoneInvalid: "Вкажіть коректний номер телефону",
+  },
+
+  orderHistory: {
+    title: "Мої замовлення",
+    empty: "У вас ще немає замовлень.",
+    emptyCta: "Перейти до товарів",
+    orderNumber: "Замовлення",
+    placedOn: "Дата",
+    total: "Разом",
+    statusSr: "Статус замовлення",
+    view: "Деталі",
+    loadError: "Не вдалося завантажити замовлення. Спробуйте ще раз.",
+    backToAccount: "До акаунту",
+  },
+
   auth: {
     login: {
       heading: "Увійти",
@@ -324,6 +355,10 @@ export const dict = {
     loginDescription: "Увійдіть до свого акаунту.",
     registerTitle: "Реєстрація | MobileStore",
     registerDescription: "Створіть новий акаунт.",
+    accountTitle: "Мій акаунт | MobileStore",
+    accountDescription: "Керуйте профілем та переглядайте свої замовлення.",
+    ordersTitle: "Мої замовлення | MobileStore",
+    ordersDescription: "Історія ваших замовлень.",
   },
 } as const;
 

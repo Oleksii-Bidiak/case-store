@@ -11,3 +11,5 @@ export {
   OrderConfirmationView,
   OrderConfirmationSkeleton,
 } from "./order-confirmation";
+export { AccountView } from "./account";
+export { OrderHistoryView, OrderHistorySkeleton } from "./order-history";

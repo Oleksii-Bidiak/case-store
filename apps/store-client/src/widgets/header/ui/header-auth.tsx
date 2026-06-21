@@ -35,8 +35,10 @@ export function HeaderAuth() {
   }
 
   return (
-    <div className="flex items-center gap-3 text-sm">
-      <span className="text-muted-foreground">{dict.header.myAccount}</span>
+    <div className="flex items-center gap-2 text-sm sm:gap-3">
+      <Button variant="ghost" size="sm" asChild>
+        <Link href="/account">{dict.header.myAccount}</Link>
+      </Button>
       <LogoutButton />
     </div>
   );
