@@ -41,7 +41,7 @@ function decodeJwt(token: string): { sub?: string; role?: string } | null {
 /**
  * AuthProvider — holds the in-memory access token and admin session metadata.
  *
- * On mount it silently calls /auth/refresh to restore a session from the
+ * On mount it silently calls /api/auth/refresh to restore a session from the
  * HttpOnly refresh cookie. Unlike the storefront, the admin app only accepts
  * ADMIN sessions: if the restored (or set) token decodes to any other role, the
  * token is cleared immediately so a CUSTOMER can never occupy the admin shell.
@@ -87,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void (async () => {
       try {
         const res = await api.post<{ data?: { accessToken?: string } }>(
-          "/auth/refresh",
+          "/api/auth/refresh",
         );
         const token = res.data?.data?.accessToken;
         if (active && token) {
