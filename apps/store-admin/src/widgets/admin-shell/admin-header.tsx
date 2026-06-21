@@ -4,6 +4,7 @@ import { Search, UserCircle } from "lucide-react";
 import { Input } from "@/shared/ui/input";
 import { useAuth } from "@/entities/session";
 import { LogoutButton } from "@/features/admin-auth";
+import { dict } from "@/shared/config";
 
 /**
  * Admin header bar — search, the signed-in admin's identity, and sign-out.
@@ -18,13 +19,19 @@ export function AdminHeader() {
   return (
     <header className="flex h-16 items-center justify-between border-b border-border px-6">
       <div className="flex items-center gap-4">
-        <h1 className="text-lg font-semibold text-foreground">Dashboard</h1>
+        <h1 className="text-lg font-semibold text-foreground">
+          {dict.header.title}
+        </h1>
       </div>
 
       <div className="flex items-center gap-4">
         <div className="relative hidden sm:block">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search..." className="w-64 pl-9" type="search" />
+          <Input
+            placeholder={dict.header.searchPlaceholder}
+            className="w-64 pl-9"
+            type="search"
+          />
         </div>
 
         <div className="flex items-center gap-2">
@@ -33,7 +40,7 @@ export function AdminHeader() {
             title={userId ?? undefined}
           >
             <UserCircle className="size-5 text-muted-foreground" />
-            <span className="hidden sm:inline">Admin</span>
+            <span className="hidden sm:inline">{dict.header.adminLabel}</span>
           </span>
           <LogoutButton />
         </div>

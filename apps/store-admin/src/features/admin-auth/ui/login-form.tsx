@@ -7,10 +7,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuth, useAuthControllerLogin } from "@/entities/session";
 import { Button, Input, Label } from "@/shared/ui";
+import { dict } from "@/shared/config";
 
 const loginSchema = z.object({
-  email: z.string().email("Enter a valid email address"),
-  password: z.string().min(1, "Password is required"),
+  email: z.string().email(dict.login.emailInvalid),
+  password: z.string().min(1, dict.login.passwordRequired),
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
@@ -83,11 +84,11 @@ export function AdminLoginForm() {
 
   const status = login.error?.response?.status;
   const errorMessage = notAdmin
-    ? "This account does not have admin access."
+    ? dict.login.errorNotAdmin
     : status === 401
-      ? "Invalid email or password."
+      ? dict.login.errorInvalid
       : login.isError
-        ? "Something went wrong. Please try again."
+        ? dict.login.errorGeneric
         : null;
 
   return (
@@ -97,7 +98,7 @@ export function AdminLoginForm() {
       noValidate
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="login-email">Email</Label>
+        <Label htmlFor="login-email">{dict.login.email}</Label>
         <Input
           id="login-email"
           type="email"
@@ -112,7 +113,7 @@ export function AdminLoginForm() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="login-password">Password</Label>
+        <Label htmlFor="login-password">{dict.login.password}</Label>
         <Input
           id="login-password"
           type="password"
@@ -133,7 +134,7 @@ export function AdminLoginForm() {
       )}
 
       <Button type="submit" disabled={login.isPending}>
-        {login.isPending ? "Signing in…" : "Sign in"}
+        {login.isPending ? dict.login.signingIn : dict.login.signIn}
       </Button>
     </form>
   );

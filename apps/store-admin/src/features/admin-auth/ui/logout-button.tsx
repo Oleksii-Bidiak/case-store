@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { useAuth, useAuthControllerLogout } from "@/entities/session";
 import { Button } from "@/shared/ui";
+import { dict } from "@/shared/config";
 
 /**
  * LogoutButton — signs the admin out: revokes the refresh token server-side,
@@ -30,7 +31,7 @@ export function LogoutButton() {
       type="button"
       variant="ghost"
       size="icon"
-      aria-label="Sign out"
+      aria-label={dict.common.signOut}
       disabled={logout.isPending}
       onClick={onClick}
     >

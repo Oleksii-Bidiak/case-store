@@ -12,16 +12,19 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Separator } from "@/shared/ui/separator";
 import { cn } from "@/shared/lib/utils";
+import { dict } from "@/shared/config";
 
 const navItems = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Products", href: "/products", icon: Package },
-  { label: "Categories", href: "/categories", icon: Tag },
-  { label: "Orders", href: "/orders", icon: ShoppingCart },
-  { label: "Users", href: "/users", icon: Users },
+  { label: dict.nav.dashboard, href: "/", icon: LayoutDashboard },
+  { label: dict.nav.products, href: "/products", icon: Package },
+  { label: dict.nav.categories, href: "/categories", icon: Tag },
+  { label: dict.nav.orders, href: "/orders", icon: ShoppingCart },
+  { label: dict.nav.users, href: "/users", icon: Users },
 ];
 
-const bottomNavItems = [{ label: "Settings", href: "#", icon: Settings }];
+const bottomNavItems = [
+  { label: dict.nav.settings, href: "#", icon: Settings },
+];
 
 /**
  * Determine whether a nav item is the active route.
