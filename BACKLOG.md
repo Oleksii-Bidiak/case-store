@@ -61,7 +61,7 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-100 | Add `npm run build` step to CI (`.github/workflows/ci.yml`) — catches Orval drift / tree-shake failures pre-merge | ⬜ | — |
+| TASK-100 | Add `npm run build` step to CI (`.github/workflows/ci.yml`) — catches Orval drift / tree-shake failures pre-merge | ✅ | docs/plans/044-ci-build-step.md |
 | TASK-101 | Run the *Pending manual QA* list to closure (Redis int, dashboard int, JSON-LD live, admin CSRF smoke) | ⬜ | — |
 | TASK-107 | **[CRITICAL BUG + REDESIGN]** Relax `AddressDto` — `phone` required, `country` optional (defaults 'UA'), `postalCode`/`state`/`address2`/`company` optional, raise `address1` limit; no Prisma migration | ✅ | docs/plans/043-checkout-ua-redesign.md |
 | TASK-108 | Redesign checkout form for UA market — new zod schema (firstName/lastName/phone/city/deliveryAddress/notes), simplified `CheckoutAddressForm`, remove billing toggle, add `onInvalid` focus handler to fix silent dead submit | ✅ | docs/plans/043-checkout-ua-redesign.md |
