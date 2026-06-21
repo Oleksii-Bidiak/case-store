@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { resolve } from 'node:path';
 import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -47,6 +49,20 @@ import { buildPinoHttpOptions } from './config/pino.config';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: buildPinoHttpOptions,
+    }),
+
+    // Static serving of uploaded product images (local-disk storage, TASK-073).
+    // Served at `/uploads` — outside the global `api` prefix, so no route clash.
+    ServeStaticModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [
+        {
+          rootPath: resolve(config.get<string>('UPLOAD_DEST', './uploads')),
+          serveRoot: '/uploads',
+          serveStaticOptions: { index: false, fallthrough: true },
+        },
+      ],
     }),
 
     // Database

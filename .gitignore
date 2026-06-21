@@ -22,6 +22,9 @@ out/
 apps/store-api/prisma/migrations/*_*/
 !apps/store-api/prisma/migrations/migration_lock.toml
 
+# Uploaded files (product images — local-disk storage, TASK-073)
+apps/store-api/uploads/
+
 # IDE
 .vscode/
 .idea/

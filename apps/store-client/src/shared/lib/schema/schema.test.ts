@@ -68,12 +68,15 @@ const baseProduct: ProductEntity = {
   isActive: true,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-02-01T00:00:00.000Z",
+  ratingAverage: null,
+  ratingCount: 0,
 };
 
 const image = (url: string, sortOrder = 0): ProductImageEntity => ({
   id: `img-${url}`,
   url,
   sortOrder,
+  isPrimary: sortOrder === 0,
 });
 
 const variant = (

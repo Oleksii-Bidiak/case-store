@@ -128,6 +128,26 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   LOG_LEVEL?: string;
+
+  // ─── File storage (product images) ──────────────────────────────────────────
+  // Iteration 1 (TASK-073) stores uploaded images on the local filesystem and
+  // serves them statically. Neither var is a secret and the defaults work for
+  // local development with no `.env` changes.
+  //
+  // UPLOAD_DEST: root directory for uploads (relative to CWD or absolute).
+  //   Default `./uploads`; files land in `<UPLOAD_DEST>/products/`.
+  // PUBLIC_BASE_URL: public origin of this API, used to build absolute image
+  //   URLs (`<PUBLIC_BASE_URL>/uploads/products/<file>`). Default
+  //   `http://localhost:3001`. In production set it to the API's public origin
+  //   (or, after TASK-074, the CDN base URL).
+
+  @IsOptional()
+  @IsString()
+  UPLOAD_DEST?: string;
+
+  @IsOptional()
+  @IsString()
+  PUBLIC_BASE_URL?: string;
 }
 
 /**

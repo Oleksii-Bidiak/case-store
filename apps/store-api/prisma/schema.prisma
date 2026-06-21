@@ -136,9 +136,10 @@ model ProductImage {
   url       String
   alt       String?
   sortOrder Int      @default(0) @map("sort_order")
+  isPrimary Boolean  @default(false) @map("is_primary")
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([productId])
+  @@index([productId, sortOrder])
   @@map("product_images")
 }
 

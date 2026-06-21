@@ -12,6 +12,12 @@ export {
   useProductControllerActivate,
   getProductControllerFindAllQueryKey,
   getProductControllerFindByIdQueryKey,
+  // Product images (TASK-073)
+  useProductImageControllerList,
+  useProductImageControllerUpload,
+  useProductImageControllerReorder,
+  useProductImageControllerDelete,
+  getProductImageControllerListQueryKey,
 } from "@/shared/api";
 
 export type {
@@ -21,4 +27,10 @@ export type {
   ProductControllerFindAllParams,
   ProductListResponseEnvelope,
   ProductResponseEnvelope,
+  // Product images (TASK-073)
+  ProductImageEntity,
+  ProductImageListEnvelope,
+  ProductImageControllerUploadBody,
+  ReorderImagesDto,
+  ReorderImageDto,
 } from "@/shared/api";

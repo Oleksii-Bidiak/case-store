@@ -11,7 +11,7 @@ interface ProductImageGalleryProps {
 }
 
 /** Coerce the generated `alt` field (typed loosely as an object) to a string. */
-function altText(image: ProductImageEntity, fallback: string): string {
+export function altText(image: ProductImageEntity, fallback: string): string {
   const raw: unknown = image.alt;
   return typeof raw === "string" && raw.length > 0 ? raw : fallback;
 }

@@ -664,15 +664,19 @@ async function seedProducts(prisma: PrismaClient, categories: Record<string, { i
       variantCount++;
     }
 
-    // Create images (delete existing first for idempotency)
+    // Create images (delete existing first for idempotency). Dev seed uses
+    // deterministic picsum.photos URLs (stable per slug + position) so the
+    // storefront looks populated without real uploads; the first image is the
+    // primary (cover). Real uploads via the admin replace these.
     await prisma.productImage.deleteMany({ where: { productId: product.id } });
     for (const img of p.images) {
       await prisma.productImage.create({
         data: {
           productId: product.id,
-          url: img.url,
+          url: `https://picsum.photos/seed/${p.slug}-${img.sortOrder}/800/800`,
           alt: img.alt,
           sortOrder: img.sortOrder,
+          isPrimary: img.sortOrder === 0,
         },
       });
       imageCount++;

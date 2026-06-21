@@ -56,11 +56,22 @@ export interface ProductRating {
 }
 
 /**
+ * Primary image shape attached to list rows (and used by the detail include).
+ */
+export interface PrimaryImage {
+  id: string;
+  url: string;
+  alt: string | null;
+  sortOrder: number;
+  isPrimary: boolean;
+}
+
+/**
  * Result of a paginated product query. Each product is enriched with its
- * approved-review aggregate so the storefront can render star ratings.
+ * approved-review aggregate (for star ratings) and its primary image (for cards).
  */
 export interface PaginatedProductsResult {
-  products: (Product & ProductRating)[];
+  products: (Product & ProductRating & { primaryImage: PrimaryImage | null })[];
   total: number;
 }
 
@@ -86,6 +97,7 @@ export interface ProductWithRelations {
         url: string;
         alt: string | null;
         sortOrder: number;
+        isPrimary: boolean;
       }>;
     };
 }
@@ -174,6 +186,7 @@ export class ProductRepository {
             url: true,
             alt: true,
             sortOrder: true,
+            isPrimary: true,
           },
         },
       },
@@ -263,17 +276,55 @@ export class ProductRepository {
       this.prisma.product.count({ where }),
     ]);
 
-    const ratings = await this.getRatingsByProductId(products.map((p) => p.id));
+    const productIds = products.map((p) => p.id);
+    const [ratings, primaryImages] = await Promise.all([
+      this.getRatingsByProductId(productIds),
+      this.getPrimaryImagesByProductId(productIds),
+    ]);
     const enriched = products.map((product) => {
       const rating = ratings.get(product.id);
       return {
         ...product,
         ratingAverage: rating?.ratingAverage ?? null,
         ratingCount: rating?.ratingCount ?? 0,
+        primaryImage: primaryImages.get(product.id) ?? null,
       };
     });
 
     return { products: enriched, total };
+  }
+
+  /**
+   * Resolve the primary image for a set of products in a single query (no N+1).
+   * Prefers the `isPrimary` image, falling back to the lowest `sortOrder`.
+   * Returns a Map keyed by productId; products without images are absent.
+   */
+  private async getPrimaryImagesByProductId(
+    productIds: string[],
+  ): Promise<Map<string, PrimaryImage>> {
+    if (productIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.prisma.productImage.findMany({
+      where: { productId: { in: productIds } },
+      orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+      select: {
+        id: true,
+        productId: true,
+        url: true,
+        alt: true,
+        sortOrder: true,
+        isPrimary: true,
+      },
+    });
+    const map = new Map<string, PrimaryImage>();
+    for (const row of rows) {
+      if (!map.has(row.productId)) {
+        const { productId, ...image } = row;
+        map.set(productId, image);
+      }
+    }
+    return map;
   }
 
   /**

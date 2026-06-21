@@ -17,6 +17,8 @@ import {
   useProductControllerFindById,
   useProductControllerUpdate,
 } from "@/entities/product";
+import { ProductImageManager } from "@/features/product-image-manager";
+import { Separator } from "@/shared/ui";
 
 interface EditProductViewProps {
   productId: string;
@@ -92,12 +94,23 @@ export function EditProductView({ productId }: EditProductViewProps) {
           Failed to load product. Please try again.
         </p>
       ) : product ? (
-        <ProductForm
-          defaultValues={mapProductToFormValues(product)}
-          onSubmit={handleSubmit}
-          isPending={update.isPending}
-          submitLabel="Save changes"
-        />
+        <div className="flex max-w-2xl flex-col gap-6">
+          <ProductForm
+            defaultValues={mapProductToFormValues(product)}
+            onSubmit={handleSubmit}
+            isPending={update.isPending}
+            submitLabel="Save changes"
+          />
+
+          <Separator />
+
+          <section className="flex flex-col gap-3">
+            <h3 className="text-lg font-semibold text-foreground">
+              Product Images
+            </h3>
+            <ProductImageManager productId={productId} />
+          </section>
+        </div>
       ) : null}
     </div>
   );

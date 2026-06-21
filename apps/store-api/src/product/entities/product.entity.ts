@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { ProductImageEntity } from './product-image.entity';
 
 /**
  * Domain entity representing a product.
@@ -87,6 +88,15 @@ export class ProductEntity {
   })
   ratingCount!: number;
 
+  @ApiProperty({
+    description:
+      'Primary (cover) image for list/card rendering, or null when the product has no images',
+    type: ProductImageEntity,
+    nullable: true,
+    required: false,
+  })
+  primaryImage?: ProductImageEntity | null;
+
   /**
    * Create a ProductEntity from a Prisma Product model.
    * Converts Decimal fields to strings and strips out relation fields.
@@ -109,6 +119,13 @@ export class ProductEntity {
     updatedAt: Date;
     ratingAverage?: number | null;
     ratingCount?: number;
+    primaryImage?: {
+      id: string;
+      url: string;
+      alt: string | null;
+      sortOrder: number;
+      isPrimary: boolean;
+    } | null;
   }): ProductEntity {
     const entity = new ProductEntity();
     entity.id = product.id;
@@ -125,6 +142,9 @@ export class ProductEntity {
     entity.ratingAverage =
       product.ratingAverage != null ? Math.round(product.ratingAverage * 10) / 10 : null;
     entity.ratingCount = product.ratingCount ?? 0;
+    entity.primaryImage = product.primaryImage
+      ? ProductImageEntity.fromPrisma(product.primaryImage)
+      : null;
     return entity;
   }
 }

@@ -12,11 +12,11 @@ const NEW_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 /**
  * ProductCard — "dumb" presentational card for a single product.
  *
- * Links to the product detail page. The product *list* API returns no image
- * URL (images live only on the detail response), so the card shows a styled
- * gradient placeholder; if the entity ever carries an image field, swap the
- * placeholder for next/image here. Sale, discount % and New badges derive from
- * existing entity fields.
+ * Links to the product detail page. When the list API returns a `primaryImage`
+ * the card renders it; otherwise it falls back to a styled gradient placeholder
+ * (a product's initial over a deterministic gradient) so the grid never looks
+ * empty. `next/image` optimization + remote-host config is deferred to TASK-074.
+ * Sale, discount % and New badges derive from existing entity fields.
  *
  * `action` is an optional slot (e.g. an AddToCart button) rendered below the
  * price. It lives OUTSIDE the navigation <Link> so an interactive control is
@@ -59,19 +59,30 @@ export function ProductCard({
         <div
           className={`relative aspect-square w-full overflow-hidden bg-gradient-to-br ${gradient}`}
         >
-          {/* Styled placeholder — the list endpoint returns no image URL. */}
-          <div className="flex h-full w-full items-center justify-center">
-            <span
-              aria-hidden="true"
-              className="text-6xl font-bold tracking-tight opacity-60 select-none font-display"
-            >
-              {(product.name?.[0] ?? "?").toUpperCase()}
-            </span>
-            <ImageIcon
-              className="absolute bottom-3 right-3 size-5 opacity-50"
-              aria-hidden="true"
+          {product.primaryImage ? (
+            // next/image optimization + remote-host config deferred to TASK-074.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={product.primaryImage.url}
+              alt={product.primaryImage.alt ?? product.name}
+              loading="lazy"
+              className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             />
-          </div>
+          ) : (
+            /* Styled placeholder — product has no image. */
+            <div className="flex h-full w-full items-center justify-center">
+              <span
+                aria-hidden="true"
+                className="text-6xl font-bold tracking-tight opacity-60 select-none font-display"
+              >
+                {(product.name?.[0] ?? "?").toUpperCase()}
+              </span>
+              <ImageIcon
+                className="absolute bottom-3 right-3 size-5 opacity-50"
+                aria-hidden="true"
+              />
+            </div>
+          )}
 
           <div className="absolute left-2.5 top-2.5 flex flex-col gap-1">
             {onSale && (
