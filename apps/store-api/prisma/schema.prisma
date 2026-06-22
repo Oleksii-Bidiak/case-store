@@ -49,6 +49,12 @@ model User {
   phone         String?
   role          UserRole  @default(CUSTOMER)
   isActive      Boolean   @default(true) @map("is_active")
+  // Audit tombstone (TASK-104). NULL = live row; non-null = soft-deleted and
+  // excluded from every read path. On soft-delete the unique `email` is mangled
+  // and the original preserved in `originalEmail`. Distinct from `isActive`,
+  // which is a reversible admin visibility toggle.
+  originalEmail String?   @map("original_email")
+  deletedAt     DateTime? @map("deleted_at")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
@@ -58,6 +64,7 @@ model User {
   reviews       Review[]
   refreshTokens RefreshToken[]
 
+  @@index([deletedAt])
   @@map("users")
 }
 
@@ -93,6 +100,10 @@ model Product {
   categoryId      String   @map("category_id")
   category        Category @relation(fields: [categoryId], references: [id])
   isActive        Boolean  @default(true) @map("is_active")
+  // Audit tombstone (TASK-104). NULL = live; non-null = soft-deleted (hidden
+  // from all reads). On soft-delete the unique `slug`/`sku` are mangled. The row
+  // is kept so historical OrderItems still resolve the product name.
+  deletedAt       DateTime? @map("deleted_at")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -105,6 +116,7 @@ model Product {
   @@index([slug])
   @@index([categoryId])
   @@index([isActive])
+  @@index([deletedAt])
   @@map("products")
 }
 
@@ -190,12 +202,16 @@ model Order {
   notes           String?
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
+  // Audit tombstone (TASK-104). NULL = live; non-null = soft-deleted and hidden
+  // from every read path. Child OrderItems are left in place.
+  deletedAt       DateTime?     @map("deleted_at")
 
   items           OrderItem[]
 
   @@index([userId])
   @@index([status])
   @@index([createdAt(sort: Desc)])
+  @@index([deletedAt])
   @@map("orders")
 }
 

@@ -281,6 +281,34 @@ export class ProductService {
   }
 
   /**
+   * Soft-delete a product (admin-only, TASK-104). Stamps `deletedAt`, sets
+   * `isActive = false`, and mangles the unique `slug`/`sku` (prefixing
+   * `deleted:<id>:`) so those slots are freed for new products. The row is kept
+   * so historical order items still resolve the product name.
+   *
+   * Throws NotFoundException if the product does not exist (or is already
+   * soft-deleted — `findById` excludes tombstoned rows).
+   */
+  async delete(id: string): Promise<ProductEntity> {
+    const product = await this.productRepository.findById(id);
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    const mangledSlug = `deleted:${product.id}:${product.slug}`;
+    const mangledSku = product.sku ? `deleted:${product.id}:${product.sku}` : null;
+
+    const deleted = await this.productRepository.softDelete(id, mangledSlug, mangledSku);
+
+    // A removed product must disappear from every list page and its detail caches.
+    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.evictProductDetail(id, product.slug);
+
+    return ProductEntity.fromPrisma(deleted);
+  }
+
+  /**
    * Evict both detail cache variants (by id and by slug) for a product. Cache
    * errors are swallowed inside CacheService, so this never affects the caller.
    */

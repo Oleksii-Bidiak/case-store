@@ -1,4 +1,17 @@
-import { Controller, Get, Post, Put, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -246,5 +259,25 @@ export class ProductController {
     const product = await this.productService.activate(id);
 
     return { data: product };
+  }
+
+  /**
+   * DELETE /api/products/:id
+   *
+   * Soft-deletes a product (sets `deletedAt`, hides it from all reads, and
+   * frees its slug/sku). Admin-only. The row is retained so historical order
+   * items still resolve. Returns 204 No Content.
+   */
+  @Delete(':id')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Delete a product (admin, soft-delete)', operationId: 'deleteProduct' })
+  @ApiParam({ name: 'id', description: 'Product UUID' })
+  @ApiResponse({ status: 204, description: 'Product deleted' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async remove(@Param('id') id: string): Promise<void> {
+    await this.productService.delete(id);
   }
 }

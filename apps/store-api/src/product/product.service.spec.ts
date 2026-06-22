@@ -49,6 +49,7 @@ const productRepositoryMock = {
   update: jest.fn(),
   deactivate: jest.fn(),
   activate: jest.fn(),
+  softDelete: jest.fn(),
 };
 
 // ─── CacheService mock ────────────────────────────────────────────────────────
@@ -614,6 +615,67 @@ describe('ProductService', () => {
       expect(cacheServiceMock.del).toHaveBeenCalledWith(
         productDetailSlugKey(mockInactiveProduct.slug),
       );
+    });
+  });
+
+  // ─── delete (soft-delete, TASK-104) ──────────────────────────────────────────
+
+  describe('delete', () => {
+    it('should soft-delete with mangled slug/sku and evict caches', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.softDelete.mockResolvedValue({
+        ...mockProduct,
+        isActive: false,
+      });
+
+      const result = await service.delete('product-uuid-1');
+
+      expect(productRepositoryMock.softDelete).toHaveBeenCalledWith(
+        'product-uuid-1',
+        `deleted:${mockProduct.id}:${mockProduct.slug}`,
+        `deleted:${mockProduct.id}:${mockProduct.sku}`,
+      );
+      expect(cacheServiceMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey(mockProduct.slug));
+      expect(result).toBeInstanceOf(ProductEntity);
+    });
+
+    it('should pass a null mangled sku when the product has no sku', async () => {
+      productRepositoryMock.findById.mockResolvedValue({ ...mockProduct, sku: null });
+      productRepositoryMock.softDelete.mockResolvedValue({
+        ...mockProduct,
+        sku: null,
+        isActive: false,
+      });
+
+      await service.delete('product-uuid-1');
+
+      expect(productRepositoryMock.softDelete).toHaveBeenCalledWith(
+        'product-uuid-1',
+        `deleted:${mockProduct.id}:${mockProduct.slug}`,
+        null,
+      );
+    });
+
+    it('should throw NotFoundException when the product does not exist', async () => {
+      productRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.delete('missing')).rejects.toThrow(NotFoundException);
+      expect(productRepositoryMock.softDelete).not.toHaveBeenCalled();
+    });
+
+    it('should not expose deletedAt on the returned entity', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.softDelete.mockResolvedValue({
+        ...mockProduct,
+        isActive: false,
+        deletedAt: new Date(),
+      });
+
+      const result = await service.delete('product-uuid-1');
+
+      expect(result).not.toHaveProperty('deletedAt');
     });
   });
 });

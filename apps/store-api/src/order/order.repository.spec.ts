@@ -39,6 +39,12 @@ const makeTx = () => ({
 
 const prismaMock = {
   $transaction: jest.fn(),
+  order: {
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    count: jest.fn(),
+    update: jest.fn(),
+  },
 };
 
 // ─── Test data ──────────────────────────────────────────────────────────────
@@ -234,6 +240,57 @@ describe('OrderRepository', () => {
         data: { status: OrderStatus.CANCELLED },
         include: expect.any(Object),
       });
+    });
+  });
+
+  // ─── soft-delete read filters & tombstone (TASK-104) ───────────────────────
+
+  describe('soft-delete behaviour', () => {
+    it('findById excludes tombstoned orders via deletedAt: null', async () => {
+      prismaMock.order.findFirst.mockResolvedValue(null);
+
+      await repository.findById('order-1');
+
+      expect(prismaMock.order.findFirst).toHaveBeenCalledWith({
+        where: { id: 'order-1', deletedAt: null },
+        include: expect.any(Object),
+      });
+    });
+
+    it('findByUserId constrains the where clause with deletedAt: null', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findByUserId('user-1', {});
+
+      // count + findMany are built synchronously and wrapped in $transaction.
+      expect(prismaMock.order.count).toHaveBeenCalledWith({
+        where: expect.objectContaining({ userId: 'user-1', deletedAt: null }),
+      });
+      expect(prismaMock.order.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ userId: 'user-1', deletedAt: null }),
+        }),
+      );
+    });
+
+    it('findAll (admin) constrains the where clause with deletedAt: null', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({});
+
+      expect(prismaMock.order.count).toHaveBeenCalledWith({
+        where: expect.objectContaining({ deletedAt: null }),
+      });
+    });
+
+    it('softDelete stamps deletedAt and leaves child items in place', async () => {
+      prismaMock.order.update.mockResolvedValue({ id: 'order-1', items: [] });
+
+      await repository.softDelete('order-1');
+
+      const updateArgs = prismaMock.order.update.mock.calls[0][0];
+      expect(updateArgs.where).toEqual({ id: 'order-1' });
+      expect(updateArgs.data.deletedAt).toBeInstanceOf(Date);
     });
   });
 

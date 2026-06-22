@@ -31,6 +31,7 @@
 | JSON-LD present in product HTML | TASK-045-I | needs live API |
 | Admin login + silent refresh + CSRF path smoke | TASK-059-B / TASK-112 | refresh-path bug now fixed; live smoke still pending a running stack |
 | Checkout end-to-end (UA form) + order-confirmation render | TASK-111 | needs running stack |
+| Apply `add_soft_delete_audit` migration + Swagger DELETE smoke (product hidden from list, order history keeps name; email freed for re-registration) | TASK-104-J | migration authored but not applied — needs a running DB |
 
 ---
 
@@ -80,7 +81,17 @@
 | TASK-048 | Sentry integration (frontend + backend) — `@sentry/nestjs` + `@sentry/nextjs`, wire to Pino error path | ⬜ | — |
 | TASK-102 | Refresh-token cleanup — scheduled purge of revoked/expired `RefreshToken` rows (`@nestjs/schedule`) | ✅ | docs/plans/046-refresh-token-cleanup.md |
 | TASK-103 | Mail reliability — replace fire-and-forget with transactional outbox + retry worker | ⬜ | — |
-| TASK-104 | Soft deletes / audit — `deletedAt` on User/Product/Order; filter in repositories | ⬜ | — |
+| TASK-104 | Soft deletes / audit — `deletedAt` on User/Product/Order; filter in repositories | ✅ | docs/plans/047-soft-deletes-audit.md |
+| TASK-104-A | Update CLAUDE.md `prisma-migration` note: remove "no soft deletes", document `isActive` vs `deletedAt` distinction | ✅ | docs/plans/047-soft-deletes-audit.md |
+| TASK-104-B | Prisma schema + migration — add `deletedAt DateTime?` + `@@index([deletedAt])` to User/Product/Order; add `originalEmail` to User | ✅ | docs/plans/047-soft-deletes-audit.md |
+| TASK-104-C | ProductRepository — add `deletedAt: null` filters to all read paths; add `softDelete(id, mangledSlug, mangledSku)` method (TDD) | ✅ | docs/plans/047-soft-deletes-audit.md |
+| TASK-104-D | UserRepository — add `deletedAt: null` filters; add `softDelete(id, mangledEmail, originalEmail)` method (TDD) | ✅ | docs/plans/047-soft-deletes-audit.md |
+| TASK-104-E | OrderRepository — add `deletedAt: null` filters; add `softDelete(id)` method; tombstoned orders unreachable via service `findById` guard (TDD) | ✅ | docs/plans/047-soft-deletes-audit.md |
+| TASK-104-F | Service layer — `ProductService.delete` + `UserService.deleteUser` with email/slug mangle, cache eviction, token revocation (TDD) | ✅ | docs/plans/047-soft-deletes-audit.md |
+| TASK-104-G | Controller layer — `DELETE /api/products/:id` and `DELETE /api/users/:id` (AdminGuard, 204 No Content, Swagger decorators) | ✅ | docs/plans/047-soft-deletes-audit.md |
+| TASK-104-H | Entity audit — `deletedAt`/`originalEmail` already excluded by whitelisting `fromPrisma` mappers (no change needed) | ✅ | docs/plans/047-soft-deletes-audit.md |
+| TASK-104-I | Regenerate Orval API client (`npm run generate:api`); confirmed `useDeleteProduct`/`useDeleteUser` hooks, no `deletedAt` in generated types | ✅ | docs/plans/047-soft-deletes-audit.md |
+| TASK-104-J | Integration/verification — full test+lint+typecheck+build gate green. **Pending:** migration apply + manual Swagger smoke on a running DB | 🔄 | docs/plans/047-soft-deletes-audit.md |
 | TASK-105 | Frontend test harness — Playwright E2E (browse→cart→checkout, auth) + Jest setup for store-admin + cart/checkout component tests | ⬜ | — |
 | TASK-106 | Reviews module backend — controller/service/repository over existing `Review` model (prereq for TASK-078) | ⬜ | — |
 

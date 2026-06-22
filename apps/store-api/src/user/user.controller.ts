@@ -1,4 +1,16 @@
-import { Controller, Get, Put, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Put,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -222,5 +234,28 @@ export class UserController {
     const user = await this.userService.activateUser(id);
 
     return { data: user };
+  }
+
+  /**
+   * DELETE /api/users/:id
+   *
+   * Soft-deletes a user account (sets `deletedAt`, hides it from all reads,
+   * mangles the email to free it for re-registration, and revokes all sessions).
+   * Admin-only; an admin cannot delete their own account. Returns 204 No Content.
+   */
+  @Delete(':id')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Delete user (admin, soft-delete)', operationId: 'deleteUser' })
+  @ApiParam({ name: 'id', description: 'User UUID' })
+  @ApiResponse({ status: 204, description: 'User deleted' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — admin access required, or cannot delete your own account',
+  })
+  async remove(@Param('id') id: string, @CurrentUser('id') adminId: string): Promise<void> {
+    await this.userService.deleteUser(id, adminId);
   }
 }

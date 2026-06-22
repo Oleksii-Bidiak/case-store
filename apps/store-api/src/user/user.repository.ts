@@ -40,17 +40,22 @@ export class UserRepository {
   /**
    * Find a user by ID.
    * Returns the user record or null if not found.
+   *
+   * Excludes soft-deleted users (`deletedAt IS NOT NULL`). `findFirst` is used
+   * instead of `findUnique` because `deletedAt: null` is not part of a unique
+   * index.
    */
   findById(id: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { id } });
+    return this.prisma.user.findFirst({ where: { id, deletedAt: null } });
   }
 
   /**
    * Find a user by email address.
-   * Returns the user record or null if not found.
+   * Returns the user record or null if not found. Excludes soft-deleted users
+   * (their email is mangled on delete, but the guard is explicit for safety).
    */
   findByEmail(email: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { email } });
+    return this.prisma.user.findFirst({ where: { email, deletedAt: null } });
   }
 
   /**
@@ -64,8 +69,9 @@ export class UserRepository {
     const { page, limit, role, isActive, search } = params;
     const skip = (page - 1) * limit;
 
-    // Build the where clause from optional filters
-    const where: Prisma.UserWhereInput = {};
+    // Build the where clause from optional filters. Soft-deleted users
+    // (tombstoned) must never appear in any admin listing.
+    const where: Prisma.UserWhereInput = { deletedAt: null };
 
     if (role !== undefined) {
       where.role = role;
@@ -127,6 +133,26 @@ export class UserRepository {
     return this.prisma.user.update({
       where: { id },
       data: { isActive: true },
+    });
+  }
+
+  /**
+   * Soft-delete a user (TASK-104): stamp `deletedAt`, set `isActive = false`,
+   * mangle the unique `email` to free the address for re-registration, and
+   * preserve the original in `originalEmail` for audit. The row is kept so the
+   * user's historical orders still resolve.
+   *
+   * The caller (service) builds `mangledEmail` and supplies the `originalEmail`.
+   */
+  softDelete(id: string, mangledEmail: string, originalEmail: string): Promise<User> {
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        isActive: false,
+        email: mangledEmail,
+        originalEmail,
+      },
     });
   }
 }

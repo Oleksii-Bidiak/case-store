@@ -134,34 +134,38 @@ export class ProductRepository {
   /**
    * Find a product by ID.
    * Returns the product record or null if not found.
+   *
+   * Excludes soft-deleted products (`deletedAt IS NOT NULL`). `findFirst` is
+   * used instead of `findUnique` because the `deletedAt: null` guard is not part
+   * of a unique index.
    */
   findById(id: string): Promise<Product | null> {
-    return this.prisma.product.findUnique({ where: { id } });
+    return this.prisma.product.findFirst({ where: { id, deletedAt: null } });
   }
 
   /**
    * Find a product by slug.
-   * Returns the product record or null if not found.
+   * Returns the product record or null if not found. Excludes soft-deleted rows.
    */
   findBySlug(slug: string): Promise<Product | null> {
-    return this.prisma.product.findUnique({ where: { slug } });
+    return this.prisma.product.findFirst({ where: { slug, deletedAt: null } });
   }
 
   /**
    * Find a product by SKU.
-   * Returns the product record or null if not found.
+   * Returns the product record or null if not found. Excludes soft-deleted rows.
    */
   findBySku(sku: string): Promise<Product | null> {
-    return this.prisma.product.findUnique({ where: { sku } });
+    return this.prisma.product.findFirst({ where: { sku, deletedAt: null } });
   }
 
   /**
    * Find a product by slug with its category, variants, and images.
-   * Used for the public product detail endpoint.
+   * Used for the public product detail endpoint. Excludes soft-deleted rows.
    */
   async findBySlugWithRelations(slug: string): Promise<ProductWithRelations['product'] | null> {
-    const product = await this.prisma.product.findUnique({
-      where: { slug },
+    const product = await this.prisma.product.findFirst({
+      where: { slug, deletedAt: null },
       include: {
         category: {
           select: { id: true, name: true, slug: true },
@@ -226,8 +230,9 @@ export class ProductRepository {
     } = params;
     const skip = (page - 1) * limit;
 
-    // Build the where clause from optional filters
-    const where: Prisma.ProductWhereInput = {};
+    // Build the where clause from optional filters. Soft-deleted products
+    // (tombstoned) must never appear in any listing, regardless of filters.
+    const where: Prisma.ProductWhereInput = { deletedAt: null };
 
     if (categoryId !== undefined) {
       where.categoryId = categoryId;
@@ -378,6 +383,27 @@ export class ProductRepository {
     return this.prisma.product.update({
       where: { id },
       data: { isActive: true },
+    });
+  }
+
+  /**
+   * Soft-delete a product (TASK-104): stamp `deletedAt`, set `isActive = false`,
+   * and replace the unique `slug`/`sku` with caller-supplied mangled values so
+   * those unique slots are freed for new products. The row itself is kept so
+   * historical OrderItems still resolve the product name.
+   *
+   * Mangling is done in the service (read-then-build) to keep this method a
+   * simple write; pass `mangledSku = null` when the product had no SKU.
+   */
+  softDelete(id: string, mangledSlug: string, mangledSku: string | null): Promise<Product> {
+    return this.prisma.product.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        isActive: false,
+        slug: mangledSlug,
+        sku: mangledSku,
+      },
     });
   }
 }

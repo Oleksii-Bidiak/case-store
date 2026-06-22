@@ -150,6 +150,7 @@ export class OrderRepository {
     const limit = query.limit ?? DEFAULT_LIMIT;
     const where: Prisma.OrderWhereInput = {
       userId,
+      deletedAt: null,
       ...(query.status ? { status: query.status } : {}),
     };
 
@@ -184,6 +185,7 @@ export class OrderRepository {
     if (query.dateTo) createdAt.lte = new Date(query.dateTo);
 
     const where: Prisma.OrderWhereInput = {
+      deletedAt: null,
       ...(query.userId ? { userId: query.userId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.dateFrom || query.dateTo ? { createdAt } : {}),
@@ -204,11 +206,14 @@ export class OrderRepository {
   }
 
   /**
-   * Find a single order by ID, or null if it does not exist.
+   * Find a single order by ID, or null if it does not exist. Excludes
+   * soft-deleted orders (`deletedAt IS NOT NULL`). Because every mutating path
+   * (`updateStatus`, `cancelAndRestock`, `markPaid`) is gated behind a service
+   * call to this method, soft-deleted orders are uniformly unreachable.
    */
   findById(orderId: string): Promise<OrderWithItems | null> {
-    return this.prisma.order.findUnique({
-      where: { id: orderId },
+    return this.prisma.order.findFirst({
+      where: { id: orderId, deletedAt: null },
       include: ORDERS_INCLUDE,
     }) as Promise<OrderWithItems | null>;
   }
@@ -287,6 +292,19 @@ export class OrderRepository {
     return this.prisma.order.update({
       where: { id: orderId },
       data: { paymentStatus: PaymentStatus.PAID, status: OrderStatus.CONFIRMED },
+      include: ORDERS_INCLUDE,
+    }) as Promise<OrderWithItems>;
+  }
+
+  /**
+   * Soft-delete an order (TASK-104): stamp `deletedAt` so it is excluded from
+   * every read path. Child `OrderItem` rows are left in place. Orders carry no
+   * unique constraints beyond `id`, so no field mangling is needed.
+   */
+  softDelete(orderId: string): Promise<OrderWithItems> {
+    return this.prisma.order.update({
+      where: { id: orderId },
+      data: { deletedAt: new Date() },
       include: ORDERS_INCLUDE,
     }) as Promise<OrderWithItems>;
   }

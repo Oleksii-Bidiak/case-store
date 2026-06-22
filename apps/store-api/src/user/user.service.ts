@@ -171,6 +171,41 @@ export class UserService {
   }
 
   /**
+   * Soft-delete a user (admin-only, TASK-104).
+   *
+   * Stamps `deletedAt`, sets `isActive = false`, mangles the unique `email`
+   * (prefixing `deleted:<id>:`) to free the address for re-registration, and
+   * preserves the original in `originalEmail` for audit. All refresh tokens are
+   * revoked so existing sessions cannot outlive the deletion. The row is kept so
+   * the user's historical orders still resolve.
+   *
+   * @param id      the target user to delete
+   * @param adminId the calling admin's own id — an admin cannot delete themselves
+   * @throws ForbiddenException when an admin targets their own account
+   * @throws NotFoundException when the target user does not exist
+   */
+  async deleteUser(id: string, adminId: string): Promise<UserEntity> {
+    if (id === adminId) {
+      throw new ForbiddenException('Cannot delete your own account');
+    }
+
+    const user = await this.userRepository.findById(id);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const mangledEmail = `deleted:${user.id}:${user.email}`;
+
+    const deleted = await this.userRepository.softDelete(id, mangledEmail, user.email);
+
+    // Kill every active session for the deleted user.
+    await this.authRepository.revokeAllUserTokens(id);
+
+    return UserEntity.fromPrisma(deleted);
+  }
+
+  /**
    * Activate a user by setting isActive = true (admin-only).
    * Throws NotFoundException if the user does not exist.
    */

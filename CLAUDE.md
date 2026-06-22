@@ -38,7 +38,7 @@ Invoke the matching skill when its area comes up:
 - **nextjs-app-router** — App Router routing, server/client components, metadata/SEO.
 - **observability** — Pino structured logging + Sentry error tracking.
 - **plan-document** — writing a `docs/plans/NNN-*.md` and keeping `BACKLOG.md` in sync.
-- **prisma-migration** — schema changes + migrations (note: `isActive` deactivation, no soft deletes).
+- **prisma-migration** — schema changes + migrations. Convention: `isActive` = reversible visibility toggle (admin-only, re-enabled any time); `deletedAt DateTime?` = audit tombstone replacing hard deletes on User/Product/Order (set once, never cleared). Both coexist — they are independent flags.
 - **tdd** — Red→Green→Refactor discipline for critical modules.
 
 ## Workflow reminders

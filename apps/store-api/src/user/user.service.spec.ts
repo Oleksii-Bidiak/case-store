@@ -45,6 +45,7 @@ const userRepositoryMock = {
   update: jest.fn(),
   deactivate: jest.fn(),
   activate: jest.fn(),
+  softDelete: jest.fn(),
 };
 
 // AuthRepository is injected into UserService so a ban can revoke all of the
@@ -372,6 +373,61 @@ describe('UserService', () => {
 
       await expect(service.activateUser('nonexistent-id')).rejects.toThrow(NotFoundException);
       expect(repository.activate).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── deleteUser (soft-delete, TASK-104) ──────────────────────────────────────
+
+  describe('deleteUser', () => {
+    it('should soft-delete with a mangled email, preserve the original, and revoke tokens', async () => {
+      repository.findById.mockResolvedValue(mockUser);
+      repository.softDelete.mockResolvedValue({
+        ...mockUser,
+        email: `deleted:${mockUser.id}:${mockUser.email}`,
+        isActive: false,
+      });
+
+      const result = await service.deleteUser('user-uuid-1', 'admin-uuid-1');
+
+      expect(repository.softDelete).toHaveBeenCalledWith(
+        'user-uuid-1',
+        `deleted:${mockUser.id}:${mockUser.email}`,
+        mockUser.email,
+      );
+      expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith('user-uuid-1');
+      expect(result).toBeInstanceOf(UserEntity);
+    });
+
+    it('should throw ForbiddenException when an admin deletes their own account', async () => {
+      await expect(service.deleteUser('admin-uuid-1', 'admin-uuid-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(repository.softDelete).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when the user does not exist', async () => {
+      repository.findById.mockResolvedValue(null);
+
+      await expect(service.deleteUser('missing', 'admin-uuid-1')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(repository.softDelete).not.toHaveBeenCalled();
+    });
+
+    it('should not expose deletedAt or originalEmail on the returned entity', async () => {
+      repository.findById.mockResolvedValue(mockUser);
+      repository.softDelete.mockResolvedValue({
+        ...mockUser,
+        email: `deleted:${mockUser.id}:${mockUser.email}`,
+        isActive: false,
+        deletedAt: new Date(),
+        originalEmail: mockUser.email,
+      });
+
+      const result = await service.deleteUser('user-uuid-1', 'admin-uuid-1');
+
+      expect(result).not.toHaveProperty('deletedAt');
+      expect(result).not.toHaveProperty('originalEmail');
     });
   });
 });
