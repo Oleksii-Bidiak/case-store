@@ -1,5 +1,5 @@
 import { plainToInstance } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, MinLength, validateSync } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Min, MinLength, validateSync } from 'class-validator';
 
 /**
  * Supported runtime environments.
@@ -148,6 +148,24 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   PUBLIC_BASE_URL?: string;
+
+  // ─── Refresh-token cleanup (TASK-102) ───────────────────────────────────────
+  // Scheduled purge of expired/revoked RefreshToken rows. Both optional with
+  // safe defaults so the app boots without any extra configuration.
+  //
+  // REFRESH_TOKEN_CLEANUP_CRON: standard 5-field cron expression controlling
+  //   when the purge runs. Default `0 3 * * *` (daily at 03:00 server time).
+  // REFRESH_TOKEN_REVOKED_RETENTION_DAYS: days to retain revoked rows before
+  //   purge (audit grace window). Default 0 = purge revoked rows immediately.
+
+  @IsOptional()
+  @IsString()
+  REFRESH_TOKEN_CLEANUP_CRON?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  REFRESH_TOKEN_REVOKED_RETENTION_DAYS?: number;
 }
 
 /**

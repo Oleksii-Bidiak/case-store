@@ -14,6 +14,7 @@ const prismaMock = {
     create: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
+    deleteMany: jest.fn(),
   },
 };
 
@@ -266,6 +267,58 @@ describe('AuthRepository', () => {
         where: { userId: 'user-uuid-1', isRevoked: false },
         data: { isRevoked: true },
       });
+    });
+  });
+
+  // ─── deleteExpiredAndRevoked ────────────────────────────────────────────────
+
+  describe('deleteExpiredAndRevoked', () => {
+    const now = new Date('2026-06-22T03:00:00.000Z');
+
+    it('should delete rows that are expired OR revoked when no retention window', async () => {
+      prismaMock.refreshToken.deleteMany.mockResolvedValue({ count: 5 });
+
+      await repository.deleteExpiredAndRevoked(now);
+
+      expect(prismaMock.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: {
+          OR: [{ expiresAt: { lt: now } }, { isRevoked: true }],
+        },
+      });
+    });
+
+    it('should treat a retention window of 0 as no retention', async () => {
+      prismaMock.refreshToken.deleteMany.mockResolvedValue({ count: 2 });
+
+      await repository.deleteExpiredAndRevoked(now, 0);
+
+      expect(prismaMock.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: {
+          OR: [{ expiresAt: { lt: now } }, { isRevoked: true }],
+        },
+      });
+    });
+
+    it('should apply a retention cutoff to revoked rows when retentionDays > 0', async () => {
+      prismaMock.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      const retentionDays = 7;
+      const cutoff = new Date(now.getTime() - retentionDays * 86_400_000);
+
+      await repository.deleteExpiredAndRevoked(now, retentionDays);
+
+      expect(prismaMock.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: {
+          OR: [{ expiresAt: { lt: now } }, { isRevoked: true, createdAt: { lt: cutoff } }],
+        },
+      });
+    });
+
+    it('should return the number of deleted rows', async () => {
+      prismaMock.refreshToken.deleteMany.mockResolvedValue({ count: 42 });
+
+      const result = await repository.deleteExpiredAndRevoked(now);
+
+      expect(result).toBe(42);
     });
   });
 });

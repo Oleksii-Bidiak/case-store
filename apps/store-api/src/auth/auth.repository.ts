@@ -98,4 +98,29 @@ export class AuthRepository {
       data: { isRevoked: true },
     });
   }
+
+  /**
+   * Delete all RefreshToken rows that are expired (`expiresAt < now`) or revoked.
+   *
+   * When `retentionDays` is greater than 0, revoked rows are only deleted once
+   * they are older than that many days (a short audit window); expired rows are
+   * always deleted regardless of the retention window. Returns the row count.
+   */
+  async deleteExpiredAndRevoked(now: Date, retentionDays = 0): Promise<number> {
+    const revokedCondition =
+      retentionDays > 0
+        ? {
+            isRevoked: true,
+            createdAt: { lt: new Date(now.getTime() - retentionDays * 86_400_000) },
+          }
+        : { isRevoked: true };
+
+    const result = await this.prisma.refreshToken.deleteMany({
+      where: {
+        OR: [{ expiresAt: { lt: now } }, revokedCondition],
+      },
+    });
+
+    return result.count;
+  }
 }

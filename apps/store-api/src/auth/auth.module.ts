@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import { RefreshTokenCleanupService } from './refresh-token-cleanup.service';
 import { JwtAccessStrategy, JwtRefreshStrategy } from './strategies';
 import { CartModule } from '../cart/cart.module';
 
@@ -27,7 +28,13 @@ import { CartModule } from '../cart/cart.module';
     CartModule,
   ],
   controllers: [AuthController],
-  providers: [AuthRepository, AuthService, JwtAccessStrategy, JwtRefreshStrategy],
+  providers: [
+    AuthRepository,
+    AuthService,
+    RefreshTokenCleanupService,
+    JwtAccessStrategy,
+    JwtRefreshStrategy,
+  ],
   exports: [AuthRepository, AuthService],
 })
 export class AuthModule {}

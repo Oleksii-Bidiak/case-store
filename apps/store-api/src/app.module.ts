@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
+import { ScheduleModule } from '@nestjs/schedule';
 import { resolve } from 'node:path';
 import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
@@ -33,6 +34,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
       // Fail fast at startup if required secrets/config are missing or invalid
       validate: validateEnv,
     }),
+
+    // Cron/interval scheduling — enables @Cron jobs (e.g. refresh-token cleanup).
+    ScheduleModule.forRoot(),
 
     // Rate limiting — uses a shared Redis store when REDIS_HOST is set
     // (multi-instance correctness), otherwise an in-memory store.

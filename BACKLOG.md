@@ -78,7 +78,7 @@
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
 | TASK-048 | Sentry integration (frontend + backend) — `@sentry/nestjs` + `@sentry/nextjs`, wire to Pino error path | ⬜ | — |
-| TASK-102 | Refresh-token cleanup — scheduled purge of revoked/expired `RefreshToken` rows (`@nestjs/schedule`) | ⬜ | — |
+| TASK-102 | Refresh-token cleanup — scheduled purge of revoked/expired `RefreshToken` rows (`@nestjs/schedule`) | ✅ | docs/plans/046-refresh-token-cleanup.md |
 | TASK-103 | Mail reliability — replace fire-and-forget with transactional outbox + retry worker | ⬜ | — |
 | TASK-104 | Soft deletes / audit — `deletedAt` on User/Product/Order; filter in repositories | ⬜ | — |
 | TASK-105 | Frontend test harness — Playwright E2E (browse→cart→checkout, auth) + Jest setup for store-admin + cart/checkout component tests | ⬜ | — |
