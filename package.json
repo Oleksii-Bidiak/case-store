@@ -12,6 +12,7 @@
     "lint": "npm run lint -w apps/store-api -w apps/store-client -w apps/store-admin",
     "test": "npm run test -w apps/store-api -w apps/store-client -w apps/store-admin",
     "test:e2e": "npm run test:e2e -w apps/store-api",
+    "test:e2e:pw": "playwright test",
     "typecheck": "npm run typecheck -w apps/store-api -w apps/store-client -w apps/store-admin",
     "db:generate": "npm run prisma:generate -w apps/store-api",
     "db:push": "npm run prisma:push -w apps/store-api",
@@ -22,6 +23,7 @@
     "prepare": "husky"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@types/jest": "^30.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^15.2.10",

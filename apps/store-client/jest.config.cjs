@@ -1,31 +1,109 @@
 /**
- * Jest config for store-client unit tests (pure-logic only, e.g. zod schemas).
- * React component / integration coverage is deferred to a future E2E suite.
+ * Jest config for store-client.
+ *
+ * Two projects share one runner:
+ *  - `unit`      — pure-logic tests (zod schemas, formatters, builders) in a
+ *                  node environment. `*.test.ts` only. ts-jest. (Unchanged from
+ *                  the original config — existing tests run exactly as before.)
+ *  - `component` — React component tests (RTL + MSW) in a jsdom environment.
+ *                  `*.test.tsx` only. @swc/jest for fast JSX transforms, with a
+ *                  setup file that loads jest-dom and the MSW server lifecycle.
+ *
+ * Run both with `npm run test -w apps/store-client`.
  *
  * @type {import('jest').Config}
  */
-module.exports = {
-  rootDir: "src",
-  testEnvironment: "node",
-  testMatch: ["**/*.test.ts"],
-  moduleFileExtensions: ["ts", "tsx", "js", "json"],
-  moduleNameMapper: {
-    "^@/(.*)$": "<rootDir>/$1",
-  },
-  transform: {
-    "^.+\\.tsx?$": [
-      "ts-jest",
-      {
-        isolatedModules: true,
-        tsconfig: {
-          module: "commonjs",
-          target: "es2020",
-          esModuleInterop: true,
-          jsx: "react-jsx",
-          skipLibCheck: true,
-          verbatimModuleSyntax: false,
-        },
+const moduleNameMapper = {
+  "^@/(.*)$": "<rootDir>/$1",
+};
+
+/**
+ * Component-project module mapper. Pins react/react-dom (and the JSX runtimes)
+ * to the single store-client copy so the app code under test and react-dom used
+ * by RTL share one React instance — otherwise hooks see a null dispatcher
+ * (multiple react copies exist across the workspace + per-app node_modules).
+ */
+const componentModuleNameMapper = {
+  "^react$": "<rootDir>/../node_modules/react",
+  "^react-dom$": "<rootDir>/../node_modules/react-dom",
+  "^react-dom/client$": "<rootDir>/../node_modules/react-dom/client",
+  "^react/jsx-runtime$": "<rootDir>/../node_modules/react/jsx-runtime",
+  "^react/jsx-dev-runtime$": "<rootDir>/../node_modules/react/jsx-dev-runtime",
+  ...moduleNameMapper,
+};
+
+/** ts-jest transform used by the unit project (matches the legacy config). */
+const tsJestTransform = {
+  "^.+\\.tsx?$": [
+    "ts-jest",
+    {
+      isolatedModules: true,
+      tsconfig: {
+        module: "commonjs",
+        target: "es2020",
+        esModuleInterop: true,
+        jsx: "react-jsx",
+        skipLibCheck: true,
+        verbatimModuleSyntax: false,
       },
-    ],
-  },
+    },
+  ],
+};
+
+/**
+ * @swc/jest transform used by the component project (fast JSX/TSX). The key also
+ * matches `.mjs`/`.cjs` so MSW v2's ESM-only transitive deps (rettime, etc.) can
+ * be transformed (see `componentTransformIgnore`).
+ */
+const swcTransform = {
+  "^.+\\.(mjs|cjs|jsx?|tsx?)$": [
+    "@swc/jest",
+    {
+      jsc: {
+        parser: { syntax: "typescript", tsx: true },
+        transform: { react: { runtime: "automatic" } },
+        target: "es2020",
+      },
+    },
+  ],
+};
+
+/**
+ * MSW v2 and several of its deps ship ESM only. Jest ignores node_modules from
+ * transformation by default, so these must be explicitly un-ignored to be run
+ * under the CJS-style component project.
+ */
+const componentTransformIgnore = [
+  "/node_modules/(?!(msw|@mswjs|@bundled-es-modules|@open-draft|rettime|until-async|strict-event-emitter|headers-polyfill|outvariant|is-node-process)/)",
+];
+
+module.exports = {
+  projects: [
+    {
+      displayName: "unit",
+      rootDir: "src",
+      testEnvironment: "node",
+      testMatch: ["**/*.test.ts"],
+      moduleFileExtensions: ["ts", "tsx", "js", "json"],
+      moduleNameMapper,
+      transform: tsJestTransform,
+    },
+    {
+      displayName: "component",
+      rootDir: "src",
+      testEnvironment: "jsdom",
+      // jsdom defaults to the "browser" export condition, which hides msw/node
+      // (and its interceptors). Force the default condition so node-mode MSW and
+      // axios resolve correctly under Jest.
+      testEnvironmentOptions: { customExportConditions: [""] },
+      testMatch: ["**/*.test.tsx"],
+      moduleFileExtensions: ["ts", "tsx", "js", "mjs", "cjs", "json"],
+      moduleNameMapper: componentModuleNameMapper,
+      // Polyfills run before the framework so msw/node can load under jsdom.
+      setupFiles: ["<rootDir>/../jest.polyfills.js"],
+      setupFilesAfterEnv: ["<rootDir>/shared/test/setup.ts"],
+      transform: swcTransform,
+      transformIgnorePatterns: componentTransformIgnore,
+    },
+  ],
 };

@@ -1,0 +1,15 @@
+{
+  "//": "Standalone tsconfig for the Playwright E2E suite (root-level, outside the app workspaces). Not part of `npm run typecheck`; Playwright transpiles specs itself.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node", "@playwright/test"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["../playwright.config.ts", "**/*.ts"]
+}

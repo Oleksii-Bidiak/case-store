@@ -32,6 +32,7 @@
 | Admin login + silent refresh + CSRF path smoke | TASK-059-B / TASK-112 | refresh-path bug now fixed; live smoke still pending a running stack |
 | Checkout end-to-end (UA form) + order-confirmation render | TASK-111 | needs running stack |
 | Apply `add_soft_delete_audit` migration + Swagger DELETE smoke (product hidden from list, order history keeps name; email freed for re-registration) | TASK-104-J | migration authored but not applied — needs a running DB |
+| Run Playwright E2E (`npm run test:e2e:pw`) — 4 specs discovered; need DB + `npx playwright install chromium` + booted API/client to execute | TASK-105-D | scaffold complete; not yet run locally/CI |
 
 ---
 
@@ -92,7 +93,12 @@
 | TASK-104-H | Entity audit — `deletedAt`/`originalEmail` already excluded by whitelisting `fromPrisma` mappers (no change needed) | ✅ | docs/plans/047-soft-deletes-audit.md |
 | TASK-104-I | Regenerate Orval API client (`npm run generate:api`); confirmed `useDeleteProduct`/`useDeleteUser` hooks, no `deletedAt` in generated types | ✅ | docs/plans/047-soft-deletes-audit.md |
 | TASK-104-J | Integration/verification — full test+lint+typecheck+build gate green. **Pending:** migration apply + manual Swagger smoke on a running DB | 🔄 | docs/plans/047-soft-deletes-audit.md |
-| TASK-105 | Frontend test harness — Playwright E2E (browse→cart→checkout, auth) + Jest setup for store-admin + cart/checkout component tests | ⬜ | — |
+| TASK-105 | Frontend test harness — Playwright E2E (browse→cart→checkout, auth) + Jest setup for store-admin + cart/checkout component tests | 🔄 | docs/plans/048-frontend-test-harness.md |
+| TASK-105-A | RTL + MSW + jsdom foundation in store-client: install deps, split Jest into `unit`+`component` projects, create `src/shared/test/` (setup, msw-server, msw-handlers, render helper) | ✅ | docs/plans/048-frontend-test-harness.md |
+| TASK-105-B | Cart and checkout component tests: `CartItemRow`, `CartSummary`, `CartView`, `CheckoutAddressForm`, `CheckoutView` — all via MSW, no hand-mocked hooks (37 component tests) | ✅ | docs/plans/048-frontend-test-harness.md |
+| TASK-105-C | store-admin Jest + RTL scaffold: mirror store-client component-test setup, update `"test"` script from no-op to `jest`, add smoke component test | ✅ | docs/plans/048-frontend-test-harness.md |
+| TASK-105-D | Playwright E2E scaffold: `@playwright/test` at root, `playwright.config.ts` with webServer array, `e2e/cart-flow.spec.ts` + `e2e/auth-flow.spec.ts`, seed fixture (4 tests discovered). **Pending:** local/CI run needs DB + browsers | 🔄 | docs/plans/048-frontend-test-harness.md |
+| TASK-105-E | CI wiring: `test-unit` already covers all 3 workspaces (root `npm run test`); added `test-e2e-playwright` job (continue-on-error: true) with Postgres service + Playwright browser install | ✅ | docs/plans/048-frontend-test-harness.md |
 | TASK-106 | Reviews module backend — controller/service/repository over existing `Review` model (prereq for TASK-078) | ⬜ | — |
 
 ### Phase C — Revenue-critical commerce *(features; payments parked)*

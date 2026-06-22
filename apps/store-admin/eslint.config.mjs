@@ -92,10 +92,27 @@ const fsdBoundaryRules = [
   },
 ];
 
+/**
+ * Test infrastructure is cross-cutting: a component test renders a widget/feature
+ * while wiring providers from the shared test helper. Exempt test files and
+ * `shared/test/` from the FSD import-direction rule (it still applies to all
+ * production code).
+ */
+const testOverrides = [
+  {
+    name: 'fsd-test-exemptions',
+    files: ['src/**/*.test.{ts,tsx}', 'src/shared/test/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': 'off',
+    },
+  },
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   ...fsdBoundaryRules,
+  ...testOverrides,
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
@@ -103,6 +120,8 @@ const eslintConfig = defineConfig([
     'out/**',
     'build/**',
     'next-env.d.ts',
+    // CommonJS test tooling (must use require; runs outside the app bundle).
+    'jest.polyfills.js',
   ]),
 ]);
 
