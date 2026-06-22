@@ -17,6 +17,7 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiQuery,
+  ApiProperty,
   ApiExtraModels,
   getSchemaPath,
 } from '@nestjs/swagger';
@@ -28,23 +29,56 @@ import { CreateOrderDto, OrderListQueryDto } from './dto';
 import { JwtAuthGuard, RolesGuard, Roles, CurrentUser } from '../auth';
 
 /**
+ * Pagination metadata for paginated storefront order lists.
+ *
+ * Decorated class mirroring the {@link PaginationMeta} interface so Swagger can
+ * emit a schema (interfaces carry no decorators). Runtime shape is identical.
+ */
+class StorefrontPaginationMeta {
+  @ApiProperty({ description: 'Total number of items', example: 42 })
+  total!: number;
+
+  @ApiProperty({ description: 'Current page (1-based)', example: 1 })
+  page!: number;
+
+  @ApiProperty({ description: 'Items per page', example: 10 })
+  limit!: number;
+
+  @ApiProperty({ description: 'Total number of pages', example: 5 })
+  totalPages!: number;
+}
+
+/**
  * Response envelope for a single order.
  */
 class OrderResponseEnvelope {
+  @ApiProperty({ type: OrderEntity })
   data!: OrderEntity;
 }
 
 /**
  * Response envelope for a paginated list of orders.
+ *
+ * Decorated class (not a bare interface) so Swagger emits a full schema and
+ * Orval generates a typed `data: OrderEntity[]` client model.
  */
 class OrderListResponseEnvelope {
+  @ApiProperty({ type: [OrderEntity], description: 'Orders for the current page' })
   data!: OrderEntity[];
-  meta!: PaginationMeta;
+
+  @ApiProperty({ type: StorefrontPaginationMeta })
+  meta!: StorefrontPaginationMeta;
 }
 
 @ApiTags('Orders')
 @ApiBearerAuth('access-token')
-@ApiExtraModels(OrderEntity, OrderItemEntity, OrderResponseEnvelope, OrderListResponseEnvelope)
+@ApiExtraModels(
+  OrderEntity,
+  OrderItemEntity,
+  StorefrontPaginationMeta,
+  OrderResponseEnvelope,
+  OrderListResponseEnvelope,
+)
 @Controller('orders')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class OrderController {
@@ -94,7 +128,7 @@ export class OrderController {
   @ApiResponse({
     status: 200,
     description: 'Paginated list of orders',
-    schema: { $ref: getSchemaPath(OrderListResponseEnvelope) },
+    type: OrderListResponseEnvelope,
   })
   async getOrders(
     @CurrentUser('id') userId: string,

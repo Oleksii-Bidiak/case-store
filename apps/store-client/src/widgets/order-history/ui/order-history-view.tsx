@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/entities/session";
-import { useGetOrders, type OrderEntity } from "@/entities/order";
+import { useGetOrders } from "@/entities/order";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatMoney } from "@/shared/lib";
@@ -55,11 +55,7 @@ export function OrderHistoryView() {
     return <OrderHistorySkeleton />;
   }
 
-  // The generated `OrderListResponseEnvelope.data` is loosely typed ({[key]:
-  // unknown}) because the backend list endpoint's Swagger schema doesn't declare
-  // the array item type. The runtime payload is OrderEntity[] — cast here.
-  // TODO: type the list envelope on the backend so this cast can be removed.
-  const orders = (data?.data as OrderEntity[] | undefined) ?? [];
+  const orders = data?.data ?? [];
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">

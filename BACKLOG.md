@@ -70,7 +70,7 @@
 | TASK-111 | Smoke-verify order-confirmation page with new address shape; re-verify §A5/Режим A points 3–5 in manual-qa-master.md | ⬜ | docs/plans/043-checkout-ua-redesign.md |
 | TASK-112 | **[BUG]** Fix store-admin logout-on-reload — mount-time silent refresh called `/auth/refresh` (missing `/api`); session lost on F5. One-line path fix (closes TASK-059-B) | ✅ | — |
 | TASK-113 | Customer account — `/account` (profile view + edit via `/api/users/me`) + `/orders` history list; header "Мій акаунт" → link; `entities/user` slice; robots disallow private routes | ✅ | — |
-| TASK-114 | Type the storefront order-list response on the backend so `OrderListResponseEnvelope.data` is `OrderEntity[]` (removes a frontend cast in order-history) | ⬜ | — |
+| TASK-114 | Type the storefront order-list response on the backend so `OrderListResponseEnvelope.data` is `OrderEntity[]` (removes a frontend cast in order-history) | ✅ | docs/plans/045-order-list-response-typing.md |
 | TASK-115 | Localize store-admin to Ukrainian — typed dictionary + `lang="uk"`. **Done:** shell/nav, header, login, dashboard (stats/charts/low-stock, UAH). **Remaining:** products, categories, orders, users CRUD (tables, forms, detail views, toggles, toasts, validation) | 🔄 | — |
 
 ### Phase B — Reliability & observability *(quality)*
