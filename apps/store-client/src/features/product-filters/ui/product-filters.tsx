@@ -57,7 +57,6 @@ export function ProductFilters({
       </legend>
 
       <SearchInput
-        key={`search-${currentParams.search ?? ""}`}
         initialValue={currentParams.search ?? ""}
         onSearch={(value) => onFilterChange({ search: value })}
       />
