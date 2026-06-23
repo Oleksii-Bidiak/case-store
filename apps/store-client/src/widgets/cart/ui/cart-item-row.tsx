@@ -7,8 +7,10 @@ import {
   useRemoveCartItem,
   useUpdateCartItem,
   type CartItemEntity,
+  type GetCart200,
 } from "@/entities/cart";
 import { formatMoney } from "@/shared/lib";
+import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { dict } from "@/shared/config";
 import { ProductThumb } from "@/shared/ui";
 
@@ -19,55 +21,132 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+/** Price string ("XX.YY") to integer cents — mirrors the backend arithmetic. */
+function toCents(price: string): number {
+  return Math.round(parseFloat(price) * 100);
+}
+
+/** Integer cents back to a "XX.YY" string — mirrors the backend formatting. */
+function centsToString(cents: number): string {
+  const dollars = Math.floor(cents / 100);
+  const remainder = cents % 100;
+  return `${dollars}.${remainder.toString().padStart(2, "0")}`;
+}
+
 /**
  * CartItemRow — a single cart line item with a quantity stepper and remove
- * control. Mutations refetch the cart on success (server is authoritative for
- * stock clamping and totals).
+ * control. Quantity changes update the React Query cache optimistically (so the
+ * line total and cart summary recalculate instantly) and write to the server on
+ * a debounce; the server remains authoritative and reconciles on refetch.
  */
 export function CartItemRow({ item }: { item: CartItemEntity }) {
   const queryClient = useQueryClient();
   const [qty, setQty] = useState(item.quantity);
 
+  // Re-sync the local input whenever the cart's authoritative quantity changes
+  // (after an optimistic cache write or a server refetch). `useState` seeds only
+  // on mount, so without this the counter would lag behind. Adjusting state
+  // during render is React's recommended pattern for derived-from-prop resets.
+  const [syncedQuantity, setSyncedQuantity] = useState(item.quantity);
+  if (item.quantity !== syncedQuantity) {
+    setSyncedQuantity(item.quantity);
+    setQty(item.quantity);
+  }
+
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
 
-  const revert = () => setQty(item.quantity);
-
   const updateItem = useUpdateCartItem({
-    mutation: { onSuccess: invalidate, onError: revert },
+    // On success the optimistic cache already matches; refetch to reconcile.
+    // On error, refetch to roll back the optimistic change to server truth.
+    mutation: { onSuccess: invalidate, onError: invalidate },
   });
   const removeItem = useRemoveCartItem({
-    mutation: { onSuccess: invalidate, onError: revert },
+    mutation: { onSuccess: invalidate, onError: invalidate },
   });
 
-  const isPending = updateItem.isPending || removeItem.isPending;
   const error = updateItem.error || removeItem.error;
 
-  const maxQty =
-    item.stock > 0 ? Math.min(MAX_QUANTITY, item.stock) : MAX_QUANTITY;
+  // Stock is only tracked for variants. A line with no variant (variantId null)
+  // reports stock 0 from the API but is not stock-capped — clamp it to the
+  // global max instead of disabling the stepper.
+  const hasVariant = item.variantId != null;
+  const maxQty = hasVariant ? Math.min(MAX_QUANTITY, item.stock) : MAX_QUANTITY;
+  const outOfStock = hasVariant && item.stock <= 0;
+
   const variantName = asString(item.variantName);
   const compareAtPrice = asString(item.compareAtPrice);
   const onSale =
     compareAtPrice != null && Number(compareAtPrice) > Number(item.price);
 
+  /**
+   * Optimistically patch the cached cart so the row's line total and the cart
+   * summary (subtotal / item count) reflect the new quantity immediately,
+   * before the debounced server write completes. Totals are recomputed the same
+   * way the backend does (cents arithmetic, no discounts in MVP).
+   */
+  const applyOptimisticQuantity = (quantity: number) => {
+    queryClient.setQueryData<GetCart200>(getGetCartQueryKey(), (prev) => {
+      if (!prev?.data) return prev;
+      const items = prev.data.items.map((line) =>
+        line.id === item.id
+          ? {
+              ...line,
+              quantity,
+              lineTotal: centsToString(toCents(line.price) * quantity),
+            }
+          : line,
+      );
+      let subtotalCents = 0;
+      let itemCount = 0;
+      for (const line of items) {
+        subtotalCents += toCents(line.price) * line.quantity;
+        itemCount += line.quantity;
+      }
+      return {
+        ...prev,
+        data: {
+          ...prev.data,
+          items,
+          totals: {
+            ...prev.data.totals,
+            subtotal: centsToString(subtotalCents),
+            itemCount,
+            uniqueItems: items.length,
+          },
+        },
+      };
+    });
+  };
+
+  // Debounce server writes so rapid +/- tapping dispatches a single PATCH for
+  // the final quantity rather than one request per click.
+  const debouncedUpdate = useDebouncedCallback((quantity: number) => {
+    updateItem.mutate({ itemId: item.id, data: { quantity } });
+  }, 300);
+
   /** Commit a desired quantity: 0 removes the item, otherwise update. */
   const commit = (next: number) => {
     const clamped = Math.max(0, Math.min(maxQty, next));
+    if (clamped <= 0) {
+      removeItem.mutate({ itemId: item.id });
+      return;
+    }
+    // Compare against the cart's actual quantity (not the local input, which the
+    // user may have already typed into) so manual entry still triggers a write.
     if (clamped === item.quantity) {
       setQty(item.quantity);
       return;
     }
-    if (clamped <= 0) {
-      removeItem.mutate({ itemId: item.id });
-    } else {
-      updateItem.mutate({ itemId: item.id, data: { quantity: clamped } });
-    }
+    setQty(clamped);
+    applyOptimisticQuantity(clamped);
+    debouncedUpdate(clamped);
   };
 
   return (
     <li
       className={`flex flex-col gap-3 border-b border-border py-4 ${
-        isPending ? "pointer-events-none opacity-50" : ""
+        removeItem.isPending ? "pointer-events-none opacity-60" : ""
       }`}
     >
       <div className="flex items-start justify-between gap-4">
@@ -128,7 +207,7 @@ export function CartItemRow({ item }: { item: CartItemEntity }) {
           <button
             type="button"
             aria-label={dict.cart.increaseAria}
-            disabled={qty >= maxQty || item.stock === 0}
+            disabled={qty >= maxQty || outOfStock}
             onClick={() => commit(qty + 1)}
             className="px-3 py-1.5 text-foreground hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
           >
