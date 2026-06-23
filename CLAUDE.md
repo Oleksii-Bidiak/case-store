@@ -53,3 +53,5 @@ Invoke the matching skill when its area comes up:
 - `BACKLOG.md` is the single source of task status — mark tasks ✅ when done and tested.
 - A pre-commit hook blocks editing `.env*` and generated API files, and blocks commits
   on `main` (see `.claude/settings.json`). `.ts`/`.tsx` files are auto-formatted on save.
+
+Start every reply with my name - Oleksii (Олексій).
