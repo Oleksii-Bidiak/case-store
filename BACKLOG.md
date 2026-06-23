@@ -79,8 +79,9 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-116 | **[CRITICAL BUG]** Cart qty stepper updates the counter only on the 2nd click — local `qty` state in `cart-item-row.tsx` never re-syncs after the success refetch and `commit()` compares against the stale prop. Add optimistic `setQty` + sync, debounce server writes via a shared `useDebouncedCallback` (`shared/lib`) | ⬜ | — |
-| TASK-117 | **[CRITICAL BUG]** Product search loses focus on every keystroke (URL-param refilter remounts the input) — keep field controlled + focused, debounce the query update (reuse TASK-116 util) | ⬜ | — |
+| TASK-116 | **[CRITICAL BUG]** Cart qty stepper updates the counter only on the 2nd click — local `qty` state in `cart-item-row.tsx` never re-syncs after the success refetch and `commit()` compares against the stale prop. Add optimistic `setQty` + sync, debounce server writes via a shared `useDebouncedCallback` (`shared/lib`) | ✅ | docs/plans/049-cart-qty-stepper-sync.md |
+| TASK-117 | **[CRITICAL BUG]** Product search loses focus on every keystroke (URL-param refilter remounts the input) — keep field controlled + focused, debounce the query update (reuse `useDebouncedCallback` from TASK-116; depends on TASK-116-A) | ⬜ | — |
+| TASK-141 | **[TECH DEBT]** Cross-cutting forms state-sync audit & remediation — grep-based sweep of both apps for `useState` seeded from props and RHF `defaultValues` without `reset()`/`values`; remediate latent risk in admin product/category edit forms and storefront profile form; consolidate ad-hoc debounces to `useDebouncedCallback`; add convention doc. **Depends on TASK-116 + TASK-117.** | ⬜ | docs/plans/050-forms-state-sync-audit.md |
 | TASK-118 | **[CRITICAL BUG]** Guest→user cart merge broken — guest cart shows from stale cache until reload, then vanishes (user cart empty). Run merge with `cartToken` on login/register, then invalidate cart query + clear `cartToken` cookie | ⬜ | — |
 | TASK-119 | **[CRITICAL BUG]** Checkout creates the order but redirects to the empty `/cart` instead of `/orders/{id}/confirmation` — verify create-order envelope (`res.data.id`) + confirmation route guard in `use-checkout.ts`; rebuild clean to rule out stale `.next`. Absorbs TASK-111 | ⬜ | — |
 | TASK-120 | **[PRIORITY BUG]** Restored-tab queries never resolve — `/products` skeletons spin forever after reopening the browser; reload fixes (Chrome+Edge). Likely a query stuck on auth/CSRF bootstrap on session-restore (`app/providers.tsx` + axios interceptor / `entities/session`) | ⬜ | — |
@@ -185,7 +186,7 @@
   manual visual QA remains, mark ✅ and add a line to *Pending manual QA*.
 - **Block a task:** change to ❌ with a note. **Park a task:** 🅿️ with a one-line reason.
 - **New task IDs:** use a single monotonic counter — next free integer above the current max
-  (currently TASK-140; TASK-091 and below are historical). Never reuse an old ID.
+  (currently TASK-141; TASK-091 and below are historical). Never reuse an old ID.
 - **Plans:** add the `docs/plans/NNN-*.md` path in the Plan column when one is written.
 - **Finishing a parent:** move its detailed sub-tasks into `docs/backlog-archive.md` and leave a
   one-row summary under *Completed*.
