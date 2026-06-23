@@ -3,6 +3,7 @@ import {
   renderWithProviders,
   screen,
   waitFor,
+  fireEvent,
   userEvent,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
@@ -11,6 +12,8 @@ import { dict } from "@/shared/config";
 import { CartItemRow } from "./cart-item-row";
 
 describe("CartItemRow", () => {
+  afterEach(() => jest.useRealTimers());
+
   it("renders the product name and quantity", () => {
     const item = makeCartItem({ productName: "Test Product", quantity: 2 });
 
@@ -78,5 +81,109 @@ describe("CartItemRow", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       dict.cart.updateError,
     );
+  });
+
+  it("updates the counter on the first click, before the server write fires", async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    const item = makeCartItem({ id: "item-1", quantity: 2, stock: 50 });
+    let patchCount = 0;
+    server.use(
+      http.patch("*/api/cart/items/:itemId", () => {
+        patchCount += 1;
+        return HttpResponse.json({ data: {} });
+      }),
+    );
+
+    renderWithProviders(<CartItemRow item={item} />);
+    await user.click(
+      screen.getByRole("button", { name: dict.cart.increaseAria }),
+    );
+
+    // Optimistic: the counter reflects the new value immediately, and the
+    // (debounced) server write has not fired yet.
+    expect(screen.getByLabelText(dict.cart.quantityAria)).toHaveValue(3);
+    expect(patchCount).toBe(0);
+  });
+
+  it("collapses rapid clicks into a single PATCH for the final quantity", async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    const item = makeCartItem({ id: "item-1", quantity: 2, stock: 50 });
+    let patchCount = 0;
+    let lastBody: { quantity?: number } | null = null;
+    server.use(
+      http.patch("*/api/cart/items/:itemId", async ({ request }) => {
+        patchCount += 1;
+        lastBody = (await request.json()) as { quantity?: number };
+        return HttpResponse.json({ data: {} });
+      }),
+    );
+
+    renderWithProviders(<CartItemRow item={item} />);
+    const increase = screen.getByRole("button", {
+      name: dict.cart.increaseAria,
+    });
+    await user.click(increase);
+    await user.click(increase);
+    await user.click(increase);
+
+    // Three optimistic increments, no server write yet.
+    expect(screen.getByLabelText(dict.cart.quantityAria)).toHaveValue(5);
+    expect(patchCount).toBe(0);
+
+    // Fire the debounce, then let the real-timer async flush settle the request.
+    jest.advanceTimersByTime(300);
+    jest.useRealTimers();
+
+    await waitFor(() => expect(patchCount).toBe(1));
+    expect(lastBody).toEqual({ quantity: 5 });
+  });
+
+  it("writes a manually typed quantity to the server on blur", async () => {
+    const item = makeCartItem({ id: "item-1", quantity: 2, stock: 50 });
+    let lastBody: { quantity?: number } | null = null;
+    server.use(
+      http.patch("*/api/cart/items/:itemId", async ({ request }) => {
+        lastBody = (await request.json()) as { quantity?: number };
+        return HttpResponse.json({ data: {} });
+      }),
+    );
+
+    renderWithProviders(<CartItemRow item={item} />);
+    const input = screen.getByLabelText(dict.cart.quantityAria);
+    fireEvent.change(input, { target: { value: "7" } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(lastBody).toEqual({ quantity: 7 }));
+  });
+
+  it("keeps the increase button enabled for a no-variant line (untracked stock)", () => {
+    // A line with no variant (variantId undefined) reports stock 0 from the API
+    // but is not stock-capped.
+    const item = makeCartItem({ stock: 0, quantity: 2 });
+
+    renderWithProviders(<CartItemRow item={item} />);
+
+    expect(
+      screen.getByRole("button", { name: dict.cart.increaseAria }),
+    ).toBeEnabled();
+  });
+
+  it("disables the increase button for an out-of-stock variant", () => {
+    // The generated variantId/variantName types are loosely typed objects
+    // (Swagger nullable-string artifact); cast to set them in the test fixture.
+    const base = makeCartItem({ stock: 0, quantity: 1 });
+    const item = {
+      ...base,
+      variantId: "variant-1",
+      variantName: "Black",
+    } as unknown as typeof base;
+
+    renderWithProviders(<CartItemRow item={item} />);
+
+    expect(
+      screen.getByRole("button", { name: dict.cart.increaseAria }),
+    ).toBeDisabled();
   });
 });
