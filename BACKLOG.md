@@ -30,7 +30,7 @@
 | Dashboard raw-SQL real-DB int-spec run | TASK-066 | needs `test:int` DB |
 | JSON-LD present in product HTML | TASK-045-I | needs live API |
 | Admin login + silent refresh + CSRF path smoke | TASK-059-B / TASK-112 | refresh-path bug now fixed; live smoke still pending a running stack |
-| Checkout end-to-end (UA form) + order-confirmation render | TASK-111 | needs running stack |
+| Checkout end-to-end (UA form) + order-confirmation render | TASK-111 → TASK-119 | QA on HEAD `296b498` shows order created but redirect lands on empty `/cart`; reopened as bug TASK-119 |
 | Apply `add_soft_delete_audit` migration + Swagger DELETE smoke (product hidden from list, order history keeps name; email freed for re-registration) | TASK-104-J | migration authored but not applied — needs a running DB |
 | Run Playwright E2E (`npm run test:e2e:pw`) — 4 specs discovered; need DB + `npx playwright install chromium` + booted API/client to execute | TASK-105-D | scaffold complete; not yet run locally/CI |
 
@@ -75,6 +75,22 @@
 | TASK-114 | Type the storefront order-list response on the backend so `OrderListResponseEnvelope.data` is `OrderEntity[]` (removes a frontend cast in order-history) | ✅ | docs/plans/045-order-list-response-typing.md |
 | TASK-115 | Localize store-admin to Ukrainian — typed dictionary + `lang="uk"`. **Done:** shell/nav, header, login, dashboard (stats/charts/low-stock, UAH). **Remaining:** products, categories, orders, users CRUD (tables, forms, detail views, toggles, toasts, validation) | 🔄 | — |
 
+#### QA pass triage — bugs (from `docs/manual-qa-master.md`, tested on HEAD `296b498`)
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-116 | **[CRITICAL BUG]** Cart qty stepper updates the counter only on the 2nd click — local `qty` state in `cart-item-row.tsx` never re-syncs after the success refetch and `commit()` compares against the stale prop. Add optimistic `setQty` + sync, debounce server writes via a shared `useDebouncedCallback` (`shared/lib`) | ⬜ | — |
+| TASK-117 | **[CRITICAL BUG]** Product search loses focus on every keystroke (URL-param refilter remounts the input) — keep field controlled + focused, debounce the query update (reuse TASK-116 util) | ⬜ | — |
+| TASK-118 | **[CRITICAL BUG]** Guest→user cart merge broken — guest cart shows from stale cache until reload, then vanishes (user cart empty). Run merge with `cartToken` on login/register, then invalidate cart query + clear `cartToken` cookie | ⬜ | — |
+| TASK-119 | **[CRITICAL BUG]** Checkout creates the order but redirects to the empty `/cart` instead of `/orders/{id}/confirmation` — verify create-order envelope (`res.data.id`) + confirmation route guard in `use-checkout.ts`; rebuild clean to rule out stale `.next`. Absorbs TASK-111 | ⬜ | — |
+| TASK-120 | **[PRIORITY BUG]** Restored-tab queries never resolve — `/products` skeletons spin forever after reopening the browser; reload fixes (Chrome+Edge). Likely a query stuck on auth/CSRF bootstrap on session-restore (`app/providers.tsx` + axios interceptor / `entities/session`) | ⬜ | — |
+| TASK-121 | **[BUG]** Post-registration: no redirect to `/` and header stays in guest state — align `register-form.tsx` success path with login | ⬜ | — |
+| TASK-122 | **[BUG]** store-admin still logs out on reload despite TASK-112 — re-investigate mount-time silent refresh | ⬜ | — |
+| TASK-123 | **[BUG]** Payment stays `PENDING` after order status changes — fix status/`paymentStatus` coupling and confirm-payment path (backend) | ⬜ | — |
+| TASK-124 | **[BUG]** Order status → CONFIRMED not reflected in storefront stock — confirm expected behavior (stock decremented at creation) then fix stale product cache eviction on status change | ⬜ | — |
+| TASK-125 | **[BUG]** Admin order detail/list missing customer email + contact data — extend admin order response + `store-admin` views | ⬜ | — |
+| TASK-126 | **[BUG]** Product card opens the wrong variant + thumbnails missing — investigate card→PDP linking, variant resolution (suspected SKU shared across products), single-image gallery render | ⬜ | — |
+
 ### Phase B — Reliability & observability *(quality)*
 
 | Task ID | Description | Status | Plan |
@@ -100,6 +116,23 @@
 | TASK-105-D | Playwright E2E scaffold: `@playwright/test` at root, `playwright.config.ts` with webServer array, `e2e/cart-flow.spec.ts` + `e2e/auth-flow.spec.ts`, seed fixture (4 tests discovered). **Pending:** local/CI run needs DB + browsers | 🔄 | docs/plans/048-frontend-test-harness.md |
 | TASK-105-E | CI wiring: `test-unit` already covers all 3 workspaces (root `npm run test`); added `test-e2e-playwright` job (continue-on-error: true) with Postgres service + Playwright browser install | ✅ | docs/plans/048-frontend-test-harness.md |
 | TASK-106 | Reviews module backend — controller/service/repository over existing `Review` model (prereq for TASK-078) | ⬜ | — |
+
+#### QA pass triage — UX, data & admin polish (from `docs/manual-qa-master.md`)
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-127 | Loading states / skeletons across storefront + admin — give feedback on slow actions ("немає лоадерів") | ⬜ | — |
+| TASK-128 | Seed overhaul — enough products for pagination, an out-of-stock variant, real descriptions + characteristics, sale items; document re-seed after migrations; fix `npm run db:studio` (prisma:studio script) | ⬜ | — |
+| TASK-129 | User-facing order status labels — replace raw `PENDING`/etc. with adequate UA wording for customers | ⬜ | — |
+| TASK-130 | Header account → user icon + dropdown; ensure the customer cabinet link is visible | ⬜ | — |
+| TASK-131 | Storefront user order cancellation — cancel button for PENDING orders (backend cancel already exists) | ⬜ | — |
+| TASK-132 | Hide raw stock quantity from customers on the storefront | ⬜ | — |
+| TASK-133 | Cart line images + product links — replace `ProductThumb` placeholder with the real image and link to the PDP | ⬜ | — |
+| TASK-134 | Order-details page — fix layout + link items to their products | ⬜ | — |
+| TASK-135 | Checkout prefill for logged-in users + phone input mask | ⬜ | — |
+| TASK-136 | Admin — generate slug on the fly on product create; remove or implement the dead header search | ⬜ | — |
+| TASK-137 | Admin revenue calc audit — count only earned revenue; show unrealized-but-ordered separately | ⬜ | — |
+| TASK-138 | a11y / console-warning cleanup — `DialogContent` missing `aria-describedby` (sheet.tsx), link-preload warning; add the "Mail disabled — skipping…" log line | ⬜ | — |
 
 ### Phase C — Revenue-critical commerce *(features; payments parked)*
 
@@ -140,6 +173,8 @@
 | TASK-088 | Bestseller / "Хіт продажу" badge (sales-driven) | 🅿️ | Behind UI rewrite |
 | TASK-089 | Contact & social bar (phone, hours, Viber/Telegram/Instagram) | 🅿️ | Behind UI rewrite |
 | TASK-068 deferrals | Remaining redesign polish (sticky ATC bar, focus-ring audit, error→toast, primitive swaps) | 🅿️ | Behind UI rewrite |
+| TASK-139 | Recommended-products carousels, admin-managed (prioritization + marketing rules) | 🅿️ | Explicit future note in QA pass; needs discovery |
+| TASK-140 | Admin tables UX (shadcn sortable/filterable) + category management/visualization rethink | 🅿️ | Behind admin UI rewrite; pairs with TASK-115 |
 
 ---
 
@@ -150,7 +185,7 @@
   manual visual QA remains, mark ✅ and add a line to *Pending manual QA*.
 - **Block a task:** change to ❌ with a note. **Park a task:** 🅿️ with a one-line reason.
 - **New task IDs:** use a single monotonic counter — next free integer above the current max
-  (currently TASK-111; TASK-091 and below are historical). Never reuse an old ID.
+  (currently TASK-140; TASK-091 and below are historical). Never reuse an old ID.
 - **Plans:** add the `docs/plans/NNN-*.md` path in the Plan column when one is written.
 - **Finishing a parent:** move its detailed sub-tasks into `docs/backlog-archive.md` and leave a
   one-row summary under *Completed*.
