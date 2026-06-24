@@ -32,6 +32,17 @@ interface CategoryFormProps {
   excludeParentId?: string;
 }
 
+/** Empty form baseline used for create mode and as the merge base in edit mode. */
+const EMPTY_VALUES: CategoryFormInput = {
+  name: "",
+  slug: "",
+  description: "",
+  image: "",
+  parentId: "",
+  sortOrder: "0",
+  isActive: true,
+};
+
 /**
  * Reusable create/edit category form.
  *
@@ -52,16 +63,13 @@ export function CategoryForm({
     formState: { errors },
   } = useForm<CategoryFormInput, unknown, CategoryFormValues>({
     resolver: zodResolver(categorySchema),
-    defaultValues: {
-      name: "",
-      slug: "",
-      description: "",
-      image: "",
-      parentId: "",
-      sortOrder: "0",
-      isActive: true,
-      ...defaultValues,
-    },
+    defaultValues: EMPTY_VALUES,
+    // In edit mode, `values` live-syncs the form when the entity refetches in the
+    // background (TASK-141-B). `keepDirtyValues` updates only pristine fields, so
+    // the admin's in-progress edits are never clobbered. In create mode
+    // (`defaultValues` undefined) `values` is omitted and the form stays editable.
+    values: defaultValues ? { ...EMPTY_VALUES, ...defaultValues } : undefined,
+    resetOptions: { keepDirtyValues: true },
   });
 
   const categoriesQuery = useAdminCategoryControllerFindAllWithProductCount({

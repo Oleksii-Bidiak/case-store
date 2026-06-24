@@ -31,11 +31,16 @@ export function ProfileForm({ user }: ProfileFormProps) {
     formState: { errors, isDirty },
   } = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
-    defaultValues: {
+    // `values` (not bare `defaultValues`) live-syncs the form if the profile query
+    // refetches while open — e.g. an update in another tab (TASK-141-C).
+    // `keepDirtyValues` updates only pristine fields, so in-progress edits survive
+    // a background refetch and the `isDirty` Save guard stays accurate.
+    values: {
       firstName: user.firstName ?? "",
       lastName: user.lastName ?? "",
       phone: user.phone ?? "",
     },
+    resetOptions: { keepDirtyValues: true },
   });
 
   const mutation = useUserControllerUpdateProfile({
