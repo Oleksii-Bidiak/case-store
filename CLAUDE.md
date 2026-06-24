@@ -53,5 +53,10 @@ Invoke the matching skill when its area comes up:
 - `BACKLOG.md` is the single source of task status — mark tasks ✅ when done and tested.
 - A pre-commit hook blocks editing `.env*` and generated API files, and blocks commits
   on `main` (see `.claude/settings.json`). `.ts`/`.tsx` files are auto-formatted on save.
+- **Form state sync** — when a form/input is seeded from async server data, follow
+  `docs/conventions/forms.md`: never seed `useState` from such a prop without a sync guard
+  (render-time guard or `lastPushedRef` `useEffect`; never `key`-remount a focus-sensitive
+  input); RHF edit forms use `values` or `reset()` keyed to the entity id, never bare
+  `defaultValues`; debounce only via `useDebouncedCallback` (direct import, not the barrel).
 
 Start every reply with my name - Oleksii (Олексій).

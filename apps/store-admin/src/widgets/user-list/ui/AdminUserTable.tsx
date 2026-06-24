@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import {
   UserEntityRole,
   useUserControllerFindAll,
@@ -71,16 +72,12 @@ export function AdminUserTable() {
     router.replace(queryString ? `${pathname}?${queryString}` : pathname);
   };
 
-  // Debounce the search box → URL `?search=` param.
-  useEffect(() => {
-    const trimmed = searchInput.trim();
+  // Debounce the search box → URL `?search=` param via the shared hook.
+  const debouncedSearch = useDebouncedCallback((value: string) => {
+    const trimmed = value.trim();
     if (trimmed === searchParam) return;
-    const timer = setTimeout(() => {
-      updateParams({ search: trimmed || undefined, page: undefined });
-    }, SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchInput]);
+    updateParams({ search: trimmed || undefined, page: undefined });
+  }, SEARCH_DEBOUNCE_MS);
 
   const { data, isLoading, isError } = useUserControllerFindAll({
     page,
@@ -116,7 +113,10 @@ export function AdminUserTable() {
           type="search"
           placeholder="Search by email or name…"
           value={searchInput}
-          onChange={(event) => setSearchInput(event.target.value)}
+          onChange={(event) => {
+            setSearchInput(event.target.value);
+            debouncedSearch(event.target.value);
+          }}
           className="w-64"
           aria-label="Search users"
         />
