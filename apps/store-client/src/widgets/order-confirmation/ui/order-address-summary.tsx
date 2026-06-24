@@ -48,7 +48,9 @@ function AddressBlock({
         {address.address1 && <div>{address.address1}</div>}
         {address.address2 && <div>{address.address2}</div>}
         {cityLine && <div>{cityLine}</div>}
-        {address.country && <div>{address.country}</div>}
+        {address.country && (
+          <div>{dict.order.countryLabel(address.country)}</div>
+        )}
         {address.phone && <div>{address.phone}</div>}
       </address>
     </div>

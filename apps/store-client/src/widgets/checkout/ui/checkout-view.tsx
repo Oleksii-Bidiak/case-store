@@ -36,7 +36,8 @@ export function CheckoutView() {
     query: { enabled: isAuthenticated },
   });
 
-  const { submitOrder, isPending, isError, errorMessage } = useCheckout();
+  const { submitOrder, isPending, isError, errorMessage, isOrderSubmitted } =
+    useCheckout();
 
   const {
     register,
@@ -69,14 +70,21 @@ export function CheckoutView() {
     }
   }, [isInitializing, isAuthenticated, router]);
 
-  // Redirect to the cart when there is nothing to order.
+  // Redirect to the cart when there is nothing to order — but NOT right after a
+  // successful order, when the backend empties the cart on purpose and we are
+  // already navigating to the confirmation page (the TASK-119 redirect race).
   useEffect(() => {
-    if (cartIsEmpty) {
+    if (cartIsEmpty && !isOrderSubmitted) {
       router.replace("/cart");
     }
-  }, [cartIsEmpty, router]);
+  }, [cartIsEmpty, isOrderSubmitted, router]);
 
-  if (isInitializing || !isAuthenticated || isCartLoading || cartIsEmpty) {
+  if (
+    isInitializing ||
+    !isAuthenticated ||
+    isCartLoading ||
+    (cartIsEmpty && !isOrderSubmitted)
+  ) {
     return <CheckoutSkeleton />;
   }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCreateOrder, type CreateOrderDto } from "@/entities/order";
@@ -19,10 +20,18 @@ export function useCheckout() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
+  // Marks that an order was placed and we are navigating to the confirmation
+  // page. Set synchronously in onSuccess — i.e. before the cart invalidation's
+  // async refetch can report an empty cart — so CheckoutView's empty-cart guard
+  // already sees `true` and won't fire `router.replace("/cart")`, overwriting our
+  // pending push to the confirmation page (the TASK-119 redirect race).
+  const [isOrderSubmitted, setIsOrderSubmitted] = useState(false);
+
   const mutation = useCreateOrder({
     mutation: {
       onSuccess: (res) => {
         const orderId = res?.data?.id;
+        setIsOrderSubmitted(true);
         queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
         router.push(orderId ? `/orders/${orderId}/confirmation` : "/");
       },
@@ -59,5 +68,6 @@ export function useCheckout() {
     isPending: mutation.isPending,
     isError: mutation.isError,
     errorMessage,
+    isOrderSubmitted,
   };
 }

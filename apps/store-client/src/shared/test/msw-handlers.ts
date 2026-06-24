@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import type { CartEntity, CartItemEntity } from "@/entities/cart";
+import type { OrderEntity, OrderItemEntity } from "@/entities/order";
 
 /**
  * Default MSW handlers for store-client component tests.
@@ -51,6 +52,60 @@ export function makeCart(items: CartItemEntity[] = [makeCartItem()]): {
       },
       createdAt: "2026-06-01T00:00:00.000Z",
       updatedAt: "2026-06-01T00:00:00.000Z",
+    },
+  };
+}
+
+/** Build an order line item with sensible defaults; override any field per-test. */
+export function makeOrderItem(
+  overrides: Partial<OrderItemEntity> = {},
+): OrderItemEntity {
+  return {
+    id: "order-item-1",
+    productId: "product-1",
+    variantId: null,
+    productName: "iPhone 15 Pro Case — Clear",
+    variantName: null,
+    quantity: 2,
+    price: "499.00",
+    lineTotal: "998.00",
+    createdAt: "2026-06-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+/**
+ * Build an order envelope with a UA shipping address by default (the shape the
+ * checkout flow produces: `deliveryAddress` → `address1`, `country: "UA"`).
+ */
+export function makeOrder(overrides: Partial<OrderEntity> = {}): {
+  data: OrderEntity;
+} {
+  return {
+    data: {
+      id: "order-1",
+      userId: "user-1",
+      status: "PENDING",
+      paymentStatus: "PENDING",
+      subtotal: "998.00",
+      discount: "0.00",
+      shippingCost: "0.00",
+      tax: "0.00",
+      total: "998.00",
+      shippingAddress: {
+        firstName: "Олег",
+        lastName: "Коваль",
+        phone: "+380501234567",
+        city: "Київ",
+        address1: "Відділення №1",
+        country: "UA",
+      },
+      billingAddress: null,
+      notes: null,
+      items: [makeOrderItem()],
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+      ...overrides,
     },
   };
 }

@@ -253,6 +253,8 @@ export const dict = {
     itemsOrdered: "Замовлені товари",
     shippingAddress: "Адреса доставки",
     billingAddress: "Адреса оплати",
+    /** Localize a 2-letter country code for display; falls back to the raw code. */
+    countryLabel: (code: string) => (code === "UA" ? "Україна" : code),
     totalsTitle: "Підсумок замовлення",
     subtotal: "Сума",
     discount: "Знижка",
