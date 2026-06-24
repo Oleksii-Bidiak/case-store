@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft, ShoppingBag } from "lucide-react";
 import { useGetCart } from "@/entities/cart";
+import { useAuth } from "@/entities/session";
 import { dict } from "@/shared/config";
 import { CartItemRow } from "./cart-item-row";
 import { CartSummary } from "./cart-summary";
@@ -14,9 +15,16 @@ import { CartSkeleton } from "./cart-skeleton";
  * anonymous visitors via the cartToken cookie — no auth required.
  */
 export function CartView() {
-  const { data, isLoading, isError, refetch } = useGetCart();
+  // Don't fetch until the auth bootstrap refresh has settled. Firing during the
+  // mount-time /api/auth/refresh window would request the cart as a guest (token
+  // not yet in memory, cartToken cleared by login), minting a fresh empty cart
+  // and caching it as the user's — the TASK-118 reload bug.
+  const { isInitializing } = useAuth();
+  const { data, isLoading, isError, refetch } = useGetCart({
+    query: { enabled: !isInitializing },
+  });
 
-  if (isLoading) {
+  if (isInitializing || isLoading) {
     return <CartSkeleton />;
   }
 

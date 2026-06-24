@@ -8,7 +8,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { api, setAccessToken } from "@/shared/api";
+import { getGetCartQueryKey } from "@/shared/api/generated/cart/cart";
 
 export interface AuthContextValue {
   accessToken: string | null;
@@ -42,6 +44,7 @@ function decodeJwt(token: string): { sub?: string; role?: string } | null {
  * HttpOnly refresh cookie (survives page reloads without localStorage).
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [accessToken, setToken] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
@@ -74,9 +77,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const token = res.data?.data?.accessToken;
         if (active && token) {
           setTokens(token);
+          // Session restored on reload: the cart query may already have fired as
+          // a guest during this bootstrap window. Invalidate it so it refetches
+          // with the now-authenticated identity and surfaces the merged user cart
+          // instead of the empty guest cart created mid-bootstrap (TASK-118-C).
+          void queryClient.invalidateQueries({
+            queryKey: getGetCartQueryKey(),
+          });
         }
       } catch {
-        // No valid refresh cookie — remain a guest.
+        // No valid refresh cookie — remain a guest. No cart invalidation: the
+        // guest cart fetched after bootstrap is already the correct identity.
       } finally {
         if (active) {
           setIsInitializing(false);
@@ -87,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [setTokens]);
+  }, [setTokens, queryClient]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

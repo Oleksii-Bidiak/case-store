@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ShoppingCart } from "lucide-react";
 import { useGetCart } from "@/entities/cart";
+import { useAuth } from "@/entities/session";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 
@@ -12,7 +13,10 @@ import { cn } from "@/shared/lib/utils";
  * is only rendered when there is at least one item.
  */
 export function HeaderCartBadge({ className }: { className?: string }) {
-  const { data } = useGetCart();
+  // Mirror CartView: hold the query until auth bootstrap settles so the badge
+  // never reflects a transient empty guest cart minted during refresh (TASK-118).
+  const { isInitializing } = useAuth();
+  const { data } = useGetCart({ query: { enabled: !isInitializing } });
   const count = data?.data?.totals.itemCount ?? 0;
 
   return (
