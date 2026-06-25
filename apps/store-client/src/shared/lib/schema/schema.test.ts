@@ -5,7 +5,6 @@ import { buildProductSchema } from "./buildProductSchema";
 import type {
   ProductEntity,
   ProductImageEntity,
-  ProductVariantEntity,
 } from "@/shared/api/generated/models";
 
 const SITE = "https://example.com";
@@ -64,7 +63,11 @@ const baseProduct: ProductEntity = {
   price: "9.99",
   compareAtPrice: null,
   sku: "CASE-15-BLK",
+  stock: 5,
   categoryId: "c1",
+  groupId: null,
+  attributes: {},
+  positionOrder: 0,
   isActive: true,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-02-01T00:00:00.000Z",
@@ -79,17 +82,6 @@ const image = (url: string, sortOrder = 0): ProductImageEntity => ({
   isPrimary: sortOrder === 0,
 });
 
-const variant = (
-  over: Partial<ProductVariantEntity>,
-): ProductVariantEntity => ({
-  id: "v1",
-  name: "Default",
-  price: "9.99",
-  stock: 5,
-  isActive: true,
-  ...over,
-});
-
 describe("buildProductSchema", () => {
   const opts = { siteUrl: SITE, currency: "UAH", brandName: "MobileStore" };
 
@@ -97,7 +89,6 @@ describe("buildProductSchema", () => {
     const schema = buildProductSchema({
       product: baseProduct,
       images: [image("https://cdn/x.jpg", 1), image("https://cdn/a.jpg", 0)],
-      variants: [],
       ...opts,
     });
 
@@ -113,11 +104,10 @@ describe("buildProductSchema", () => {
     expect(schema.image).toEqual(["https://cdn/a.jpg", "https://cdn/x.jpg"]);
   });
 
-  it("builds an InStock offer with currency and product price when no variants", () => {
+  it("builds an InStock offer with currency and the position price", () => {
     const schema = buildProductSchema({
       product: baseProduct,
       images: [],
-      variants: [],
       ...opts,
     });
     const offer = schema.offers as Record<string, unknown>;
@@ -128,30 +118,10 @@ describe("buildProductSchema", () => {
     expect(offer.availability).toBe("https://schema.org/InStock");
   });
 
-  it("uses the lowest active-variant price for the offer", () => {
+  it("marks the offer OutOfStock when the position has zero stock", () => {
     const schema = buildProductSchema({
-      product: baseProduct,
+      product: { ...baseProduct, stock: 0 },
       images: [],
-      variants: [
-        variant({ id: "v1", price: "14.99", stock: 2 }),
-        variant({ id: "v2", price: "11.50", stock: 1 }),
-        variant({ id: "v3", price: "5.00", stock: 0, isActive: false }), // inactive ignored
-      ],
-      ...opts,
-    });
-    const offer = schema.offers as Record<string, unknown>;
-    expect(offer.price).toBe("11.50");
-    expect(offer.availability).toBe("https://schema.org/InStock");
-  });
-
-  it("marks the offer OutOfStock when every active variant has zero stock", () => {
-    const schema = buildProductSchema({
-      product: baseProduct,
-      images: [],
-      variants: [
-        variant({ id: "v1", stock: 0 }),
-        variant({ id: "v2", stock: 0 }),
-      ],
       ...opts,
     });
     const offer = schema.offers as Record<string, unknown>;
@@ -162,7 +132,6 @@ describe("buildProductSchema", () => {
     const schema = buildProductSchema({
       product: { ...baseProduct, sku: null, price: "" },
       images: [],
-      variants: [],
       ...opts,
     });
     expect(schema.sku).toBeUndefined();

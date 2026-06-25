@@ -7,7 +7,9 @@ export type {
   ProductControllerFindAllParams,
   ProductDetailResponseEnvelope,
   ProductCategoryEntity,
-  ProductVariantEntity,
+  ProductGroupEntity,
+  ProductGroupAxisEntity,
+  ProductSiblingEntity,
   ProductImageEntity,
 } from "@/shared/api/generated/models";
 

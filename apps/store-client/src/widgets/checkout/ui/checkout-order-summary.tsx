@@ -5,11 +5,6 @@ import { Skeleton } from "@/shared/ui";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
-/** Narrow the loosely-typed generated nullable string fields to a usable string. */
-function asString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
 /**
  * CheckoutOrderSummary — read-only cart summary shown alongside the checkout
  * form. Reuses the cached `useGetCart` query (no extra network round-trip) so the
@@ -49,7 +44,6 @@ export function CheckoutOrderSummary() {
 
       <ul className="flex flex-col gap-3">
         {items.map((item) => {
-          const variantName = asString(item.variantName);
           return (
             <li
               key={item.id}
@@ -57,9 +51,6 @@ export function CheckoutOrderSummary() {
             >
               <div className="flex flex-col">
                 <span className="text-foreground">{item.productName}</span>
-                {variantName && (
-                  <span className="text-muted-foreground">{variantName}</span>
-                )}
                 <span className="text-muted-foreground">
                   {item.quantity} × {formatMoney(item.price)}
                 </span>

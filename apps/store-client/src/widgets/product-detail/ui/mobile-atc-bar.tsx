@@ -5,7 +5,6 @@ import { formatMoney } from "@/shared/lib";
 
 interface MobileAtcBarProps {
   productId: string;
-  variantId?: string | null;
   price: string;
   disabled?: boolean;
 }
@@ -18,7 +17,6 @@ interface MobileAtcBarProps {
  */
 export function MobileAtcBar({
   productId,
-  variantId,
   price,
   disabled = false,
 }: MobileAtcBarProps) {
@@ -31,7 +29,6 @@ export function MobileAtcBar({
         <div className="flex-1">
           <AddToCartButton
             productId={productId}
-            variantId={variantId}
             disabled={disabled}
             compact
             className="border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"

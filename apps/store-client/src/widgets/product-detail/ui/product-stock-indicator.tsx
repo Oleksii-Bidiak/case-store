@@ -4,8 +4,8 @@ import { dict } from "@/shared/config";
 const LOW_STOCK_THRESHOLD = 5;
 
 /**
- * ProductStockIndicator — colour-coded availability line for the selected
- * variant. `stock` is null when no variant is selected (nothing rendered).
+ * ProductStockIndicator — colour-coded availability line for the position.
+ * `stock` is null when unknown (nothing rendered).
  */
 export function ProductStockIndicator({ stock }: { stock: number | null }) {
   if (stock == null) {

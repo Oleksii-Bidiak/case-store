@@ -158,27 +158,18 @@ describe("CartItemRow", () => {
     await waitFor(() => expect(lastBody).toEqual({ quantity: 7 }));
   });
 
-  it("keeps the increase button enabled for a no-variant line (untracked stock)", () => {
-    // A line with no variant (variantId undefined) reports stock 0 from the API
-    // but is not stock-capped.
-    const item = makeCartItem({ stock: 0, quantity: 2 });
+  it("caps the increase button at the position's available stock", () => {
+    const item = makeCartItem({ stock: 3, quantity: 3 });
 
     renderWithProviders(<CartItemRow item={item} />);
 
     expect(
       screen.getByRole("button", { name: dict.cart.increaseAria }),
-    ).toBeEnabled();
+    ).toBeDisabled();
   });
 
-  it("disables the increase button for an out-of-stock variant", () => {
-    // The generated variantId/variantName types are loosely typed objects
-    // (Swagger nullable-string artifact); cast to set them in the test fixture.
-    const base = makeCartItem({ stock: 0, quantity: 1 });
-    const item = {
-      ...base,
-      variantId: "variant-1",
-      variantName: "Black",
-    } as unknown as typeof base;
+  it("disables the increase button for an out-of-stock position", () => {
+    const item = makeCartItem({ stock: 0, quantity: 1 });
 
     renderWithProviders(<CartItemRow item={item} />);
 

@@ -9,7 +9,6 @@ import { dict } from "@/shared/config";
 
 interface AddToCartButtonProps {
   productId: string;
-  variantId?: string | null;
   quantity?: number;
   disabled?: boolean;
   className?: string;
@@ -22,13 +21,12 @@ interface AddToCartButtonProps {
 }
 
 /**
- * AddToCartButton — adds a product (and optional variant) to the cart via the
- * generated useAddToCart hook, then invalidates the cart query so the header
- * and CartPage refetch. Works for guests (cartToken cookie) and users alike.
+ * AddToCartButton — adds a product position to the cart via the generated
+ * useAddToCart hook, then invalidates the cart query so the header and CartPage
+ * refetch. Works for guests (cartToken cookie) and users alike.
  */
 export function AddToCartButton({
   productId,
-  variantId,
   quantity = 1,
   disabled = false,
   className = "",
@@ -50,7 +48,7 @@ export function AddToCartButton({
 
   const handleClick = () => {
     addToCart.mutate({
-      data: { productId, variantId: variantId ?? undefined, quantity },
+      data: { productId, quantity },
     });
   };
 

@@ -1,14 +1,12 @@
 import type {
   ProductEntity,
   ProductImageEntity,
-  ProductVariantEntity,
 } from "@/shared/api/generated/models";
 
 /** Inputs for {@link buildProductSchema}. */
 export interface BuildProductSchemaInput {
   product: ProductEntity;
   images: ProductImageEntity[];
-  variants: ProductVariantEntity[];
   siteUrl: string;
   currency: string;
   brandName: string;
@@ -17,10 +15,10 @@ export interface BuildProductSchemaInput {
 /**
  * Build a Schema.org Product JSON-LD graph from the product detail response.
  *
- * - `price` is the lowest active-variant price when variants exist, otherwise
- *   the product-level price. `offers` is omitted entirely when no usable price.
- * - `availability` is InStock when any active variant has stock (or when there
- *   are no variants), else OutOfStock.
+ * Each product is a first-class position (TASK-142), so `price`, `sku`, and
+ * `availability` come straight off the position row:
+ * - `price` is the position's price. `offers` is omitted when no usable price.
+ * - `availability` is InStock when the position has stock, else OutOfStock.
  * - `sku`, `description`, and `image` are omitted when absent.
  * - `aggregateRating` / `review` are intentionally deferred — the API exposes no
  *   review data yet (see plan 033, decision A7).
@@ -30,13 +28,11 @@ export interface BuildProductSchemaInput {
 export function buildProductSchema(
   input: BuildProductSchemaInput,
 ): Record<string, unknown> {
-  const { product, images, variants, siteUrl, currency, brandName } = input;
+  const { product, images, siteUrl, currency, brandName } = input;
   const url = `${siteUrl}/products/${product.slug}`;
 
-  const activeVariants = variants.filter((v) => v.isActive);
-  const price = resolvePrice(activeVariants, product.price);
-  const inStock =
-    activeVariants.length > 0 ? activeVariants.some((v) => v.stock > 0) : true;
+  const price = resolvePrice(product.price);
+  const inStock = product.stock > 0;
 
   const imageUrls = [...images]
     .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -78,22 +74,8 @@ export function buildProductSchema(
   return schema;
 }
 
-/**
- * Lowest active-variant price (formatted to 2 decimals) when present, otherwise
- * the product price string as-is. Returns null when no valid price exists.
- */
-function resolvePrice(
-  activeVariants: ProductVariantEntity[],
-  fallback: string,
-): string | null {
-  const variantPrices = activeVariants
-    .map((v) => Number(v.price))
-    .filter((n) => Number.isFinite(n) && n >= 0);
-
-  if (variantPrices.length > 0) {
-    return Math.min(...variantPrices).toFixed(2);
-  }
-
-  const fb = Number(fallback);
-  return fallback.trim().length > 0 && Number.isFinite(fb) ? fallback : null;
+/** The position price string when valid, otherwise null. */
+function resolvePrice(price: string): string | null {
+  const value = Number(price);
+  return price.trim().length > 0 && Number.isFinite(value) ? price : null;
 }

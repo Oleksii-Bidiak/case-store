@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { useProductControllerFindBySlug } from "@/entities/product";
 import { AddToCartButton } from "@/features/add-to-cart";
@@ -8,9 +8,8 @@ import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { Badge, RatingStars } from "@/shared/ui";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
-import { pickCheapestActiveVariantId } from "./pick-default-variant";
 import { ProductImageGallery } from "./product-image-gallery";
-import { ProductVariantSelector } from "./product-variant-selector";
+import { ProductSiblingNavigator } from "./product-sibling-navigator";
 import { ProductStockIndicator } from "./product-stock-indicator";
 import { ProductTrustBadges } from "./product-trust-badges";
 import { ProductSpecsTabs } from "./product-specs-tabs";
@@ -23,24 +22,13 @@ function truncate(value: string, max: number): string {
 
 /**
  * ProductDetailView — client orchestrator for the product detail page.
- * Fetches the product by slug, manages the selected variant, and composes
- * the breadcrumb, image gallery, variant selector, and info panel.
+ * Fetches the position by slug and composes the breadcrumb, image gallery,
+ * sibling-position navigator, and info panel. Each position is a first-class
+ * product, so price/stock/sku read directly from the position row; switching an
+ * attribute navigates to a sibling position's slug (TASK-142).
  */
 export function ProductDetailView({ slug }: { slug: string }) {
   const { data, isLoading, isError } = useProductControllerFindBySlug(slug);
-  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
-    null,
-  );
-
-  const variants = useMemo(() => data?.variants ?? [], [data]);
-
-  // Default to the cheapest active variant so the PDP selection matches the
-  // price the product card advertised (base price), instead of the
-  // alphabetically-first variant the API returns (TASK-126).
-  const defaultVariantId = useMemo(
-    () => pickCheapestActiveVariantId(variants),
-    [variants],
-  );
 
   const sortedImages = useMemo(
     () => [...(data?.images ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
@@ -65,19 +53,11 @@ export function ProductDetailView({ slug }: { slug: string }) {
   }
 
   const product = data.data;
-  const { category } = data;
+  const { category, group } = data;
 
-  // Until the user picks a variant, fall back to the cheapest active one
-  // (computed above) so the price and selection state stay in sync without a
-  // state-syncing effect.
-  const effectiveVariantId = selectedVariantId ?? defaultVariantId;
-  const selectedVariant =
-    variants.find((variant) => variant.id === effectiveVariantId) ?? null;
-
-  const displayPrice = selectedVariant?.price ?? product.price;
   const onSale =
     product.compareAtPrice != null &&
-    Number(product.compareAtPrice) > Number(displayPrice);
+    Number(product.compareAtPrice) > Number(product.price);
 
   return (
     <article className="flex flex-col gap-8 pb-24 md:pb-0">
@@ -128,7 +108,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
             <p
               className={`font-display text-3xl font-extrabold tracking-tight ${onSale ? "text-sale" : "text-foreground"}`}
             >
-              {formatMoney(displayPrice)}
+              {formatMoney(product.price)}
             </p>
             {onSale && product.compareAtPrice && (
               <>
@@ -140,7 +120,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
             )}
           </div>
 
-          <ProductStockIndicator stock={selectedVariant?.stock ?? null} />
+          <ProductStockIndicator stock={product.stock} />
 
           {typeof product.sku === "string" && product.sku.length > 0 && (
             <p className="text-sm text-muted-foreground">
@@ -148,17 +128,17 @@ export function ProductDetailView({ slug }: { slug: string }) {
             </p>
           )}
 
-          <ProductVariantSelector
-            variants={variants}
-            selectedVariantId={effectiveVariantId}
-            onVariantChange={setSelectedVariantId}
-            basePrice={product.price}
-          />
+          {group && (
+            <ProductSiblingNavigator
+              group={group}
+              currentAttributes={product.attributes}
+              currentSlug={product.slug}
+            />
+          )}
 
           <AddToCartButton
             productId={product.id}
-            variantId={effectiveVariantId}
-            disabled={selectedVariant?.stock === 0}
+            disabled={product.stock === 0}
           />
 
           <ProductTrustBadges />
@@ -171,9 +151,8 @@ export function ProductDetailView({ slug }: { slug: string }) {
 
       <MobileAtcBar
         productId={product.id}
-        variantId={effectiveVariantId}
-        price={displayPrice}
-        disabled={selectedVariant?.stock === 0}
+        price={product.price}
+        disabled={product.stock === 0}
       />
     </article>
   );

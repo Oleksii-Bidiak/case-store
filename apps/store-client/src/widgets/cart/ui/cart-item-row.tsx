@@ -67,14 +67,11 @@ export function CartItemRow({ item }: { item: CartItemEntity }) {
 
   const error = updateItem.error || removeItem.error;
 
-  // Stock is only tracked for variants. A line with no variant (variantId null)
-  // reports stock 0 from the API but is not stock-capped — clamp it to the
-  // global max instead of disabling the stepper.
-  const hasVariant = item.variantId != null;
-  const maxQty = hasVariant ? Math.min(MAX_QUANTITY, item.stock) : MAX_QUANTITY;
-  const outOfStock = hasVariant && item.stock <= 0;
+  // Each line is a product position with its own stock; cap the stepper at the
+  // available stock (or the global max, whichever is lower).
+  const maxQty = Math.min(MAX_QUANTITY, item.stock);
+  const outOfStock = item.stock <= 0;
 
-  const variantName = asString(item.variantName);
   const compareAtPrice = asString(item.compareAtPrice);
   const onSale =
     compareAtPrice != null && Number(compareAtPrice) > Number(item.price);
@@ -158,9 +155,6 @@ export function CartItemRow({ item }: { item: CartItemEntity }) {
           />
           <div className="flex flex-col">
             <p className="font-medium text-foreground">{item.productName}</p>
-            {variantName && (
-              <p className="text-sm text-muted-foreground">{variantName}</p>
-            )}
             <div className="mt-1 flex items-baseline gap-2">
               <span className="text-sm text-foreground">
                 {formatMoney(item.price)}

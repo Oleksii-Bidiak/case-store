@@ -63,9 +63,7 @@ export function makeOrderItem(
   return {
     id: "order-item-1",
     productId: "product-1",
-    variantId: null,
     productName: "iPhone 15 Pro Case — Clear",
-    variantName: null,
     quantity: 2,
     price: "499.00",
     lineTotal: "998.00",

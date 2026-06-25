@@ -77,7 +77,6 @@ async function buildProductPageSchemas(slug: string): Promise<{
     const {
       data: product,
       images,
-      variants,
       category,
     } = await productControllerFindBySlug(slug);
     const canonical = `${SITE_URL}/products/${product.slug}`;
@@ -86,7 +85,6 @@ async function buildProductPageSchemas(slug: string): Promise<{
       product: buildProductSchema({
         product,
         images,
-        variants,
         siteUrl: SITE_URL,
         currency: CURRENCY,
         brandName: SITE_NAME,
