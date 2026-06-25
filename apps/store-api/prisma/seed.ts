@@ -1,9 +1,20 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
+import { createHash } from 'crypto';
 import argon2 from 'argon2';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Derive a stable, UUID-shaped id from a seed string (sha1-based). Lets the seed
+ * upsert ProductGroup rows idempotently even though groups have no natural
+ * unique key (TASK-142).
+ */
+function deterministicUuid(seed: string): string {
+  const h = createHash('sha1').update(seed).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
 
 function slugify(text: string): string {
   return text
@@ -622,69 +633,152 @@ async function seedProducts(prisma: PrismaClient, categories: Record<string, { i
         { url: '/images/products/sp-samsung-s24-1.jpg', alt: 'PET Film Samsung S24', sortOrder: 0 },
       ],
     },
+    // ── Standalone positions (no group — single buyable unit, TASK-142) ──
+    {
+      name: 'Universal Phone Holder for Car Dashboard',
+      slug: slugify('Universal Phone Holder for Car Dashboard'),
+      description:
+        'Adjustable dashboard mount with a strong suction cup and 360° rotation. Fits phones 4.7"–7".',
+      price: 16.99,
+      compareAtPrice: 24.99,
+      sku: 'ACC-CAR-HOLDER',
+      categoryId: categories['car-chargers'].id,
+      variants: [
+        {
+          name: 'Universal Phone Holder for Car Dashboard',
+          sku: 'ACC-CAR-HOLDER',
+          price: 16.99,
+          stock: 40,
+          attributes: {},
+        },
+      ],
+      images: [
+        {
+          url: '/images/products/acc-car-holder-1.jpg',
+          alt: 'Car Dashboard Phone Holder',
+          sortOrder: 0,
+        },
+      ],
+    },
+    {
+      name: 'Braided USB-C to USB-C Cable 2m',
+      slug: slugify('Braided USB-C to USB-C Cable 2m'),
+      description:
+        'Durable nylon-braided 100W USB-C cable, 2 metres. Currently sold out — restock incoming.',
+      price: 11.99,
+      sku: 'CABLE-USBC-2M',
+      categoryId: categories['usb-c-cables'].id,
+      variants: [
+        {
+          name: 'Braided USB-C to USB-C Cable 2m',
+          sku: 'CABLE-USBC-2M',
+          price: 11.99,
+          stock: 0,
+          attributes: {},
+        },
+      ],
+      images: [
+        {
+          url: '/images/products/cable-usbc-2m-1.jpg',
+          alt: 'Braided USB-C Cable 2m',
+          sortOrder: 0,
+        },
+      ],
+    },
   ];
 
-  let productCount = 0;
-  let variantCount = 0;
+  let groupCount = 0;
+  let positionCount = 0;
   let imageCount = 0;
 
   for (const p of productsData) {
-    const product = await prisma.product.upsert({
-      where: { slug: p.slug },
-      update: {},
-      create: {
-        name: p.name,
-        slug: p.slug,
-        description: p.description,
-        price: p.price,
-        compareAtPrice: p.compareAtPrice,
-        sku: p.sku,
-        categoryId: p.categoryId,
-        isActive: true,
-      },
-    });
+    // A catalog entry with more than one variant becomes a ProductGroup whose
+    // members are first-class Product positions; a single-variant entry is a
+    // standalone position with no group (TASK-142).
+    const isGroup = p.variants.length > 1;
 
-    productCount++;
+    let groupId: string | null = null;
+    if (isGroup) {
+      groupId = deterministicUuid(p.slug);
 
-    // Create variants
-    for (const v of p.variants) {
-      await prisma.productVariant.upsert({
-        where: { sku: v.sku! },
-        update: {},
-        create: {
-          productId: product.id,
-          name: v.name,
-          sku: v.sku,
-          price: v.price,
-          stock: v.stock,
-          attributes: v.attributes,
-          isActive: true,
-        },
+      // Axis names are the distinct attribute keys across the variants, in
+      // first-seen order (e.g. ["color"] or ["pack"]).
+      const axisNames: string[] = [];
+      for (const v of p.variants) {
+        for (const key of Object.keys(v.attributes ?? {})) {
+          if (!axisNames.includes(key)) axisNames.push(key);
+        }
+      }
+
+      await prisma.productGroup.upsert({
+        where: { id: groupId },
+        update: { name: p.name, isActive: true },
+        create: { id: groupId, name: p.name, isActive: true },
       });
-      variantCount++;
+
+      // Replace axes wholesale so re-seeding stays idempotent.
+      await prisma.productGroupAxis.deleteMany({ where: { groupId } });
+      if (axisNames.length > 0) {
+        await prisma.productGroupAxis.createMany({
+          data: axisNames.map((name, index) => ({ groupId: groupId!, name, sortOrder: index })),
+        });
+      }
+      groupCount++;
     }
 
-    // Create images (delete existing first for idempotency). Dev seed uses
-    // deterministic picsum.photos URLs (stable per slug + position) so the
-    // storefront looks populated without real uploads; the first image is the
-    // primary (cover). Real uploads via the admin replace these.
-    await prisma.productImage.deleteMany({ where: { productId: product.id } });
-    for (const img of p.images) {
-      await prisma.productImage.create({
-        data: {
-          productId: product.id,
-          url: `https://picsum.photos/seed/${p.slug}-${img.sortOrder}/800/800`,
-          alt: img.alt,
-          sortOrder: img.sortOrder,
-          isPrimary: img.sortOrder === 0,
-        },
+    // Create one position per variant. Group members carry the variant name and
+    // attributes; a standalone position takes the entry name and empty attributes.
+    for (let i = 0; i < p.variants.length; i++) {
+      const v = p.variants[i];
+      const positionSlug = isGroup ? `${p.slug}-${slugify(v.name)}` : p.slug;
+      const positionName = isGroup ? `${p.name} — ${v.name}` : p.name;
+      const positionSku = v.sku ?? p.sku;
+      const attributes = isGroup ? (v.attributes ?? {}) : {};
+
+      const positionData = {
+        name: positionName,
+        slug: positionSlug,
+        description: p.description,
+        price: v.price,
+        compareAtPrice: p.compareAtPrice ?? null,
+        sku: positionSku,
+        stock: v.stock,
+        categoryId: p.categoryId,
+        groupId,
+        attributes,
+        positionOrder: i,
+        isActive: true,
+      };
+
+      const position = await prisma.product.upsert({
+        where: { slug: positionSlug },
+        update: positionData,
+        create: positionData,
       });
-      imageCount++;
+      positionCount++;
+
+      // Clone the entry's images onto each position (shared gallery). Delete
+      // existing first for idempotency. Dev seed uses deterministic
+      // picsum.photos URLs (stable per position slug) so the storefront looks
+      // populated without real uploads; the first image is the primary (cover).
+      await prisma.productImage.deleteMany({ where: { productId: position.id } });
+      for (const img of p.images) {
+        await prisma.productImage.create({
+          data: {
+            productId: position.id,
+            url: `https://picsum.photos/seed/${positionSlug}-${img.sortOrder}/800/800`,
+            alt: img.alt,
+            sortOrder: img.sortOrder,
+            isPrimary: img.sortOrder === 0,
+          },
+        });
+        imageCount++;
+      }
     }
   }
 
   console.log(
-    `  ✓ Products: ${productCount} products, ${variantCount} variants, ${imageCount} images`,
+    `  ✓ Products: ${groupCount} groups, ${positionCount} positions, ${imageCount} images`,
   );
 }
 
