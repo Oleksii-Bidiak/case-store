@@ -1,7 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -31,8 +32,16 @@ const fieldClass =
 /** RegisterForm — account creation with zod validation. */
 export function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const { setTokens } = useAuth();
+  const { isAuthenticated, setTokens } = useAuth();
+
+  // Honour a `?redirect=` param so post-registration navigation returns the user
+  // to where they came from (e.g. /checkout). Only same-origin paths are allowed
+  // — the leading-slash check prevents open-redirect attacks. Mirrors login-form.
+  const redirectParam = searchParams.get("redirect");
+  const redirectTarget =
+    redirectParam && redirectParam.startsWith("/") ? redirectParam : "/";
 
   const {
     register,
@@ -41,6 +50,16 @@ export function RegisterForm() {
   } = useForm<RegisterValues>({ resolver: zodResolver(registerSchema) });
 
   const registerUser = useAuthControllerRegister();
+
+  // Already signed in (or just authenticated via setTokens) → leave the auth
+  // page. This reactive guard is what flips the header out of guest state: it
+  // re-runs once `isAuthenticated` commits, even if the imperative push below
+  // fires before the context update propagates.
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace(redirectTarget);
+    }
+  }, [isAuthenticated, router, redirectTarget]);
 
   const onSubmit = (values: RegisterValues) => {
     registerUser.mutate(
@@ -54,12 +73,15 @@ export function RegisterForm() {
       },
       {
         onSuccess: (res) => {
+          // `customInstance` unwraps the Axios layer, so `res` is the API
+          // envelope `{ data: { accessToken } }` — the access token lives at
+          // `res.data.accessToken` (refresh token is set as an HttpOnly cookie).
           const token = res?.data?.accessToken;
           if (token) {
             setTokens(token);
           }
           queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
-          router.push("/");
+          router.push(redirectTarget);
         },
       },
     );
