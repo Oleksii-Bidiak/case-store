@@ -8,6 +8,7 @@ import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { Badge, RatingStars } from "@/shared/ui";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
+import { pickCheapestActiveVariantId } from "./pick-default-variant";
 import { ProductImageGallery } from "./product-image-gallery";
 import { ProductVariantSelector } from "./product-variant-selector";
 import { ProductStockIndicator } from "./product-stock-indicator";
@@ -32,6 +33,14 @@ export function ProductDetailView({ slug }: { slug: string }) {
   );
 
   const variants = useMemo(() => data?.variants ?? [], [data]);
+
+  // Default to the cheapest active variant so the PDP selection matches the
+  // price the product card advertised (base price), instead of the
+  // alphabetically-first variant the API returns (TASK-126).
+  const defaultVariantId = useMemo(
+    () => pickCheapestActiveVariantId(variants),
+    [variants],
+  );
 
   const sortedImages = useMemo(
     () => [...(data?.images ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
@@ -58,10 +67,9 @@ export function ProductDetailView({ slug }: { slug: string }) {
   const product = data.data;
   const { category } = data;
 
-  // Fall back to the first active variant until the user picks one, so the
-  // price and selection state stay in sync without a state-syncing effect.
-  const defaultVariantId =
-    variants.find((variant) => variant.isActive)?.id ?? null;
+  // Until the user picks a variant, fall back to the cheapest active one
+  // (computed above) so the price and selection state stay in sync without a
+  // state-syncing effect.
   const effectiveVariantId = selectedVariantId ?? defaultVariantId;
   const selectedVariant =
     variants.find((variant) => variant.id === effectiveVariantId) ?? null;
