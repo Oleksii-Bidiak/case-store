@@ -1,6 +1,6 @@
 # Plan: Admin Order Customer Data — Expose Email + Account Info on Admin Order Responses
 
-> **Status:** Implemented — pending manual QA (TASK-125-D)
+> **Status:** Complete (manual QA passed — TASK-125-D ✅)
 > **Phase:** Phase A — Stabilize & Close Out (QA pass triage — bugs)
 > **Created:** 2026-06-25
 > **Last Updated:** 2026-06-25
@@ -25,7 +25,9 @@
   (`admin-order-table.test.tsx`, `order-detail-view.test.tsx`) cover both present/absent cases.
 - Gates: store-api **397/397** tests pass; store-admin **5/5** pass; lint clean; typecheck clean
   (all workspaces); `npm run build` green. No Prisma migration.
-- **TASK-125-D:** Manual QA on a running stack still pending.
+- **TASK-125-D:** Manual QA on a running stack passed — admin list shows customer email/name,
+  admin detail shows the Customer card, and customer-facing `/api/orders` responses carry no
+  `customer` key.
 
 ---
 
