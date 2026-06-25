@@ -31,7 +31,6 @@ function makeOrder(customer: unknown) {
       {
         id: "item-1",
         productName: "iPhone 15 Pro Case",
-        variantName: "Black",
         price: "29.99",
         quantity: 1,
         lineTotal: "29.99",

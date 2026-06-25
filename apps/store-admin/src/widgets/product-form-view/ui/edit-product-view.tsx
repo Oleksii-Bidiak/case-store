@@ -124,7 +124,11 @@ function mapProductToFormValues(product: {
   price: string;
   compareAtPrice?: string | null;
   sku?: string | null;
+  stock: number;
   categoryId: string;
+  groupId?: string | null;
+  attributes?: Record<string, unknown> | null;
+  positionOrder: number;
   isActive: boolean;
 }): Partial<ProductFormInput> {
   return {
@@ -134,7 +138,16 @@ function mapProductToFormValues(product: {
     price: product.price,
     compareAtPrice: product.compareAtPrice ?? "",
     sku: product.sku ?? "",
+    stock: String(product.stock),
     categoryId: product.categoryId,
+    groupId: product.groupId ?? "",
+    positionOrder: String(product.positionOrder),
+    attributes: Object.entries(product.attributes ?? {}).map(
+      ([key, value]) => ({
+        key,
+        value: typeof value === "string" ? value : String(value ?? ""),
+      }),
+    ),
     isActive: product.isActive,
   };
 }

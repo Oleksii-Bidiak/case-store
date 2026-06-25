@@ -1,4 +1,4 @@
-import type { LowStockVariantDto } from "@/entities/dashboard";
+import type { LowStockProductDto } from "@/entities/dashboard";
 import {
   Badge,
   Table,
@@ -11,16 +11,16 @@ import {
 import { dict } from "@/shared/config";
 
 interface DashboardLowStockTableProps {
-  variants: LowStockVariantDto[];
+  products: LowStockProductDto[];
 }
 
 /**
  * Low-stock alert table. Pure presentational — receives the already-fetched
- * variant list. A red badge flags critical stock (<= 2), yellow flags low
+ * position list. A red badge flags critical stock (<= 2), yellow flags low
  * (<= 5).
  */
 export function DashboardLowStockTable({
-  variants,
+  products,
 }: DashboardLowStockTableProps) {
   return (
     <div className="rounded-lg border border-border bg-card p-6">
@@ -31,35 +31,31 @@ export function DashboardLowStockTable({
         <TableHeader>
           <TableRow>
             <TableHead>{dict.dashboard.product}</TableHead>
-            <TableHead>{dict.dashboard.variant}</TableHead>
             <TableHead className="text-right">{dict.dashboard.stock}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {variants.length === 0 ? (
+          {products.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={3}
+                colSpan={2}
                 className="py-6 text-center text-sm text-muted-foreground"
               >
                 {dict.dashboard.noLowStock}
               </TableCell>
             </TableRow>
           ) : (
-            variants.map((variant) => (
-              <TableRow key={variant.variantId}>
+            products.map((product) => (
+              <TableRow key={product.productId}>
                 <TableCell className="font-medium">
-                  {variant.productName}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {variant.variantName}
+                  {product.productName}
                 </TableCell>
                 <TableCell className="text-right">
-                  {variant.stock <= 2 ? (
-                    <Badge variant="destructive">{variant.stock}</Badge>
+                  {product.stock <= 2 ? (
+                    <Badge variant="destructive">{product.stock}</Badge>
                   ) : (
                     <Badge variant="outline" className="text-yellow-600">
-                      {variant.stock}
+                      {product.stock}
                     </Badge>
                   )}
                 </TableCell>

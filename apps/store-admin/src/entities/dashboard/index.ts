@@ -17,6 +17,6 @@ export type {
   InventoryMetricsDto,
   DailyDataPointDto,
   TopProductDto,
-  LowStockVariantDto,
+  LowStockProductDto,
   OrderStatusCountDto,
 } from "@/shared/api";

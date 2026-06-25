@@ -12,6 +12,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth';
 import { UserModule } from './user';
 import { ProductModule } from './product';
+import { ProductGroupModule } from './product-group';
 import { CategoryModule } from './category';
 import { CartModule } from './cart';
 import { OrderModule } from './order';
@@ -80,6 +81,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Product catalog
     ProductModule,
+
+    // Product groups (sibling positions + attribute axes, TASK-142)
+    ProductGroupModule,
 
     // Category management
     CategoryModule,

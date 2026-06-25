@@ -2,6 +2,8 @@ import {
   IsString,
   IsOptional,
   IsNumber,
+  IsInt,
+  IsObject,
   IsBoolean,
   IsUUID,
   MaxLength,
@@ -85,6 +87,17 @@ export class UpdateProductDto {
   sku?: string;
 
   @ApiProperty({
+    description: 'Available stock quantity for this position',
+    example: 42,
+    required: false,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'Stock must be an integer' })
+  @Min(0, { message: 'Stock cannot be negative' })
+  stock?: number;
+
+  @ApiProperty({
     description: 'Category ID',
     example: '550e8400-e29b-41d4-a716-446655440000',
     required: false,
@@ -92,6 +105,38 @@ export class UpdateProductDto {
   @IsOptional()
   @IsUUID(4, { message: 'Category ID must be a valid UUID' })
   categoryId?: string;
+
+  @ApiProperty({
+    description: 'Group this position belongs to (siblings share a group)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    required: false,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsUUID(4, { message: 'Group ID must be a valid UUID' })
+  groupId?: string;
+
+  @ApiProperty({
+    description: 'Attribute values for this position, keyed by group axis name',
+    example: { color: 'blue', pack: 'single' },
+    required: false,
+    type: 'object',
+    additionalProperties: { type: 'string' },
+  })
+  @IsOptional()
+  @IsObject({ message: 'Attributes must be a key-value object' })
+  attributes?: Record<string, string>;
+
+  @ApiProperty({
+    description: 'Sort order of this position within its group',
+    example: 0,
+    required: false,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'Position order must be an integer' })
+  @Min(0, { message: 'Position order cannot be negative' })
+  positionOrder?: number;
 
   @ApiProperty({
     description: 'Whether the product is active and visible',

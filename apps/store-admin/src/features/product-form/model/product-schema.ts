@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { CreateProductDto } from "@/entities/product";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Validation schema for the admin product form.
@@ -65,7 +67,41 @@ export const productSchema = z.object({
     .optional()
     .or(z.literal("")),
 
+  stock: z
+    .string()
+    .trim()
+    .optional()
+    .refine(
+      (v) => v === undefined || v === "" || /^\d+$/.test(v),
+      "Stock must be a whole number ≥ 0",
+    )
+    .transform((v) => (v === undefined || v === "" ? 0 : Number(v))),
+
   categoryId: z.string().uuid("Select a category"),
+
+  // "" represents "no group" — mapped to undefined in the DTO.
+  groupId: z
+    .string()
+    .optional()
+    .refine(
+      (v) => v === undefined || v === "" || UUID_PATTERN.test(v),
+      "Select a valid group",
+    ),
+
+  positionOrder: z
+    .string()
+    .trim()
+    .optional()
+    .refine(
+      (v) => v === undefined || v === "" || /^\d+$/.test(v),
+      "Position order must be a whole number ≥ 0",
+    )
+    .transform((v) => (v === undefined || v === "" ? 0 : Number(v))),
+
+  // Key-value attribute pairs (e.g. color/blue). Blank keys are dropped on map.
+  attributes: z
+    .array(z.object({ key: z.string().trim(), value: z.string().trim() }))
+    .optional(),
 
   isActive: z.boolean().optional(),
 });
@@ -84,6 +120,17 @@ export function productFormValuesToDto(
   const slug = values.slug?.trim();
   const description = values.description?.trim();
   const sku = values.sku?.trim();
+  const groupId = values.groupId?.trim();
+
+  // Collapse the key-value pairs into an attribute object, dropping blank keys
+  // and de-duplicating on key (last value wins).
+  const attributes: Record<string, string> = {};
+  for (const pair of values.attributes ?? []) {
+    const key = pair.key.trim();
+    if (key) {
+      attributes[key] = pair.value.trim();
+    }
+  }
 
   return {
     name: values.name,
@@ -92,7 +139,11 @@ export function productFormValuesToDto(
     price: values.price,
     compareAtPrice: values.compareAtPrice,
     sku: sku ? sku : undefined,
+    stock: values.stock,
     categoryId: values.categoryId,
+    groupId: groupId ? groupId : undefined,
+    attributes,
+    positionOrder: values.positionOrder,
     isActive: values.isActive,
   };
 }

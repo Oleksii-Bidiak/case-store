@@ -9,6 +9,7 @@ export const dict = {
   nav: {
     dashboard: "Панель",
     products: "Товари",
+    productGroups: "Групи товарів",
     categories: "Категорії",
     orders: "Замовлення",
     users: "Користувачі",

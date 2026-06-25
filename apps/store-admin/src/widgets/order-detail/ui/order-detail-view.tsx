@@ -141,7 +141,6 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Product</TableHead>
-                  <TableHead>Variant</TableHead>
                   <TableHead className="text-right">Unit price</TableHead>
                   <TableHead className="text-right">Qty</TableHead>
                   <TableHead className="text-right">Line total</TableHead>
@@ -152,9 +151,6 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">
                       {item.productName}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {item.variantName ?? "—"}
                     </TableCell>
                     <TableCell className="text-right">
                       {formatMoney(item.price)}

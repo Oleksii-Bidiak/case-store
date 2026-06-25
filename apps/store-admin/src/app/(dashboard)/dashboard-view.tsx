@@ -58,7 +58,7 @@ export function DashboardView() {
 
           <Separator className="my-6" />
 
-          <DashboardLowStockTable variants={data.inventory.lowStockVariants} />
+          <DashboardLowStockTable products={data.inventory.lowStockProducts} />
         </>
       )}
 

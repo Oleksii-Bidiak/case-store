@@ -12,6 +12,7 @@ export type { ErrorType, BodyType } from "./instance";
 export * from "./generated/auth/auth";
 export * from "./generated/users/users";
 export * from "./generated/products/products";
+export * from "./generated/product-groups/product-groups";
 export * from "./generated/categories/categories";
 export * from "./generated/admin-orders/admin-orders";
 export * from "./generated/admin-dashboard/admin-dashboard";
