@@ -1,9 +1,9 @@
 # Plan: Variant-as-Product-Position (EPIC TASK-142)
 
-> **Status:** In Progress — backend green (A, B-read, C done)
+> **Status:** Complete — all sub-tasks (A–G) shipped to `develop`
 > **Phase:** Cross-phase Epic (touches Phases 2–5)
 > **Created:** 2026-06-25
-> **Last Updated:** 2026-06-25
+> **Last Updated:** 2026-06-26
 
 ## Progress (develop)
 
@@ -20,8 +20,25 @@
   `Product.stock`; `variantId` removed across cart (repo/service/entities/DTO) and order
   (repo/service/types/entities); dashboard low-stock and mail order-confirmation de-varianted.
   All TDD specs updated. **Backend green: 394 tests, typecheck, lint, `nest build`.**
-- **Next:** TASK-142-D Orval regen → TASK-142-E storefront → TASK-142-F admin (+ group CRUD) →
-  TASK-142-G seed.
+- **TASK-142-D ✅** — Orval regenerated for both frontends; spec confirms `ProductEntity` has
+  `stock`/`attributes`, the detail envelope has `group`, and `AddToCartDto` has no `variantId`.
+  (Generated dirs are git-ignored — regenerated per environment.)
+- **TASK-142-E ✅** — Storefront moved to cross-position navigation: `ProductSiblingNavigator`
+  replaces `ProductVariantSelector`/`pick-default-variant`; `ProductDetailView` reads
+  price/stock/sku off the position; `variantId` dropped from ATC button + mobile bar; cart row,
+  checkout summary, order list, and JSON-LD builder de-varianted. Component tests added;
+  store-client typecheck/lint/tests green. (Unrelated pre-existing `/register` prerender break
+  noted, out of scope.)
+- **TASK-142-F ✅** — Backend `ProductGroupModule` (admin CRUD `/api/product-groups`) + write-path
+  DTO fields (`stock`/`attributes`/`groupId`/`positionOrder`); admin product form gains those
+  fields (key-value attributes editor, group selector); new `/admin/product-groups` list +
+  create/edit pages + sidebar nav; dashboard low-stock & order-detail de-varianted. Backend 394
+  tests green; admin typecheck/lint/test/build clean.
+- **TASK-142-G ✅** — Seed rewritten to positions + groups (13 groups / 32 positions incl. 2
+  standalone + 1 out-of-stock; idempotent via deterministic group ids). Sitemap already emits one
+  URL per active position (no change); per-position JSON-LD shipped in E. No final drop migration
+  needed — `product_variants` and the `variantId` columns were dropped in migration A.
+- **Status: complete.** All sub-tasks shipped to `develop`.
 
 ---
 
@@ -755,7 +772,7 @@ Run `npm run generate:api` after each controller/DTO change.
 - [ ] JSON-LD: each position PDP `<script type="application/ld+json">` contains the position's
       own `name`, `sku`, `price`, `availability`.
 - [ ] Final migration: `product_variants_bak` table dropped via `prisma migrate dev --name
-    drop_product_variants_bak`. `variantId` columns in CartItem / OrderItem dropped in same
+  drop_product_variants_bak`. `variantId` columns in CartItem / OrderItem dropped in same
       migration (they are null across all rows by this point).
 - [ ] `npm run test -w apps/store-api` green after final migration.
 - [ ] `tsc --noEmit` clean across all workspaces.
