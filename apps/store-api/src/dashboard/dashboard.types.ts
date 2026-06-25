@@ -48,16 +48,14 @@ export interface ProductMetrics {
   topProducts: TopProduct[];
 }
 
-export interface LowStockVariant {
-  variantId: string;
-  variantName: string;
+export interface LowStockProduct {
   productId: string;
   productName: string;
   stock: number;
 }
 
 export interface InventoryMetrics {
-  lowStockVariants: LowStockVariant[];
+  lowStockProducts: LowStockProduct[];
 }
 
 export interface DashboardSummary {
@@ -71,10 +69,10 @@ export interface DashboardSummary {
 /** Rolling window (in days) used for all time-series metrics. */
 export const DASHBOARD_WINDOW_DAYS = 30;
 
-/** Variants with stock at or below this threshold (but > 0) are "low stock". */
+/** Positions with stock at or below this threshold (but > 0) are "low stock". */
 export const LOW_STOCK_THRESHOLD = 5;
 
-/** Maximum number of low-stock variants returned. */
+/** Maximum number of low-stock positions returned. */
 export const LOW_STOCK_LIMIT = 10;
 
 /** Number of top-selling products returned. */

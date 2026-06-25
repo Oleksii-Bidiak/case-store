@@ -26,7 +26,7 @@ import { CreateProductDto, UpdateProductDto, ProductListQueryDto } from './dto';
 import { AdminGuard } from '../auth/guards';
 import {
   ProductEntity,
-  ProductVariantEntity,
+  ProductGroupEntity,
   ProductImageEntity,
   ProductCategoryEntity,
 } from './entities';
@@ -77,8 +77,8 @@ class ProductDetailResponseEnvelope {
   @ApiProperty({ type: ProductCategoryEntity })
   category!: ProductCategoryEntity;
 
-  @ApiProperty({ type: [ProductVariantEntity] })
-  variants!: ProductVariantEntity[];
+  @ApiProperty({ type: ProductGroupEntity, nullable: true })
+  group!: ProductGroupEntity | null;
 
   @ApiProperty({ type: [ProductImageEntity] })
   images!: ProductImageEntity[];
@@ -92,7 +92,7 @@ type ProductListResponse = { data: ProductEntity[]; meta: PaginationMeta };
 type ProductDetailResponse = {
   data: ProductEntity;
   category: ProductCategoryEntity;
-  variants: ProductVariantEntity[];
+  group: ProductGroupEntity | null;
   images: ProductImageEntity[];
 };
 
@@ -113,7 +113,7 @@ type ProductDetailResponse = {
 @ApiTags('Products')
 @ApiExtraModels(
   ProductEntity,
-  ProductVariantEntity,
+  ProductGroupEntity,
   ProductImageEntity,
   ProductCategoryEntity,
   ProductResponseEnvelope,

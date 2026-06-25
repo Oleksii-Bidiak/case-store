@@ -8,7 +8,7 @@ import {
 } from './product.repository';
 import {
   ProductEntity,
-  ProductVariantEntity,
+  ProductGroupEntity,
   ProductImageEntity,
   ProductCategoryEntity,
 } from './entities';
@@ -44,12 +44,12 @@ interface PaginatedProductsResponse {
 }
 
 /**
- * Product detail response with category, variants, and images.
+ * Product detail response with category, group (siblings + axes), and images.
  */
 interface ProductDetailResponse {
   data: ProductEntity;
   category: ProductCategoryEntity;
-  variants: ProductVariantEntity[];
+  group: ProductGroupEntity | null;
   images: ProductImageEntity[];
 }
 
@@ -134,7 +134,7 @@ export class ProductService {
     const response: ProductDetailResponse = {
       data: ProductEntity.fromPrisma(product),
       category: ProductCategoryEntity.fromPrisma(product.category),
-      variants: product.variants.map((v) => ProductVariantEntity.fromPrisma(v)),
+      group: product.group ? ProductGroupEntity.fromPrisma(product.group) : null,
       images: product.images.map((img) => ProductImageEntity.fromPrisma(img)),
     };
 

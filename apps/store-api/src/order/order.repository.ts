@@ -22,12 +22,10 @@ const ORDERS_INCLUDE = {
       id: true,
       orderId: true,
       productId: true,
-      variantId: true,
       quantity: true,
       price: true,
       createdAt: true,
       product: { select: { id: true, name: true, slug: true } },
-      variant: { select: { id: true, name: true } },
     },
   },
 } satisfies Prisma.OrderInclude;
@@ -78,18 +76,14 @@ export class OrderRepository {
   async createFromCart(params: CreateOrderParams): Promise<OrderWithItems> {
     const { userId, cartId, cartItems, shippingAddress, billingAddress, notes } = params;
 
-    // Snapshot each line's unit price (variant price if present, otherwise
-    // product price) into the order-item rows. These persisted rows — not the
-    // cart — are the order's source of truth from here on.
-    const itemData = cartItems.map((item) => {
-      const priceStr = item.variant ? item.variant.price.toString() : item.product.price.toString();
-      return {
-        productId: item.productId,
-        variantId: item.variantId,
-        quantity: item.quantity,
-        price: new Prisma.Decimal(priceStr),
-      };
-    });
+    // Snapshot each line's unit price (the position's price) into the order-item
+    // rows. These persisted rows — not the cart — are the order's source of
+    // truth from here on.
+    const itemData = cartItems.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      price: new Prisma.Decimal(item.product.price.toString()),
+    }));
 
     // Derive the subtotal from the persisted order-item rows themselves (single
     // source of truth) using integer-cents arithmetic to avoid float drift.
@@ -122,31 +116,29 @@ export class OrderRepository {
       // Empty the originating cart so it cannot be ordered twice.
       await tx.cartItem.deleteMany({ where: { cartId } });
 
-      // Authoritative inventory decrement for variant lines. The conditional
-      // `WHERE stock >= quantity` makes this safe under concurrency: if a
-      // racing order already consumed the stock, `count` is 0 and we throw,
-      // rolling back the whole transaction (no order, no cart clear, no
-      // partial decrement). Stock can therefore never go negative.
+      // Authoritative inventory decrement on each ordered position. The
+      // conditional `WHERE stock >= quantity` makes this safe under concurrency:
+      // if a racing order already consumed the stock, `count` is 0 and we throw,
+      // rolling back the whole transaction (no order, no cart clear, no partial
+      // decrement). Stock can therefore never go negative.
       for (const item of cartItems) {
-        if (item.variantId) {
-          const { count } = await tx.productVariant.updateMany({
-            where: { id: item.variantId, stock: { gte: item.quantity } },
-            data: { stock: { decrement: item.quantity } },
-          });
-          if (count === 0) {
-            throw new ConflictException(
-              `Insufficient stock for "${item.product.name}" — please review your cart`,
-            );
-          }
+        const { count } = await tx.product.updateMany({
+          where: { id: item.productId, stock: { gte: item.quantity } },
+          data: { stock: { decrement: item.quantity } },
+        });
+        if (count === 0) {
+          throw new ConflictException(
+            `Insufficient stock for "${item.product.name}" — please review your cart`,
+          );
         }
       }
 
       return created;
     });
 
-    // Stock for the ordered variants just changed — evict their detail caches
-    // (variant stock is rendered on detail pages) and all list pages. Eviction
-    // errors are swallowed inside CacheService, so they never affect the order.
+    // Stock for the ordered positions just changed — evict their detail caches
+    // and all list pages. Eviction errors are swallowed inside CacheService, so
+    // they never affect the order.
     await this.evictProductCaches((order as OrderWithItems).items);
 
     return order as OrderWithItems;
@@ -282,12 +274,10 @@ export class OrderRepository {
       });
 
       for (const item of order.items) {
-        if (item.variantId) {
-          await tx.productVariant.update({
-            where: { id: item.variantId },
-            data: { stock: { increment: item.quantity } },
-          });
-        }
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stock: { increment: item.quantity } },
+        });
       }
 
       return tx.order.update({
@@ -297,7 +287,7 @@ export class OrderRepository {
       });
     })) as OrderWithItems;
 
-    // Restock changed variant stock — evict the same caches as createFromCart.
+    // Restock changed position stock — evict the same caches as createFromCart.
     await this.evictProductCaches(updated.items);
 
     return updated;

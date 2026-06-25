@@ -30,7 +30,6 @@ const mockCartWithItems: CartWithItems = {
     {
       id: 'item-uuid-1',
       productId: 'product-uuid-1',
-      variantId: 'variant-uuid-1',
       quantity: 2,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -39,12 +38,6 @@ const mockCartWithItems: CartWithItems = {
         name: 'iPhone 15 Pro Case',
         price: { toString: () => '29.99' } as any,
         compareAtPrice: { toString: () => '39.99' } as any,
-        isActive: true,
-      },
-      variant: {
-        id: 'variant-uuid-1',
-        name: 'Black / iPhone 15 Pro',
-        price: { toString: () => '29.99' } as any,
         stock: 50,
         isActive: true,
       },
@@ -52,7 +45,6 @@ const mockCartWithItems: CartWithItems = {
     {
       id: 'item-uuid-2',
       productId: 'product-uuid-2',
-      variantId: null,
       quantity: 1,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -61,9 +53,9 @@ const mockCartWithItems: CartWithItems = {
         name: 'Screen Protector',
         price: { toString: () => '9.99' } as any,
         compareAtPrice: null,
+        stock: 30,
         isActive: true,
       },
-      variant: null,
     },
   ],
 };
@@ -187,21 +179,18 @@ describe('CartRepository', () => {
     const input: AddToCartInput = {
       cartId: 'cart-uuid-1',
       productId: 'product-uuid-1',
-      variantId: 'variant-uuid-1',
       quantity: 2,
     };
 
-    const makeTx = (existing: { id: string } | null, cart: unknown) => ({
+    const makeTx = (cart: unknown) => ({
       cart: { findUnique: jest.fn().mockResolvedValue(cart) },
       cartItem: {
-        findFirst: jest.fn().mockResolvedValue(existing),
-        create: jest.fn().mockResolvedValue({}),
-        update: jest.fn().mockResolvedValue({}),
+        upsert: jest.fn().mockResolvedValue({}),
       },
     });
 
     it('should use a transaction to ensure atomicity', async () => {
-      const txMock = makeTx(null, mockCartWithItems);
+      const txMock = makeTx(mockCartWithItems);
       prismaMock.$transaction.mockImplementation(async (cb: (tx: any) => Promise<any>) =>
         cb(txMock),
       );
@@ -211,70 +200,26 @@ describe('CartRepository', () => {
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     });
 
-    it('should create a new line then return the full cart when the item does not exist', async () => {
-      const txMock = makeTx(null, mockCartWithItems);
+    it('should upsert the line by (cartId, productId) then return the full cart', async () => {
+      const txMock = makeTx(mockCartWithItems);
       prismaMock.$transaction.mockImplementation(async (cb: (tx: any) => Promise<any>) =>
         cb(txMock),
       );
 
       const result = await repository.addItem(input);
 
-      // The line is resolved with a null-safe findFirst filter, not a unique where.
-      expect(txMock.cartItem.findFirst).toHaveBeenCalledWith({
-        where: { cartId: 'cart-uuid-1', productId: 'product-uuid-1', variantId: 'variant-uuid-1' },
-        select: { id: true },
-      });
-      expect(txMock.cartItem.create).toHaveBeenCalledWith({
-        data: {
-          cartId: 'cart-uuid-1',
-          productId: 'product-uuid-1',
-          variantId: 'variant-uuid-1',
-          quantity: 2,
-        },
+      // The line is upserted on the compound unique; create on miss, increment
+      // on hit — in a single call.
+      expect(txMock.cartItem.upsert).toHaveBeenCalledWith({
+        where: { cartId_productId: { cartId: 'cart-uuid-1', productId: 'product-uuid-1' } },
+        update: { quantity: { increment: 2 } },
+        create: { cartId: 'cart-uuid-1', productId: 'product-uuid-1', quantity: 2 },
       });
       expect(txMock.cart.findUnique).toHaveBeenCalledWith({
         where: { id: 'cart-uuid-1' },
         include: expect.objectContaining({ items: expect.any(Object) }),
       });
       expect(result).toEqual(mockCartWithItems);
-    });
-
-    it('should increment the existing line quantity when the item already exists', async () => {
-      const txMock = makeTx({ id: 'item-uuid-1' }, mockCartWithItems);
-      prismaMock.$transaction.mockImplementation(async (cb: (tx: any) => Promise<any>) =>
-        cb(txMock),
-      );
-
-      await repository.addItem(input);
-
-      expect(txMock.cartItem.update).toHaveBeenCalledWith({
-        where: { id: 'item-uuid-1' },
-        data: { quantity: { increment: 2 } },
-      });
-      expect(txMock.cartItem.create).not.toHaveBeenCalled();
-    });
-
-    it('should resolve a null variantId via a findFirst filter, not a null unique selector', async () => {
-      const inputNoVariant: AddToCartInput = {
-        cartId: 'cart-uuid-1',
-        productId: 'product-uuid-2',
-        variantId: undefined,
-        quantity: 1,
-      };
-      const txMock = makeTx(null, emptyCart);
-      prismaMock.$transaction.mockImplementation(async (cb: (tx: any) => Promise<any>) =>
-        cb(txMock),
-      );
-
-      await repository.addItem(inputNoVariant);
-
-      expect(txMock.cartItem.findFirst).toHaveBeenCalledWith({
-        where: { cartId: 'cart-uuid-1', productId: 'product-uuid-2', variantId: null },
-        select: { id: true },
-      });
-      expect(txMock.cartItem.create).toHaveBeenCalledWith({
-        data: { cartId: 'cart-uuid-1', productId: 'product-uuid-2', variantId: null, quantity: 1 },
-      });
     });
   });
 
@@ -334,53 +279,25 @@ describe('CartRepository', () => {
   // ─── findItem ────────────────────────────────────────────────────────────────
 
   describe('findItem', () => {
-    it('should find a cart item by cart, product, and variant ID', async () => {
+    it('should find a cart item by cart and product (position) ID', async () => {
       const existingItem = {
         id: 'item-uuid-1',
         cartId: 'cart-uuid-1',
         productId: 'product-uuid-1',
-        variantId: 'variant-uuid-1',
         quantity: 2,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
       prismaMock.cartItem.findUnique.mockResolvedValue(existingItem);
 
-      const result = await repository.findItem('cart-uuid-1', 'product-uuid-1', 'variant-uuid-1');
+      const result = await repository.findItem('cart-uuid-1', 'product-uuid-1');
 
       expect(result).toEqual(existingItem);
       expect(prismaMock.cartItem.findUnique).toHaveBeenCalledWith({
         where: {
-          cartId_productId_variantId: {
+          cartId_productId: {
             cartId: 'cart-uuid-1',
             productId: 'product-uuid-1',
-            variantId: 'variant-uuid-1',
-          },
-        },
-      });
-    });
-
-    it('should find a cart item without variant', async () => {
-      const existingItem = {
-        id: 'item-uuid-2',
-        cartId: 'cart-uuid-1',
-        productId: 'product-uuid-2',
-        variantId: null,
-        quantity: 1,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      prismaMock.cartItem.findUnique.mockResolvedValue(existingItem);
-
-      const result = await repository.findItem('cart-uuid-1', 'product-uuid-2');
-
-      expect(result).toEqual(existingItem);
-      expect(prismaMock.cartItem.findUnique).toHaveBeenCalledWith({
-        where: {
-          cartId_productId_variantId: {
-            cartId: 'cart-uuid-1',
-            productId: 'product-uuid-2',
-            variantId: null,
           },
         },
       });

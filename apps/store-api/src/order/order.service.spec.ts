@@ -41,7 +41,6 @@ const cartWithItems: CartWithItems = {
     {
       id: 'cart-item-1',
       productId: 'product-uuid-1',
-      variantId: 'variant-uuid-1',
       quantity: 2,
       createdAt: now,
       updatedAt: now,
@@ -50,12 +49,6 @@ const cartWithItems: CartWithItems = {
         name: 'iPhone 15 Pro Case',
         price: { toString: () => '29.99' } as never,
         compareAtPrice: null,
-        isActive: true,
-      },
-      variant: {
-        id: 'variant-uuid-1',
-        name: 'Black / iPhone 15 Pro',
-        price: { toString: () => '29.99' } as never,
         stock: 50,
         isActive: true,
       },
@@ -63,7 +56,6 @@ const cartWithItems: CartWithItems = {
     {
       id: 'cart-item-2',
       productId: 'product-uuid-2',
-      variantId: null,
       quantity: 1,
       createdAt: now,
       updatedAt: now,
@@ -72,9 +64,9 @@ const cartWithItems: CartWithItems = {
         name: 'Screen Protector',
         price: { toString: () => '9.99' } as never,
         compareAtPrice: null,
+        stock: 30,
         isActive: true,
       },
-      variant: null,
     },
   ],
 };
@@ -86,8 +78,8 @@ const cartWithLowStock: CartWithItems = {
   items: [
     {
       ...cartWithItems.items[0],
-      quantity: 5, // exceeds variant stock of 1 below
-      variant: { ...cartWithItems.items[0].variant!, stock: 1 },
+      quantity: 5, // exceeds the position stock of 1 below
+      product: { ...cartWithItems.items[0].product, stock: 1 },
     },
   ],
 };
@@ -114,12 +106,10 @@ const makeOrder = (overrides: Partial<OrderWithItems> = {}): OrderWithItems => (
       id: 'order-item-1',
       orderId: 'order-uuid-1',
       productId: 'product-uuid-1',
-      variantId: 'variant-uuid-1',
       quantity: 2,
       price: { toString: () => '29.99' },
       createdAt: now,
       product: { id: 'product-uuid-1', name: 'iPhone 15 Pro Case', slug: 'iphone-15-pro-case' },
-      variant: { id: 'variant-uuid-1', name: 'Black / iPhone 15 Pro' },
     },
   ],
   ...overrides,
@@ -231,7 +221,7 @@ describe('OrderService', () => {
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException when a variant has insufficient stock', async () => {
+    it('should throw BadRequestException when a position has insufficient stock', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithLowStock);
 
       await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(BadRequestException);

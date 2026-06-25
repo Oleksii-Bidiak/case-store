@@ -97,8 +97,20 @@ model Product {
   price           Decimal  @db.Decimal(10, 2)
   compareAtPrice  Decimal? @map("compare_at_price") @db.Decimal(10, 2)
   sku             String?  @unique
+  // Per-position stock (was ProductVariant.stock). DB CHECK (stock >= 0) is
+  // re-applied in the TASK-142 migration; Prisma has no CHECK support.
+  stock           Int      @default(0)
   categoryId      String   @map("category_id")
   category        Category @relation(fields: [categoryId], references: [id])
+  // Group membership (TASK-142): sibling positions of the same item (e.g.
+  // colours / pack sizes) share a group. Nullable — a standalone position has
+  // no group.
+  groupId         String?       @map("group_id")
+  group           ProductGroup? @relation(fields: [groupId], references: [id])
+  // Structured attribute values for this position within its group, keyed by
+  // the group's axis names, e.g. {"color": "blue", "pack": "single"}.
+  attributes      Json?         @default("{}")
+  positionOrder   Int           @default(0) @map("position_order")
   isActive        Boolean  @default(true) @map("is_active")
   // Audit tombstone (TASK-104). NULL = live; non-null = soft-deleted (hidden
   // from all reads). On soft-delete the unique `slug`/`sku` are mangled. The row
@@ -107,7 +119,6 @@ model Product {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
-  variants        ProductVariant[]
   images          ProductImage[]
   reviews         Review[]
   orderItems      OrderItem[]
@@ -117,28 +128,38 @@ model Product {
   @@index([categoryId])
   @@index([isActive])
   @@index([deletedAt])
+  @@index([groupId])
   @@map("products")
 }
 
-model ProductVariant {
+// Groups sibling product positions (TASK-142). A group is the abstract item
+// (e.g. "Tempered Glass for iPhone 15"); each buyable position (Single Pack,
+// Double Pack, a colour, …) is a Product row pointing at this group.
+model ProductGroup {
   id        String   @id @default(uuid())
-  productId String   @map("product_id")
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  name      String   // e.g., "Black / iPhone 15 Pro"
-  sku       String?  @unique
-  price     Decimal  @db.Decimal(10, 2)
-  stock     Int      @default(0) // DB CHECK (stock >= 0) added in migration 20260612120000 (not modelled in schema — Prisma has no CHECK support)
-  attributes Json?   // e.g., {"color": "black", "model": "iPhone 15 Pro"}
+  name      String
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  orderItems  OrderItem[]
-  cartItems   CartItem[]
+  positions Product[]
+  axes      ProductGroupAxis[]
 
-  @@index([productId])
-  @@index([sku])
-  @@map("product_variants")
+  @@map("product_groups")
+}
+
+// Ordered attribute axis names for a group (e.g. "color", "pack", "storage").
+// The PDP renders one selector per axis and resolves the sibling position whose
+// attributes match the chosen values.
+model ProductGroupAxis {
+  id        String       @id @default(uuid())
+  groupId   String       @map("group_id")
+  group     ProductGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name      String
+  sortOrder Int          @default(0) @map("sort_order")
+
+  @@index([groupId])
+  @@map("product_group_axes")
 }
 
 model ProductImage {
@@ -175,13 +196,11 @@ model CartItem {
   cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
   productId String   @map("product_id")
   product   Product  @relation(fields: [productId], references: [id])
-  variantId String?  @map("variant_id")  // Optional - some products have no variants
-  variant   ProductVariant? @relation(fields: [variantId], references: [id])
   quantity  Int      @default(1)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@unique([cartId, productId, variantId])
+  @@unique([cartId, productId])
   @@index([cartId])
   @@map("cart_items")
 }
@@ -221,8 +240,6 @@ model OrderItem {
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productId String   @map("product_id")
   product   Product  @relation(fields: [productId], references: [id])
-  variantId String?  @map("variant_id")
-  variant   ProductVariant? @relation(fields: [variantId], references: [id])
   quantity  Int
   price     Decimal  @db.Decimal(10, 2) // Price at time of purchase
   createdAt DateTime @default(now()) @map("created_at")

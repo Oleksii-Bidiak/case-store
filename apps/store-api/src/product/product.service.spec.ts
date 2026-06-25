@@ -23,7 +23,11 @@ const mockProduct = {
   price: { toString: () => '29.99' },
   compareAtPrice: { toString: () => '39.99' },
   sku: 'IP15-PRO-CASE-CLR',
+  stock: 150,
   categoryId: 'category-uuid-1',
+  groupId: null,
+  attributes: {},
+  positionOrder: 0,
   isActive: true,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -179,7 +183,7 @@ describe('ProductService', () => {
       const productWithRelations = {
         ...mockProduct,
         category: { id: 'cat-1', name: 'Phone Cases', slug: 'phone-cases' },
-        variants: [],
+        group: null,
         images: [],
       };
       productRepositoryMock.findBySlugWithRelations.mockResolvedValue(productWithRelations);
@@ -190,7 +194,7 @@ describe('ProductService', () => {
       expect(result.data).toBeInstanceOf(ProductEntity);
       expect(result.data.slug).toBe('iphone-15-pro-case-clear-magsafe');
       expect(result).toHaveProperty('category');
-      expect(result).toHaveProperty('variants');
+      expect(result).toHaveProperty('group');
       expect(result).toHaveProperty('images');
       expect(productRepositoryMock.findBySlugWithRelations).toHaveBeenCalledWith(
         'iphone-15-pro-case-clear-magsafe',
@@ -494,12 +498,12 @@ describe('ProductService', () => {
     const productWithRelations = {
       ...mockProduct,
       category: { id: 'cat-1', name: 'Phone Cases', slug: 'phone-cases' },
-      variants: [],
+      group: null,
       images: [],
     };
 
     it('returns the cached value on HIT without querying the repository', async () => {
-      const cached = { data: {}, category: {}, variants: [], images: [] };
+      const cached = { data: {}, category: {}, group: null, images: [] };
       cacheServiceMock.get.mockResolvedValue(cached);
 
       const result = await service.findBySlug(slug);

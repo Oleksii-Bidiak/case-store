@@ -92,17 +92,11 @@ export class ProductMetricsDto {
   topProducts!: TopProductDto[];
 }
 
-export class LowStockVariantDto {
-  @ApiProperty({ type: String, description: 'Variant UUID' })
-  variantId!: string;
-
-  @ApiProperty({ type: String, description: 'Variant name', example: 'Black / iPhone 15 Pro' })
-  variantName!: string;
-
-  @ApiProperty({ type: String, description: 'Parent product UUID' })
+export class LowStockProductDto {
+  @ApiProperty({ type: String, description: 'Product (position) UUID' })
   productId!: string;
 
-  @ApiProperty({ type: String, description: 'Parent product name', example: 'Silicone Case' })
+  @ApiProperty({ type: String, description: 'Product name', example: 'Silicone Case — Black' })
   productName!: string;
 
   @ApiProperty({ type: Number, description: 'Remaining stock units', example: 3 })
@@ -111,10 +105,10 @@ export class LowStockVariantDto {
 
 export class InventoryMetricsDto {
   @ApiProperty({
-    type: [LowStockVariantDto],
-    description: 'Variants at or below the low-stock threshold',
+    type: [LowStockProductDto],
+    description: 'Positions at or below the low-stock threshold',
   })
-  lowStockVariants!: LowStockVariantDto[];
+  lowStockProducts!: LowStockProductDto[];
 }
 
 export class DashboardSummaryResponse {

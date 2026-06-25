@@ -23,18 +23,16 @@ export interface ShippingAddressData {
 
 /**
  * A single order line as returned by repository queries, including the
- * snapshotted product/variant reference details.
+ * snapshotted product (position) reference details.
  */
 export interface OrderItemRow {
   id: string;
   orderId: string;
   productId: string;
-  variantId: string | null;
   quantity: number;
   price: { toString(): string }; // Prisma Decimal
   createdAt: Date;
   product: { id: string; name: string; slug: string };
-  variant: { id: string; name: string } | null;
 }
 
 /**

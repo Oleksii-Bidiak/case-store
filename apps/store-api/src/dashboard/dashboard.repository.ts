@@ -8,7 +8,7 @@ import {
   TOP_PRODUCTS_LIMIT,
   type DailyDataPoint,
   type DashboardSummary,
-  type LowStockVariant,
+  type LowStockProduct,
   type OrderStatusCount,
   type TopProduct,
 } from './dashboard.types';
@@ -65,7 +65,7 @@ export class DashboardRepository {
       totalProducts,
       activeProducts,
       topProducts,
-      lowStockVariants,
+      lowStockProducts,
     ] = await Promise.all([
       this.getTotalRevenue(),
       this.getRevenueSince(windowStart),
@@ -78,7 +78,7 @@ export class DashboardRepository {
       this.prisma.product.count(),
       this.prisma.product.count({ where: { isActive: true } }),
       this.getTopProducts(TOP_PRODUCTS_LIMIT),
-      this.getLowStockVariants(LOW_STOCK_THRESHOLD, LOW_STOCK_LIMIT),
+      this.getLowStockProducts(LOW_STOCK_THRESHOLD, LOW_STOCK_LIMIT),
     ]);
 
     return {
@@ -86,7 +86,7 @@ export class DashboardRepository {
       orders: { totalOrders, ordersByStatus, ordersByDay },
       users: { totalUsers, newUsersByDay },
       products: { totalProducts, activeProducts, topProducts },
-      inventory: { lowStockVariants },
+      inventory: { lowStockProducts },
     };
   }
 
@@ -229,20 +229,18 @@ export class DashboardRepository {
     }));
   }
 
-  /** Active variants with stock in `(0, threshold]`, lowest first. */
-  private async getLowStockVariants(threshold: number, limit: number): Promise<LowStockVariant[]> {
-    const variants = await this.prisma.productVariant.findMany({
-      where: { stock: { gt: 0, lte: threshold }, isActive: true },
+  /** Active positions with stock in `(0, threshold]`, lowest first. */
+  private async getLowStockProducts(threshold: number, limit: number): Promise<LowStockProduct[]> {
+    const products = await this.prisma.product.findMany({
+      where: { stock: { gt: 0, lte: threshold }, isActive: true, deletedAt: null },
       orderBy: { stock: 'asc' },
       take: limit,
-      include: { product: { select: { id: true, name: true } } },
+      select: { id: true, name: true, stock: true },
     });
-    return variants.map((variant) => ({
-      variantId: variant.id,
-      variantName: variant.name,
-      productId: variant.product.id,
-      productName: variant.product.name,
-      stock: variant.stock,
+    return products.map((product) => ({
+      productId: product.id,
+      productName: product.name,
+      stock: product.stock,
     }));
   }
 

@@ -10,8 +10,8 @@ import { ApiProperty } from '@nestjs/swagger';
  * Decimal fields (price, compareAtPrice, lineTotal) are converted
  * to strings to avoid floating-point precision issues.
  *
- * Price source: When a variant exists, the variant price is used.
- * Otherwise, the product price is used.
+ * Each cart line references a product position (TASK-142); price and stock come
+ * from the product itself.
  */
 export class CartItemEntity {
   @ApiProperty({
@@ -21,17 +21,10 @@ export class CartItemEntity {
   id!: string;
 
   @ApiProperty({
-    description: 'Product ID this item refers to',
+    description: 'Product (position) ID this item refers to',
     example: '550e8400-e29b-41d4-a716-446655440001',
   })
   productId!: string;
-
-  @ApiProperty({
-    description: 'Product variant ID (null if no variant selected)',
-    example: '550e8400-e29b-41d4-a716-446655440002',
-    required: false,
-  })
-  variantId!: string | null;
 
   @ApiProperty({
     description: 'Quantity of this item in the cart',
@@ -46,7 +39,7 @@ export class CartItemEntity {
   productName!: string;
 
   @ApiProperty({
-    description: 'Unit price as string (variant price if variant exists, otherwise product price)',
+    description: 'Unit price as string',
     example: '29.99',
   })
   price!: string;
@@ -59,20 +52,13 @@ export class CartItemEntity {
   compareAtPrice!: string | null;
 
   @ApiProperty({
-    description: 'Variant name if a variant is selected',
-    example: 'Black / iPhone 15 Pro',
-    required: false,
-  })
-  variantName!: string | null;
-
-  @ApiProperty({
-    description: 'Available stock for this item (variant stock or product-level)',
+    description: 'Available stock for this position',
     example: 50,
   })
   stock!: number;
 
   @ApiProperty({
-    description: 'Whether the product/variant is active',
+    description: 'Whether the product position is active',
     example: true,
   })
   isActive!: boolean;
@@ -98,7 +84,6 @@ export class CartItemEntity {
   static fromPrisma(item: {
     id: string;
     productId: string;
-    variantId: string | null;
     quantity: number;
     createdAt: Date;
     updatedAt: Date;
@@ -107,35 +92,24 @@ export class CartItemEntity {
       name: string;
       price: { toString(): string };
       compareAtPrice: { toString(): string } | null;
-      isActive: boolean;
-    };
-    variant: {
-      id: string;
-      name: string;
-      price: { toString(): string };
       stock: number;
       isActive: boolean;
-    } | null;
+    };
   }): CartItemEntity {
     const entity = new CartItemEntity();
     entity.id = item.id;
     entity.productId = item.productId;
-    entity.variantId = item.variantId;
     entity.quantity = item.quantity;
     entity.productName = item.product.name;
     entity.compareAtPrice = item.product.compareAtPrice
       ? item.product.compareAtPrice.toString()
       : null;
 
-    // Use variant price if variant exists, otherwise product price
-    const unitPriceStr = item.variant
-      ? item.variant.price.toString()
-      : item.product.price.toString();
+    const unitPriceStr = item.product.price.toString();
 
     entity.price = unitPriceStr;
-    entity.variantName = item.variant ? item.variant.name : null;
-    entity.stock = item.variant ? item.variant.stock : 0; // No variant = no stock tracking at product level
-    entity.isActive = item.variant ? item.variant.isActive : item.product.isActive;
+    entity.stock = item.product.stock;
+    entity.isActive = item.product.isActive;
 
     // Calculate line total using cents arithmetic to avoid float errors
     const priceCents = Math.round(parseFloat(unitPriceStr) * 100);

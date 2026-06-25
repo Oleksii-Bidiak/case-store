@@ -17,32 +17,16 @@ export class OrderItemEntity {
   id!: string;
 
   @ApiProperty({
-    description: 'Product ID this line refers to',
+    description: 'Product (position) ID this line refers to',
     example: '550e8400-e29b-41d4-a716-446655440001',
   })
   productId!: string;
-
-  @ApiProperty({
-    description: 'Product variant ID (null if no variant)',
-    type: String,
-    example: '550e8400-e29b-41d4-a716-446655440002',
-    nullable: true,
-  })
-  variantId!: string | null;
 
   @ApiProperty({
     description: 'Product name at the time of purchase',
     example: 'iPhone 15 Pro Case — Clear MagSafe',
   })
   productName!: string;
-
-  @ApiProperty({
-    description: 'Variant name at the time of purchase (null if no variant)',
-    type: String,
-    example: 'Black / iPhone 15 Pro',
-    nullable: true,
-  })
-  variantName!: string | null;
 
   @ApiProperty({ description: 'Quantity ordered', example: 2 })
   quantity!: number;
@@ -70,9 +54,7 @@ export class OrderItemEntity {
     const entity = new OrderItemEntity();
     entity.id = row.id;
     entity.productId = row.productId;
-    entity.variantId = row.variantId;
     entity.productName = row.product.name;
-    entity.variantName = row.variant ? row.variant.name : null;
     entity.quantity = row.quantity;
 
     const priceStr = row.price.toString();

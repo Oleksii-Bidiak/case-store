@@ -1,32 +1,21 @@
-import { IsUUID, IsInt, IsOptional, Min, Max } from 'class-validator';
+import { IsUUID, IsInt, Min, Max } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 /**
  * DTO for adding an item to the cart.
  *
- * productId is required. variantId is optional — some products
- * have no variants. quantity must be between 1 and 99.
- *
- * If the same product+variant combination already exists in the cart,
- * the service will increment the quantity instead of creating a duplicate.
+ * productId identifies a buyable product position (TASK-142). quantity must be
+ * between 1 and 99. If the same position already exists in the cart, the service
+ * increments the quantity instead of creating a duplicate.
  */
 export class AddToCartDto {
   @ApiProperty({
-    description: 'Product ID to add to cart',
+    description: 'Product (position) ID to add to cart',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
   @IsUUID(4, { message: 'Product ID must be a valid UUID' })
   productId!: string;
-
-  @ApiProperty({
-    description: 'Product variant ID (optional — some products have no variants)',
-    example: '550e8400-e29b-41d4-a716-446655440001',
-    required: false,
-  })
-  @IsOptional()
-  @IsUUID(4, { message: 'Variant ID must be a valid UUID' })
-  variantId?: string;
 
   @ApiProperty({
     description: 'Quantity to add (1-99)',

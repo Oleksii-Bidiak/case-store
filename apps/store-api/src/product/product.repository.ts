@@ -27,7 +27,11 @@ export interface CreateProductInput {
   price: number;
   compareAtPrice?: number | null;
   sku?: string | null;
+  stock?: number;
   categoryId: string;
+  groupId?: string | null;
+  attributes?: Record<string, string> | null;
+  positionOrder?: number;
   isActive?: boolean;
 }
 
@@ -42,7 +46,11 @@ export interface UpdateProductInput {
   price?: number;
   compareAtPrice?: number | null;
   sku?: string | null;
+  stock?: number;
   categoryId?: string;
+  groupId?: string | null;
+  attributes?: Record<string, string> | null;
+  positionOrder?: number;
   isActive?: boolean;
 }
 
@@ -76,22 +84,40 @@ export interface PaginatedProductsResult {
 }
 
 /**
- * Product with related category, variants, and images.
+ * A sibling position in the same group (TASK-142): another buyable Product row
+ * the PDP can navigate to when the shopper changes an attribute axis.
+ */
+export interface SiblingPosition {
+  id: string;
+  slug: string;
+  name: string;
+  price: { toString(): string };
+  attributes: unknown;
+  stock: number;
+  isActive: boolean;
+  positionOrder: number;
+}
+
+/**
+ * The group a position belongs to, with its attribute axes and sibling
+ * positions, used to render the PDP's attribute selectors and cross-navigation.
+ */
+export interface ProductGroupRelation {
+  id: string;
+  name: string;
+  axes: Array<{ name: string; sortOrder: number }>;
+  positions: SiblingPosition[];
+}
+
+/**
+ * Product with related category, group (siblings + axes), and images.
  * Used for the product detail endpoint.
  */
 export interface ProductWithRelations {
   product: Product &
     ProductRating & {
       category: { id: string; name: string; slug: string };
-      variants: Array<{
-        id: string;
-        name: string;
-        sku: string | null;
-        price: { toString(): string };
-        stock: number;
-        attributes: unknown;
-        isActive: boolean;
-      }>;
+      group: ProductGroupRelation | null;
       images: Array<{
         id: string;
         url: string;
@@ -160,8 +186,11 @@ export class ProductRepository {
   }
 
   /**
-   * Find a product by slug with its category, variants, and images.
-   * Used for the public product detail endpoint. Excludes soft-deleted rows.
+   * Find a product position by slug with its category, group (sibling positions
+   * + attribute axes), and images. Used for the public product detail endpoint.
+   * Excludes soft-deleted rows. Sibling positions are the other active,
+   * non-deleted positions in the same group, ordered by `positionOrder`
+   * (TASK-142).
    */
   async findBySlugWithRelations(slug: string): Promise<ProductWithRelations['product'] | null> {
     const product = await this.prisma.product.findFirst({
@@ -170,17 +199,26 @@ export class ProductRepository {
         category: {
           select: { id: true, name: true, slug: true },
         },
-        variants: {
-          where: { isActive: true },
-          orderBy: { name: 'asc' },
-          select: {
-            id: true,
-            name: true,
-            sku: true,
-            price: true,
-            stock: true,
-            attributes: true,
-            isActive: true,
+        group: {
+          include: {
+            axes: {
+              orderBy: { sortOrder: 'asc' },
+              select: { name: true, sortOrder: true },
+            },
+            positions: {
+              where: { isActive: true, deletedAt: null },
+              orderBy: { positionOrder: 'asc' },
+              select: {
+                id: true,
+                slug: true,
+                name: true,
+                price: true,
+                attributes: true,
+                stock: true,
+                isActive: true,
+                positionOrder: true,
+              },
+            },
           },
         },
         images: {
@@ -202,8 +240,12 @@ export class ProductRepository {
 
     const ratings = await this.getRatingsByProductId([product.id]);
     const rating = ratings.get(product.id);
+    const { group, ...rest } = product;
     return {
-      ...product,
+      ...rest,
+      group: group
+        ? { id: group.id, name: group.name, axes: group.axes, positions: group.positions }
+        : null,
       ratingAverage: rating?.ratingAverage ?? null,
       ratingCount: rating?.ratingCount ?? 0,
     };
@@ -346,7 +388,11 @@ export class ProductRepository {
         price: data.price,
         compareAtPrice: data.compareAtPrice ?? null,
         sku: data.sku ?? null,
+        stock: data.stock ?? 0,
         categoryId: data.categoryId,
+        groupId: data.groupId ?? null,
+        attributes: (data.attributes ?? {}) as Prisma.InputJsonValue,
+        positionOrder: data.positionOrder ?? 0,
         isActive: data.isActive ?? true,
       },
     });
@@ -358,9 +404,15 @@ export class ProductRepository {
    * Returns the updated product record.
    */
   update(id: string, data: UpdateProductInput): Promise<Product> {
+    const { attributes, ...rest } = data;
     return this.prisma.product.update({
       where: { id },
-      data,
+      data: {
+        ...rest,
+        ...(attributes !== undefined
+          ? { attributes: (attributes ?? {}) as Prisma.InputJsonValue }
+          : {}),
+      },
     });
   }
 

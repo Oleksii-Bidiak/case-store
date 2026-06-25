@@ -25,7 +25,6 @@ const mockCartWithVariantItem: CartWithItems = {
     {
       id: 'item-uuid-1',
       productId: 'product-uuid-1',
-      variantId: 'variant-uuid-1',
       quantity: 2,
       createdAt: now,
       updatedAt: now,
@@ -34,12 +33,6 @@ const mockCartWithVariantItem: CartWithItems = {
         name: 'iPhone 15 Pro Case',
         price: { toString: () => '29.99' } as any,
         compareAtPrice: { toString: () => '39.99' } as any,
-        isActive: true,
-      },
-      variant: {
-        id: 'variant-uuid-1',
-        name: 'Black / iPhone 15 Pro',
-        price: { toString: () => '29.99' } as any,
         stock: 50,
         isActive: true,
       },
@@ -57,7 +50,6 @@ const mockCartWithNoVariantItem: CartWithItems = {
     {
       id: 'item-uuid-2',
       productId: 'product-uuid-2',
-      variantId: null,
       quantity: 1,
       createdAt: now,
       updatedAt: now,
@@ -66,9 +58,9 @@ const mockCartWithNoVariantItem: CartWithItems = {
         name: 'Screen Protector',
         price: { toString: () => '9.99' } as any,
         compareAtPrice: null,
+        stock: 30,
         isActive: true,
       },
-      variant: null,
     },
   ],
 };
@@ -83,7 +75,6 @@ const mockCartWithMultipleItems: CartWithItems = {
     {
       id: 'item-uuid-1',
       productId: 'product-uuid-1',
-      variantId: 'variant-uuid-1',
       quantity: 2,
       createdAt: now,
       updatedAt: now,
@@ -92,12 +83,6 @@ const mockCartWithMultipleItems: CartWithItems = {
         name: 'iPhone 15 Pro Case',
         price: { toString: () => '29.99' } as any,
         compareAtPrice: { toString: () => '39.99' } as any,
-        isActive: true,
-      },
-      variant: {
-        id: 'variant-uuid-1',
-        name: 'Black / iPhone 15 Pro',
-        price: { toString: () => '29.99' } as any,
         stock: 50,
         isActive: true,
       },
@@ -105,7 +90,6 @@ const mockCartWithMultipleItems: CartWithItems = {
     {
       id: 'item-uuid-2',
       productId: 'product-uuid-2',
-      variantId: null,
       quantity: 1,
       createdAt: now,
       updatedAt: now,
@@ -114,9 +98,9 @@ const mockCartWithMultipleItems: CartWithItems = {
         name: 'Screen Protector',
         price: { toString: () => '9.99' } as any,
         compareAtPrice: null,
+        stock: 30,
         isActive: true,
       },
-      variant: null,
     },
   ],
 };
@@ -140,21 +124,14 @@ const mockCartWithLowStockItem: CartWithItems = {
     {
       id: 'item-uuid-3',
       productId: 'product-uuid-3',
-      variantId: 'variant-uuid-3',
       quantity: 1,
       createdAt: now,
       updatedAt: now,
       product: {
         id: 'product-uuid-3',
-        name: 'Limited Edition Case',
+        name: 'Limited Edition Case — Gold',
         price: { toString: () => '49.99' } as any,
         compareAtPrice: null,
-        isActive: true,
-      },
-      variant: {
-        id: 'variant-uuid-3',
-        name: 'Gold / iPhone 15 Pro',
-        price: { toString: () => '49.99' } as any,
         stock: 2,
         isActive: true,
       },
@@ -172,7 +149,6 @@ const mockCartWithInactiveProduct: CartWithItems = {
     {
       id: 'item-uuid-4',
       productId: 'product-uuid-4',
-      variantId: null,
       quantity: 1,
       createdAt: now,
       updatedAt: now,
@@ -181,9 +157,9 @@ const mockCartWithInactiveProduct: CartWithItems = {
         name: 'Discontinued Case',
         price: { toString: () => '19.99' } as any,
         compareAtPrice: null,
+        stock: 10,
         isActive: false,
       },
-      variant: null,
     },
   ],
 };
@@ -199,7 +175,6 @@ const mockGuestCart: CartWithItems = {
     {
       id: 'guest-item-1',
       productId: 'product-uuid-1',
-      variantId: 'variant-uuid-1',
       quantity: 2,
       createdAt: now,
       updatedAt: now,
@@ -208,12 +183,6 @@ const mockGuestCart: CartWithItems = {
         name: 'iPhone 15 Pro Case',
         price: { toString: () => '29.99' } as any,
         compareAtPrice: null,
-        isActive: true,
-      },
-      variant: {
-        id: 'variant-uuid-1',
-        name: 'Black / iPhone 15 Pro',
-        price: { toString: () => '29.99' } as any,
         stock: 50,
         isActive: true,
       },
@@ -221,7 +190,6 @@ const mockGuestCart: CartWithItems = {
     {
       id: 'guest-item-2',
       productId: 'product-uuid-2',
-      variantId: null,
       quantity: 1,
       createdAt: now,
       updatedAt: now,
@@ -230,9 +198,9 @@ const mockGuestCart: CartWithItems = {
         name: 'Screen Protector',
         price: { toString: () => '9.99' } as any,
         compareAtPrice: null,
+        stock: 30,
         isActive: true,
       },
-      variant: null,
     },
   ],
 };
@@ -342,7 +310,6 @@ describe('CartService', () => {
   describe('addToCart', () => {
     const addDto: AddToCartDto = {
       productId: 'product-uuid-1',
-      variantId: 'variant-uuid-1',
       quantity: 2,
     };
 
@@ -359,7 +326,6 @@ describe('CartService', () => {
       expect(cartRepositoryMock.addItem).toHaveBeenCalledWith({
         cartId: 'cart-uuid-1',
         productId: 'product-uuid-1',
-        variantId: 'variant-uuid-1',
         quantity: 2,
       });
     });
@@ -384,7 +350,6 @@ describe('CartService', () => {
           {
             id: 'item-oos',
             productId: 'product-oos',
-            variantId: 'variant-oos',
             quantity: 1,
             createdAt: now,
             updatedAt: now,
@@ -393,12 +358,6 @@ describe('CartService', () => {
               name: 'Out of Stock Case',
               price: { toString: () => '19.99' } as any,
               compareAtPrice: null,
-              isActive: true,
-            },
-            variant: {
-              id: 'variant-oos',
-              name: 'Red / iPhone 15',
-              price: { toString: () => '19.99' } as any,
               stock: 0,
               isActive: true,
             },
@@ -410,7 +369,6 @@ describe('CartService', () => {
       await expect(
         service.addToCart(userIdentity, {
           productId: 'product-oos',
-          variantId: 'variant-oos',
           quantity: 1,
         }),
       ).rejects.toThrow(BadRequestException);
@@ -432,7 +390,6 @@ describe('CartService', () => {
       await expect(
         service.addToCart(userIdentity, {
           productId: 'product-uuid-3',
-          variantId: 'variant-uuid-3',
           quantity: 5,
         }),
       ).rejects.toThrow(BadRequestException);
@@ -454,7 +411,6 @@ describe('CartService', () => {
       await expect(
         service.addToCart(userIdentity, {
           productId: 'product-uuid-1',
-          variantId: 'variant-uuid-1',
           quantity: 100,
         }),
       ).rejects.toThrow(BadRequestException);
@@ -472,20 +428,20 @@ describe('CartService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should add item without variant (variantId undefined)', async () => {
+    it('should add a position to the cart', async () => {
       cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
       cartRepositoryMock.addItem.mockResolvedValue(mockCartWithNoVariantItem);
 
-      const dtoNoVariant: AddToCartDto = {
+      const dto: AddToCartDto = {
         productId: 'product-uuid-2',
         quantity: 1,
       };
 
-      const result = await service.addToCart(userIdentity, dtoNoVariant);
+      const result = await service.addToCart(userIdentity, dto);
 
-      expect(result.items[0].variantId).toBeNull();
+      expect(result.items[0].productId).toBe('product-uuid-2');
       expect(cartRepositoryMock.addItem).toHaveBeenCalledWith(
-        expect.objectContaining({ variantId: undefined }),
+        expect.objectContaining({ productId: 'product-uuid-2' }),
       );
     });
   });
@@ -695,8 +651,8 @@ describe('CartService', () => {
         userCartId: 'user-cart-raced',
         guestCartId: 'guest-cart-1',
         lines: [
-          { productId: 'product-uuid-1', variantId: 'variant-uuid-1', quantity: 2 },
-          { productId: 'product-uuid-2', variantId: null, quantity: 1 },
+          { productId: 'product-uuid-1', quantity: 2 },
+          { productId: 'product-uuid-2', quantity: 1 },
         ],
       });
     });
@@ -718,17 +674,23 @@ describe('CartService', () => {
         userCartId: 'user-cart-1',
         guestCartId: 'guest-cart-1',
         lines: [
-          { productId: 'product-uuid-1', variantId: 'variant-uuid-1', quantity: 2 },
-          { productId: 'product-uuid-2', variantId: null, quantity: 1 },
+          { productId: 'product-uuid-1', quantity: 2 },
+          { productId: 'product-uuid-2', quantity: 1 },
         ],
       });
     });
 
     it('should sum overlapping quantities and clamp to MAX_QUANTITY (99)', async () => {
-      // Guest has the no-variant product (qty 1); user already has 99 of it.
+      // Guest has the position (qty 15); user already has 90. Stock is ample so
+      // the MAX_QUANTITY clamp (not stock) is what bites.
+      const amplyStocked = {
+        ...mockGuestCart.items[1],
+        quantity: 15,
+        product: { ...mockGuestCart.items[1].product, stock: 200 },
+      };
       cartRepositoryMock.findByToken.mockResolvedValue({
         ...mockGuestCart,
-        items: [{ ...mockGuestCart.items[1], quantity: 15 }], // product-uuid-2, no variant
+        items: [amplyStocked],
       });
       cartRepositoryMock.findByUserId.mockResolvedValue({
         ...mockEmptyCart,
@@ -748,7 +710,7 @@ describe('CartService', () => {
       expect(cartRepositoryMock.mergeGuestCartIntoUser).toHaveBeenCalledWith({
         userCartId: 'user-cart-1',
         guestCartId: 'guest-cart-1',
-        lines: [{ productId: 'product-uuid-2', variantId: null, quantity: 99 }],
+        lines: [{ productId: 'product-uuid-2', quantity: 99 }],
       });
     });
 
@@ -781,7 +743,7 @@ describe('CartService', () => {
       expect(cartRepositoryMock.mergeGuestCartIntoUser).toHaveBeenCalledWith({
         userCartId: 'user-cart-1',
         guestCartId: 'guest-cart-1',
-        lines: [{ productId: 'product-uuid-3', variantId: 'variant-uuid-3', quantity: 2 }],
+        lines: [{ productId: 'product-uuid-3', quantity: 2 }],
       });
     });
 
@@ -789,16 +751,16 @@ describe('CartService', () => {
       cartRepositoryMock.findByToken.mockResolvedValue({
         ...mockGuestCart,
         items: [
-          // Overlapping no-variant item: guest 1 + user 2 → 3
+          // Overlapping item: guest 1 + user 2 → 3
           { ...mockGuestCart.items[1], quantity: 1 },
-          // Brand-new variant item (stock 50): copied as-is
+          // Brand-new position (stock 50): copied as-is
           { ...mockCartWithVariantItem.items[0], id: 'guest-new', quantity: 2 },
-          // Out-of-stock variant item: clamps to 0 and must be dropped entirely
+          // Out-of-stock position: clamps to 0 and must be dropped entirely
           {
             ...mockCartWithLowStockItem.items[0],
             id: 'guest-oos',
             quantity: 3,
-            variant: { ...mockCartWithLowStockItem.items[0].variant!, stock: 0 },
+            product: { ...mockCartWithLowStockItem.items[0].product, stock: 0 },
           },
         ],
       });
@@ -815,8 +777,8 @@ describe('CartService', () => {
         userCartId: 'user-cart-1',
         guestCartId: 'guest-cart-1',
         lines: [
-          { productId: 'product-uuid-2', variantId: null, quantity: 3 },
-          { productId: 'product-uuid-1', variantId: 'variant-uuid-1', quantity: 2 },
+          { productId: 'product-uuid-2', quantity: 3 },
+          { productId: 'product-uuid-1', quantity: 2 },
         ],
       });
     });
@@ -836,7 +798,6 @@ describe('CartService', () => {
           {
             id: 'item-whole',
             productId: 'product-whole',
-            variantId: null,
             quantity: 3,
             createdAt: now,
             updatedAt: now,
@@ -845,9 +806,9 @@ describe('CartService', () => {
               name: 'Cable',
               price: { toString: () => '10.00' } as any,
               compareAtPrice: null,
+              stock: 100,
               isActive: true,
             },
-            variant: null,
           },
         ],
       };
@@ -869,8 +830,8 @@ describe('CartService', () => {
       expect(result.totals.uniqueItems).toBe(1);
     });
 
-    it('should handle variant price different from product price', async () => {
-      const cartWithDifferentVariantPrice: CartWithItems = {
+    it('should use the position price for line totals', async () => {
+      const cartWithPosition: CartWithItems = {
         id: 'cart-uuid-1',
         userId: 'user-uuid-1',
         token: null,
@@ -880,28 +841,21 @@ describe('CartService', () => {
           {
             id: 'item-diff-price',
             productId: 'product-diff',
-            variantId: 'variant-diff',
             quantity: 1,
             createdAt: now,
             updatedAt: now,
             product: {
               id: 'product-diff',
-              name: 'Premium Case',
-              price: { toString: () => '29.99' } as any,
-              compareAtPrice: null,
-              isActive: true,
-            },
-            variant: {
-              id: 'variant-diff',
-              name: 'Limited Edition',
+              name: 'Premium Case — Limited Edition',
               price: { toString: () => '49.99' } as any,
+              compareAtPrice: null,
               stock: 10,
               isActive: true,
             },
           },
         ],
       };
-      cartRepositoryMock.findOrCreate.mockResolvedValue(cartWithDifferentVariantPrice);
+      cartRepositoryMock.findOrCreate.mockResolvedValue(cartWithPosition);
 
       const result = await service.getCart(userIdentity);
 

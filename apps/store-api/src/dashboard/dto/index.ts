@@ -6,7 +6,7 @@ export {
   UserMetricsDto,
   TopProductDto,
   ProductMetricsDto,
-  LowStockVariantDto,
+  LowStockProductDto,
   InventoryMetricsDto,
   DashboardSummaryResponse,
 } from './dashboard-summary.dto';

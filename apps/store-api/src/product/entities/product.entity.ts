@@ -60,10 +60,37 @@ export class ProductEntity {
   sku!: string | null;
 
   @ApiProperty({
+    description: 'Available stock quantity for this position',
+    example: 150,
+  })
+  stock!: number;
+
+  @ApiProperty({
     description: 'Category ID the product belongs to',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
   categoryId!: string;
+
+  @ApiProperty({
+    description: 'Group this position belongs to (siblings share a group), or null when standalone',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  groupId!: string | null;
+
+  @ApiProperty({
+    description: 'Attribute values for this position within its group (keyed by group axis names)',
+    example: { color: 'blue', pack: 'single' },
+    type: 'object',
+    additionalProperties: true,
+    required: false,
+  })
+  attributes!: Record<string, string>;
+
+  @ApiProperty({ description: 'Sort order of this position within its group', example: 0 })
+  positionOrder!: number;
 
   @ApiProperty({ description: 'Whether the product is active', example: true })
   isActive!: boolean;
@@ -113,7 +140,11 @@ export class ProductEntity {
     price: { toString(): string };
     compareAtPrice: { toString(): string } | null;
     sku: string | null;
+    stock: number;
     categoryId: string;
+    groupId?: string | null;
+    attributes?: unknown;
+    positionOrder?: number;
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
@@ -135,7 +166,11 @@ export class ProductEntity {
     entity.price = product.price.toString();
     entity.compareAtPrice = product.compareAtPrice ? product.compareAtPrice.toString() : null;
     entity.sku = product.sku;
+    entity.stock = product.stock;
     entity.categoryId = product.categoryId;
+    entity.groupId = product.groupId ?? null;
+    entity.attributes = (product.attributes as Record<string, string> | null) ?? {};
+    entity.positionOrder = product.positionOrder ?? 0;
     entity.isActive = product.isActive;
     entity.createdAt = product.createdAt;
     entity.updatedAt = product.updatedAt;

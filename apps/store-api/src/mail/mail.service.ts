@@ -86,7 +86,6 @@ export class MailService {
       createdAt: order.createdAt,
       items: order.items.map((item) => ({
         productName: item.productName,
-        variantName: item.variantName,
         quantity: item.quantity,
         price: item.price,
         lineTotal: item.lineTotal,

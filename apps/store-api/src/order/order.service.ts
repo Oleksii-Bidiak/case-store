@@ -124,11 +124,11 @@ export class OrderService {
     }
 
     // Re-validate stock at order-creation time (it may have changed since
-    // add-to-cart). Only variant lines track stock.
+    // add-to-cart). Each position tracks its own stock.
     for (const item of cart.items) {
-      if (item.variant && item.quantity > item.variant.stock) {
+      if (item.quantity > item.product.stock) {
         throw new BadRequestException(
-          `Insufficient stock for "${item.product.name}" — ${item.variant.stock} available`,
+          `Insufficient stock for "${item.product.name}" — ${item.product.stock} available`,
         );
       }
     }

@@ -5,7 +5,7 @@ import {
   DailyDataPointDto,
   DashboardSummaryResponse,
   InventoryMetricsDto,
-  LowStockVariantDto,
+  LowStockProductDto,
   OrderMetricsDto,
   OrderStatusCountDto,
   ProductMetricsDto,
@@ -34,7 +34,7 @@ import { AdminGuard } from '../auth/guards';
   InventoryMetricsDto,
   DailyDataPointDto,
   TopProductDto,
-  LowStockVariantDto,
+  LowStockProductDto,
   OrderStatusCountDto,
 )
 @Controller('admin/dashboard')

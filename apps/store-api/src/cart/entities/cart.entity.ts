@@ -88,7 +88,6 @@ export class CartEntity {
     items: Array<{
       id: string;
       productId: string;
-      variantId: string | null;
       quantity: number;
       createdAt: Date;
       updatedAt: Date;
@@ -97,15 +96,9 @@ export class CartEntity {
         name: string;
         price: { toString(): string };
         compareAtPrice: { toString(): string } | null;
-        isActive: boolean;
-      };
-      variant: {
-        id: string;
-        name: string;
-        price: { toString(): string };
         stock: number;
         isActive: boolean;
-      } | null;
+      };
     }>;
   }): CartEntity {
     const entity = new CartEntity();
@@ -122,20 +115,19 @@ export class CartEntity {
    * Calculate cart totals from raw Prisma items.
    * Uses string-based price arithmetic to avoid float precision issues.
    *
-   * Price source: variant price if variant exists, otherwise product price.
+   * Price source: the product position's price (TASK-142).
    */
   private static calculateTotals(
     items: Array<{
       quantity: number;
       product: { price: { toString(): string } };
-      variant: { price: { toString(): string } } | null;
     }>,
   ): CartTotals {
     let subtotalCents = 0;
     let itemCount = 0;
 
     for (const item of items) {
-      const priceStr = item.variant ? item.variant.price.toString() : item.product.price.toString();
+      const priceStr = item.product.price.toString();
 
       // Convert "XX.YY" to cents to avoid floating-point errors
       const priceCents = Math.round(parseFloat(priceStr) * 100);

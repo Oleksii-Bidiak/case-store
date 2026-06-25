@@ -10,7 +10,6 @@ import type { ResolvedCartIdentity } from './cart-identity.types';
 export interface AddToCartInput {
   cartId: string;
   productId: string;
-  variantId?: string;
   quantity: number;
 }
 
@@ -28,14 +27,15 @@ export interface UpdateCartItemInput {
  */
 export interface MergeCartLine {
   productId: string;
-  variantId: string | null;
   quantity: number;
 }
 
 /**
- * Cart with its items and related product/variant details.
+ * Cart with its items and related product (position) details.
  * This is the shape returned by all cart queries — it includes
- * the full item tree so the service can calculate totals.
+ * the full item tree so the service can calculate totals and validate stock.
+ * Since TASK-142 each cart line references a product position directly; stock
+ * and price live on the product.
  */
 export interface CartWithItems {
   id: string;
@@ -46,7 +46,6 @@ export interface CartWithItems {
   items: Array<{
     id: string;
     productId: string;
-    variantId: string | null;
     quantity: number;
     createdAt: Date;
     updatedAt: Date;
@@ -55,22 +54,16 @@ export interface CartWithItems {
       name: string;
       price: { toString(): string };
       compareAtPrice: { toString(): string } | null;
-      isActive: boolean;
-    };
-    variant: {
-      id: string;
-      name: string;
-      price: { toString(): string };
       stock: number;
       isActive: boolean;
-    } | null;
+    };
   }>;
 }
 
 /**
  * Shared Prisma include clause for cart queries.
- * Always fetches items with their product and variant details
- * so the service can calculate totals and validate stock.
+ * Always fetches items with their product (position) details so the service can
+ * calculate totals and validate stock.
  */
 const CART_ITEMS_INCLUDE = {
   items: {
@@ -78,7 +71,6 @@ const CART_ITEMS_INCLUDE = {
     select: {
       id: true,
       productId: true,
-      variantId: true,
       quantity: true,
       createdAt: true,
       updatedAt: true,
@@ -88,14 +80,6 @@ const CART_ITEMS_INCLUDE = {
           name: true,
           price: true,
           compareAtPrice: true,
-          isActive: true,
-        },
-      },
-      variant: {
-        select: {
-          id: true,
-          name: true,
-          price: true,
           stock: true,
           isActive: true,
         },
@@ -204,14 +188,7 @@ export class CartRepository {
 
     await this.prisma.$transaction(async (tx) => {
       for (const line of lines) {
-        await this.writeCartLine(
-          tx,
-          userCartId,
-          line.productId,
-          line.variantId,
-          line.quantity,
-          'set',
-        );
+        await this.writeCartLine(tx, userCartId, line.productId, line.quantity, 'set');
       }
 
       // Cascades to the guest cart's CartItems via the schema relation.
@@ -220,15 +197,9 @@ export class CartRepository {
   }
 
   /**
-   * Upsert a single cart line by (cartId, productId, variantId) using a
-   * find-then-write strategy.
-   *
-   * The compound unique `cartId_productId_variantId` CANNOT be used as an
-   * upsert/where selector when `variantId` is null — Prisma rejects null in a
-   * unique where ("Argument `variantId` must not be null"), and Postgres treats
-   * NULLs as distinct so the constraint would not dedupe them anyway. `findFirst`
-   * accepts null as an ordinary filter, so we resolve the row first and then
-   * update or create it.
+   * Upsert a single cart line by (cartId, productId) using the compound unique
+   * `cartId_productId`. Since TASK-142 a cart line maps to a product position,
+   * so there is no nullable variant to special-case.
    *
    * `mode: 'increment'` adds to the existing quantity (add-to-cart); `mode:
    * 'set'` writes the absolute quantity (merge, where the service pre-clamps).
@@ -237,40 +208,28 @@ export class CartRepository {
     tx: Prisma.TransactionClient,
     cartId: string,
     productId: string,
-    variantId: string | null,
     quantity: number,
     mode: 'increment' | 'set',
   ): Promise<void> {
-    const existing = await tx.cartItem.findFirst({
-      where: { cartId, productId, variantId: variantId ?? null },
-      select: { id: true },
-    });
-
-    if (existing) {
-      await tx.cartItem.update({
-        where: { id: existing.id },
-        data: { quantity: mode === 'increment' ? { increment: quantity } : quantity },
-      });
-      return;
-    }
-
-    await tx.cartItem.create({
-      data: { cartId, productId, variantId: variantId ?? null, quantity },
+    await tx.cartItem.upsert({
+      where: { cartId_productId: { cartId, productId } },
+      update: { quantity: mode === 'increment' ? { increment: quantity } : quantity },
+      create: { cartId, productId, quantity },
     });
   }
 
   /**
-   * Add an item to a specific cart. If the same product+variant combination
-   * already exists, increment the quantity instead of creating a duplicate.
-   * Returns the full updated cart with items.
+   * Add an item to a specific cart. If the same product position already exists,
+   * increment the quantity instead of creating a duplicate. Returns the full
+   * updated cart with items.
    */
   async addItem(input: AddToCartInput): Promise<CartWithItems> {
-    const { cartId, productId, variantId, quantity } = input;
+    const { cartId, productId, quantity } = input;
 
     return this.prisma.$transaction(async (tx) => {
-      // Add the line, incrementing the quantity if the same product+variant
-      // already exists in this cart.
-      await this.writeCartLine(tx, cartId, productId, variantId ?? null, quantity, 'increment');
+      // Add the line, incrementing the quantity if the same product already
+      // exists in this cart.
+      await this.writeCartLine(tx, cartId, productId, quantity, 'increment');
 
       // Return the full cart with items
       const result = await tx.cart.findUnique({
@@ -312,19 +271,13 @@ export class CartRepository {
   }
 
   /**
-   * Find a specific cart item by cart ID, product ID, and optional variant ID.
+   * Find a specific cart item by cart ID and product (position) ID.
    * Used by the service to check if an item already exists before adding.
    * Returns null if the item is not found.
    */
-  findItem(cartId: string, productId: string, variantId?: string): Promise<CartItem | null> {
+  findItem(cartId: string, productId: string): Promise<CartItem | null> {
     return this.prisma.cartItem.findUnique({
-      where: {
-        cartId_productId_variantId: {
-          cartId,
-          productId,
-          variantId: (variantId ?? null) as string,
-        },
-      },
+      where: { cartId_productId: { cartId, productId } },
     });
   }
 }

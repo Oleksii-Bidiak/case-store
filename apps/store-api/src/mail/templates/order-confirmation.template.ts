@@ -23,7 +23,6 @@ export interface OrderConfirmationAddress {
 /** A single line of the confirmed order (prices already stringified). */
 export interface OrderConfirmationItem {
   productName: string;
-  variantName: string | null;
   quantity: number;
   price: string;
   lineTotal: string;
@@ -91,7 +90,7 @@ function addressLines(address: OrderConfirmationAddress): string[] {
 }
 
 function itemLabel(item: OrderConfirmationItem): string {
-  return item.variantName ? `${item.productName} (${item.variantName})` : item.productName;
+  return item.productName;
 }
 
 // ─── HTML rendering ──────────────────────────────────────────────────────────

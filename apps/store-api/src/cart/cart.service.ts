@@ -43,7 +43,6 @@ export class CartService {
     const input: AddToCartInput = {
       cartId: cart.id,
       productId: dto.productId,
-      variantId: dto.variantId,
       quantity: dto.quantity,
     };
 
@@ -92,10 +91,10 @@ export class CartService {
       throw new BadRequestException(`Quantity cannot exceed ${MAX_QUANTITY}`);
     }
 
-    // Validate stock availability (for variants)
-    if (cartItem.variant && dto.quantity > cartItem.variant.stock) {
+    // Validate stock availability against the position's stock.
+    if (dto.quantity > cartItem.product.stock) {
       throw new BadRequestException(
-        `Requested quantity (${dto.quantity}) exceeds available stock (${cartItem.variant.stock})`,
+        `Requested quantity (${dto.quantity}) exceeds available stock (${cartItem.product.stock})`,
       );
     }
 
@@ -182,20 +181,13 @@ export class CartService {
     // touching the database, so the transactional write is a pure data apply.
     const lines: MergeCartLine[] = guestCart.items
       .map((guestItem) => {
-        const existing = userCart.items.find(
-          (item) =>
-            item.productId === guestItem.productId && item.variantId === guestItem.variantId,
-        );
+        const existing = userCart.items.find((item) => item.productId === guestItem.productId);
 
         const summed = (existing?.quantity ?? 0) + guestItem.quantity;
-        let quantity = Math.min(MAX_QUANTITY, summed);
+        // Clamp to MAX_QUANTITY and the position's available stock.
+        const quantity = Math.min(MAX_QUANTITY, summed, guestItem.product.stock);
 
-        // Clamp to available stock when the line has a variant.
-        if (guestItem.variant) {
-          quantity = Math.min(quantity, guestItem.variant.stock);
-        }
-
-        return { productId: guestItem.productId, variantId: guestItem.variantId, quantity };
+        return { productId: guestItem.productId, quantity };
       })
       .filter((line) => line.quantity > 0);
 
@@ -224,16 +216,15 @@ export class CartService {
    */
   private validateCartItems(cart: CartWithItems): void {
     for (const item of cart.items) {
-      // Check if product/variant is active
-      const isActive = item.variant ? item.variant.isActive : item.product.isActive;
-      if (!isActive) {
+      // Check if the product position is active
+      if (!item.product.isActive) {
         throw new BadRequestException(`Product "${item.product.name}" is no longer available`);
       }
 
-      // Check stock availability (for variants)
-      if (item.variant && item.quantity > item.variant.stock) {
+      // Check stock availability against the position's stock
+      if (item.quantity > item.product.stock) {
         throw new BadRequestException(
-          `Requested quantity (${item.quantity}) exceeds available stock (${item.variant.stock}) for "${item.variant.name}"`,
+          `Requested quantity (${item.quantity}) exceeds available stock (${item.product.stock}) for "${item.product.name}"`,
         );
       }
 
