@@ -1,6 +1,6 @@
 # Plan: Order Payment Status Coupling Fix
 
-> **Status:** Implemented — pending manual QA (TASK-123-C checklist)
+> **Status:** Complete (manual QA passed — TASK-123-C ✅)
 > **Phase:** Phase A — Stabilize & Close Out (QA pass triage — bugs)
 > **Created:** 2026-06-25
 > **Last Updated:** 2026-06-25
@@ -18,7 +18,7 @@ currentPaymentStatus)` in `order.service.ts`; `updateStatus` now derives and pas
 paymentStatus)` writes both columns in one Prisma update (no business logic in the repo).
 - **TASK-123-C:** Verified store-admin needs no change — `order-detail-view.tsx:119-120`
   already renders the `paymentStatus` badge and `OrderStatusSelect` invalidates the detail/
-  list queries on success. Manual QA checklist (Scenarios A–D) still pending a running stack.
+  list queries on success. Manual QA checklist (Scenarios A–D) passed on a running stack.
 - Gates: `npm run test -w apps/store-api` 380/380 pass, lint clean, typecheck clean (all
   three workspaces). No Prisma migration, no Orval regeneration.
 
