@@ -48,6 +48,33 @@ function derivePaymentStatus(
 }
 
 /**
+ * Order statuses whose stock is still in the warehouse (reserved at creation,
+ * not yet shipped to the customer). Cancelling an order from one of these
+ * states can safely return the reserved stock to inventory automatically.
+ */
+const PRE_SHIPMENT_STATUSES: ReadonlySet<OrderStatus> = new Set([
+  OrderStatus.PENDING,
+  OrderStatus.CONFIRMED,
+  OrderStatus.PROCESSING,
+]);
+
+/**
+ * Whether a status transition should automatically return reserved stock to
+ * inventory (TASK-124).
+ *
+ * Stock is reserved when the order is created. Auto-restock applies ONLY when an
+ * order is cancelled before it ships — the goods never left the warehouse. Once
+ * shipped or delivered, the physical item is with the carrier/customer; bringing
+ * it back to sellable stock requires a manual admin adjustment after the return
+ * is received, so SHIPPED/DELIVERED cancels and all REFUNDED transitions are NOT
+ * auto-restocked. Cancelling an already-cancelled order is a no-op (the guard is
+ * false), preventing a double stock credit.
+ */
+function shouldAutoRestock(currentStatus: OrderStatus, targetStatus: OrderStatus): boolean {
+  return targetStatus === OrderStatus.CANCELLED && PRE_SHIPMENT_STATUSES.has(currentStatus);
+}
+
+/**
  * Pagination metadata returned alongside a list of orders.
  */
 export interface PaginationMeta {
@@ -291,6 +318,19 @@ export class OrderService {
 
     if (!existing) {
       throw new NotFoundException('Order not found');
+    }
+
+    // Pre-shipment cancellation: return the reserved stock to inventory and
+    // evict product caches in one transaction (reuses the customer-cancel path).
+    // Post-shipment cancels and refunds are deliberately NOT auto-restocked —
+    // the physical return must be received and re-stocked by hand (TASK-124).
+    if (shouldAutoRestock(existing.status, status)) {
+      const restocked = await this.orderRepository.cancelAndRestock(orderId);
+      this.logger.info(
+        { event: 'order.cancelled_restocked', orderId, from: existing.status },
+        'Order cancelled before shipment; reserved stock returned to inventory',
+      );
+      return OrderEntity.fromPrisma(restocked);
     }
 
     // Couple paymentStatus to the target status so advancing an order past

@@ -480,30 +480,6 @@ describe('OrderService', () => {
       expect(result.paymentStatus).toBe(PaymentStatus.PAID);
     });
 
-    it('leaves paymentStatus PAID (no regression) when a CONFIRMED+PAID order is CANCELLED', async () => {
-      seedAndEcho({ status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID });
-
-      await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED);
-
-      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
-        'order-uuid-1',
-        OrderStatus.CANCELLED,
-        PaymentStatus.PAID,
-      );
-    });
-
-    it('leaves paymentStatus PENDING when a PENDING order is CANCELLED', async () => {
-      seedAndEcho({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING });
-
-      await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED);
-
-      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
-        'order-uuid-1',
-        OrderStatus.CANCELLED,
-        PaymentStatus.PENDING,
-      );
-    });
-
     it('derives paymentStatus REFUNDED when an order is moved to REFUNDED', async () => {
       seedAndEcho({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID });
 
@@ -526,6 +502,115 @@ describe('OrderService', () => {
         OrderStatus.DELIVERED,
         PaymentStatus.PAID,
       );
+    });
+  });
+
+  // ─── updateStatus — stock restock on cancel (TASK-124) ────────────────────────
+  // Stock is reserved at order creation. Returning it to inventory is automatic
+  // ONLY when an order is cancelled before it ships (PENDING/CONFIRMED/PROCESSING),
+  // because the goods are still in the warehouse. Post-shipment cancels (SHIPPED/
+  // DELIVERED) and all refunds require a MANUAL stock adjustment after the
+  // physical return is received — so the service must NOT auto-restock those.
+
+  describe('updateStatus — stock restock on cancel', () => {
+    const seed = (current: Partial<OrderWithItems>) => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder(current));
+      orderRepositoryMock.cancelAndRestock.mockImplementation((_id: string) =>
+        Promise.resolve(makeOrder({ ...current, status: OrderStatus.CANCELLED })),
+      );
+      orderRepositoryMock.updateStatus.mockImplementation(
+        (_id: string, status: OrderStatus, paymentStatus: PaymentStatus) =>
+          Promise.resolve(makeOrder({ status, paymentStatus })),
+      );
+    };
+
+    // ── Auto-restock: pre-shipment cancels return the reserved stock ──
+    it.each([OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
+      'auto-returns reserved stock when cancelling a pre-shipment order (%s → CANCELLED)',
+      async (from) => {
+        seed({
+          status: from,
+          paymentStatus: from === OrderStatus.PENDING ? PaymentStatus.PENDING : PaymentStatus.PAID,
+        });
+
+        const result = await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED);
+
+        expect(orderRepositoryMock.cancelAndRestock).toHaveBeenCalledWith('order-uuid-1');
+        expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+        expect(result.status).toBe(OrderStatus.CANCELLED);
+      },
+    );
+
+    it('preserves paymentStatus PAID on a paid pre-shipment cancel (refund is a separate step)', async () => {
+      seed({ status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID });
+      orderRepositoryMock.cancelAndRestock.mockResolvedValue(
+        makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      const result = await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED);
+
+      expect(result.paymentStatus).toBe(PaymentStatus.PAID);
+    });
+
+    // ── Manual restock: post-shipment cancels / refunds do NOT auto-restock ──
+    it.each([OrderStatus.SHIPPED, OrderStatus.DELIVERED])(
+      'does NOT auto-restock when cancelling a post-shipment order (%s → CANCELLED, manual return)',
+      async (from) => {
+        seed({ status: from, paymentStatus: PaymentStatus.PAID });
+
+        await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED);
+
+        expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+        expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+          'order-uuid-1',
+          OrderStatus.CANCELLED,
+          PaymentStatus.PAID,
+        );
+      },
+    );
+
+    it('does NOT auto-restock when refunding a delivered order (manual return required)', async () => {
+      seed({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.REFUNDED);
+
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.REFUNDED,
+        PaymentStatus.REFUNDED,
+      );
+    });
+
+    it('does NOT restock again when an already-CANCELLED order is set to CANCELLED (no double credit)', async () => {
+      seed({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED);
+
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.CANCELLED,
+        PaymentStatus.PAID,
+      );
+    });
+
+    it('does NOT restock on a forward transition (PENDING → CONFIRMED)', async () => {
+      seed({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED);
+
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException and restocks nothing when the order does not exist', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.updateStatus('missing', OrderStatus.CANCELLED)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
   });
 
