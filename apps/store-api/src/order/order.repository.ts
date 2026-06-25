@@ -219,13 +219,19 @@ export class OrderRepository {
   }
 
   /**
-   * Update an order's status. Ownership and transition validity are enforced
-   * by the service before this is called.
+   * Update an order's status and payment status in a single atomic write.
+   * Ownership, transition validity, and the status→paymentStatus coupling are
+   * computed by the service (TASK-123) before this is called; the repository
+   * only persists the two columns the service hands it.
    */
-  updateStatus(orderId: string, status: OrderStatus): Promise<OrderWithItems> {
+  updateStatus(
+    orderId: string,
+    status: OrderStatus,
+    paymentStatus: PaymentStatus,
+  ): Promise<OrderWithItems> {
     return this.prisma.order.update({
       where: { id: orderId },
-      data: { status },
+      data: { status, paymentStatus },
       include: ORDERS_INCLUDE,
     }) as Promise<OrderWithItems>;
   }

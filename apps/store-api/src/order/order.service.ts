@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { CartRepository } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
@@ -15,6 +15,37 @@ import type { CreateOrderDto, OrderListQueryDto, AdminOrderListQueryDto } from '
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
+
+/**
+ * Derive the payment status implied by a target order status (TASK-123).
+ *
+ * The admin status PATCH path drives the whole order lifecycle, so advancing an
+ * order past PENDING must also advance its payment status — otherwise it gets
+ * stranded at PENDING (the bug). Pre-Stripe (TASK-034), the admin moving an
+ * order forward is the implicit "payment received" signal: any non-terminal
+ * advance implies PAID. CANCELLED is left as-is (a PENDING cancel never took
+ * payment; a PAID cancel's refund is a separate action), and REFUNDED reverses
+ * the payment. Pure function — no side effects, idempotent (PAID never regresses
+ * on a repeated forward update).
+ */
+function derivePaymentStatus(
+  targetStatus: OrderStatus,
+  currentPaymentStatus: PaymentStatus,
+): PaymentStatus {
+  switch (targetStatus) {
+    case OrderStatus.CONFIRMED:
+    case OrderStatus.PROCESSING:
+    case OrderStatus.SHIPPED:
+    case OrderStatus.DELIVERED:
+      return PaymentStatus.PAID;
+    case OrderStatus.REFUNDED:
+      return PaymentStatus.REFUNDED;
+    case OrderStatus.CANCELLED:
+    case OrderStatus.PENDING:
+    default:
+      return currentPaymentStatus; // leave payment status unchanged
+  }
+}
 
 /**
  * Pagination metadata returned alongside a list of orders.
@@ -262,7 +293,10 @@ export class OrderService {
       throw new NotFoundException('Order not found');
     }
 
-    const order = await this.orderRepository.updateStatus(orderId, status);
+    // Couple paymentStatus to the target status so advancing an order past
+    // PENDING does not strand its payment at PENDING (TASK-123).
+    const paymentStatus = derivePaymentStatus(status, existing.paymentStatus);
+    const order = await this.orderRepository.updateStatus(orderId, status, paymentStatus);
     return OrderEntity.fromPrisma(order);
   }
 }

@@ -423,7 +423,7 @@ describe('OrderService', () => {
     it('should update the order status without an ownership check', async () => {
       orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.PENDING }));
       orderRepositoryMock.updateStatus.mockResolvedValue(
-        makeOrder({ status: OrderStatus.CONFIRMED }),
+        makeOrder({ status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID }),
       );
 
       const result = await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED);
@@ -431,6 +431,7 @@ describe('OrderService', () => {
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
         OrderStatus.CONFIRMED,
+        PaymentStatus.PAID,
       );
       expect(result.status).toBe(OrderStatus.CONFIRMED);
     });
@@ -442,6 +443,89 @@ describe('OrderService', () => {
         NotFoundException,
       );
       expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── updateStatus — paymentStatus coupling (TASK-123) ─────────────────────────
+  // Advancing an order past PENDING via the admin status PATCH must also advance
+  // paymentStatus so it does not get stranded at PENDING. The service derives the
+  // target paymentStatus and hands both columns to the repository.
+
+  describe('updateStatus — paymentStatus coupling', () => {
+    // The repository echoes whatever the service computed; these tests assert on
+    // the call arguments (the service's derivation), the source of the bug.
+    const seedAndEcho = (current: Partial<OrderWithItems>) => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder(current));
+      orderRepositoryMock.updateStatus.mockImplementation(
+        (_id: string, status: OrderStatus, paymentStatus: PaymentStatus) =>
+          Promise.resolve(makeOrder({ status, paymentStatus })),
+      );
+    };
+
+    it.each([
+      OrderStatus.CONFIRMED,
+      OrderStatus.PROCESSING,
+      OrderStatus.SHIPPED,
+      OrderStatus.DELIVERED,
+    ])('derives paymentStatus PAID when advancing PENDING → %s', async (status) => {
+      seedAndEcho({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING });
+
+      const result = await service.updateStatus('order-uuid-1', status);
+
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        status,
+        PaymentStatus.PAID,
+      );
+      expect(result.paymentStatus).toBe(PaymentStatus.PAID);
+    });
+
+    it('leaves paymentStatus PAID (no regression) when a CONFIRMED+PAID order is CANCELLED', async () => {
+      seedAndEcho({ status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED);
+
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.CANCELLED,
+        PaymentStatus.PAID,
+      );
+    });
+
+    it('leaves paymentStatus PENDING when a PENDING order is CANCELLED', async () => {
+      seedAndEcho({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED);
+
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.CANCELLED,
+        PaymentStatus.PENDING,
+      );
+    });
+
+    it('derives paymentStatus REFUNDED when an order is moved to REFUNDED', async () => {
+      seedAndEcho({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.REFUNDED);
+
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.REFUNDED,
+        PaymentStatus.REFUNDED,
+      );
+    });
+
+    it('keeps an already-PAID order PAID when advanced further (idempotency)', async () => {
+      seedAndEcho({ status: OrderStatus.PROCESSING, paymentStatus: PaymentStatus.PAID });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.DELIVERED);
+
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.DELIVERED,
+        PaymentStatus.PAID,
+      );
     });
   });
 
