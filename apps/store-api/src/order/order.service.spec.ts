@@ -132,6 +132,7 @@ const orderRepositoryMock = {
   findByUserId: jest.fn(),
   findAll: jest.fn(),
   findById: jest.fn(),
+  findByIdForAdmin: jest.fn(),
   updateStatus: jest.fn(),
   cancelAndRestock: jest.fn(),
   updatePaymentStatus: jest.fn(),
@@ -658,8 +659,8 @@ describe('OrderService', () => {
   // ─── adminGetOrder (admin) ──────────────────────────────────────────────────
 
   describe('adminGetOrder', () => {
-    it('should return any order by ID without an ownership check', async () => {
-      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: OTHER_USER_ID }));
+    it('should return any order by ID via the admin (customer-joined) read', async () => {
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(makeOrder({ userId: OTHER_USER_ID }));
 
       const result = await service.adminGetOrder('order-uuid-1');
 
@@ -669,9 +670,102 @@ describe('OrderService', () => {
     });
 
     it('should throw NotFoundException when the order does not exist', async () => {
-      orderRepositoryMock.findById.mockResolvedValue(null);
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(null);
 
       await expect(service.adminGetOrder('missing')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ─── adminGetOrder — customer data (TASK-125) ─────────────────────────────────
+  // Admin order reads join the owning user so the admin can see who placed the
+  // order (account email + name). Customer-facing reads must NOT load this.
+
+  describe('adminGetOrder — customer data', () => {
+    const customer = {
+      id: OTHER_USER_ID,
+      email: 'buyer@example.com',
+      firstName: 'Ivan',
+      lastName: 'Petrenko',
+    };
+
+    it('reads via findByIdForAdmin, not the lean findById', async () => {
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(
+        makeOrder({ userId: OTHER_USER_ID, user: customer }),
+      );
+
+      await service.adminGetOrder('order-uuid-1');
+
+      expect(orderRepositoryMock.findByIdForAdmin).toHaveBeenCalledWith('order-uuid-1');
+      expect(orderRepositoryMock.findById).not.toHaveBeenCalled();
+    });
+
+    it('maps the joined user onto OrderEntity.customer', async () => {
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(
+        makeOrder({ userId: OTHER_USER_ID, user: customer }),
+      );
+
+      const result = await service.adminGetOrder('order-uuid-1');
+
+      expect(result.customer).toEqual(customer);
+    });
+
+    it('leaves customer undefined when the order has no joined user', async () => {
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(makeOrder());
+
+      const result = await service.adminGetOrder('order-uuid-1');
+
+      expect(result.customer).toBeUndefined();
+    });
+
+    it('exposes customer on every order in the admin list', async () => {
+      orderRepositoryMock.findAll.mockResolvedValue({
+        orders: [makeOrder({ userId: OTHER_USER_ID, user: customer })],
+        total: 1,
+      });
+
+      const result = await service.adminGetAllOrders({});
+
+      expect(result.data[0].customer).toEqual(customer);
+    });
+  });
+
+  // ─── OrderEntity.fromPrisma — customer mapping (TASK-125) ─────────────────────
+
+  describe('OrderEntity.fromPrisma — customer mapping', () => {
+    it('sets customer with all four fields when user is present', () => {
+      const entity = OrderEntity.fromPrisma(
+        makeOrder({
+          user: { id: 'u-1', email: 'a@b.ua', firstName: 'Ada', lastName: 'Byron' },
+        }),
+      );
+
+      expect(entity.customer).toEqual({
+        id: 'u-1',
+        email: 'a@b.ua',
+        firstName: 'Ada',
+        lastName: 'Byron',
+      });
+    });
+
+    it('leaves customer undefined when user is absent', () => {
+      const entity = OrderEntity.fromPrisma(makeOrder());
+
+      expect(entity.customer).toBeUndefined();
+    });
+
+    it('maps null first/last names through', () => {
+      const entity = OrderEntity.fromPrisma(
+        makeOrder({
+          user: { id: 'u-2', email: 'c@d.ua', firstName: null, lastName: null },
+        }),
+      );
+
+      expect(entity.customer).toEqual({
+        id: 'u-2',
+        email: 'c@d.ua',
+        firstName: null,
+        lastName: null,
+      });
     });
   });
 });

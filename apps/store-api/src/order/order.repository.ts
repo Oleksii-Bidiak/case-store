@@ -32,6 +32,20 @@ const ORDERS_INCLUDE = {
   },
 } satisfies Prisma.OrderInclude;
 
+/**
+ * Admin-only include: the lean order include plus the owning user's account
+ * fields (id, email, name). Used exclusively by the admin read paths
+ * (`findAll`, `findByIdForAdmin`) so an admin can see who placed each order.
+ * Customer-facing and mutation queries keep {@link ORDERS_INCLUDE} (no user
+ * join), so customer email never reaches non-admin responses (TASK-125).
+ */
+const ADMIN_ORDERS_INCLUDE = {
+  ...ORDERS_INCLUDE,
+  user: {
+    select: { id: true, email: true, firstName: true, lastName: true },
+  },
+} satisfies Prisma.OrderInclude;
+
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
 
@@ -195,7 +209,7 @@ export class OrderRepository {
       this.prisma.order.count({ where }),
       this.prisma.order.findMany({
         where,
-        include: ORDERS_INCLUDE,
+        include: ADMIN_ORDERS_INCLUDE,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -203,6 +217,19 @@ export class OrderRepository {
     ]);
 
     return { orders: orders as OrderWithItems[], total };
+  }
+
+  /**
+   * Admin — find a single order by ID with the owning user joined (account
+   * email + name), or null if it does not exist. Mirrors {@link findById} but
+   * uses {@link ADMIN_ORDERS_INCLUDE}; called from `OrderService.adminGetOrder`
+   * so admin detail responses carry customer data (TASK-125).
+   */
+  findByIdForAdmin(orderId: string): Promise<OrderWithItems | null> {
+    return this.prisma.order.findFirst({
+      where: { id: orderId, deletedAt: null },
+      include: ADMIN_ORDERS_INCLUDE,
+    }) as Promise<OrderWithItems | null>;
   }
 
   /**

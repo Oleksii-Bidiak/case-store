@@ -4,6 +4,30 @@ import { OrderItemEntity } from './order-item.entity';
 import type { OrderWithItems, ShippingAddressData } from '../order.types';
 
 /**
+ * Customer account data attached to an order on admin responses only.
+ *
+ * Populated from the joined `user` relation (see `ADMIN_ORDERS_INCLUDE`) so an
+ * admin can see who placed an order (email + name). Never present on
+ * customer-facing order responses — those queries do not join the user.
+ */
+export class OrderCustomerData {
+  @ApiProperty({
+    description: 'Customer account ID',
+    example: '550e8400-e29b-41d4-a716-446655440001',
+  })
+  id!: string;
+
+  @ApiProperty({ description: 'Customer account email', example: 'buyer@example.com' })
+  email!: string;
+
+  @ApiProperty({ description: 'First name', nullable: true, type: String, example: 'Ivan' })
+  firstName!: string | null;
+
+  @ApiProperty({ description: 'Last name', nullable: true, type: String, example: 'Petrenko' })
+  lastName!: string | null;
+}
+
+/**
  * Domain entity representing an order.
  *
  * This is a clean domain entity — not a Prisma model. All `Decimal` money
@@ -76,6 +100,14 @@ export class OrderEntity {
   @ApiProperty({ description: 'Order line items', type: [OrderItemEntity] })
   items!: OrderItemEntity[];
 
+  @ApiProperty({
+    description: 'Customer account data — present only on admin order responses',
+    type: () => OrderCustomerData,
+    required: false,
+    nullable: true,
+  })
+  customer?: OrderCustomerData;
+
   @ApiProperty({ description: 'Creation timestamp', example: '2024-01-01T00:00:00.000Z' })
   createdAt!: Date;
 
@@ -101,6 +133,16 @@ export class OrderEntity {
     entity.billingAddress = (order.billingAddress as ShippingAddressData | null) ?? null;
     entity.notes = order.notes;
     entity.items = order.items.map((item) => OrderItemEntity.fromPrisma(item));
+    // Only set on admin reads, which join the `user` relation. Customer-facing
+    // reads omit it, so `customer` stays absent from those responses (TASK-125).
+    if (order.user) {
+      entity.customer = {
+        id: order.user.id,
+        email: order.user.email,
+        firstName: order.user.firstName,
+        lastName: order.user.lastName,
+      };
+    }
     entity.createdAt = order.createdAt;
     entity.updatedAt = order.updatedAt;
     return entity;

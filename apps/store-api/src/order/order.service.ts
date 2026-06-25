@@ -218,7 +218,9 @@ export class OrderService {
    * @throws NotFoundException when the order does not exist.
    */
   async adminGetOrder(orderId: string): Promise<OrderEntity> {
-    const order = await this.orderRepository.findById(orderId);
+    // Admin read joins the owning user so the response carries customer data
+    // (email + name); customer-facing `getOrder` keeps the lean `findById`.
+    const order = await this.orderRepository.findByIdForAdmin(orderId);
 
     if (!order) {
       throw new NotFoundException('Order not found');

@@ -338,4 +338,37 @@ describe('OrderRepository', () => {
       expect(cacheMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
     });
   });
+
+  // ─── admin reads join the owning user (TASK-125) ──────────────────────────────
+
+  describe('admin customer join', () => {
+    it('findByIdForAdmin selects the owning user (id, email, names)', async () => {
+      prismaMock.order.findFirst.mockResolvedValue({ id: 'order-1' });
+
+      await repository.findByIdForAdmin('order-1');
+
+      const arg = prismaMock.order.findFirst.mock.calls[0][0];
+      expect(arg.where).toEqual({ id: 'order-1', deletedAt: null });
+      expect(arg.include.user.select).toEqual({
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+      });
+    });
+
+    it('findAll includes the user select on the page query', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({});
+
+      // findAll runs count + findMany inside a $transaction; the array passed in
+      // holds the two query builders. Assert the findMany call carried the join.
+      const queries = prismaMock.$transaction.mock.calls[0][0];
+      expect(prismaMock.order.findMany).toHaveBeenCalled();
+      const findManyArg = prismaMock.order.findMany.mock.calls[0][0];
+      expect(findManyArg.include.user.select).toMatchObject({ email: true });
+      expect(queries).toHaveLength(2);
+    });
+  });
 });

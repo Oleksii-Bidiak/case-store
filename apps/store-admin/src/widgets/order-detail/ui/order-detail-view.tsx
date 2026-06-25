@@ -174,6 +174,24 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
 
         {/* Sidebar column */}
         <div className="flex flex-col gap-6">
+          {order.customer ? (
+            <section className="flex flex-col gap-1 rounded-md border border-border p-4">
+              <h3 className="text-sm font-semibold text-foreground">
+                Customer
+              </h3>
+              <div className="text-sm text-muted-foreground">
+                <div>{order.customer.email}</div>
+                {(order.customer.firstName || order.customer.lastName) && (
+                  <div>
+                    {[order.customer.firstName, order.customer.lastName]
+                      .filter(Boolean)
+                      .join(" ")}
+                  </div>
+                )}
+              </div>
+            </section>
+          ) : null}
+
           <section className="flex flex-col gap-2 rounded-md border border-border p-4">
             <h3 className="text-sm font-semibold text-foreground">Summary</h3>
             <SummaryRow label="Subtotal" value={formatMoney(order.subtotal)} />

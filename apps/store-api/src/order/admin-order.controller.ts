@@ -9,7 +9,7 @@ import {
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { OrderService } from './order.service';
-import { OrderEntity, OrderItemEntity } from './entities';
+import { OrderEntity, OrderItemEntity, OrderCustomerData } from './entities';
 import { AdminOrderListQueryDto, UpdateOrderStatusDto } from './dto';
 import { AdminGuard } from '../auth/guards';
 
@@ -71,6 +71,7 @@ class AdminOrderResponseEnvelope {
 @ApiExtraModels(
   OrderEntity,
   OrderItemEntity,
+  OrderCustomerData,
   AdminOrderListResponse,
   AdminOrderPaginationMeta,
   AdminOrderResponseEnvelope,

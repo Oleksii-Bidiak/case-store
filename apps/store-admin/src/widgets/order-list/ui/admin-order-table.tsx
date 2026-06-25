@@ -147,8 +147,24 @@ export function AdminOrderTable() {
                   <TableCell className="font-mono text-xs">
                     {order.id.slice(0, 8)}…
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {order.userId.slice(0, 8)}…
+                  <TableCell>
+                    {order.customer ? (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-sm">{order.customer.email}</span>
+                        {(order.customer.firstName ||
+                          order.customer.lastName) && (
+                          <span className="text-xs text-muted-foreground">
+                            {[order.customer.firstName, order.customer.lastName]
+                              .filter(Boolean)
+                              .join(" ")}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {order.userId.slice(0, 8)}…
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge variant={orderStatusBadgeVariant(order.status)}>

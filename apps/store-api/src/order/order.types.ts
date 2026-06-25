@@ -58,6 +58,17 @@ export interface OrderWithItems {
   createdAt: Date;
   updatedAt: Date;
   items: OrderItemRow[];
+  /**
+   * Owning user account, selected only by the admin read paths
+   * (`findAll` / `findByIdForAdmin`) via `ADMIN_ORDERS_INCLUDE`. Absent on
+   * customer-facing and mutation queries, which use the lean `ORDERS_INCLUDE`.
+   */
+  user?: {
+    id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+  };
 }
 
 /**
