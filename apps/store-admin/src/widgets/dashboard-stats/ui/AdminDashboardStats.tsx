@@ -1,15 +1,10 @@
 import type { DashboardSummaryResponse } from "@/entities/dashboard";
 import { dict } from "@/shared/config";
+import { formatCurrency } from "@/shared/lib";
 
 interface AdminDashboardStatsProps {
   summary: DashboardSummaryResponse;
 }
-
-const currencyFormatter = new Intl.NumberFormat("uk-UA", {
-  style: "currency",
-  currency: "UAH",
-  maximumFractionDigits: 0,
-});
 
 interface StatCardProps {
   label: string;
@@ -40,12 +35,12 @@ export function AdminDashboardStats({ summary }: AdminDashboardStatsProps) {
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       <StatCard
         label={dict.dashboard.totalRevenue}
-        value={currencyFormatter.format(summary.revenue.totalRevenue)}
+        value={formatCurrency(summary.revenue.totalRevenue)}
         subText={dict.dashboard.revenueLifetime}
       />
       <StatCard
         label={dict.dashboard.revenue30}
-        value={currencyFormatter.format(summary.revenue.revenueLast30Days)}
+        value={formatCurrency(summary.revenue.revenueLast30Days)}
         subText={dict.dashboard.last30}
       />
       <StatCard

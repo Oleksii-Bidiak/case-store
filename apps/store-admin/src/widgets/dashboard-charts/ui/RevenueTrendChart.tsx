@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import type { DailyDataPointDto } from "@/entities/dashboard";
 import { dict } from "@/shared/config";
+import { formatCurrency } from "@/shared/lib";
 
 interface RevenueTrendChartProps {
   data: DailyDataPointDto[];
@@ -44,14 +45,14 @@ export function RevenueTrendChart({ data }: RevenueTrendChartProps) {
             stroke="var(--color-muted-foreground)"
           />
           <YAxis
-            tickFormatter={(value: number) => `₴${value.toFixed(0)}`}
+            tickFormatter={(value: number) => formatCurrency(value)}
             tick={{ fontSize: 12 }}
             stroke="var(--color-muted-foreground)"
             width={56}
           />
           <Tooltip
             formatter={(value) => [
-              `₴${Number(value).toFixed(2)}`,
+              formatCurrency(Number(value)),
               dict.dashboard.revenueTooltip,
             ]}
             labelFormatter={(label) =>
