@@ -56,6 +56,10 @@ describe("AdminOrderTable — customer column (TASK-125)", () => {
     expect(screen.getByText("Ivan Petrenko")).toBeInTheDocument();
     // The UUID fallback must not render when a customer is present.
     expect(screen.queryByText(/user-uui…|87654321…/)).not.toBeInTheDocument();
+    // Status badges render Ukrainian labels, not raw enums (TASK-129).
+    expect(screen.getByText("Очікує підтвердження")).toBeInTheDocument();
+    expect(screen.getByText("Очікує оплати")).toBeInTheDocument();
+    expect(screen.queryByText("PENDING")).not.toBeInTheDocument();
   });
 
   it("falls back to the truncated user id when no customer is joined", async () => {

@@ -1,6 +1,6 @@
 # Plan: Order & Payment Status Labels — Ukrainian Localization
 
-> **Status:** To Do
+> **Status:** Done
 > **Phase:** Phase 5 — Polish & Production (Tier-1 UA Localization)
 > **Created:** 2026-06-26
 > **Last Updated:** 2026-06-26

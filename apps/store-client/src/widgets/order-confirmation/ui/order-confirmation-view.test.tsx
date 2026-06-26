@@ -43,6 +43,10 @@ describe("OrderConfirmationView", () => {
     expect(screen.getByText("Відділення №1")).toBeInTheDocument();
     expect(screen.getByText("Київ")).toBeInTheDocument();
     expect(screen.getByText("+380501234567")).toBeInTheDocument();
+    // Status badges render Ukrainian labels, not raw enums (TASK-129).
+    expect(screen.getByText("Очікує підтвердження")).toBeInTheDocument();
+    expect(screen.getByText("Оплата: Очікує оплати")).toBeInTheDocument();
+    expect(screen.queryByText("PENDING")).not.toBeInTheDocument();
   });
 
   it("localizes the country code instead of rendering the raw ISO value", async () => {

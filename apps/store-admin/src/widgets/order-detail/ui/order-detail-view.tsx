@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   orderStatusBadgeVariant,
+  orderStatusLabel,
   paymentStatusBadgeVariant,
+  paymentStatusLabel,
   useAdminOrderControllerFindById,
 } from "@/entities/order";
 import { OrderStatusSelect } from "@/features/order-status-update";
@@ -115,10 +117,10 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
           <section className="flex flex-col gap-3 rounded-md border border-border p-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={orderStatusBadgeVariant(order.status)}>
-                {order.status}
+                {orderStatusLabel(order.status)}
               </Badge>
               <Badge variant={paymentStatusBadgeVariant(order.paymentStatus)}>
-                {dict.orders.payment(order.paymentStatus)}
+                {paymentStatusLabel(order.paymentStatus)}
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">

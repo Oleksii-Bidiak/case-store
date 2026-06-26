@@ -27,3 +27,5 @@ export {
   orderStatusBadgeVariant,
   paymentStatusBadgeVariant,
 } from "./status-badge";
+
+export { orderStatusLabel, paymentStatusLabel } from "./status-label";
