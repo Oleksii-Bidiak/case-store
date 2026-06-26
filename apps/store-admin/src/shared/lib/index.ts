@@ -1,5 +1,6 @@
 // Shared Lib — Utility functions and helpers
 export { cn } from "./utils";
+export * from "./format";
 
 // NOTE: `use-debounced-callback` is intentionally NOT re-exported here. It is a
 // "use client" hook; adding a client module to this barrel (which server
