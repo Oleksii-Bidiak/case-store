@@ -60,6 +60,7 @@ describe('Cart — guest & merge (e2e)', () => {
     removeItem: jest.fn(),
     clearItems: jest.fn(),
     findItem: jest.fn(),
+    findProductForCartValidation: jest.fn(),
   };
 
   // Mock AuthRepository — for login + JWT strategy user lookup
@@ -212,6 +213,12 @@ describe('Cart — guest & merge (e2e)', () => {
   describe('Guest cart — with cartToken cookie', () => {
     it('POST /api/cart/items → 201 and adds the item to the guest cart for that token', async () => {
       cartRepositoryMock.findOrCreate.mockResolvedValue(makeGuestCart([]));
+      cartRepositoryMock.findProductForCartValidation.mockResolvedValue({
+        id: VALID_PRODUCT_UUID,
+        name: 'iPhone 15 Pro Case — Clear MagSafe',
+        stock: 50,
+        isActive: true,
+      });
       cartRepositoryMock.addItem.mockResolvedValue(makeGuestCart([guestCartItem]));
 
       const res = await request(app.getHttpServer())

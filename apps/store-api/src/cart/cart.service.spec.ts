@@ -139,31 +139,6 @@ const mockCartWithLowStockItem: CartWithItems = {
   ],
 };
 
-const mockCartWithInactiveProduct: CartWithItems = {
-  id: 'cart-uuid-1',
-  userId: 'user-uuid-1',
-  token: null,
-  createdAt: now,
-  updatedAt: now,
-  items: [
-    {
-      id: 'item-uuid-4',
-      productId: 'product-uuid-4',
-      quantity: 1,
-      createdAt: now,
-      updatedAt: now,
-      product: {
-        id: 'product-uuid-4',
-        name: 'Discontinued Case',
-        price: { toString: () => '19.99' } as any,
-        compareAtPrice: null,
-        stock: 10,
-        isActive: false,
-      },
-    },
-  ],
-};
-
 // Guest cart used by merge tests — token-based, two items.
 const mockGuestCart: CartWithItems = {
   id: 'guest-cart-1',
@@ -219,6 +194,7 @@ const cartRepositoryMock = {
   removeItem: jest.fn(),
   clearItems: jest.fn(),
   findItem: jest.fn(),
+  findProductForCartValidation: jest.fn(),
 };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -313,8 +289,18 @@ describe('CartService', () => {
       quantity: 2,
     };
 
-    it('should resolve the cart, add the item, and return the updated cart', async () => {
+    // Product details returned by the pre-write validation lookup for a product
+    // that is not yet present in the cart.
+    const activeProduct = {
+      id: 'product-uuid-1',
+      name: 'iPhone 15 Pro Case',
+      stock: 50,
+      isActive: true,
+    };
+
+    it('should validate, add the item, and return the updated cart', async () => {
       cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
+      cartRepositoryMock.findProductForCartValidation.mockResolvedValue(activeProduct);
       cartRepositoryMock.addItem.mockResolvedValue(mockCartWithVariantItem);
 
       const result = await service.addToCart(userIdentity, addDto);
@@ -332,6 +318,7 @@ describe('CartService', () => {
 
     it('should work for a guest token identity', async () => {
       cartRepositoryMock.findOrCreate.mockResolvedValue({ ...mockEmptyCart, id: 'guest-cart-1' });
+      cartRepositoryMock.findProductForCartValidation.mockResolvedValue(activeProduct);
       cartRepositoryMock.addItem.mockResolvedValue(mockCartWithVariantItem);
 
       await service.addToCart(tokenIdentity, addDto);
@@ -342,94 +329,113 @@ describe('CartService', () => {
       );
     });
 
-    it('should throw BadRequestException when adding out-of-stock item', async () => {
+    it('should validate against the loaded cart line without an extra product lookup', async () => {
+      // Product already in the cart → details come from the loaded cart line,
+      // so findProductForCartValidation must not be called.
+      cartRepositoryMock.findOrCreate.mockResolvedValue(mockCartWithVariantItem);
+      cartRepositoryMock.addItem.mockResolvedValue(mockCartWithVariantItem);
+
+      await service.addToCart(userIdentity, { productId: 'product-uuid-1', quantity: 1 });
+
+      expect(cartRepositoryMock.findProductForCartValidation).not.toHaveBeenCalled();
+      expect(cartRepositoryMock.addItem).toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException and NOT persist when product is out of stock', async () => {
       cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
-      const outOfStockCart: CartWithItems = {
+      cartRepositoryMock.findProductForCartValidation.mockResolvedValue({
+        id: 'product-oos',
+        name: 'Out of Stock Case',
+        stock: 0,
+        isActive: true,
+      });
+
+      await expect(
+        service.addToCart(userIdentity, { productId: 'product-oos', quantity: 1 }),
+      ).rejects.toThrow(BadRequestException);
+      expect(cartRepositoryMock.addItem).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException and NOT persist when quantity exceeds stock', async () => {
+      cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
+      cartRepositoryMock.findProductForCartValidation.mockResolvedValue({
+        id: 'product-uuid-3',
+        name: 'Limited Edition Case — Gold',
+        stock: 2,
+        isActive: true,
+      });
+
+      await expect(
+        service.addToCart(userIdentity, { productId: 'product-uuid-3', quantity: 5 }),
+      ).rejects.toThrow(BadRequestException);
+      expect(cartRepositoryMock.addItem).not.toHaveBeenCalled();
+    });
+
+    it('should throw when existing qty (96) + incoming qty (5) exceeds MAX_QUANTITY (99)', async () => {
+      // Existing line of qty 96; resultingQty 101 must fail before any write,
+      // using the product details already on the loaded cart line.
+      const cartWithHighQty: CartWithItems = {
         ...mockEmptyCart,
         items: [
           {
-            id: 'item-oos',
-            productId: 'product-oos',
-            quantity: 1,
+            id: 'item-high',
+            productId: 'product-uuid-1',
+            quantity: 96,
             createdAt: now,
             updatedAt: now,
             product: {
-              id: 'product-oos',
-              name: 'Out of Stock Case',
-              price: { toString: () => '19.99' } as any,
+              id: 'product-uuid-1',
+              name: 'iPhone 15 Pro Case',
+              price: { toString: () => '29.99' } as any,
               compareAtPrice: null,
-              stock: 0,
+              stock: 200,
               isActive: true,
             },
           },
         ],
       };
-      cartRepositoryMock.addItem.mockResolvedValue(outOfStockCart);
+      cartRepositoryMock.findOrCreate.mockResolvedValue(cartWithHighQty);
 
       await expect(
-        service.addToCart(userIdentity, {
-          productId: 'product-oos',
-          quantity: 1,
-        }),
+        service.addToCart(userIdentity, { productId: 'product-uuid-1', quantity: 5 }),
       ).rejects.toThrow(BadRequestException);
+      expect(cartRepositoryMock.findProductForCartValidation).not.toHaveBeenCalled();
+      expect(cartRepositoryMock.addItem).not.toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException when quantity exceeds stock', async () => {
+    it('should throw BadRequestException and NOT persist when product is inactive', async () => {
       cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
-      const lowStockCart: CartWithItems = {
-        ...mockCartWithLowStockItem,
-        items: [
-          {
-            ...mockCartWithLowStockItem.items[0],
-            quantity: 5, // exceeds stock of 2
-          },
-        ],
-      };
-      cartRepositoryMock.addItem.mockResolvedValue(lowStockCart);
+      cartRepositoryMock.findProductForCartValidation.mockResolvedValue({
+        id: 'product-uuid-4',
+        name: 'Discontinued Case',
+        stock: 10,
+        isActive: false,
+      });
 
       await expect(
-        service.addToCart(userIdentity, {
-          productId: 'product-uuid-3',
-          quantity: 5,
-        }),
+        service.addToCart(userIdentity, { productId: 'product-uuid-4', quantity: 1 }),
       ).rejects.toThrow(BadRequestException);
+      expect(cartRepositoryMock.addItem).not.toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException when total quantity exceeds max (99)', async () => {
+    it('should throw NotFoundException and NOT persist when the product does not exist', async () => {
       cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
-      const maxQtyCart: CartWithItems = {
-        ...mockCartWithVariantItem,
-        items: [
-          {
-            ...mockCartWithVariantItem.items[0],
-            quantity: 100, // exceeds max of 99
-          },
-        ],
-      };
-      cartRepositoryMock.addItem.mockResolvedValue(maxQtyCart);
+      cartRepositoryMock.findProductForCartValidation.mockResolvedValue(null);
 
       await expect(
-        service.addToCart(userIdentity, {
-          productId: 'product-uuid-1',
-          quantity: 100,
-        }),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('should throw BadRequestException when adding inactive product', async () => {
-      cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
-      cartRepositoryMock.addItem.mockResolvedValue(mockCartWithInactiveProduct);
-
-      await expect(
-        service.addToCart(userIdentity, {
-          productId: 'product-uuid-4',
-          quantity: 1,
-        }),
-      ).rejects.toThrow(BadRequestException);
+        service.addToCart(userIdentity, { productId: 'ghost-product', quantity: 1 }),
+      ).rejects.toThrow(NotFoundException);
+      expect(cartRepositoryMock.addItem).not.toHaveBeenCalled();
     });
 
     it('should add a position to the cart', async () => {
       cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
+      cartRepositoryMock.findProductForCartValidation.mockResolvedValue({
+        id: 'product-uuid-2',
+        name: 'Screen Protector',
+        stock: 30,
+        isActive: true,
+      });
       cartRepositoryMock.addItem.mockResolvedValue(mockCartWithNoVariantItem);
 
       const dto: AddToCartDto = {

@@ -55,6 +55,7 @@ describe('CartController (e2e)', () => {
     removeItem: jest.fn(),
     clearItems: jest.fn(),
     findItem: jest.fn(),
+    findProductForCartValidation: jest.fn(),
   };
 
   // Mock AuthRepository — for JWT strategy user lookup
@@ -116,29 +117,6 @@ describe('CartController (e2e)', () => {
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     product: testProduct,
     variant: null,
-  };
-
-  const testCartItemWithVariant = {
-    id: 'item-e2e-2',
-    productId: 'prod-e2e-1',
-    variantId: 'var-e2e-1',
-    quantity: 1,
-    createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-    product: testProduct,
-    variant: {
-      id: 'var-e2e-1',
-      name: 'Black',
-      price: { toString: () => '34.99' },
-      stock: 5,
-      isActive: true,
-    },
-  };
-
-  // A variant item whose quantity (10) exceeds its stock (5)
-  const testOutOfStockCartItem = {
-    ...testCartItemWithVariant,
-    quantity: 10,
   };
 
   const makeCartWithItems = (
@@ -266,8 +244,15 @@ describe('CartController (e2e)', () => {
   describe('POST /api/cart/items', () => {
     it('should add an item to the cart and return 201 with the updated cart', async () => {
       const token = generateAccessToken(userA.id, userA.role);
-      // addToCart resolves the cart (findOrCreate) before adding the item.
+      // addToCart resolves the cart (findOrCreate), then validates the product
+      // (stock/isActive/max) BEFORE writing the item.
       cartRepositoryMock.findOrCreate.mockResolvedValue(emptyCart(userA.id));
+      cartRepositoryMock.findProductForCartValidation.mockResolvedValue({
+        id: VALID_PRODUCT_UUID,
+        name: 'iPhone 15 Pro Case — Clear MagSafe',
+        stock: 50,
+        isActive: true,
+      });
       cartRepositoryMock.addItem.mockResolvedValue(makeCartWithItems(userA.id));
 
       const response = await request(app.getHttpServer())
@@ -285,6 +270,12 @@ describe('CartController (e2e)', () => {
     it('should increment quantity when the same product+variant is added again', async () => {
       const token = generateAccessToken(userA.id, userA.role);
       cartRepositoryMock.findOrCreate.mockResolvedValue(makeCartWithItems(userA.id));
+      cartRepositoryMock.findProductForCartValidation.mockResolvedValue({
+        id: VALID_PRODUCT_UUID,
+        name: 'iPhone 15 Pro Case — Clear MagSafe',
+        stock: 50,
+        isActive: true,
+      });
       // Repository upsert has already incremented the quantity to 2
       cartRepositoryMock.addItem.mockResolvedValue(
         makeCartWithItems(userA.id, [{ ...testCartItem, quantity: 2 }]),
@@ -301,18 +292,25 @@ describe('CartController (e2e)', () => {
       expect(response.body.data.totals.itemCount).toBe(2);
     });
 
-    it('should return 400 when the item quantity exceeds the variant stock', async () => {
+    it('should return 400 and NOT persist when the quantity exceeds stock', async () => {
       const token = generateAccessToken(userA.id, userA.role);
       cartRepositoryMock.findOrCreate.mockResolvedValue(emptyCart(userA.id));
-      cartRepositoryMock.addItem.mockResolvedValue(
-        makeCartWithItems(userA.id, [testOutOfStockCartItem]),
-      );
+      // Stock (5) is validated BEFORE the write; requesting 10 must be rejected
+      // without ever calling addItem (regression: no ghost row on 400).
+      cartRepositoryMock.findProductForCartValidation.mockResolvedValue({
+        id: VALID_PRODUCT_UUID,
+        name: 'iPhone 15 Pro Case — Clear MagSafe',
+        stock: 5,
+        isActive: true,
+      });
 
       await request(app.getHttpServer())
         .post('/api/cart/items')
         .set('Authorization', `Bearer ${token}`)
         .send({ productId: VALID_PRODUCT_UUID, quantity: 10 })
         .expect(400);
+
+      expect(cartRepositoryMock.addItem).not.toHaveBeenCalled();
     });
 
     it('should return 400 when the requested quantity exceeds the max (99)', async () => {

@@ -280,4 +280,23 @@ export class CartRepository {
       where: { cartId_productId: { cartId, productId } },
     });
   }
+
+  /**
+   * Fetch the fields needed to validate an add-to-cart request for a product
+   * that is not yet present in the cart. Returns null when the product does
+   * not exist.
+   *
+   * Cart-internal use only — `CartService` calls this to validate stock /
+   * `isActive` / max-quantity BEFORE writing a new cart line. It is NOT a
+   * general product-access API and must not grow into one; the cart already
+   * reads these product columns via `CART_ITEMS_INCLUDE` for existing lines.
+   */
+  findProductForCartValidation(
+    productId: string,
+  ): Promise<{ id: string; name: string; stock: number; isActive: boolean } | null> {
+    return this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, name: true, stock: true, isActive: true },
+    });
+  }
 }

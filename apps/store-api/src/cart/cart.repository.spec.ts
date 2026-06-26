@@ -15,6 +15,9 @@ const prismaMock = {
     delete: jest.fn(),
     deleteMany: jest.fn(),
   },
+  product: {
+    findUnique: jest.fn(),
+  },
   $transaction: jest.fn(),
 };
 
@@ -307,6 +310,36 @@ describe('CartRepository', () => {
       prismaMock.cartItem.findUnique.mockResolvedValue(null);
 
       const result = await repository.findItem('cart-uuid-1', 'nonexistent-product');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  // ─── findProductForCartValidation ────────────────────────────────────────────
+
+  describe('findProductForCartValidation', () => {
+    it('should fetch only the validation fields for a product', async () => {
+      const product = {
+        id: 'product-uuid-1',
+        name: 'iPhone 15 Pro Case',
+        stock: 50,
+        isActive: true,
+      };
+      prismaMock.product.findUnique.mockResolvedValue(product);
+
+      const result = await repository.findProductForCartValidation('product-uuid-1');
+
+      expect(result).toEqual(product);
+      expect(prismaMock.product.findUnique).toHaveBeenCalledWith({
+        where: { id: 'product-uuid-1' },
+        select: { id: true, name: true, stock: true, isActive: true },
+      });
+    });
+
+    it('should return null when the product does not exist', async () => {
+      prismaMock.product.findUnique.mockResolvedValue(null);
+
+      const result = await repository.findProductForCartValidation('ghost-product');
 
       expect(result).toBeNull();
     });

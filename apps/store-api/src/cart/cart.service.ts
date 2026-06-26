@@ -32,13 +32,34 @@ export class CartService {
   }
 
   /**
-   * Add an item to the cart. If the same product+variant combination already
-   * exists, the repository increments the quantity (upsert).
+   * Add an item to the cart. If the same product position already exists in the
+   * cart, the repository increments the quantity (upsert).
    *
-   * After adding, validates active status, stock, and max quantity.
+   * Validate-before-write invariant: stock, `isActive`, and max-quantity are all
+   * checked BEFORE the DB write, so an invalid request never persists a row (the
+   * historical bug was validating after the write, leaving a "ghost" item that
+   * reappeared on reload). Validation runs against the *resulting* quantity
+   * (`existing line qty + incoming qty`) to match the repository's increment
+   * semantics.
    */
   async addToCart(identity: ResolvedCartIdentity, dto: AddToCartDto): Promise<CartEntity> {
     const cart = await this.cartRepository.findOrCreate(identity);
+
+    // Resulting quantity after the increment the repository will apply.
+    const existingLine = cart.items.find((item) => item.productId === dto.productId);
+    const resultingQuantity = (existingLine?.quantity ?? 0) + dto.quantity;
+
+    // Product details: reuse the cart line for an existing product (already
+    // loaded), otherwise fetch them for the new product.
+    const product =
+      existingLine?.product ??
+      (await this.cartRepository.findProductForCartValidation(dto.productId));
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    this.validateAddition(product, resultingQuantity);
 
     const input: AddToCartInput = {
       cartId: cart.id,
@@ -47,9 +68,6 @@ export class CartService {
     };
 
     const updated = await this.cartRepository.addItem(input);
-
-    // Validate the resulting cart items
-    this.validateCartItems(updated);
 
     return CartEntity.fromPrisma(updated);
   }
@@ -210,28 +228,31 @@ export class CartService {
   }
 
   /**
-   * Validate all items in a cart after an add operation.
+   * Validate an add-to-cart request against the resulting line quantity, BEFORE
+   * any DB write. Checks active status, stock availability, and the per-item
+   * maximum.
    *
-   * @throws BadRequestException if any validation fails
+   * @throws BadRequestException if any rule fails
    */
-  private validateCartItems(cart: CartWithItems): void {
-    for (const item of cart.items) {
-      // Check if the product position is active
-      if (!item.product.isActive) {
-        throw new BadRequestException(`Product "${item.product.name}" is no longer available`);
-      }
+  private validateAddition(
+    product: { name: string; stock: number; isActive: boolean },
+    resultingQuantity: number,
+  ): void {
+    // Check if the product position is active
+    if (!product.isActive) {
+      throw new BadRequestException(`Product "${product.name}" is no longer available`);
+    }
 
-      // Check stock availability against the position's stock
-      if (item.quantity > item.product.stock) {
-        throw new BadRequestException(
-          `Requested quantity (${item.quantity}) exceeds available stock (${item.product.stock}) for "${item.product.name}"`,
-        );
-      }
+    // Check stock availability against the position's stock
+    if (resultingQuantity > product.stock) {
+      throw new BadRequestException(
+        `Requested quantity (${resultingQuantity}) exceeds available stock (${product.stock}) for "${product.name}"`,
+      );
+    }
 
-      // Check max quantity
-      if (item.quantity > MAX_QUANTITY) {
-        throw new BadRequestException(`Quantity cannot exceed ${MAX_QUANTITY} per item`);
-      }
+    // Check max quantity
+    if (resultingQuantity > MAX_QUANTITY) {
+      throw new BadRequestException(`Quantity cannot exceed ${MAX_QUANTITY} per item`);
     }
   }
 }
