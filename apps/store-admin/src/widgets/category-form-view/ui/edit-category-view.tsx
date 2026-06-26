@@ -17,6 +17,7 @@ import {
   useAdminCategoryControllerFindById,
   useAdminCategoryControllerUpdate,
 } from "@/entities/category";
+import { dict } from "@/shared/config";
 
 interface EditCategoryViewProps {
   categoryId: string;
@@ -58,11 +59,11 @@ export function EditCategoryView({ categoryId }: EditCategoryViewProps) {
           void queryClient.invalidateQueries({
             queryKey: getAdminCategoryControllerFindByIdQueryKey(categoryId),
           });
-          toast.success("Category updated");
+          toast.success(dict.categories.toastUpdated);
           router.push("/categories");
         },
         onError: () => {
-          toast.error("Failed to update category");
+          toast.error(dict.categories.toastUpdateFailed);
         },
       },
     );
@@ -75,9 +76,11 @@ export function EditCategoryView({ categoryId }: EditCategoryViewProps) {
           href="/categories"
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          ← Back to categories
+          {dict.categories.back}
         </Link>
-        <h2 className="text-2xl font-bold text-foreground">Edit Category</h2>
+        <h2 className="text-2xl font-bold text-foreground">
+          {dict.categories.editHeading}
+        </h2>
       </div>
 
       {isLoading ? (
@@ -91,7 +94,7 @@ export function EditCategoryView({ categoryId }: EditCategoryViewProps) {
         </div>
       ) : isError && !isNotFound ? (
         <p role="alert" className="text-sm text-destructive">
-          Failed to load category. Please try again.
+          {dict.categories.loadOneError}
         </p>
       ) : category ? (
         <CategoryForm
@@ -99,7 +102,7 @@ export function EditCategoryView({ categoryId }: EditCategoryViewProps) {
           excludeParentId={categoryId}
           onSubmit={handleSubmit}
           isPending={update.isPending}
-          submitLabel="Save changes"
+          submitLabel={dict.common.saveChanges}
         />
       ) : null}
     </div>

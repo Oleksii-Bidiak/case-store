@@ -1,5 +1,8 @@
 import { z } from "zod";
 import type { CreateCategoryDto } from "@/entities/category";
+import { dict } from "@/shared/config";
+
+const e = dict.categoryForm.errors;
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -12,38 +15,29 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  * while `onSubmit` receives a parsed number.
  */
 export const categorySchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1, "Name is required")
-    .max(255, "Name must be at most 255 characters"),
+  name: z.string().trim().min(1, e.nameRequired).max(255, e.nameMax),
 
   slug: z
     .string()
     .trim()
-    .max(255, "Slug must be at most 255 characters")
-    .regex(SLUG_PATTERN, "Use lowercase letters, numbers, and single hyphens")
+    .max(255, e.slugMax)
+    .regex(SLUG_PATTERN, e.slugPattern)
     .optional()
     .or(z.literal("")),
 
   description: z
     .string()
     .trim()
-    .max(2000, "Description must be at most 2000 characters")
+    .max(2000, e.descriptionMax)
     .optional()
     .or(z.literal("")),
 
-  image: z
-    .string()
-    .trim()
-    .url("Must be a valid URL")
-    .optional()
-    .or(z.literal("")),
+  image: z.string().trim().url(e.imageUrl).optional().or(z.literal("")),
 
   parentId: z
     .string()
     .trim()
-    .uuid("Must be a valid category")
+    .uuid(e.parentInvalid)
     .optional()
     .or(z.literal("")),
 
@@ -51,10 +45,7 @@ export const categorySchema = z.object({
     .string()
     .trim()
     .optional()
-    .refine(
-      (v) => v === undefined || v === "" || /^\d+$/.test(v),
-      "Sort order must be a non-negative integer",
-    )
+    .refine((v) => v === undefined || v === "" || /^\d+$/.test(v), e.sortInt)
     .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
 
   isActive: z.boolean().optional(),

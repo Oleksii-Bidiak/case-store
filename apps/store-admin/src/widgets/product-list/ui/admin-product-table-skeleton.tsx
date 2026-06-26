@@ -6,6 +6,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 
 const SKELETON_ROWS = 5;
 
@@ -18,12 +19,12 @@ export function AdminProductTableSkeleton() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Category</TableHead>
-            <TableHead>Price</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Created</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead>{dict.products.colName}</TableHead>
+            <TableHead>{dict.products.colCategory}</TableHead>
+            <TableHead>{dict.products.colPrice}</TableHead>
+            <TableHead>{dict.products.colStatus}</TableHead>
+            <TableHead>{dict.products.colCreated}</TableHead>
+            <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

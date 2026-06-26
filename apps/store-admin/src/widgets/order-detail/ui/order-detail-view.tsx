@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import { OrderDetailSkeleton } from "./order-detail-skeleton";
 
 interface OrderDetailViewProps {
@@ -79,7 +80,7 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
   if (isError && !isNotFound) {
     return (
       <p role="alert" className="text-sm text-destructive">
-        Failed to load order. Please try again.
+        {dict.orders.loadOneError}
       </p>
     );
   }
@@ -101,10 +102,10 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
           href="/orders"
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          ← Back to orders
+          {dict.orders.back}
         </Link>
         <h2 className="text-2xl font-bold text-foreground">
-          Order #{order.id.slice(0, 8)}
+          {dict.orders.title(order.id.slice(0, 8))}
         </h2>
       </div>
 
@@ -117,17 +118,19 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                 {order.status}
               </Badge>
               <Badge variant={paymentStatusBadgeVariant(order.paymentStatus)}>
-                Payment: {order.paymentStatus}
+                {dict.orders.payment(order.paymentStatus)}
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
-              Created {dateFormatter.format(new Date(order.createdAt))} ·
-              Updated {dateFormatter.format(new Date(order.updatedAt))}
+              {dict.orders.timeline(
+                dateFormatter.format(new Date(order.createdAt)),
+                dateFormatter.format(new Date(order.updatedAt)),
+              )}
             </p>
             <Separator />
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium text-foreground">
-                Update status
+                {dict.orders.updateStatus}
               </span>
               <OrderStatusSelect
                 orderId={order.id}
@@ -140,10 +143,16 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Product</TableHead>
-                  <TableHead className="text-right">Unit price</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Line total</TableHead>
+                  <TableHead>{dict.orders.itemProduct}</TableHead>
+                  <TableHead className="text-right">
+                    {dict.orders.itemUnitPrice}
+                  </TableHead>
+                  <TableHead className="text-right">
+                    {dict.orders.itemQty}
+                  </TableHead>
+                  <TableHead className="text-right">
+                    {dict.orders.itemLineTotal}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -173,7 +182,7 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
           {order.customer ? (
             <section className="flex flex-col gap-1 rounded-md border border-border p-4">
               <h3 className="text-sm font-semibold text-foreground">
-                Customer
+                {dict.orders.customer}
               </h3>
               <div className="text-sm text-muted-foreground">
                 <div>{order.customer.email}</div>
@@ -189,29 +198,48 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
           ) : null}
 
           <section className="flex flex-col gap-2 rounded-md border border-border p-4">
-            <h3 className="text-sm font-semibold text-foreground">Summary</h3>
-            <SummaryRow label="Subtotal" value={formatMoney(order.subtotal)} />
-            <SummaryRow label="Discount" value={formatMoney(order.discount)} />
+            <h3 className="text-sm font-semibold text-foreground">
+              {dict.orders.summary}
+            </h3>
             <SummaryRow
-              label="Shipping"
+              label={dict.orders.subtotal}
+              value={formatMoney(order.subtotal)}
+            />
+            <SummaryRow
+              label={dict.orders.discount}
+              value={formatMoney(order.discount)}
+            />
+            <SummaryRow
+              label={dict.orders.shipping}
               value={formatMoney(order.shippingCost)}
             />
-            <SummaryRow label="Tax" value={formatMoney(order.tax)} />
+            <SummaryRow
+              label={dict.orders.tax}
+              value={formatMoney(order.tax)}
+            />
             <Separator />
             <div className="flex items-center justify-between font-semibold">
-              <span>Total</span>
+              <span>{dict.orders.total}</span>
               <span>{formatMoney(order.total)}</span>
             </div>
           </section>
 
-          <AddressBlock title="Shipping address" address={shipping} />
+          <AddressBlock
+            title={dict.orders.shippingAddress}
+            address={shipping}
+          />
           {billingDiffers ? (
-            <AddressBlock title="Billing address" address={billing} />
+            <AddressBlock
+              title={dict.orders.billingAddress}
+              address={billing}
+            />
           ) : null}
 
           {order.notes ? (
             <section className="flex flex-col gap-1 rounded-md border border-border p-4">
-              <h3 className="text-sm font-semibold text-foreground">Notes</h3>
+              <h3 className="text-sm font-semibold text-foreground">
+                {dict.orders.notes}
+              </h3>
               <p className="text-sm text-muted-foreground">{order.notes}</p>
             </section>
           ) : null}

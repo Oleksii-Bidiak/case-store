@@ -19,6 +19,7 @@ import {
 } from "@/entities/product";
 import { ProductImageManager } from "@/features/product-image-manager";
 import { Separator } from "@/shared/ui";
+import { dict } from "@/shared/config";
 
 interface EditProductViewProps {
   productId: string;
@@ -58,11 +59,11 @@ export function EditProductView({ productId }: EditProductViewProps) {
           void queryClient.invalidateQueries({
             queryKey: getProductControllerFindByIdQueryKey(productId),
           });
-          toast.success("Product updated");
+          toast.success(dict.products.toastUpdated);
           router.push("/products");
         },
         onError: () => {
-          toast.error("Failed to update product");
+          toast.error(dict.products.toastUpdateFailed);
         },
       },
     );
@@ -75,9 +76,11 @@ export function EditProductView({ productId }: EditProductViewProps) {
           href="/products"
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          ← Back to products
+          {dict.products.back}
         </Link>
-        <h2 className="text-2xl font-bold text-foreground">Edit Product</h2>
+        <h2 className="text-2xl font-bold text-foreground">
+          {dict.products.editHeading}
+        </h2>
       </div>
 
       {isLoading ? (
@@ -91,7 +94,7 @@ export function EditProductView({ productId }: EditProductViewProps) {
         </div>
       ) : isError && !isNotFound ? (
         <p role="alert" className="text-sm text-destructive">
-          Failed to load product. Please try again.
+          {dict.products.loadOneError}
         </p>
       ) : product ? (
         <div className="flex max-w-2xl flex-col gap-6">
@@ -99,14 +102,14 @@ export function EditProductView({ productId }: EditProductViewProps) {
             defaultValues={mapProductToFormValues(product)}
             onSubmit={handleSubmit}
             isPending={update.isPending}
-            submitLabel="Save changes"
+            submitLabel={dict.common.saveChanges}
           />
 
           <Separator />
 
           <section className="flex flex-col gap-3">
             <h3 className="text-lg font-semibold text-foreground">
-              Product Images
+              {dict.products.imagesHeading}
             </h3>
             <ProductImageManager productId={productId} />
           </section>

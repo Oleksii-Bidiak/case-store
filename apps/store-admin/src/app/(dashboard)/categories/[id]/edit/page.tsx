@@ -1,9 +1,10 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { EditCategoryView } from "@/widgets";
+import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
-  title: "Edit Category — Admin",
+  title: dict.categories.metaTitleEdit,
 };
 
 interface EditCategoryPageProps {

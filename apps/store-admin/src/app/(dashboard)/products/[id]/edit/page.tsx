@@ -1,9 +1,10 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { EditProductView } from "@/widgets";
+import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
-  title: "Edit Product — Admin",
+  title: dict.products.metaTitleEdit,
 };
 
 interface EditProductPageProps {

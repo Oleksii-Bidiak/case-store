@@ -25,6 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import { AdminUserTableSkeleton } from "./AdminUserTableSkeleton";
 
 const PAGE_SIZE = 20;
@@ -111,39 +112,49 @@ export function AdminUserTable() {
       <div className="flex flex-wrap items-center gap-2">
         <Input
           type="search"
-          placeholder="Search by email or name…"
+          placeholder={dict.users.searchPlaceholder}
           value={searchInput}
           onChange={(event) => {
             setSearchInput(event.target.value);
             debouncedSearch(event.target.value);
           }}
           className="w-64"
-          aria-label="Search users"
+          aria-label={dict.users.searchAria}
         />
         <Select
           value={roleParam || ALL_OPTION}
           onValueChange={handleRoleChange}
         >
-          <SelectTrigger className="w-40" aria-label="Filter by role">
-            <SelectValue placeholder="All roles" />
+          <SelectTrigger
+            className="w-40"
+            aria-label={dict.users.filterRoleAria}
+          >
+            <SelectValue placeholder={dict.users.allRoles} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL_OPTION}>All roles</SelectItem>
-            <SelectItem value={UserEntityRole.CUSTOMER}>Customer</SelectItem>
-            <SelectItem value={UserEntityRole.ADMIN}>Admin</SelectItem>
+            <SelectItem value={ALL_OPTION}>{dict.users.allRoles}</SelectItem>
+            <SelectItem value={UserEntityRole.CUSTOMER}>
+              {dict.users.roleCustomer}
+            </SelectItem>
+            <SelectItem value={UserEntityRole.ADMIN}>
+              {dict.users.roleAdmin}
+            </SelectItem>
           </SelectContent>
         </Select>
         <Select
           value={isActiveParam || ALL_OPTION}
           onValueChange={handleStatusChange}
         >
-          <SelectTrigger className="w-40" aria-label="Filter by status">
-            <SelectValue placeholder="All statuses" />
+          <SelectTrigger
+            className="w-40"
+            aria-label={dict.users.filterStatusAria}
+          >
+            <SelectValue placeholder={dict.users.allStatuses} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL_OPTION}>All statuses</SelectItem>
-            <SelectItem value="true">Active</SelectItem>
-            <SelectItem value="false">Inactive</SelectItem>
+            <SelectItem value={ALL_OPTION}>{dict.users.allStatuses}</SelectItem>
+            <SelectItem value="true">{dict.common.active}</SelectItem>
+            <SelectItem value="false">{dict.common.inactive}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -152,11 +163,11 @@ export function AdminUserTable() {
         <AdminUserTableSkeleton />
       ) : isError ? (
         <p role="alert" className="text-sm text-destructive">
-          Failed to load users. Please try again.
+          {dict.users.loadError}
         </p>
       ) : users.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          No users match the current filters.
+          {dict.users.empty}
         </div>
       ) : (
         <div className="rounded-md border border-border">
@@ -164,12 +175,14 @@ export function AdminUserTable() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12" />
-                <TableHead>Email</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Joined</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>{dict.users.colEmail}</TableHead>
+                <TableHead>{dict.users.colName}</TableHead>
+                <TableHead>{dict.users.colRole}</TableHead>
+                <TableHead>{dict.users.colStatus}</TableHead>
+                <TableHead>{dict.users.colJoined}</TableHead>
+                <TableHead className="text-right">
+                  {dict.common.actions}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -190,12 +203,16 @@ export function AdminUserTable() {
                           : "secondary"
                       }
                     >
-                      {user.role}
+                      {user.role === UserEntityRole.ADMIN
+                        ? dict.users.roleAdmin
+                        : dict.users.roleCustomer}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <Badge variant={user.isActive ? "default" : "destructive"}>
-                      {user.isActive ? "Active" : "Inactive"}
+                      {user.isActive
+                        ? dict.common.active
+                        : dict.common.inactive}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
@@ -203,7 +220,7 @@ export function AdminUserTable() {
                   </TableCell>
                   <TableCell className="text-right">
                     <Button asChild variant="outline" size="sm">
-                      <Link href={`/users/${user.id}`}>View</Link>
+                      <Link href={`/users/${user.id}`}>{dict.common.view}</Link>
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -216,7 +233,7 @@ export function AdminUserTable() {
       {!isLoading && !isError && users.length > 0 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
+            {dict.common.pageOf(page, totalPages)}
           </p>
           <div className="flex gap-2">
             <Button
@@ -229,7 +246,7 @@ export function AdminUserTable() {
                 })
               }
             >
-              Previous
+              {dict.common.previous}
             </Button>
             <Button
               variant="outline"
@@ -237,7 +254,7 @@ export function AdminUserTable() {
               disabled={page >= totalPages}
               onClick={() => updateParams({ page: String(page + 1) })}
             >
-              Next
+              {dict.common.next}
             </Button>
           </div>
         </div>

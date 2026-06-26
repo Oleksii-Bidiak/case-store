@@ -13,6 +13,7 @@ import {
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
   useAdminCategoryControllerCreate,
 } from "@/entities/category";
+import { dict } from "@/shared/config";
 
 /**
  * Create-category page body: renders the form and wires the create mutation,
@@ -32,11 +33,11 @@ export function CreateCategoryView() {
             queryKey:
               getAdminCategoryControllerFindAllWithProductCountQueryKey(),
           });
-          toast.success("Category created");
+          toast.success(dict.categories.toastCreated);
           router.push("/categories");
         },
         onError: () => {
-          toast.error("Failed to create category");
+          toast.error(dict.categories.toastCreateFailed);
         },
       },
     );
@@ -49,15 +50,17 @@ export function CreateCategoryView() {
           href="/categories"
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          ← Back to categories
+          {dict.categories.back}
         </Link>
-        <h2 className="text-2xl font-bold text-foreground">Create Category</h2>
+        <h2 className="text-2xl font-bold text-foreground">
+          {dict.categories.createHeading}
+        </h2>
       </div>
 
       <CategoryForm
         onSubmit={handleSubmit}
         isPending={create.isPending}
-        submitLabel="Create category"
+        submitLabel={dict.categories.createSubmit}
       />
     </div>
   );

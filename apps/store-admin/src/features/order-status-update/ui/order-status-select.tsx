@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import { getAllowedTransitions } from "../model/transitions";
 
 interface OrderStatusSelectProps {
@@ -42,7 +43,7 @@ export function OrderStatusSelect({
   if (allowed.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No further transitions available
+        {dict.orderStatus.noTransitions}
       </p>
     );
   }
@@ -61,10 +62,10 @@ export function OrderStatusSelect({
           void queryClient.invalidateQueries({
             queryKey: getAdminOrderControllerFindByIdQueryKey(orderId),
           });
-          toast.success(`Order status updated to ${value}`);
+          toast.success(dict.orderStatus.toastUpdated(value));
         },
         onError: () => {
-          toast.error("Failed to update order status");
+          toast.error(dict.orderStatus.toastFailed);
         },
       },
     );
@@ -76,8 +77,8 @@ export function OrderStatusSelect({
       onValueChange={handleChange}
       disabled={updateStatus.isPending}
     >
-      <SelectTrigger className="w-56" aria-label="Update order status">
-        <SelectValue placeholder="Change status…" />
+      <SelectTrigger className="w-56" aria-label={dict.orderStatus.updateAria}>
+        <SelectValue placeholder={dict.orderStatus.changeStatus} />
       </SelectTrigger>
       <SelectContent>
         {allowed.map((status) => (

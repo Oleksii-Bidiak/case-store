@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { UserDetailSkeleton, UserDetailView } from "@/widgets";
+import { dict } from "@/shared/config";
 
 interface UserDetailPageProps {
   params: Promise<{ id: string }>;
@@ -12,7 +13,7 @@ export async function generateMetadata({
   const { id } = await params;
 
   return {
-    title: `User ${id.slice(0, 8)} — Admin`,
+    title: dict.users.metaTitleDetail(id.slice(0, 8)),
   };
 }
 

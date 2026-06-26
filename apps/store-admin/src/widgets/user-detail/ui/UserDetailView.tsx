@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { UserEntityRole, useUserControllerFindById } from "@/entities/user";
 import { UserBanToggle } from "@/features/user-ban-toggle";
 import { Badge, Separator } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import { UserDetailSkeleton } from "./UserDetailSkeleton";
 
 interface UserDetailViewProps {
@@ -43,7 +44,7 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
   if (isError && !isNotFound) {
     return (
       <p role="alert" className="text-sm text-destructive">
-        Failed to load user. Please try again.
+        {dict.users.loadOneError}
       </p>
     );
   }
@@ -62,7 +63,7 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
           href="/users"
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          ← Back to Users
+          {dict.users.back}
         </Link>
         <h2 className="text-2xl font-bold text-foreground">{user.email}</h2>
       </div>
@@ -87,10 +88,12 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
                         : "secondary"
                     }
                   >
-                    {user.role}
+                    {user.role === UserEntityRole.ADMIN
+                      ? dict.users.roleAdmin
+                      : dict.users.roleCustomer}
                   </Badge>
                   <Badge variant={user.isActive ? "default" : "destructive"}>
-                    {user.isActive ? "Active" : "Inactive"}
+                    {user.isActive ? dict.common.active : dict.common.inactive}
                   </Badge>
                 </div>
               </div>
@@ -99,11 +102,17 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
             <Separator />
 
             <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <DetailField label="Email" value={user.email} />
-              <DetailField label="Full name" value={name || "—"} />
-              <DetailField label="Phone" value={user.phone ?? "—"} />
+              <DetailField label={dict.users.fieldEmail} value={user.email} />
               <DetailField
-                label="Member since"
+                label={dict.users.fieldFullName}
+                value={name || "—"}
+              />
+              <DetailField
+                label={dict.users.fieldPhone}
+                value={user.phone ?? "—"}
+              />
+              <DetailField
+                label={dict.users.fieldMemberSince}
                 value={dateFormatter.format(new Date(user.createdAt))}
               />
             </dl>
@@ -111,12 +120,12 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
 
           <section className="flex flex-col gap-2 rounded-md border border-border p-4">
             <span className="text-sm font-medium text-foreground">
-              Account status
+              {dict.users.accountStatus}
             </span>
             <p className="text-sm text-muted-foreground">
               {user.isActive
-                ? "This account is active and the user can sign in."
-                : "This account is deactivated and the user cannot sign in."}
+                ? dict.users.accountActive
+                : dict.users.accountInactive}
             </p>
             <div>
               <UserBanToggle userId={user.id} isActive={user.isActive} />
@@ -128,15 +137,15 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
         <div className="flex flex-col gap-6">
           <section className="flex flex-col gap-3 rounded-md border border-border p-4">
             <h3 className="text-sm font-semibold text-foreground">
-              Account metadata
+              {dict.users.accountMetadata}
             </h3>
-            <DetailField label="User ID" value={user.id} mono />
+            <DetailField label={dict.users.fieldUserId} value={user.id} mono />
             <DetailField
-              label="Created"
+              label={dict.users.fieldCreated}
               value={dateFormatter.format(new Date(user.createdAt))}
             />
             <DetailField
-              label="Last updated"
+              label={dict.users.fieldUpdated}
               value={dateFormatter.format(new Date(user.updatedAt))}
             />
           </section>

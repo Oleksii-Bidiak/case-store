@@ -3,6 +3,7 @@
 import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/entities/session";
+import { dict } from "@/shared/config";
 
 /**
  * AdminShellGuard — route gate for the authenticated admin area.
@@ -26,11 +27,11 @@ export function AdminShellGuard({ children }: { children: ReactNode }) {
     return (
       <div
         role="status"
-        aria-label="Loading"
+        aria-label={dict.common.loading}
         className="flex h-screen items-center justify-center"
       >
         <div className="size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
-        <span className="sr-only">Loading…</span>
+        <span className="sr-only">{dict.common.loading}</span>
       </div>
     );
   }

@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { renderWithProviders, screen } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
+import { dict } from "@/shared/config";
 import { OrderDetailView } from "./order-detail-view";
 
 // next/navigation is unavailable under jsdom — mock the router.
@@ -59,7 +60,7 @@ describe("OrderDetailView — customer section (TASK-125)", () => {
 
     renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
 
-    expect(await screen.findByText("Customer")).toBeInTheDocument();
+    expect(await screen.findByText(dict.orders.customer)).toBeInTheDocument();
     expect(screen.getByText("buyer@example.com")).toBeInTheDocument();
     expect(screen.getByText("Ivan Petrenko")).toBeInTheDocument();
   });
@@ -74,7 +75,7 @@ describe("OrderDetailView — customer section (TASK-125)", () => {
     renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
 
     // Wait for the order to load (Summary always renders), then assert no card.
-    expect(await screen.findByText("Summary")).toBeInTheDocument();
-    expect(screen.queryByText("Customer")).not.toBeInTheDocument();
+    expect(await screen.findByText(dict.orders.summary)).toBeInTheDocument();
+    expect(screen.queryByText(dict.orders.customer)).not.toBeInTheDocument();
   });
 });

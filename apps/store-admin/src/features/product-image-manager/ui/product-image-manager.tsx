@@ -29,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 
 interface ProductImageManagerProps {
   productId: string;
@@ -66,9 +67,9 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
       {
         onSuccess: () => {
           void invalidate();
-          toast.success("Images uploaded");
+          toast.success(dict.productImages.toastUploaded);
         },
-        onError: () => toast.error("Upload failed — check file type and size"),
+        onError: () => toast.error(dict.productImages.toastUploadFailed),
         onSettled: () => {
           if (fileInputRef.current) fileInputRef.current.value = "";
         },
@@ -91,7 +92,7 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
       },
       {
         onSuccess: () => void invalidate(),
-        onError: () => toast.error("Failed to reorder images"),
+        onError: () => toast.error(dict.productImages.toastReorderFailed),
       },
     );
   };
@@ -116,9 +117,9 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
       {
         onSuccess: () => {
           void invalidate();
-          toast.success("Image deleted");
+          toast.success(dict.productImages.toastDeleted);
         },
-        onError: () => toast.error("Failed to delete image"),
+        onError: () => toast.error(dict.productImages.toastDeleteFailed),
         onSettled: () => setPendingDeleteId(null),
       },
     );
@@ -138,7 +139,7 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
           ) : (
             <ImagePlus />
           )}
-          Upload images
+          {dict.productImages.upload}
         </Button>
         <input
           ref={fileInputRef}
@@ -149,7 +150,7 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
           onChange={(e) => handleFiles(e.target.files)}
         />
         <p className="text-sm text-muted-foreground">
-          JPEG, PNG, WebP or GIF — up to 5 MB each.
+          {dict.productImages.hint}
         </p>
       </div>
 
@@ -164,11 +165,11 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
         </div>
       ) : isError ? (
         <p role="alert" className="text-sm text-destructive">
-          Failed to load images. Please try again.
+          {dict.productImages.loadError}
         </p>
       ) : images.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No images yet. Upload the first one to set the product cover.
+          {dict.productImages.empty}
         </p>
       ) : (
         <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
@@ -181,14 +182,15 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={image.url}
-                  alt={image.alt ?? "Product image"}
+                  alt={image.alt ?? dict.productImages.alt}
                   className="h-full w-full object-cover"
                 />
               </div>
 
               {image.isPrimary && (
                 <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground">
-                  <Star className="size-3 fill-current" /> Primary
+                  <Star className="size-3 fill-current" />{" "}
+                  {dict.productImages.primary}
                 </span>
               )}
 
@@ -198,7 +200,7 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
                     type="button"
                     variant="ghost"
                     size="icon-xs"
-                    aria-label="Move left"
+                    aria-label={dict.productImages.moveLeft}
                     disabled={busy || index === 0}
                     onClick={() => move(index, -1)}
                   >
@@ -208,7 +210,7 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
                     type="button"
                     variant="ghost"
                     size="icon-xs"
-                    aria-label="Move right"
+                    aria-label={dict.productImages.moveRight}
                     disabled={busy || index === images.length - 1}
                     onClick={() => move(index, 1)}
                   >
@@ -220,7 +222,7 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
                     type="button"
                     variant="ghost"
                     size="icon-xs"
-                    aria-label="Set as primary"
+                    aria-label={dict.productImages.setPrimary}
                     disabled={busy || image.isPrimary}
                     onClick={() => setPrimary(image.id)}
                   >
@@ -230,7 +232,7 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
                     type="button"
                     variant="ghost"
                     size="icon-xs"
-                    aria-label="Delete image"
+                    aria-label={dict.productImages.deleteImage}
                     disabled={busy}
                     onClick={() => setPendingDeleteId(image.id)}
                   >
@@ -249,16 +251,15 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete image?</DialogTitle>
+            <DialogTitle>{dict.productImages.deleteTitle}</DialogTitle>
             <DialogDescription>
-              This permanently removes the image from the product and storage.
-              This cannot be undone.
+              {dict.productImages.deleteDescription}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="outline">
-                Cancel
+                {dict.common.cancel}
               </Button>
             </DialogClose>
             <Button
@@ -268,7 +269,7 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
               onClick={confirmDelete}
             >
               {remove.isPending && <Loader2 className="animate-spin" />}
-              Delete
+              {dict.common.delete}
             </Button>
           </DialogFooter>
         </DialogContent>

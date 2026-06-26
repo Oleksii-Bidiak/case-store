@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import { AdminCategoryTableSkeleton } from "./admin-category-table-skeleton";
 
 const PAGE_SIZE = 20;
@@ -75,14 +76,14 @@ export function AdminCategoryTable() {
       <form onSubmit={handleSearchSubmit} className="flex gap-2" role="search">
         <Input
           type="search"
-          placeholder="Search categories…"
+          placeholder={dict.categories.searchPlaceholder}
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
           className="max-w-xs"
-          aria-label="Search categories"
+          aria-label={dict.categories.searchAria}
         />
         <Button type="submit" variant="outline">
-          Search
+          {dict.common.search}
         </Button>
       </form>
 
@@ -90,26 +91,28 @@ export function AdminCategoryTable() {
         <AdminCategoryTableSkeleton />
       ) : isError ? (
         <p role="alert" className="text-sm text-destructive">
-          Failed to load categories. Please try again.
+          {dict.categories.loadError}
         </p>
       ) : categories.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
           {searchParam
-            ? `No categories match “${searchParam}”.`
-            : "No categories yet. Create your first category."}
+            ? dict.categories.emptyMatch(searchParam)
+            : dict.categories.empty}
         </div>
       ) : (
         <div className="rounded-md border border-border">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Slug</TableHead>
-                <TableHead>Parent</TableHead>
-                <TableHead>Products</TableHead>
-                <TableHead>Sort</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>{dict.categories.colName}</TableHead>
+                <TableHead>{dict.categories.colSlug}</TableHead>
+                <TableHead>{dict.categories.colParent}</TableHead>
+                <TableHead>{dict.categories.colProducts}</TableHead>
+                <TableHead>{dict.categories.colSort}</TableHead>
+                <TableHead>{dict.categories.colStatus}</TableHead>
+                <TableHead className="text-right">
+                  {dict.common.actions}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -122,7 +125,7 @@ export function AdminCategoryTable() {
                   <TableCell className="text-muted-foreground">
                     {category.parentId
                       ? (nameById.get(category.parentId) ?? "—")
-                      : "Root"}
+                      : dict.categories.root}
                   </TableCell>
                   <TableCell>{category.productCount}</TableCell>
                   <TableCell>{category.sortOrder}</TableCell>
@@ -134,7 +137,9 @@ export function AdminCategoryTable() {
                   </TableCell>
                   <TableCell className="text-right">
                     <Button asChild variant="outline" size="sm">
-                      <Link href={`/categories/${category.id}/edit`}>Edit</Link>
+                      <Link href={`/categories/${category.id}/edit`}>
+                        {dict.common.edit}
+                      </Link>
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -147,7 +152,7 @@ export function AdminCategoryTable() {
       {!isLoading && !isError && categories.length > 0 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
+            {dict.common.pageOf(page, totalPages)}
           </p>
           <div className="flex gap-2">
             <Button
@@ -160,7 +165,7 @@ export function AdminCategoryTable() {
                 })
               }
             >
-              Previous
+              {dict.common.previous}
             </Button>
             <Button
               variant="outline"
@@ -168,7 +173,7 @@ export function AdminCategoryTable() {
               disabled={page >= totalPages}
               onClick={() => updateParams({ page: String(page + 1) })}
             >
-              Next
+              {dict.common.next}
             </Button>
           </div>
         </div>

@@ -6,6 +6,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 
 const SKELETON_ROWS = 5;
 const COLUMN_COUNT = 8;
@@ -19,14 +20,14 @@ export function AdminOrderTableSkeleton() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Order</TableHead>
-            <TableHead>Customer</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Payment</TableHead>
-            <TableHead>Total</TableHead>
-            <TableHead>Items</TableHead>
-            <TableHead>Created</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead>{dict.orders.colOrder}</TableHead>
+            <TableHead>{dict.orders.colCustomer}</TableHead>
+            <TableHead>{dict.orders.colStatus}</TableHead>
+            <TableHead>{dict.orders.colPayment}</TableHead>
+            <TableHead>{dict.orders.colTotal}</TableHead>
+            <TableHead>{dict.orders.colItems}</TableHead>
+            <TableHead>{dict.orders.colCreated}</TableHead>
+            <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

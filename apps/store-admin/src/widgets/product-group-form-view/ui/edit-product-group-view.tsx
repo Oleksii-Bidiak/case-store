@@ -19,6 +19,7 @@ import {
   type ProductGroupDetailEntity,
 } from "@/entities/product-group";
 import { Separator } from "@/shared/ui";
+import { dict } from "@/shared/config";
 
 interface EditProductGroupViewProps {
   groupId: string;
@@ -58,11 +59,11 @@ export function EditProductGroupView({ groupId }: EditProductGroupViewProps) {
           void queryClient.invalidateQueries({
             queryKey: getProductGroupControllerFindByIdQueryKey(groupId),
           });
-          toast.success("Group updated");
+          toast.success(dict.productGroups.toastUpdated);
           router.push("/product-groups");
         },
         onError: () => {
-          toast.error("Failed to update group");
+          toast.error(dict.productGroups.toastUpdateFailed);
         },
       },
     );
@@ -75,9 +76,11 @@ export function EditProductGroupView({ groupId }: EditProductGroupViewProps) {
           href="/product-groups"
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          ← Back to groups
+          {dict.productGroups.back}
         </Link>
-        <h2 className="text-2xl font-bold text-foreground">Edit Group</h2>
+        <h2 className="text-2xl font-bold text-foreground">
+          {dict.productGroups.editHeading}
+        </h2>
       </div>
 
       {isLoading ? (
@@ -91,7 +94,7 @@ export function EditProductGroupView({ groupId }: EditProductGroupViewProps) {
         </div>
       ) : isError && !isNotFound ? (
         <p role="alert" className="text-sm text-destructive">
-          Failed to load group. Please try again.
+          {dict.productGroups.loadOneError}
         </p>
       ) : group ? (
         <div className="flex max-w-2xl flex-col gap-6">
@@ -99,14 +102,14 @@ export function EditProductGroupView({ groupId }: EditProductGroupViewProps) {
             defaultValues={mapGroupToFormValues(group)}
             onSubmit={handleSubmit}
             isPending={update.isPending}
-            submitLabel="Save changes"
+            submitLabel={dict.common.saveChanges}
           />
 
           <Separator />
 
           <section className="flex flex-col gap-3">
             <h3 className="text-lg font-semibold text-foreground">
-              Positions in this group
+              {dict.productGroups.positionsHeading}
             </h3>
             {group.positions.length > 0 ? (
               <ul className="flex flex-col gap-1 text-sm">
@@ -117,15 +120,16 @@ export function EditProductGroupView({ groupId }: EditProductGroupViewProps) {
                   >
                     <span className="text-foreground">{position.name}</span>
                     <span className="text-muted-foreground">
-                      {position.isActive ? "Active" : "Inactive"}
+                      {position.isActive
+                        ? dict.common.active
+                        : dict.common.inactive}
                     </span>
                   </li>
                 ))}
               </ul>
             ) : (
               <p className="text-sm text-muted-foreground">
-                No positions assigned yet. Assign a product to this group from
-                the product form&apos;s Group selector.
+                {dict.productGroups.positionsEmpty}
               </p>
             )}
           </section>

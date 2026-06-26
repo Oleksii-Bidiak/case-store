@@ -3,6 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import {
   getUserControllerFindAllQueryKey,
   getUserControllerFindByIdQueryKey,
@@ -46,10 +47,14 @@ export function UserBanToggle({ userId, isActive }: UserBanToggleProps) {
           void queryClient.invalidateQueries({
             queryKey: getUserControllerFindByIdQueryKey(userId),
           });
-          toast.success(isActive ? "User deactivated." : "User activated.");
+          toast.success(
+            isActive
+              ? dict.userBan.toastDeactivated
+              : dict.userBan.toastActivated,
+          );
         },
         onError: () => {
-          toast.error("Failed to update user status.");
+          toast.error(dict.userBan.toastFailed);
         },
       },
     );
@@ -62,10 +67,10 @@ export function UserBanToggle({ userId, isActive }: UserBanToggleProps) {
         variant="outline"
         size="sm"
         disabled
-        title="Cannot deactivate your own account."
-        aria-label="Cannot deactivate your own account"
+        title={dict.userBan.cannotSelf}
+        aria-label={dict.userBan.cannotSelf}
       >
-        Deactivate
+        {dict.common.deactivate}
       </Button>
     );
   }
@@ -77,9 +82,13 @@ export function UserBanToggle({ userId, isActive }: UserBanToggleProps) {
       size="sm"
       onClick={handleToggle}
       disabled={isPending}
-      aria-label={isActive ? "Deactivate user" : "Activate user"}
+      aria-label={
+        isActive
+          ? dict.userBan.deactivateUserAria
+          : dict.userBan.activateUserAria
+      }
     >
-      {isActive ? "Deactivate" : "Activate"}
+      {isActive ? dict.common.deactivate : dict.common.activate}
     </Button>
   );
 }
