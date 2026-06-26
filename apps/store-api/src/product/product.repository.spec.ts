@@ -64,6 +64,39 @@ describe('ProductRepository (soft-delete behaviour)', () => {
     });
   });
 
+  // ─── findBySlugWithRelations — public detail read (TASK-145) ─────────────────
+  // The public PDP endpoint must hide deactivated products: the default query
+  // filters `isActive: true`. The `activeOnly: false` override (reserved for the
+  // future staff preview, TASK-155) drops that filter.
+
+  describe('findBySlugWithRelations', () => {
+    it('should include isActive: true in the where clause by default', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+
+      await repository.findBySlugWithRelations('clear-case');
+
+      const findFirstArgs = prismaMock.product.findFirst.mock.calls[0][0];
+      expect(findFirstArgs.where).toEqual({
+        slug: 'clear-case',
+        isActive: true,
+        deletedAt: null,
+      });
+    });
+
+    it('should omit the isActive filter when activeOnly is false', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+
+      await repository.findBySlugWithRelations('clear-case', { activeOnly: false });
+
+      const findFirstArgs = prismaMock.product.findFirst.mock.calls[0][0];
+      expect(findFirstArgs.where).toEqual({
+        slug: 'clear-case',
+        deletedAt: null,
+      });
+      expect(findFirstArgs.where).not.toHaveProperty('isActive');
+    });
+  });
+
   describe('findAll', () => {
     it('should always constrain the where clause with deletedAt: null', async () => {
       prismaMock.product.findMany.mockResolvedValue([]);

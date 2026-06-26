@@ -127,7 +127,7 @@ describe('ProductController (e2e)', () => {
   const testProductWithRelations = {
     ...testProduct,
     category: { id: 'category-e2e-1', name: 'Phone Cases', slug: 'phone-cases' },
-    variants: [],
+    group: null,
     images: [],
   };
 
@@ -255,7 +255,7 @@ describe('ProductController (e2e)', () => {
 
       expect(response.body).toHaveProperty('data');
       expect(response.body).toHaveProperty('category');
-      expect(response.body).toHaveProperty('variants');
+      expect(response.body).toHaveProperty('group');
       expect(response.body).toHaveProperty('images');
       expect(response.body.data).toHaveProperty('id');
       expect(response.body.data).toHaveProperty('name');
@@ -267,6 +267,26 @@ describe('ProductController (e2e)', () => {
       productRepositoryMock.findBySlugWithRelations.mockResolvedValue(null);
 
       await request(app.getHttpServer()).get('/api/products/nonexistent-slug').expect(404);
+    });
+
+    it('should return 404 when the repository returns null (deactivated or missing product) (TASK-145)', async () => {
+      // After the guard fix, a deactivated product's slug resolves to null in the
+      // repository (isActive: true filter), so the endpoint must return 404 —
+      // identical to a missing slug, leaking nothing about the hidden product.
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(null);
+
+      await request(app.getHttpServer()).get('/api/products/discontinued-case').expect(404);
+    });
+
+    it('should return 200 for an active product slug (TASK-145 regression guard)', async () => {
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(testProductWithRelations);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/products/iphone-15-pro-case-clear-magsafe')
+        .expect(200);
+
+      expect(response.body).toHaveProperty('data');
+      expect(response.body.data).toHaveProperty('slug');
     });
   });
 

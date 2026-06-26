@@ -191,10 +191,24 @@ export class ProductRepository {
    * Excludes soft-deleted rows. Sibling positions are the other active,
    * non-deleted positions in the same group, ordered by `positionOrder`
    * (TASK-142).
+   *
+   * @param slug - the product slug to look up.
+   * @param options.activeOnly - when `true` (the default), only active products
+   *   are returned; a deactivated product resolves to `null` so the public PDP
+   *   surfaces a 404 (TASK-145). Pass `false` to bypass the `isActive` filter for
+   *   staff preview of deactivated products (reserved for TASK-155); soft-deleted
+   *   rows remain excluded regardless.
    */
-  async findBySlugWithRelations(slug: string): Promise<ProductWithRelations['product'] | null> {
+  async findBySlugWithRelations(
+    slug: string,
+    options?: { activeOnly?: boolean },
+  ): Promise<ProductWithRelations['product'] | null> {
     const product = await this.prisma.product.findFirst({
-      where: { slug, deletedAt: null },
+      where: {
+        slug,
+        deletedAt: null,
+        ...((options?.activeOnly ?? true) ? { isActive: true } : {}),
+      },
       include: {
         category: {
           select: { id: true, name: true, slug: true },

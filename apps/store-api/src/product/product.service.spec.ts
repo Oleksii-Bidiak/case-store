@@ -209,6 +209,18 @@ describe('ProductService', () => {
         'nonexistent-slug',
       );
     });
+
+    it('should throw NotFoundException when the product exists but is inactive (TASK-145)', async () => {
+      // The repository applies the default `activeOnly: true` filter, so a
+      // deactivated product resolves to null — indistinguishable from a missing
+      // slug. The service surfaces this as a 404, hiding it from the storefront.
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(null);
+
+      await expect(service.findBySlug('discontinued-case')).rejects.toThrow(NotFoundException);
+      expect(productRepositoryMock.findBySlugWithRelations).toHaveBeenCalledWith(
+        'discontinued-case',
+      );
+    });
   });
 
   // ─── findById (admin) ────────────────────────────────────────────────────────

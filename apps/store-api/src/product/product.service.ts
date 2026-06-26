@@ -117,6 +117,9 @@ export class ProductService {
    * Get a product by slug with its category, variants, and images.
    * Public endpoint — used for product detail pages.
    * Cache-aside; throws NotFoundException if the product is not found.
+   *
+   * Uses the repository's default `activeOnly: true` filter, so a deactivated
+   * product is indistinguishable from a missing slug and returns 404 (TASK-145).
    */
   async findBySlug(slug: string): Promise<ProductDetailResponse> {
     const cacheKey = productDetailSlugKey(slug);
