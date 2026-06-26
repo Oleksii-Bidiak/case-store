@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { formatCurrency } from "@/shared/lib";
 import { OrderDetailSkeleton } from "./order-detail-skeleton";
 
 interface OrderDetailViewProps {
@@ -41,19 +42,10 @@ interface AddressFields {
   phone?: string;
 }
 
-const moneyFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
-
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
   timeStyle: "short",
 });
-
-function formatMoney(value: string): string {
-  return moneyFormatter.format(Number(value));
-}
 
 /**
  * Admin order detail page body.
@@ -164,13 +156,13 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                       {item.productName}
                     </TableCell>
                     <TableCell className="text-right">
-                      {formatMoney(item.price)}
+                      {formatCurrency(item.price)}
                     </TableCell>
                     <TableCell className="text-right">
                       {item.quantity}
                     </TableCell>
                     <TableCell className="text-right">
-                      {formatMoney(item.lineTotal)}
+                      {formatCurrency(item.lineTotal)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -205,24 +197,24 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
             </h3>
             <SummaryRow
               label={dict.orders.subtotal}
-              value={formatMoney(order.subtotal)}
+              value={formatCurrency(order.subtotal)}
             />
             <SummaryRow
               label={dict.orders.discount}
-              value={formatMoney(order.discount)}
+              value={formatCurrency(order.discount)}
             />
             <SummaryRow
               label={dict.orders.shipping}
-              value={formatMoney(order.shippingCost)}
+              value={formatCurrency(order.shippingCost)}
             />
             <SummaryRow
               label={dict.orders.tax}
-              value={formatMoney(order.tax)}
+              value={formatCurrency(order.tax)}
             />
             <Separator />
             <div className="flex items-center justify-between font-semibold">
               <span>{dict.orders.total}</span>
-              <span>{formatMoney(order.total)}</span>
+              <span>{formatCurrency(order.total)}</span>
             </div>
           </section>
 

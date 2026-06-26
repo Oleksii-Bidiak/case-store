@@ -17,14 +17,10 @@ import {
   TableRow,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { formatCurrency } from "@/shared/lib";
 import { AdminProductTableSkeleton } from "./admin-product-table-skeleton";
 
 const PAGE_SIZE = 10;
-
-const priceFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
 
 /**
  * Paginated, searchable product table for the admin panel.
@@ -132,9 +128,7 @@ export function AdminProductTable() {
                   <TableCell className="text-muted-foreground">
                     {categoryNames.get(product.categoryId) ?? "—"}
                   </TableCell>
-                  <TableCell>
-                    {priceFormatter.format(Number(product.price))}
-                  </TableCell>
+                  <TableCell>{formatCurrency(product.price)}</TableCell>
                   <TableCell>
                     <ProductStatusToggle
                       productId={product.id}

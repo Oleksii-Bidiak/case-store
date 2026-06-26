@@ -26,6 +26,7 @@ import {
   TableRow,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { formatCurrency } from "@/shared/lib";
 import { AdminOrderTableSkeleton } from "./admin-order-table-skeleton";
 
 const PAGE_SIZE = 20;
@@ -40,11 +41,6 @@ const STATUS_FILTER_OPTIONS = [
   OrderEntityStatus.CANCELLED,
   OrderEntityStatus.REFUNDED,
 ];
-
-const moneyFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
@@ -188,9 +184,7 @@ export function AdminOrderTable() {
                       {paymentStatusLabel(order.paymentStatus)}
                     </Badge>
                   </TableCell>
-                  <TableCell>
-                    {moneyFormatter.format(Number(order.total))}
-                  </TableCell>
+                  <TableCell>{formatCurrency(order.total)}</TableCell>
                   <TableCell>{order.items.length}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {dateFormatter.format(new Date(order.createdAt))}
