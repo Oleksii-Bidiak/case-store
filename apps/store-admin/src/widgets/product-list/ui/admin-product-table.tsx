@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import { AdminProductTableSkeleton } from "./admin-product-table-skeleton";
 
 const PAGE_SIZE = 10;
@@ -86,14 +87,14 @@ export function AdminProductTable() {
       <form onSubmit={handleSearchSubmit} className="flex gap-2" role="search">
         <Input
           type="search"
-          placeholder="Search products…"
+          placeholder={dict.products.searchPlaceholder}
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
           className="max-w-xs"
-          aria-label="Search products"
+          aria-label={dict.products.searchAria}
         />
         <Button type="submit" variant="outline">
-          Search
+          {dict.common.search}
         </Button>
       </form>
 
@@ -101,25 +102,27 @@ export function AdminProductTable() {
         <AdminProductTableSkeleton />
       ) : isError ? (
         <p role="alert" className="text-sm text-destructive">
-          Failed to load products. Please try again.
+          {dict.products.loadError}
         </p>
       ) : products.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
           {searchParam
-            ? `No products match “${searchParam}”.`
-            : "No products yet. Create your first product."}
+            ? dict.products.emptyMatch(searchParam)
+            : dict.products.empty}
         </div>
       ) : (
         <div className="rounded-md border border-border">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Price</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>{dict.products.colName}</TableHead>
+                <TableHead>{dict.products.colCategory}</TableHead>
+                <TableHead>{dict.products.colPrice}</TableHead>
+                <TableHead>{dict.products.colStatus}</TableHead>
+                <TableHead>{dict.products.colCreated}</TableHead>
+                <TableHead className="text-right">
+                  {dict.common.actions}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -143,7 +146,9 @@ export function AdminProductTable() {
                   </TableCell>
                   <TableCell className="text-right">
                     <Button asChild variant="outline" size="sm">
-                      <Link href={`/products/${product.id}/edit`}>Edit</Link>
+                      <Link href={`/products/${product.id}/edit`}>
+                        {dict.common.edit}
+                      </Link>
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -156,7 +161,7 @@ export function AdminProductTable() {
       {!isLoading && !isError && products.length > 0 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
+            {dict.common.pageOf(page, totalPages)}
           </p>
           <div className="flex gap-2">
             <Button
@@ -169,7 +174,7 @@ export function AdminProductTable() {
                 })
               }
             >
-              Previous
+              {dict.common.previous}
             </Button>
             <Button
               variant="outline"
@@ -177,7 +182,7 @@ export function AdminProductTable() {
               disabled={page >= totalPages}
               onClick={() => updateParams({ page: String(page + 1) })}
             >
-              Next
+              {dict.common.next}
             </Button>
           </div>
         </div>

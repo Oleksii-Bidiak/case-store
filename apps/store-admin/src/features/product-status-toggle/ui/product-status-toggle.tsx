@@ -2,6 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge, Button } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import {
   getProductControllerFindAllQueryKey,
   useProductControllerActivate,
@@ -52,10 +53,14 @@ export function ProductStatusToggle({
       size="sm"
       onClick={handleToggle}
       disabled={isPending}
-      aria-label={isActive ? "Deactivate product" : "Activate product"}
+      aria-label={
+        isActive
+          ? dict.statusToggle.productDeactivate
+          : dict.statusToggle.productActivate
+      }
     >
       <Badge variant={isActive ? "default" : "secondary"}>
-        {isActive ? "Active" : "Inactive"}
+        {isActive ? dict.common.active : dict.common.inactive}
       </Badge>
     </Button>
   );

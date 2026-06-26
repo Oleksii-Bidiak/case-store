@@ -1,5 +1,8 @@
 import { z } from "zod";
 import type { CreateProductGroupDto } from "@/entities/product-group";
+import { dict } from "@/shared/config";
+
+const e = dict.productGroupForm.errors;
 
 /**
  * Validation schema for the admin product-group form (TASK-142).
@@ -8,11 +11,7 @@ import type { CreateProductGroupDto } from "@/entities/product-group";
  * array becomes the `sortOrder` on submit. Blank axis names are dropped.
  */
 export const productGroupSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1, "Name is required")
-    .max(255, "Name must be at most 255 characters"),
+  name: z.string().trim().min(1, e.nameRequired).max(255, e.nameMax),
 
   axes: z.array(z.object({ name: z.string().trim() })).optional(),
 

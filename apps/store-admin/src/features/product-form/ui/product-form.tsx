@@ -16,6 +16,7 @@ import {
   SelectValue,
   Textarea,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import {
   productSchema,
   type ProductFormInput,
@@ -60,7 +61,7 @@ export function ProductForm({
   defaultValues,
   onSubmit,
   isPending,
-  submitLabel = "Save product",
+  submitLabel = dict.productForm.submit,
 }: ProductFormProps) {
   const {
     register,
@@ -99,7 +100,7 @@ export function ProductForm({
       noValidate
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="product-name">Name</Label>
+        <Label htmlFor="product-name">{dict.productForm.name}</Label>
         <Input id="product-name" {...register("name")} />
         {errors.name && (
           <p role="alert" className="text-sm text-destructive">
@@ -109,10 +110,10 @@ export function ProductForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="product-slug">Slug</Label>
+        <Label htmlFor="product-slug">{dict.productForm.slug}</Label>
         <Input
           id="product-slug"
-          placeholder="Leave blank to auto-generate from name"
+          placeholder={dict.productForm.slugPlaceholder}
           {...register("slug")}
         />
         {errors.slug && (
@@ -123,7 +124,9 @@ export function ProductForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="product-description">Description</Label>
+        <Label htmlFor="product-description">
+          {dict.productForm.description}
+        </Label>
         <Textarea
           id="product-description"
           rows={5}
@@ -138,7 +141,7 @@ export function ProductForm({
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="product-price">Price</Label>
+          <Label htmlFor="product-price">{dict.productForm.price}</Label>
           <Input
             id="product-price"
             type="number"
@@ -155,7 +158,9 @@ export function ProductForm({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="product-compare-price">Compare-at price</Label>
+          <Label htmlFor="product-compare-price">
+            {dict.productForm.compareAtPrice}
+          </Label>
           <Input
             id="product-compare-price"
             type="number"
@@ -174,7 +179,7 @@ export function ProductForm({
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="product-sku">SKU</Label>
+          <Label htmlFor="product-sku">{dict.productForm.sku}</Label>
           <Input id="product-sku" {...register("sku")} />
           {errors.sku && (
             <p role="alert" className="text-sm text-destructive">
@@ -184,7 +189,7 @@ export function ProductForm({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="product-category">Category</Label>
+          <Label htmlFor="product-category">{dict.productForm.category}</Label>
           <Controller
             control={control}
             name="categoryId"
@@ -194,8 +199,8 @@ export function ProductForm({
                   <SelectValue
                     placeholder={
                       categoriesQuery.isLoading
-                        ? "Loading…"
-                        : "Select a category"
+                        ? dict.productForm.loading
+                        : dict.productForm.categoryPlaceholder
                     }
                   />
                 </SelectTrigger>
@@ -219,7 +224,7 @@ export function ProductForm({
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="product-stock">Stock</Label>
+          <Label htmlFor="product-stock">{dict.productForm.stock}</Label>
           <Input
             id="product-stock"
             type="number"
@@ -236,7 +241,9 @@ export function ProductForm({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="product-position-order">Position order</Label>
+          <Label htmlFor="product-position-order">
+            {dict.productForm.positionOrder}
+          </Label>
           <Input
             id="product-position-order"
             type="number"
@@ -254,7 +261,7 @@ export function ProductForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="product-group">Group</Label>
+        <Label htmlFor="product-group">{dict.productForm.group}</Label>
         <Controller
           control={control}
           name="groupId"
@@ -267,11 +274,17 @@ export function ProductForm({
             >
               <SelectTrigger id="product-group">
                 <SelectValue
-                  placeholder={groupsQuery.isLoading ? "Loading…" : "No group"}
+                  placeholder={
+                    groupsQuery.isLoading
+                      ? dict.productForm.loading
+                      : dict.productForm.groupNone
+                  }
                 />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NO_GROUP}>No group</SelectItem>
+                <SelectItem value={NO_GROUP}>
+                  {dict.productForm.groupNone}
+                </SelectItem>
                 {groups.map((group) => (
                   <SelectItem key={group.id} value={group.id}>
                     {group.name}
@@ -289,29 +302,28 @@ export function ProductForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label>Attributes</Label>
+        <Label>{dict.productForm.attributes}</Label>
         <p className="text-sm text-muted-foreground">
-          Position attribute values keyed by the group&apos;s axis names (e.g.
-          color / blue).
+          {dict.productForm.attributesHint}
         </p>
         <div className="flex flex-col gap-2">
           {attributeFields.map((attributeField, index) => (
             <div key={attributeField.id} className="flex items-center gap-2">
               <Input
-                aria-label={`Attribute ${index + 1} key`}
-                placeholder="key (e.g. color)"
+                aria-label={dict.productForm.attrKeyAria(index + 1)}
+                placeholder={dict.productForm.attrKeyPlaceholder}
                 {...register(`attributes.${index}.key` as const)}
               />
               <Input
-                aria-label={`Attribute ${index + 1} value`}
-                placeholder="value (e.g. blue)"
+                aria-label={dict.productForm.attrValueAria(index + 1)}
+                placeholder={dict.productForm.attrValuePlaceholder}
                 {...register(`attributes.${index}.value` as const)}
               />
               <Button
                 type="button"
                 variant="outline"
                 size="icon"
-                aria-label={`Remove attribute ${index + 1}`}
+                aria-label={dict.productForm.removeAttrAria(index + 1)}
                 onClick={() => removeAttribute(index)}
               >
                 <Trash2 className="size-4" />
@@ -327,7 +339,7 @@ export function ProductForm({
           onClick={() => appendAttribute({ key: "", value: "" })}
         >
           <Plus className="size-4" />
-          Add attribute
+          {dict.productForm.addAttribute}
         </Button>
       </div>
 
@@ -338,12 +350,12 @@ export function ProductForm({
           className="size-4 rounded border-border accent-primary"
           {...register("isActive")}
         />
-        <Label htmlFor="product-active">Active (visible in the store)</Label>
+        <Label htmlFor="product-active">{dict.productForm.active}</Label>
       </div>
 
       <div>
         <Button type="submit" disabled={isPending}>
-          {isPending ? "Saving…" : submitLabel}
+          {isPending ? dict.common.saving : submitLabel}
         </Button>
       </div>
     </form>

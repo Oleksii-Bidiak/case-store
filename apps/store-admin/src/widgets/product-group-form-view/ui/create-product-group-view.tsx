@@ -13,6 +13,7 @@ import {
   getProductGroupControllerFindAllQueryKey,
   useProductGroupControllerCreate,
 } from "@/entities/product-group";
+import { dict } from "@/shared/config";
 
 /**
  * Create-group page body: renders the group form and wires the create mutation,
@@ -31,11 +32,11 @@ export function CreateProductGroupView() {
           void queryClient.invalidateQueries({
             queryKey: getProductGroupControllerFindAllQueryKey(),
           });
-          toast.success("Group created");
+          toast.success(dict.productGroups.toastCreated);
           router.push("/product-groups");
         },
         onError: () => {
-          toast.error("Failed to create group");
+          toast.error(dict.productGroups.toastCreateFailed);
         },
       },
     );
@@ -48,15 +49,17 @@ export function CreateProductGroupView() {
           href="/product-groups"
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          ← Back to groups
+          {dict.productGroups.back}
         </Link>
-        <h2 className="text-2xl font-bold text-foreground">Create Group</h2>
+        <h2 className="text-2xl font-bold text-foreground">
+          {dict.productGroups.createHeading}
+        </h2>
       </div>
 
       <ProductGroupForm
         onSubmit={handleSubmit}
         isPending={create.isPending}
-        submitLabel="Create group"
+        submitLabel={dict.productGroups.createSubmit}
       />
     </div>
   );

@@ -14,6 +14,7 @@ import {
   SelectValue,
   Textarea,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import {
   categorySchema,
   type CategoryFormInput,
@@ -53,7 +54,7 @@ export function CategoryForm({
   defaultValues,
   onSubmit,
   isPending,
-  submitLabel = "Save category",
+  submitLabel = dict.categoryForm.submit,
   excludeParentId,
 }: CategoryFormProps) {
   const {
@@ -86,7 +87,7 @@ export function CategoryForm({
       noValidate
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="category-name">Name</Label>
+        <Label htmlFor="category-name">{dict.categoryForm.name}</Label>
         <Input id="category-name" {...register("name")} />
         {errors.name && (
           <p role="alert" className="text-sm text-destructive">
@@ -96,10 +97,10 @@ export function CategoryForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="category-slug">Slug</Label>
+        <Label htmlFor="category-slug">{dict.categoryForm.slug}</Label>
         <Input
           id="category-slug"
-          placeholder="Leave blank to auto-generate from name"
+          placeholder={dict.categoryForm.slugPlaceholder}
           {...register("slug")}
         />
         {errors.slug && (
@@ -110,7 +111,9 @@ export function CategoryForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="category-description">Description</Label>
+        <Label htmlFor="category-description">
+          {dict.categoryForm.description}
+        </Label>
         <Textarea
           id="category-description"
           rows={4}
@@ -124,10 +127,10 @@ export function CategoryForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="category-image">Image URL</Label>
+        <Label htmlFor="category-image">{dict.categoryForm.image}</Label>
         <Input
           id="category-image"
-          placeholder="https://…"
+          placeholder={dict.categoryForm.imagePlaceholder}
           {...register("image")}
         />
         {errors.image && (
@@ -139,7 +142,7 @@ export function CategoryForm({
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="category-parent">Parent category</Label>
+          <Label htmlFor="category-parent">{dict.categoryForm.parent}</Label>
           <Controller
             control={control}
             name="parentId"
@@ -154,13 +157,15 @@ export function CategoryForm({
                   <SelectValue
                     placeholder={
                       categoriesQuery.isLoading
-                        ? "Loading…"
-                        : "Root (no parent)"
+                        ? dict.categoryForm.loading
+                        : dict.categoryForm.rootOption
                     }
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={ROOT_OPTION}>Root (no parent)</SelectItem>
+                  <SelectItem value={ROOT_OPTION}>
+                    {dict.categoryForm.rootOption}
+                  </SelectItem>
                   {parentOptions.map((category) => (
                     <SelectItem key={category.id} value={category.id}>
                       {category.name}
@@ -178,7 +183,7 @@ export function CategoryForm({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="category-sort">Sort order</Label>
+          <Label htmlFor="category-sort">{dict.categoryForm.sortOrder}</Label>
           <Input
             id="category-sort"
             type="number"
@@ -202,12 +207,12 @@ export function CategoryForm({
           className="size-4 rounded border-border accent-primary"
           {...register("isActive")}
         />
-        <Label htmlFor="category-active">Active (visible in the store)</Label>
+        <Label htmlFor="category-active">{dict.categoryForm.active}</Label>
       </div>
 
       <div>
         <Button type="submit" disabled={isPending}>
-          {isPending ? "Saving…" : submitLabel}
+          {isPending ? dict.common.saving : submitLabel}
         </Button>
       </div>
     </form>

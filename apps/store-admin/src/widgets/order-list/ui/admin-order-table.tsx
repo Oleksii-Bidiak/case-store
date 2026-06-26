@@ -23,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import { AdminOrderTableSkeleton } from "./admin-order-table-skeleton";
 
 const PAGE_SIZE = 20;
@@ -100,11 +101,16 @@ export function AdminOrderTable() {
           value={statusParam || ALL_OPTION}
           onValueChange={handleStatusChange}
         >
-          <SelectTrigger className="w-48" aria-label="Filter by status">
-            <SelectValue placeholder="All statuses" />
+          <SelectTrigger
+            className="w-48"
+            aria-label={dict.orders.filterStatusAria}
+          >
+            <SelectValue placeholder={dict.orders.allStatuses} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL_OPTION}>All statuses</SelectItem>
+            <SelectItem value={ALL_OPTION}>
+              {dict.orders.allStatuses}
+            </SelectItem>
             {STATUS_FILTER_OPTIONS.map((status) => (
               <SelectItem key={status} value={status}>
                 {status}
@@ -118,27 +124,29 @@ export function AdminOrderTable() {
         <AdminOrderTableSkeleton />
       ) : isError ? (
         <p role="alert" className="text-sm text-destructive">
-          Failed to load orders. Please try again.
+          {dict.orders.loadError}
         </p>
       ) : orders.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
           {statusParam
-            ? `No orders with status “${statusParam}”.`
-            : "No orders yet."}
+            ? dict.orders.emptyStatus(statusParam)
+            : dict.orders.empty}
         </div>
       ) : (
         <div className="rounded-md border border-border">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Order</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Payment</TableHead>
-                <TableHead>Total</TableHead>
-                <TableHead>Items</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>{dict.orders.colOrder}</TableHead>
+                <TableHead>{dict.orders.colCustomer}</TableHead>
+                <TableHead>{dict.orders.colStatus}</TableHead>
+                <TableHead>{dict.orders.colPayment}</TableHead>
+                <TableHead>{dict.orders.colTotal}</TableHead>
+                <TableHead>{dict.orders.colItems}</TableHead>
+                <TableHead>{dict.orders.colCreated}</TableHead>
+                <TableHead className="text-right">
+                  {dict.common.actions}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -187,7 +195,9 @@ export function AdminOrderTable() {
                   </TableCell>
                   <TableCell className="text-right">
                     <Button asChild variant="outline" size="sm">
-                      <Link href={`/orders/${order.id}`}>View</Link>
+                      <Link href={`/orders/${order.id}`}>
+                        {dict.common.view}
+                      </Link>
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -200,7 +210,7 @@ export function AdminOrderTable() {
       {!isLoading && !isError && orders.length > 0 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
+            {dict.common.pageOf(page, totalPages)}
           </p>
           <div className="flex gap-2">
             <Button
@@ -213,7 +223,7 @@ export function AdminOrderTable() {
                 })
               }
             >
-              Previous
+              {dict.common.previous}
             </Button>
             <Button
               variant="outline"
@@ -221,7 +231,7 @@ export function AdminOrderTable() {
               disabled={page >= totalPages}
               onClick={() => updateParams({ page: String(page + 1) })}
             >
-              Next
+              {dict.common.next}
             </Button>
           </div>
         </div>

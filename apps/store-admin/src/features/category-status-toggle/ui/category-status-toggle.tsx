@@ -2,6 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge, Button } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import {
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
   useAdminCategoryControllerActivate,
@@ -50,10 +51,14 @@ export function CategoryStatusToggle({
       size="sm"
       onClick={handleToggle}
       disabled={isPending}
-      aria-label={isActive ? "Deactivate category" : "Activate category"}
+      aria-label={
+        isActive
+          ? dict.statusToggle.categoryDeactivate
+          : dict.statusToggle.categoryActivate
+      }
     >
       <Badge variant={isActive ? "default" : "secondary"}>
-        {isActive ? "Active" : "Inactive"}
+        {isActive ? dict.common.active : dict.common.inactive}
       </Badge>
     </Button>
   );

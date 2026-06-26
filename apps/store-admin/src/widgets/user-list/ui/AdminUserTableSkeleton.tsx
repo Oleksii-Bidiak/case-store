@@ -6,6 +6,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 
 const SKELETON_ROWS = 5;
 const COLUMN_COUNT = 7;
@@ -20,12 +21,12 @@ export function AdminUserTableSkeleton() {
         <TableHeader>
           <TableRow>
             <TableHead className="w-12" />
-            <TableHead>Email</TableHead>
-            <TableHead>Name</TableHead>
-            <TableHead>Role</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Joined</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead>{dict.users.colEmail}</TableHead>
+            <TableHead>{dict.users.colName}</TableHead>
+            <TableHead>{dict.users.colRole}</TableHead>
+            <TableHead>{dict.users.colStatus}</TableHead>
+            <TableHead>{dict.users.colJoined}</TableHead>
+            <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

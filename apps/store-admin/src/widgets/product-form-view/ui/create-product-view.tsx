@@ -13,6 +13,7 @@ import {
   getProductControllerFindAllQueryKey,
   useProductControllerCreate,
 } from "@/entities/product";
+import { dict } from "@/shared/config";
 
 /**
  * Create-product page body: renders the product form and wires the create
@@ -31,11 +32,11 @@ export function CreateProductView() {
           void queryClient.invalidateQueries({
             queryKey: getProductControllerFindAllQueryKey(),
           });
-          toast.success("Product created");
+          toast.success(dict.products.toastCreated);
           router.push("/products");
         },
         onError: () => {
-          toast.error("Failed to create product");
+          toast.error(dict.products.toastCreateFailed);
         },
       },
     );
@@ -48,15 +49,17 @@ export function CreateProductView() {
           href="/products"
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          ← Back to products
+          {dict.products.back}
         </Link>
-        <h2 className="text-2xl font-bold text-foreground">Create Product</h2>
+        <h2 className="text-2xl font-bold text-foreground">
+          {dict.products.createHeading}
+        </h2>
       </div>
 
       <ProductForm
         onSubmit={handleSubmit}
         isPending={create.isPending}
-        submitLabel="Create product"
+        submitLabel={dict.products.createSubmit}
       />
     </div>
   );

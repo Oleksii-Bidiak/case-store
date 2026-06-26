@@ -6,6 +6,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 
 const SKELETON_ROWS = 5;
 const COLUMN_COUNT = 7;
@@ -19,13 +20,13 @@ export function AdminCategoryTableSkeleton() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Slug</TableHead>
-            <TableHead>Parent</TableHead>
-            <TableHead>Products</TableHead>
-            <TableHead>Sort</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead>{dict.categories.colName}</TableHead>
+            <TableHead>{dict.categories.colSlug}</TableHead>
+            <TableHead>{dict.categories.colParent}</TableHead>
+            <TableHead>{dict.categories.colProducts}</TableHead>
+            <TableHead>{dict.categories.colSort}</TableHead>
+            <TableHead>{dict.categories.colStatus}</TableHead>
+            <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui";
+import { dict } from "@/shared/config";
 
 /**
  * Product-group list for the admin panel (TASK-142). Each group shows its axes
@@ -36,7 +37,7 @@ export function AdminProductGroupTable() {
   if (isError) {
     return (
       <p role="alert" className="text-sm text-destructive">
-        Failed to load product groups. Please try again.
+        {dict.productGroups.loadError}
       </p>
     );
   }
@@ -44,7 +45,7 @@ export function AdminProductGroupTable() {
   if (groups.length === 0) {
     return (
       <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-        No product groups yet. Create your first group.
+        {dict.productGroups.empty}
       </div>
     );
   }
@@ -54,11 +55,11 @@ export function AdminProductGroupTable() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Axes</TableHead>
-            <TableHead>Positions</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead>{dict.productGroups.colName}</TableHead>
+            <TableHead>{dict.productGroups.colAxes}</TableHead>
+            <TableHead>{dict.productGroups.colPositions}</TableHead>
+            <TableHead>{dict.productGroups.colStatus}</TableHead>
+            <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -72,11 +73,13 @@ export function AdminProductGroupTable() {
               </TableCell>
               <TableCell>{group.positionCount}</TableCell>
               <TableCell className="text-muted-foreground">
-                {group.isActive ? "Active" : "Inactive"}
+                {group.isActive ? dict.common.active : dict.common.inactive}
               </TableCell>
               <TableCell className="text-right">
                 <Button asChild variant="outline" size="sm">
-                  <Link href={`/product-groups/${group.id}/edit`}>Edit</Link>
+                  <Link href={`/product-groups/${group.id}/edit`}>
+                    {dict.common.edit}
+                  </Link>
                 </Button>
               </TableCell>
             </TableRow>
