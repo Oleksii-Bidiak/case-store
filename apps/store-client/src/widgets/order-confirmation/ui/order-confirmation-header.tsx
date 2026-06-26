@@ -78,7 +78,7 @@ export function OrderConfirmationHeader({
             aria-label={dict.order.orderStatusAria(status)}
             className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${badgeClass(status)}`}
           >
-            {status}
+            {dict.order.orderStatusLabels[status] ?? status}
           </span>
         </dd>
         <dt className="sr-only">{dict.order.paymentStatusSr}</dt>

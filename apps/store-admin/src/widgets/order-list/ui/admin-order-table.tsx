@@ -5,7 +5,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   OrderEntityStatus,
   orderStatusBadgeVariant,
+  orderStatusLabel,
   paymentStatusBadgeVariant,
+  paymentStatusLabel,
   useAdminOrderControllerFindAll,
 } from "@/entities/order";
 import {
@@ -113,7 +115,7 @@ export function AdminOrderTable() {
             </SelectItem>
             {STATUS_FILTER_OPTIONS.map((status) => (
               <SelectItem key={status} value={status}>
-                {status}
+                {orderStatusLabel(status)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -129,7 +131,7 @@ export function AdminOrderTable() {
       ) : orders.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
           {statusParam
-            ? dict.orders.emptyStatus(statusParam)
+            ? dict.orders.emptyStatus(orderStatusLabel(statusParam))
             : dict.orders.empty}
         </div>
       ) : (
@@ -176,14 +178,14 @@ export function AdminOrderTable() {
                   </TableCell>
                   <TableCell>
                     <Badge variant={orderStatusBadgeVariant(order.status)}>
-                      {order.status}
+                      {orderStatusLabel(order.status)}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <Badge
                       variant={paymentStatusBadgeVariant(order.paymentStatus)}
                     >
-                      {order.paymentStatus}
+                      {paymentStatusLabel(order.paymentStatus)}
                     </Badge>
                   </TableCell>
                   <TableCell>

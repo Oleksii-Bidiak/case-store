@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   getAdminOrderControllerFindAllQueryKey,
   getAdminOrderControllerFindByIdQueryKey,
+  orderStatusLabel,
   useAdminOrderControllerUpdateStatus,
   type UpdateOrderStatusDto,
 } from "@/entities/order";
@@ -62,7 +63,7 @@ export function OrderStatusSelect({
           void queryClient.invalidateQueries({
             queryKey: getAdminOrderControllerFindByIdQueryKey(orderId),
           });
-          toast.success(dict.orderStatus.toastUpdated(value));
+          toast.success(dict.orderStatus.toastUpdated(orderStatusLabel(value)));
         },
         onError: () => {
           toast.error(dict.orderStatus.toastFailed);
@@ -83,7 +84,7 @@ export function OrderStatusSelect({
       <SelectContent>
         {allowed.map((status) => (
           <SelectItem key={status} value={status}>
-            {status}
+            {orderStatusLabel(status)}
           </SelectItem>
         ))}
       </SelectContent>

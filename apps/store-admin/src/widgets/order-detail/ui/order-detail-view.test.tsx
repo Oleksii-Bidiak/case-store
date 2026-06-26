@@ -63,6 +63,10 @@ describe("OrderDetailView — customer section (TASK-125)", () => {
     expect(await screen.findByText(dict.orders.customer)).toBeInTheDocument();
     expect(screen.getByText("buyer@example.com")).toBeInTheDocument();
     expect(screen.getByText("Ivan Petrenko")).toBeInTheDocument();
+    // Status badges render Ukrainian labels, not raw enums (TASK-129).
+    expect(screen.getByText("Очікує підтвердження")).toBeInTheDocument();
+    expect(screen.getByText("Очікує оплати")).toBeInTheDocument();
+    expect(screen.queryByText("PENDING")).not.toBeInTheDocument();
   });
 
   it("omits the Customer card when no customer is present", async () => {

@@ -94,13 +94,15 @@ export function OrderHistoryView() {
 
                 <div className="flex items-center gap-3">
                   <span
-                    aria-label={`${dict.orderHistory.statusSr}: ${order.status}`}
+                    aria-label={`${dict.orderHistory.statusSr}: ${
+                      dict.order.orderStatusLabels[order.status] ?? order.status
+                    }`}
                     className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${
                       STATUS_BADGE[order.status] ??
                       "bg-muted text-muted-foreground"
                     }`}
                   >
-                    {order.status}
+                    {dict.order.orderStatusLabels[order.status] ?? order.status}
                   </span>
                   <span className="font-semibold text-foreground">
                     {formatMoney(order.total)}

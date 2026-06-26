@@ -6,6 +6,28 @@
 //
 // If multi-locale is ever required, this object's shape already matches a
 // next-intl message catalog, so migration is mechanical.
+
+// Ukrainian labels for the order/payment status enums (TASK-129). Keyed by the
+// raw API enum string with a `?? status` fallback at call sites. `PENDING` and
+// `REFUNDED` exist in both enums but carry different customer-facing meanings,
+// so the two maps are deliberately kept separate — never merge them.
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  PENDING: "Очікує підтвердження",
+  CONFIRMED: "Підтверджено",
+  PROCESSING: "В обробці",
+  SHIPPED: "Відправлено",
+  DELIVERED: "Доставлено",
+  CANCELLED: "Скасовано",
+  REFUNDED: "Повернення коштів",
+};
+
+const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  PENDING: "Очікує оплати",
+  PAID: "Оплачено",
+  FAILED: "Помилка оплати",
+  REFUNDED: "Кошти повернено",
+};
+
 export const dict = {
   common: {
     retry: "Спробувати ще раз",
@@ -250,9 +272,15 @@ export const dict = {
     placedOn: "Дата замовлення:",
     orderStatusSr: "Статус замовлення",
     paymentStatusSr: "Статус оплати",
-    orderStatusAria: (status: string) => `Статус замовлення: ${status}`,
-    paymentStatusAria: (status: string) => `Статус оплати: ${status}`,
-    paymentLabel: (status: string) => `Оплата: ${status}`,
+    // Direct-access label maps for components that render badge text (TASK-129).
+    orderStatusLabels: ORDER_STATUS_LABELS,
+    paymentStatusLabels: PAYMENT_STATUS_LABELS,
+    orderStatusAria: (status: string) =>
+      `Статус замовлення: ${ORDER_STATUS_LABELS[status] ?? status}`,
+    paymentStatusAria: (status: string) =>
+      `Статус оплати: ${PAYMENT_STATUS_LABELS[status] ?? status}`,
+    paymentLabel: (status: string) =>
+      `Оплата: ${PAYMENT_STATUS_LABELS[status] ?? status}`,
     itemsOrdered: "Замовлені товари",
     shippingAddress: "Адреса доставки",
     billingAddress: "Адреса оплати",
