@@ -151,6 +151,9 @@ export const dict = {
     adding: "Додаємо…",
     added: "Додано ✓",
     error: "Не вдалося додати товар. Спробуйте ще раз.",
+    // Mirrors dict.product.outOfStock; kept in the feature's own slice so the
+    // compact card button can surface the state via its label.
+    outOfStock: "Немає в наявності",
   },
 
   cart: {

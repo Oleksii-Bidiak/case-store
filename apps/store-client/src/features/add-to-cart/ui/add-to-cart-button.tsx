@@ -18,6 +18,14 @@ interface AddToCartButtonProps {
    * Default rendering (large block button) is unchanged for the PDP.
    */
   compact?: boolean;
+  /**
+   * The product position is out of stock. Disables the button and, in compact
+   * (card) rendering, swaps the label to "Немає в наявності" so the unavailable
+   * state is communicated without a separate stock indicator. On the PDP the
+   * `ProductStockIndicator` already shows the message, so callers there pass
+   * `disabled` instead and leave this unset.
+   */
+  outOfStock?: boolean;
 }
 
 /**
@@ -31,6 +39,7 @@ export function AddToCartButton({
   disabled = false,
   className = "",
   compact = false,
+  outOfStock = false,
 }: AddToCartButtonProps) {
   const queryClient = useQueryClient();
 
@@ -58,18 +67,23 @@ export function AddToCartButton({
       ? dict.addToCart.added
       : dict.addToCart.idle;
 
+  const isDisabled = disabled || outOfStock || addToCart.isPending;
+
   if (compact) {
+    // Out-of-stock takes precedence so the card communicates the state inline.
+    const compactLabel = outOfStock ? dict.addToCart.outOfStock : label;
+
     return (
       <Button
         type="button"
         size="sm"
         variant="outline"
         onClick={handleClick}
-        disabled={disabled || addToCart.isPending}
+        disabled={isDisabled}
         className={`w-full font-semibold transition-colors hover:bg-primary hover:text-primary-foreground hover:border-primary ${className}`}
       >
         <ShoppingCart aria-hidden="true" />
-        {label}
+        {compactLabel}
       </Button>
     );
   }
@@ -79,7 +93,7 @@ export function AddToCartButton({
       <button
         type="button"
         onClick={handleClick}
-        disabled={disabled || addToCart.isPending}
+        disabled={isDisabled}
         className={`w-full rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
       >
         {label}

@@ -68,7 +68,13 @@ export function ProductList({ params, buildPageHref }: ProductListProps) {
           <ProductCard
             key={product.id}
             product={product}
-            action={<AddToCartButton productId={product.id} compact />}
+            action={
+              <AddToCartButton
+                productId={product.id}
+                compact
+                outOfStock={product.stock === 0}
+              />
+            }
           />
         ))}
       </div>
