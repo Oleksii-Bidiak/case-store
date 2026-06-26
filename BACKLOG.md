@@ -3,7 +3,9 @@
 > **Single source of truth** for task status.
 > Completed phases are summarized below (one row per parent); full sub-task history lives
 > in [`docs/backlog-archive.md`](docs/backlog-archive.md). Open work is in **Roadmap (Open)**.
-> When you don't know what to do, ask: "What's next?" — pick the first ⬜ in Phase A, then B, C, D.
+> When you don't know what to do, ask: "What's next?" — pick the first ⬜/🔄 in **Tier 0**, then
+> Tier 1, 2, 3, 4. Tiers are ordered **critical → least important**; localization (Tier 1) is the
+> owner's headline priority, sitting just below the data/security bugs that corrupt real data.
 
 ## Status Legend
 
@@ -53,137 +55,128 @@
 | **Phase 2 — Storefront & Cart** | TASK-021…027 cart backend · 028…032 storefront pages + add-to-cart · 051 guest cart · 052 storefront auth | ✅ | plans 009–019 |
 | **Phase 3 — Checkout & Orders** | TASK-033 order module · 035 checkout · 036 confirmation page · 037 confirmation emails · 053…060 review follow-ups | ✅ | plans 020, 022–024 |
 | **Phase 4 — Admin Panel** | TASK-038 RBAC · 039 product mgmt · 040 category mgmt · 041 order mgmt · 042 user mgmt · 043 dashboard · 061…067 review follow-ups | ✅ | plans 025–031 |
-| **Phase 5 — Polish & Production** | TASK-044 Redis caching · 045 SEO sitemap/JSON-LD · 046 Helmet/CSRF/rate-limit · 047 Pino logging · 068 UI/UX redesign (core) · 069 UA/UAH localization | ✅ | plans 032–035, 039–040 |
+| **Phase 5 — Polish & Production** | TASK-044 Redis caching · 045 SEO sitemap/JSON-LD · 046 Helmet/CSRF/rate-limit · 047 Pino logging · 068 UI/UX redesign (core) · 069 UA/UAH localization (storefront) | ✅ | plans 032–035, 039–040 |
 | **Tech Debt & Architecture** | TASK-054 monorepo review · 058 orval-config consolidation · 059 baseURL alignment · 071/072 QA bugfixes | ✅ | plans 036–038, manual-qa-master |
-| **Product Images** | TASK-073 images (backend + admin upload + storefront display) | ✅ | plan 041 |
+| **Product Images** | TASK-073 images (backend + admin **upload** + storefront display) | ✅ | plan 041 |
+| **EPIC — Variant-as-Product-Position** | TASK-142 (A–G) — promote every variant to a first-class product position; group siblings via `ProductGroup`; cross-position slug navigation; cart/order/admin/seed/SEO de-varianted | ✅ | plan 060 |
 
 ---
 
-## Roadmap (Open)
+## Roadmap (Open) — priority tiers
 
-> The active sequence is **Phase A → B → C → D**. Each row is a one-liner; full design goes
-> into a `docs/plans/NNN-*.md` when picked up. New tasks use a single monotonic counter
-> starting at **TASK-100** (historical IDs ≤ 091 retained where a plan already references them).
+> Active sequence: **Tier 0 → Tier 1 → Tier 2 → Tier 3 → Tier 4**, then *Parked / Later*.
+> Each row is a one-liner; full design goes into a `docs/plans/NNN-*.md` when a task is picked up.
+> New task IDs use a single monotonic counter (next plain ID **TASK-157**).
 
-### Phase A — Stabilize & close out *(do first)*
-
-| Task ID | Description | Status | Plan |
-| --- | --- | --- | --- |
-| TASK-100 | Add `npm run build` step to CI (`.github/workflows/ci.yml`) — catches Orval drift / tree-shake failures pre-merge | ✅ | docs/plans/044-ci-build-step.md |
-| TASK-101 | Run the *Pending manual QA* list to closure (Redis int, dashboard int, JSON-LD live, admin CSRF smoke) | ⬜ | — |
-| TASK-107 | **[CRITICAL BUG + REDESIGN]** Relax `AddressDto` — `phone` required, `country` optional (defaults 'UA'), `postalCode`/`state`/`address2`/`company` optional, raise `address1` limit; no Prisma migration | ✅ | docs/plans/043-checkout-ua-redesign.md |
-| TASK-108 | Redesign checkout form for UA market — new zod schema (firstName/lastName/phone/city/deliveryAddress/notes), simplified `CheckoutAddressForm`, remove billing toggle, add `onInvalid` focus handler to fix silent dead submit | ✅ | docs/plans/043-checkout-ua-redesign.md |
-| TASK-109 | Regenerate Orval API client after `AddressDto` relaxation (`npm run generate:api`) | ✅ | docs/plans/043-checkout-ua-redesign.md |
-| TASK-110 | Update order e2e fixture — add `phone` to `validAddress`, add negative test for missing `phone` | ✅ | docs/plans/043-checkout-ua-redesign.md |
-| TASK-111 | ~~Smoke-verify order-confirmation page with new address shape~~ — **Absorbed into TASK-119** (plan 053); UA address render verification is TASK-119-D and the Manual QA Checklist in that plan | ~~⬜~~ absorbed | docs/plans/043-checkout-ua-redesign.md → docs/plans/053-checkout-confirmation-redirect.md |
-| TASK-112 | **[BUG]** Fix store-admin logout-on-reload — mount-time silent refresh called `/auth/refresh` (missing `/api`); session lost on F5. One-line path fix (closes TASK-059-B) | ✅ | — |
-| TASK-113 | Customer account — `/account` (profile view + edit via `/api/users/me`) + `/orders` history list; header "Мій акаунт" → link; `entities/user` slice; robots disallow private routes | ✅ | — |
-| TASK-114 | Type the storefront order-list response on the backend so `OrderListResponseEnvelope.data` is `OrderEntity[]` (removes a frontend cast in order-history) | ✅ | docs/plans/045-order-list-response-typing.md |
-| TASK-115 | Localize store-admin to Ukrainian — typed dictionary + `lang="uk"`. **Done:** shell/nav, header, login, dashboard (stats/charts/low-stock, UAH). **Remaining:** products, categories, orders, users CRUD (tables, forms, detail views, toggles, toasts, validation) | 🔄 | — |
-
-#### QA pass triage — bugs (from `docs/manual-qa-master.md`, tested on HEAD `296b498`)
+### Tier 0 — Critical data & security bugs *(do first — they corrupt real data / leak hidden content)*
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-116 | **[CRITICAL BUG]** Cart qty stepper updates the counter only on the 2nd click — local `qty` state in `cart-item-row.tsx` never re-syncs after the success refetch and `commit()` compares against the stale prop. Add optimistic `setQty` + sync, debounce server writes via a shared `useDebouncedCallback` (`shared/lib`) | ✅ | docs/plans/049-cart-qty-stepper-sync.md |
-| TASK-117 | **[CRITICAL BUG]** Product search loses focus on every keystroke (URL-param refilter remounts the input) — keep field controlled + focused, debounce the query update (reuse `useDebouncedCallback` from TASK-116; depends on TASK-116-A). Sub-tasks: **TASK-117-A** remove key-remount + refactor SearchInput (fix, S, depends TASK-116-A ✅); **TASK-117-B** folded into A; **TASK-117-C** add search-input.test.tsx with 4 regression scenarios (test, S, depends TASK-117-A) | ✅ | docs/plans/051-product-search-focus-sync.md |
-| TASK-141 | **[TECH DEBT]** Cross-cutting forms state-sync audit & remediation — grep-based sweep of both apps for `useState` seeded from props and RHF `defaultValues` without `reset()`/`values`; remediate latent risk in admin product/category edit forms and storefront profile form; consolidate ad-hoc debounces to `useDebouncedCallback`; add convention doc. **TASK-116 ✅ + TASK-117 ✅ — gate satisfied; references: `cart-item-row.tsx` (P1), `search-input.tsx` (P1 focus), `use-debounced-callback.ts` (hook).** Sub-tasks: **TASK-141-A** grep sweep + inventory (audit, S); **TASK-141-B** admin edit forms P2 fix — `values`/`reset()` (fix, M, after A); **TASK-141-C** profile form P2 fix — `values`+`keepDirtyValues` (fix, S, after A); **TASK-141-D** migrate `AdminUserTable` inline `setTimeout` + copy hook to store-admin (refactor, S, after A); **TASK-141-E** convention doc in `CLAUDE.md` (docs, S, after B+C+D). **All sub-tasks A–E ✅ (2026-06-24): doc `docs/conventions/forms.md` + CLAUDE.md ref; admin forms use `values`+`keepDirtyValues`; profile form same; `AdminUserTable` debounce → shared hook copied to store-admin. Sweep found 2 new low-risk submit-based search inputs (#9/#10), no remediation needed. lint+typecheck+tests green. Pending: manual multi-tab refetch QA of admin edit forms.** | ✅ | docs/plans/050-forms-state-sync-audit.md |
-| TASK-118 | **[CRITICAL BUG]** Guest→user cart merge broken — guest cart shows from stale cache until reload, then vanishes (user cart empty). Root cause: `useGetCart` fires before auth bootstrap completes on reload (creates new empty guest cart); fix: gate query on `isInitializing` + invalidate cart after silent refresh. Backend merge already correct. Sub-tasks: **TASK-118-A** gate `CartView` query on `isInitializing` (fix, S); **TASK-118-B** same guard in `header-cart-badge` (fix, S, after A); **TASK-118-C** invalidate cart in `AuthProvider` after successful silent refresh (fix, S); **TASK-118-D** regression tests — CartView init guard + AuthProvider post-refresh cart fetch (test, M, TDD, after A+C). **All sub-tasks A–D ✅ (2026-06-24): root cause was frontend — `useGetCart` fired during the auth-bootstrap window as a guest and cached an empty cart. Gated `CartView` + `header-cart-badge` on `!isInitializing`; `AuthProvider` invalidates the cart after a successful silent refresh (required swapping `providers.tsx` so `QueryClientProvider` wraps `AuthProvider`). +4 RTL/MSW tests, 60 green; lint+typecheck clean. Backend untouched. Pending: manual reload/login QA.** | ✅ | docs/plans/052-guest-cart-merge.md |
-| TASK-119 | **[CRITICAL BUG]** Checkout creates the order but redirects to the empty `/cart` instead of `/orders/{id}/confirmation`. Root cause: cart-empty `useEffect` in `CheckoutView` fires after cart invalidation wins the race against `router.push` in `onSuccess`. Fix: gate the guard on `isOrderSubmitted` ref. Absorbs TASK-111. Sub-tasks: **TASK-119-A** add `isOrderSubmitted` flag + fix `CheckoutView` guards (fix, S); **TASK-119-B** clean `.next` build (chore, S, after A); **TASK-119-C** regression tests — redirect race + success path (test, M, TDD, after A); **TASK-119-D** confirmation page smoke with UA address shape (test, S, after A, absorbs TASK-111). **All sub-tasks A–D ✅ (2026-06-24): redirect race confirmed — gated the cart-empty guard on `isOrderSubmitted` (a `useState` flag, not a ref: the `react-hooks` rule forbids reading `ref.current` in render, and setState before the async cart refetch already suppresses the guard). Regression test verified Red→Green. Fixed raw `country` ISO display (`"UA"`→"Україна" via `dict.order.countryLabel`); order-status localization left to TASK-129. Clean `.next` rebuild OK; +4 tests, 64 green; lint+typecheck clean. Backend untouched. Pending: manual checkout→confirmation QA.** | ✅ | docs/plans/053-checkout-confirmation-redirect.md |
-| TASK-120 | **[PRIORITY BUG]** Restored-tab `/products` skeletons spin forever after reopening the browser; reload fixes (Chrome+Edge). **Diagnosis (Playwright, 2026-06-25): the reported symptom is a Next 16 / Turbopack DEV-mode artifact, NOT app code.** A `next start` PRODUCTION build is solid — 20/20 cold + authenticated + back/forward loads hydrate and fetch correctly headless, and the reporter confirmed the symptom disappears on the prod build. The intermittent dev hang matches Turbopack dev serving a restored tab stale chunk/HMR state (the "CSS preloaded but not used" warning, no JS errors, client never fires `/api/*` = no hydration). Earlier extension noise (crypto-wallet `code 4900`, adblock) was a red herring. **No production bug to fix.** Shipped a *defensive* guard `useRecoverStrandedQueries` (`shared/lib`, wired in `providers.tsx`): on `visibilitychange → visible`, *if* any query is `pending`, `cancelQueries()` + `refetchQueries({ type: "active" })` — guards a genuine (separate) bfcache wedged-query failure mode proven via Playwright simulation, but it is NOT the cause/fix of this dev symptom. Guarded so a normal tab switch is a no-op. +3 RTL tests (67 green); typecheck+lint+build clean; no instance.ts/auth.context changes. | ✅ | docs/plans/054-restored-tab-query-hang.md |
-| TASK-121 | **[BUG]** Post-registration: no redirect to `/` and header stays in guest state — align `register-form.tsx` success path with login. Sub-tasks: **TASK-121-A** confirm `customInstance` unwrapping + fix token accessor if wrong (fix, S); **TASK-121-B** add `useEffect`/`isAuthenticated`/`redirectTarget`/`?redirect=` support (fix, S, after A); **TASK-121-C** RTL component test — success/redirect + `?redirect=` + open-redirect guard + error states (test, M, TDD, write before B); **TASK-121-D** manual QA on running stack — register → redirect to `/` + header flips to authenticated without reload (manual, S, after B). | ✅ | docs/plans/055-register-redirect-auth-sync.md |
-| TASK-122 | **[BUG]** store-admin still logs out on reload despite TASK-112 — re-investigate mount-time silent refresh | ✅ | — |
-| TASK-123 | **[BUG]** Payment stays `PENDING` after order status changes — fix status/`paymentStatus` coupling and confirm-payment path (backend). Root cause: `updateStatus` (admin PATCH path) writes only `status`, leaving `paymentStatus` untouched; `confirmPayment` path already writes both. Fix: add `derivePaymentStatus` pure helper in `OrderService.updateStatus`; extend `OrderRepository.updateStatus` to write both columns atomically. Sub-tasks: **TASK-123-A** write failing unit tests first — 9 coupling cases in `order.service.spec.ts` (TDD Red, M, no deps); **TASK-123-B** implement `derivePaymentStatus` + service + repository update (TDD Green, S, after A); **TASK-123-C** admin UI verification + manual QA checklist (S, after B). No Prisma migration, no Orval regen, no frontend code change. | ✅ | docs/plans/056-order-payment-status-coupling.md |
-| TASK-124 | **[BUG]** Order status → CONFIRMED not reflected in storefront stock. **Part 1 (expected):** stock decrements at creation, not confirmation — QA symptom is working-as-intended. **Part 2 (real fix):** admin status changes didn't restock/evict. **Owner-refined policy:** auto-restock ONLY on pre-shipment cancel (PENDING/CONFIRMED/PROCESSING → CANCELLED, reusing `cancelAndRestock`); SHIPPED/DELIVERED cancels and all REFUNDED are **manual** restock. Implemented via pure `shouldAutoRestock` guard + branch in `OrderService.updateStatus` (idempotent — already-cancelled = no double credit). TDD: `updateStatus — stock restock on cancel` block (auto/no-restock/no-double-credit/404). Manual QA matrix in `manual-qa-master.md` §C2-a. No new repo method, no migration, no Orval/frontend change. 388 backend tests green. | ✅ | docs/plans/057-order-status-stock-cache-eviction.md |
-| TASK-125 | **[BUG]** Admin order detail/list missing customer email + contact data — extend admin order response + `store-admin` views. Sub-tasks: **TASK-125-A** backend TDD — `OrderCustomerData`, `ADMIN_ORDERS_INCLUDE`, `findByIdForAdmin`, entity mapping, unit tests (fix, M, TDD, no deps); **TASK-125-B** Orval regeneration — `npm run generate:api`, build + typecheck gate (chore, S, after A); **TASK-125-C** store-admin list + detail views + component tests (feat, M, after B); **TASK-125-D** manual QA on running stack (test, S, after C). No Prisma migration. Shipped: optional `customer` on `OrderEntity` (admin-only `ADMIN_ORDERS_INCLUDE` + `findByIdForAdmin`; PII isolated from customer paths), Orval regen, store-admin list email/name cell + detail Customer card. 397 store-api + 5 store-admin tests green; build clean. | ✅ | docs/plans/058-admin-order-customer-data.md |
-| TASK-126 | **[BUG]** Product card opens the wrong variant + thumbnails missing — investigate card→PDP linking, variant resolution (suspected SKU shared across products), single-image gallery render. **Root causes confirmed (plan 059):** (1) wrong-variant = product-level sale badge on card vs. alphabetically-first active variant as PDP default — SKU-uniqueness and slug-collision hypotheses both refuted; fix = PDP defaults to cheapest active variant. (2) No thumbnails = `images.length > 1` gate is correct design; most seeded products have 1 image (seed data gap, not a render bug) — fix belongs to TASK-128. Sub-tasks: **TASK-126-A** confirm root causes / investigation (docs, S, ✅ done in plan 059); **TASK-126-B** fix PDP cheapest-variant default in `product-detail-view.tsx` (fix, S, after A); **TASK-126-C** confirm gallery strip design intent — no code change (docs, S, after A); **TASK-126-D** tests — `pick-default-variant.test.ts` + `product-detail-view.test.tsx` + `product-image-gallery.test.tsx` (test, M, TDD Red before B, Green after B); **TASK-126-E** manual QA on running stack — maps to `manual-qa-master.md` A1 line 207 (test, S, after B+D). No Prisma migration, no Orval regen, no backend change. Shipped: pure `pickCheapestActiveVariantId` helper + PDP default-variant fix; gallery gate confirmed correct (no change); seed-image gap → TASK-128. 83 store-client tests green. **NOTE: in-page variant selector superseded by cross-position sibling navigation in TASK-142; `pickCheapestActiveVariantId` will be removed in TASK-142-E.** | ✅ | docs/plans/059-product-card-variant-gallery.md |
+| TASK-143 | **[CRITICAL BUG]** Guest/any add-to-cart persists the item *before* validation → 400 toast but the item is already saved (it appears after a reload). `cart.service.ts:40-55` calls `cartRepository.addItem()` then `validateCartItems()`. Fix: validate stock/`isActive`/max-qty **before** the DB write, or wrap add+validate in a transaction that rolls back on failure. | ⬜ | — |
+| TASK-144 | **[CRITICAL BUG]** Stock-0 products can be added from the product **card** button — `product-grid`'s `AddToCartButton` has no stock guard (the PDP `product-detail-view` already uses `disabled={product.stock === 0}`). Add the same guard to the card; pairs with the TASK-143 backend guard. | ⬜ | — |
+| TASK-145 | **[SECURITY BUG]** Public PDP serves **deactivated** products by direct slug — `product.repository.ts` `findBySlugWithRelations` filters `deletedAt: null` but not `isActive`. Add `isActive: true` to the public read path (admin/manager preview is TASK-155). Also closes the admin B2 "deactivate still visible on storefront" finding. | ⬜ | — |
 
-### Phase A (continued) — EPIC: Variant-as-Product-Position
+### Tier 1 — Full Ukrainian localization & UA business *(headline priority)*
 
-> Full design in `docs/plans/060-variant-as-product-position.md`. Sub-tasks run bottom-up;
-> TASK-142-B and TASK-142-C may run in parallel after TASK-142-A. TASK-142-E and TASK-142-F
-> may run in parallel after TASK-142-D. This is a **breaking model change** — deliver via
-> dedicated feature branches, never directly on `develop`.
+> "Localization" here = language **and** Ukrainian business practice: order/payment statuses
+> customers understand, hryvnia formatting, `+380` phone, UA addresses, and Nova Poshta delivery.
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-142 | **[EPIC]** Variant-as-product-position — promote every `ProductVariant` to a first-class `Product` row with own slug/card/PDP; group sibling positions via `ProductGroup`; replace in-page variant selector with cross-position slug navigation (ktc.ua/Rozetka pattern). Touches schema, cart/order (TDD), storefront, admin, SEO, seed. All seven sub-tasks (A–G) shipped to `develop`. | ✅ | docs/plans/060-variant-as-product-position.md |
-| TASK-142-A | **[EPIC / Phase 1]** Prisma schema migration — add `ProductGroup`, `ProductGroupAxis`, position columns (`group_id`, `attributes`, `stock`, `position_order`) to `Product`; drop `ProductVariant`; remove `variantId` from `CartItem`/`OrderItem`; `CartItem` unique → `[cartId, productId]`; `CHECK (stock >= 0)` on `products.stock`. No data backfill (pre-MVP, per owner). Migration `20260625210000_variant_as_product_position` applied. | ✅ | docs/plans/060-variant-as-product-position.md |
-| TASK-142-B | **[EPIC / Phase 2a]** Backend read path — `ProductEntity` gains `stock`/`attributes`/`groupId`/`positionOrder`; detail endpoint returns `group` (siblings + axes) via `ProductGroupEntity`; `findBySlugWithRelations` joins the group; Swagger updated. (Standalone admin `ProductGroup` CRUD module folded into TASK-142-F.) Depends: TASK-142-A. | ✅ | docs/plans/060-variant-as-product-position.md |
-| TASK-142-C | **[EPIC / Phase 2b — TDD]** Cart and Order adaptation — stock decrement/restock on `Product.stock`; `variantId` removed from cart (repo/service/entities/DTO) + order (repo/service/types/entities); `CartItem` upsert on `[cartId,productId]`; dashboard low-stock + mail de-varianted; all specs updated (TDD). Backend green: 394 tests, typecheck, lint, build. Depends: TASK-142-A. | ✅ | docs/plans/060-variant-as-product-position.md |
-| TASK-142-D | **[EPIC / Phase 3]** Orval regen — `npm run generate:api`; verify `ProductEntity` gains `stock` + `attributes`; detail response type gains `group?`; `AddToCartDto` loses `variantId`. Generated dirs are git-ignored (regenerated per env); spec/hooks confirmed current. Frontend `build` clean is satisfied by E/F (which adapt the consumers). Depends: TASK-142-B + TASK-142-C. (S) | ✅ | docs/plans/060-variant-as-product-position.md |
-| TASK-142-E | **[EPIC / Phase 4a]** Storefront PDP + grid — removed `ProductVariantSelector` + `pick-default-variant`; added `ProductSiblingNavigator` (axis strips → sibling slug navigation); `ProductDetailView` shows `product.price`/`stock`/`sku` directly; `variantId` dropped from `AddToCartButton` + `MobileAtcBar`; cart row, checkout summary, order list, and JSON-LD builder de-varianted. Component tests added; store-client typecheck/lint/tests green. (Pre-existing `/register` prerender break is unrelated, out of scope.) Depends: TASK-142-D. (M) | ✅ | docs/plans/060-variant-as-product-position.md |
-| TASK-142-F | **[EPIC / Phase 4b]** Admin — position form adds `stock`, `attributes` key-value editor, `groupId` select, `positionOrder` (no inline variants section existed); new backend `ProductGroupModule` (admin CRUD `/api/product-groups`) + write-path DTO fields; `/admin/product-groups` list + create/edit pages + sidebar nav; dashboard low-stock & order-detail de-varianted. Backend 394 tests green; admin typecheck/lint/test/build clean. Depends: TASK-142-D. (M) | ✅ | docs/plans/060-variant-as-product-position.md |
-| TASK-142-G | **[EPIC / Phase 5]** Seed rewrite + SEO review — seed creates positions + groups (13 groups / 32 positions incl. 2 standalone + 1 out-of-stock; idempotent via deterministic group ids); absorbs TASK-128 seed work. Sitemap already lists one URL per active position (no change); per-position JSON-LD shipped in E. No final drop migration needed — `product_variants` + `variantId` columns were dropped in migration A. Depends: TASK-142-B + TASK-142-C + TASK-142-E. (M) | ✅ | docs/plans/060-variant-as-product-position.md |
+| TASK-115 | Finish store-admin UA localization — products/categories/orders/users CRUD (tables, forms, detail views, toggles, toasts, zod validation messages). Expand `apps/store-admin/src/shared/config/dictionary.ts` (~60 hardcoded strings remain). **Done:** shell/nav, header, login, dashboard. | 🔄 | — |
+| TASK-129 | User-facing order **&** payment status labels — replace raw enums (`PENDING`…) with adequate UA wording for customers (storefront order history + confirmation) and admin (badge text, status select). Add a shared status→label map per app. | ⬜ | — |
+| TASK-148 | **[NEW]** UAH currency localization — admin formatters use `en-US`/`USD`; switch to `uk-UA`/`UAH` in product/order tables, order detail, dashboard. Add UAH formatting to storefront order history/confirmation (amounts currently render without a currency). | ⬜ | — |
+| TASK-135 | Checkout prefill for logged-in users (pull saved profile/contact data) + UA phone input mask (`+380 …`). | ⬜ | — |
+| TASK-080 | **[promoted from Phase C]** Delivery + Nova Poshta — city + branch autocomplete via the NP API, persist the chosen branch in the DB, show cost + ETA in checkout. Manual delivery is the interim fallback until this ships. | ⬜ | — |
 
----
-
-### Phase B — Reliability & observability *(quality)*
+### Tier 2 — Critical functional bugs *(broken flows, not data-corrupting)*
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-048 | Sentry integration (frontend + backend) — `@sentry/nestjs` + `@sentry/nextjs`, wire to Pino error path | ⬜ | — |
-| TASK-102 | Refresh-token cleanup — scheduled purge of revoked/expired `RefreshToken` rows (`@nestjs/schedule`) | ✅ | docs/plans/046-refresh-token-cleanup.md |
-| TASK-103 | Mail reliability — replace fire-and-forget with transactional outbox + retry worker | ⬜ | — |
-| TASK-104 | Soft deletes / audit — `deletedAt` on User/Product/Order; filter in repositories | ✅ | docs/plans/047-soft-deletes-audit.md |
-| TASK-104-A | Update CLAUDE.md `prisma-migration` note: remove "no soft deletes", document `isActive` vs `deletedAt` distinction | ✅ | docs/plans/047-soft-deletes-audit.md |
-| TASK-104-B | Prisma schema + migration — add `deletedAt DateTime?` + `@@index([deletedAt])` to User/Product/Order; add `originalEmail` to User | ✅ | docs/plans/047-soft-deletes-audit.md |
-| TASK-104-C | ProductRepository — add `deletedAt: null` filters to all read paths; add `softDelete(id, mangledSlug, mangledSku)` method (TDD) | ✅ | docs/plans/047-soft-deletes-audit.md |
-| TASK-104-D | UserRepository — add `deletedAt: null` filters; add `softDelete(id, mangledEmail, originalEmail)` method (TDD) | ✅ | docs/plans/047-soft-deletes-audit.md |
-| TASK-104-E | OrderRepository — add `deletedAt: null` filters; add `softDelete(id)` method; tombstoned orders unreachable via service `findById` guard (TDD) | ✅ | docs/plans/047-soft-deletes-audit.md |
-| TASK-104-F | Service layer — `ProductService.delete` + `UserService.deleteUser` with email/slug mangle, cache eviction, token revocation (TDD) | ✅ | docs/plans/047-soft-deletes-audit.md |
-| TASK-104-G | Controller layer — `DELETE /api/products/:id` and `DELETE /api/users/:id` (AdminGuard, 204 No Content, Swagger decorators) | ✅ | docs/plans/047-soft-deletes-audit.md |
-| TASK-104-H | Entity audit — `deletedAt`/`originalEmail` already excluded by whitelisting `fromPrisma` mappers (no change needed) | ✅ | docs/plans/047-soft-deletes-audit.md |
-| TASK-104-I | Regenerate Orval API client (`npm run generate:api`); confirmed `useDeleteProduct`/`useDeleteUser` hooks, no `deletedAt` in generated types | ✅ | docs/plans/047-soft-deletes-audit.md |
-| TASK-104-J | Integration/verification — full test+lint+typecheck+build gate green. **Pending:** migration apply + manual Swagger smoke on a running DB | 🔄 | docs/plans/047-soft-deletes-audit.md |
-| TASK-105 | Frontend test harness — Playwright E2E (browse→cart→checkout, auth) + Jest setup for store-admin + cart/checkout component tests | 🔄 | docs/plans/048-frontend-test-harness.md |
-| TASK-105-A | RTL + MSW + jsdom foundation in store-client: install deps, split Jest into `unit`+`component` projects, create `src/shared/test/` (setup, msw-server, msw-handlers, render helper) | ✅ | docs/plans/048-frontend-test-harness.md |
-| TASK-105-B | Cart and checkout component tests: `CartItemRow`, `CartSummary`, `CartView`, `CheckoutAddressForm`, `CheckoutView` — all via MSW, no hand-mocked hooks (37 component tests) | ✅ | docs/plans/048-frontend-test-harness.md |
-| TASK-105-C | store-admin Jest + RTL scaffold: mirror store-client component-test setup, update `"test"` script from no-op to `jest`, add smoke component test | ✅ | docs/plans/048-frontend-test-harness.md |
-| TASK-105-D | Playwright E2E scaffold: `@playwright/test` at root, `playwright.config.ts` with webServer array, `e2e/cart-flow.spec.ts` + `e2e/auth-flow.spec.ts`, seed fixture (4 tests discovered). **Pending:** local/CI run needs DB + browsers | 🔄 | docs/plans/048-frontend-test-harness.md |
-| TASK-105-E | CI wiring: `test-unit` already covers all 3 workspaces (root `npm run test`); added `test-e2e-playwright` job (continue-on-error: true) with Postgres service + Playwright browser install | ✅ | docs/plans/048-frontend-test-harness.md |
-| TASK-106 | Reviews module backend — controller/service/repository over existing `Review` model (prereq for TASK-078) | ⬜ | — |
+| TASK-146 | **[NEW BUG]** Checkout steps "Доставка / Перевірка / Підтвердження" are cosmetic — `checkout-view.tsx:98` hardcodes `CheckoutStepIndicator current={1}` and the single form submits the order directly. Implement the real multi-step flow (advance Delivery → Review → Confirm) or collapse to one honest step. | ⬜ | — |
+| TASK-147 | **[NEW]** Admin tables column sorting (products / orders / users) — clickable sortable headers + `sortBy`/`sortOrder` URL params (backend list endpoints already accept them). Owner flagged **critical**. | ⬜ | — |
+| TASK-149 | **[NEW BUG]** Admin category parent selection is not persisted — choosing a parent on create/edit resets in the UI on save (B3). Investigate the category form state-sync + the submitted payload. | ⬜ | — |
+| TASK-150 | **[NEW BUG]** Admin users — "All statuses" filter doesn't filter (B5); banned/inactive customer is still able to order and isn't session-revoked. Verify against the existing ban logic and the active-status guard. | ⬜ | — |
+| TASK-151 | **[NEW]** Admin order management rework — give the admin **full manual control** over status and a **separate "paid" toggle** decoupled from the `PENDING→…→DELIVERED` pipeline (owner's B4 remark; tackle after localization). | ⬜ | — |
+| TASK-152 | **[NEW BUG]** Dashboard "Top products" / "Low-stock" panels are not visible / show empty (B6). Surface them and verify against real paid orders (pairs with the TASK-137 revenue audit). | ⬜ | — |
 
-#### QA pass triage — UX, data & admin polish (from `docs/manual-qa-master.md`)
+### Tier 3 — UX, data & admin polish
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
 | TASK-127 | Loading states / skeletons across storefront + admin — give feedback on slow actions ("немає лоадерів") | ⬜ | — |
-| TASK-128 | Seed enrichment (residual after TASK-142-G absorbed the core overhaul) — multi-image positions so the gallery thumbnail strip can be exercised in QA; verify `npm run db:studio`; write developer re-seed guide. No Prisma migration, no backend module changes, no Orval regen. Sub-tasks: **TASK-128-A** verify `db:studio` on live DB, fix if broken (chore, S, ✅ — **was broken**: Prisma 7 `studio` rejects `--schema`; fixed `prisma:studio` script to drop the flag, Studio now opens on an auto-selected port); **TASK-128-B** expand `seedProducts` so ≥6 entries have 2-3 images (chore, M, ✅ — 8 entries now multi-image → 17 positions get the gallery strip; reseed: 32 positions / 53 images, 0 duplicate primaries); **TASK-128-C** write `docs/seed-guide.md` — prerequisites, commands, idempotency, credential override, DB-reset warning (docs, S, ✅). | ✅ | docs/plans/061-seed-enrichment.md |
-| TASK-129 | User-facing order status labels — replace raw `PENDING`/etc. with adequate UA wording for customers | ⬜ | — |
 | TASK-130 | Header account → user icon + dropdown; ensure the customer cabinet link is visible | ⬜ | — |
 | TASK-131 | Storefront user order cancellation — cancel button for PENDING orders (backend cancel already exists) | ⬜ | — |
 | TASK-132 | Hide raw stock quantity from customers on the storefront | ⬜ | — |
 | TASK-133 | Cart line images + product links — replace `ProductThumb` placeholder with the real image and link to the PDP | ⬜ | — |
 | TASK-134 | Order-details page — fix layout + link items to their products | ⬜ | — |
-| TASK-135 | Checkout prefill for logged-in users + phone input mask | ⬜ | — |
 | TASK-136 | Admin — generate slug on the fly on product create; remove or implement the dead header search | ⬜ | — |
 | TASK-137 | Admin revenue calc audit — count only earned revenue; show unrealized-but-ordered separately | ⬜ | — |
 | TASK-138 | a11y / console-warning cleanup — `DialogContent` missing `aria-describedby` (sheet.tsx), link-preload warning; add the "Mail disabled — skipping…" log line | ⬜ | — |
+| TASK-153 | **[NEW]** Admin-managed static/service pages (Політика конфіденційності, Часті питання, Повернення та обмін, …) via a rich-text editor + dynamic storefront routes. Pick a proven editor library. | ⬜ | — |
+| TASK-154 | **[NEW]** Admin-managed site contact block (support email, phone, working hours) surfaced in the storefront footer/contacts. | ⬜ | — |
+| TASK-155 | **[NEW]** Admin/manager-only **preview of deactivated products** — the allowed path behind the TASK-145 public block (customers blocked, staff can preview hidden products live). | ⬜ | — |
+| TASK-156 | **[NEW]** Admin order-detail line items → link to the product edit page (admin side of the cart/order product-link work; storefront side is TASK-133/134). | ⬜ | — |
 
-### Phase C — Revenue-critical commerce *(features; payments parked)*
+### Tier 4 — Commerce, discovery & reliability *(features)*
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
 | TASK-078 | Product reviews — write flow + moderation (auth'd submission, verified-purchase, PDP list, admin approval queue) | ⬜ | — |
+| TASK-106 | Reviews module backend — controller/service/repository over existing `Review` model (prereq for TASK-078) | ⬜ | — |
 | TASK-079 | Coupons / promo codes — `Discount` model (percent/fixed, min-spend, expiry, usage caps), apply in cart/checkout, admin CRUD | ⬜ | — |
-| TASK-080 | Delivery + Nova Poshta — courier/branch options, city+branch autocomplete, cost + ETA in checkout | ⬜ | — |
-
-### Phase D — Discovery & conversion *(features + performance)*
-
-| Task ID | Description | Status | Plan |
-| --- | --- | --- | --- |
 | TASK-075 | Full-text search + header autocomplete — Meilisearch (typo-tolerant) behind `/search`; inline header dropdown | ⬜ | — |
 | TASK-076 | Wishlist / favorites — guest-via-cookie + merge-on-login (mirrors guest-cart pattern) | ⬜ | — |
 | TASK-077 | Variant dots + quick-add — surface variant summary on list API; color dots + hover ATC overlay | ⬜ | — |
 | TASK-074 | Image optimization — `next/image` remotePatterns + shimmer placeholder | ⬜ | docs/plans/042-image-optimization.md |
 | TASK-091 | Origin-side image pre-optimization — `sharp` WebP renditions + per-image LQIP `blurDataUrl` on upload | ⬜ | — |
+| TASK-048 | Sentry integration (frontend + backend) — `@sentry/nestjs` + `@sentry/nextjs`, wire to Pino error path | ⬜ | — |
+| TASK-103 | Mail reliability — replace fire-and-forget with transactional outbox + retry worker | ⬜ | — |
+| TASK-104-J | Soft deletes — integration green; **pending:** apply `add_soft_delete_audit` migration + Swagger DELETE smoke on a running DB | 🔄 | docs/plans/047-soft-deletes-audit.md |
+| TASK-105 / 105-D | Frontend test harness — RTL/MSW + store-admin Jest shipped; **pending:** run Playwright E2E (DB + browsers) | 🔄 | docs/plans/048-frontend-test-harness.md |
+| TASK-101 | Run the *Pending manual QA* list to closure (Redis int, dashboard int, JSON-LD live, admin CSRF smoke) | ⬜ | — |
+
+---
+
+## Recently completed — Phase A & reliability close-out
+
+> Shipped (build/lint/typecheck + automated tests green). Detailed root-cause/QA notes live in the
+> linked plans and the *Pending manual QA* table above. Kept here for reference, out of the active
+> sequence.
+
+| Task ID | Summary | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-100 | CI `npm run build` step — catches Orval drift / tree-shake failures pre-merge | ✅ | plan 044 |
+| TASK-107 | Relax `AddressDto` for the UA market (phone required, country optional, etc.) | ✅ | plan 043 |
+| TASK-108 | UA checkout form redesign (firstName/lastName/phone/city/deliveryAddress/notes; `onInvalid` focus) | ✅ | plan 043 |
+| TASK-109 | Orval regen after `AddressDto` relaxation | ✅ | plan 043 |
+| TASK-110 | Order e2e fixture — add `phone`, negative test for missing phone | ✅ | plan 043 |
+| TASK-111 | ~~Smoke-verify confirmation page~~ — absorbed into TASK-119 | ✅ | plan 043 → 053 |
+| TASK-112 | store-admin logout-on-reload path fix (`/auth/refresh` missing `/api`) | ✅ | — |
+| TASK-113 | Customer `/account` (profile view+edit) + `/orders` history; header "Мій акаунт" link | ✅ | — |
+| TASK-114 | Type the storefront order-list response (`OrderListResponseEnvelope.data` = `OrderEntity[]`) | ✅ | plan 045 |
+| TASK-116 | Cart qty stepper sync — optimistic `setQty` + debounced server writes | ✅ | plan 049 |
+| TASK-117 | Product search focus/debounce — controlled field, no key-remount | ✅ | plan 051 |
+| TASK-118 | Guest→user cart merge — gate `useGetCart` on `isInitializing` + invalidate after refresh | ✅ | plan 052 |
+| TASK-119 | Checkout confirmation redirect race — gate cart-empty guard on `isOrderSubmitted`; UA country label | ✅ | plan 053 |
+| TASK-120 | Restored-tab query-hang — defensive `useRecoverStrandedQueries` (dev-only Turbopack symptom diagnosed) | ✅ | plan 054 |
+| TASK-121 | Post-registration redirect + header auth-state sync | ✅ | plan 055 |
+| TASK-122 | store-admin logout-on-reload re-fix | ✅ | — |
+| TASK-123 | Payment/status coupling — `derivePaymentStatus` in `updateStatus` | ✅ | plan 056 |
+| TASK-124 | Order status × stock — auto-restock only on pre-shipment cancel; cache eviction | ✅ | plan 057 |
+| TASK-125 | Admin order list/detail — customer email + contact data (`ADMIN_ORDERS_INCLUDE`) | ✅ | plan 058 |
+| TASK-126 | Product card → PDP cheapest-variant default; gallery gate confirmed correct | ✅ | plan 059 |
+| TASK-128 | Seed enrichment — multi-image positions, `db:studio` fix, re-seed guide | ✅ | plan 061 |
+| TASK-141 | Cross-cutting forms state-sync audit — `values`/`keepDirtyValues`; convention doc | ✅ | plan 050 |
+| TASK-102 | Refresh-token cleanup — scheduled purge of revoked/expired rows | ✅ | plan 046 |
+| TASK-104 (A–I) | Soft deletes / audit — `deletedAt` + repo filters + `DELETE` endpoints (`-J` still open above) | ✅ | plan 047 |
+| TASK-105 (A/B/C/E) | Frontend test harness — RTL/MSW foundation, cart/checkout component tests, store-admin scaffold, CI wiring (`-D` Playwright run open above) | ✅ | plan 048 |
 
 ---
 
 ## Parked / Later
 
-> Tracked but intentionally outside the active A–D sequence.
+> Tracked but intentionally outside the active Tier 0–4 sequence.
 
 | Task ID | Description | Status | Reason |
 | --- | --- | --- | --- |
@@ -198,10 +191,10 @@
 | TASK-086 | Quick-view modal from product cards | 🅿️ | Behind UI rewrite |
 | TASK-087 | Recently-viewed products strip (localStorage) | 🅿️ | Behind UI rewrite |
 | TASK-088 | Bestseller / "Хіт продажу" badge (sales-driven) | 🅿️ | Behind UI rewrite |
-| TASK-089 | Contact & social bar (phone, hours, Viber/Telegram/Instagram) | 🅿️ | Behind UI rewrite |
+| TASK-089 | Contact & social bar (phone, hours, Viber/Telegram/Instagram) | 🅿️ | Behind UI rewrite; pairs with TASK-154 |
 | TASK-068 deferrals | Remaining redesign polish (sticky ATC bar, focus-ring audit, error→toast, primitive swaps) | 🅿️ | Behind UI rewrite |
 | TASK-139 | Recommended-products carousels, admin-managed (prioritization + marketing rules) | 🅿️ | Explicit future note in QA pass; needs discovery |
-| TASK-140 | Admin tables UX (shadcn sortable/filterable) + category management/visualization rethink | 🅿️ | Behind admin UI rewrite; pairs with TASK-115 |
+| TASK-140 | Admin tables UX (shadcn sortable/filterable) + category management/visualization rethink | 🅿️ | Behind admin UI rewrite; pairs with TASK-115/TASK-147 |
 
 ---
 
@@ -212,7 +205,7 @@
   manual visual QA remains, mark ✅ and add a line to *Pending manual QA*.
 - **Block a task:** change to ❌ with a note. **Park a task:** 🅿️ with a one-line reason.
 - **New task IDs:** use a single monotonic counter — next free integer above the current max
-  (currently TASK-142-G; next plain ID is TASK-143; TASK-091 and below are historical). Never reuse an old ID.
+  (currently TASK-156; next plain ID is TASK-157). TASK-091 and below are historical. Never reuse an old ID.
 - **Plans:** add the `docs/plans/NNN-*.md` path in the Plan column when one is written.
 - **Finishing a parent:** move its detailed sub-tasks into `docs/backlog-archive.md` and leave a
   one-row summary under *Completed*.
