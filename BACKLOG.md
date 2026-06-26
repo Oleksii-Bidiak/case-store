@@ -84,7 +84,7 @@
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
 | TASK-115 | Finish store-admin UA localization — products/categories/orders/users CRUD (tables, forms, detail views, toggles, toasts, zod validation messages). Expand `apps/store-admin/src/shared/config/dictionary.ts` (~60 hardcoded strings remain). **Done:** shell/nav, header, login, dashboard. | 🔄 | — |
-| TASK-129 | User-facing order **&** payment status labels — replace raw enums (`PENDING`…) with adequate UA wording for customers (storefront order history + confirmation) and admin (badge text, status select). Add a shared status→label map per app. | ⬜ | — |
+| TASK-129 | User-facing order **&** payment status labels — replace raw enums (`PENDING`…) with adequate UA wording for customers (storefront order history + confirmation) and admin (badge text, status select). Add a shared status→label map per app. | ⬜ | [docs/plans/065-order-payment-status-labels.md](docs/plans/065-order-payment-status-labels.md) |
 | TASK-148 | **[NEW]** UAH currency localization — admin formatters use `en-US`/`USD`; switch to `uk-UA`/`UAH` in product/order tables, order detail, dashboard. Add UAH formatting to storefront order history/confirmation (amounts currently render without a currency). | ⬜ | — |
 | TASK-135 | Checkout prefill for logged-in users (pull saved profile/contact data) + UA phone input mask (`+380 …`). | ⬜ | — |
 | TASK-080 | **[promoted from Phase C]** Delivery + Nova Poshta — city + branch autocomplete via the NP API, persist the chosen branch in the DB, show cost + ETA in checkout. Manual delivery is the interim fallback until this ships. | ⬜ | — |
