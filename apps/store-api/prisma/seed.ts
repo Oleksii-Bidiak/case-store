@@ -265,6 +265,16 @@ async function seedProducts(prisma: PrismaClient, categories: Record<string, { i
           alt: 'Clear MagSafe Case - Front',
           sortOrder: 0,
         },
+        {
+          url: '/images/products/case-magsafe-2.jpg',
+          alt: 'Clear MagSafe Case - Back',
+          sortOrder: 1,
+        },
+        {
+          url: '/images/products/case-magsafe-3.jpg',
+          alt: 'Clear MagSafe Case - MagSafe Ring',
+          sortOrder: 2,
+        },
       ],
     },
     // ── Samsung Cases ──
@@ -298,6 +308,11 @@ async function seedProducts(prisma: PrismaClient, categories: Record<string, { i
           url: '/images/products/case-samsung-armor-1.jpg',
           alt: 'Armor Case Samsung Galaxy S24',
           sortOrder: 0,
+        },
+        {
+          url: '/images/products/case-samsung-armor-2.jpg',
+          alt: 'Armor Case Samsung Galaxy S24 - Kickstand',
+          sortOrder: 1,
         },
       ],
     },
@@ -361,6 +376,11 @@ async function seedProducts(prisma: PrismaClient, categories: Record<string, { i
           url: '/images/products/charger-wall-20w-1.jpg',
           alt: '20W USB-C Wall Charger',
           sortOrder: 0,
+        },
+        {
+          url: '/images/products/charger-wall-20w-2.jpg',
+          alt: '20W USB-C Wall Charger - USB-C Port',
+          sortOrder: 1,
         },
       ],
     },
@@ -461,6 +481,16 @@ async function seedProducts(prisma: PrismaClient, categories: Record<string, { i
           url: '/images/products/charger-wireless-15w-1.jpg',
           alt: '15W Qi Wireless Charging Pad',
           sortOrder: 0,
+        },
+        {
+          url: '/images/products/charger-wireless-15w-2.jpg',
+          alt: '15W Qi Wireless Charging Pad - Top View',
+          sortOrder: 1,
+        },
+        {
+          url: '/images/products/charger-wireless-15w-3.jpg',
+          alt: '15W Qi Wireless Charging Pad - In Use',
+          sortOrder: 2,
         },
       ],
     },
@@ -603,6 +633,11 @@ async function seedProducts(prisma: PrismaClient, categories: Record<string, { i
           alt: 'Tempered Glass iPhone 15',
           sortOrder: 0,
         },
+        {
+          url: '/images/products/sp-iphone15-2.jpg',
+          alt: 'Tempered Glass iPhone 15 - Install Frame',
+          sortOrder: 1,
+        },
       ],
     },
     {
@@ -631,6 +666,11 @@ async function seedProducts(prisma: PrismaClient, categories: Record<string, { i
       ],
       images: [
         { url: '/images/products/sp-samsung-s24-1.jpg', alt: 'PET Film Samsung S24', sortOrder: 0 },
+        {
+          url: '/images/products/sp-samsung-s24-2.jpg',
+          alt: 'PET Film Samsung S24 - Applied',
+          sortOrder: 1,
+        },
       ],
     },
     // ── Standalone positions (no group — single buyable unit, TASK-142) ──
@@ -657,6 +697,11 @@ async function seedProducts(prisma: PrismaClient, categories: Record<string, { i
           url: '/images/products/acc-car-holder-1.jpg',
           alt: 'Car Dashboard Phone Holder',
           sortOrder: 0,
+        },
+        {
+          url: '/images/products/acc-car-holder-2.jpg',
+          alt: 'Car Dashboard Phone Holder - Mounted',
+          sortOrder: 1,
         },
       ],
     },
