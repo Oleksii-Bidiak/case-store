@@ -24,6 +24,52 @@ const authed = {
   auth: { isAuthenticated: true, accessToken: "token" },
 } as const;
 
+/** Populated cart + a blank profile so the form starts empty for typing tests. */
+function setupBlankProfile() {
+  server.use(
+    http.get("*/api/cart", () => HttpResponse.json(makeCart())),
+    http.get("*/api/users/me", () =>
+      HttpResponse.json(makeUser({ firstName: "", lastName: "", phone: "" })),
+    ),
+  );
+}
+
+/** Fill all required delivery (step-1) fields. Types city before the address
+ *  because editing the city clears the dependent warehouse field. */
+async function fillDelivery(
+  user: ReturnType<typeof userEvent.setup>,
+  overrides: Partial<{
+    firstName: string;
+    lastName: string;
+    phone: string;
+    city: string;
+    address: string;
+  }> = {},
+) {
+  const v = {
+    firstName: "Олег",
+    lastName: "Коваль",
+    phone: "501234567",
+    city: "Київ",
+    address: "Відділення №1",
+    ...overrides,
+  };
+  await user.type(
+    screen.getByLabelText(dict.checkout.fields.firstName),
+    v.firstName,
+  );
+  await user.type(
+    screen.getByLabelText(dict.checkout.fields.lastName),
+    v.lastName,
+  );
+  await user.type(screen.getByLabelText(dict.checkout.fields.phone), v.phone);
+  await user.type(screen.getByLabelText(dict.checkout.fields.city), v.city);
+  await user.type(
+    screen.getByLabelText(dict.checkout.fields.deliveryAddress),
+    v.address,
+  );
+}
+
 describe("CheckoutView", () => {
   beforeEach(() => {
     mockReplace.mockClear();
@@ -56,9 +102,13 @@ describe("CheckoutView", () => {
     expect(
       await screen.findByRole("heading", { name: dict.checkout.title }),
     ).toBeInTheDocument();
+    // Step 1 shows "Далі" — the order-placing submit only appears on the review step.
     expect(
-      screen.getByRole("button", { name: dict.checkout.placeOrder }),
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.checkout.placeOrder }),
+    ).not.toBeInTheDocument();
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
@@ -105,6 +155,11 @@ describe("CheckoutView", () => {
       "Відділення №1",
     );
 
+    // Advance to the review step, then place the order from there (TASK-146).
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+    await screen.findByRole("heading", { name: dict.checkout.reviewHeading });
     await user.click(
       screen.getByRole("button", { name: dict.checkout.placeOrder }),
     );
@@ -229,5 +284,138 @@ describe("CheckoutView", () => {
     expect(screen.getByLabelText(dict.checkout.fields.phone)).toHaveValue(
       "+380",
     );
+  });
+
+  // ── TASK-146: multi-step flow ──────────────────────────────────────────────
+
+  it("shows 'Далі' on step 1 and 'Підтвердити замовлення' only on step 2", async () => {
+    setupBlankProfile();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    // Step 1
+    expect(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.checkout.placeOrder }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.checkout.prevStep }),
+    ).not.toBeInTheDocument();
+
+    await fillDelivery(user);
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+
+    // Step 2
+    await screen.findByRole("heading", { name: dict.checkout.reviewHeading });
+    expect(
+      screen.getByRole("button", { name: dict.checkout.placeOrder }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.checkout.prevStep }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.checkout.nextStep }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not advance to step 2 when delivery fields are invalid", async () => {
+    setupBlankProfile();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    // Click "Далі" without filling anything.
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+
+    // Still on step 1: the review heading never appears and an error is shown.
+    expect(
+      await screen.findByText(dict.checkout.validation.firstName),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: dict.checkout.reviewHeading }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.checkout.placeOrder }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("returns to step 1 when 'Назад' is clicked on step 2", async () => {
+    setupBlankProfile();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+
+    await screen.findByRole("heading", { name: dict.checkout.title });
+    await fillDelivery(user);
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+    await screen.findByRole("heading", { name: dict.checkout.reviewHeading });
+
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.prevStep }),
+    );
+
+    // Back on step 1: the address form is visible again with the entered value.
+    expect(
+      await screen.findByRole("button", { name: dict.checkout.nextStep }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(dict.checkout.fields.firstName)).toHaveValue(
+      "Олег",
+    );
+  });
+
+  it("step indicator reflects the current step via aria-current", async () => {
+    setupBlankProfile();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    // Step 1 active initially.
+    let current = document.querySelector('[aria-current="step"]');
+    expect(current).toHaveTextContent("1");
+
+    await fillDelivery(user);
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+    await screen.findByRole("heading", { name: dict.checkout.reviewHeading });
+
+    // Step 2 active after advancing.
+    current = document.querySelector('[aria-current="step"]');
+    expect(current).not.toHaveTextContent("1");
+  });
+
+  it("review step shows the delivery data entered on step 1", async () => {
+    setupBlankProfile();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+
+    await screen.findByRole("heading", { name: dict.checkout.title });
+    await fillDelivery(user, {
+      firstName: "Тарас",
+      lastName: "Шевченко",
+      city: "Харків",
+      address: "Відділення №5",
+    });
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+
+    const review = (
+      await screen.findByRole("heading", { name: dict.checkout.reviewHeading })
+    ).closest("section") as HTMLElement;
+    expect(review).toHaveTextContent("Тарас Шевченко");
+    expect(review).toHaveTextContent("Харків");
+    expect(review).toHaveTextContent("Відділення №5");
   });
 });
