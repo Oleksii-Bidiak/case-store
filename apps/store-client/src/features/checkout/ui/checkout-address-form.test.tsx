@@ -1,25 +1,52 @@
-import type { UseFormRegister, FieldErrors } from "react-hook-form";
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
 import { render, screen } from "@/shared/test/render";
 import { dict } from "@/shared/config";
 import type { CheckoutFormValues } from "../model/checkout-schema";
 import { CheckoutAddressForm } from "./checkout-address-form";
 
-/** Minimal register stub — returns the field props shape RHF would. */
-const register = ((name: string) => ({
-  name,
-  onChange: jest.fn(),
-  onBlur: jest.fn(),
-  ref: jest.fn(),
-})) as unknown as UseFormRegister<CheckoutFormValues>;
+/**
+ * Render the form inside a real `useForm` instance. The phone field now uses
+ * `Controller`, which needs a genuine `control` object (the old `register` stub
+ * is no longer sufficient). Errors are injected via `setError` so they flow
+ * through both `formState.errors` (register fields) and `fieldState` (phone).
+ */
+function renderForm(
+  errors: Partial<Record<keyof CheckoutFormValues, string>> = {},
+) {
+  function Harness() {
+    const form = useForm<CheckoutFormValues>({
+      defaultValues: {
+        firstName: "",
+        lastName: "",
+        phone: "",
+        city: "",
+        deliveryAddress: "",
+        notes: "",
+      },
+    });
 
-function renderForm(errors: FieldErrors<CheckoutFormValues> = {}) {
-  return render(
-    <CheckoutAddressForm
-      legend="Доставка"
-      register={register}
-      errors={errors}
-    />,
-  );
+    useEffect(() => {
+      Object.entries(errors).forEach(([name, message]) => {
+        form.setError(name as keyof CheckoutFormValues, {
+          type: "manual",
+          message,
+        });
+      });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    return (
+      <CheckoutAddressForm
+        legend="Доставка"
+        register={form.register}
+        control={form.control}
+        errors={form.formState.errors}
+      />
+    );
+  }
+
+  return render(<Harness />);
 }
 
 describe("CheckoutAddressForm", () => {
@@ -43,6 +70,14 @@ describe("CheckoutAddressForm", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders the phone field with type=tel and inputMode=numeric", () => {
+    renderForm();
+
+    const phone = screen.getByLabelText(dict.checkout.fields.phone);
+    expect(phone).toHaveAttribute("type", "tel");
+    expect(phone).toHaveAttribute("inputmode", "numeric");
+  });
+
   it("shows the delivery hint when deliveryAddress has no error", () => {
     renderForm();
 
@@ -50,7 +85,7 @@ describe("CheckoutAddressForm", () => {
   });
 
   it("marks a field invalid and surfaces its error message", () => {
-    renderForm({ phone: { type: "manual", message: "Невірний телефон" } });
+    renderForm({ phone: "Невірний телефон" });
 
     expect(screen.getByLabelText(dict.checkout.fields.phone)).toHaveAttribute(
       "aria-invalid",
@@ -60,9 +95,7 @@ describe("CheckoutAddressForm", () => {
   });
 
   it("replaces the delivery hint with the error when deliveryAddress is invalid", () => {
-    renderForm({
-      deliveryAddress: { type: "manual", message: "Вкажіть адресу" },
-    });
+    renderForm({ deliveryAddress: "Вкажіть адресу" });
 
     expect(
       screen.queryByText(dict.checkout.deliveryHint),

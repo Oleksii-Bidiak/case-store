@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
 import type { CartEntity, CartItemEntity } from "@/entities/cart";
 import type { OrderEntity, OrderItemEntity } from "@/entities/order";
+import type { UserEntity } from "@/entities/user";
 
 /**
  * Default MSW handlers for store-client component tests.
@@ -108,9 +109,35 @@ export function makeOrder(overrides: Partial<OrderEntity> = {}): {
   };
 }
 
+/**
+ * Build a current-user profile envelope with UA defaults; override any field
+ * per-test (e.g. `makeUser({ phone: null })`). Matches `GET /api/users/me`.
+ */
+export function makeUser(overrides: Partial<UserEntity> = {}): {
+  data: UserEntity;
+} {
+  return {
+    data: {
+      id: "user-1",
+      email: "oleg@example.com",
+      firstName: "Олег",
+      lastName: "Коваль",
+      phone: "+380501234567",
+      role: "CUSTOMER",
+      isActive: true,
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+      ...overrides,
+    },
+  };
+}
+
 export const handlers = [
   // Cart read — a populated guest cart by default.
   http.get("*/api/cart", () => HttpResponse.json(makeCart())),
+
+  // Current-user profile — a populated UA profile by default.
+  http.get("*/api/users/me", () => HttpResponse.json(makeUser())),
 
   // Cart mutations — echo a minimal success envelope; tests assert the call,
   // and components refetch the cart afterwards.

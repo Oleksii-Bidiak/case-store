@@ -9,6 +9,7 @@ import { useGetCart } from "@/entities/cart";
 import {
   CheckoutAddressForm,
   useCheckout,
+  useCheckoutPrefill,
   checkoutSchema,
   type CheckoutFormValues,
 } from "@/features/checkout";
@@ -43,11 +44,15 @@ export function CheckoutView() {
     register,
     handleSubmit,
     control,
+    reset,
     setFocus,
     formState: { errors },
   } = useForm<CheckoutFormValues>({
     resolver: zodResolver(checkoutSchema),
   });
+
+  // Seed the form with the logged-in user's saved contact details (name + phone).
+  useCheckoutPrefill(reset, isAuthenticated);
 
   const notes = useWatch({ control, name: "notes" }) ?? "";
 
@@ -105,6 +110,7 @@ export function CheckoutView() {
           <CheckoutAddressForm
             legend={dict.checkout.shippingAddress}
             register={register}
+            control={control}
             errors={errors}
           />
 
