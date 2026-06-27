@@ -1,10 +1,18 @@
 # Plan: Nova Poshta Delivery Integration
 
-> **Status:** 🔄 In Progress
+> **Status:** 🔄 Partially shipped — A–D done; E + live QA deferred
 > **Phase:** Phase 3 — Checkout & Orders (Tier 1 Ukrainian business practice extension)
 > **Created:** 2026-06-27
 > **Last Updated:** 2026-06-27
 > **BACKLOG Task:** TASK-080
+>
+> **Deferral (owner decision 2026-06-27):** TASK-080-A…D are implemented, committed,
+> and automated-test-green (storefront NP city/warehouse autocomplete + shipping
+> cost/ETA on order; the NP client is server-side with graceful free-text fallback).
+> The remaining work is **deferred until the real `NP_API_KEY` is provisioned**:
+> TASK-080-E (admin-configurable dispatch origin — also needs a running DB for its
+> `DeliverySetting` migration) and the live NP-API manual QA. Without the key the app
+> boots normally, delivery endpoints return 503, and checkout falls back to free text.
 
 ---
 
@@ -556,7 +564,7 @@ implementation
 **Acceptance Criteria:**
 
 - [ ] `NP_API_KEY` and `NP_SENDER_CITY_REF` added to `EnvironmentVariables` as `@IsOptional()
-    @IsString()` fields; `validateEnv` still passes with neither set
+  @IsString()` fields; `validateEnv` still passes with neither set
 - [ ] `NovaPoshtaClient` injectable service uses Node.js built-in `fetch` to call
       `https://api.novaposhta.ua/v2.0/json/`; throws `ServiceUnavailableException` when
       `NP_API_KEY` is absent
@@ -565,7 +573,7 @@ implementation
 - [ ] `DeliveryService.searchWarehouses(cityRef, q?)` caches responses with a 30-minute TTL;
       returns `NpWarehouseDto[]`
 - [ ] `DeliveryService.estimateShipping(recipientCityRef)` falls back to `{ cost: "0", etaDays:
-    null }` when the NP API call fails (never throws to callers)
+  null }` when the NP API call fails (never throws to callers)
 - [ ] `DeliveryController` exposes `GET /api/delivery/cities`, `/warehouses`, `/estimate`; Swagger
       decorators present on all three; `@Throttle` applied
 - [ ] `DeliveryModule` imported in `AppModule`; `DeliveryService` exported for `OrderModule`
@@ -603,7 +611,7 @@ implementation
 **Acceptance Criteria:**
 
 - [ ] `AddressDto` has three new optional fields: `npCityRef?: string`, `npWarehouseName?:
-    string`, `npWarehouseRef?: string` (all `@IsString() @IsOptional() @MaxLength(100)`)
+  string`, `npWarehouseRef?: string` (all `@IsString() @IsOptional() @MaxLength(100)`)
 - [ ] `ShippingAddressData` interface updated to match the extended DTO; existing Order reads
       typecheck cleanly (fields are optional — old snapshot rows without NP refs are unaffected)
 - [ ] `CreateOrderParams` includes `shippingCost?: number`
@@ -704,7 +712,7 @@ the remaining coverage)
 
 - [ ] `delivery.service.spec.ts` covers: `searchCities` min-length guard (throws on `q="K"`);
       cache hit path (client not called second time); `estimateShipping` fallback to `{ cost: "0",
-    etaDays: null }` on client error; `isConfigured()` returns `false` when `NP_API_KEY` absent
+  etaDays: null }` on client error; `isConfigured()` returns `false` when `NP_API_KEY` absent
 - [ ] E2E / integration test covers `GET /api/delivery/cities?q=Ки` with mocked `NovaPoshtaClient`
       returning stubbed cities; verifies response shape `{ data: NpCityDto[] }`
 - [ ] `combobox.test.tsx` covers: dropdown opens on input with `>= 2` chars; Escape closes;
@@ -747,7 +755,7 @@ the remaining coverage)
       `DeliverySetting` → `NP_SENDER_CITY_REF` → Kyiv default / `0.5kg`; a unit test asserts the
       DB value overrides the env fallback
 - [ ] `DeliveryController` (or an admin sub-controller) exposes `GET` + `PUT
-    /api/admin/delivery-settings`, guarded admin-only via the existing roles guard; Swagger
+  /api/admin/delivery-settings`, guarded admin-only via the existing roles guard; Swagger
       decorated; `DeliverySettingDto` / `UpdateDeliverySettingDto` validated with class-validator
 - [ ] Orval regen produces the admin hooks in `apps/store-admin/src/shared/api/generated/`
 - [ ] store-admin settings page (e.g. `app/(dashboard)/settings/delivery`) with a form: sender
