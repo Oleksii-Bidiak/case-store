@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
+import { useTableSort } from "@/shared/lib/use-table-sort";
 import {
   UserEntityRole,
   useUserControllerFindAll,
@@ -18,6 +19,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SortableColumnHeader,
   Table,
   TableBody,
   TableCell,
@@ -73,6 +75,11 @@ export function AdminUserTable() {
     router.replace(queryString ? `${pathname}?${queryString}` : pathname);
   };
 
+  const { sortBy, sortOrder, onSort } = useTableSort(
+    searchParams,
+    updateParams,
+  );
+
   // Debounce the search box → URL `?search=` param via the shared hook.
   const debouncedSearch = useDebouncedCallback((value: string) => {
     const trimmed = value.trim();
@@ -88,6 +95,8 @@ export function AdminUserTable() {
       ? (roleParam as (typeof UserEntityRole)[keyof typeof UserEntityRole])
       : undefined,
     isActive: isActiveParam ? isActiveParam === "true" : undefined,
+    sortBy,
+    sortOrder,
   });
 
   const users = data?.data ?? [];
@@ -175,11 +184,23 @@ export function AdminUserTable() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12" />
-                <TableHead>{dict.users.colEmail}</TableHead>
+                <SortableColumnHeader
+                  field="email"
+                  label={dict.users.colEmail}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
                 <TableHead>{dict.users.colName}</TableHead>
                 <TableHead>{dict.users.colRole}</TableHead>
                 <TableHead>{dict.users.colStatus}</TableHead>
-                <TableHead>{dict.users.colJoined}</TableHead>
+                <SortableColumnHeader
+                  field="createdAt"
+                  label={dict.users.colJoined}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
                 <TableHead className="text-right">
                   {dict.common.actions}
                 </TableHead>

@@ -67,5 +67,6 @@ export {
   TableHeader,
   TableRow,
 } from "./table";
+export { SortableColumnHeader } from "./sortable-column-header";
 export { Textarea } from "./textarea";
 export { Toaster } from "./sonner";

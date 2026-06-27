@@ -90,6 +90,11 @@ export const dict = {
     signOut: "Вийти",
     yes: "Так",
     no: "Ні",
+    // Table column sorting (TASK-147).
+    sortByAria: (col: string) => `Сортувати за: ${col}`,
+    sortAsc: "за зростанням",
+    sortDesc: "за спаданням",
+    sortNone: "не відсортовано",
   },
 
   // --- Products (TASK-115) ----------------------------------------------------

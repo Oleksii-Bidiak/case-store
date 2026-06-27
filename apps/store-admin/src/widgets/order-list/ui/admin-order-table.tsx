@@ -10,6 +10,7 @@ import {
   paymentStatusLabel,
   useAdminOrderControllerFindAll,
 } from "@/entities/order";
+import { useTableSort } from "@/shared/lib/use-table-sort";
 import {
   Badge,
   Button,
@@ -18,6 +19,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SortableColumnHeader,
   Table,
   TableBody,
   TableCell,
@@ -61,17 +63,6 @@ export function AdminOrderTable() {
   const statusParam = searchParams.get("status") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
 
-  const { data, isLoading, isError } = useAdminOrderControllerFindAll({
-    page,
-    limit: PAGE_SIZE,
-    status: statusParam
-      ? (statusParam as (typeof OrderEntityStatus)[keyof typeof OrderEntityStatus])
-      : undefined,
-  });
-
-  const orders = data?.data ?? [];
-  const totalPages = data?.meta?.totalPages ?? 1;
-
   const updateParams = (next: Record<string, string | undefined>) => {
     const params = new URLSearchParams(searchParams.toString());
     for (const [key, value] of Object.entries(next)) {
@@ -82,8 +73,27 @@ export function AdminOrderTable() {
       }
     }
     const queryString = params.toString();
-    router.push(queryString ? `${pathname}?${queryString}` : pathname);
+    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
   };
+
+  // Column sort lives in the URL (TASK-147).
+  const { sortBy, sortOrder, onSort } = useTableSort(
+    searchParams,
+    updateParams,
+  );
+
+  const { data, isLoading, isError } = useAdminOrderControllerFindAll({
+    page,
+    limit: PAGE_SIZE,
+    status: statusParam
+      ? (statusParam as (typeof OrderEntityStatus)[keyof typeof OrderEntityStatus])
+      : undefined,
+    sortBy,
+    sortOrder,
+  });
+
+  const orders = data?.data ?? [];
+  const totalPages = data?.meta?.totalPages ?? 1;
 
   const handleStatusChange = (value: string) => {
     updateParams({
@@ -137,11 +147,29 @@ export function AdminOrderTable() {
               <TableRow>
                 <TableHead>{dict.orders.colOrder}</TableHead>
                 <TableHead>{dict.orders.colCustomer}</TableHead>
-                <TableHead>{dict.orders.colStatus}</TableHead>
+                <SortableColumnHeader
+                  field="status"
+                  label={dict.orders.colStatus}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
                 <TableHead>{dict.orders.colPayment}</TableHead>
-                <TableHead>{dict.orders.colTotal}</TableHead>
+                <SortableColumnHeader
+                  field="total"
+                  label={dict.orders.colTotal}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
                 <TableHead>{dict.orders.colItems}</TableHead>
-                <TableHead>{dict.orders.colCreated}</TableHead>
+                <SortableColumnHeader
+                  field="createdAt"
+                  label={dict.orders.colCreated}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
                 <TableHead className="text-right">
                   {dict.common.actions}
                 </TableHead>

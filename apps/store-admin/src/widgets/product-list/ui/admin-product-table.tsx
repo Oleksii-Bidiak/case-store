@@ -6,9 +6,11 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCategoryControllerGetRootCategories } from "@/shared/api";
 import { useProductControllerFindAll } from "@/entities/product";
 import { ProductStatusToggle } from "@/features/product-status-toggle";
+import { useTableSort } from "@/shared/lib/use-table-sort";
 import {
   Button,
   Input,
+  SortableColumnHeader,
   Table,
   TableBody,
   TableCell,
@@ -39,12 +41,32 @@ export function AdminProductTable() {
 
   const [searchInput, setSearchInput] = useState(searchParam);
 
+  const updateParams = (next: Record<string, string | undefined>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(next)) {
+      if (value === undefined || value === "") {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+    }
+    const queryString = params.toString();
+    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
+  };
+
+  // Column sort lives in the URL (TASK-147); replaces the previously hardcoded
+  // createdAt/desc.
+  const { sortBy, sortOrder, onSort } = useTableSort(
+    searchParams,
+    updateParams,
+  );
+
   const { data, isLoading, isError } = useProductControllerFindAll({
     page,
     limit: PAGE_SIZE,
     search: searchParam || undefined,
-    sortBy: "createdAt",
-    sortOrder: "desc",
+    sortBy,
+    sortOrder,
   });
 
   const categoriesQuery = useCategoryControllerGetRootCategories({
@@ -56,19 +78,6 @@ export function AdminProductTable() {
       category.name,
     ]),
   );
-
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.push(queryString ? `${pathname}?${queryString}` : pathname);
-  };
 
   const handleSearchSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -111,11 +120,29 @@ export function AdminProductTable() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{dict.products.colName}</TableHead>
+                <SortableColumnHeader
+                  field="name"
+                  label={dict.products.colName}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
                 <TableHead>{dict.products.colCategory}</TableHead>
-                <TableHead>{dict.products.colPrice}</TableHead>
+                <SortableColumnHeader
+                  field="price"
+                  label={dict.products.colPrice}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
                 <TableHead>{dict.products.colStatus}</TableHead>
-                <TableHead>{dict.products.colCreated}</TableHead>
+                <SortableColumnHeader
+                  field="createdAt"
+                  label={dict.products.colCreated}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
                 <TableHead className="text-right">
                   {dict.common.actions}
                 </TableHead>
