@@ -166,6 +166,25 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(0)
   REFRESH_TOKEN_REVOKED_RETENTION_DAYS?: number;
+
+  // ─── Nova Poshta delivery (TASK-080) ────────────────────────────────────────
+  // Both optional: the app boots without NP credentials. When NP_API_KEY is
+  // absent the delivery endpoints return 503 and checkout falls back to
+  // free-text city/address entry.
+  //
+  // NP_API_KEY: API key from the Nova Poshta business cabinet (server-side only).
+  // NP_SENDER_CITY_REF: bootstrap fallback for the dispatch-origin city (NP city
+  //   UUID) used in the cost estimate. The source of truth becomes the
+  //   admin-editable DeliverySetting (TASK-080-E); until set this seeds the
+  //   origin, defaulting to Kyiv when unset.
+
+  @IsOptional()
+  @IsString()
+  NP_API_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  NP_SENDER_CITY_REF?: string;
 }
 
 /**

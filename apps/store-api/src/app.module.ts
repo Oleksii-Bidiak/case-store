@@ -16,6 +16,7 @@ import { ProductGroupModule } from './product-group';
 import { CategoryModule } from './category';
 import { CartModule } from './cart';
 import { OrderModule } from './order';
+import { DeliveryModule } from './delivery';
 import { DashboardModule } from './dashboard';
 import { MailModule } from './mail';
 import { RedisCacheModule } from './cache';
@@ -93,6 +94,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Orders
     OrderModule,
+
+    // Nova Poshta delivery proxy (city/warehouse search + cost estimate)
+    DeliveryModule,
 
     // Admin dashboard metrics
     DashboardModule,
