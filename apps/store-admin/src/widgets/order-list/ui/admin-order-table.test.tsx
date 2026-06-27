@@ -1,11 +1,13 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen } from "@/shared/test/render";
+import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
+import { dict } from "@/shared/config";
 import { AdminOrderTable } from "./admin-order-table";
 
 // next/navigation is unavailable under jsdom — mock the router + URL state.
+const mockReplace = jest.fn();
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
   usePathname: () => "/orders",
   useSearchParams: () => new URLSearchParams(""),
 }));
@@ -75,5 +77,34 @@ describe("AdminOrderTable — customer column (TASK-125)", () => {
     renderWithProviders(<AdminOrderTable />);
 
     expect(await screen.findByText("user-uui…")).toBeInTheDocument();
+  });
+});
+
+describe("AdminOrderTable — column sorting (TASK-147)", () => {
+  beforeEach(() => mockReplace.mockClear());
+
+  it("renders sortable headers and updates the URL on click", async () => {
+    server.use(
+      http.get("*/api/admin/orders", () =>
+        HttpResponse.json({
+          data: [makeOrderRow(null)],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        }),
+      ),
+    );
+
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText("user-uui…");
+
+    const createdHeader = screen.getByRole("button", {
+      name: dict.common.sortByAria(dict.orders.colCreated),
+    });
+    expect(createdHeader).toBeInTheDocument();
+
+    await userEvent.click(createdHeader);
+
+    expect(mockReplace).toHaveBeenCalledWith(
+      expect.stringContaining("sortBy=createdAt"),
+    );
   });
 });
