@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { RegisterForm } from "@/features/auth";
 import { dict } from "@/shared/config";
@@ -13,7 +14,10 @@ export default function RegisterPage() {
       <h1 className="text-2xl font-bold text-foreground">
         {dict.auth.register.heading}
       </h1>
-      <RegisterForm />
+      {/* RegisterForm reads useSearchParams() — needs a Suspense boundary for SSR. */}
+      <Suspense fallback={null}>
+        <RegisterForm />
+      </Suspense>
     </section>
   );
 }
