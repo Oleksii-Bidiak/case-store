@@ -223,6 +223,10 @@ export const dict = {
     orderNotes: "Примітки до замовлення",
     placeOrder: "Підтвердити замовлення",
     placingOrder: "Оформлюємо замовлення…",
+    // Multi-step flow navigation (TASK-146).
+    nextStep: "Далі",
+    prevStep: "Назад",
+    reviewHeading: "Перевірте деталі замовлення",
     error400: "Деякі товари можуть бути недоступні. Перегляньте ваш кошик.",
     summaryTitle: "Підсумок замовлення",
     subtotal: "Сума",

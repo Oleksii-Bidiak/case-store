@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -8,8 +8,10 @@ import { useAuth } from "@/entities/session";
 import { useGetCart } from "@/entities/cart";
 import {
   CheckoutAddressForm,
+  CheckoutReviewStep,
   useCheckout,
   useCheckoutPrefill,
+  useCheckoutSteps,
   checkoutSchema,
   type CheckoutFormValues,
 } from "@/features/checkout";
@@ -47,6 +49,7 @@ export function CheckoutView() {
     reset,
     setValue,
     setFocus,
+    trigger,
     formState: { errors },
   } = useForm<CheckoutFormValues>({
     resolver: zodResolver(checkoutSchema),
@@ -54,6 +57,24 @@ export function CheckoutView() {
 
   // Seed the form with the logged-in user's saved contact details (name + phone).
   useCheckoutPrefill(reset, isAuthenticated);
+
+  // Two-screen flow: Delivery (step 1) → Review (step 2). The order is created
+  // only on the step-2 submit (TASK-146).
+  const { step, isValidating, goToReview, goToDelivery } =
+    useCheckoutSteps(trigger);
+  const reviewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const isFirstRender = useRef(true);
+
+  // Move focus on step transitions (not on initial mount): to the review heading
+  // when advancing, back to the first field when returning (WCAG 2.4.3).
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (step === 2) reviewHeadingRef.current?.focus();
+    else setFocus("firstName");
+  }, [step, setFocus]);
 
   const notes = useWatch({ control, name: "notes" }) ?? "";
   // Drives the live Nova Poshta shipping estimate in the order summary (TASK-080).
@@ -103,61 +124,88 @@ export function CheckoutView() {
           {dict.checkout.title}
         </h1>
 
-        <CheckoutStepIndicator current={1} />
+        <CheckoutStepIndicator current={step} />
 
         <form
           onSubmit={handleSubmit(submitOrder, focusFirstError)}
           className="flex flex-col gap-8"
           noValidate
         >
-          <CheckoutAddressForm
-            legend={dict.checkout.shippingAddress}
-            register={register}
-            control={control}
-            setValue={setValue}
-            errors={errors}
-          />
+          {step === 1 && (
+            <>
+              <CheckoutAddressForm
+                legend={dict.checkout.shippingAddress}
+                register={register}
+                control={control}
+                setValue={setValue}
+                errors={errors}
+              />
 
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="checkout-notes"
-              className="text-sm font-medium text-foreground"
-            >
-              {dict.checkout.orderNotes}{" "}
-              <span className="text-muted-foreground">
-                {dict.common.optional}
-              </span>
-            </label>
-            <Textarea
-              id="checkout-notes"
-              rows={3}
-              maxLength={500}
-              {...register("notes")}
-            />
-            <span className="self-end text-xs text-muted-foreground">
-              {notes.length}/500
-            </span>
-            {errors.notes && (
-              <p role="alert" className="text-sm text-destructive">
-                {errors.notes.message}
-              </p>
-            )}
-          </div>
+              <div className="flex flex-col gap-1">
+                <label
+                  htmlFor="checkout-notes"
+                  className="text-sm font-medium text-foreground"
+                >
+                  {dict.checkout.orderNotes}{" "}
+                  <span className="text-muted-foreground">
+                    {dict.common.optional}
+                  </span>
+                </label>
+                <Textarea
+                  id="checkout-notes"
+                  rows={3}
+                  maxLength={500}
+                  {...register("notes")}
+                />
+                <span className="self-end text-xs text-muted-foreground">
+                  {notes.length}/500
+                </span>
+                {errors.notes && (
+                  <p role="alert" className="text-sm text-destructive">
+                    {errors.notes.message}
+                  </p>
+                )}
+              </div>
 
-          {isError && errorMessage && (
-            <p role="alert" className="text-sm text-destructive">
-              {errorMessage}
-            </p>
+              <Button
+                type="button"
+                size="lg"
+                onClick={goToReview}
+                disabled={isValidating}
+                className="self-start"
+              >
+                {dict.checkout.nextStep}
+              </Button>
+            </>
           )}
 
-          <Button
-            type="submit"
-            size="lg"
-            disabled={isPending}
-            className="self-start"
-          >
-            {isPending ? dict.checkout.placingOrder : dict.checkout.placeOrder}
-          </Button>
+          {step === 2 && (
+            <>
+              <CheckoutReviewStep ref={reviewHeadingRef} control={control} />
+
+              {isError && errorMessage && (
+                <p role="alert" className="text-sm text-destructive">
+                  {errorMessage}
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="outline"
+                  onClick={goToDelivery}
+                >
+                  {dict.checkout.prevStep}
+                </Button>
+                <Button type="submit" size="lg" disabled={isPending}>
+                  {isPending
+                    ? dict.checkout.placingOrder
+                    : dict.checkout.placeOrder}
+                </Button>
+              </div>
+            </>
+          )}
         </form>
       </section>
 
