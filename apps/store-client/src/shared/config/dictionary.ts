@@ -233,6 +233,11 @@ export const dict = {
     stepConfirm: "Підтвердження",
     deliveryEstimateLabel: "Орієнтовна доставка",
     deliveryEstimateValue: "3–5 робочих днів",
+    // Nova Poshta shipping estimate in the order summary (TASK-080).
+    shippingCostLabel: "Доставка",
+    shippingCalculating: "Розраховуємо…",
+    shippingSelectCity: "Оберіть місто для розрахунку",
+    etaValue: (days: number) => `Орієнтовно ${days}–${days + 1} роб. дн.`,
     fields: {
       firstName: "Ім'я",
       lastName: "Прізвище",
@@ -251,6 +256,12 @@ export const dict = {
     deliveryPlaceholder: "напр. Нова Пошта, відділення №12",
     deliveryHint:
       "Вкажіть місто та відділення Нової Пошти або адресу для кур'єра. Доставку оформлюємо вручну.",
+    // Nova Poshta autocomplete (TASK-080).
+    cityPlaceholder: "Почніть вводити назву міста",
+    warehousePlaceholder: "Оберіть відділення або введіть адресу",
+    warehouseHint: "Спершу оберіть місто, щоб побачити відділення Нової Пошти",
+    searchLoading: "Пошук…",
+    searchEmpty: "Нічого не знайдено",
     validation: {
       firstName: "Ім'я є обов'язковим",
       lastName: "Прізвище є обов'язковим",

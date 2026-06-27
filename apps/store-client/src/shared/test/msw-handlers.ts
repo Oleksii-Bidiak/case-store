@@ -2,6 +2,7 @@ import { http, HttpResponse } from "msw";
 import type { CartEntity, CartItemEntity } from "@/entities/cart";
 import type { OrderEntity, OrderItemEntity } from "@/entities/order";
 import type { UserEntity } from "@/entities/user";
+import type { NpCityDto, NpWarehouseDto } from "@/entities/delivery";
 
 /**
  * Default MSW handlers for store-client component tests.
@@ -132,12 +133,47 @@ export function makeUser(overrides: Partial<UserEntity> = {}): {
   };
 }
 
+/** Build a Nova Poshta city result; override any field per-test. */
+export function makeCity(overrides: Partial<NpCityDto> = {}): NpCityDto {
+  return {
+    ref: "city-ref-1",
+    name: "м. Київ, Київська обл.",
+    area: "Київська",
+    warehouses: 1234,
+    ...overrides,
+  };
+}
+
+/** Build a Nova Poshta warehouse result; override any field per-test. */
+export function makeWarehouse(
+  overrides: Partial<NpWarehouseDto> = {},
+): NpWarehouseDto {
+  return {
+    ref: "wh-ref-1",
+    description: "Відділення №1: вул. Хрещатик, 22",
+    number: "1",
+    typeOfWarehouse: "type-1",
+    ...overrides,
+  };
+}
+
 export const handlers = [
   // Cart read — a populated guest cart by default.
   http.get("*/api/cart", () => HttpResponse.json(makeCart())),
 
   // Current-user profile — a populated UA profile by default.
   http.get("*/api/users/me", () => HttpResponse.json(makeUser())),
+
+  // Nova Poshta delivery proxy (TASK-080) — sensible defaults; override per-test.
+  http.get("*/api/delivery/cities", () =>
+    HttpResponse.json({ data: [makeCity()] }),
+  ),
+  http.get("*/api/delivery/warehouses", () =>
+    HttpResponse.json({ data: [makeWarehouse()] }),
+  ),
+  http.get("*/api/delivery/estimate", () =>
+    HttpResponse.json({ data: { cost: "60.00", etaDays: 2 } }),
+  ),
 
   // Cart mutations — echo a minimal success envelope; tests assert the call,
   // and components refetch the cart afterwards.

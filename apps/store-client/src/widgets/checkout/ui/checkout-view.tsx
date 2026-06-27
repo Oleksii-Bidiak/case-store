@@ -45,6 +45,7 @@ export function CheckoutView() {
     handleSubmit,
     control,
     reset,
+    setValue,
     setFocus,
     formState: { errors },
   } = useForm<CheckoutFormValues>({
@@ -55,6 +56,8 @@ export function CheckoutView() {
   useCheckoutPrefill(reset, isAuthenticated);
 
   const notes = useWatch({ control, name: "notes" }) ?? "";
+  // Drives the live Nova Poshta shipping estimate in the order summary (TASK-080).
+  const npCityRef = useWatch({ control, name: "npCityRef" });
 
   // Surface a blocked submit instead of failing silently: focus the first
   // invalid field so the user sees exactly what needs fixing.
@@ -111,6 +114,7 @@ export function CheckoutView() {
             legend={dict.checkout.shippingAddress}
             register={register}
             control={control}
+            setValue={setValue}
             errors={errors}
           />
 
@@ -158,7 +162,7 @@ export function CheckoutView() {
       </section>
 
       <aside className="lg:col-span-1 lg:self-start">
-        <CheckoutOrderSummary />
+        <CheckoutOrderSummary npCityRef={npCityRef} />
       </aside>
     </div>
   );

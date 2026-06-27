@@ -2,31 +2,30 @@
 
 import {
   Controller,
+  useWatch,
   type Control,
   type UseFormRegister,
+  type UseFormSetValue,
   type FieldErrors,
 } from "react-hook-form";
 import { dict } from "@/shared/config";
 import { Input, Label, PhoneInput } from "@/shared/ui";
 import type { CheckoutFormValues } from "../model/checkout-schema";
+import { NpCityField } from "./np-city-field";
+import { NpWarehouseField } from "./np-warehouse-field";
 
 interface FieldConfig {
   name: keyof CheckoutFormValues;
   label: string;
   autoComplete: string;
   type?: string;
-  placeholder?: string;
-  /** Render full-width (own row) instead of half-width in the grid. */
-  fullWidth?: boolean;
-  maxLength?: number;
 }
 
 /**
- * Simplified Ukrainian checkout fields (manual delivery — Nova Poshta API is a
- * future integration, TASK-080). All fields below are required; `notes` lives
- * in the parent form. `deliveryAddress` is a single free-text field that maps to
- * the backend `AddressDto.address1`. The `phone` field sits between these two
- * groups and is rendered via `Controller` + `PhoneInput` (UA mask).
+ * Recipient name fields (rendered via plain `register`). Phone is a `Controller`
+ * + `PhoneInput`; the city/warehouse rows use the Nova Poshta autocomplete
+ * (`NpCityField` / `NpWarehouseField`, TASK-080), which fall back to free text
+ * when NP is offline so manual delivery still works.
  */
 const NAME_FIELDS: FieldConfig[] = [
   {
@@ -41,63 +40,41 @@ const NAME_FIELDS: FieldConfig[] = [
   },
 ];
 
-const DELIVERY_FIELDS: FieldConfig[] = [
-  {
-    name: "city",
-    label: dict.checkout.fields.city,
-    autoComplete: "address-level2",
-  },
-  {
-    name: "deliveryAddress",
-    label: dict.checkout.fields.deliveryAddress,
-    autoComplete: "street-address",
-    placeholder: dict.checkout.deliveryPlaceholder,
-    fullWidth: true,
-    maxLength: 500,
-  },
-];
-
 interface CheckoutAddressFormProps {
   legend: string;
   register: UseFormRegister<CheckoutFormValues>;
   control: Control<CheckoutFormValues>;
+  setValue: UseFormSetValue<CheckoutFormValues>;
   errors: FieldErrors<CheckoutFormValues>;
 }
 
 /**
- * CheckoutAddressForm — the recipient + delivery fieldset for checkout. Renders
- * the simplified UA field set; the delivery address spans the full row and
- * carries a hint that delivery is arranged manually.
+ * CheckoutAddressForm — the recipient + delivery fieldset for checkout. The
+ * delivery rows are Nova Poshta autocompletes: the warehouse search is scoped to
+ * the city selected via `npCityRef` (watched here and passed down).
  */
 export function CheckoutAddressForm({
   legend,
   register,
   control,
+  setValue,
   errors,
 }: CheckoutAddressFormProps) {
+  const npCityRef = useWatch({ control, name: "npCityRef" });
+
   const renderField = (field: FieldConfig) => {
     const id = `checkout-${field.name}`;
     const message = errors[field.name]?.message;
     return (
-      <div
-        key={field.name}
-        className={`flex flex-col gap-1.5 ${field.fullWidth ? "sm:col-span-2" : ""}`}
-      >
+      <div key={field.name} className="flex flex-col gap-1.5">
         <Label htmlFor={id}>{field.label}</Label>
         <Input
           id={id}
           type={field.type}
           autoComplete={field.autoComplete}
-          placeholder={field.placeholder}
-          maxLength={field.maxLength}
           aria-invalid={message ? true : undefined}
           {...register(field.name)}
         />
-        {field.name === "deliveryAddress" && !message && (
-          <span className="text-xs text-muted-foreground">
-            {dict.checkout.deliveryHint}
-          </span>
-        )}
         {message && (
           <p role="alert" className="text-sm text-destructive">
             {message}
@@ -139,7 +116,12 @@ export function CheckoutAddressForm({
           )}
         />
 
-        {DELIVERY_FIELDS.map(renderField)}
+        <NpCityField control={control} setValue={setValue} />
+        <NpWarehouseField
+          control={control}
+          setValue={setValue}
+          cityRef={npCityRef}
+        />
       </div>
     </fieldset>
   );

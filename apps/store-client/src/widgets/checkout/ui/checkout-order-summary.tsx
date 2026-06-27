@@ -1,17 +1,31 @@
 "use client";
 
 import { useGetCart } from "@/entities/cart";
+import { useEstimateDelivery } from "@/entities/delivery";
 import { Skeleton } from "@/shared/ui";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
+interface CheckoutOrderSummaryProps {
+  /** NP city ref of the selected city; drives the live shipping estimate. */
+  npCityRef?: string;
+}
+
 /**
  * CheckoutOrderSummary — read-only cart summary shown alongside the checkout
  * form. Reuses the cached `useGetCart` query (no extra network round-trip) so the
- * totals stay in sync with the cart page.
+ * totals stay in sync with the cart page. When a Nova Poshta city is selected
+ * (`npCityRef`), it shows a live shipping cost + ETA estimate (TASK-080).
  */
-export function CheckoutOrderSummary() {
+export function CheckoutOrderSummary({ npCityRef }: CheckoutOrderSummaryProps) {
   const { data, isLoading, isError } = useGetCart();
+
+  const { data: estimateData, isFetching: isEstimating } = useEstimateDelivery(
+    { cityRef: npCityRef ?? "" },
+    { query: { enabled: Boolean(npCityRef) } },
+  );
+  const estimate = estimateData?.data;
+  const hasCost = estimate ? Number(estimate.cost) > 0 : false;
 
   if (isLoading) {
     return (
@@ -72,12 +86,29 @@ export function CheckoutOrderSummary() {
 
       <div className="flex items-center justify-between text-sm">
         <span className="text-muted-foreground">
-          {dict.checkout.deliveryEstimateLabel}
+          {dict.checkout.shippingCostLabel}
         </span>
         <span className="text-foreground">
-          {dict.checkout.deliveryEstimateValue}
+          {!npCityRef
+            ? dict.checkout.shippingSelectCity
+            : isEstimating
+              ? dict.checkout.shippingCalculating
+              : hasCost && estimate
+                ? formatMoney(estimate.cost)
+                : dict.checkout.deliveryEstimateValue}
         </span>
       </div>
+
+      {npCityRef && !isEstimating && estimate?.etaDays != null && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">
+            {dict.checkout.deliveryEstimateLabel}
+          </span>
+          <span className="text-foreground">
+            {dict.checkout.etaValue(estimate.etaDays)}
+          </span>
+        </div>
+      )}
 
       <p className="text-sm text-muted-foreground">
         {dict.checkout.pricesDisclaimer}

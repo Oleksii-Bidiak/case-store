@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { render, screen } from "@/shared/test/render";
+import { renderWithProviders, screen } from "@/shared/test/render";
 import { dict } from "@/shared/config";
 import type { CheckoutFormValues } from "../model/checkout-schema";
 import { CheckoutAddressForm } from "./checkout-address-form";
@@ -41,12 +41,13 @@ function renderForm(
         legend="Доставка"
         register={form.register}
         control={form.control}
+        setValue={form.setValue}
         errors={form.formState.errors}
       />
     );
   }
 
-  return render(<Harness />);
+  return renderWithProviders(<Harness />);
 }
 
 describe("CheckoutAddressForm", () => {
@@ -78,10 +79,10 @@ describe("CheckoutAddressForm", () => {
     expect(phone).toHaveAttribute("inputmode", "numeric");
   });
 
-  it("shows the delivery hint when deliveryAddress has no error", () => {
+  it("shows the warehouse hint until a city is selected", () => {
     renderForm();
 
-    expect(screen.getByText(dict.checkout.deliveryHint)).toBeInTheDocument();
+    expect(screen.getByText(dict.checkout.warehouseHint)).toBeInTheDocument();
   });
 
   it("marks a field invalid and surfaces its error message", () => {
@@ -94,11 +95,11 @@ describe("CheckoutAddressForm", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Невірний телефон");
   });
 
-  it("replaces the delivery hint with the error when deliveryAddress is invalid", () => {
+  it("replaces the warehouse hint with the error when deliveryAddress is invalid", () => {
     renderForm({ deliveryAddress: "Вкажіть адресу" });
 
     expect(
-      screen.queryByText(dict.checkout.deliveryHint),
+      screen.queryByText(dict.checkout.warehouseHint),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("Вкажіть адресу");
   });

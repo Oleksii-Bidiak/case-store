@@ -45,10 +45,16 @@ export function useCheckout() {
         lastName: values.lastName,
         phone: values.phone,
         city: values.city,
-        // The free-text delivery address / Nova Poshta branch maps to address1;
-        // country is fixed to UA for the manual-delivery MVP.
+        // The delivery address / Nova Poshta branch maps to address1; country is
+        // fixed to UA. NP refs (TASK-080) are sent when the user picked from the
+        // autocomplete; omitted for the free-text fallback.
         address1: values.deliveryAddress,
         country: "UA",
+        npCityRef: values.npCityRef || undefined,
+        npWarehouseRef: values.npWarehouseRef || undefined,
+        npWarehouseName: values.npWarehouseRef
+          ? values.deliveryAddress
+          : undefined,
       },
       notes: values.notes || undefined,
     };

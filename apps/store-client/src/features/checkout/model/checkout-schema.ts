@@ -24,7 +24,12 @@ export const checkoutSchema = z.object({
     .min(1, dict.checkout.validation.phone)
     .regex(phoneRegex, dict.checkout.validation.phone),
   city: z.string().min(1, dict.checkout.validation.city),
+  // Nova Poshta refs (TASK-080) — set when the user picks from the autocomplete;
+  // empty for the free-text fallback (NP not configured / offline). The visible
+  // `city`/`deliveryAddress` strings stay required so manual orders still submit.
+  npCityRef: z.string().optional(),
   deliveryAddress: z.string().min(1, dict.checkout.validation.deliveryAddress),
+  npWarehouseRef: z.string().optional(),
   notes: z.string().max(500, dict.checkout.validation.notesMax).optional(),
 });
 
