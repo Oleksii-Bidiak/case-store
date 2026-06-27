@@ -6,6 +6,7 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiProperty,
+  ApiQuery,
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { OrderService } from './order.service';
@@ -90,6 +91,12 @@ export class AdminOrderController {
   @Get()
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'List all orders (admin)', operationId: 'adminOrderControllerFindAll' })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    description: 'Sort field: createdAt | total | status',
+  })
+  @ApiQuery({ name: 'sortOrder', required: false, description: 'Sort order: asc | desc' })
   @ApiResponse({
     status: 200,
     description: 'Paginated list of orders',

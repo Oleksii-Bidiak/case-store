@@ -18,6 +18,7 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiProperty,
+  ApiQuery,
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { UserService } from './user.service';
@@ -147,6 +148,8 @@ export class UserController {
   @UseGuards(AdminGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'List all users (admin)' })
+  @ApiQuery({ name: 'sortBy', required: false, description: 'Sort field: createdAt | email' })
+  @ApiQuery({ name: 'sortOrder', required: false, description: 'Sort order: asc | desc' })
   @ApiResponse({
     status: 200,
     description: 'Paginated list of users',

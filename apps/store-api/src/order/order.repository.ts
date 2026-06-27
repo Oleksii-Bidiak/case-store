@@ -201,12 +201,24 @@ export class OrderRepository {
       ...(query.dateFrom || query.dateTo ? { createdAt } : {}),
     };
 
+    // Allow-listed sort (TASK-147). The DTO `@IsIn` already rejects unknown
+    // fields at the API boundary; this fallback is a defensive default. NOTE:
+    // `status` sorts by the enum's alphabetical order in Postgres, not by
+    // business lifecycle order — acceptable for the admin table MVP.
+    const ALLOWED_SORT: Record<string, string> = {
+      createdAt: 'createdAt',
+      total: 'total',
+      status: 'status',
+    };
+    const sortField = ALLOWED_SORT[query.sortBy ?? 'createdAt'] ?? 'createdAt';
+    const sortOrder = query.sortOrder ?? 'desc';
+
     const [total, orders] = await this.prisma.$transaction([
       this.prisma.order.count({ where }),
       this.prisma.order.findMany({
         where,
         include: ADMIN_ORDERS_INCLUDE,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { [sortField]: sortOrder },
         skip: (page - 1) * limit,
         take: limit,
       }),

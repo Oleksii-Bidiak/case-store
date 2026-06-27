@@ -11,6 +11,8 @@ export interface FindAllParams {
   role?: UserRole;
   isActive?: boolean;
   search?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
 }
 
 /**
@@ -69,6 +71,15 @@ export class UserRepository {
     const { page, limit, role, isActive, search } = params;
     const skip = (page - 1) * limit;
 
+    // Allow-listed sort (TASK-147). The DTO `@IsIn` rejects unknown fields at
+    // the API boundary; this fallback is a defensive default.
+    const ALLOWED_SORT: Record<string, string> = {
+      createdAt: 'createdAt',
+      email: 'email',
+    };
+    const sortField = ALLOWED_SORT[params.sortBy ?? 'createdAt'] ?? 'createdAt';
+    const sortOrder = params.sortOrder ?? 'desc';
+
     // Build the where clause from optional filters. Soft-deleted users
     // (tombstoned) must never appear in any admin listing.
     const where: Prisma.UserWhereInput = { deletedAt: null };
@@ -94,7 +105,7 @@ export class UserRepository {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { [sortField]: sortOrder },
       }),
       this.prisma.user.count({ where }),
     ]);

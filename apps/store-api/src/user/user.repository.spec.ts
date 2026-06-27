@@ -56,6 +56,49 @@ describe('UserRepository (soft-delete behaviour)', () => {
       const countArgs = prismaMock.user.count.mock.calls[0][0];
       expect(countArgs.where).toEqual(expect.objectContaining({ deletedAt: null }));
     });
+
+    it('defaults to createdAt desc when no sort is provided (TASK-147)', async () => {
+      prismaMock.user.findMany.mockResolvedValue([]);
+      prismaMock.user.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20 });
+
+      expect(prismaMock.user.findMany.mock.calls[0][0].orderBy).toEqual({
+        createdAt: 'desc',
+      });
+    });
+
+    it('sorts by an allow-listed field + order (TASK-147)', async () => {
+      prismaMock.user.findMany.mockResolvedValue([]);
+      prismaMock.user.count.mockResolvedValue(0);
+
+      await repository.findAll({
+        page: 1,
+        limit: 20,
+        sortBy: 'email',
+        sortOrder: 'asc',
+      });
+
+      expect(prismaMock.user.findMany.mock.calls[0][0].orderBy).toEqual({
+        email: 'asc',
+      });
+    });
+
+    it('falls back to createdAt for an unknown sort field (TASK-147)', async () => {
+      prismaMock.user.findMany.mockResolvedValue([]);
+      prismaMock.user.count.mockResolvedValue(0);
+
+      await repository.findAll({
+        page: 1,
+        limit: 20,
+        sortBy: "name'; DROP TABLE users;--",
+        sortOrder: 'asc',
+      });
+
+      expect(prismaMock.user.findMany.mock.calls[0][0].orderBy).toEqual({
+        createdAt: 'asc',
+      });
+    });
   });
 
   describe('softDelete', () => {

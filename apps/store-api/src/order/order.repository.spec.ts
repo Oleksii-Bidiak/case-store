@@ -363,4 +363,36 @@ describe('OrderRepository', () => {
       expect(queries).toHaveLength(2);
     });
   });
+
+  describe('findAll — sorting (TASK-147)', () => {
+    it('defaults to createdAt desc when no sort is provided', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({});
+
+      expect(prismaMock.order.findMany.mock.calls[0][0].orderBy).toEqual({
+        createdAt: 'desc',
+      });
+    });
+
+    it('sorts by an allow-listed field + order', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ sortBy: 'total', sortOrder: 'asc' });
+
+      expect(prismaMock.order.findMany.mock.calls[0][0].orderBy).toEqual({
+        total: 'asc',
+      });
+    });
+
+    it('falls back to createdAt for an unknown sort field', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ sortBy: 'bogus', sortOrder: 'asc' });
+
+      expect(prismaMock.order.findMany.mock.calls[0][0].orderBy).toEqual({
+        createdAt: 'asc',
+      });
+    });
+  });
 });

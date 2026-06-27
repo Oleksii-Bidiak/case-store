@@ -106,6 +106,8 @@ export class UserService {
       role: query.role,
       isActive: query.isActive,
       search: query.search,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
     };
 
     const { users, total } = await this.userRepository.findAll(params);

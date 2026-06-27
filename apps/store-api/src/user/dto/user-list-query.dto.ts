@@ -4,6 +4,7 @@ import {
   Min,
   Max,
   IsEnum,
+  IsIn,
   IsString,
   IsBoolean,
   MaxLength,
@@ -77,4 +78,28 @@ export class UserListQueryDto {
   @IsString()
   @MaxLength(200, { message: 'Search query must be at most 200 characters' })
   search?: string;
+
+  @ApiProperty({
+    description: 'Sort field (createdAt, email)',
+    example: 'createdAt',
+    required: false,
+    default: 'createdAt',
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['createdAt', 'email'], {
+    message: 'sortBy must be one of: createdAt, email',
+  })
+  sortBy?: string = 'createdAt';
+
+  @ApiProperty({
+    description: 'Sort order (asc or desc)',
+    example: 'desc',
+    required: false,
+    default: 'desc',
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['asc', 'desc'], { message: 'sortOrder must be asc or desc' })
+  sortOrder?: 'asc' | 'desc' = 'desc';
 }

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsDateString, IsOptional, IsUUID } from 'class-validator';
+import { IsDateString, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import { OrderListQueryDto } from './order-list-query.dto';
 
 /**
@@ -32,4 +32,28 @@ export class AdminOrderListQueryDto extends OrderListQueryDto {
   @IsOptional()
   @IsDateString()
   dateTo?: string;
+
+  @ApiProperty({
+    description: 'Sort field (createdAt, total, status)',
+    required: false,
+    default: 'createdAt',
+    example: 'createdAt',
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['createdAt', 'total', 'status'], {
+    message: 'sortBy must be one of: createdAt, total, status',
+  })
+  sortBy?: string = 'createdAt';
+
+  @ApiProperty({
+    description: 'Sort order (asc or desc)',
+    required: false,
+    default: 'desc',
+    example: 'desc',
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['asc', 'desc'], { message: 'sortOrder must be asc or desc' })
+  sortOrder?: 'asc' | 'desc' = 'desc';
 }
