@@ -19,6 +19,10 @@ export interface ShippingAddressData {
   postalCode: string;
   country: string;
   phone?: string;
+  /** Nova Poshta delivery refs (TASK-080) — present only for NP-routed orders. */
+  npCityRef?: string;
+  npWarehouseName?: string;
+  npWarehouseRef?: string;
 }
 
 /**
@@ -81,4 +85,9 @@ export interface CreateOrderParams {
   shippingAddress: AddressDto;
   billingAddress?: AddressDto;
   notes?: string;
+  /**
+   * Estimated Nova Poshta shipping cost (UAH) computed by the service from the
+   * delivery estimate. Absent for free-text/manual orders → repository writes 0.
+   */
+  shippingCost?: number;
 }

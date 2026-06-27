@@ -10,6 +10,7 @@ import { OrderRepository } from './order.repository';
 import { CartRepository } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
 import { MailService } from '../mail/mail.service';
+import { DeliveryService } from '../delivery';
 import { OrderEntity } from './entities';
 import type { CreateOrderDto, OrderListQueryDto, AdminOrderListQueryDto } from './dto';
 
@@ -100,6 +101,7 @@ export class OrderService {
     private readonly cartRepository: CartRepository,
     private readonly userRepository: UserRepository,
     private readonly mailService: MailService,
+    private readonly deliveryService: DeliveryService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(OrderService.name);
@@ -133,6 +135,21 @@ export class OrderService {
       }
     }
 
+    // Compute the Nova Poshta shipping cost when the order carries an NP city
+    // ref (TASK-080). estimateShipping never throws (it self-falls-back to 0),
+    // but we guard defensively so a delivery hiccup can never block an order.
+    let shippingCost: number | undefined;
+    const npCityRef = dto.shippingAddress.npCityRef;
+    if (npCityRef) {
+      try {
+        const estimate = await this.deliveryService.estimateShipping(npCityRef);
+        shippingCost = Number(estimate.cost);
+      } catch (err) {
+        this.logger.warn({ err, npCityRef }, 'Shipping estimate failed at order creation; using 0');
+        shippingCost = 0;
+      }
+    }
+
     const order = await this.orderRepository.createFromCart({
       userId,
       cartId: cart.id,
@@ -140,6 +157,7 @@ export class OrderService {
       shippingAddress: dto.shippingAddress,
       billingAddress: dto.billingAddress,
       notes: dto.notes,
+      ...(shippingCost !== undefined ? { shippingCost } : {}),
     });
 
     this.logger.info({ event: 'order.created', orderId: order.id, userId }, 'Order created');

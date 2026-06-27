@@ -8,6 +8,7 @@ import { OrderEntity } from './entities';
 import { CartRepository, CartWithItems } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
 import { MailService } from '../mail/mail.service';
+import { DeliveryService } from '../delivery';
 import type { User } from '@prisma/client';
 import type { OrderWithItems } from './order.types';
 import type { CreateOrderDto } from './dto';
@@ -141,6 +142,10 @@ const mailServiceMock = {
   sendOrderConfirmation: jest.fn(),
 };
 
+const deliveryServiceMock = {
+  estimateShipping: jest.fn(),
+};
+
 const pinoLoggerMock = {
   setContext: jest.fn(),
   info: jest.fn(),
@@ -170,6 +175,7 @@ describe('OrderService', () => {
         { provide: CartRepository, useValue: cartRepositoryMock },
         { provide: UserRepository, useValue: userRepositoryMock },
         { provide: MailService, useValue: mailServiceMock },
+        { provide: DeliveryService, useValue: deliveryServiceMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
       ],
     }).compile();
@@ -205,6 +211,49 @@ describe('OrderService', () => {
         billingAddress: undefined,
         notes: undefined,
       });
+    });
+
+    it('does not estimate shipping for a free-text order (no npCityRef)', async () => {
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+
+      await service.createOrder(USER_ID, createDto);
+
+      expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.createFromCart.mock.calls[0][0]).not.toHaveProperty(
+        'shippingCost',
+      );
+    });
+
+    it('estimates and forwards the NP shipping cost when npCityRef is present', async () => {
+      const npDto: CreateOrderDto = {
+        shippingAddress: { ...address, npCityRef: 'city-ref-1', npWarehouseRef: 'wh-ref-1' },
+      };
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+      deliveryServiceMock.estimateShipping.mockResolvedValue({ cost: '60.00', etaDays: 2 });
+
+      await service.createOrder(USER_ID, npDto);
+
+      expect(deliveryServiceMock.estimateShipping).toHaveBeenCalledWith('city-ref-1');
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
+        expect.objectContaining({ shippingCost: 60 }),
+      );
+    });
+
+    it('falls back to 0 shipping when the estimate throws (order still created)', async () => {
+      const npDto: CreateOrderDto = {
+        shippingAddress: { ...address, npCityRef: 'city-ref-1' },
+      };
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+      deliveryServiceMock.estimateShipping.mockRejectedValue(new Error('NP down'));
+
+      await service.createOrder(USER_ID, npDto);
+
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
+        expect.objectContaining({ shippingCost: 0 }),
+      );
     });
 
     it('should throw NotFoundException when the user has no cart', async () => {

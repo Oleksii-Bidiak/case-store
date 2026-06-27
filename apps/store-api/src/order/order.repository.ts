@@ -74,7 +74,8 @@ export class OrderRepository {
    *   stock from ever going negative.
    */
   async createFromCart(params: CreateOrderParams): Promise<OrderWithItems> {
-    const { userId, cartId, cartItems, shippingAddress, billingAddress, notes } = params;
+    const { userId, cartId, cartItems, shippingAddress, billingAddress, notes, shippingCost } =
+      params;
 
     // Snapshot each line's unit price (the position's price) into the order-item
     // rows. These persisted rows — not the cart — are the order's source of
@@ -93,6 +94,10 @@ export class OrderRepository {
     );
     const subtotal = new Prisma.Decimal(centsToDecimalString(subtotalCents));
 
+    // Shipping cost comes from the Nova Poshta estimate (TASK-080); 0 for
+    // free-text/manual orders. Total = subtotal + shipping (no discount/tax yet).
+    const shipping = new Prisma.Decimal((shippingCost ?? 0).toString());
+
     const order = await this.prisma.$transaction(async (tx) => {
       const created = await tx.order.create({
         data: {
@@ -101,10 +106,9 @@ export class OrderRepository {
           paymentStatus: PaymentStatus.PENDING,
           subtotal,
           discount: new Prisma.Decimal(0),
-          shippingCost: new Prisma.Decimal(0),
+          shippingCost: shipping,
           tax: new Prisma.Decimal(0),
-          // Phase 3 MVP: no discount/shipping/tax — total equals subtotal.
-          total: subtotal,
+          total: subtotal.plus(shipping),
           shippingAddress: shippingAddress as unknown as Prisma.InputJsonValue,
           billingAddress: (billingAddress ?? shippingAddress) as unknown as Prisma.InputJsonValue,
           notes: notes ?? null,

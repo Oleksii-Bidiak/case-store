@@ -82,4 +82,38 @@ export class AddressDto {
   @IsNotEmpty()
   @MaxLength(30)
   phone!: string;
+
+  // ─── Nova Poshta delivery refs (TASK-080) ───────────────────────────────────
+  // Optional: present only when the order was placed through the NP autocomplete
+  // (TASK-080-C). Old free-text orders and the manual fallback omit them.
+
+  @ApiProperty({
+    description: 'Nova Poshta city (delivery) reference UUID',
+    required: false,
+    example: 'db5c88e0-391c-11dd-90d9-001a92567626',
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  npCityRef?: string;
+
+  @ApiProperty({
+    description: 'Selected Nova Poshta warehouse description',
+    required: false,
+    example: 'Відділення №1: вул. Хрещатик, 22',
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  npWarehouseName?: string;
+
+  @ApiProperty({
+    description: 'Nova Poshta warehouse reference UUID',
+    required: false,
+    example: '7b422fc6-e1b8-11e3-8c4a-0050568002cf',
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  npWarehouseRef?: string;
 }
