@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { OrderStatus } from '@prisma/client';
+import { PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import {
   DASHBOARD_WINDOW_DAYS,
@@ -14,11 +14,14 @@ import {
 } from './dashboard.types';
 
 /**
- * Order statuses that do NOT count toward revenue. Cancelled and refunded
- * orders represent reversed money, so they are excluded from every revenue
- * aggregate.
+ * Revenue is counted only for orders the admin has actually marked PAID
+ * (`paymentStatus = PAID`). Since TASK-151 decoupled payment status from the
+ * order-status pipeline (`derivePaymentStatus` was removed), order status is no
+ * longer a proxy for "money received" — an order can sit at CONFIRMED/PROCESSING
+ * while still unpaid (e.g. cash-on-delivery awaiting collection). Every revenue
+ * aggregate and the top-products list therefore filter on `paymentStatus = PAID`
+ * so the dashboard reflects earned revenue, not merely accepted orders (TASK-152).
  */
-const NON_REVENUE_STATUSES: OrderStatus[] = [OrderStatus.CANCELLED, OrderStatus.REFUNDED];
 
 /** Raw-query row shape for the gap-filled daily series. */
 interface DailyRow {
@@ -109,20 +112,20 @@ export class DashboardRepository {
     return start;
   }
 
-  /** Lifetime revenue: sum of `Order.total` excluding cancelled/refunded. */
+  /** Lifetime revenue: sum of `Order.total` for PAID orders only (TASK-152). */
   private async getTotalRevenue(): Promise<number> {
     const result = await this.prisma.order.aggregate({
       _sum: { total: true },
-      where: { status: { notIn: NON_REVENUE_STATUSES } },
+      where: { paymentStatus: PaymentStatus.PAID },
     });
     return Number(result._sum.total ?? 0);
   }
 
-  /** Revenue since a given date, excluding cancelled/refunded. */
+  /** Revenue since a given date, PAID orders only (TASK-152). */
   private async getRevenueSince(since: Date): Promise<number> {
     const result = await this.prisma.order.aggregate({
       _sum: { total: true },
-      where: { status: { notIn: NON_REVENUE_STATUSES }, createdAt: { gte: since } },
+      where: { paymentStatus: PaymentStatus.PAID, createdAt: { gte: since } },
     });
     return Number(result._sum.total ?? 0);
   }
@@ -138,7 +141,7 @@ export class DashboardRepository {
 
   /**
    * Daily revenue for the last `windowDays`, gap-filled to a complete series.
-   * Cancelled/refunded orders are excluded to match the revenue definition.
+   * Counts PAID orders only, matching the revenue definition (TASK-152).
    */
   private async getRevenueByDay(windowDays: number): Promise<DailyDataPoint[]> {
     const rows = await this.prisma.$queryRaw<DailyRow[]>`
@@ -151,7 +154,7 @@ export class DashboardRepository {
            ) AS d(day)
       LEFT JOIN orders o
         ON DATE_TRUNC('day', o.created_at) = d.day
-        AND o.status NOT IN ('CANCELLED', 'REFUNDED')
+        AND o.payment_status = 'PAID'
       GROUP BY d.day
       ORDER BY d.day ASC
     `;
@@ -202,11 +205,10 @@ export class DashboardRepository {
    * `_sum` a single column, so a raw query is used. The product name is joined
    * in the same query (no second lookup, no N+1).
    *
-   * Only items from revenue-bearing orders count: the `INNER JOIN orders`
-   * excludes CANCELLED/REFUNDED orders so top-products revenue stays consistent
-   * with `getTotalRevenue` (the {@link NON_REVENUE_STATUSES} list — enumerated
-   * as string literals here because `$queryRaw` cannot safely interpolate an
-   * array into a SQL `IN (...)` list).
+   * Only items from PAID orders count: the `INNER JOIN orders` filters
+   * `payment_status = 'PAID'` so top-products revenue stays consistent with
+   * `getTotalRevenue` (TASK-152 — earned revenue, not merely accepted orders;
+   * order status is no longer a payment proxy after the TASK-151 decoupling).
    */
   private async getTopProducts(limit: number): Promise<TopProduct[]> {
     const rows = await this.prisma.$queryRaw<TopProductRow[]>`
@@ -216,7 +218,7 @@ export class DashboardRepository {
       FROM order_items oi
       INNER JOIN orders o
         ON o.id = oi.order_id
-        AND o.status NOT IN ('CANCELLED', 'REFUNDED')
+        AND o.payment_status = 'PAID'
       JOIN products p ON p.id = oi.product_id
       GROUP BY oi.product_id, p.name
       ORDER BY "totalRevenue" DESC

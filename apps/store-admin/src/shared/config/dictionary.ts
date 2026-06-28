@@ -65,6 +65,9 @@ export const dict = {
     sku: "Артикул",
     stock: "Запас",
     noLowStock: "Немає товарів із низьким запасом.",
+    topProducts: "Топ товари за виручкою",
+    rank: "#",
+    noTopProducts: "Немає даних про продажі.",
   },
 
   common: {

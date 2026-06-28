@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
 import { LOW_STOCK_THRESHOLD } from '../src/dashboard/dashboard.types';
 import { PrismaService } from '../src/prisma';
@@ -11,8 +11,10 @@ import { PrismaService } from '../src/prisma';
  * Integration tests for DashboardRepository — run the REAL repository against a
  * REAL Postgres instance (no mocks). These exercise the raw `$queryRaw` SQL the
  * mocked e2e suite (dashboard.e2e-spec.ts) cannot reach: the `generate_series`
- * gap-fill, the `SUM(price * quantity)` top-products arithmetic, and the
- * CANCELLED/REFUNDED exclusion (TASK-064).
+ * gap-fill, the `SUM(price * quantity)` top-products arithmetic, and — since
+ * TASK-152 — the `payment_status = 'PAID'` revenue filter (orders are counted as
+ * revenue only once the admin marks them PAID, after TASK-151 decoupled payment
+ * from order status). Post-TASK-142 stock lives on `Product` (no ProductVariant).
  *
  * Requires an isolated `*_test` database; DATABASE_URL is forced to it by
  * setup-int.ts. Run with `npm run test:int -w apps/store-api` (DB up + migrated).
@@ -27,13 +29,12 @@ describe('DashboardRepository (integration)', () => {
 
   let categoryId: string;
   let userId: string;
-  let topProductId: string; // appears in DELIVERED + PENDING orders
-  let cancelledProductId: string; // appears only in a CANCELLED order
-  let lowStockVariantId: string; // stock below threshold
-  let healthyVariantId: string; // stock above threshold
+  let paidProductId: string; // low stock + appears in a PAID order
+  let unpaidProductId: string; // healthy stock + appears only in a PENDING (unpaid) order
+  let cancelledProductId: string; // healthy stock + appears only in a CANCELLED order
 
-  // DELIVERED qty 3 @ $10 = $30; PENDING qty 1 @ $10 = $10  → $40 earned.
-  const EXPECTED_TOP_REVENUE = 40;
+  // Only the PAID order counts toward revenue: qty 3 @ $10 = $30.
+  const EXPECTED_TOP_REVENUE = 30;
 
   beforeAll(async () => {
     const url = process.env.DATABASE_URL ?? '';
@@ -68,87 +69,77 @@ describe('DashboardRepository (integration)', () => {
     });
     userId = user.id;
 
-    const topProduct = await prisma.product.create({
-      data: { name: 'Dash Top Product', slug: `dash-top-${suffix}`, price: '10.00', categoryId },
-    });
-    topProductId = topProduct.id;
-
-    const lowStockVariant = await prisma.productVariant.create({
+    // Low-stock product, sold in a PAID order → appears in top-products + low-stock.
+    const paidProduct = await prisma.product.create({
       data: {
-        productId: topProductId,
-        name: 'Low Stock Variant',
+        name: 'Dash Paid Product',
+        slug: `dash-paid-${suffix}`,
         price: '10.00',
+        categoryId,
         stock: LOW_STOCK_THRESHOLD - 2, // e.g. 3 — below threshold
       },
     });
-    lowStockVariantId = lowStockVariant.id;
+    paidProductId = paidProduct.id;
 
+    // Healthy product, only ever in an unpaid (PENDING) order → must NOT appear
+    // in top-products after the TASK-152 paid-only filter.
+    const unpaidProduct = await prisma.product.create({
+      data: {
+        name: 'Dash Unpaid Product',
+        slug: `dash-unpaid-${suffix}`,
+        price: '20.00',
+        categoryId,
+        stock: LOW_STOCK_THRESHOLD + 50, // well above threshold
+      },
+    });
+    unpaidProductId = unpaidProduct.id;
+
+    // Healthy product, only in a CANCELLED order → never counts.
     const cancelledProduct = await prisma.product.create({
       data: {
         name: 'Dash Cancelled Product',
         slug: `dash-cancel-${suffix}`,
         price: '20.00',
         categoryId,
+        stock: LOW_STOCK_THRESHOLD + 50,
       },
     });
     cancelledProductId = cancelledProduct.id;
 
-    const healthyVariant = await prisma.productVariant.create({
-      data: {
-        productId: cancelledProductId,
-        name: 'Healthy Variant',
-        price: '20.00',
-        stock: LOW_STOCK_THRESHOLD + 50, // well above threshold
-      },
-    });
-    healthyVariantId = healthyVariant.id;
-
-    // Revenue-bearing orders for the top product (DELIVERED + PENDING).
+    // PAID order for the paid product (DELIVERED + PAID): qty 3 @ $10 = $30.
     await prisma.order.create({
       data: {
         userId,
         status: OrderStatus.DELIVERED,
+        paymentStatus: PaymentStatus.PAID,
         subtotal: '30.00',
         total: '30.00',
-        items: {
-          create: [
-            { productId: topProductId, variantId: lowStockVariantId, quantity: 3, price: '10.00' },
-          ],
-        },
+        items: { create: [{ productId: paidProductId, quantity: 3, price: '10.00' }] },
       },
     });
 
+    // CONFIRMED but UNPAID order (TASK-151: status advanced, payment still PENDING):
+    // must NOT count toward revenue or top-products.
     await prisma.order.create({
       data: {
         userId,
-        status: OrderStatus.PENDING,
-        subtotal: '10.00',
-        total: '10.00',
-        items: {
-          create: [
-            { productId: topProductId, variantId: lowStockVariantId, quantity: 1, price: '10.00' },
-          ],
-        },
+        status: OrderStatus.CONFIRMED,
+        paymentStatus: PaymentStatus.PENDING,
+        subtotal: '40.00',
+        total: '40.00',
+        items: { create: [{ productId: unpaidProductId, quantity: 2, price: '20.00' }] },
       },
     });
 
-    // CANCELLED order for the cancelled product — must NOT count toward revenue.
+    // CANCELLED order — must never count.
     await prisma.order.create({
       data: {
         userId,
         status: OrderStatus.CANCELLED,
+        paymentStatus: PaymentStatus.PENDING,
         subtotal: '100.00',
         total: '100.00',
-        items: {
-          create: [
-            {
-              productId: cancelledProductId,
-              variantId: healthyVariantId,
-              quantity: 5,
-              price: '20.00',
-            },
-          ],
-        },
+        items: { create: [{ productId: cancelledProductId, quantity: 5, price: '20.00' }] },
       },
     });
   });
@@ -159,39 +150,40 @@ describe('DashboardRepository (integration)', () => {
     }
     await prisma.orderItem.deleteMany({});
     await prisma.order.deleteMany({});
-    await prisma.productVariant.deleteMany({
-      where: { id: { in: [lowStockVariantId, healthyVariantId] } },
+    await prisma.product.deleteMany({
+      where: { id: { in: [paidProductId, unpaidProductId, cancelledProductId] } },
     });
-    await prisma.product.deleteMany({ where: { id: { in: [topProductId, cancelledProductId] } } });
     await prisma.category.deleteMany({ where: { id: categoryId } });
     await prisma.user.deleteMany({ where: { id: userId } });
     await app.close();
   });
 
   describe('getSummary — top products', () => {
-    it('uses SUM(price * quantity) and excludes CANCELLED/REFUNDED orders', async () => {
+    it('uses SUM(price * quantity) and counts only PAID orders (TASK-152)', async () => {
       const summary = await repo.getSummary();
       const { topProducts } = summary.products;
 
-      const top = topProducts.find((p) => p.productId === topProductId);
+      const top = topProducts.find((p) => p.productId === paidProductId);
       expect(top).toBeDefined();
-      // 3*$10 (DELIVERED) + 1*$10 (PENDING) = $40 — proves quantity weighting.
+      // 3 * $10 from the PAID order only — the PENDING order is excluded.
       expect(top?.totalRevenue).toBe(EXPECTED_TOP_REVENUE);
 
-      // The product whose only order is CANCELLED must not appear at all.
+      // A product whose only order is CONFIRMED-but-UNPAID must not appear.
+      expect(topProducts.find((p) => p.productId === unpaidProductId)).toBeUndefined();
+      // A product whose only order is CANCELLED must not appear.
       expect(topProducts.find((p) => p.productId === cancelledProductId)).toBeUndefined();
     });
   });
 
   describe('getSummary — revenue series gap-fill', () => {
-    it('returns a full 30-point series with today summing the non-cancelled orders', async () => {
+    it('returns a full 30-point series with today summing the PAID orders only', async () => {
       const summary = await repo.getSummary();
       const series = summary.revenue.revenueByDay;
 
       // generate_series always yields the full window.
       expect(series).toHaveLength(30);
 
-      // Today is the last (ascending) bucket — DELIVERED + PENDING, no CANCELLED.
+      // Today is the last (ascending) bucket — PAID order only (no unpaid/cancelled).
       expect(series[series.length - 1].value).toBe(EXPECTED_TOP_REVENUE);
 
       // At least one earlier day has no orders → gap-filled to 0.
@@ -200,14 +192,15 @@ describe('DashboardRepository (integration)', () => {
   });
 
   describe('getSummary — low stock', () => {
-    it('includes variants at/below the threshold, excludes healthy stock, ordered ascending', async () => {
+    it('includes products at/below the threshold, excludes healthy stock, ordered ascending', async () => {
       const summary = await repo.getSummary();
-      const variants = summary.inventory.lowStockVariants;
+      const products = summary.inventory.lowStockProducts;
 
-      expect(variants.find((v) => v.variantId === lowStockVariantId)).toBeDefined();
-      expect(variants.find((v) => v.variantId === healthyVariantId)).toBeUndefined();
+      expect(products.find((p) => p.productId === paidProductId)).toBeDefined();
+      expect(products.find((p) => p.productId === unpaidProductId)).toBeUndefined();
+      expect(products.find((p) => p.productId === cancelledProductId)).toBeUndefined();
 
-      const stocks = variants.map((v) => v.stock);
+      const stocks = products.map((p) => p.stock);
       const sorted = [...stocks].sort((a, b) => a - b);
       expect(stocks).toEqual(sorted);
     });

@@ -7,6 +7,7 @@ import {
   AdminDashboardStatsSkeleton,
   DashboardCharts,
   DashboardLowStockTable,
+  DashboardTopProductsTable,
 } from "@/widgets";
 import { Button, Separator } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -55,6 +56,10 @@ export function DashboardView() {
           <Separator className="my-6" />
 
           <DashboardCharts summary={data} />
+
+          <Separator className="my-6" />
+
+          <DashboardTopProductsTable products={data.products.topProducts} />
 
           <Separator className="my-6" />
 

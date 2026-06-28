@@ -65,10 +65,8 @@ describe('Admin Dashboard (e2e)', () => {
       topProducts: [{ productId: 'prod-1', name: 'USB-C Cable 2m', totalRevenue: 3420 }],
     },
     inventory: {
-      lowStockVariants: [
+      lowStockProducts: [
         {
-          variantId: 'var-1',
-          variantName: 'Black / iPhone 15 Pro',
           productId: 'prod-2',
           productName: 'Silicone Case',
           stock: 3,
@@ -211,11 +209,9 @@ describe('Admin Dashboard (e2e)', () => {
       );
 
       // inventory
-      expect(Array.isArray(body.inventory.lowStockVariants)).toBe(true);
-      expect(body.inventory.lowStockVariants[0]).toEqual(
+      expect(Array.isArray(body.inventory.lowStockProducts)).toBe(true);
+      expect(body.inventory.lowStockProducts[0]).toEqual(
         expect.objectContaining({
-          variantId: expect.any(String),
-          variantName: expect.any(String),
           productId: expect.any(String),
           productName: expect.any(String),
           stock: expect.any(Number),
@@ -229,7 +225,7 @@ describe('Admin Dashboard (e2e)', () => {
         orders: { totalOrders: 0, ordersByStatus: [], ordersByDay: [] },
         users: { totalUsers: 0, newUsersByDay: [] },
         products: { totalProducts: 0, activeProducts: 0, topProducts: [] },
-        inventory: { lowStockVariants: [] },
+        inventory: { lowStockProducts: [] },
       });
 
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
@@ -244,7 +240,7 @@ describe('Admin Dashboard (e2e)', () => {
       expect(body.orders.totalOrders).toBeGreaterThanOrEqual(0);
       expect(body.users.totalUsers).toBeGreaterThanOrEqual(0);
       expect(body.products.totalProducts).toBeGreaterThanOrEqual(0);
-      expect(body.inventory.lowStockVariants).toEqual([]);
+      expect(body.inventory.lowStockProducts).toEqual([]);
     });
   });
 });

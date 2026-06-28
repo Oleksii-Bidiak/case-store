@@ -26,3 +26,4 @@ export {
   OrdersByStatusChart,
 } from "./dashboard-charts";
 export { DashboardLowStockTable } from "./dashboard-low-stock";
+export { DashboardTopProductsTable } from "./dashboard-top-products";
