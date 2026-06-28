@@ -393,6 +393,27 @@ describe('CategoryService', () => {
       );
       expect(categoryRepositoryMock.update).not.toHaveBeenCalled();
     });
+
+    it('should clear the parent when parentId is null (make root)', async () => {
+      // mockChildCategory has parentId 'cat-uuid-1'; clearing it makes it a root.
+      categoryRepositoryMock.findById.mockResolvedValue(mockChildCategory);
+      categoryRepositoryMock.update.mockResolvedValue({
+        ...mockChildCategory,
+        parentId: null,
+      });
+
+      const updateClearParent: UpdateCategoryInput = { parentId: null };
+
+      const result = await service.update('cat-uuid-2', updateClearParent);
+
+      expect(result).toBeInstanceOf(CategoryEntity);
+      expect(result.parentId).toBeNull();
+      // null short-circuits parent-existence/cycle checks — no extra lookups.
+      expect(categoryRepositoryMock.findDescendantIds).not.toHaveBeenCalled();
+      expect(categoryRepositoryMock.update).toHaveBeenCalledWith('cat-uuid-2', {
+        parentId: null,
+      });
+    });
   });
 
   // ─── deactivate (admin) ──────────────────────────────────────────────────────

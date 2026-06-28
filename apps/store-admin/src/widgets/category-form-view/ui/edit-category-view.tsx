@@ -49,7 +49,10 @@ export function EditCategoryView({ categoryId }: EditCategoryViewProps) {
 
   const handleSubmit = (values: CategoryFormValues) => {
     update.mutate(
-      { id: categoryId, data: categoryFormValuesToDto(values) },
+      {
+        id: categoryId,
+        data: categoryFormValuesToDto(values, { isUpdate: true }),
+      },
       {
         onSuccess: () => {
           void queryClient.invalidateQueries({
@@ -98,6 +101,7 @@ export function EditCategoryView({ categoryId }: EditCategoryViewProps) {
         </p>
       ) : category ? (
         <CategoryForm
+          id={categoryId}
           defaultValues={mapCategoryToFormValues(category)}
           excludeParentId={categoryId}
           onSubmit={handleSubmit}

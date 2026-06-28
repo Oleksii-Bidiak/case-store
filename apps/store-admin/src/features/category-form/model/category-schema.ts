@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CreateCategoryDto } from "@/entities/category";
+import type { CreateCategoryDto, UpdateCategoryDto } from "@/entities/category";
 import { dict } from "@/shared/config";
 
 const e = dict.categoryForm.errors;
@@ -56,12 +56,26 @@ export type CategoryFormValues = z.output<typeof categorySchema>;
 
 /**
  * Map parsed form values to a create/update payload, dropping blank optional
- * strings so the backend treats them as "not provided" (blank slug → auto-slug,
- * blank parent → root category).
+ * strings so the backend treats them as "not provided" (blank slug → auto-slug).
+ *
+ * Parent handling differs by mode:
+ * - CREATE (`isUpdate` false): blank parent → `undefined` (omitted; backend
+ *   stores `null`).
+ * - UPDATE (`isUpdate` true): blank parent → `null` (explicit clear). With
+ *   `undefined` Prisma would treat the field as "no change", so an admin could
+ *   never demote a sub-category back to a root one (TASK-149).
  */
 export function categoryFormValuesToDto(
   values: CategoryFormValues,
-): CreateCategoryDto {
+): CreateCategoryDto;
+export function categoryFormValuesToDto(
+  values: CategoryFormValues,
+  options: { isUpdate: true },
+): UpdateCategoryDto;
+export function categoryFormValuesToDto(
+  values: CategoryFormValues,
+  options: { isUpdate?: boolean } = {},
+): CreateCategoryDto | UpdateCategoryDto {
   const slug = values.slug?.trim();
   const description = values.description?.trim();
   const image = values.image?.trim();
@@ -72,7 +86,7 @@ export function categoryFormValuesToDto(
     slug: slug ? slug : undefined,
     description: description ? description : undefined,
     image: image ? image : undefined,
-    parentId: parentId ? parentId : undefined,
+    parentId: parentId ? parentId : options.isUpdate ? null : undefined,
     sortOrder: values.sortOrder,
     isActive: values.isActive,
   };

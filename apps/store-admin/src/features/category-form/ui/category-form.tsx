@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAdminCategoryControllerFindAllWithProductCount } from "@/entities/category";
@@ -24,6 +25,10 @@ import {
 const ROOT_OPTION = "__root__";
 
 interface CategoryFormProps {
+  /** Entity id (edit mode). Drives the forms.md Rule 2b reset: the form
+   *  re-seeds from `defaultValues` only when navigating to a different
+   *  category, never on a background refetch. Omitted in create mode. */
+  id?: string;
   defaultValues?: Partial<CategoryFormInput>;
   onSubmit: (values: CategoryFormValues) => void;
   isPending: boolean;
@@ -51,6 +56,7 @@ const EMPTY_VALUES: CategoryFormInput = {
  * edited) plus a "Root (no parent)" option mapped to an empty parentId.
  */
 export function CategoryForm({
+  id,
   defaultValues,
   onSubmit,
   isPending,
@@ -61,17 +67,24 @@ export function CategoryForm({
     register,
     control,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<CategoryFormInput, unknown, CategoryFormValues>({
     resolver: zodResolver(categorySchema),
     defaultValues: EMPTY_VALUES,
-    // In edit mode, `values` live-syncs the form when the entity refetches in the
-    // background (TASK-141-B). `keepDirtyValues` updates only pristine fields, so
-    // the admin's in-progress edits are never clobbered. In create mode
-    // (`defaultValues` undefined) `values` is omitted and the form stays editable.
-    values: defaultValues ? { ...EMPTY_VALUES, ...defaultValues } : undefined,
-    resetOptions: { keepDirtyValues: true },
   });
+
+  // forms.md Rule 2b: re-seed only when navigating to a different entity (`id`
+  // changes), NOT on every render or background refetch. The previous `values`
+  // live-sync (Rule 2a) could clobber an in-progress parent selection before
+  // its dirty flag was committed under React 19 concurrent rendering, which is
+  // why the chosen parent was silently dropped on save (TASK-149).
+  useEffect(() => {
+    if (id && defaultValues) {
+      reset({ ...EMPTY_VALUES, ...defaultValues });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   const categoriesQuery = useAdminCategoryControllerFindAllWithProductCount({
     limit: 100,
