@@ -82,4 +82,29 @@ describe("OrderDetailView — customer section (TASK-125)", () => {
     expect(await screen.findByText(dict.orders.summary)).toBeInTheDocument();
     expect(screen.queryByText(dict.orders.customer)).not.toBeInTheDocument();
   });
+
+  it("renders independent status and payment-status controls (TASK-151)", async () => {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: makeOrder(null) }),
+      ),
+    );
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    await screen.findByText(dict.orders.summary);
+
+    // Two separate comboboxes: order status + payment status.
+    expect(
+      screen.getByRole("combobox", { name: dict.orderStatus.updateAria }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", {
+        name: dict.orderStatus.paymentUpdateAria,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.orderStatus.updatePaymentStatus),
+    ).toBeInTheDocument();
+  });
 });

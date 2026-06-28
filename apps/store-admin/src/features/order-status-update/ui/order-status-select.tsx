@@ -25,12 +25,12 @@ interface OrderStatusSelectProps {
 }
 
 /**
- * Status-transition control for the order detail page.
+ * Status control for the order detail page.
  *
- * Offers only the valid next statuses for the order's current status (see
- * {@link getAllowedTransitions}). Terminal statuses render an inline note
- * instead of a select. On success it invalidates both the admin order list and
- * this order's detail query so every view reflects the new status.
+ * TASK-151: the admin has full manual control — every status except the order's
+ * current one is selectable (see {@link getAllowedTransitions}). On success it
+ * invalidates both the admin order list and this order's detail query so every
+ * view reflects the new status.
  */
 export function OrderStatusSelect({
   orderId,
@@ -39,15 +39,9 @@ export function OrderStatusSelect({
   const queryClient = useQueryClient();
   const updateStatus = useAdminOrderControllerUpdateStatus();
 
+  // TASK-151: admin has full manual control — every status except the current
+  // one is an available target, so this list is never empty (no terminal guard).
   const allowed = getAllowedTransitions(currentStatus);
-
-  if (allowed.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        {dict.orderStatus.noTransitions}
-      </p>
-    );
-  }
 
   const handleChange = (value: string) => {
     updateStatus.mutate(

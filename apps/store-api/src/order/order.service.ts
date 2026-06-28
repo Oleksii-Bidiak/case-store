@@ -19,37 +19,6 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
 
 /**
- * Derive the payment status implied by a target order status (TASK-123).
- *
- * The admin status PATCH path drives the whole order lifecycle, so advancing an
- * order past PENDING must also advance its payment status — otherwise it gets
- * stranded at PENDING (the bug). Pre-Stripe (TASK-034), the admin moving an
- * order forward is the implicit "payment received" signal: any non-terminal
- * advance implies PAID. CANCELLED is left as-is (a PENDING cancel never took
- * payment; a PAID cancel's refund is a separate action), and REFUNDED reverses
- * the payment. Pure function — no side effects, idempotent (PAID never regresses
- * on a repeated forward update).
- */
-function derivePaymentStatus(
-  targetStatus: OrderStatus,
-  currentPaymentStatus: PaymentStatus,
-): PaymentStatus {
-  switch (targetStatus) {
-    case OrderStatus.CONFIRMED:
-    case OrderStatus.PROCESSING:
-    case OrderStatus.SHIPPED:
-    case OrderStatus.DELIVERED:
-      return PaymentStatus.PAID;
-    case OrderStatus.REFUNDED:
-      return PaymentStatus.REFUNDED;
-    case OrderStatus.CANCELLED:
-    case OrderStatus.PENDING:
-    default:
-      return currentPaymentStatus; // leave payment status unchanged
-  }
-}
-
-/**
  * Order statuses whose stock is still in the warehouse (reserved at creation,
  * not yet shipped to the customer). Cancelling an order from one of these
  * states can safely return the reserved stock to inventory automatically.
@@ -310,6 +279,10 @@ export class OrderService {
    * (TASK-034): until automated payments exist, an admin marks orders paid by
    * hand. Authorization (ADMIN role) is enforced at the controller.
    *
+   * @deprecated Superseded by {@link adminUpdatePaymentStatus} (TASK-151). Use
+   *   `PATCH /api/admin/orders/:id/payment-status`, which sets the payment status
+   *   independently of the order status. Retained for the existing
+   *   `PATCH /api/orders/:id/confirm-payment` route until that route is removed.
    * @throws NotFoundException when the order does not exist.
    * @throws ConflictException when the order is not PENDING (already paid,
    *   cancelled, refunded, or further along its lifecycle).
@@ -363,10 +336,39 @@ export class OrderService {
       return OrderEntity.fromPrisma(restocked);
     }
 
-    // Couple paymentStatus to the target status so advancing an order past
-    // PENDING does not strand its payment at PENDING (TASK-123).
-    const paymentStatus = derivePaymentStatus(status, existing.paymentStatus);
-    const order = await this.orderRepository.updateStatus(orderId, status, paymentStatus);
+    // TASK-151: order status and payment status are decoupled. Advancing the
+    // order status leaves the existing payment status untouched (forwarded
+    // unchanged); the admin manages payment independently via
+    // adminUpdatePaymentStatus. (Previously TASK-123 auto-derived PAID here.)
+    const order = await this.orderRepository.updateStatus(orderId, status, existing.paymentStatus);
+    return OrderEntity.fromPrisma(order);
+  }
+
+  /**
+   * Admin — set an order's payment status directly, independently of its order
+   * status (TASK-151). This is the manual stand-in for the Stripe payment
+   * webhook (TASK-034) and the supported way to mark an order paid/unpaid/
+   * refunded. Authorization (ADMIN role) is enforced at the controller.
+   *
+   * @throws NotFoundException when the order does not exist.
+   */
+  async adminUpdatePaymentStatus(
+    orderId: string,
+    paymentStatus: PaymentStatus,
+  ): Promise<OrderEntity> {
+    const existing = await this.orderRepository.findById(orderId);
+
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const order = await this.orderRepository.updatePaymentStatus(orderId, paymentStatus);
+
+    this.logger.info(
+      { event: 'order.payment_status_updated', orderId, paymentStatus },
+      'Order payment status updated',
+    );
+
     return OrderEntity.fromPrisma(order);
   }
 }

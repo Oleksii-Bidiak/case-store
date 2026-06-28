@@ -274,6 +274,11 @@ export const dict = {
     updateAria: "Оновити статус замовлення",
     toastUpdated: (s: string) => `Статус замовлення змінено на ${s}`,
     toastFailed: "Не вдалося оновити статус замовлення",
+    updatePaymentStatus: "Статус оплати",
+    changePaymentStatus: "Змінити статус оплати…",
+    paymentToastUpdated: (label: string) => `Статус оплати оновлено: ${label}`,
+    paymentToastFailed: "Не вдалося оновити статус оплати",
+    paymentUpdateAria: "Оновити статус оплати",
   },
 
   // --- Users (TASK-115) -------------------------------------------------------

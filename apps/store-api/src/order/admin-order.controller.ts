@@ -9,9 +9,10 @@ import {
   ApiQuery,
   ApiExtraModels,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { OrderService } from './order.service';
 import { OrderEntity, OrderItemEntity, OrderCustomerData } from './entities';
-import { AdminOrderListQueryDto, UpdateOrderStatusDto } from './dto';
+import { AdminOrderListQueryDto, UpdateOrderStatusDto, UpdateOrderPaymentStatusDto } from './dto';
 import { AdminGuard } from '../auth/guards';
 
 /**
@@ -60,9 +61,10 @@ class AdminOrderResponseEnvelope {
  * Controller for admin order management endpoints.
  *
  * Admin endpoints (ADMIN role required):
- *   GET    /admin/orders                  — List all orders across all users
- *   GET    /admin/orders/:orderId         — Get any order by ID
- *   PATCH  /admin/orders/:orderId/status  — Update an order's status
+ *   GET    /admin/orders                          — List all orders across all users
+ *   GET    /admin/orders/:orderId                 — Get any order by ID
+ *   PATCH  /admin/orders/:orderId/status          — Update an order's status
+ *   PATCH  /admin/orders/:orderId/payment-status  — Update an order's payment status
  *
  * Separate from the customer-facing {@link OrderController} (`/api/orders`),
  * which scopes every route to the authenticated user. Mirrors the
@@ -151,6 +153,39 @@ export class AdminOrderController {
     @Body() dto: UpdateOrderStatusDto,
   ): Promise<AdminOrderResponseEnvelope> {
     const order = await this.orderService.updateStatus(orderId, dto.status);
+
+    return { data: order };
+  }
+
+  /**
+   * PATCH /api/admin/orders/:orderId/payment-status
+   *
+   * Set an order's payment status directly, independently of its order status
+   * (TASK-151). This is the supported way for an admin to mark an order
+   * paid/unpaid/refunded; it never changes the order status. Admin-only.
+   */
+  @Patch(':orderId/payment-status')
+  @ApiBearerAuth('access-token')
+  // Admin-only state mutation; throttle to blunt scripted misuse even from an
+  // authenticated admin token (mirrors the status/confirm-payment routes).
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Update order payment status (admin)',
+    operationId: 'adminOrderControllerUpdatePaymentStatus',
+  })
+  @ApiParam({ name: 'orderId', description: 'Order UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Order payment status updated',
+    type: AdminOrderResponseEnvelope,
+  })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async updatePaymentStatus(
+    @Param('orderId') orderId: string,
+    @Body() dto: UpdateOrderPaymentStatusDto,
+  ): Promise<AdminOrderResponseEnvelope> {
+    const order = await this.orderService.adminUpdatePaymentStatus(orderId, dto.paymentStatus);
 
     return { data: order };
   }

@@ -11,6 +11,7 @@ import {
   useAdminOrderControllerFindById,
 } from "@/entities/order";
 import { OrderStatusSelect } from "@/features/order-status-update";
+import { PaymentStatusSelect } from "@/features/order-payment-update";
 import {
   Badge,
   Separator,
@@ -129,6 +130,15 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
               <OrderStatusSelect
                 orderId={order.id}
                 currentStatus={order.status}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium text-foreground">
+                {dict.orderStatus.updatePaymentStatus}
+              </span>
+              <PaymentStatusSelect
+                orderId={order.id}
+                currentPaymentStatus={order.paymentStatus}
               />
             </div>
           </section>

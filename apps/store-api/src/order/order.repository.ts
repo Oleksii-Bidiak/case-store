@@ -326,6 +326,10 @@ export class OrderRepository {
    * CONFIRMED in a single update. Used by the admin "payment received" action
    * (a manual stand-in until the Stripe webhook of TASK-034 lands). The service
    * enforces that only a PENDING order reaches this point.
+   *
+   * @deprecated Superseded by {@link updatePaymentStatus} (TASK-151), which sets
+   *   the payment status independently of the order status. Retained for the
+   *   deprecated `confirmPayment` service path until that route is removed.
    */
   markPaid(orderId: string): Promise<OrderWithItems> {
     return this.prisma.order.update({

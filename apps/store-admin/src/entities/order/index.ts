@@ -7,6 +7,7 @@ export {
   useAdminOrderControllerFindAll,
   useAdminOrderControllerFindById,
   useAdminOrderControllerUpdateStatus,
+  useAdminOrderControllerUpdatePaymentStatus,
   getAdminOrderControllerFindAllQueryKey,
   getAdminOrderControllerFindByIdQueryKey,
   // Status / payment enum value objects (used for filters and badge mapping).
@@ -18,6 +19,7 @@ export type {
   OrderEntity,
   OrderItemEntity,
   UpdateOrderStatusDto,
+  UpdateOrderPaymentStatusDto,
   AdminOrderControllerFindAllParams,
   AdminOrderListResponse,
   AdminOrderResponseEnvelope,

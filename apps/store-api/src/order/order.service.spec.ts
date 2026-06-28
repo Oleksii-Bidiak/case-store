@@ -521,15 +521,16 @@ describe('OrderService', () => {
     it('should update the order status without an ownership check', async () => {
       orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.PENDING }));
       orderRepositoryMock.updateStatus.mockResolvedValue(
-        makeOrder({ status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID }),
+        makeOrder({ status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PENDING }),
       );
 
       const result = await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED);
 
+      // TASK-151: paymentStatus is forwarded unchanged (PENDING), not auto-derived.
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
         OrderStatus.CONFIRMED,
-        PaymentStatus.PAID,
+        PaymentStatus.PENDING,
       );
       expect(result.status).toBe(OrderStatus.CONFIRMED);
     });
@@ -544,14 +545,16 @@ describe('OrderService', () => {
     });
   });
 
-  // ─── updateStatus — paymentStatus coupling (TASK-123) ─────────────────────────
-  // Advancing an order past PENDING via the admin status PATCH must also advance
-  // paymentStatus so it does not get stranded at PENDING. The service derives the
-  // target paymentStatus and hands both columns to the repository.
+  // ─── updateStatus — decoupled (no auto-derive) (TASK-151) ─────────────────────
+  // TASK-151: coupling removed — paymentStatus is no longer auto-derived from the
+  // target order status. Advancing the order status leaves the existing payment
+  // status untouched; the admin manages payment separately via
+  // adminUpdatePaymentStatus. This replaces the former TASK-123 coupling block.
 
-  describe('updateStatus — paymentStatus coupling', () => {
-    // The repository echoes whatever the service computed; these tests assert on
-    // the call arguments (the service's derivation), the source of the bug.
+  describe('updateStatus — decoupled (no auto-derive)', () => {
+    // The repository echoes whatever the service hands it; these tests assert on
+    // the call arguments — i.e. that the service forwards the order's CURRENT
+    // payment status unchanged rather than deriving a new one.
     const seedAndEcho = (current: Partial<OrderWithItems>) => {
       orderRepositoryMock.findById.mockResolvedValue(makeOrder(current));
       orderRepositoryMock.updateStatus.mockImplementation(
@@ -565,7 +568,7 @@ describe('OrderService', () => {
       OrderStatus.PROCESSING,
       OrderStatus.SHIPPED,
       OrderStatus.DELIVERED,
-    ])('derives paymentStatus PAID when advancing PENDING → %s', async (status) => {
+    ])('preserves paymentStatus PENDING when advancing PENDING → %s', async (status) => {
       seedAndEcho({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING });
 
       const result = await service.updateStatus('order-uuid-1', status);
@@ -573,12 +576,12 @@ describe('OrderService', () => {
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
         status,
-        PaymentStatus.PAID,
+        PaymentStatus.PENDING,
       );
-      expect(result.paymentStatus).toBe(PaymentStatus.PAID);
+      expect(result.paymentStatus).toBe(PaymentStatus.PENDING);
     });
 
-    it('derives paymentStatus REFUNDED when an order is moved to REFUNDED', async () => {
+    it('does NOT auto-set REFUNDED when an order is moved to REFUNDED (payment preserved)', async () => {
       seedAndEcho({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID });
 
       await service.updateStatus('order-uuid-1', OrderStatus.REFUNDED);
@@ -586,11 +589,11 @@ describe('OrderService', () => {
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
         OrderStatus.REFUNDED,
-        PaymentStatus.REFUNDED,
+        PaymentStatus.PAID,
       );
     });
 
-    it('keeps an already-PAID order PAID when advanced further (idempotency)', async () => {
+    it('leaves an already-PAID order PAID when advanced further', async () => {
       seedAndEcho({ status: OrderStatus.PROCESSING, paymentStatus: PaymentStatus.PAID });
 
       await service.updateStatus('order-uuid-1', OrderStatus.DELIVERED);
@@ -600,6 +603,56 @@ describe('OrderService', () => {
         OrderStatus.DELIVERED,
         PaymentStatus.PAID,
       );
+    });
+  });
+
+  // ─── adminUpdatePaymentStatus (admin) (TASK-151) ──────────────────────────────
+  // The admin sets payment status directly and independently of the order status.
+
+  describe('adminUpdatePaymentStatus', () => {
+    it('sets PAID on a PENDING order via the repository', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING }),
+      );
+      orderRepositoryMock.updatePaymentStatus.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      const result = await service.adminUpdatePaymentStatus('order-uuid-1', PaymentStatus.PAID);
+
+      expect(orderRepositoryMock.updatePaymentStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        PaymentStatus.PAID,
+      );
+      expect(result).toBeInstanceOf(OrderEntity);
+      expect(result.paymentStatus).toBe(PaymentStatus.PAID);
+    });
+
+    it('sets REFUNDED on a DELIVERED order without changing the order status', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
+      );
+      orderRepositoryMock.updatePaymentStatus.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.REFUNDED }),
+      );
+
+      const result = await service.adminUpdatePaymentStatus('order-uuid-1', PaymentStatus.REFUNDED);
+
+      expect(orderRepositoryMock.updatePaymentStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        PaymentStatus.REFUNDED,
+      );
+      expect(result.status).toBe(OrderStatus.DELIVERED);
+      expect(result.paymentStatus).toBe(PaymentStatus.REFUNDED);
+    });
+
+    it('throws NotFoundException when the order does not exist', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.adminUpdatePaymentStatus('missing', PaymentStatus.PAID)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
     });
   });
 
@@ -673,10 +726,12 @@ describe('OrderService', () => {
       await service.updateStatus('order-uuid-1', OrderStatus.REFUNDED);
 
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+      // TASK-151: paymentStatus is preserved (PAID), not auto-set to REFUNDED.
+      // The admin sets payment status separately via adminUpdatePaymentStatus.
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
         OrderStatus.REFUNDED,
-        PaymentStatus.REFUNDED,
+        PaymentStatus.PAID,
       );
     });
 

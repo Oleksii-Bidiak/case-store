@@ -198,6 +198,10 @@ export class OrderController {
    * Admin action: register that payment was received and confirm the order
    * (PENDING → CONFIRMED, paymentStatus → PAID). Manual stand-in for the
    * payment webhook until Stripe integration (TASK-034) lands.
+   *
+   * @deprecated Superseded by `PATCH /api/admin/orders/:id/payment-status`
+   *   (TASK-151), which sets the payment status independently of the order
+   *   status. Retained until external consumers are confirmed migrated.
    */
   @Patch(':orderId/confirm-payment')
   @Roles(UserRole.ADMIN)
@@ -205,7 +209,8 @@ export class OrderController {
   // scripted misuse even from an authenticated admin token.
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @ApiOperation({
-    summary: 'Mark payment received and confirm order (admin)',
+    summary:
+      '[DEPRECATED — use PATCH /admin/orders/:id/payment-status] Mark payment received and confirm order (admin)',
     operationId: 'confirmOrderPayment',
   })
   @ApiParam({ name: 'orderId', description: 'Order UUID' })

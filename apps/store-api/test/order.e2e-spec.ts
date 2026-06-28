@@ -685,12 +685,13 @@ describe('OrderController (e2e)', () => {
         .expect(200);
 
       expect(response.body.data.status).toBe(OrderStatus.PROCESSING);
-      // Advancing past PENDING couples paymentStatus to PAID (TASK-123), so the
-      // service hands the repository the derived payment status as the 3rd arg.
+      // TASK-151: status and payment are decoupled — the service forwards the
+      // order's current paymentStatus (PENDING here) unchanged as the 3rd arg,
+      // never auto-deriving PAID.
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-e2e-1',
         OrderStatus.PROCESSING,
-        PaymentStatus.PAID,
+        PaymentStatus.PENDING,
       );
     });
 
@@ -735,6 +736,75 @@ describe('OrderController (e2e)', () => {
       await request(app.getHttpServer())
         .patch('/api/admin/orders/order-e2e-1/status')
         .send({ status: OrderStatus.PROCESSING })
+        .expect(401);
+    });
+  });
+
+  // ─── PATCH /api/admin/orders/:orderId/payment-status (admin) (TASK-151) ──────────
+
+  describe('PATCH /api/admin/orders/:orderId/payment-status', () => {
+    it('should update the payment status for an admin without changing order status (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.PENDING }));
+      orderRepositoryMock.updatePaymentStatus.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/payment-status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ paymentStatus: PaymentStatus.PAID })
+        .expect(200);
+
+      expect(response.body.data.paymentStatus).toBe(PaymentStatus.PAID);
+      expect(response.body.data.status).toBe(OrderStatus.PENDING);
+      expect(orderRepositoryMock.updatePaymentStatus).toHaveBeenCalledWith(
+        'order-e2e-1',
+        PaymentStatus.PAID,
+      );
+    });
+
+    it('should return 400 for an invalid payment status value', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/payment-status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ paymentStatus: 'NOT_A_PAYMENT_STATUS' })
+        .expect(400);
+
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('should return 404 when the order does not exist', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/nonexistent-uuid/payment-status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ paymentStatus: PaymentStatus.PAID })
+        .expect(404);
+
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('should return 403 for a non-admin user', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/payment-status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ paymentStatus: PaymentStatus.PAID })
+        .expect(403);
+
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('should return 401 without a JWT', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/payment-status')
+        .send({ paymentStatus: PaymentStatus.PAID })
         .expect(401);
     });
   });
