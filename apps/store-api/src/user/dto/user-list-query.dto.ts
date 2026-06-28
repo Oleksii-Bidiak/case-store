@@ -61,9 +61,16 @@ export class UserListQueryDto {
     required: false,
   })
   @IsOptional()
-  @Transform(({ value }: { value: string }) => {
-    if (value === 'true') return true;
-    if (value === 'false') return false;
+  // Read the ORIGINAL query value from `obj`, not the `value` argument. The
+  // global ValidationPipe runs with `enableImplicitConversion: true`, which
+  // coerces the raw string to the reflected `Boolean` type BEFORE this transform
+  // — and `Boolean('false')` is `true`. Deriving from `obj[key]` (the untouched
+  // `'true'`/`'false'` string) is the only way to distinguish the two; anything
+  // unrecognised falls through to `undefined` (no filter). (TASK-150 B5)
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
     return undefined;
   })
   @IsBoolean({ message: 'isActive must be true or false' })

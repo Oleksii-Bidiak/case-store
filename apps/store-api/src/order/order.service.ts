@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { OrderStatus, PaymentStatus } from '@prisma/client';
@@ -110,11 +111,23 @@ export class OrderService {
   /**
    * Create an order from the user's current cart.
    *
+   * @throws ForbiddenException when the placing account is deactivated (banned).
    * @throws NotFoundException when the user has no cart.
    * @throws BadRequestException when the cart is empty or a variant has
    *   insufficient stock at order-creation time.
    */
   async createOrder(userId: string, dto: CreateOrderDto): Promise<OrderEntity> {
+    // Ban enforcement (TASK-150): a deactivated account must not place an order
+    // even while it still holds a non-expired access token. Refresh tokens are
+    // revoked the moment a user is banned, but the short-lived access token
+    // remains valid until it expires — so re-check active status here, as the
+    // first operation, before any cart lookup or inventory write. The same user
+    // object is reused for the confirmation email below (single fetch).
+    const user = await this.userRepository.findById(userId);
+    if (!user || !user.isActive) {
+      throw new ForbiddenException('Account is deactivated');
+    }
+
     const cart = await this.cartRepository.findByUserId(userId);
 
     if (!cart) {
@@ -166,22 +179,19 @@ export class OrderService {
 
     // Dispatch the confirmation email as a fault-isolated side-effect. The order
     // is already persisted and is the source of truth — a mail failure (SMTP
-    // down, null user, template crash) must never roll back the order or surface
-    // as an HTTP error. Any error is caught and logged; createOrder always
-    // returns the created order.
+    // down, template crash) must never roll back the order or surface as an HTTP
+    // error. Any error is caught and logged; createOrder always returns the
+    // created order. The recipient is the user fetched by the ban guard above.
     try {
-      const user = await this.userRepository.findById(userId);
-      if (user) {
-        await this.mailService.sendOrderConfirmation({
-          to: user.email,
-          order: orderEntity,
-          customerName: user.firstName ?? undefined,
-        });
-        this.logger.info(
-          { event: 'order.email_sent', orderId: order.id, to: user.email },
-          'Order confirmation email sent',
-        );
-      }
+      await this.mailService.sendOrderConfirmation({
+        to: user.email,
+        order: orderEntity,
+        customerName: user.firstName ?? undefined,
+      });
+      this.logger.info(
+        { event: 'order.email_sent', orderId: order.id, to: user.email },
+        'Order confirmation email sent',
+      );
     } catch (err) {
       // Structured fields ({ err, orderId }) so the failure is queryable in log
       // aggregation, not just a formatted string.

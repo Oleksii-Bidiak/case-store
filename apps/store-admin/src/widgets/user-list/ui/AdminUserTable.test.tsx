@@ -5,10 +5,11 @@ import { dict } from "@/shared/config";
 import { AdminUserTable } from "./AdminUserTable";
 
 const mockReplace = jest.fn();
+const mockSearchParamsRef = { current: new URLSearchParams("") };
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
   usePathname: () => "/users",
-  useSearchParams: () => new URLSearchParams(""),
+  useSearchParams: () => mockSearchParamsRef.current,
 }));
 
 function makeUserRow() {
@@ -36,7 +37,10 @@ function stubUsers() {
 }
 
 describe("AdminUserTable — column sorting (TASK-147)", () => {
-  beforeEach(() => mockReplace.mockClear());
+  beforeEach(() => {
+    mockReplace.mockClear();
+    mockSearchParamsRef.current = new URLSearchParams("");
+  });
 
   it("renders sortable Email and Joined headers", async () => {
     stubUsers();
@@ -68,6 +72,65 @@ describe("AdminUserTable — column sorting (TASK-147)", () => {
 
     expect(mockReplace).toHaveBeenCalledWith(
       expect.stringContaining("sortBy=email"),
+    );
+  });
+});
+
+describe("AdminUserTable — status filter (TASK-150 B5)", () => {
+  beforeEach(() => {
+    mockReplace.mockClear();
+    mockSearchParamsRef.current = new URLSearchParams("");
+  });
+
+  const openStatusFilter = async () =>
+    userEvent.click(
+      screen.getByRole("combobox", { name: dict.users.filterStatusAria }),
+    );
+
+  it("writes isActive=true to the URL when Active is selected", async () => {
+    stubUsers();
+    renderWithProviders(<AdminUserTable />);
+    await screen.findByText("buyer@example.com");
+
+    await openStatusFilter();
+    await userEvent.click(
+      await screen.findByRole("option", { name: dict.common.active }),
+    );
+
+    expect(mockReplace).toHaveBeenCalledWith(
+      expect.stringContaining("isActive=true"),
+    );
+  });
+
+  it("writes isActive=false to the URL when Inactive is selected", async () => {
+    stubUsers();
+    renderWithProviders(<AdminUserTable />);
+    await screen.findByText("buyer@example.com");
+
+    await openStatusFilter();
+    await userEvent.click(
+      await screen.findByRole("option", { name: dict.common.inactive }),
+    );
+
+    expect(mockReplace).toHaveBeenCalledWith(
+      expect.stringContaining("isActive=false"),
+    );
+  });
+
+  it("clears isActive from the URL when All statuses is selected", async () => {
+    // Start from a filtered view so picking "All statuses" is a real change.
+    mockSearchParamsRef.current = new URLSearchParams("isActive=false");
+    stubUsers();
+    renderWithProviders(<AdminUserTable />);
+    await screen.findByText("buyer@example.com");
+
+    await openStatusFilter();
+    await userEvent.click(
+      await screen.findByRole("option", { name: dict.users.allStatuses }),
+    );
+
+    expect(mockReplace).toHaveBeenCalledWith(
+      expect.not.stringContaining("isActive"),
     );
   });
 });

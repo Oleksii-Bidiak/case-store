@@ -1,5 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
@@ -158,7 +163,10 @@ const recipient = {
   email: 'olena@example.com',
   firstName: 'Olena',
   lastName: 'Shevchenko',
+  isActive: true,
 } as User;
+
+const bannedUser = { ...recipient, isActive: false } as User;
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -186,6 +194,12 @@ describe('OrderService', () => {
   // ─── createOrder ──────────────────────────────────────────────────────────
 
   describe('createOrder', () => {
+    // The placing user is fetched and active-checked before any cart work
+    // (TASK-150). Seed an active account so the happy-path cases reach the cart.
+    beforeEach(() => {
+      userRepositoryMock.findById.mockResolvedValue(recipient);
+    });
+
     it('should create an order from the cart and return an OrderEntity', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
@@ -278,6 +292,48 @@ describe('OrderService', () => {
     });
   });
 
+  // ─── createOrder → ban enforcement (TASK-150) ───────────────────────────────
+  // A deactivated account must not place an order even while it still holds a
+  // non-expired access token. The guard runs FIRST — before cart lookup or any
+  // write — so a banned user never touches inventory.
+
+  describe('createOrder — ban enforcement', () => {
+    it('throws ForbiddenException when the placing user is inactive (banned)', async () => {
+      userRepositoryMock.findById.mockResolvedValue(bannedUser);
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+
+      await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(ForbiddenException);
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    it('throws ForbiddenException when the user no longer exists', async () => {
+      userRepositoryMock.findById.mockResolvedValue(null);
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+
+      await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(ForbiddenException);
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    it('checks the user before touching the cart (no inventory work for a banned user)', async () => {
+      userRepositoryMock.findById.mockResolvedValue(bannedUser);
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+
+      await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(ForbiddenException);
+      expect(cartRepositoryMock.findByUserId).not.toHaveBeenCalled();
+    });
+
+    it('fetches the user exactly once on the happy path (reused for the email)', async () => {
+      userRepositoryMock.findById.mockResolvedValue(recipient);
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+
+      await service.createOrder(USER_ID, createDto);
+
+      expect(userRepositoryMock.findById).toHaveBeenCalledTimes(1);
+      expect(userRepositoryMock.findById).toHaveBeenCalledWith(USER_ID);
+    });
+  });
+
   // ─── createOrder → email dispatch (fault-isolated side-effect) ──────────────
 
   describe('createOrder — email dispatch', () => {
@@ -311,13 +367,15 @@ describe('OrderService', () => {
       expect(result.id).toBe('order-uuid-1');
     });
 
-    it('does not attempt an email when the recipient user is not found', async () => {
-      userRepositoryMock.findById.mockResolvedValue(null);
+    it('reuses the guard-fetched user for the email (no second lookup)', async () => {
+      userRepositoryMock.findById.mockResolvedValue(recipient);
 
-      const result = await service.createOrder(USER_ID, createDto);
+      await service.createOrder(USER_ID, createDto);
 
-      expect(mailServiceMock.sendOrderConfirmation).not.toHaveBeenCalled();
-      expect(result).toBeInstanceOf(OrderEntity);
+      // The ban guard already fetched the user; the email path must reuse it
+      // rather than issue a redundant findById.
+      expect(userRepositoryMock.findById).toHaveBeenCalledTimes(1);
+      expect(mailServiceMock.sendOrderConfirmation).toHaveBeenCalledTimes(1);
     });
   });
 

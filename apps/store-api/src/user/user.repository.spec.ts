@@ -99,6 +99,41 @@ describe('UserRepository (soft-delete behaviour)', () => {
         createdAt: 'asc',
       });
     });
+
+    // ── isActive filter (TASK-150 B5) ──
+    it('constrains where.isActive to true when isActive: true', async () => {
+      prismaMock.user.findMany.mockResolvedValue([]);
+      prismaMock.user.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20, isActive: true });
+
+      expect(prismaMock.user.findMany.mock.calls[0][0].where).toEqual(
+        expect.objectContaining({ isActive: true, deletedAt: null }),
+      );
+      expect(prismaMock.user.count.mock.calls[0][0].where).toEqual(
+        expect.objectContaining({ isActive: true }),
+      );
+    });
+
+    it('constrains where.isActive to false when isActive: false', async () => {
+      prismaMock.user.findMany.mockResolvedValue([]);
+      prismaMock.user.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20, isActive: false });
+
+      expect(prismaMock.user.findMany.mock.calls[0][0].where).toEqual(
+        expect.objectContaining({ isActive: false, deletedAt: null }),
+      );
+    });
+
+    it('omits where.isActive entirely when isActive is undefined (all statuses)', async () => {
+      prismaMock.user.findMany.mockResolvedValue([]);
+      prismaMock.user.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20 });
+
+      expect(prismaMock.user.findMany.mock.calls[0][0].where).not.toHaveProperty('isActive');
+    });
   });
 
   describe('softDelete', () => {

@@ -42,6 +42,7 @@ describe('OrderController (e2e)', () => {
     findByUserId: jest.fn(),
     findAll: jest.fn(),
     findById: jest.fn(),
+    findByIdForAdmin: jest.fn(),
     updateStatus: jest.fn(),
     cancelAndRestock: jest.fn(),
     updatePaymentStatus: jest.fn(),
@@ -247,15 +248,22 @@ describe('OrderController (e2e)', () => {
   // ─── POST /api/orders ────────────────────────────────────────────────────────
 
   describe('POST /api/orders', () => {
-    it('should create an order from the cart and return 201', async () => {
-      const token = generateAccessToken(userA.id, userA.role);
-      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
-      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+    // The order ban guard (TASK-150) fetches the placing user first; seed an
+    // active account by default so the cart/validation paths are reachable.
+    // Tests that exercise the ban itself override this.
+    beforeEach(() => {
       userRepositoryMock.findById.mockResolvedValue({
         id: userA.id,
         email: 'usera@example.com',
         firstName: 'User',
+        isActive: true,
       });
+    });
+
+    it('should create an order from the cart and return 201', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
       const response = await request(app.getHttpServer())
         .post('/api/orders')
@@ -277,6 +285,26 @@ describe('OrderController (e2e)', () => {
         .post('/api/orders')
         .send({ shippingAddress: validAddress })
         .expect(401);
+    });
+
+    it('should return 403 when the placing account is deactivated (banned)', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      // A still-valid access token, but the account was banned after issuance.
+      userRepositoryMock.findById.mockResolvedValue({
+        id: userA.id,
+        email: 'usera@example.com',
+        firstName: 'User',
+        isActive: false,
+      });
+      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ shippingAddress: validAddress })
+        .expect(403);
+
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
     it('should return 400 when shippingAddress is missing', async () => {
@@ -604,7 +632,8 @@ describe('OrderController (e2e)', () => {
   describe('GET /api/admin/orders/:orderId', () => {
     it('should return 200 for any order regardless of owner (admin)', async () => {
       const token = generateAccessToken(admin.id, admin.role);
-      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: userB.id }));
+      // adminGetOrder reads via findByIdForAdmin (customer-joined, TASK-125).
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(makeOrder({ userId: userB.id }));
 
       const response = await request(app.getHttpServer())
         .get('/api/admin/orders/order-e2e-1')
@@ -617,7 +646,7 @@ describe('OrderController (e2e)', () => {
 
     it('should return 404 when the order does not exist', async () => {
       const token = generateAccessToken(admin.id, admin.role);
-      orderRepositoryMock.findById.mockResolvedValue(null);
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(null);
 
       await request(app.getHttpServer())
         .get('/api/admin/orders/nonexistent-uuid')
@@ -656,9 +685,12 @@ describe('OrderController (e2e)', () => {
         .expect(200);
 
       expect(response.body.data.status).toBe(OrderStatus.PROCESSING);
+      // Advancing past PENDING couples paymentStatus to PAID (TASK-123), so the
+      // service hands the repository the derived payment status as the 3rd arg.
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-e2e-1',
         OrderStatus.PROCESSING,
+        PaymentStatus.PAID,
       );
     });
 

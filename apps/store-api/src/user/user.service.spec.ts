@@ -273,6 +273,14 @@ describe('UserService', () => {
         search: 'john',
       });
     });
+
+    it('forwards isActive: false unchanged to the repository (TASK-150 B5)', async () => {
+      repository.findAll.mockResolvedValue({ users: [], total: 0 });
+
+      await service.findAll({ page: 1, limit: 20, isActive: false });
+
+      expect(repository.findAll).toHaveBeenCalledWith(expect.objectContaining({ isActive: false }));
+    });
   });
 
   // ─── findById (admin) ───────────────────────────────────────────────────────
