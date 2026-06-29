@@ -28,13 +28,28 @@ export class OrderStatusCountDto {
 export class RevenueMetricsDto {
   @ApiProperty({
     type: Number,
-    description: 'Lifetime revenue (excl. cancelled/refunded)',
+    description: 'Lifetime earned revenue (paymentStatus = PAID orders only)',
     example: 48230.75,
   })
   totalRevenue!: number;
 
-  @ApiProperty({ type: Number, description: 'Revenue in the last 30 days', example: 8120.4 })
+  @ApiProperty({ type: Number, description: 'Earned revenue in the last 30 days', example: 8120.4 })
   revenueLast30Days!: number;
+
+  @ApiProperty({
+    type: Number,
+    description:
+      'Unrealized revenue: sum of Order.total where paymentStatus != PAID and status not in (CANCELLED, REFUNDED)',
+    example: 12400.0,
+  })
+  unrealizedRevenue!: number;
+
+  @ApiProperty({
+    type: Number,
+    description: 'Unrealized revenue in the last 30 days',
+    example: 3800.0,
+  })
+  unrealizedRevenueLast30Days!: number;
 
   @ApiProperty({ type: [DailyDataPointDto], description: 'Daily revenue for the last 30 days' })
   revenueByDay!: DailyDataPointDto[];
