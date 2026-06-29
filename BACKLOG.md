@@ -107,7 +107,7 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-127 | Loading states / skeletons across storefront + admin — give feedback on slow actions ("немає лоадерів") | ⬜ | — |
+| TASK-127 | Loading states / skeletons across storefront + admin — give feedback on slow actions ("немає лоадерів"). **Audit complete; plan written; all sub-tasks implemented & verified (build/lint/typecheck green, 52/52 admin tests pass).** Sub-tasks: ✅ **TASK-127-A** admin shared `Skeleton` primitive + `AdminFormSkeleton` + `AdminProductGroupTableSkeleton` + fix 6 bare `<Suspense>` fallbacks (products/new, categories/new, categories/[id]/edit, product-groups page/new/[id]/edit), ✅ **TASK-127-B** storefront `loading.tsx` files for 7 route segments (products/, products/[slug]/, cart/, checkout/, orders/, orders/[id]/confirmation/, account/) + `AccountSkeleton` widget, ✅ **TASK-127-C** admin `loading.tsx` files for 13 route segments (dashboard + all major sub-routes + product-groups) — depends on TASK-127-A and TASK-127-E (Sub-B), ✅ **TASK-127-D** admin table `isFetching` overlay for `AdminProductTable`/`AdminOrderTable`/`AdminUserTable` during sort/filter/pagination refetches, ✅ **TASK-127-E** storefront `ProductList` `isFetching` overlay (Sub-A) + admin `DashboardSectionSkeleton` for charts/top-products/low-stock panels (Sub-B). | ✅ | [docs/plans/075-loading-states-skeletons.md](docs/plans/075-loading-states-skeletons.md) |
 | TASK-130 | Header account → user icon + dropdown; ensure the customer cabinet link is visible | ⬜ | — |
 | TASK-131 | Storefront user order cancellation — cancel button for PENDING orders (backend cancel already exists) | ⬜ | — |
 | TASK-132 | Hide raw stock quantity from customers on the storefront | ⬜ | — |
