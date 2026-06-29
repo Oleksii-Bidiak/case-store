@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PaymentStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import {
   DASHBOARD_WINDOW_DAYS,
@@ -21,6 +21,13 @@ import {
  * while still unpaid (e.g. cash-on-delivery awaiting collection). Every revenue
  * aggregate and the top-products list therefore filter on `paymentStatus = PAID`
  * so the dashboard reflects earned revenue, not merely accepted orders (TASK-152).
+ *
+ * Alongside earned revenue, TASK-137 adds an "unrealized" revenue pair
+ * (`getUnrealizedRevenue` / `getUnrealizedRevenueSince`): the value of orders that
+ * are still active but not yet paid (`paymentStatus != PAID` AND `status NOT IN
+ * (CANCELLED, REFUNDED)`). This is the receivable pipeline — money expected but
+ * not yet collected (e.g. COD awaiting collection, or a failed payment pending a
+ * retry) — shown beside earned revenue so the admin can read both at a glance.
  */
 
 /** Raw-query row shape for the gap-filled daily series. */
@@ -59,6 +66,8 @@ export class DashboardRepository {
     const [
       totalRevenue,
       revenueLast30Days,
+      unrealizedRevenue,
+      unrealizedRevenueLast30Days,
       revenueByDay,
       totalOrders,
       ordersByStatus,
@@ -72,6 +81,8 @@ export class DashboardRepository {
     ] = await Promise.all([
       this.getTotalRevenue(),
       this.getRevenueSince(windowStart),
+      this.getUnrealizedRevenue(),
+      this.getUnrealizedRevenueSince(windowStart),
       this.getRevenueByDay(windowDays),
       this.prisma.order.count(),
       this.getOrderCountByStatus(),
@@ -85,7 +96,13 @@ export class DashboardRepository {
     ]);
 
     return {
-      revenue: { totalRevenue, revenueLast30Days, revenueByDay },
+      revenue: {
+        totalRevenue,
+        revenueLast30Days,
+        unrealizedRevenue,
+        unrealizedRevenueLast30Days,
+        revenueByDay,
+      },
       orders: { totalOrders, ordersByStatus, ordersByDay },
       users: { totalUsers, newUsersByDay },
       products: { totalProducts, activeProducts, topProducts },
@@ -126,6 +143,36 @@ export class DashboardRepository {
     const result = await this.prisma.order.aggregate({
       _sum: { total: true },
       where: { paymentStatus: PaymentStatus.PAID, createdAt: { gte: since } },
+    });
+    return Number(result._sum.total ?? 0);
+  }
+
+  /**
+   * Unrealized (pending-payment) revenue: sum of `Order.total` for orders that
+   * are still active but not yet paid — `paymentStatus != PAID` AND `status NOT
+   * IN (CANCELLED, REFUNDED)`. This is the receivable pipeline, the complement to
+   * earned revenue (TASK-137).
+   */
+  private async getUnrealizedRevenue(): Promise<number> {
+    const result = await this.prisma.order.aggregate({
+      _sum: { total: true },
+      where: {
+        paymentStatus: { not: PaymentStatus.PAID },
+        status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+      },
+    });
+    return Number(result._sum.total ?? 0);
+  }
+
+  /** Unrealized revenue since a given date (same active-but-unpaid filter). */
+  private async getUnrealizedRevenueSince(since: Date): Promise<number> {
+    const result = await this.prisma.order.aggregate({
+      _sum: { total: true },
+      where: {
+        paymentStatus: { not: PaymentStatus.PAID },
+        status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+        createdAt: { gte: since },
+      },
     });
     return Number(result._sum.total ?? 0);
   }

@@ -22,6 +22,10 @@ export interface OrderStatusCount {
 export interface RevenueMetrics {
   totalRevenue: number;
   revenueLast30Days: number;
+  /** Sum of Order.total for active orders not yet marked PAID (TASK-137). */
+  unrealizedRevenue: number;
+  /** Unrealized revenue created in the rolling window (TASK-137). */
+  unrealizedRevenueLast30Days: number;
   revenueByDay: DailyDataPoint[];
 }
 
