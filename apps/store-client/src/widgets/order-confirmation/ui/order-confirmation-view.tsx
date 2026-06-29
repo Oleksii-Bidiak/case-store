@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/entities/session";
 import { useGetOrder } from "@/entities/order";
+import { CancelOrderButton } from "@/features/cancel-order";
 import { dict } from "@/shared/config";
 import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
@@ -134,6 +135,7 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
         <Link href="/" className={primaryCta}>
           {dict.common.continueShopping}
         </Link>
+        {order.status === "PENDING" && <CancelOrderButton orderId={order.id} />}
       </div>
     </div>
   );

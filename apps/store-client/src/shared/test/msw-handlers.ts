@@ -194,6 +194,11 @@ export const handlers = [
     ),
   ),
 
+  // Order cancel — returns the order with the new CANCELLED status.
+  http.patch("*/api/orders/:orderId/cancel", () =>
+    HttpResponse.json(makeOrder({ status: "CANCELLED" })),
+  ),
+
   // Auth — login/register return a token envelope.
   http.post("*/api/auth/login", () =>
     HttpResponse.json({ data: { accessToken: "test.access.token" } }),
