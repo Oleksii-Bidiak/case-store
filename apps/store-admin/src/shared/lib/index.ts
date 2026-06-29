@@ -1,6 +1,7 @@
 // Shared Lib — Utility functions and helpers
 export { cn } from "./utils";
 export * from "./format";
+export { slugify } from "./slug";
 
 // NOTE: `use-debounced-callback` is intentionally NOT re-exported here. It is a
 // "use client" hook; adding a client module to this barrel (which server

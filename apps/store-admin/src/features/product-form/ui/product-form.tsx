@@ -1,10 +1,11 @@
 "use client";
 
-import { Controller, useFieldArray, useForm } from "react-hook-form";
+import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2 } from "lucide-react";
 import { useCategoryControllerGetRootCategories } from "@/shared/api";
 import { useProductGroupControllerFindAll } from "@/entities/product-group";
+import { slugify } from "@/shared/lib";
 import {
   Button,
   Input,
@@ -85,6 +86,13 @@ export function ProductForm({
     remove: removeAttribute,
   } = useFieldArray({ control, name: "attributes" });
 
+  // Live slug preview: read-only observers on the same `control`. When the slug
+  // field is blank, show what the backend would auto-derive from the name (the
+  // `slugify` port mirrors the server's `generateSlug`). Pure render-time
+  // computation — no state, no side effects (forms.md Rule 1/3 not triggered).
+  const nameValue = useWatch({ control, name: "name" });
+  const slugValue = useWatch({ control, name: "slug" });
+
   const categoriesQuery = useCategoryControllerGetRootCategories({
     limit: 100,
   });
@@ -116,6 +124,14 @@ export function ProductForm({
           placeholder={dict.productForm.slugPlaceholder}
           {...register("slug")}
         />
+        {!slugValue && nameValue.trim().length > 0 && (
+          <p
+            className="text-sm text-muted-foreground"
+            data-testid="slug-preview"
+          >
+            {dict.productForm.slugPreview(slugify(nameValue))}
+          </p>
+        )}
         {errors.slug && (
           <p role="alert" className="text-sm text-destructive">
             {errors.slug.message}

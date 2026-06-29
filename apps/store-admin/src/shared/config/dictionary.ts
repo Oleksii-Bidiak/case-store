@@ -18,7 +18,6 @@ export const dict = {
 
   header: {
     title: "Панель керування",
-    searchPlaceholder: "Пошук…",
     adminLabel: "Адміністратор",
   },
 
@@ -133,6 +132,7 @@ export const dict = {
     name: "Назва",
     slug: "Slug",
     slugPlaceholder: "Залиште порожнім для авто-генерації з назви",
+    slugPreview: (slug: string) => `Буде згенеровано: ${slug}`,
     description: "Опис",
     price: "Ціна",
     compareAtPrice: "Стара ціна",
