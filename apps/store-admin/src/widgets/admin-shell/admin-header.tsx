@@ -1,17 +1,19 @@
 "use client";
 
-import { Search, UserCircle } from "lucide-react";
-import { Input } from "@/shared/ui/input";
+import { UserCircle } from "lucide-react";
 import { useAuth } from "@/entities/session";
 import { LogoutButton } from "@/features/admin-auth";
 import { dict } from "@/shared/config";
 
 /**
- * Admin header bar — search, the signed-in admin's identity, and sign-out.
+ * Admin header bar — the signed-in admin's identity and sign-out.
  *
  * The JWT carries only `{ sub, role }`, so the identity falls back to a generic
  * "Admin" label (with the user id as a tooltip). Showing the admin's email
  * would require a profile fetch — deferred per plan 025 §11.
+ *
+ * Global admin search is deferred to TASK-075 (Meilisearch, Tier-4);
+ * the placeholder input from plan 025 has been removed.
  */
 export function AdminHeader() {
   const { userId } = useAuth();
@@ -25,15 +27,6 @@ export function AdminHeader() {
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="relative hidden sm:block">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder={dict.header.searchPlaceholder}
-            className="w-64 pl-9"
-            type="search"
-          />
-        </div>
-
         <div className="flex items-center gap-2">
           <span
             className="flex items-center gap-2 text-sm font-medium text-foreground"
