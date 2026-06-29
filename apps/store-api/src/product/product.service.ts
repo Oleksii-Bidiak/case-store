@@ -55,6 +55,18 @@ interface ProductDetailResponse {
 }
 
 /**
+ * Admin product detail response. Mirrors {@link ProductDetailResponse} but
+ * carries the full {@link ProductEntity} (raw `stock`, `isActive`) instead of
+ * the public-safe shape — used by the admin preview path (TASK-155).
+ */
+interface ProductDetailAdminResponse {
+  data: ProductEntity;
+  category: ProductCategoryEntity;
+  group: ProductGroupEntity | null;
+  images: ProductImageEntity[];
+}
+
+/**
  * Cache invalidation obligation: ANY method that mutates product data MUST
  * evict the affected cache entries after the write, otherwise stale data is
  * served until the TTL expires. Use {@link ProductService.evictProductDetail}
@@ -170,6 +182,42 @@ export class ProductService {
     const entity = ProductEntity.fromPrisma(product);
     await this.cache.set(cacheKey, entity, this.cacheTtlSeconds);
     return entity;
+  }
+
+  /**
+   * Get the full product detail by slug for admin preview (admin-only).
+   *
+   * Unlike {@link findBySlug}, this calls the repository with
+   * `{ activeOnly: false }` so deactivated products ARE returned — letting staff
+   * preview hidden products live before re-activating them (TASK-155). The RBAC
+   * guard lives at the controller level (`AdminGuard`); soft-deleted rows remain
+   * excluded by the repository regardless.
+   *
+   * Intentionally skips the public detail cache entirely: the response holds a
+   * `ProductEntity` (raw `stock`, `isActive`) whereas the public cache holds a
+   * `PublicProductEntity`. Writing here would poison `productDetailSlugKey` and
+   * leak admin-only fields to public callers; reading from it would return the
+   * wrong shape. Staff preview is infrequent, so a cache miss is acceptable.
+   *
+   * Throws NotFoundException when the slug does not resolve (missing or
+   * soft-deleted).
+   */
+  async findBySlugForAdminPreview(slug: string): Promise<ProductDetailAdminResponse> {
+    const product = await this.productRepository.findBySlugWithRelations(slug, {
+      activeOnly: false,
+    });
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    const { category, group, images, ...productFields } = product;
+    return {
+      data: ProductEntity.fromPrisma(productFields),
+      category: ProductCategoryEntity.fromPrisma(category),
+      group: group ? ProductGroupEntity.fromPrisma(group) : null,
+      images: images.map((img) => ProductImageEntity.fromPrisma(img)),
+    };
   }
 
   /**

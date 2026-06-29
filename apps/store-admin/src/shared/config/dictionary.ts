@@ -109,6 +109,7 @@ export const dict = {
     metaTitle: "Товари — Адмін",
     metaTitleNew: "Створення товару — Адмін",
     metaTitleEdit: "Редагування товару — Адмін",
+    metaTitlePreview: "Перегляд товару — Адмін",
     heading: "Товари",
     add: "Додати товар",
     searchPlaceholder: "Пошук товарів…",
@@ -131,6 +132,23 @@ export const dict = {
     toastCreateFailed: "Не вдалося створити товар",
     toastUpdated: "Товар оновлено",
     toastUpdateFailed: "Не вдалося оновити товар",
+    // Staff preview of deactivated products (TASK-155)
+    previewLink: "Переглянути",
+    previewHeading: "Перегляд товару",
+    previewBack: "← Назад",
+    previewEditLink: "Редагувати товар",
+    previewLoadError: "Не вдалося завантажити товар для перегляду.",
+    previewDeactivatedBanner:
+      "Цей товар деактивований і не відображається для покупців. Це службовий перегляд.",
+    previewNoImages: "Зображень немає",
+    previewCategory: "Категорія",
+    previewStock: "Запас",
+    previewSku: "Артикул",
+    previewAttributes: "Атрибути",
+    previewSiblings: "Інші позиції групи",
+    previewNoDescription: "Опис відсутній",
+    previewActive: "Активний",
+    previewInactive: "Деактивований",
   },
 
   productForm: {

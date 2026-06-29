@@ -290,6 +290,74 @@ describe('ProductController (e2e)', () => {
     });
   });
 
+  // ─── GET /api/products/admin/preview/:slug (admin) ───────────────────────────
+
+  describe('GET /api/products/admin/preview/:slug', () => {
+    const inactiveProductWithRelations = {
+      ...testProduct,
+      id: 'product-e2e-inactive',
+      name: 'Discontinued Case',
+      slug: 'discontinued-case',
+      stock: 0,
+      groupId: null,
+      attributes: {},
+      positionOrder: 0,
+      isActive: false,
+      category: { id: 'category-e2e-1', name: 'Phone Cases', slug: 'phone-cases' },
+      group: null,
+      images: [],
+    };
+
+    it('should return 401 without auth token', async () => {
+      await request(app.getHttpServer())
+        .get('/api/products/admin/preview/discontinued-case')
+        .expect(401);
+    });
+
+    it('should return 403 for non-admin user', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .get('/api/products/admin/preview/discontinued-case')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('should return 200 with full detail for a deactivated product (admin)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(inactiveProductWithRelations);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/products/admin/preview/discontinued-case')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body).toHaveProperty('data');
+      expect(response.body).toHaveProperty('category');
+      expect(response.body).toHaveProperty('group');
+      expect(response.body).toHaveProperty('images');
+      expect(response.body.data.slug).toBe('discontinued-case');
+      expect(response.body.data.isActive).toBe(false);
+      // The "preview" string must route to this handler, not to admin/:id.
+      expect(productRepositoryMock.findBySlugWithRelations).toHaveBeenCalledWith(
+        'discontinued-case',
+        {
+          activeOnly: false,
+        },
+      );
+    });
+
+    it('should return 404 when the repository returns null (admin)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .get('/api/products/admin/preview/missing-slug')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+  });
+
   // ─── POST /api/products (admin) ──────────────────────────────────────────────
 
   describe('POST /api/products', () => {

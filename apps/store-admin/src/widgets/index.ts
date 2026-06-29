@@ -2,6 +2,7 @@
 export { AdminSidebar, AdminHeader } from "./admin-shell";
 export { AdminProductTable, AdminProductTableSkeleton } from "./product-list";
 export { CreateProductView, EditProductView } from "./product-form-view";
+export { AdminProductPreviewView } from "./admin-product-preview";
 export {
   AdminProductGroupTable,
   AdminProductGroupTableSkeleton,
