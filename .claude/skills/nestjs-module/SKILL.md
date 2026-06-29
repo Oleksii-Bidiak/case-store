@@ -23,15 +23,15 @@ Every feature module MUST follow this structure:
 ```
 src/
   feature/
-    feature.controller.ts       вЂ” Routes, DTO validation, HTTP responses ONLY
-    feature.service.ts           вЂ” Business logic ONLY
-    feature.repository.ts        вЂ” Database access through Prisma ONLY
-    feature.module.ts            вЂ” Module registration
+    feature.controller.ts       — Routes, DTO validation, HTTP responses ONLY
+    feature.service.ts           — Business logic ONLY
+    feature.repository.ts        — Database access through Prisma ONLY
+    feature.module.ts            — Module registration
     dto/
-      create-feature.dto.ts      вЂ” class-validator + class-transformer
-      update-feature.dto.ts      вЂ” PartialType + class-validator
+      create-feature.dto.ts      — class-validator + class-transformer
+      update-feature.dto.ts      — PartialType + class-validator
     entities/
-      feature.entity.ts          вЂ” Domain entity (not Prisma model)
+      feature.entity.ts          — Domain entity (not Prisma model)
 ```
 
 ## Implementation Order
@@ -54,11 +54,11 @@ model Feature {
 }
 ```
 
-Then run: `npx prisma generate`
+Then run: `npm run db:generate` (wraps `prisma generate --schema=prisma/schema.prisma`)
 
 ### 2. Entity (Domain Model)
 
-Create the domain entity вЂ” this is NOT the Prisma model:
+Create the domain entity — this is NOT the Prisma model:
 
 ```typescript
 // src/feature/entities/feature.entity.ts
@@ -77,6 +77,7 @@ Encapsulate all Prisma queries:
 ```typescript
 // src/feature/feature.repository.ts
 import { Injectable } from "@nestjs/common";
+import { Feature as PrismaFeature } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { FeatureEntity } from "./entities/feature.entity";
 
@@ -102,7 +103,7 @@ export class FeatureRepository {
     return this.toEntity(record);
   }
 
-  private toEntity(record: any): FeatureEntity {
+  private toEntity(record: PrismaFeature): FeatureEntity {
     const entity = new FeatureEntity();
     Object.assign(entity, record);
     return entity;
@@ -252,8 +253,8 @@ export class FeatureModule {}
 
 ## Rules
 
-- Controllers MUST NOT contain business logic вЂ” only routing, validation, and response formatting.
-- Services MUST NOT import PrismaClient вЂ” use Repository instead.
+- Controllers MUST NOT contain business logic — only routing, validation, and response formatting.
+- Services MUST NOT import PrismaClient — use Repository instead.
 - Repositories MUST return domain entities, not raw Prisma objects.
 - All API responses MUST follow the envelope: `{ data }` or `{ data, meta }` for lists.
 - All DTOs MUST use `class-validator` decorators for input validation.

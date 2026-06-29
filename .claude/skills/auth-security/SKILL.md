@@ -395,7 +395,7 @@ import { APP_GUARD } from '@nestjs/core';
 })
 export class AppModule {}
 
-// src/auth/auth.controller.ts вЂ” stricter limits for auth endpoints
+// src/auth/auth.controller.ts — stricter limits for auth endpoints
 @Throttle({ default: { ttl: 60000, limit: 5 } })
 @Post('login')
 async login(...) { ... }
@@ -496,9 +496,9 @@ PORT=3000
 
 ## Rules
 
-- ALWAYS use HttpOnly cookies for refresh tokens вЂ” never expose them to JavaScript.
+- ALWAYS use HttpOnly cookies for refresh tokens — never expose them to JavaScript.
 - ALWAYS use `argon2` (argon2id, the library default) for password hashing — `argon2.hash(password)` / `argon2.verify(hash, password)`. This is what the live `auth.service.ts` uses.
-- ALWAYS rotate refresh tokens on every use вЂ” revoke the old one and issue a new pair.
+- ALWAYS rotate refresh tokens on every use — revoke the old one and issue a new pair.
 - ALWAYS use `ValidationPipe` with `whitelist: true` and `forbidNonWhitelisted: true` globally.
 - ALWAYS use `@UseGuards(JwtAuthGuard)` on protected endpoints.
 - ALWAYS use `@Roles()` decorator + `RolesGuard` for admin-only endpoints.

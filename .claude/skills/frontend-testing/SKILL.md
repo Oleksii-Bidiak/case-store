@@ -150,7 +150,7 @@ export const handlers = [
 
 ## Testing Patterns by FSD Layer
 
-### Shared Layer вЂ” UI Components
+### Shared Layer — UI Components
 
 ```typescript
 // src/shared/ui/button/button.test.tsx
@@ -183,7 +183,7 @@ describe('Button', () => {
 });
 ```
 
-### Entities Layer вЂ” API Hooks
+### Entities Layer — API Hooks
 
 ```typescript
 // src/entities/product/api/product-hooks.test.tsx
@@ -226,7 +226,7 @@ describe('useGetProducts', () => {
 });
 ```
 
-### Features Layer вЂ” Business Interactions
+### Features Layer — Business Interactions
 
 ```typescript
 // src/features/add-to-cart/ui/add-to-cart-button.test.tsx
@@ -279,7 +279,7 @@ describe('AddToCartButton', () => {
 });
 ```
 
-### Widgets Layer вЂ” Composite Blocks
+### Widgets Layer — Composite Blocks
 
 ```typescript
 // src/widgets/product-card/ui/product-card.test.tsx

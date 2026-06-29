@@ -20,11 +20,11 @@ Use me when creating new UI components in `apps/store-client/src/` or `apps/stor
 
 ```
 src/
-  app/          вЂ” Next.js App Router, providers, layouts, (route) groups
-  widgets/      вЂ” Composite UI blocks composed of features & entities
-  features/     вЂ” Business interactions with API hooks (mutation/query)
-  entities/     вЂ” Domain models, types, Orval-generated API hooks
-  shared/       вЂ” UI kit (shadcn), utils, constants, generated API client
+  app/          — Next.js App Router, providers, layouts, (route) groups
+  widgets/      — Composite UI blocks composed of features & entities
+  features/     — Business interactions with API hooks (mutation/query)
+  entities/     — Domain models, types, Orval-generated API hooks
+  shared/       — UI kit (shadcn), utils, constants, generated API client
 ```
 
 ## Import Rules (CRITICAL)
@@ -32,7 +32,7 @@ src/
 Import direction is strictly downward. A layer MAY only import from layers below it:
 
 ```
-app в†’ widgets в†’ features в†’ entities в†’ shared
+app → widgets → features → entities → shared
 ```
 
 **NEVER import upward.** For example:
@@ -93,7 +93,7 @@ export function Button({ className, variant, size, asChild = false, ...props }: 
 ```
 
 **Important:** Use shadcn/ui CLI to add components: `npx shadcn-ui@latest add button`
-Use semantic design tokens from `tailwind.config.ts` вЂ” never raw hex values.
+Use semantic design tokens from `tailwind.config.ts` — never raw hex values.
 
 ### 2. Entities Layer (`entities/`)
 
@@ -226,8 +226,8 @@ Every component MUST include:
 ## Rules
 
 - NEVER import from a layer above the current one.
-- ALWAYS use Orval-generated hooks for API calls вЂ” never write manual `fetch`/`axios`.
-- ALWAYS use semantic design tokens from `tailwind.config.ts` вЂ” never raw hex values.
+- ALWAYS use Orval-generated hooks for API calls — never write manual `fetch`/`axios`.
+- ALWAYS use semantic design tokens from `tailwind.config.ts` — never raw hex values.
 - ALWAYS use shadcn/ui components as the base for `shared/ui`.
 - ALWAYS add `'use client'` directive to client components that use hooks/state.
 - ALWAYS include accessibility attributes in interactive elements.

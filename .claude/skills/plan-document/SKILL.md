@@ -30,8 +30,8 @@ Every plan file MUST follow this structure:
 ````markdown
 # Plan: [Feature Name]
 
-> **Status:** рџ”„ In Progress | вњ… Complete | вЏёпёЏ On Hold
-> **Phase:** Phase N вЂ” [Phase Name]
+> **Status:** 🔄 In Progress | ✅ Complete | ⏸️ On Hold
+> **Phase:** Phase N — [Phase Name]
 > **Created:** YYYY-MM-DD
 > **Last Updated:** YYYY-MM-DD
 
@@ -64,7 +64,7 @@ Prisma schema changes needed:
 // Example schema additions
 \```
 
-### Backend (NestJS вЂ” Clean Architecture)
+### Backend (NestJS — Clean Architecture)
 
 #### [ModuleName]Repository
 
@@ -75,19 +75,19 @@ Prisma schema changes needed:
 
 #### [ModuleName]Service
 
-- `create(dto: CreateDto): Promise<Entity>` вЂ” Business rules...
-- `calculateTotal(items, discount?): Promise<number>` вЂ” For cart calculations, ALWAYS use TDD
+- `create(dto: CreateDto): Promise<Entity>` — Business rules...
+- `calculateTotal(items, discount?): Promise<number>` — For cart calculations, ALWAYS use TDD
 - ...
 
 #### [ModuleName]Controller
 
-- `POST /route` вЂ” Create
-- `GET /route` вЂ” List
-- `GET /route/:id` вЂ” Get by ID
-- `PUT /route/:id` вЂ” Update
-- `DELETE /route/:id` вЂ” Delete
+- `POST /route` — Create
+- `GET /route` — List
+- `GET /route/:id` — Get by ID
+- `PUT /route/:id` — Update
+- `DELETE /route/:id` — Delete
 
-### Frontend (Next.js вЂ” FSD)
+### Frontend (Next.js — FSD)
 
 #### shared/ui
 
@@ -95,20 +95,20 @@ Prisma schema changes needed:
 
 #### entities
 
-- `useGet[Entity]` вЂ” Orval-generated hook
-- `useGet[Entity]List` вЂ” Orval-generated hook
+- `useGet[Entity]` — Orval-generated hook
+- `useGet[Entity]List` — Orval-generated hook
 
 #### features
 
-- `[FeatureName]` вЂ” Business interaction component (e.g., AddToCart)
+- `[FeatureName]` — Business interaction component (e.g., AddToCart)
 
 #### widgets
 
-- `[WidgetName]` вЂ” Composite block (e.g., ProductCard>
+- `[WidgetName]` — Composite block (e.g., ProductCard>
 
 #### app (pages)
 
-- `app/(route-group)/page.tsx` вЂ” Page component
+- `app/(route-group)/page.tsx` — Page component
 
 ### API Contract
 
@@ -117,7 +117,7 @@ Key endpoints with request/response shapes:
 | Method | Path   | Request Body | Response                 |
 | ------ | ------ | ------------ | ------------------------ |
 | POST   | /route | CreateDto    | { data: Entity }         |
-| GET    | /route | вЂ”          | { data: Entity[], meta } |
+| GET    | /route | —            | { data: Entity[], meta } |
 | ...    | ...    | ...          | ...                      |
 
 ## Tasks
@@ -137,7 +137,7 @@ Key endpoints with request/response shapes:
 
 **Files to create/modify:**
 
-- `path/to/file.ts` вЂ” purpose
+- `path/to/file.ts` — purpose
 
 ---
 
@@ -181,18 +181,18 @@ After creating a plan document, you MUST update `BACKLOG.md`:
 1. Find the relevant phase section
 2. Update task descriptions if they're more detailed now
 3. Add the plan file path to the "Plan" column
-4. Mark the first task as рџ”„ (In Progress) if starting immediately
+4. Mark the first task as 🔄 (In Progress) if starting immediately
 
 ## Status Updates
 
 When starting to implement a task from the plan:
 
-- Update `BACKLOG.md`: change the task status from в¬њ to рџ”„
+- Update `BACKLOG.md`: change the task status from ⬜ to 🔄
 - Update the plan file: add "Started: YYYY-MM-DD" to the task
 
 When completing a task:
 
-- Update `BACKLOG.md`: change the task status from рџ”„ to вњ…
+- Update `BACKLOG.md`: change the task status from 🔄 to ✅
 - Update the plan file: add "Completed: YYYY-MM-DD" to the task
 
 ## Rules
@@ -203,5 +203,5 @@ When completing a task:
 - ALWAYS reference the roadmap phase in the plan header
 - ALWAYS include acceptance criteria for every task
 - ALWAYS mark TDD-required tasks clearly (cart, discounts, inventory, auth)
-- NEVER modify code when creating a plan вЂ” plans are read-only documents
-- NEVER delete plan files вЂ” they serve as project history
+- NEVER modify code when creating a plan — plans are read-only documents
+- NEVER delete plan files — they serve as project history

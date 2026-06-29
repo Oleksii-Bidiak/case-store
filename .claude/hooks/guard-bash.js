@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /**
- * PreToolUse hook (Bash) — GitFlow + secrets guardrails.
+ * PreToolUse hook (Bash|PowerShell) — GitFlow + secrets guardrails.
+ * Runs for BOTH shells: PowerShell is the primary shell here and is broadly
+ * allowed (`PowerShell(*)`), so the guard must cover it too — otherwise the
+ * protections below are trivially bypassed via PowerShell.
  * Blocks:
  *   - `git commit` / `git push` while the current branch is `main`
- *   - printing .env files (cat/type/Get-Content .env...) to avoid leaking secrets
+ *   - printing .env files (cat/type/Get-Content/Select-String .env...) to avoid leaking secrets
  * Exit code 2 + stderr blocks the tool call and tells Claude why.
  */
 const { execSync } = require('child_process');
@@ -30,7 +33,7 @@ process.stdin.on('end', () => {
   );
   const mentionsRealEnv = /\.env(\b|\.)/i.test(withoutSafeEnv);
   const usesFileReader =
-    /\b(cat|type|Get-Content|gc|less|more|head|tail|tac|nl|od|xxd|hexdump|strings|grep|egrep|rg|awk|sed|printf)\b/i.test(
+    /\b(cat|type|Get-Content|gc|Select-String|sls|less|more|head|tail|tac|nl|od|xxd|hexdump|strings|grep|egrep|rg|awk|sed|printf|ReadAllText|ReadAllLines|ReadAllBytes)\b/i.test(
       cmd
     ) || /(^|[\s;&|])\.\s+\S*\.env/i.test(cmd); // POSIX `.`/source builtin
   if (mentionsRealEnv && usesFileReader) {

@@ -125,6 +125,11 @@ model Product {
 
 ### Commands Quick Reference
 
+> Canonical invocation is via the root `npm run db:*` wrappers (they pass
+> `--schema=prisma/schema.prisma` for you): `db:generate`, `db:migrate`, `db:push`,
+> `db:seed`, `db:studio`. The bare `npx prisma …` forms below assume you are inside
+> `apps/store-api`; from the repo root add `--schema=apps/store-api/prisma/schema.prisma`.
+
 ```bash
 # Create and apply a new migration (dev)
 npx prisma migrate dev --name <migration-name>
@@ -212,12 +217,12 @@ Run: `npx prisma db seed`
 
 ## Rules
 
-- ALWAYS use `cuid()` for IDs вЂ” never auto-increment integers for public-facing resources.
+- ALWAYS use `cuid()` for IDs — never auto-increment integers for public-facing resources.
 - ALWAYS add `@@map` to use snake_case table names in the database.
 - ALWAYS include `createdAt` and `updatedAt` timestamps on every model.
 - NEVER use `@db.Decimal` without specifying precision (use `@db.Decimal(10, 2)` for prices).
 - MATCH the existing **`isActive Boolean`** deactivation pattern on user-facing models; the schema has **no `deletedAt`** today (soft deletes are roadmap TASK-104, not current).
 - NEVER use `onDelete: Cascade` on relationships that cross aggregate boundaries.
 - ALWAYS name migrations descriptively in kebab-case.
-- NEVER use `prisma db push` in production вЂ” always use `prisma migrate deploy`.
+- NEVER use `prisma db push` in production — always use `prisma migrate deploy`.
 - ALWAYS regenerate the client after schema changes: `npx prisma generate`.

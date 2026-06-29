@@ -26,12 +26,12 @@ Only use me when the user specifically asks for TDD or uses the `/test` command 
 
 ## TDD Workflow
 
-### Step 1: RED вЂ” Write a Failing Test
+### Step 1: RED — Write a Failing Test
 
 1. Understand the requirement precisely.
 2. Identify the module under test (Service layer for NestJS).
 3. Write a test that clearly describes the expected behavior.
-4. Run the test вЂ” it MUST fail. If it passes, the test is wrong.
+4. Run the test — it MUST fail. If it passes, the test is wrong.
 
 ```typescript
 // Example: cart.service.spec.ts
@@ -47,11 +47,11 @@ describe("CartService.calculateTotal", () => {
 });
 ```
 
-### Step 2: GREEN вЂ” Write Minimum Code
+### Step 2: GREEN — Write Minimum Code
 
 1. Implement only what's needed to pass the test.
 2. No gold-plating, no extra features.
-3. Run the test вЂ” it MUST pass.
+3. Run the test — it MUST pass.
 
 ```typescript
 // Example: minimal implementation
@@ -65,7 +65,7 @@ calculateTotal(items: CartItem[], discount?: Discount): number {
 }
 ```
 
-### Step 3: REFACTOR вЂ” Improve Quality
+### Step 3: REFACTOR — Improve Quality
 
 1. Improve code while keeping all tests green.
 2. Extract reusable logic, improve naming, remove duplication.

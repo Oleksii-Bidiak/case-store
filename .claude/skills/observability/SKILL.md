@@ -366,10 +366,10 @@ NEXT_PUBLIC_APP_VERSION=0.1.0
 
 ## Rules
 
-- ALWAYS use Pino for backend logging вЂ” never `console.log` in production code.
+- ALWAYS use Pino for backend logging — never `console.log` in production code.
 - ALWAYS redact sensitive data (passwords, tokens, cookies) in log output.
 - ALWAYS log business events at `info` level: order creation, user registration, payment.
-- ALWAYS capture 5xx errors in Sentry вЂ” never capture 4xx client errors.
+- ALWAYS capture 5xx errors in Sentry — never capture 4xx client errors.
 - ALWAYS set `tracesSampleRate` to a lower value (0.1-0.2) in production.
 - ALWAYS include `release` version in Sentry config for tracking regressions.
 - NEVER log full request bodies for auth endpoints (login, register).

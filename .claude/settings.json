@@ -24,7 +24,11 @@
     "deny": [
       "Read(.env)",
       "Read(**/.env)",
-      "Read(**/.env.*)",
+      "Read(**/.env.local)",
+      "Read(**/.env.development)",
+      "Read(**/.env.production)",
+      "Read(**/.env.test)",
+      "Read(**/.env.*.local)",
       "Edit(**/shared/api/generated/**)",
       "Write(**/shared/api/generated/**)"
     ]
@@ -41,7 +45,7 @@
         ]
       },
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",

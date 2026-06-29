@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
  * PostToolUse hook (Edit|Write) — light auto-format.
- * For saved .ts/.tsx files, runs prettier --write then eslint --fix on that single file.
+ * For saved .ts/.tsx files, runs prettier --write on that single file.
+ * ESLint is intentionally NOT run here: it duplicates the husky/lint-staged
+ * pre-commit step and `eslint --fix` on every edit noticeably slows the flow.
  * Best-effort: never fails the edit flow (always exits 0).
  */
 const { execSync } = require('child_process');
@@ -31,7 +33,6 @@ process.stdin.on('end', () => {
 
   const quoted = JSON.stringify(filePath);
   run('prettier', `npx --no-install prettier --write ${quoted}`);
-  run('eslint', `npx --no-install eslint --fix ${quoted}`);
 
   process.exit(0);
 });

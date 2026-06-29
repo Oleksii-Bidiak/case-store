@@ -39,10 +39,10 @@ Use me when creating new pages, layouts, middleware, or data-fetching patterns i
 
 ```
 Does it need interactivity or browser APIs?
-  YES в†’ 'use client'
-  NO в†’ Does it need data fetching?
-    YES в†’ Server Component with async/await
-    NO в†’ Server Component (static render)
+  YES → 'use client'
+  NO → Does it need data fetching?
+    YES → Server Component with async/await
+    NO → Server Component (static render)
 ```
 
 ## App Router Conventions
@@ -51,7 +51,7 @@ Does it need interactivity or browser APIs?
 
 ```
 src/app/
-  (shop)/              вЂ” Public storefront routes
+  (shop)/              — Public storefront routes
     (home)/
       page.tsx
     products/
@@ -66,7 +66,7 @@ src/app/
       page.tsx
     register/
       page.tsx
-  (admin)/             вЂ” Admin panel routes
+  (admin)/             — Admin panel routes
     dashboard/
       page.tsx
     products/
@@ -76,7 +76,7 @@ src/app/
 ### Layout Hierarchy
 
 ```typescript
-// src/app/layout.tsx вЂ” Root layout (always Server Component)
+// src/app/layout.tsx — Root layout (always Server Component)
 import { QueryProvider } from '@/shared/providers/query-provider';
 import '@/shared/styles/globals.css';
 
@@ -92,7 +92,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 ```
 
 ```typescript
-// src/app/(shop)/layout.tsx вЂ” Shop layout with Header/Footer
+// src/app/(shop)/layout.tsx — Shop layout with Header/Footer
 import { Header } from '@/widgets/header';
 import { Footer } from '@/widgets/footer';
 
@@ -164,7 +164,7 @@ export default function NotFound() {
 
 ## Data Fetching Patterns
 
-### Server Component вЂ” Direct Fetch
+### Server Component — Direct Fetch
 
 ```typescript
 // src/app/(shop)/products/[slug]/page.tsx
@@ -185,7 +185,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
 }
 ```
 
-### Client Component вЂ” TanStack Query
+### Client Component — TanStack Query
 
 ```typescript
 // src/features/product-detail/ui/product-detail.tsx
@@ -326,7 +326,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
 - ALWAYS use `generateMetadata` for SEO on dynamic pages.
 - ALWAYS use `HydrationBoundary` + `prefetchQuery` for server-side data fetching with TanStack Query.
 - NEVER fetch data on the client when it can be fetched on the server.
-- NEVER use `useEffect` for data fetching вЂ” use TanStack Query hooks instead.
-- NEVER expose API secrets in Client Components вЂ” keep them in Server Components or Server Actions.
+- NEVER use `useEffect` for data fetching — use TanStack Query hooks instead.
+- NEVER expose API secrets in Client Components — keep them in Server Components or Server Actions.
 - ALWAYS use route groups `(shop)`, `(auth)`, `(admin)` to organize layouts.
-- ALWAYS use semantic design tokens from `tailwind.config.ts` вЂ” never raw hex values.
+- ALWAYS use semantic design tokens from `tailwind.config.ts` — never raw hex values.
