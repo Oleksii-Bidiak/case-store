@@ -52,10 +52,12 @@ export interface CartWithItems {
     product: {
       id: string;
       name: string;
+      slug: string;
       price: { toString(): string };
       compareAtPrice: { toString(): string } | null;
       stock: number;
       isActive: boolean;
+      images: Array<{ url: string }>;
     };
   }>;
 }
@@ -63,7 +65,9 @@ export interface CartWithItems {
 /**
  * Shared Prisma include clause for cart queries.
  * Always fetches items with their product (position) details so the service can
- * calculate totals and validate stock.
+ * calculate totals and validate stock. Also selects the product `slug` and its
+ * primary `images` entry (isPrimary-first, then sortOrder; `take: 1`) so each
+ * cart line can render a thumbnail and link to the PDP without an extra query.
  */
 const CART_ITEMS_INCLUDE = {
   items: {
@@ -78,10 +82,16 @@ const CART_ITEMS_INCLUDE = {
         select: {
           id: true,
           name: true,
+          slug: true,
           price: true,
           compareAtPrice: true,
           stock: true,
           isActive: true,
+          images: {
+            orderBy: [{ isPrimary: 'desc' as const }, { sortOrder: 'asc' as const }],
+            take: 1,
+            select: { url: true },
+          },
         },
       },
     },

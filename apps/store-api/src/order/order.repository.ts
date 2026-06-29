@@ -13,7 +13,10 @@ import type { OrderListQueryDto, AdminOrderListQueryDto } from './dto';
 /**
  * Shared Prisma include clause for order queries. Always fetches the order
  * lines (ordered by creation) with the minimal product/variant reference data
- * needed to render an order, mirroring the `CART_ITEMS_INCLUDE` pattern.
+ * needed to render an order, mirroring the `CART_ITEMS_INCLUDE` pattern. The
+ * product select includes `slug` plus the primary `images` entry (isPrimary-first,
+ * then sortOrder; `take: 1`) so each order line can render a thumbnail and link
+ * to the PDP.
  */
 const ORDERS_INCLUDE = {
   items: {
@@ -25,7 +28,18 @@ const ORDERS_INCLUDE = {
       quantity: true,
       price: true,
       createdAt: true,
-      product: { select: { id: true, name: true, slug: true } },
+      product: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          images: {
+            orderBy: [{ isPrimary: 'desc' as const }, { sortOrder: 'asc' as const }],
+            take: 1,
+            select: { url: true },
+          },
+        },
+      },
     },
   },
 } satisfies Prisma.OrderInclude;

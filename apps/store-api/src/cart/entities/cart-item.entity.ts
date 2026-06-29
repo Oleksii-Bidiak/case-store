@@ -11,7 +11,9 @@ import { ApiProperty } from '@nestjs/swagger';
  * to strings to avoid floating-point precision issues.
  *
  * Each cart line references a product position (TASK-142); price and stock come
- * from the product itself.
+ * from the product itself. `productSlug` and `imageUrl` (the product's primary
+ * image, or null) let the storefront render a thumbnail and link to the PDP
+ * without an extra request per line.
  */
 export class CartItemEntity {
   @ApiProperty({
@@ -37,6 +39,20 @@ export class CartItemEntity {
     example: 'iPhone 15 Pro Case — Clear MagSafe',
   })
   productName!: string;
+
+  @ApiProperty({
+    description: 'URL slug for the PDP link',
+    example: 'iphone-15-pro-case-clear-magsafe',
+  })
+  productSlug!: string;
+
+  @ApiProperty({
+    description: 'Primary image URL, null when the product has no images',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  imageUrl!: string | null;
 
   @ApiProperty({
     description: 'Unit price as string',
@@ -90,10 +106,12 @@ export class CartItemEntity {
     product: {
       id: string;
       name: string;
+      slug: string;
       price: { toString(): string };
       compareAtPrice: { toString(): string } | null;
       stock: number;
       isActive: boolean;
+      images: Array<{ url: string }>;
     };
   }): CartItemEntity {
     const entity = new CartItemEntity();
@@ -101,6 +119,8 @@ export class CartItemEntity {
     entity.productId = item.productId;
     entity.quantity = item.quantity;
     entity.productName = item.product.name;
+    entity.productSlug = item.product.slug;
+    entity.imageUrl = item.product.images[0]?.url ?? null;
     entity.compareAtPrice = item.product.compareAtPrice
       ? item.product.compareAtPrice.toString()
       : null;

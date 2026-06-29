@@ -94,10 +94,12 @@ export class CartEntity {
       product: {
         id: string;
         name: string;
+        slug: string;
         price: { toString(): string };
         compareAtPrice: { toString(): string } | null;
         stock: number;
         isActive: boolean;
+        images: Array<{ url: string }>;
       };
     }>;
   }): CartEntity {

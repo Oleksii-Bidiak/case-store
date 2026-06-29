@@ -69,8 +69,13 @@ export interface DashboardSummary {
 /** Rolling window (in days) used for all time-series metrics. */
 export const DASHBOARD_WINDOW_DAYS = 30;
 
-/** Positions with stock at or below this threshold (but > 0) are "low stock". */
-export const LOW_STOCK_THRESHOLD = 5;
+/**
+ * Low-stock threshold for the dashboard restock query. Re-exported from the
+ * product module (`product.constants.ts`) — its canonical home — so the public
+ * product contract and the dashboard share a single source of truth. Existing
+ * dashboard imports of `LOW_STOCK_THRESHOLD` from this module keep working.
+ */
+export { LOW_STOCK_THRESHOLD } from '../product/product.constants';
 
 /** Maximum number of low-stock positions returned. */
 export const LOW_STOCK_LIMIT = 10;

@@ -3,7 +3,7 @@ import { NotFoundException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ProductRepository, CreateProductInput, UpdateProductInput } from './product.repository';
 import { ProductService } from './product.service';
-import { ProductEntity } from './entities';
+import { ProductEntity, PublicProductEntity } from './entities';
 import { ProductListQueryDto } from './dto';
 import {
   CacheService,
@@ -116,7 +116,7 @@ describe('ProductService', () => {
       const result = await service.findAll(query);
 
       expect(result.data).toHaveLength(1);
-      expect(result.data[0]).toBeInstanceOf(ProductEntity);
+      expect(result.data[0]).toBeInstanceOf(PublicProductEntity);
       expect(result.meta.total).toBe(1);
       expect(result.meta.page).toBe(1);
       expect(result.meta.limit).toBe(20);
@@ -191,7 +191,7 @@ describe('ProductService', () => {
       const result = await service.findBySlug('iphone-15-pro-case-clear-magsafe');
 
       expect(result).toHaveProperty('data');
-      expect(result.data).toBeInstanceOf(ProductEntity);
+      expect(result.data).toBeInstanceOf(PublicProductEntity);
       expect(result.data.slug).toBe('iphone-15-pro-case-clear-magsafe');
       expect(result).toHaveProperty('category');
       expect(result).toHaveProperty('group');

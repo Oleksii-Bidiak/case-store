@@ -7,7 +7,9 @@ import type { OrderItemRow } from '../order.types';
  * This is a clean domain entity — not a Prisma model. The `price` is the
  * unit price snapshotted at the time of purchase; `lineTotal` is computed
  * with cents arithmetic to avoid floating-point precision issues (the same
- * pattern as {@link CartItemEntity}).
+ * pattern as {@link CartItemEntity}). `productSlug` and `imageUrl` (the
+ * product's primary image, or null) let the order-detail view render a
+ * thumbnail and link to the PDP without an extra request per line.
  */
 export class OrderItemEntity {
   @ApiProperty({
@@ -27,6 +29,20 @@ export class OrderItemEntity {
     example: 'iPhone 15 Pro Case — Clear MagSafe',
   })
   productName!: string;
+
+  @ApiProperty({
+    description: 'URL slug for the PDP link',
+    example: 'iphone-15-pro-case-clear-magsafe',
+  })
+  productSlug!: string;
+
+  @ApiProperty({
+    description: 'Primary image URL, null when the product has no images',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  imageUrl!: string | null;
 
   @ApiProperty({ description: 'Quantity ordered', example: 2 })
   quantity!: number;
@@ -55,6 +71,8 @@ export class OrderItemEntity {
     entity.id = row.id;
     entity.productId = row.productId;
     entity.productName = row.product.name;
+    entity.productSlug = row.product.slug;
+    entity.imageUrl = row.product.images[0]?.url ?? null;
     entity.quantity = row.quantity;
 
     const priceStr = row.price.toString();
