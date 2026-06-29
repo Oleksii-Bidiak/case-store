@@ -1,0 +1,198 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { ProductImageEntity } from './product-image.entity';
+import { LOW_STOCK_THRESHOLD } from '../product.constants';
+
+/**
+ * Public-facing variant of {@link ProductEntity} for the storefront.
+ *
+ * It carries every field {@link ProductEntity} exposes **except** the raw
+ * `stock` integer, which would leak internal inventory levels. In its place two
+ * derived booleans are exposed:
+ *
+ *   - `inStock`  — `stock > 0`
+ *   - `lowStock` — `0 < stock <= {@link LOW_STOCK_THRESHOLD}`
+ *
+ * `fromPrisma` still *receives* `stock` (to compute the booleans) but never
+ * assigns it to the returned object, so it never reaches the JSON serializer.
+ *
+ * Used by `ProductService.findAll` (`GET /products`) and `findBySlug`
+ * (`GET /products/:slug`). The admin path (`findById`, `GET /products/admin/:id`)
+ * keeps the full {@link ProductEntity} with raw `stock`.
+ */
+export class PublicProductEntity {
+  @ApiProperty({
+    description: 'Product unique identifier',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  id!: string;
+
+  @ApiProperty({ description: 'Product name', example: 'iPhone 15 Pro Case — Clear MagSafe' })
+  name!: string;
+
+  @ApiProperty({ description: 'URL-friendly slug', example: 'iphone-15-pro-case-clear-magsafe' })
+  slug!: string;
+
+  @ApiProperty({
+    description: 'Product description (markdown)',
+    example: 'Premium clear case...',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  description!: string | null;
+
+  @ApiProperty({
+    description: 'Product price as string (avoids float precision)',
+    example: '29.99',
+  })
+  price!: string;
+
+  @ApiProperty({
+    description: 'Original price for discount display',
+    example: '39.99',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  compareAtPrice!: string | null;
+
+  @ApiProperty({
+    description: 'Stock Keeping Unit',
+    example: 'IP15-PRO-CASE-CLR',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  sku!: string | null;
+
+  @ApiProperty({
+    description: 'Whether the position has any stock available',
+    example: true,
+  })
+  inStock!: boolean;
+
+  @ApiProperty({
+    description: 'Whether the position is running low (in stock but at or below the low threshold)',
+    example: false,
+  })
+  lowStock!: boolean;
+
+  @ApiProperty({
+    description: 'Category ID the product belongs to',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  categoryId!: string;
+
+  @ApiProperty({
+    description: 'Group this position belongs to (siblings share a group), or null when standalone',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  groupId!: string | null;
+
+  @ApiProperty({
+    description: 'Attribute values for this position within its group (keyed by group axis names)',
+    example: { color: 'blue', pack: 'single' },
+    type: 'object',
+    additionalProperties: true,
+    required: false,
+  })
+  attributes!: Record<string, string>;
+
+  @ApiProperty({ description: 'Sort order of this position within its group', example: 0 })
+  positionOrder!: number;
+
+  @ApiProperty({ description: 'Whether the product is active', example: true })
+  isActive!: boolean;
+
+  @ApiProperty({ description: 'Creation timestamp', example: '2024-01-01T00:00:00.000Z' })
+  createdAt!: Date;
+
+  @ApiProperty({ description: 'Last update timestamp', example: '2024-01-01T00:00:00.000Z' })
+  updatedAt!: Date;
+
+  @ApiProperty({
+    description: 'Average approved-review rating (1–5), or null when there are no reviews',
+    example: 4.5,
+    type: Number,
+    nullable: true,
+  })
+  ratingAverage!: number | null;
+
+  @ApiProperty({
+    description: 'Number of approved reviews this product has',
+    example: 128,
+  })
+  ratingCount!: number;
+
+  @ApiProperty({
+    description:
+      'Primary (cover) image for list/card rendering, or null when the product has no images',
+    type: ProductImageEntity,
+    nullable: true,
+    required: false,
+  })
+  primaryImage?: ProductImageEntity | null;
+
+  /**
+   * Create a PublicProductEntity from a Prisma Product model. Accepts the same
+   * shape as {@link ProductEntity.fromPrisma} (including `stock`), derives
+   * `inStock`/`lowStock`, and deliberately omits `stock` from the result so the
+   * raw inventory count never reaches a public response.
+   */
+  static fromPrisma(product: {
+    id: string;
+    name: string;
+    slug: string;
+    description: string | null;
+    price: { toString(): string };
+    compareAtPrice: { toString(): string } | null;
+    sku: string | null;
+    stock: number;
+    categoryId: string;
+    groupId?: string | null;
+    attributes?: unknown;
+    positionOrder?: number;
+    isActive: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+    ratingAverage?: number | null;
+    ratingCount?: number;
+    primaryImage?: {
+      id: string;
+      url: string;
+      alt: string | null;
+      sortOrder: number;
+      isPrimary: boolean;
+    } | null;
+  }): PublicProductEntity {
+    const entity = new PublicProductEntity();
+    entity.id = product.id;
+    entity.name = product.name;
+    entity.slug = product.slug;
+    entity.description = product.description;
+    entity.price = product.price.toString();
+    entity.compareAtPrice = product.compareAtPrice ? product.compareAtPrice.toString() : null;
+    entity.sku = product.sku;
+    // Derive public availability signals from stock; the raw count is never
+    // assigned to the entity, so it never reaches the JSON response.
+    entity.inStock = product.stock > 0;
+    entity.lowStock = product.stock > 0 && product.stock <= LOW_STOCK_THRESHOLD;
+    entity.categoryId = product.categoryId;
+    entity.groupId = product.groupId ?? null;
+    entity.attributes = (product.attributes as Record<string, string> | null) ?? {};
+    entity.positionOrder = product.positionOrder ?? 0;
+    entity.isActive = product.isActive;
+    entity.createdAt = product.createdAt;
+    entity.updatedAt = product.updatedAt;
+    entity.ratingAverage =
+      product.ratingAverage != null ? Math.round(product.ratingAverage * 10) / 10 : null;
+    entity.ratingCount = product.ratingCount ?? 0;
+    entity.primaryImage = product.primaryImage
+      ? ProductImageEntity.fromPrisma(product.primaryImage)
+      : null;
+    return entity;
+  }
+}

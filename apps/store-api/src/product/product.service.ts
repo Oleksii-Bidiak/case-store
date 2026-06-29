@@ -8,6 +8,7 @@ import {
 } from './product.repository';
 import {
   ProductEntity,
+  PublicProductEntity,
   ProductGroupEntity,
   ProductImageEntity,
   ProductCategoryEntity,
@@ -39,7 +40,7 @@ interface PaginationMeta {
  * Paginated response envelope for product lists.
  */
 interface PaginatedProductsResponse {
-  data: ProductEntity[];
+  data: PublicProductEntity[];
   meta: PaginationMeta;
 }
 
@@ -47,7 +48,7 @@ interface PaginatedProductsResponse {
  * Product detail response with category, group (siblings + axes), and images.
  */
 interface ProductDetailResponse {
-  data: ProductEntity;
+  data: PublicProductEntity;
   category: ProductCategoryEntity;
   group: ProductGroupEntity | null;
   images: ProductImageEntity[];
@@ -100,7 +101,7 @@ export class ProductService {
     const totalPages = Math.ceil(total / params.limit);
 
     const response: PaginatedProductsResponse = {
-      data: products.map((product) => ProductEntity.fromPrisma(product)),
+      data: products.map((product) => PublicProductEntity.fromPrisma(product)),
       meta: {
         total,
         page: params.page,
@@ -109,6 +110,10 @@ export class ProductService {
       },
     };
 
+    // NOTE: as of the line-item contract change, cached list entries hold
+    // `PublicProductEntity` items (no raw `stock`, with `inStock`/`lowStock`).
+    // Any Redis warm-up entries written before this deploy carry the old shape
+    // and must be evicted on rollout — the cache TTL otherwise self-heals.
     await this.cache.set(cacheKey, response, this.cacheTtlSeconds);
     return response;
   }
@@ -135,7 +140,7 @@ export class ProductService {
     }
 
     const response: ProductDetailResponse = {
-      data: ProductEntity.fromPrisma(product),
+      data: PublicProductEntity.fromPrisma(product),
       category: ProductCategoryEntity.fromPrisma(product.category),
       group: product.group ? ProductGroupEntity.fromPrisma(product.group) : null,
       images: product.images.map((img) => ProductImageEntity.fromPrisma(img)),

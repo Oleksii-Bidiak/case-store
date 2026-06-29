@@ -36,7 +36,7 @@ export interface OrderItemRow {
   quantity: number;
   price: { toString(): string }; // Prisma Decimal
   createdAt: Date;
-  product: { id: string; name: string; slug: string };
+  product: { id: string; name: string; slug: string; images: Array<{ url: string }> };
 }
 
 /**

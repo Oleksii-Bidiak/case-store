@@ -26,6 +26,7 @@ import { CreateProductDto, UpdateProductDto, ProductListQueryDto } from './dto';
 import { AdminGuard } from '../auth/guards';
 import {
   ProductEntity,
+  PublicProductEntity,
   ProductGroupEntity,
   ProductImageEntity,
   ProductCategoryEntity,
@@ -60,8 +61,8 @@ class PaginationMeta {
  * Response envelope for a paginated product list.
  */
 class ProductListResponseEnvelope {
-  @ApiProperty({ type: [ProductEntity], description: 'Products for the current page' })
-  data!: ProductEntity[];
+  @ApiProperty({ type: [PublicProductEntity], description: 'Products for the current page' })
+  data!: PublicProductEntity[];
 
   @ApiProperty({ type: PaginationMeta })
   meta!: PaginationMeta;
@@ -71,8 +72,8 @@ class ProductListResponseEnvelope {
  * Response envelope for a product detail with relations.
  */
 class ProductDetailResponseEnvelope {
-  @ApiProperty({ type: ProductEntity })
-  data!: ProductEntity;
+  @ApiProperty({ type: PublicProductEntity })
+  data!: PublicProductEntity;
 
   @ApiProperty({ type: ProductCategoryEntity })
   category!: ProductCategoryEntity;
@@ -88,9 +89,9 @@ class ProductDetailResponseEnvelope {
  * Type aliases for controller return types.
  */
 type ProductResponse = { data: ProductEntity };
-type ProductListResponse = { data: ProductEntity[]; meta: PaginationMeta };
+type ProductListResponse = { data: PublicProductEntity[]; meta: PaginationMeta };
 type ProductDetailResponse = {
-  data: ProductEntity;
+  data: PublicProductEntity;
   category: ProductCategoryEntity;
   group: ProductGroupEntity | null;
   images: ProductImageEntity[];
@@ -113,6 +114,7 @@ type ProductDetailResponse = {
 @ApiTags('Products')
 @ApiExtraModels(
   ProductEntity,
+  PublicProductEntity,
   ProductGroupEntity,
   ProductImageEntity,
   ProductCategoryEntity,
