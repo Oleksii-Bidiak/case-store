@@ -47,7 +47,7 @@ export const dict = {
     viewOrders: "Переглянути замовлення",
     manageUsers: "Керувати користувачами",
     totalRevenue: "Загальна виручка",
-    revenueLifetime: "За весь час (без скасованих / повернених)",
+    revenueLifetime: "За весь час (лише оплачені замовлення)",
     revenue30: "Виручка (30 днів)",
     last30: "Останні 30 днів",
     totalOrders: "Усього замовлень",

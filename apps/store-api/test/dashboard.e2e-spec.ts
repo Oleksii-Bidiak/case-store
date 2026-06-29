@@ -36,6 +36,8 @@ describe('Admin Dashboard (e2e)', () => {
     revenue: {
       totalRevenue: 48230.75,
       revenueLast30Days: 8120.4,
+      unrealizedRevenue: 12400.0,
+      unrealizedRevenueLast30Days: 3800.0,
       revenueByDay: [
         { date: '2026-06-12', value: 1200.5 },
         { date: '2026-06-13', value: 0 },
@@ -179,6 +181,8 @@ describe('Admin Dashboard (e2e)', () => {
       // revenue
       expect(typeof body.revenue.totalRevenue).toBe('number');
       expect(typeof body.revenue.revenueLast30Days).toBe('number');
+      expect(typeof body.revenue.unrealizedRevenue).toBe('number');
+      expect(typeof body.revenue.unrealizedRevenueLast30Days).toBe('number');
       expect(Array.isArray(body.revenue.revenueByDay)).toBe(true);
       expect(body.revenue.revenueByDay[0]).toEqual(
         expect.objectContaining({ date: expect.any(String), value: expect.any(Number) }),
@@ -221,7 +225,13 @@ describe('Admin Dashboard (e2e)', () => {
 
     it('should return non-negative numeric metrics and array fields when the store is empty', async () => {
       dashboardRepositoryMock.getSummary.mockResolvedValueOnce({
-        revenue: { totalRevenue: 0, revenueLast30Days: 0, revenueByDay: [] },
+        revenue: {
+          totalRevenue: 0,
+          revenueLast30Days: 0,
+          unrealizedRevenue: 0,
+          unrealizedRevenueLast30Days: 0,
+          revenueByDay: [],
+        },
         orders: { totalOrders: 0, ordersByStatus: [], ordersByDay: [] },
         users: { totalUsers: 0, newUsersByDay: [] },
         products: { totalProducts: 0, activeProducts: 0, topProducts: [] },
