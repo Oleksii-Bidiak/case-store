@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/entities/session";
 import { useGetOrders } from "@/entities/order";
+import { CancelOrderButton } from "@/features/cancel-order";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatMoney } from "@/shared/lib";
@@ -77,10 +78,10 @@ export function OrderHistoryView() {
       ) : (
         <ul className="flex flex-col gap-3">
           {orders.map((order) => (
-            <li key={order.id}>
+            <li key={order.id} className="flex items-center gap-3">
               <Link
                 href={`/orders/${order.id}/confirmation`}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-4 shadow-card transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex flex-1 flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-4 shadow-card transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <div className="flex flex-col">
                   <span className="font-medium text-foreground">
@@ -109,6 +110,10 @@ export function OrderHistoryView() {
                   </span>
                 </div>
               </Link>
+
+              {order.status === "PENDING" && (
+                <CancelOrderButton orderId={order.id} />
+              )}
             </li>
           ))}
         </ul>
