@@ -177,4 +177,56 @@ describe("CartItemRow", () => {
       screen.getByRole("button", { name: dict.cart.increaseAria }),
     ).toBeDisabled();
   });
+
+  // ─── image + product link (TASK-133) ──────────────────────────────────────
+  it("renders the real product image and links the line to the PDP", () => {
+    const item = makeCartItem({
+      productName: "Linked Item",
+      productSlug: "linked-item",
+      imageUrl: "https://cdn.example.com/linked-item.jpg",
+    });
+
+    renderWithProviders(<CartItemRow item={item} />);
+
+    const link = screen.getByRole("link", {
+      name: dict.cart.viewProductAria("Linked Item"),
+    });
+    expect(link).toHaveAttribute("href", "/products/linked-item");
+
+    const img = screen.getByRole("img", { name: "Linked Item" });
+    expect(img).toHaveAttribute(
+      "src",
+      "https://cdn.example.com/linked-item.jpg",
+    );
+  });
+
+  it("falls back to the placeholder thumbnail when there is no image", () => {
+    const item = makeCartItem({
+      productName: "No Image Item",
+      productSlug: "no-image-item",
+      imageUrl: null,
+    });
+
+    renderWithProviders(<CartItemRow item={item} />);
+
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(
+      screen.getByRole("link", {
+        name: dict.cart.viewProductAria("No Image Item"),
+      }),
+    ).toHaveAttribute("href", "/products/no-image-item");
+  });
+
+  it("falls back to the placeholder thumbnail after the image errors", () => {
+    const item = makeCartItem({
+      productName: "Broken Image",
+      imageUrl: "https://cdn.example.com/broken.jpg",
+    });
+
+    renderWithProviders(<CartItemRow item={item} />);
+
+    fireEvent.error(screen.getByRole("img", { name: "Broken Image" }));
+
+    expect(screen.queryByRole("img")).toBeNull();
+  });
 });

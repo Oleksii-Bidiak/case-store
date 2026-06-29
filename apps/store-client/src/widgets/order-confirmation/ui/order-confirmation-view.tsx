@@ -103,13 +103,22 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
       />
 
       <div className="flex flex-col gap-8 lg:grid lg:grid-cols-3">
-        <section className="flex flex-col gap-8 lg:col-span-2">
+        <div className="flex flex-col gap-8 lg:col-span-2">
           <OrderItemList items={order.items} />
           <OrderAddressSummary
             shippingAddress={order.shippingAddress}
             billingAddress={order.billingAddress}
           />
-        </section>
+
+          <div className="flex flex-wrap gap-4">
+            <Link href="/" className={primaryCta}>
+              {dict.common.continueShopping}
+            </Link>
+            {order.status === "PENDING" && (
+              <CancelOrderButton orderId={order.id} />
+            )}
+          </div>
+        </div>
 
         <aside className="flex flex-col gap-6 lg:col-span-1 lg:self-start">
           <OrderTotalsBreakdown
@@ -129,13 +138,6 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
             </div>
           )}
         </aside>
-      </div>
-
-      <div className="flex flex-wrap gap-4">
-        <Link href="/" className={primaryCta}>
-          {dict.common.continueShopping}
-        </Link>
-        {order.status === "PENDING" && <CancelOrderButton orderId={order.id} />}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetCartQueryKey,
@@ -42,6 +43,7 @@ function centsToString(cents: number): string {
 export function CartItemRow({ item }: { item: CartItemEntity }) {
   const queryClient = useQueryClient();
   const [qty, setQty] = useState(item.quantity);
+  const [imgFailed, setImgFailed] = useState(false);
 
   // Re-sync the local input whenever the cart's authoritative quantity changes
   // (after an optimistic cache write or a server refetch). `useState` seeds only
@@ -147,12 +149,28 @@ export function CartItemRow({ item }: { item: CartItemEntity }) {
       }`}
     >
       <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <ProductThumb
-            name={item.productName}
-            className="size-16 shrink-0 rounded-lg"
-            initialClassName="text-xl"
-          />
+        <Link
+          href={`/products/${item.productSlug}`}
+          aria-label={dict.cart.viewProductAria(item.productName)}
+          className="flex items-start gap-3 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {item.imageUrl && !imgFailed ? (
+            // next/image optimization + remote-host config deferred to TASK-042.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={item.imageUrl}
+              alt={item.productName}
+              loading="lazy"
+              onError={() => setImgFailed(true)}
+              className="size-16 shrink-0 rounded-lg object-cover"
+            />
+          ) : (
+            <ProductThumb
+              name={item.productName}
+              className="size-16 shrink-0 rounded-lg"
+              initialClassName="text-xl"
+            />
+          )}
           <div className="flex flex-col">
             <p className="font-medium text-foreground">{item.productName}</p>
             <div className="mt-1 flex items-baseline gap-2">
@@ -166,7 +184,7 @@ export function CartItemRow({ item }: { item: CartItemEntity }) {
               )}
             </div>
           </div>
-        </div>
+        </Link>
         <p className="shrink-0 font-semibold text-foreground">
           {formatMoney(item.lineTotal)}
         </p>

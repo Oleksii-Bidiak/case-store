@@ -210,6 +210,7 @@ export const dict = {
     remove: "Видалити",
     removeItemAria: "Видалити товар",
     removeNamedAria: (name: string) => `Видалити «${name}» з кошика`,
+    viewProductAria: (name: string) => `Переглянути «${name}»`,
     decreaseAria: "Зменшити кількість",
     increaseAria: "Збільшити кількість",
     quantityAria: "Кількість",
@@ -298,6 +299,7 @@ export const dict = {
     paymentLabel: (status: string) =>
       `Оплата: ${PAYMENT_STATUS_LABELS[status] ?? status}`,
     itemsOrdered: "Замовлені товари",
+    viewProductAria: (name: string) => `Переглянути «${name}»`,
     shippingAddress: "Адреса доставки",
     billingAddress: "Адреса оплати",
     /** Localize a 2-letter country code for display; falls back to the raw code. */
