@@ -15,6 +15,7 @@ import { ProductModule } from './product';
 import { ProductGroupModule } from './product-group';
 import { CategoryModule } from './category';
 import { PagesModule } from './pages';
+import { SiteContactModule } from './site-contact';
 import { CartModule } from './cart';
 import { OrderModule } from './order';
 import { DeliveryModule } from './delivery';
@@ -92,6 +93,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Admin-managed static / service pages (TASK-153)
     PagesModule,
+
+    // Admin-managed site contact settings (TASK-154)
+    SiteContactModule,
 
     // Shopping cart
     CartModule,

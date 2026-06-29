@@ -14,6 +14,7 @@ export const dict = {
     pages: "Сторінки",
     orders: "Замовлення",
     users: "Користувачі",
+    siteContact: "Контакти",
     settings: "Налаштування",
   },
 
@@ -293,6 +294,36 @@ export const dict = {
       metaTitleMax: "SEO заголовок має містити не більше 255 символів",
       metaDescriptionMax: "SEO опис має містити не більше 500 символів",
       sortInt: "Порядок сортування має бути невід'ємним цілим числом",
+    },
+  },
+
+  // --- Site contact settings (TASK-154) ---------------------------------------
+  siteContact: {
+    metaTitle: "Контакти — Адмін",
+    heading: "Налаштування контактів",
+    subheading: "Ці дані відображаються у футері та на сторінці контактів.",
+    loadError: "Не вдалося завантажити контакти. Спробуйте ще раз.",
+    toastUpdated: "Контакти оновлено",
+    toastUpdateFailed: "Не вдалося оновити контакти",
+  },
+
+  siteContactForm: {
+    email: "Електронна пошта підтримки",
+    emailPlaceholder: "support@example.ua",
+    phone: "Телефон",
+    phonePlaceholder: "+380 44 000 0000",
+    workingHours: "Години роботи",
+    workingHoursPlaceholder: "Пн–Нд: 9:00 – 20:00",
+    viberLink: "Viber",
+    viberLinkPlaceholder: "https://viber.me/…",
+    telegramLink: "Telegram",
+    telegramLinkPlaceholder: "https://t.me/…",
+    instagramLink: "Instagram",
+    instagramLinkPlaceholder: "https://instagram.com/…",
+    submit: "Зберегти контакти",
+    errors: {
+      emailInvalid: "Вкажіть коректну електронну пошту",
+      urlInvalid: "Вкажіть коректний URL (https://…)",
     },
   },
 
