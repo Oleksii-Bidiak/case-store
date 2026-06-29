@@ -328,3 +328,23 @@ model Page {
   @@index([isActive])
   @@map("pages")
 }
+
+/// Singleton row storing admin-managed contact information displayed in the
+/// storefront footer and contacts page. There is EXACTLY ONE row, always
+/// identified by SINGLETON_ID = '00000000-0000-0000-0000-000000000001'.
+/// The id is a plain String (not @default(uuid())) — the value is always the
+/// well-known constant set by the repository and seed. No isActive / deletedAt:
+/// the singleton is always active and is never deleted (TASK-154).
+model SiteContactSettings {
+  id            String   @id
+  email         String?
+  phone         String?
+  workingHours  String?  @map("working_hours")
+  viberLink     String?  @map("viber_link")
+  telegramLink  String?  @map("telegram_link")
+  instagramLink String?  @map("instagram_link")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("site_contact_settings")
+}

@@ -5,5 +5,6 @@ export * from "./product-status-toggle";
 export * from "./category-form";
 export * from "./category-status-toggle";
 export * from "./page-form";
+export * from "./site-contact-form";
 export * from "./order-status-update";
 export * from "./user-ban-toggle";

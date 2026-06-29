@@ -17,6 +17,7 @@ export {
 export { CreateCategoryView, EditCategoryView } from "./category-form-view";
 export { AdminPageTable, AdminPageTableSkeleton } from "./page-list";
 export { CreatePageView, EditPageView } from "./page-form-view";
+export { SiteContactSettingsView } from "./site-contact-settings-view";
 export { AdminOrderTable, AdminOrderTableSkeleton } from "./order-list";
 export { OrderDetailView, OrderDetailSkeleton } from "./order-detail";
 export { AdminUserTable, AdminUserTableSkeleton } from "./user-list";

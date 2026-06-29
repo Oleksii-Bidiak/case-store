@@ -9,7 +9,11 @@ import {
   Mail,
   Phone,
   Clock,
+  MessageCircle,
+  Send,
+  Camera,
 } from "lucide-react";
+import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
 import { dict } from "@/shared/config";
 
 const TRUST_ITEMS = [
@@ -18,12 +22,50 @@ const TRUST_ITEMS = [
   { icon: RotateCcw, label: dict.trust.returns },
 ] as const;
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
+/**
+ * Fetch the admin-managed contact block server-side with a 1-hour ISR cache.
+ *
+ * Uses a native `fetch` (not the axios-based Orval client) so Next.js can apply
+ * `revalidate` caching — contact info changes at most a few times per year, so
+ * the footer should not hit the API on every page render. Returns null on any
+ * error; callers fall back to the localized `dict.footer.*` strings.
+ */
+async function getContactSettings(): Promise<SiteContactSettingsEntity | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/site-contact`, {
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) {
+      return null;
+    }
+    const body = (await res.json()) as { data?: SiteContactSettingsEntity };
+    return body.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+const SOCIAL_LINKS = [
+  { key: "viberLink", icon: MessageCircle, label: "Viber" },
+  { key: "telegramLink", icon: Send, label: "Telegram" },
+  { key: "instagramLink", icon: Camera, label: "Instagram" },
+] as const;
+
 /**
  * Footer — multi-column storefront footer with link groups, contact info, a
- * trust-icon row and a payment-method strip. Pure Server Component (no hooks).
+ * trust-icon row and a payment-method strip. Async Server Component: contact
+ * details are admin-managed (TASK-154) and fetched with ISR; the localized
+ * `dict.footer.*` strings remain as fallbacks when a field is unset.
  */
-export function Footer() {
+export async function Footer() {
   const year = new Date().getFullYear();
+  const contact = await getContactSettings();
+
+  const email = contact?.email ?? dict.footer.contactEmail;
+  const phone = contact?.phone ?? dict.footer.contactPhone;
+  const hours = contact?.workingHours ?? dict.footer.contactHours;
 
   return (
     <footer className="mt-16 border-t border-border bg-card text-card-foreground">
@@ -75,18 +117,47 @@ export function Footer() {
           <h2 className="text-sm font-semibold text-foreground">
             {dict.footer.contactTitle}
           </h2>
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <a
+            href={`mailto:${email}`}
+            className="flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <Mail className="size-4" aria-hidden="true" />
-            {dict.footer.contactEmail}
-          </p>
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            {email}
+          </a>
+          <a
+            href={`tel:${phone.replace(/\s+/g, "")}`}
+            className="flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <Phone className="size-4" aria-hidden="true" />
-            {dict.footer.contactPhone}
-          </p>
+            {phone}
+          </a>
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Clock className="size-4" aria-hidden="true" />
-            {dict.footer.contactHours}
+            {hours}
           </p>
+
+          {contact && SOCIAL_LINKS.some(({ key }) => contact[key]) ? (
+            <div className="mt-1 flex items-center gap-4">
+              {SOCIAL_LINKS.map(({ key, icon: Icon, label }) => {
+                const href = contact[key];
+                if (!href) {
+                  return null;
+                }
+                return (
+                  <a
+                    key={key}
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={label}
+                    className="text-muted-foreground transition-colors hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Icon className="size-5" aria-hidden="true" />
+                  </a>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
       </div>
 

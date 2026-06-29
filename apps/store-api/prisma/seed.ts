@@ -904,6 +904,31 @@ async function seedAddresses(prisma: PrismaClient, customer: { id: string }) {
   return address;
 }
 
+/**
+ * Seed the singleton site-contact settings row (TASK-154).
+ * Uses the same well-known fixed ID as `SiteContactRepository.SINGLETON_ID`.
+ * Idempotent: the upsert never duplicates the row.
+ */
+async function seedSiteContactSettings(prisma: PrismaClient) {
+  const SINGLETON_ID = '00000000-0000-0000-0000-000000000001';
+
+  await prisma.siteContactSettings.upsert({
+    where: { id: SINGLETON_ID },
+    update: {},
+    create: {
+      id: SINGLETON_ID,
+      email: 'support@mobilestore.ua',
+      phone: '+380 44 000 0000',
+      workingHours: 'Пн–Нд: 9:00 – 20:00',
+      viberLink: null,
+      telegramLink: null,
+      instagramLink: null,
+    },
+  });
+
+  console.log('  ✓ SiteContactSettings: singleton row upserted');
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -916,6 +941,7 @@ async function main() {
   try {
     // Seed in dependency order
     const { customer } = await seedUsers(prisma);
+    await seedSiteContactSettings(prisma);
     const categories = await seedCategories(prisma);
     await seedProducts(prisma, categories);
     await seedReviews(prisma);
