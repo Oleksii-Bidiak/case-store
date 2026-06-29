@@ -23,8 +23,10 @@ function StatCard({ label, value, subText }: StatCardProps) {
 }
 
 /**
- * Four headline metric cards for the admin dashboard. Pure presentational —
+ * Headline metric cards for the admin dashboard. Pure presentational —
  * receives the already-fetched summary and renders; no hooks, no data fetching.
+ * Earned (PAID) revenue is shown separately from unrealized revenue —
+ * ordered-but-not-yet-paid money (TASK-137).
  */
 export function AdminDashboardStats({ summary }: AdminDashboardStatsProps) {
   const pendingOrders =
@@ -32,7 +34,7 @@ export function AdminDashboardStats({ summary }: AdminDashboardStatsProps) {
       ?.count ?? 0;
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
       <StatCard
         label={dict.dashboard.totalRevenue}
         value={formatCurrency(summary.revenue.totalRevenue)}
@@ -41,6 +43,16 @@ export function AdminDashboardStats({ summary }: AdminDashboardStatsProps) {
       <StatCard
         label={dict.dashboard.revenue30}
         value={formatCurrency(summary.revenue.revenueLast30Days)}
+        subText={dict.dashboard.last30}
+      />
+      <StatCard
+        label={dict.dashboard.unrealizedRevenue}
+        value={formatCurrency(summary.revenue.unrealizedRevenue)}
+        subText={dict.dashboard.unrealizedLifetime}
+      />
+      <StatCard
+        label={dict.dashboard.unrealizedRevenue30}
+        value={formatCurrency(summary.revenue.unrealizedRevenueLast30Days)}
         subText={dict.dashboard.last30}
       />
       <StatCard
