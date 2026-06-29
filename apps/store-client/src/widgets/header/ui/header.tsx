@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Menu } from "lucide-react";
+import { useAuth, useAuthControllerLogout } from "@/entities/session";
 import {
   Button,
   Sheet,
@@ -15,6 +18,9 @@ import { dict } from "@/shared/config";
 import { HeaderAuth } from "./header-auth";
 import { HeaderCartBadge } from "./header-cart-badge";
 
+const MOBILE_LINK_CLASS =
+  "rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
 const NAV_LINKS = [{ href: "/products", label: dict.nav.products }] as const;
 
 /**
@@ -24,6 +30,23 @@ const NAV_LINKS = [{ href: "/products", label: dict.nav.products }] as const;
  */
 export function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { isInitializing, isAuthenticated, clearTokens } = useAuth();
+
+  // Mirrors LogoutButton / HeaderAuth: best-effort server logout, then clear the
+  // local session and close the slide-out menu regardless of the outcome.
+  const logout = useAuthControllerLogout();
+  const handleMobileLogout = () => {
+    logout.mutate(undefined, {
+      onSettled: () => {
+        clearTokens();
+        queryClient.clear();
+        setMenuOpen(false);
+        router.push("/");
+      },
+    });
+  };
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80">
@@ -64,10 +87,61 @@ export function Header() {
                 <Link
                   href="/cart"
                   onClick={() => setMenuOpen(false)}
-                  className="rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className={MOBILE_LINK_CLASS}
                 >
                   {dict.nav.cart}
                 </Link>
+
+                {/* Auth area — hidden until the session bootstrap settles. */}
+                {!isInitializing &&
+                  (isAuthenticated ? (
+                    <>
+                      <hr className="my-1 border-border" />
+                      <Link
+                        href="/account"
+                        onClick={() => setMenuOpen(false)}
+                        className={MOBILE_LINK_CLASS}
+                      >
+                        {dict.header.myAccount}
+                      </Link>
+                      <Link
+                        href="/orders"
+                        onClick={() => setMenuOpen(false)}
+                        className={MOBILE_LINK_CLASS}
+                      >
+                        {dict.account.ordersLink}
+                      </Link>
+                      <hr className="my-1 border-border" />
+                      <button
+                        type="button"
+                        onClick={handleMobileLogout}
+                        disabled={logout.isPending}
+                        className={`${MOBILE_LINK_CLASS} text-left disabled:opacity-50`}
+                      >
+                        {logout.isPending
+                          ? dict.auth.logout.signingOut
+                          : dict.auth.logout.signOut}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <hr className="my-1 border-border" />
+                      <Link
+                        href="/login"
+                        onClick={() => setMenuOpen(false)}
+                        className={MOBILE_LINK_CLASS}
+                      >
+                        {dict.header.signIn}
+                      </Link>
+                      <Link
+                        href="/register"
+                        onClick={() => setMenuOpen(false)}
+                        className={MOBILE_LINK_CLASS}
+                      >
+                        {dict.header.register}
+                      </Link>
+                    </>
+                  ))}
               </nav>
             </SheetContent>
           </Sheet>
