@@ -46,7 +46,11 @@ export class MailService {
    */
   async sendOrderConfirmation(params: SendOrderConfirmationParams): Promise<void> {
     if (!this.enabled) {
-      this.logger.debug(`Mail disabled — skipping order confirmation to ${params.to}`);
+      // Promoted from debug → info so the skip is visible at the default Pino
+      // `info` log level (manual QA needs to confirm the no-op happened).
+      // NOTE: the injected logger is nestjs-pino's `PinoLogger`, whose
+      // info-level method is `info()` — it has no `log()` method.
+      this.logger.info(`Mail disabled — skipping order confirmation to ${params.to}`);
       return;
     }
 

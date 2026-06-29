@@ -47,6 +47,17 @@ function DialogOverlay({
   );
 }
 
+/**
+ * DialogContent — the modal surface (backed by Radix `Dialog.Content`).
+ *
+ * a11y convention: when a `DialogDescription` is rendered inside, Radix auto-wires
+ * `aria-describedby` to it via context — nothing to do. When NO description is
+ * rendered, pass `aria-describedby={undefined}` at the call site to suppress
+ * Radix's dev-console "Missing Description" warning. Do NOT add a default
+ * `aria-describedby` inside this component — it would override Radix's
+ * auto-linking for the dialogs that DO have a description, breaking the
+ * screen-reader association.
+ */
 function DialogContent({
   className,
   children,
