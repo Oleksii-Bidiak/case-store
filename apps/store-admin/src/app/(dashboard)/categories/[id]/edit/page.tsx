@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { EditCategoryView } from "@/widgets";
+import { AdminFormSkeleton } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
@@ -17,7 +18,7 @@ export default async function EditCategoryPage({
   const { id } = await params;
 
   return (
-    <Suspense>
+    <Suspense fallback={<AdminFormSkeleton />}>
       <EditCategoryView categoryId={id} />
     </Suspense>
   );

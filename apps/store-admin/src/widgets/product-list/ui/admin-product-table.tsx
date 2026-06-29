@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { Loader2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCategoryControllerGetRootCategories } from "@/shared/api";
 import { useProductControllerFindAll } from "@/entities/product";
@@ -61,7 +62,7 @@ export function AdminProductTable() {
     updateParams,
   );
 
-  const { data, isLoading, isError } = useProductControllerFindAll({
+  const { data, isLoading, isFetching, isError } = useProductControllerFindAll({
     page,
     limit: PAGE_SIZE,
     search: searchParam || undefined,
@@ -116,7 +117,15 @@ export function AdminProductTable() {
             : dict.products.empty}
         </div>
       ) : (
-        <div className="rounded-md border border-border">
+        <div className="relative rounded-md border border-border">
+          {isFetching && !isLoading && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60"
+            >
+              <Loader2 className="size-6 animate-spin text-primary" />
+            </div>
+          )}
           <Table>
             <TableHeader>
               <TableRow>

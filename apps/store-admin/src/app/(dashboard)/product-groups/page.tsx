@@ -1,7 +1,10 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { AdminProductGroupTable } from "@/widgets";
+import {
+  AdminProductGroupTable,
+  AdminProductGroupTableSkeleton,
+} from "@/widgets";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
@@ -21,7 +24,7 @@ export default function ProductGroupsPage() {
         </Button>
       </div>
 
-      <Suspense>
+      <Suspense fallback={<AdminProductGroupTableSkeleton />}>
         <AdminProductGroupTable />
       </Suspense>
     </div>

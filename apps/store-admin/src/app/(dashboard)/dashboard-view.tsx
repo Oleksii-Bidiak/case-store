@@ -7,6 +7,7 @@ import {
   AdminDashboardStatsSkeleton,
   DashboardCharts,
   DashboardLowStockTable,
+  DashboardSectionSkeleton,
   DashboardTopProductsTable,
 } from "@/widgets";
 import { Button, Separator } from "@/shared/ui";
@@ -44,7 +45,21 @@ export function DashboardView() {
       <Separator className="my-6" />
 
       {isLoading ? (
-        <AdminDashboardStatsSkeleton />
+        <>
+          <AdminDashboardStatsSkeleton />
+
+          <Separator className="my-6" />
+
+          <DashboardSectionSkeleton className="min-h-[300px]" />
+
+          <Separator className="my-6" />
+
+          <DashboardSectionSkeleton />
+
+          <Separator className="my-6" />
+
+          <DashboardSectionSkeleton />
+        </>
       ) : isError || !data ? (
         <p role="alert" className="text-sm text-destructive">
           {dict.dashboard.loadError}

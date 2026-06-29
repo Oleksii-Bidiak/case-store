@@ -2,7 +2,10 @@
 export { AdminSidebar, AdminHeader } from "./admin-shell";
 export { AdminProductTable, AdminProductTableSkeleton } from "./product-list";
 export { CreateProductView, EditProductView } from "./product-form-view";
-export { AdminProductGroupTable } from "./product-group-list";
+export {
+  AdminProductGroupTable,
+  AdminProductGroupTableSkeleton,
+} from "./product-group-list";
 export {
   CreateProductGroupView,
   EditProductGroupView,
@@ -19,6 +22,7 @@ export { UserDetailView, UserDetailSkeleton } from "./user-detail";
 export {
   AdminDashboardStats,
   AdminDashboardStatsSkeleton,
+  DashboardSectionSkeleton,
 } from "./dashboard-stats";
 export {
   DashboardCharts,

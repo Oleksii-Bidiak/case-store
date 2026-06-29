@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Loader2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   OrderEntityStatus,
@@ -82,15 +83,16 @@ export function AdminOrderTable() {
     updateParams,
   );
 
-  const { data, isLoading, isError } = useAdminOrderControllerFindAll({
-    page,
-    limit: PAGE_SIZE,
-    status: statusParam
-      ? (statusParam as (typeof OrderEntityStatus)[keyof typeof OrderEntityStatus])
-      : undefined,
-    sortBy,
-    sortOrder,
-  });
+  const { data, isLoading, isFetching, isError } =
+    useAdminOrderControllerFindAll({
+      page,
+      limit: PAGE_SIZE,
+      status: statusParam
+        ? (statusParam as (typeof OrderEntityStatus)[keyof typeof OrderEntityStatus])
+        : undefined,
+      sortBy,
+      sortOrder,
+    });
 
   const orders = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
@@ -141,7 +143,15 @@ export function AdminOrderTable() {
             : dict.orders.empty}
         </div>
       ) : (
-        <div className="rounded-md border border-border">
+        <div className="relative rounded-md border border-border">
+          {isFetching && !isLoading && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60"
+            >
+              <Loader2 className="size-6 animate-spin text-primary" />
+            </div>
+          )}
           <Table>
             <TableHeader>
               <TableRow>

@@ -68,5 +68,7 @@ export {
   TableRow,
 } from "./table";
 export { SortableColumnHeader } from "./sortable-column-header";
+export { Skeleton } from "./skeleton";
+export { AdminFormSkeleton } from "./admin-form-skeleton";
 export { Textarea } from "./textarea";
 export { Toaster } from "./sonner";

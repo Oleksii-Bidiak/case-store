@@ -1,0 +1,9 @@
+import { AdminFormSkeleton } from "@/shared/ui";
+
+/**
+ * Route-level loading UI for `/product-groups/[id]/edit`; mirrors the page's
+ * `<Suspense>` fallback so there is no visual jump on navigation.
+ */
+export default function Loading() {
+  return <AdminFormSkeleton />;
+}
