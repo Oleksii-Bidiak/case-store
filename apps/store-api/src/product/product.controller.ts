@@ -86,12 +86,37 @@ class ProductDetailResponseEnvelope {
 }
 
 /**
+ * Admin preview envelope (TASK-155). Same shape as the public detail envelope
+ * but carries the full {@link ProductEntity} (raw `stock`, `isActive`) so staff
+ * can preview deactivated products.
+ */
+class AdminProductPreviewResponseEnvelope {
+  @ApiProperty({ type: ProductEntity })
+  data!: ProductEntity;
+
+  @ApiProperty({ type: ProductCategoryEntity })
+  category!: ProductCategoryEntity;
+
+  @ApiProperty({ type: ProductGroupEntity, nullable: true })
+  group!: ProductGroupEntity | null;
+
+  @ApiProperty({ type: [ProductImageEntity] })
+  images!: ProductImageEntity[];
+}
+
+/**
  * Type aliases for controller return types.
  */
 type ProductResponse = { data: ProductEntity };
 type ProductListResponse = { data: PublicProductEntity[]; meta: PaginationMeta };
 type ProductDetailResponse = {
   data: PublicProductEntity;
+  category: ProductCategoryEntity;
+  group: ProductGroupEntity | null;
+  images: ProductImageEntity[];
+};
+type AdminProductPreviewResponse = {
+  data: ProductEntity;
   category: ProductCategoryEntity;
   group: ProductGroupEntity | null;
   images: ProductImageEntity[];
@@ -121,6 +146,7 @@ type ProductDetailResponse = {
   ProductResponseEnvelope,
   ProductListResponseEnvelope,
   ProductDetailResponseEnvelope,
+  AdminProductPreviewResponseEnvelope,
 )
 @Controller('products')
 export class ProductController {
@@ -161,6 +187,39 @@ export class ProductController {
   @ApiResponse({ status: 404, description: 'Product not found' })
   async findBySlug(@Param('slug') slug: string): Promise<ProductDetailResponse> {
     return this.productService.findBySlug(slug);
+  }
+
+  /**
+   * GET /api/products/admin/preview/:slug
+   *
+   * Returns the full product detail by slug INCLUDING deactivated products, so
+   * admins can preview hidden products live before re-activating them (TASK-155).
+   * Admin-only. Intended for the store-admin preview page; do NOT call from
+   * public paths — the public `GET /products/:slug` hides deactivated products.
+   *
+   * IMPORTANT: this handler MUST be declared before `@Get('admin/:id')`. NestJS
+   * matches routes in declaration order; if `admin/:id` came first it would
+   * capture the literal string "preview" as `:id` and this route would be
+   * unreachable.
+   */
+  @Get('admin/preview/:slug')
+  @UseGuards(AdminGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Preview a product by slug, including deactivated (admin)',
+    operationId: 'productControllerPreviewProductBySlug',
+  })
+  @ApiParam({ name: 'slug', description: 'Product URL slug' })
+  @ApiResponse({
+    status: 200,
+    description: 'Product detail (including deactivated products)',
+    type: AdminProductPreviewResponseEnvelope,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized — missing or invalid token' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  async findPreviewBySlug(@Param('slug') slug: string): Promise<AdminProductPreviewResponse> {
+    return this.productService.findBySlugForAdminPreview(slug);
   }
 
   /**

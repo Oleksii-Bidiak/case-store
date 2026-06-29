@@ -78,9 +78,21 @@ export function EditProductView({ productId }: EditProductViewProps) {
         >
           {dict.products.back}
         </Link>
-        <h2 className="text-2xl font-bold text-foreground">
-          {dict.products.editHeading}
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-2xl font-bold text-foreground">
+            {dict.products.editHeading}
+          </h2>
+          {product && (
+            <Link
+              href={`/products/preview/${product.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-medium text-primary hover:underline"
+            >
+              {dict.products.previewLink}
+            </Link>
+          )}
+        </div>
       </div>
 
       {isLoading ? (

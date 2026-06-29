@@ -245,6 +245,62 @@ describe('ProductService', () => {
     });
   });
 
+  // ─── findBySlugForAdminPreview (admin) ───────────────────────────────────────
+
+  describe('findBySlugForAdminPreview', () => {
+    const inactiveWithRelations = {
+      ...mockInactiveProduct,
+      category: { id: 'cat-1', name: 'Phone Cases', slug: 'phone-cases' },
+      group: null,
+      images: [],
+    };
+
+    it('should bypass the active filter via { activeOnly: false }', async () => {
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(inactiveWithRelations);
+
+      await service.findBySlugForAdminPreview('discontinued-case');
+
+      expect(productRepositoryMock.findBySlugWithRelations).toHaveBeenCalledWith(
+        'discontinued-case',
+        {
+          activeOnly: false,
+        },
+      );
+    });
+
+    it('should return a full admin entity for a deactivated product', async () => {
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(inactiveWithRelations);
+
+      const result = await service.findBySlugForAdminPreview('discontinued-case');
+
+      expect(result).toHaveProperty('data');
+      expect(result.data).toBeInstanceOf(ProductEntity);
+      expect(result.data.isActive).toBe(false);
+      expect(result.data.slug).toBe('discontinued-case');
+      expect(result).toHaveProperty('category');
+      expect(result).toHaveProperty('group');
+      expect(result).toHaveProperty('images');
+    });
+
+    it('should NOT read or write the public detail cache', async () => {
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(inactiveWithRelations);
+
+      await service.findBySlugForAdminPreview('discontinued-case');
+
+      expect(cacheServiceMock.get).not.toHaveBeenCalled();
+      expect(cacheServiceMock.set).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when the product is not found', async () => {
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(null);
+
+      await expect(service.findBySlugForAdminPreview('missing')).rejects.toThrow(NotFoundException);
+      expect(productRepositoryMock.findBySlugWithRelations).toHaveBeenCalledWith('missing', {
+        activeOnly: false,
+      });
+    });
+  });
+
   // ─── create (admin) ──────────────────────────────────────────────────────────
 
   describe('create', () => {

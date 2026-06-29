@@ -10,6 +10,7 @@ export {
   useProductControllerUpdate,
   useProductControllerDeactivate,
   useProductControllerActivate,
+  useProductControllerPreviewProductBySlug,
   getProductControllerFindAllQueryKey,
   getProductControllerFindByIdQueryKey,
   // Product images (TASK-073)
@@ -27,6 +28,10 @@ export type {
   ProductControllerFindAllParams,
   ProductListResponseEnvelope,
   ProductResponseEnvelope,
+  AdminProductPreviewResponseEnvelope,
+  ProductCategoryEntity,
+  ProductGroupEntity,
+  ProductSiblingEntity,
   // Product images (TASK-073)
   ProductImageEntity,
   ProductImageListEnvelope,
