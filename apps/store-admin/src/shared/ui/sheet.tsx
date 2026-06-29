@@ -44,6 +44,17 @@ function SheetOverlay({
   );
 }
 
+/**
+ * SheetContent — the slide-out panel surface (backed by Radix `Dialog.Content`).
+ *
+ * a11y convention: when a `SheetDescription` is rendered inside, Radix auto-wires
+ * `aria-describedby` to it via context — nothing to do. When NO description is
+ * rendered, pass `aria-describedby={undefined}` at the call site to suppress
+ * Radix's dev-console "Missing Description" warning. Do NOT add a default
+ * `aria-describedby` inside this component — it would override Radix's
+ * auto-linking for the sheets that DO have a description, breaking the
+ * screen-reader association.
+ */
 function SheetContent({
   className,
   children,

@@ -132,5 +132,18 @@ describe('MailService', () => {
       ).resolves.toBeUndefined();
       expect(sendMail).not.toHaveBeenCalled();
     });
+
+    it('logs the skip at info level (visible at default LOG_LEVEL), not debug', async () => {
+      const logger = makeLogger();
+      const service = new MailService(makeConfig({ MAIL_ENABLED: 'false' }), logger);
+
+      await service.sendOrderConfirmation({ to: 'c@example.com', order });
+
+      expect(logger.info).toHaveBeenCalledTimes(1);
+      expect(logger.info).toHaveBeenCalledWith(
+        'Mail disabled — skipping order confirmation to c@example.com',
+      );
+      expect(logger.debug).not.toHaveBeenCalled();
+    });
   });
 });

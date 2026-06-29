@@ -41,7 +41,13 @@ export function Header() {
                 <Menu className="size-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-72">
+            {/* No SheetDescription here — pass aria-describedby={undefined} so
+                Radix does not emit its "Missing Description" dev warning. */}
+            <SheetContent
+              side="left"
+              className="w-72"
+              aria-describedby={undefined}
+            >
               <SheetHeader>
                 <SheetTitle className="text-lg font-bold text-primary">
                   MobileStore
