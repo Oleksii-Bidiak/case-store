@@ -6,6 +6,12 @@ export { Badge, badgeVariants } from "./badge";
 export { Input } from "./input";
 export { PhoneInput } from "./phone-input";
 export { Combobox, type ComboboxOption, type ComboboxProps } from "./combobox";
+export {
+  AccountDropdown,
+  AccountDropdownItem,
+  type AccountDropdownProps,
+  type AccountDropdownItemProps,
+} from "./account-dropdown";
 export { Label } from "./label";
 export { Textarea } from "./textarea";
 export { Separator } from "./separator";
