@@ -1,6 +1,9 @@
 import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/shared/config";
-import { fetchAllActiveProducts } from "@/shared/lib/schema";
+import {
+  fetchAllActiveProducts,
+  fetchAllPublishedPages,
+} from "@/shared/lib/schema";
 
 // In Next.js 16 metadata routes are cached (statically generated) by default,
 // which would call the API at BUILD time. `force-dynamic` opts into request-time
@@ -25,17 +28,42 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
+  // Published static pages are fetched independently so a failure of one source
+  // never drops the other.
+  const [productRoutes, pageRoutes] = await Promise.all([
+    fetchProductRoutes(),
+    fetchPageRoutes(),
+  ]);
+
+  return [...staticRoutes, ...productRoutes, ...pageRoutes];
+}
+
+async function fetchProductRoutes(): Promise<MetadataRoute.Sitemap> {
   try {
     const products = await fetchAllActiveProducts();
-    const productRoutes: MetadataRoute.Sitemap = products.map((product) => ({
+    return products.map((product) => ({
       url: `${SITE_URL}/products/${product.slug}`,
       lastModified: new Date(product.updatedAt),
       changeFrequency: "weekly",
       priority: 0.8,
     }));
-    return [...staticRoutes, ...productRoutes];
   } catch (err) {
     console.error("[sitemap] Failed to fetch products:", err);
-    return staticRoutes;
+    return [];
+  }
+}
+
+async function fetchPageRoutes(): Promise<MetadataRoute.Sitemap> {
+  try {
+    const pages = await fetchAllPublishedPages();
+    return pages.map((page) => ({
+      url: `${SITE_URL}/info/${page.slug}`,
+      lastModified: new Date(page.updatedAt),
+      changeFrequency: "monthly",
+      priority: 0.5,
+    }));
+  } catch (err) {
+    console.error("[sitemap] Failed to fetch pages:", err);
+    return [];
   }
 }

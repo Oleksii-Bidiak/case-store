@@ -302,3 +302,29 @@ model RefreshToken {
   @@index([expiresAt])
   @@map("refresh_tokens")
 }
+
+/// Admin-managed static / service pages (Privacy Policy, FAQ, Returns, …).
+/// Rendered on the storefront at /info/[slug]. Content is Tiptap-generated HTML
+/// (sanitized before display). No `deletedAt` tombstone — pages are admin content,
+/// not user-generated data, so a hard DELETE is appropriate; `isActive = false`
+/// is the draft / unpublished state.
+model Page {
+  id              String   @id @default(uuid())
+  slug            String   @unique
+  title           String
+  /// Tiptap-generated HTML; sanitized before display on the storefront.
+  content         String   @db.Text
+  excerpt         String?
+  metaTitle       String?  @map("meta_title")
+  metaDescription String?  @map("meta_description")
+  /// isActive = reversible visibility toggle (admin-only, re-enabled any time).
+  /// false = draft / unpublished; true = published and visible on the storefront.
+  isActive        Boolean  @default(false) @map("is_active")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([slug])
+  @@index([isActive])
+  @@map("pages")
+}

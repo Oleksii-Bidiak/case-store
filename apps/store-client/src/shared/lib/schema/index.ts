@@ -6,3 +6,4 @@ export type { BreadcrumbItem } from "./buildBreadcrumbSchema";
 export { buildProductSchema } from "./buildProductSchema";
 export type { BuildProductSchemaInput } from "./buildProductSchema";
 export { fetchAllActiveProducts } from "./fetchAllProducts";
+export { fetchAllPublishedPages } from "./fetchAllPages";

@@ -119,6 +119,7 @@ async function bootstrap() {
       .addTag('Users', 'User profile and admin user management')
       .addTag('Products', 'Product catalog browsing and admin management')
       .addTag('Categories', 'Category browsing and admin management')
+      .addTag('Pages', 'Static / service page browsing and admin management')
       .addTag('Cart', 'Shopping cart management')
       .addTag('Security', 'CSRF token issuance')
       .build();

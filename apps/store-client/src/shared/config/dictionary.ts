@@ -409,6 +409,7 @@ export const dict = {
       "Перегляньте всі аксесуари для телефонів — фільтруйте за категорією, ціною та ключовим словом і сортуйте, щоб знайти саме те, що потрібно.",
     productFallbackTitle: "Товар",
     productFallbackDescription: "Переглянути деталі товару.",
+    pageFallbackTitle: "Сторінка",
     cartTitle: "Кошик | MobileStore",
     cartDescription: "Перегляньте та змініть товари у вашому кошику.",
     checkoutTitle: "Оформлення замовлення | MobileStore",

@@ -5,6 +5,7 @@ import {
   Package,
   Layers,
   Tag,
+  FileText,
   ShoppingCart,
   Users,
   Settings,
@@ -20,6 +21,7 @@ const navItems = [
   { label: dict.nav.products, href: "/products", icon: Package },
   { label: dict.nav.productGroups, href: "/product-groups", icon: Layers },
   { label: dict.nav.categories, href: "/categories", icon: Tag },
+  { label: dict.nav.pages, href: "/pages", icon: FileText },
   { label: dict.nav.orders, href: "/orders", icon: ShoppingCart },
   { label: dict.nav.users, href: "/users", icon: Users },
 ];

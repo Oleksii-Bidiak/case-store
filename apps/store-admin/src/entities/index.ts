@@ -2,6 +2,7 @@
 export * from "./session";
 export * from "./product";
 export * from "./category";
+export * from "./page";
 export * from "./order";
 export * from "./user";
 export * from "./dashboard";
