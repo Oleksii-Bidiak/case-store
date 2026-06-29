@@ -31,6 +31,7 @@ function makeOrder(customer: unknown) {
     items: [
       {
         id: "item-1",
+        productId: "prod-uuid-1",
         productName: "iPhone 15 Pro Case",
         price: "29.99",
         quantity: 1,
@@ -106,5 +107,21 @@ describe("OrderDetailView — customer section (TASK-125)", () => {
     expect(
       screen.getByText(dict.orderStatus.updatePaymentStatus),
     ).toBeInTheDocument();
+  });
+
+  it("renders product name as a link to the product edit page (TASK-156)", async () => {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: makeOrder(null) }),
+      ),
+    );
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    const link = await screen.findByRole("link", {
+      name: dict.orders.viewProductAria("iPhone 15 Pro Case"),
+    });
+    expect(link).toHaveAttribute("href", "/products/prod-uuid-1/edit");
+    expect(link).toHaveTextContent("iPhone 15 Pro Case");
   });
 });

@@ -162,8 +162,16 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
               <TableBody>
                 {order.items.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell className="font-medium">
-                      {item.productName}
+                    <TableCell>
+                      <Link
+                        href={`/products/${item.productId}/edit`}
+                        aria-label={dict.orders.viewProductAria(
+                          item.productName,
+                        )}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        {item.productName}
+                      </Link>
                     </TableCell>
                     <TableCell className="text-right">
                       {formatCurrency(item.price)}
