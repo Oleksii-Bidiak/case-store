@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Loader2 } from "lucide-react";
 import {
   useProductControllerFindAll,
   type ProductControllerFindAllParams,
@@ -24,7 +25,8 @@ interface ProductListProps {
  * keyed on `params`, so any filter change refetches automatically.
  */
 export function ProductList({ params, buildPageHref }: ProductListProps) {
-  const { data, isPending, isError } = useProductControllerFindAll(params);
+  const { data, isPending, isFetching, isError } =
+    useProductControllerFindAll(params);
 
   if (isPending) {
     return <ProductListSkeleton />;
@@ -63,20 +65,30 @@ export function ProductList({ params, buildPageHref }: ProductListProps) {
         {dict.catalog.countFound(meta?.total ?? products.length)}
       </p>
 
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-        {products.map((product) => (
-          <ProductCard
-            key={product.id}
-            product={product}
-            action={
-              <AddToCartButton
-                productId={product.id}
-                compact
-                outOfStock={product.stock === 0}
-              />
-            }
-          />
-        ))}
+      <div className="relative">
+        {isFetching && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/60"
+          >
+            <Loader2 className="size-8 animate-spin text-primary" />
+          </div>
+        )}
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          {products.map((product) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              action={
+                <AddToCartButton
+                  productId={product.id}
+                  compact
+                  outOfStock={product.stock === 0}
+                />
+              }
+            />
+          ))}
+        </div>
       </div>
 
       {meta && meta.totalPages > 1 && (
