@@ -1,18 +1,19 @@
 import { Check, AlertTriangle, X } from "lucide-react";
 import { dict } from "@/shared/config";
 
-const LOW_STOCK_THRESHOLD = 5;
-
 /**
  * ProductStockIndicator — colour-coded availability line for the position.
- * `stock` is null when unknown (nothing rendered).
+ * Driven by the public booleans (`inStock`/`lowStock`) derived server-side; the
+ * raw stock quantity is never exposed to customers (TASK-132 / TASK-158).
  */
-export function ProductStockIndicator({ stock }: { stock: number | null }) {
-  if (stock == null) {
-    return null;
-  }
-
-  if (stock <= 0) {
+export function ProductStockIndicator({
+  inStock,
+  lowStock,
+}: {
+  inStock: boolean;
+  lowStock: boolean;
+}) {
+  if (!inStock) {
     return (
       <p className="flex items-center gap-1.5 text-sm font-medium text-destructive">
         <X className="size-4" aria-hidden="true" />
@@ -21,11 +22,11 @@ export function ProductStockIndicator({ stock }: { stock: number | null }) {
     );
   }
 
-  if (stock < LOW_STOCK_THRESHOLD) {
+  if (lowStock) {
     return (
       <p className="flex items-center gap-1.5 text-sm font-medium text-warning">
         <AlertTriangle className="size-4" aria-hidden="true" />
-        {dict.product.lowStock(stock)}
+        {dict.product.lowStock}
       </p>
     );
   }

@@ -45,7 +45,7 @@ export function ProductGrid() {
             <AddToCartButton
               productId={product.id}
               compact
-              outOfStock={product.stock === 0}
+              outOfStock={!product.inStock}
             />
           }
         />

@@ -3,7 +3,7 @@ import { buildWebSiteSchema } from "./buildWebSiteSchema";
 import { buildBreadcrumbSchema } from "./buildBreadcrumbSchema";
 import { buildProductSchema } from "./buildProductSchema";
 import type {
-  ProductEntity,
+  PublicProductEntity,
   ProductImageEntity,
 } from "@/shared/api/generated/models";
 
@@ -55,7 +55,7 @@ describe("buildBreadcrumbSchema", () => {
 
 // ─── buildProductSchema ──────────────────────────────────────────────────────
 
-const baseProduct: ProductEntity = {
+const baseProduct: PublicProductEntity = {
   id: "p1",
   name: "iPhone 15 Case",
   slug: "iphone-15-case",
@@ -63,7 +63,8 @@ const baseProduct: ProductEntity = {
   price: "9.99",
   compareAtPrice: null,
   sku: "CASE-15-BLK",
-  stock: 5,
+  inStock: true,
+  lowStock: false,
   categoryId: "c1",
   groupId: null,
   attributes: {},
@@ -120,7 +121,7 @@ describe("buildProductSchema", () => {
 
   it("marks the offer OutOfStock when the position has zero stock", () => {
     const schema = buildProductSchema({
-      product: { ...baseProduct, stock: 0 },
+      product: { ...baseProduct, inStock: false, lowStock: false },
       images: [],
       ...opts,
     });

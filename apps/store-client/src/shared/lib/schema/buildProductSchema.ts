@@ -1,11 +1,11 @@
 import type {
-  ProductEntity,
+  PublicProductEntity,
   ProductImageEntity,
 } from "@/shared/api/generated/models";
 
 /** Inputs for {@link buildProductSchema}. */
 export interface BuildProductSchemaInput {
-  product: ProductEntity;
+  product: PublicProductEntity;
   images: ProductImageEntity[];
   siteUrl: string;
   currency: string;
@@ -32,7 +32,7 @@ export function buildProductSchema(
   const url = `${siteUrl}/products/${product.slug}`;
 
   const price = resolvePrice(product.price);
-  const inStock = product.stock > 0;
+  const inStock = product.inStock;
 
   const imageUrls = [...images]
     .sort((a, b) => a.sortOrder - b.sortOrder)

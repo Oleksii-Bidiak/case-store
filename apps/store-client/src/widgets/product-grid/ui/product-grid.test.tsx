@@ -13,7 +13,8 @@ function makeProduct(overrides: Record<string, unknown> = {}) {
     price: "12.99",
     compareAtPrice: null,
     sku: "TG-1",
-    stock: 7,
+    inStock: true,
+    lowStock: false,
     categoryId: "cat-1",
     groupId: null,
     attributes: {},
@@ -39,7 +40,7 @@ describe("ProductGrid — stock guard (TASK-144)", () => {
   it("disables the add-to-cart button with an out-of-stock label for a stock-0 product", async () => {
     server.use(
       http.get("*/api/products", () =>
-        HttpResponse.json(listEnvelope([makeProduct({ stock: 0 })])),
+        HttpResponse.json(listEnvelope([makeProduct({ inStock: false })])),
       ),
     );
 
@@ -54,7 +55,7 @@ describe("ProductGrid — stock guard (TASK-144)", () => {
   it("renders an enabled add-to-cart button for an in-stock product", async () => {
     server.use(
       http.get("*/api/products", () =>
-        HttpResponse.json(listEnvelope([makeProduct({ stock: 5 })])),
+        HttpResponse.json(listEnvelope([makeProduct({ inStock: true })])),
       ),
     );
 

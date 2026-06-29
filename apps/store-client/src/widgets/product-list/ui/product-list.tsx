@@ -83,7 +83,7 @@ export function ProductList({ params, buildPageHref }: ProductListProps) {
                 <AddToCartButton
                   productId={product.id}
                   compact
-                  outOfStock={product.stock === 0}
+                  outOfStock={!product.inStock}
                 />
               }
             />

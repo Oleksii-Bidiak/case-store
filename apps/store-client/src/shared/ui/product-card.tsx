@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { ImageIcon } from "lucide-react";
-import type { ProductEntity } from "@/shared/api/generated/models";
+import type { PublicProductEntity } from "@/shared/api/generated/models";
 import { formatMoney, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { Badge } from "./badge";
@@ -27,7 +27,7 @@ export function ProductCard({
   product,
   action,
 }: {
-  product: ProductEntity;
+  product: PublicProductEntity;
   action?: ReactNode;
 }) {
   const onSale =

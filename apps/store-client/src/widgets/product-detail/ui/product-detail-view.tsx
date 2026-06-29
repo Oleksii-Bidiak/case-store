@@ -120,7 +120,10 @@ export function ProductDetailView({ slug }: { slug: string }) {
             )}
           </div>
 
-          <ProductStockIndicator stock={product.stock} />
+          <ProductStockIndicator
+            inStock={product.inStock}
+            lowStock={product.lowStock}
+          />
 
           {typeof product.sku === "string" && product.sku.length > 0 && (
             <p className="text-sm text-muted-foreground">
@@ -136,10 +139,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
             />
           )}
 
-          <AddToCartButton
-            productId={product.id}
-            disabled={product.stock === 0}
-          />
+          <AddToCartButton productId={product.id} disabled={!product.inStock} />
 
           <ProductTrustBadges />
         </div>
@@ -152,7 +152,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
       <MobileAtcBar
         productId={product.id}
         price={product.price}
-        disabled={product.stock === 0}
+        disabled={!product.inStock}
       />
     </article>
   );
