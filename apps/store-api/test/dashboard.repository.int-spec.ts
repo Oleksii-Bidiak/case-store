@@ -191,6 +191,23 @@ describe('DashboardRepository (integration)', () => {
     });
   });
 
+  describe('getSummary — unrealized revenue', () => {
+    it('sums Order.total for active unpaid orders only, leaving earned revenue untouched (TASK-137)', async () => {
+      const summary = await repo.getSummary();
+      const { revenue } = summary;
+
+      // Only the CONFIRMED + PENDING order (qty 2 @ $20 = $40) is unrealized.
+      // The DELIVERED + PAID order is earned, the CANCELLED order is neither.
+      expect(revenue.unrealizedRevenue).toBe(40);
+
+      // The unpaid order was created today → inside the 30-day window.
+      expect(revenue.unrealizedRevenueLast30Days).toBe(40);
+
+      // Earned revenue (PAID only) must stay at $30 — not polluted by unrealized.
+      expect(revenue.totalRevenue).toBe(EXPECTED_TOP_REVENUE);
+    });
+  });
+
   describe('getSummary — low stock', () => {
     it('includes products at/below the threshold, excludes healthy stock, ordered ascending', async () => {
       const summary = await repo.getSummary();
