@@ -374,6 +374,7 @@ export const dict = {
     itemUnitPrice: "Ціна за од.",
     itemQty: "К-сть",
     itemLineTotal: "Сума",
+    viewProductAria: (name: string) => `Редагувати «${name}»`,
     customer: "Клієнт",
     summary: "Підсумок",
     subtotal: "Проміжна сума",
