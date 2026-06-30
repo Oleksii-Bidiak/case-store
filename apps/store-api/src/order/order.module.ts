@@ -10,7 +10,8 @@ import { AdminOrderController } from './admin-order.controller';
 @Module({
   // UserModule provides UserRepository (recipient lookup for confirmation
   // email). DeliveryModule provides DeliveryService (NP shipping estimate at
-  // order creation). MailService comes from the global MailModule.
+  // order creation). MailOutboxService (order-confirmation enqueue) comes from
+  // the global MailOutboxModule.
   imports: [CartModule, UserModule, DeliveryModule],
   controllers: [OrderController, AdminOrderController],
   providers: [OrderRepository, OrderService],

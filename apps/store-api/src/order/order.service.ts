@@ -10,7 +10,7 @@ import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { CartRepository } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
-import { MailService } from '../mail/mail.service';
+import { MailOutboxService } from '../mail-outbox';
 import { DeliveryService } from '../delivery';
 import { OrderEntity } from './entities';
 import type { CreateOrderDto, OrderListQueryDto, AdminOrderListQueryDto } from './dto';
@@ -70,7 +70,7 @@ export class OrderService {
     private readonly orderRepository: OrderRepository,
     private readonly cartRepository: CartRepository,
     private readonly userRepository: UserRepository,
-    private readonly mailService: MailService,
+    private readonly mailOutbox: MailOutboxService,
     private readonly deliveryService: DeliveryService,
     private readonly logger: PinoLogger,
   ) {
@@ -132,42 +132,39 @@ export class OrderService {
       }
     }
 
-    const order = await this.orderRepository.createFromCart({
-      userId,
-      cartId: cart.id,
-      cartItems: cart.items,
-      shippingAddress: dto.shippingAddress,
-      billingAddress: dto.billingAddress,
-      notes: dto.notes,
-      ...(shippingCost !== undefined ? { shippingCost } : {}),
-    });
+    const order = await this.orderRepository.createFromCart(
+      {
+        userId,
+        cartId: cart.id,
+        cartItems: cart.items,
+        shippingAddress: dto.shippingAddress,
+        billingAddress: dto.billingAddress,
+        notes: dto.notes,
+        ...(shippingCost !== undefined ? { shippingCost } : {}),
+      },
+      // ── TASK-103-F: transactional outbox ──────────────────────────────────
+      // Enqueue the order-confirmation email INSIDE the order's transaction so
+      // the outbox row and the order commit atomically. The background
+      // MailOutboxWorker renders + sends it later, so the HTTP response no
+      // longer blocks on SMTP and a transient mail failure can never be lost.
+      // Replaces the former inline `await this.mailService.sendOrderConfirmation`.
+      // INTEGRATION NOTE: this callback is the in-transaction seam the coupons
+      // agent's discount-redemption write also lives in — keep both blocks here.
+      async (tx, created) => {
+        await this.mailOutbox.enqueueOrderConfirmation(
+          {
+            to: user.email,
+            order: OrderEntity.fromPrisma(created),
+            customerName: user.firstName ?? undefined,
+          },
+          tx,
+        );
+      },
+    );
 
     this.logger.info({ event: 'order.created', orderId: order.id, userId }, 'Order created');
 
-    const orderEntity = OrderEntity.fromPrisma(order);
-
-    // Dispatch the confirmation email as a fault-isolated side-effect. The order
-    // is already persisted and is the source of truth — a mail failure (SMTP
-    // down, template crash) must never roll back the order or surface as an HTTP
-    // error. Any error is caught and logged; createOrder always returns the
-    // created order. The recipient is the user fetched by the ban guard above.
-    try {
-      await this.mailService.sendOrderConfirmation({
-        to: user.email,
-        order: orderEntity,
-        customerName: user.firstName ?? undefined,
-      });
-      this.logger.info(
-        { event: 'order.email_sent', orderId: order.id, to: user.email },
-        'Order confirmation email sent',
-      );
-    } catch (err) {
-      // Structured fields ({ err, orderId }) so the failure is queryable in log
-      // aggregation, not just a formatted string.
-      this.logger.error({ err, orderId: order.id }, 'Failed to send order confirmation email');
-    }
-
-    return orderEntity;
+    return OrderEntity.fromPrisma(order);
   }
 
   /**

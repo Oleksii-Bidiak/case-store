@@ -87,7 +87,15 @@ export class OrderRepository {
    *   so we throw and the whole transaction rolls back. This is what keeps
    *   stock from ever going negative.
    */
-  async createFromCart(params: CreateOrderParams): Promise<OrderWithItems> {
+  async createFromCart(
+    params: CreateOrderParams,
+    // TASK-103-F: optional in-transaction hook. Invoked with the order's `tx`
+    // client and the freshly-created order so callers can perform writes that
+    // must commit (or roll back) atomically with the order — e.g. enqueue the
+    // confirmation email into the mail outbox. Kept generic so other in-tx
+    // side-effects (e.g. coupon redemption) can reuse the same seam.
+    afterCreate?: (tx: Prisma.TransactionClient, created: OrderWithItems) => Promise<void>,
+  ): Promise<OrderWithItems> {
     const { userId, cartId, cartItems, shippingAddress, billingAddress, notes, shippingCost } =
       params;
 
@@ -149,6 +157,13 @@ export class OrderRepository {
             `Insufficient stock for "${item.product.name}" — please review your cart`,
           );
         }
+      }
+
+      // TASK-103-F: run any in-transaction side-effect (e.g. enqueue the
+      // order-confirmation outbox row) so it commits atomically with the order.
+      // Throwing here rolls back the whole order — exactly the outbox guarantee.
+      if (afterCreate) {
+        await afterCreate(tx, created as unknown as OrderWithItems);
       }
 
       return created;
