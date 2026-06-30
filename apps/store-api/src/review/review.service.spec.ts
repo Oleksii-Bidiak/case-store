@@ -1,0 +1,229 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { ConflictException, NotFoundException } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
+import { Prisma, Review } from '@prisma/client';
+import { ReviewRepository } from './review.repository';
+import { ReviewService } from './review.service';
+import { ReviewModerationStatus } from './dto';
+
+// ─── Constants ──────────────────────────────────────────────────────────────
+
+const USER_ID = 'user-uuid-1';
+const PRODUCT_ID = 'product-uuid-1';
+const now = new Date('2026-06-30T12:00:00.000Z');
+
+const makeReview = (overrides: Partial<Review> = {}): Review => ({
+  id: 'review-uuid-1',
+  userId: USER_ID,
+  productId: PRODUCT_ID,
+  rating: 5,
+  comment: 'Great case!',
+  isActive: false,
+  createdAt: now,
+  updatedAt: now,
+  ...overrides,
+});
+
+// ─── Mocks ──────────────────────────────────────────────────────────────────
+
+const reviewRepositoryMock = {
+  create: jest.fn(),
+  findApprovedByProduct: jest.fn(),
+  aggregate: jest.fn(),
+  findForModeration: jest.fn(),
+  findById: jest.fn(),
+  approve: jest.fn(),
+  delete: jest.fn(),
+  isVerifiedPurchase: jest.fn(),
+  findExisting: jest.fn(),
+};
+
+const pinoLoggerMock = {
+  setContext: jest.fn(),
+  info: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+};
+
+// ─── Tests ──────────────────────────────────────────────────────────────────
+
+describe('ReviewService', () => {
+  let service: ReviewService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReviewService,
+        { provide: ReviewRepository, useValue: reviewRepositoryMock },
+        { provide: PinoLogger, useValue: pinoLoggerMock },
+      ],
+    }).compile();
+
+    service = module.get<ReviewService>(ReviewService);
+  });
+
+  // ─── submitReview ───────────────────────────────────────────────────────────
+
+  describe('submitReview', () => {
+    it('throws ConflictException when the user already reviewed the product', async () => {
+      reviewRepositoryMock.findExisting.mockResolvedValue(makeReview());
+
+      await expect(service.submitReview(USER_ID, PRODUCT_ID, { rating: 4 })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(reviewRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('creates a pending review (isActive = false) and returns the entity', async () => {
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview());
+
+      const result = await service.submitReview(USER_ID, PRODUCT_ID, {
+        rating: 5,
+        comment: 'Great case!',
+      });
+
+      expect(reviewRepositoryMock.create).toHaveBeenCalledWith({
+        userId: USER_ID,
+        productId: PRODUCT_ID,
+        rating: 5,
+        comment: 'Great case!',
+      });
+      expect(result.isActive).toBe(false);
+      expect(result.id).toBe('review-uuid-1');
+    });
+
+    it('returns verifiedPurchase = true when the user has purchased the product', async () => {
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(true);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview());
+
+      const result = await service.submitReview(USER_ID, PRODUCT_ID, { rating: 5 });
+
+      expect(result.verifiedPurchase).toBe(true);
+    });
+
+    it('returns verifiedPurchase = false when the user has not purchased the product', async () => {
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview());
+
+      const result = await service.submitReview(USER_ID, PRODUCT_ID, { rating: 5 });
+
+      expect(result.verifiedPurchase).toBe(false);
+    });
+
+    it('maps a Prisma P2002 unique-violation race to ConflictException', async () => {
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: '5.0.0',
+        }),
+      );
+
+      await expect(service.submitReview(USER_ID, PRODUCT_ID, { rating: 5 })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+  });
+
+  // ─── getApprovedReviews ───────────────────────────────────────────────────────
+
+  describe('getApprovedReviews', () => {
+    it('returns only approved reviews with aggregate and pagination meta', async () => {
+      reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
+        reviews: [makeReview({ isActive: true })],
+        total: 1,
+      });
+      reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 5, ratingCount: 1 });
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+
+      const result = await service.getApprovedReviews(PRODUCT_ID, {});
+
+      expect(reviewRepositoryMock.findApprovedByProduct).toHaveBeenCalledWith(PRODUCT_ID, 1, 10);
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].isActive).toBe(true);
+      expect(result.aggregate.ratingAverage).toBe(5);
+      expect(result.aggregate.ratingCount).toBe(1);
+      expect(result.meta).toEqual({ total: 1, page: 1, limit: 10, totalPages: 1 });
+    });
+  });
+
+  // ─── getReviewsForModeration ──────────────────────────────────────────────────
+
+  describe('getReviewsForModeration', () => {
+    it('returns the pending queue by default with author/product fields', async () => {
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview(),
+            user: { email: 'olena@example.com' },
+            product: { name: 'iPhone 15 Pro Case' },
+          },
+        ],
+        total: 1,
+      });
+
+      const result = await service.getReviewsForModeration({});
+
+      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith('pending', 1, 10);
+      expect(result.data[0].userEmail).toBe('olena@example.com');
+      expect(result.data[0].productName).toBe('iPhone 15 Pro Case');
+      expect(result.meta.total).toBe(1);
+    });
+
+    it('passes the approved status through to the repository', async () => {
+      reviewRepositoryMock.findForModeration.mockResolvedValue({ reviews: [], total: 0 });
+
+      await service.getReviewsForModeration({ status: ReviewModerationStatus.APPROVED });
+
+      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith('approved', 1, 10);
+    });
+  });
+
+  // ─── approveReview ────────────────────────────────────────────────────────────
+
+  describe('approveReview', () => {
+    it('throws NotFoundException when the review does not exist', async () => {
+      reviewRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.approveReview('missing')).rejects.toBeInstanceOf(NotFoundException);
+      expect(reviewRepositoryMock.approve).not.toHaveBeenCalled();
+    });
+
+    it('approves the review and returns the entity', async () => {
+      reviewRepositoryMock.findById.mockResolvedValue(makeReview());
+      reviewRepositoryMock.approve.mockResolvedValue(makeReview({ isActive: true }));
+
+      const result = await service.approveReview('review-uuid-1');
+
+      expect(reviewRepositoryMock.approve).toHaveBeenCalledWith('review-uuid-1');
+      expect(result.isActive).toBe(true);
+    });
+  });
+
+  // ─── rejectReview ─────────────────────────────────────────────────────────────
+
+  describe('rejectReview', () => {
+    it('throws NotFoundException when the review does not exist', async () => {
+      reviewRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.rejectReview('missing')).rejects.toBeInstanceOf(NotFoundException);
+      expect(reviewRepositoryMock.delete).not.toHaveBeenCalled();
+    });
+
+    it('hard-deletes the review when it exists', async () => {
+      reviewRepositoryMock.findById.mockResolvedValue(makeReview());
+      reviewRepositoryMock.delete.mockResolvedValue(undefined);
+
+      await service.rejectReview('review-uuid-1');
+
+      expect(reviewRepositoryMock.delete).toHaveBeenCalledWith('review-uuid-1');
+    });
+  });
+});
