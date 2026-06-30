@@ -36,6 +36,11 @@ async function exportSwagger(): Promise<void> {
       'refresh-token',
     )
     .addCookieAuth('cartToken', { type: 'apiKey', in: 'cookie', name: 'cartToken' }, 'cart-token')
+    .addCookieAuth(
+      'wishlistToken',
+      { type: 'apiKey', in: 'cookie', name: 'wishlistToken' },
+      'wishlist-token',
+    )
     .addTag('Health', 'Health check endpoints')
     .addTag('Auth', 'Authentication and authorization')
     .addTag('Users', 'User profile and admin user management')
@@ -43,6 +48,7 @@ async function exportSwagger(): Promise<void> {
     .addTag('Categories', 'Category browsing and admin management')
     .addTag('Pages', 'Static / service page browsing and admin management')
     .addTag('Cart', 'Shopping cart management')
+    .addTag('Wishlist', 'Wishlist / favorites — guest via cookie, merges on login')
     .addTag('Reviews', 'Product reviews — submission, public listing, and admin moderation')
     .build();
 
