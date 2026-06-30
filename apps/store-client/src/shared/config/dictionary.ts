@@ -424,6 +424,21 @@ export const dict = {
     ordersTitle: "Мої замовлення | MobileStore",
     ordersDescription: "Історія ваших замовлень.",
   },
+
+  // TASK-077 — variant dots + quick-add overlay on the product card.
+  productCard: {
+    /** Accessible label for the swatch row, listing the available colours. */
+    colorsAvailable: (names: string[]) =>
+      `Доступні кольори: ${names.join(", ")}`,
+    /** Overflow indicator when more colours exist than dots shown. */
+    moreColors: (n: number) => `+${n}`,
+    /** Aria label for the hover/focus quick-add button. */
+    quickAddAria: (name: string) => `Швидко додати «${name}» до кошика`,
+    /** Compact label shown inside the quick-add overlay button. */
+    quickAdd: "Швидке додавання",
+    /** Advertised "from {price}" prefix when a group has cheaper variants. */
+    priceFrom: "від",
+  },
 } as const;
 
 export type Dictionary = typeof dict;

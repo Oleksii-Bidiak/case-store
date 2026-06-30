@@ -26,6 +26,13 @@ interface AddToCartButtonProps {
    * `disabled` instead and leave this unset.
    */
   outOfStock?: boolean;
+  /**
+   * Optional accessible name override. Used by the card quick-add overlay to
+   * announce the specific product (e.g. "Швидко додати «iPhone Case» до
+   * кошика") since the visible compact label is generic. Falls back to the
+   * visible label when unset.
+   */
+  ariaLabel?: string;
 }
 
 /**
@@ -40,6 +47,7 @@ export function AddToCartButton({
   className = "",
   compact = false,
   outOfStock = false,
+  ariaLabel,
 }: AddToCartButtonProps) {
   const queryClient = useQueryClient();
 
@@ -80,6 +88,9 @@ export function AddToCartButton({
         variant="outline"
         onClick={handleClick}
         disabled={isDisabled}
+        // Out of stock: drop the override so the visible "Немає в наявності"
+        // label remains the accessible name (conveys WHY it is disabled).
+        aria-label={outOfStock ? undefined : ariaLabel}
         className={`w-full font-semibold transition-colors hover:bg-primary hover:text-primary-foreground hover:border-primary ${className}`}
       >
         <ShoppingCart aria-hidden="true" />

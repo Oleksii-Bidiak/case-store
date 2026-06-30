@@ -74,6 +74,15 @@ const baseProduct: PublicProductEntity = {
   updatedAt: "2026-02-01T00:00:00.000Z",
   ratingAverage: null,
   ratingCount: 0,
+  variantSummary: {
+    groupId: null,
+    variantCount: 1,
+    priceFrom: "9.99",
+    defaultVariantId: "p1",
+    defaultVariantSlug: "iphone-15-case",
+    defaultInStock: true,
+    colors: [],
+  },
 };
 
 const image = (url: string, sortOrder = 0): ProductImageEntity => ({
