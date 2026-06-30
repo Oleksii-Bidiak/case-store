@@ -30,6 +30,8 @@ import {
   ProductGroupEntity,
   ProductImageEntity,
   ProductCategoryEntity,
+  ProductVariantSummaryEntity,
+  ProductVariantColorEntity,
 } from './entities';
 
 /**
@@ -143,6 +145,8 @@ type AdminProductPreviewResponse = {
   ProductGroupEntity,
   ProductImageEntity,
   ProductCategoryEntity,
+  ProductVariantSummaryEntity,
+  ProductVariantColorEntity,
   ProductResponseEnvelope,
   ProductListResponseEnvelope,
   ProductDetailResponseEnvelope,

@@ -101,4 +101,45 @@ describe('PublicProductEntity.fromPrisma', () => {
 
     expect(entity.primaryImage).toBeNull();
   });
+
+  it('derives variantSummary from the provided sibling positions', () => {
+    const entity = PublicProductEntity.fromPrisma({
+      ...buildPrismaProduct(),
+      groupId: 'grp-1',
+      variantSiblings: [
+        {
+          id: 'a',
+          slug: 'a',
+          price: { toString: () => '19.99' },
+          attributes: { color: 'Black' },
+          stock: 5,
+          positionOrder: 0,
+        },
+        {
+          id: 'b',
+          slug: 'b',
+          price: { toString: () => '9.99' },
+          attributes: { color: 'White' },
+          stock: 0,
+          positionOrder: 1,
+        },
+      ],
+    });
+
+    expect(entity.variantSummary.groupId).toBe('grp-1');
+    expect(entity.variantSummary.variantCount).toBe(2);
+    expect(entity.variantSummary.priceFrom).toBe('9.99');
+    expect(entity.variantSummary.defaultVariantId).toBe('b');
+    expect(entity.variantSummary.colors.map((c) => c.value)).toEqual(['Black', 'White']);
+  });
+
+  it('collapses to a single self-variant when no siblings are provided', () => {
+    const entity = PublicProductEntity.fromPrisma(buildPrismaProduct({ stock: 4 }));
+
+    expect(entity.variantSummary.groupId).toBeNull();
+    expect(entity.variantSummary.variantCount).toBe(1);
+    expect(entity.variantSummary.defaultVariantId).toBe('prod-1');
+    expect(entity.variantSummary.defaultInStock).toBe(true);
+    expect(entity.variantSummary.colors).toEqual([]);
+  });
 });

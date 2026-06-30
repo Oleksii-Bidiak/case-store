@@ -121,6 +121,61 @@ describe('ProductRepository (soft-delete behaviour)', () => {
         expect.objectContaining({ deletedAt: null, categoryId: 'cat-1', isActive: true }),
       );
     });
+
+    it('attaches active sibling positions of each grouped product for the variant summary', async () => {
+      prismaMock.product.findMany
+        // page rows
+        .mockResolvedValueOnce([{ id: 'p1', groupId: 'grp-1' }])
+        // variant siblings query
+        .mockResolvedValueOnce([
+          {
+            id: 'p1',
+            slug: 'p1',
+            groupId: 'grp-1',
+            price: { toString: () => '9.99' },
+            attributes: { color: 'Black' },
+            stock: 3,
+            positionOrder: 0,
+          },
+          {
+            id: 'p2',
+            slug: 'p2',
+            groupId: 'grp-1',
+            price: { toString: () => '12.99' },
+            attributes: { color: 'White' },
+            stock: 1,
+            positionOrder: 1,
+          },
+        ]);
+      prismaMock.product.count.mockResolvedValue(1);
+      prismaMock.review.groupBy.mockResolvedValue([]);
+      prismaMock.productImage.findMany.mockResolvedValue([]);
+
+      const result = await repository.findAll({ page: 1, limit: 20 });
+
+      // Sibling query is scoped to the page's groups, active and non-deleted.
+      const variantQuery = prismaMock.product.findMany.mock.calls[1][0];
+      expect(variantQuery.where).toEqual({
+        groupId: { in: ['grp-1'] },
+        isActive: true,
+        deletedAt: null,
+      });
+      expect(result.products[0].variantSiblings).toHaveLength(2);
+      expect(result.products[0].variantSiblings?.[0]).not.toHaveProperty('groupId');
+    });
+
+    it('does not run a sibling query when no product on the page has a group', async () => {
+      prismaMock.product.findMany.mockResolvedValueOnce([{ id: 'p1', groupId: null }]);
+      prismaMock.product.count.mockResolvedValue(1);
+      prismaMock.review.groupBy.mockResolvedValue([]);
+      prismaMock.productImage.findMany.mockResolvedValue([]);
+
+      const result = await repository.findAll({ page: 1, limit: 20 });
+
+      // Only the page query ran — no second product.findMany for siblings.
+      expect(prismaMock.product.findMany).toHaveBeenCalledTimes(1);
+      expect(result.products[0].variantSiblings).toBeUndefined();
+    });
   });
 
   // ─── softDelete ─────────────────────────────────────────────────────────────

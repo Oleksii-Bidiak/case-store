@@ -75,11 +75,31 @@ export interface PrimaryImage {
 }
 
 /**
+ * A lightweight active sibling position used to build a product's variant
+ * summary on the list response (TASK-077): distinct colours, advertised "from"
+ * price, and the default (cheapest) variant for quick-add.
+ */
+export interface VariantSiblingLite {
+  id: string;
+  slug: string;
+  price: { toString(): string };
+  attributes: unknown;
+  stock: number;
+  positionOrder: number;
+}
+
+/**
  * Result of a paginated product query. Each product is enriched with its
- * approved-review aggregate (for star ratings) and its primary image (for cards).
+ * approved-review aggregate (for star ratings), its primary image (for cards),
+ * and the active sibling positions of its variant group (for the variant
+ * summary). `variantSiblings` is absent for standalone products (no group).
  */
 export interface PaginatedProductsResult {
-  products: (Product & ProductRating & { primaryImage: PrimaryImage | null })[];
+  products: (Product &
+    ProductRating & {
+      primaryImage: PrimaryImage | null;
+      variantSiblings?: VariantSiblingLite[];
+    })[];
   total: number;
 }
 
@@ -338,9 +358,13 @@ export class ProductRepository {
     ]);
 
     const productIds = products.map((p) => p.id);
-    const [ratings, primaryImages] = await Promise.all([
+    const groupIds = [
+      ...new Set(products.map((p) => p.groupId).filter((id): id is string => id != null)),
+    ];
+    const [ratings, primaryImages, variantSiblings] = await Promise.all([
       this.getRatingsByProductId(productIds),
       this.getPrimaryImagesByProductId(productIds),
+      this.getVariantSiblingsByGroupId(groupIds),
     ]);
     const enriched = products.map((product) => {
       const rating = ratings.get(product.id);
@@ -349,6 +373,7 @@ export class ProductRepository {
         ratingAverage: rating?.ratingAverage ?? null,
         ratingCount: rating?.ratingCount ?? 0,
         primaryImage: primaryImages.get(product.id) ?? null,
+        variantSiblings: product.groupId ? (variantSiblings.get(product.groupId) ?? []) : undefined,
       };
     });
 
@@ -383,6 +408,47 @@ export class ProductRepository {
       if (!map.has(row.productId)) {
         const { productId, ...image } = row;
         map.set(productId, image);
+      }
+    }
+    return map;
+  }
+
+  /**
+   * Fetch the active sibling positions for a set of variant groups in a single
+   * query (no N+1), keyed by groupId. Only active, non-deleted positions are
+   * returned — these drive the list-card variant summary (colours, "from" price,
+   * default quick-add variant). Groups with no active positions are absent.
+   */
+  private async getVariantSiblingsByGroupId(
+    groupIds: string[],
+  ): Promise<Map<string, VariantSiblingLite[]>> {
+    if (groupIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.prisma.product.findMany({
+      where: { groupId: { in: groupIds }, isActive: true, deletedAt: null },
+      orderBy: { positionOrder: 'asc' },
+      select: {
+        id: true,
+        slug: true,
+        groupId: true,
+        price: true,
+        attributes: true,
+        stock: true,
+        positionOrder: true,
+      },
+    });
+    const map = new Map<string, VariantSiblingLite[]>();
+    for (const row of rows) {
+      if (row.groupId == null) {
+        continue;
+      }
+      const { groupId, ...sibling } = row;
+      const bucket = map.get(groupId);
+      if (bucket) {
+        bucket.push(sibling);
+      } else {
+        map.set(groupId, [sibling]);
       }
     }
     return map;
