@@ -3,6 +3,7 @@
 import { useProductControllerFindAll } from "@/entities/product";
 import { ProductCard } from "@/shared/ui";
 import { AddToCartButton } from "@/features/add-to-cart";
+import { dict } from "@/shared/config";
 import { ProductGridSkeleton } from "./product-grid-skeleton";
 
 /**
@@ -41,11 +42,12 @@ export function ProductGrid() {
         <ProductCard
           key={product.id}
           product={product}
-          action={
+          quickAdd={
             <AddToCartButton
-              productId={product.id}
+              productId={product.variantSummary.defaultVariantId}
               compact
-              outOfStock={!product.inStock}
+              outOfStock={!product.variantSummary.defaultInStock}
+              ariaLabel={dict.productCard.quickAddAria(product.name)}
             />
           }
         />

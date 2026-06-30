@@ -7,3 +7,8 @@ export {
   ProductSiblingEntity,
   ProductGroupAxisEntity,
 } from './product-group.entity';
+export {
+  ProductVariantSummaryEntity,
+  ProductVariantColorEntity,
+} from './product-variant-summary.entity';
+export type { VariantSiblingInput } from './product-variant-summary.entity';

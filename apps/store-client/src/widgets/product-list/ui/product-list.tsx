@@ -79,11 +79,12 @@ export function ProductList({ params, buildPageHref }: ProductListProps) {
             <ProductCard
               key={product.id}
               product={product}
-              action={
+              quickAdd={
                 <AddToCartButton
-                  productId={product.id}
+                  productId={product.variantSummary.defaultVariantId}
                   compact
-                  outOfStock={!product.inStock}
+                  outOfStock={!product.variantSummary.defaultInStock}
+                  ariaLabel={dict.productCard.quickAddAria(product.name)}
                 />
               }
             />

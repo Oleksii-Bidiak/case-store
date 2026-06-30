@@ -4,6 +4,19 @@ import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { ProductGrid } from "./product-grid";
 
+function variantSummary(overrides: Record<string, unknown> = {}) {
+  return {
+    groupId: null,
+    variantCount: 1,
+    priceFrom: "12.99",
+    defaultVariantId: "product-1",
+    defaultVariantSlug: "tempered-glass",
+    defaultInStock: true,
+    colors: [],
+    ...overrides,
+  };
+}
+
 function makeProduct(overrides: Record<string, unknown> = {}) {
   return {
     id: "product-1",
@@ -25,6 +38,7 @@ function makeProduct(overrides: Record<string, unknown> = {}) {
     createdAt: "2026-06-01T00:00:00.000Z",
     updatedAt: "2026-06-01T00:00:00.000Z",
     primaryImage: null,
+    variantSummary: variantSummary(),
     ...overrides,
   };
 }
@@ -36,33 +50,41 @@ function listEnvelope(products: ReturnType<typeof makeProduct>[]) {
   };
 }
 
-describe("ProductGrid — stock guard (TASK-144)", () => {
-  it("disables the add-to-cart button with an out-of-stock label for a stock-0 product", async () => {
+describe("ProductGrid — quick-add stock guard (TASK-144 / TASK-077)", () => {
+  it("disables the quick-add button with an out-of-stock label when the default variant has no stock", async () => {
     server.use(
       http.get("*/api/products", () =>
-        HttpResponse.json(listEnvelope([makeProduct({ inStock: false })])),
+        HttpResponse.json(
+          listEnvelope([
+            makeProduct({
+              variantSummary: variantSummary({ defaultInStock: false }),
+            }),
+          ]),
+        ),
       ),
     );
 
     renderWithProviders(<ProductGrid />);
 
+    // Out of stock → the override aria-label is dropped, so the accessible name
+    // is the visible "Немає в наявності" label (conveys why it is disabled).
     const button = await screen.findByRole("button", {
       name: dict.addToCart.outOfStock,
     });
     expect(button).toBeDisabled();
   });
 
-  it("renders an enabled add-to-cart button for an in-stock product", async () => {
+  it("renders an enabled quick-add button labelled per product when the default variant is in stock", async () => {
     server.use(
       http.get("*/api/products", () =>
-        HttpResponse.json(listEnvelope([makeProduct({ inStock: true })])),
+        HttpResponse.json(listEnvelope([makeProduct()])),
       ),
     );
 
     renderWithProviders(<ProductGrid />);
 
     const button = await screen.findByRole("button", {
-      name: dict.addToCart.idle,
+      name: dict.productCard.quickAddAria("Tempered Glass"),
     });
     expect(button).toBeEnabled();
   });

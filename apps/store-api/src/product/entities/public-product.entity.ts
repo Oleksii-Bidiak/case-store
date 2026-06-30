@@ -1,5 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ProductImageEntity } from './product-image.entity';
+import {
+  ProductVariantSummaryEntity,
+  type VariantSiblingInput,
+} from './product-variant-summary.entity';
 import { LOW_STOCK_THRESHOLD } from '../product.constants';
 
 /**
@@ -136,6 +140,15 @@ export class PublicProductEntity {
   })
   primaryImage?: ProductImageEntity | null;
 
+  @ApiProperty({
+    description:
+      'Compact variant summary for list cards: distinct colours, advertised "from" price, ' +
+      'and the default (cheapest) variant for quick-add. For a standalone product this ' +
+      'collapses to a single variant (the product itself).',
+    type: ProductVariantSummaryEntity,
+  })
+  variantSummary!: ProductVariantSummaryEntity;
+
   /**
    * Create a PublicProductEntity from a Prisma Product model. Accepts the same
    * shape as {@link ProductEntity.fromPrisma} (including `stock`), derives
@@ -167,6 +180,12 @@ export class PublicProductEntity {
       sortOrder: number;
       isPrimary: boolean;
     } | null;
+    /**
+     * Active sibling positions of this product's variant group (supplied by the
+     * list query). When omitted or empty — e.g. on the detail path or a
+     * standalone product — the summary derives from the product itself.
+     */
+    variantSiblings?: VariantSiblingInput[];
   }): PublicProductEntity {
     const entity = new PublicProductEntity();
     entity.id = product.id;
@@ -193,6 +212,25 @@ export class PublicProductEntity {
     entity.primaryImage = product.primaryImage
       ? ProductImageEntity.fromPrisma(product.primaryImage)
       : null;
+    // Build the variant summary from the group's active siblings when provided
+    // (list path); otherwise treat the product as its own sole variant.
+    const siblings: VariantSiblingInput[] =
+      product.variantSiblings && product.variantSiblings.length > 0
+        ? product.variantSiblings
+        : [
+            {
+              id: product.id,
+              slug: product.slug,
+              price: product.price,
+              attributes: product.attributes,
+              stock: product.stock,
+              positionOrder: product.positionOrder ?? 0,
+            },
+          ];
+    entity.variantSummary = ProductVariantSummaryEntity.fromSiblings(
+      product.groupId ?? null,
+      siblings,
+    );
     return entity;
   }
 }
