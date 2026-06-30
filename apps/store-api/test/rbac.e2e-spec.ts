@@ -4,7 +4,6 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
@@ -53,7 +52,7 @@ describe('RBAC guards (e2e)', () => {
     create: jest.fn().mockResolvedValue({ id: 'prod-rbac-1', ...validProduct }),
   };
 
-  // OrderRepository drives the confirm-payment ADMIN path (findById → markPaid).
+  // OrderRepository is mocked so AppModule wires up without a real database.
   const orderRepositoryMock = {
     createFromCart: jest.fn(),
     findByUserId: jest.fn(),
@@ -61,7 +60,6 @@ describe('RBAC guards (e2e)', () => {
     updateStatus: jest.fn(),
     cancelAndRestock: jest.fn(),
     updatePaymentStatus: jest.fn(),
-    markPaid: jest.fn(),
   };
 
   // Boot-time mocks so AppModule wires up without a real database.
@@ -94,24 +92,6 @@ describe('RBAC guards (e2e)', () => {
       update: jest.fn(),
       updateMany: jest.fn(),
     },
-  };
-
-  const order = {
-    id: 'order-rbac-1',
-    userId: customer.id,
-    status: OrderStatus.CONFIRMED,
-    paymentStatus: PaymentStatus.PAID,
-    subtotal: { toString: () => '29.99' },
-    discount: { toString: () => '0' },
-    shippingCost: { toString: () => '0' },
-    tax: { toString: () => '0' },
-    total: { toString: () => '29.99' },
-    shippingAddress: {} as never,
-    billingAddress: {} as never,
-    notes: null,
-    createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-    items: [],
   };
 
   function token(userId: string, role: string): string {
@@ -194,36 +174,6 @@ describe('RBAC guards (e2e)', () => {
         .send(validProduct)
         .expect(201);
       expect(productServiceMock.create).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  // ─── PATCH /api/orders/:id/confirm-payment (@Roles ADMIN) ────────────────────
-
-  describe('PATCH /api/orders/:id/confirm-payment', () => {
-    it('returns 401 without a JWT (authentication required)', async () => {
-      await request(app.getHttpServer())
-        .patch('/api/orders/order-rbac-1/confirm-payment')
-        .expect(401);
-      expect(orderRepositoryMock.markPaid).not.toHaveBeenCalled();
-    });
-
-    it('returns 403 for an authenticated CUSTOMER (wrong role)', async () => {
-      await request(app.getHttpServer())
-        .patch('/api/orders/order-rbac-1/confirm-payment')
-        .set('Authorization', `Bearer ${token(customer.id, customer.role)}`)
-        .expect(403);
-      expect(orderRepositoryMock.markPaid).not.toHaveBeenCalled();
-    });
-
-    it('passes the guard for an authenticated ADMIN (200)', async () => {
-      orderRepositoryMock.findById.mockResolvedValue({ ...order, status: OrderStatus.PENDING });
-      orderRepositoryMock.markPaid.mockResolvedValue(order);
-
-      await request(app.getHttpServer())
-        .patch('/api/orders/order-rbac-1/confirm-payment')
-        .set('Authorization', `Bearer ${token(admin.id, admin.role)}`)
-        .expect(200);
-      expect(orderRepositoryMock.markPaid).toHaveBeenCalledWith('order-rbac-1');
     });
   });
 });

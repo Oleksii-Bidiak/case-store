@@ -167,7 +167,7 @@ export class AdminOrderController {
   @Patch(':orderId/payment-status')
   @ApiBearerAuth('access-token')
   // Admin-only state mutation; throttle to blunt scripted misuse even from an
-  // authenticated admin token (mirrors the status/confirm-payment routes).
+  // authenticated admin token (mirrors the status route).
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @ApiOperation({
     summary: 'Update order payment status (admin)',

@@ -272,43 +272,6 @@ export class OrderService {
   }
 
   /**
-   * Admin — register that payment for an order was received and confirm it.
-   *
-   * Sets the order's payment status to PAID and advances it from PENDING to
-   * CONFIRMED. This is a manual stand-in for the Stripe payment webhook
-   * (TASK-034): until automated payments exist, an admin marks orders paid by
-   * hand. Authorization (ADMIN role) is enforced at the controller.
-   *
-   * @deprecated Superseded by {@link adminUpdatePaymentStatus} (TASK-151). Use
-   *   `PATCH /api/admin/orders/:id/payment-status`, which sets the payment status
-   *   independently of the order status. Retained for the existing
-   *   `PATCH /api/orders/:id/confirm-payment` route until that route is removed.
-   * @throws NotFoundException when the order does not exist.
-   * @throws ConflictException when the order is not PENDING (already paid,
-   *   cancelled, refunded, or further along its lifecycle).
-   */
-  async confirmPayment(orderId: string): Promise<OrderEntity> {
-    const order = await this.orderRepository.findById(orderId);
-
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
-
-    if (order.status !== OrderStatus.PENDING) {
-      throw new ConflictException('Only PENDING orders can be marked as paid');
-    }
-
-    const paid = await this.orderRepository.markPaid(orderId);
-
-    this.logger.info(
-      { event: 'order.status_updated', orderId, status: 'CONFIRMED' },
-      'Order marked PAID and CONFIRMED',
-    );
-
-    return OrderEntity.fromPrisma(paid);
-  }
-
-  /**
    * Internal — update an order's status without an ownership check.
    * Used by the payment webhook handler (TASK-034) and admin order management
    * (TASK-041).
