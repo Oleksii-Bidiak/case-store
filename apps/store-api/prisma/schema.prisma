@@ -38,6 +38,17 @@ enum AddressType {
   BILLING
 }
 
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+enum MailOutboxStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 // Models
 
 model User {
@@ -58,11 +69,13 @@ model User {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  cart          Cart?
-  orders        Order[]
-  addresses     Address[]
-  reviews       Review[]
-  refreshTokens RefreshToken[]
+  cart                Cart?
+  wishlist            Wishlist?
+  orders              Order[]
+  addresses           Address[]
+  reviews             Review[]
+  refreshTokens       RefreshToken[]
+  discountRedemptions DiscountRedemption[]
 
   @@index([deletedAt])
   @@map("users")
@@ -123,6 +136,7 @@ model Product {
   reviews         Review[]
   orderItems      OrderItem[]
   cartItems       CartItem[]
+  wishlistItems   WishlistItem[]
 
   @@index([slug])
   @@index([categoryId])
@@ -213,6 +227,8 @@ model Order {
   paymentStatus   PaymentStatus @default(PENDING) @map("payment_status")
   subtotal        Decimal       @db.Decimal(10, 2)
   discount        Decimal       @default(0) @db.Decimal(10, 2)
+  // Snapshot of the redeemed promo code (TASK-079), for admin order readability.
+  discountCode    String?       @map("discount_code")
   shippingCost    Decimal       @default(0) @map("shipping_cost") @db.Decimal(10, 2)
   tax             Decimal       @default(0) @db.Decimal(10, 2)
   total           Decimal       @db.Decimal(10, 2)
@@ -347,4 +363,99 @@ model SiteContactSettings {
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@map("site_contact_settings")
+}
+
+/// Promo code / coupon (TASK-079). Codes are stored UPPERCASE and matched
+/// case-insensitively. `value` is a percentage (1–100) when `type` is PERCENT,
+/// or a fixed UAH amount when FIXED. Eligibility is gated by the active flag,
+/// the optional starts/expires window, `minSpend`, and the redemption caps.
+model Discount {
+  id             String       @id @default(uuid())
+  code           String       @unique
+  type           DiscountType
+  value          Decimal      @db.Decimal(10, 2)
+  minSpend       Decimal?     @map("min_spend") @db.Decimal(10, 2)
+  maxRedemptions Int?         @map("max_redemptions")
+  redeemedCount  Int          @default(0) @map("redeemed_count")
+  perUserLimit   Int?         @map("per_user_limit")
+  startsAt       DateTime?    @map("starts_at")
+  expiresAt      DateTime?    @map("expires_at")
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  redemptions    DiscountRedemption[]
+
+  @@index([isActive])
+  @@map("discounts")
+}
+
+/// One redemption of a discount, tied to the order it was applied to. The unique
+/// `orderId` makes redeeming idempotent (re-applying to the same order cannot
+/// double-count), and per-user counts drive `Discount.perUserLimit`.
+model DiscountRedemption {
+  id         String   @id @default(uuid())
+  discountId String   @map("discount_id")
+  discount   Discount @relation(fields: [discountId], references: [id], onDelete: Cascade)
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId    String   @unique @map("order_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([discountId])
+  @@index([userId])
+  @@map("discount_redemptions")
+}
+
+/// Wishlist / favorites (TASK-076). Mirrors the guest-cart identity model: a
+/// wishlist belongs to either a logged-in user (`userId`) or a guest (`token`,
+/// carried in the `wishlistToken` cookie), and the guest list merges into the
+/// user's on login/register.
+model Wishlist {
+  id        String   @id @default(uuid())
+  userId    String?  @unique @map("user_id")
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String?  @unique @map("token")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items     WishlistItem[]
+
+  @@index([token])
+  @@map("wishlists")
+}
+
+model WishlistItem {
+  id         String   @id @default(uuid())
+  wishlistId String   @map("wishlist_id")
+  wishlist   Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  productId  String   @map("product_id")
+  product    Product  @relation(fields: [productId], references: [id])
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([wishlistId, productId])
+  @@index([wishlistId])
+  @@map("wishlist_items")
+}
+
+/// Transactional mail outbox (TASK-103). Order creation enqueues a row in the
+/// same transaction as the order; a cron worker dispatches PENDING rows that are
+/// due (`nextAttemptAt <= now`) via the SMTP transport, retrying with backoff up
+/// to `maxAttempts` before marking the row FAILED. Generic `type` + JSON
+/// `payload` so new mail kinds reuse the table without a migration.
+model MailOutbox {
+  id            String           @id @default(uuid())
+  type          String
+  recipient     String
+  payload       Json
+  status        MailOutboxStatus @default(PENDING)
+  attempts      Int              @default(0)
+  maxAttempts   Int              @default(5) @map("max_attempts")
+  lastError     String?          @map("last_error")
+  nextAttemptAt DateTime         @default(now()) @map("next_attempt_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  sentAt        DateTime?        @map("sent_at")
+
+  @@index([status, nextAttemptAt])
+  @@map("mail_outbox")
 }
