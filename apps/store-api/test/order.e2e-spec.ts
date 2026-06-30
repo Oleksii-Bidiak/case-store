@@ -12,6 +12,7 @@ import { UserRepository } from '../src/user/user.repository';
 import { CartRepository, CartWithItems } from '../src/cart/cart.repository';
 import { OrderRepository } from '../src/order/order.repository';
 import { MailService } from '../src/mail/mail.service';
+import { MailOutboxService } from '../src/mail-outbox';
 import type { OrderWithItems } from '../src/order/order.types';
 import { PrismaService } from '../src/prisma';
 
@@ -81,10 +82,20 @@ describe('OrderController (e2e)', () => {
     activate: jest.fn(),
   };
 
-  // MailService is mocked so the order-confirmation dispatch in createOrder
-  // never attempts a real SMTP connection during e2e.
+  // MailService is mocked so nothing ever attempts a real SMTP connection.
   const mailServiceMock = {
     sendOrderConfirmation: jest.fn().mockResolvedValue(undefined),
+    sendOrderConfirmationPayload: jest.fn().mockResolvedValue(undefined),
+    isEnabled: jest.fn().mockReturnValue(false),
+  };
+
+  // TASK-103-F: order creation enqueues the confirmation email into the mail
+  // outbox (inside the order transaction) instead of sending synchronously.
+  // Mock the outbox service so the assertion targets the enqueue, and stub
+  // dispatchDue so a stray worker tick is a harmless no-op.
+  const mailOutboxServiceMock = {
+    enqueueOrderConfirmation: jest.fn().mockResolvedValue(undefined),
+    dispatchDue: jest.fn().mockResolvedValue({ sent: 0, retried: 0, failed: 0 }),
   };
 
   const prismaServiceMock = {
@@ -227,6 +238,8 @@ describe('OrderController (e2e)', () => {
       .useValue(orderRepositoryMock)
       .overrideProvider(MailService)
       .useValue(mailServiceMock)
+      .overrideProvider(MailOutboxService)
+      .useValue(mailOutboxServiceMock)
       .overrideProvider(APP_GUARD)
       .useClass(ThrottlerGuardPassThrough)
       .compile();
@@ -274,7 +287,19 @@ describe('OrderController (e2e)', () => {
     it('should create an order from the cart and return 201', async () => {
       const token = generateAccessToken(userA.id, userA.role);
       cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
-      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+      // Drive the in-transaction afterCreate hook so the outbox enqueue runs,
+      // mirroring the real repository (TASK-103-F).
+      const createdOrder = makeOrder();
+      const txStub = { mailOutbox: { create: jest.fn() } };
+      orderRepositoryMock.createFromCart.mockImplementation(
+        async (
+          _params: unknown,
+          afterCreate?: (tx: unknown, created: OrderWithItems) => Promise<void>,
+        ) => {
+          if (afterCreate) await afterCreate(txStub, createdOrder);
+          return createdOrder;
+        },
+      );
 
       const response = await request(app.getHttpServer())
         .post('/api/orders')
@@ -286,9 +311,13 @@ describe('OrderController (e2e)', () => {
       expect(response.body.data.status).toBe(OrderStatus.PENDING);
       expect(response.body.data.items).toHaveLength(1);
       expect(response.body.data.total).toBe('59.98');
-      expect(mailServiceMock.sendOrderConfirmation).toHaveBeenCalledWith(
+      // The confirmation email is enqueued into the outbox (in-transaction),
+      // NOT sent synchronously over SMTP.
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledWith(
         expect.objectContaining({ to: 'usera@example.com' }),
+        txStub,
       );
+      expect(mailServiceMock.sendOrderConfirmation).not.toHaveBeenCalled();
     });
 
     it('should return 401 without a JWT', async () => {

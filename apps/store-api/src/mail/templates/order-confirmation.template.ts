@@ -51,6 +51,20 @@ export interface MailTemplate {
   text: string;
 }
 
+/**
+ * Fully-serialized order-confirmation payload as stored in a `MailOutbox` row
+ * (TASK-103). It is the same data {@link buildOrderConfirmationEmail} needs, but
+ * JSON-safe: `createdAt` is an ISO string (not a `Date`) because the row is
+ * persisted as a `Json` column and rendered later by the retry worker. The
+ * recipient travels with the payload so the worker can dispatch without a
+ * second lookup.
+ */
+export interface OrderConfirmationMailPayload {
+  to: string;
+  customerName?: string;
+  order: Omit<OrderConfirmationParams['order'], 'createdAt'> & { createdAt: string };
+}
+
 const ORDER_NUMBER_LENGTH = 8;
 
 /** Short, human-friendly order number — the first 8 chars of the id, uppercased. */

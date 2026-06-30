@@ -140,6 +140,34 @@ describe('OrderRepository', () => {
 
       await expect(repository.createFromCart(baseParams)).rejects.toThrow(ConflictException);
     });
+
+    // ── TASK-103-F: in-transaction afterCreate hook (mail-outbox enqueue seam) ──
+    it('invokes the afterCreate hook inside the transaction with the tx client and created order', async () => {
+      const tx = makeTx();
+      const created = { id: 'order-1', items: [] };
+      tx.order.create.mockResolvedValue(created);
+      tx.product.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      const afterCreate = jest.fn().mockResolvedValue(undefined);
+
+      await repository.createFromCart(baseParams, afterCreate);
+
+      expect(afterCreate).toHaveBeenCalledTimes(1);
+      // Receives the SAME tx client used for the order write, plus the order.
+      expect(afterCreate).toHaveBeenCalledWith(tx, created);
+    });
+
+    it('rolls the order back when the afterCreate hook throws (atomic outbox write)', async () => {
+      const tx = makeTx();
+      tx.order.create.mockResolvedValue({ id: 'order-1', items: [] });
+      tx.product.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      const afterCreate = jest.fn().mockRejectedValue(new Error('outbox write failed'));
+
+      await expect(repository.createFromCart(baseParams, afterCreate)).rejects.toThrow(
+        'outbox write failed',
+      );
+    });
   });
 
   // ─── createFromCart — price snapshot & subtotal (TASK-057 / TASK-058) ──────

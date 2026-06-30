@@ -12,7 +12,7 @@ import { OrderService } from './order.service';
 import { OrderEntity } from './entities';
 import { CartRepository, CartWithItems } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
-import { MailService } from '../mail/mail.service';
+import { MailOutboxService } from '../mail-outbox';
 import { DeliveryService } from '../delivery';
 import type { User } from '@prisma/client';
 import type { OrderWithItems } from './order.types';
@@ -151,9 +151,30 @@ const userRepositoryMock = {
   findById: jest.fn(),
 };
 
-const mailServiceMock = {
-  sendOrderConfirmation: jest.fn(),
+// The order-confirmation email is now enqueued into the transactional outbox
+// (TASK-103-F) INSIDE the order's transaction — no synchronous SMTP send.
+const mailOutboxServiceMock = {
+  enqueueOrderConfirmation: jest.fn(),
 };
+
+/** Fake transaction client handed to the createFromCart afterCreate hook. */
+const txMock = { mailOutbox: { create: jest.fn() } };
+
+/**
+ * Default createFromCart behaviour: resolve to a created order AND drive the
+ * in-transaction afterCreate hook (so the outbox enqueue runs), mirroring the
+ * real repository which invokes the hook inside its `$transaction`.
+ */
+const resolveCreateWithHook = (order: OrderWithItems = makeOrder()) =>
+  orderRepositoryMock.createFromCart.mockImplementation(
+    async (
+      _params: unknown,
+      afterCreate?: (tx: unknown, created: OrderWithItems) => Promise<void>,
+    ) => {
+      if (afterCreate) await afterCreate(txMock, order);
+      return order;
+    },
+  );
 
 const deliveryServiceMock = {
   estimateShipping: jest.fn(),
@@ -190,7 +211,7 @@ describe('OrderService', () => {
         { provide: OrderRepository, useValue: orderRepositoryMock },
         { provide: CartRepository, useValue: cartRepositoryMock },
         { provide: UserRepository, useValue: userRepositoryMock },
-        { provide: MailService, useValue: mailServiceMock },
+        { provide: MailOutboxService, useValue: mailOutboxServiceMock },
         { provide: DeliveryService, useValue: deliveryServiceMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
       ],
@@ -225,14 +246,18 @@ describe('OrderService', () => {
 
       await service.createOrder(USER_ID, createDto);
 
-      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith({
-        userId: USER_ID,
-        cartId: 'cart-uuid-1',
-        cartItems: cartWithItems.items,
-        shippingAddress: address,
-        billingAddress: undefined,
-        notes: undefined,
-      });
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
+        {
+          userId: USER_ID,
+          cartId: 'cart-uuid-1',
+          cartItems: cartWithItems.items,
+          shippingAddress: address,
+          billingAddress: undefined,
+          notes: undefined,
+        },
+        // TASK-103-F: in-transaction outbox-enqueue hook passed as 2nd arg.
+        expect.any(Function),
+      );
     });
 
     it('does not estimate shipping for a free-text order (no npCityRef)', async () => {
@@ -260,6 +285,7 @@ describe('OrderService', () => {
       expect(deliveryServiceMock.estimateShipping).toHaveBeenCalledWith('city-ref-1');
       expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
         expect.objectContaining({ shippingCost: 60 }),
+        expect.any(Function),
       );
     });
 
@@ -275,6 +301,7 @@ describe('OrderService', () => {
 
       expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
         expect.objectContaining({ shippingCost: 0 }),
+        expect.any(Function),
       );
     });
 
@@ -342,48 +369,51 @@ describe('OrderService', () => {
     });
   });
 
-  // ─── createOrder → email dispatch (fault-isolated side-effect) ──────────────
+  // ─── createOrder → outbox enqueue (transactional outbox, TASK-103-F) ────────
+  // The confirmation email is no longer sent synchronously; it is enqueued into
+  // the mail outbox INSIDE the order's transaction (the repository drives the
+  // afterCreate hook). A background worker dispatches it later.
 
-  describe('createOrder — email dispatch', () => {
+  describe('createOrder — outbox enqueue', () => {
     beforeEach(() => {
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
-      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+      resolveCreateWithHook();
     });
 
-    it('sends a confirmation email to the recipient after a successful create', async () => {
+    it('enqueues an order-confirmation outbox row for the recipient in the transaction', async () => {
       userRepositoryMock.findById.mockResolvedValue(recipient);
 
       const result = await service.createOrder(USER_ID, createDto);
 
-      expect(userRepositoryMock.findById).toHaveBeenCalledWith(USER_ID);
-      expect(mailServiceMock.sendOrderConfirmation).toHaveBeenCalledTimes(1);
-      expect(mailServiceMock.sendOrderConfirmation).toHaveBeenCalledWith({
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
+      const [params, tx] = mailOutboxServiceMock.enqueueOrderConfirmation.mock.calls[0];
+      expect(params).toEqual({
         to: recipient.email,
-        order: result,
+        order: expect.any(OrderEntity),
         customerName: recipient.firstName,
       });
+      // Enqueued through the order's transaction client (atomic with the order).
+      expect(tx).toBe(txMock);
       expect(result).toBeInstanceOf(OrderEntity);
     });
 
-    it('still resolves with the order when the email send rejects (fault isolation)', async () => {
-      userRepositoryMock.findById.mockResolvedValue(recipient);
-      mailServiceMock.sendOrderConfirmation.mockRejectedValue(new Error('SMTP unavailable'));
-
-      const result = await service.createOrder(USER_ID, createDto);
-
-      expect(result).toBeInstanceOf(OrderEntity);
-      expect(result.id).toBe('order-uuid-1');
-    });
-
-    it('reuses the guard-fetched user for the email (no second lookup)', async () => {
+    it('does NOT perform a synchronous SMTP send (no MailService instance call)', async () => {
       userRepositoryMock.findById.mockResolvedValue(recipient);
 
       await service.createOrder(USER_ID, createDto);
 
-      // The ban guard already fetched the user; the email path must reuse it
-      // rather than issue a redundant findById.
+      // OrderService no longer depends on MailService at all — the only mail
+      // interaction is the outbox enqueue above.
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
+    });
+
+    it('reuses the guard-fetched user for the enqueue (no second lookup)', async () => {
+      userRepositoryMock.findById.mockResolvedValue(recipient);
+
+      await service.createOrder(USER_ID, createDto);
+
       expect(userRepositoryMock.findById).toHaveBeenCalledTimes(1);
-      expect(mailServiceMock.sendOrderConfirmation).toHaveBeenCalledTimes(1);
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
     });
   });
 
