@@ -18,6 +18,7 @@ import { PagesModule } from './pages';
 import { SiteContactModule } from './site-contact';
 import { CartModule } from './cart';
 import { OrderModule } from './order';
+import { DiscountModule } from './discount';
 import { ReviewModule } from './review';
 import { DeliveryModule } from './delivery';
 import { DashboardModule } from './dashboard';
@@ -103,6 +104,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Orders
     OrderModule,
+
+    // Discounts / promo codes (TASK-079)
+    DiscountModule,
 
     // Product reviews (public submission/list + admin moderation)
     ReviewModule,
