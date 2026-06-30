@@ -139,14 +139,14 @@
 | --- | --- | --- | --- |
 | TASK-078 | Product reviews — write flow + moderation (auth'd submission, verified-purchase, PDP list, admin approval queue) | ✅ | [docs/plans/089-product-reviews.md](docs/plans/089-product-reviews.md) |
 | TASK-106 | Reviews module backend — controller/service/repository over existing `Review` model (prereq for TASK-078) | ✅ | [docs/plans/089-product-reviews.md](docs/plans/089-product-reviews.md) |
-| TASK-079 | Coupons / promo codes — `Discount` model (percent/fixed, min-spend, expiry, usage caps), apply in cart/checkout, admin CRUD | ⬜ | — |
+| TASK-079 | Coupons / promo codes — `Discount` model (percent/fixed, min-spend, expiry, usage caps), apply in cart/checkout, admin CRUD | ⬜ | [docs/plans/090-coupons-discounts.md](docs/plans/090-coupons-discounts.md) |
 | TASK-075 | Full-text search + header autocomplete — Meilisearch (typo-tolerant) behind `/search`; inline header dropdown | ⬜ | — |
-| TASK-076 | Wishlist / favorites — guest-via-cookie + merge-on-login (mirrors guest-cart pattern) | ⬜ | — |
+| TASK-076 | Wishlist / favorites — guest-via-cookie + merge-on-login (mirrors guest-cart pattern) | ⬜ | [docs/plans/091-wishlist-favorites.md](docs/plans/091-wishlist-favorites.md) |
 | TASK-077 | Variant dots + quick-add — surface variant summary on list API; color dots + hover ATC overlay | ✅ | — |
 | TASK-074 | Image optimization — `next/image` remotePatterns + shimmer placeholder | ✅ | docs/plans/042-image-optimization.md |
 | TASK-091 | Origin-side image pre-optimization — `sharp` WebP renditions + per-image LQIP `blurDataUrl` on upload | ⬜ | — |
 | TASK-048 | Sentry integration (frontend + backend) — `@sentry/nestjs` + `@sentry/nextjs`, wire to Pino error path | ⬜ | — |
-| TASK-103 | Mail reliability — replace fire-and-forget with transactional outbox + retry worker | ⬜ | — |
+| TASK-103 | Mail reliability — replace fire-and-forget with transactional outbox + retry worker | ⬜ | [docs/plans/092-mail-outbox.md](docs/plans/092-mail-outbox.md) |
 | TASK-104-J | Soft deletes — integration green; **pending:** apply `add_soft_delete_audit` migration + Swagger DELETE smoke on a running DB | 🔄 | docs/plans/047-soft-deletes-audit.md |
 | TASK-105 / 105-D | Frontend test harness — RTL/MSW + store-admin Jest shipped; **pending:** run Playwright E2E (DB + browsers) | 🔄 | docs/plans/048-frontend-test-harness.md |
 | TASK-101 | Run the *Pending manual QA* list to closure (Redis int, dashboard int, JSON-LD live, admin CSRF smoke) | ⬜ | — |
