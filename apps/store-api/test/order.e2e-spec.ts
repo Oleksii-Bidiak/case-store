@@ -4,13 +4,14 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CartRepository, CartWithItems } from '../src/cart/cart.repository';
 import { OrderRepository } from '../src/order/order.repository';
+import { DiscountRepository } from '../src/discount';
 import { MailService } from '../src/mail/mail.service';
 import type { OrderWithItems } from '../src/order/order.types';
 import { PrismaService } from '../src/prisma';
@@ -46,6 +47,22 @@ describe('OrderController (e2e)', () => {
     updateStatus: jest.fn(),
     cancelAndRestock: jest.fn(),
     updatePaymentStatus: jest.fn(),
+  };
+
+  // TASK-079: DiscountRepository is mocked so the order-with-discount path can
+  // recompute a code without a real DB. createFromCart itself is mocked, so the
+  // redeem closure is not invoked here (the redeem-in-transaction path is
+  // covered by the order.service unit spec + the integration runner).
+  const discountRepositoryMock = {
+    findByCode: jest.fn(),
+    findById: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    softDeactivate: jest.fn(),
+    countUserRedemptions: jest.fn(),
+    incrementRedeemed: jest.fn(),
+    createRedemption: jest.fn(),
   };
 
   const cartRepositoryMock = {
@@ -225,6 +242,8 @@ describe('OrderController (e2e)', () => {
       .useValue(cartRepositoryMock)
       .overrideProvider(OrderRepository)
       .useValue(orderRepositoryMock)
+      .overrideProvider(DiscountRepository)
+      .useValue(discountRepositoryMock)
       .overrideProvider(MailService)
       .useValue(mailServiceMock)
       .overrideProvider(APP_GUARD)
@@ -289,6 +308,51 @@ describe('OrderController (e2e)', () => {
       expect(mailServiceMock.sendOrderConfirmation).toHaveBeenCalledWith(
         expect.objectContaining({ to: 'usera@example.com' }),
       );
+    });
+
+    it('recomputes and applies a promo code at checkout (TASK-079)', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
+      // Subtotal is 59.98 (29.99 × 2); a 10% PERCENT code discounts 6.00.
+      discountRepositoryMock.findByCode.mockResolvedValue({
+        id: 'd-e2e-1',
+        code: 'SUMMER10',
+        type: 'PERCENT',
+        value: new Prisma.Decimal('10'),
+        minSpend: null,
+        maxRedemptions: null,
+        redeemedCount: 0,
+        perUserLimit: null,
+        startsAt: null,
+        expiresAt: null,
+        isActive: true,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      });
+      orderRepositoryMock.createFromCart.mockResolvedValue(
+        makeOrder({
+          discount: { toString: () => '6.00' },
+          discountCode: 'SUMMER10',
+          total: { toString: () => '53.98' },
+        }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ shippingAddress: validAddress, discountCode: 'summer10' })
+        .expect(201);
+
+      expect(discountRepositoryMock.findByCode).toHaveBeenCalledWith('SUMMER10');
+      // The recomputed discount (amount + code) is forwarded into the order tx.
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          discount: expect.objectContaining({ amount: '6.00', code: 'SUMMER10' }),
+        }),
+      );
+      expect(response.body.data.discountCode).toBe('SUMMER10');
+      expect(response.body.data.discount).toBe('6.00');
+      expect(response.body.data.total).toBe('53.98');
     });
 
     it('should return 401 without a JWT', async () => {
