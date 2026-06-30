@@ -423,7 +423,7 @@ describe('Wishlist — guest & merge (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/auth/register')
         .set('Cookie', `wishlistToken=${GUEST_TOKEN}`)
-        .send({ ...credentials, name: 'Wishlist Tester' })
+        .send({ ...credentials, firstName: 'Wishlist', lastName: 'Tester' })
         .expect(201);
 
       expect(mergeSpy).toHaveBeenCalledWith(GUEST_TOKEN, USER_ID);

@@ -378,6 +378,9 @@ describe('OrderController (e2e)', () => {
         expect.objectContaining({
           discount: expect.objectContaining({ amount: '6.00', code: 'SUMMER10' }),
         }),
+        // TASK-103: createFromCart also receives the in-transaction afterCreate
+        // callback (mail-outbox enqueue) as a second argument.
+        expect.any(Function),
       );
       expect(response.body.data.discountCode).toBe('SUMMER10');
       expect(response.body.data.discount).toBe('6.00');
