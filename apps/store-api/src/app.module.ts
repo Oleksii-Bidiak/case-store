@@ -17,6 +17,7 @@ import { CategoryModule } from './category';
 import { PagesModule } from './pages';
 import { SiteContactModule } from './site-contact';
 import { CartModule } from './cart';
+import { WishlistModule } from './wishlist';
 import { OrderModule } from './order';
 import { DiscountModule } from './discount';
 import { ReviewModule } from './review';
@@ -102,6 +103,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Shopping cart
     CartModule,
+
+    // Wishlist / favorites (guest via cookie, merges on login — TASK-076)
+    WishlistModule,
 
     // Orders
     OrderModule,

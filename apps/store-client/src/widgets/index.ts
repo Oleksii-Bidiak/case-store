@@ -7,6 +7,7 @@ export { ProductListView, ProductListSkeleton } from "./product-list";
 export { ProductDetailView, ProductDetailSkeleton } from "./product-detail";
 export { ProductReviewsWidget } from "./product-reviews";
 export { CartView, CartSkeleton } from "./cart";
+export { WishlistView, WishlistSkeleton } from "./wishlist";
 export { CheckoutView, CheckoutOrderSummary } from "./checkout";
 export {
   OrderConfirmationView,

@@ -31,6 +31,8 @@ import { CurrentUser } from './decorators';
 import { AuthTokens } from './entities';
 import { CartService } from '../cart/cart.service';
 import { CART_TOKEN_COOKIE } from '../cart/cart-identity.types';
+import { WishlistService } from '../wishlist/wishlist.service';
+import { WISHLIST_TOKEN_COOKIE } from '../wishlist/wishlist-identity.types';
 
 /**
  * Response envelope for auth operations.
@@ -63,6 +65,7 @@ export class AuthController {
     private readonly configService: ConfigService,
     private readonly jwtService: JwtService,
     private readonly cartService: CartService,
+    private readonly wishlistService: WishlistService,
   ) {}
 
   /**
@@ -97,6 +100,7 @@ export class AuthController {
 
     this.setRefreshCookie(response, tokens.refreshToken);
     await this.mergeGuestCartIfPresent(request, response, tokens.accessToken);
+    await this.mergeGuestWishlistIfPresent(request, response, tokens.accessToken);
 
     return {
       data: { accessToken: tokens.accessToken },
@@ -135,6 +139,7 @@ export class AuthController {
 
     this.setRefreshCookie(response, tokens.refreshToken);
     await this.mergeGuestCartIfPresent(request, response, tokens.accessToken);
+    await this.mergeGuestWishlistIfPresent(request, response, tokens.accessToken);
 
     return {
       data: { accessToken: tokens.accessToken },
@@ -283,6 +288,57 @@ export class AuthController {
     const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
 
     response.cookie(CART_TOKEN_COOKIE, '', {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'strict',
+      path: '/api',
+      maxAge: 0,
+    });
+  }
+
+  /**
+   * If the request carries a guest `wishlistToken` cookie, merge that guest
+   * wishlist into the authenticated user's wishlist and clear the cookie. The
+   * user ID is read from the freshly-signed access token's `sub` claim.
+   *
+   * Sibling of {@link mergeGuestCartIfPresent} — same defensive contract: a
+   * merge failure must never block authentication (errors are logged and
+   * swallowed), and the guest cookie is cleared ONLY after a successful merge so
+   * a transient failure leaves the guest wishlist intact for a later retry.
+   */
+  private async mergeGuestWishlistIfPresent(
+    request: Request,
+    response: Response,
+    accessToken: string,
+  ): Promise<void> {
+    const wishlistToken: string | undefined = request.cookies?.[WISHLIST_TOKEN_COOKIE];
+
+    if (!wishlistToken) {
+      return;
+    }
+
+    try {
+      const payload = this.jwtService.decode(accessToken) as { sub?: string } | null;
+      const userId = payload?.sub;
+
+      if (userId) {
+        await this.wishlistService.mergeGuestWishlist(wishlistToken, userId);
+      }
+
+      // Clear the guest cookie only on success — never in a finally block.
+      this.clearWishlistTokenCookie(response);
+    } catch (error) {
+      this.logger.error('Guest wishlist merge on authentication failed', error as Error);
+    }
+  }
+
+  /**
+   * Clear the guest wishlist token cookie after a successful merge.
+   */
+  private clearWishlistTokenCookie(response: Response): void {
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+
+    response.cookie(WISHLIST_TOKEN_COOKIE, '', {
       httpOnly: true,
       secure: isProduction,
       sameSite: 'strict',

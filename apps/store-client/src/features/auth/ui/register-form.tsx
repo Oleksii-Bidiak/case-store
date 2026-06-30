@@ -9,6 +9,7 @@ import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth, useAuthControllerRegister } from "@/entities/session";
 import { getGetCartQueryKey } from "@/entities/cart";
+import { getGetWishlistQueryKey } from "@/entities/wishlist";
 import { dict } from "@/shared/config";
 
 const registerSchema = z
@@ -81,6 +82,9 @@ export function RegisterForm() {
             setTokens(token);
           }
           queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
+          queryClient.invalidateQueries({
+            queryKey: getGetWishlistQueryKey(),
+          });
           router.push(redirectTarget);
         },
       },

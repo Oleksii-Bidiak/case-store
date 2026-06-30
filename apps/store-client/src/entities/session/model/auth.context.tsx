@@ -11,6 +11,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { api, setAccessToken } from "@/shared/api";
 import { getGetCartQueryKey } from "@/shared/api/generated/cart/cart";
+import { getGetWishlistQueryKey } from "@/shared/api/generated/wishlist/wishlist";
 
 export interface AuthContextValue {
   accessToken: string | null;
@@ -77,12 +78,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const token = res.data?.data?.accessToken;
         if (active && token) {
           setTokens(token);
-          // Session restored on reload: the cart query may already have fired as
-          // a guest during this bootstrap window. Invalidate it so it refetches
-          // with the now-authenticated identity and surfaces the merged user cart
-          // instead of the empty guest cart created mid-bootstrap (TASK-118-C).
+          // Session restored on reload: the cart/wishlist queries may already
+          // have fired as a guest during this bootstrap window. Invalidate them
+          // so they refetch with the now-authenticated identity and surface the
+          // merged user cart/wishlist instead of the empty guest one created
+          // mid-bootstrap (TASK-118-C; wishlist mirrors this for TASK-076).
           void queryClient.invalidateQueries({
             queryKey: getGetCartQueryKey(),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: getGetWishlistQueryKey(),
           });
         }
       } catch {
