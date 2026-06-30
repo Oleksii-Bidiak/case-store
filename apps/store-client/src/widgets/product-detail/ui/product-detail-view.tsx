@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { useProductControllerFindBySlug } from "@/entities/product";
 import { AddToCartButton } from "@/features/add-to-cart";
+import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { Badge, RatingStars } from "@/shared/ui";
@@ -139,7 +140,19 @@ export function ProductDetailView({ slug }: { slug: string }) {
             />
           )}
 
-          <AddToCartButton productId={product.id} disabled={!product.inStock} />
+          <div className="flex items-stretch gap-3">
+            <div className="flex-1">
+              <AddToCartButton
+                productId={product.id}
+                disabled={!product.inStock}
+              />
+            </div>
+            <WishlistToggleButton
+              productId={product.id}
+              productName={product.name}
+              variant="inline"
+            />
+          </div>
 
           <ProductTrustBadges />
         </div>

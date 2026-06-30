@@ -473,6 +473,35 @@ export const dict = {
     quickAdd: "Швидке додавання",
     /** Advertised "from {price}" prefix when a group has cheaper variants. */
     priceFrom: "від",
+    /** Aria label for the wishlist heart when the product is NOT saved. */
+    wishlistAddAria: (name: string) => `Додати «${name}» до списку бажань`,
+    /** Aria label for the wishlist heart when the product IS saved. */
+    wishlistRemoveAria: (name: string) => `Прибрати «${name}» зі списку бажань`,
+  },
+
+  // TASK-076 — wishlist / favorites (guest via cookie, merges on login).
+  wishlist: {
+    /** Header icon accessible label. */
+    headerAria: "Список бажань",
+    /** Mobile-menu link + nav label. */
+    navLabel: "Список бажань",
+    /** Page heading. */
+    heading: "Список бажань",
+    /** Count line under the heading. */
+    count: (n: number) => `${n} ${n === 1 ? "товар" : "товарів"} збережено`,
+    /** Empty-state heading + body + CTA. */
+    emptyHeading: "Ваш список бажань порожній",
+    emptyBody:
+      "Збережіть товари, натиснувши на сердечко, щоб знайти їх пізніше.",
+    emptyCta: "Перейти до товарів",
+    /** Remove-from-list control on a saved card. */
+    removeAria: (name: string) => `Прибрати «${name}» зі списку бажань`,
+    remove: "Прибрати",
+    /** Error toast when a toggle/remove mutation fails. */
+    error: "Не вдалося оновити список бажань. Спробуйте ще раз.",
+    /** Metadata for the /wishlist route. */
+    metaTitle: "Список бажань | MobileStore",
+    metaDescription: "Збережені товари у вашому списку бажань.",
   },
 } as const;
 

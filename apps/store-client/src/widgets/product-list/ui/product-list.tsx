@@ -8,6 +8,7 @@ import {
 } from "@/entities/product";
 import { ProductCard } from "@/shared/ui";
 import { AddToCartButton } from "@/features/add-to-cart";
+import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { dict } from "@/shared/config";
 import { ProductListSkeleton } from "./product-list-skeleton";
 import { Pagination } from "./pagination";
@@ -81,6 +82,12 @@ export function ProductList({ params, buildPageHref }: ProductListProps) {
               product={product}
               // First row (4 cards on desktop) is above the fold — load eagerly for LCP.
               priority={index < 4}
+              wishlist={
+                <WishlistToggleButton
+                  productId={product.id}
+                  productName={product.name}
+                />
+              }
               quickAdd={
                 <AddToCartButton
                   productId={product.variantSummary.defaultVariantId}

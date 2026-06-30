@@ -34,6 +34,7 @@ export function ProductCard({
   product,
   action,
   quickAdd,
+  wishlist,
   priority = false,
 }: {
   product: PublicProductEntity;
@@ -41,6 +42,12 @@ export function ProductCard({
   action?: ReactNode;
   /** Optional quick-add control overlaid on the image, shown on hover/focus. */
   quickAdd?: ReactNode;
+  /**
+   * Optional wishlist heart pinned to the image's top-right corner (always
+   * visible, above the stretched link so it stays independently clickable).
+   * Injected by widgets; shared/ui stays free of feature imports.
+   */
+  wishlist?: ReactNode;
   priority?: boolean;
 }) {
   const summary = product.variantSummary;
@@ -99,6 +106,13 @@ export function ProductCard({
             </Badge>
           )}
         </div>
+
+        {/* Wishlist heart — pinned top-right, above the stretched link (z-20) so
+            it stays independently clickable without nesting a control in the
+            anchor. */}
+        {wishlist && (
+          <div className="absolute right-2.5 top-2.5 z-20">{wishlist}</div>
+        )}
 
         {/* Quick-add overlay — sits above the stretched link (z-20) so it stays
             independently clickable. Hidden (and non-interactive to pointers)

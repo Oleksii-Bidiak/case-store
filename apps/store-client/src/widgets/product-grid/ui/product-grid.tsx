@@ -3,6 +3,7 @@
 import { useProductControllerFindAll } from "@/entities/product";
 import { ProductCard } from "@/shared/ui";
 import { AddToCartButton } from "@/features/add-to-cart";
+import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { dict } from "@/shared/config";
 import { ProductGridSkeleton } from "./product-grid-skeleton";
 
@@ -44,6 +45,12 @@ export function ProductGrid() {
           product={product}
           // First row (4 cards on desktop) is above the fold — load eagerly for LCP.
           priority={index < 4}
+          wishlist={
+            <WishlistToggleButton
+              productId={product.id}
+              productName={product.name}
+            />
+          }
           quickAdd={
             <AddToCartButton
               productId={product.variantSummary.defaultVariantId}

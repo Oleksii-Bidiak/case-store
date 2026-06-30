@@ -17,6 +17,7 @@ import {
 import { dict } from "@/shared/config";
 import { HeaderAuth } from "./header-auth";
 import { HeaderCartBadge } from "./header-cart-badge";
+import { HeaderWishlistBadge } from "./header-wishlist-badge";
 
 const MOBILE_LINK_CLASS =
   "rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -97,6 +98,13 @@ export function Header() {
                 >
                   {dict.nav.cart}
                 </Link>
+                <Link
+                  href="/wishlist"
+                  onClick={() => setMenuOpen(false)}
+                  className={MOBILE_LINK_CLASS}
+                >
+                  {dict.wishlist.navLabel}
+                </Link>
 
                 {/* Auth area — hidden until the session bootstrap settles. */}
                 {!isInitializing &&
@@ -176,8 +184,9 @@ export function Header() {
           ))}
         </nav>
 
-        {/* Right: cart + auth */}
+        {/* Right: wishlist + cart + auth */}
         <div className="flex items-center gap-2 sm:gap-3">
+          <HeaderWishlistBadge />
           <HeaderCartBadge />
           <HeaderAuth />
         </div>
