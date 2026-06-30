@@ -20,6 +20,10 @@ export { AdminPageTable, AdminPageTableSkeleton } from "./page-list";
 export { CreatePageView, EditPageView } from "./page-form-view";
 export { SiteContactSettingsView } from "./site-contact-settings-view";
 export { AdminOrderTable, AdminOrderTableSkeleton } from "./order-list";
+export {
+  AdminReviewTable,
+  AdminReviewTableSkeleton,
+} from "./review-moderation";
 export { OrderDetailView, OrderDetailSkeleton } from "./order-detail";
 export { AdminUserTable, AdminUserTableSkeleton } from "./user-list";
 export { UserDetailView, UserDetailSkeleton } from "./user-detail";

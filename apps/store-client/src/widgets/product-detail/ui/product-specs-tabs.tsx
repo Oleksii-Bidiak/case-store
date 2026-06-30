@@ -2,16 +2,19 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { ProductReviewsWidget } from "@/widgets/product-reviews";
 
 /**
  * ProductSpecsTabs — Description / Specifications / Reviews tabs for the PDP.
- * Specifications and Reviews are placeholders until the product entity carries
- * structured specs and a reviews endpoint exists (tracked separately).
+ * Specifications is a placeholder until the product entity carries structured
+ * specs; the Reviews tab renders the live {@link ProductReviewsWidget}.
  */
 export function ProductSpecsTabs({
   description,
+  productId,
 }: {
   description: string | null;
+  productId: string;
 }) {
   return (
     <Tabs defaultValue="description" className="w-full">
@@ -20,9 +23,7 @@ export function ProductSpecsTabs({
           {dict.product.tabDescription}
         </TabsTrigger>
         <TabsTrigger value="specs">{dict.product.tabSpecs}</TabsTrigger>
-        <TabsTrigger value="reviews" disabled>
-          {dict.product.tabReviews}
-        </TabsTrigger>
+        <TabsTrigger value="reviews">{dict.product.tabReviews}</TabsTrigger>
       </TabsList>
 
       <TabsContent
@@ -38,11 +39,8 @@ export function ProductSpecsTabs({
         {dict.product.specsEmpty}
       </TabsContent>
 
-      <TabsContent
-        value="reviews"
-        className="pt-4 text-sm text-muted-foreground"
-      >
-        {dict.product.reviewsSoon}
+      <TabsContent value="reviews" className="pt-4">
+        <ProductReviewsWidget productId={productId} />
       </TabsContent>
     </Tabs>
   );

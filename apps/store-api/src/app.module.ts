@@ -18,6 +18,7 @@ import { PagesModule } from './pages';
 import { SiteContactModule } from './site-contact';
 import { CartModule } from './cart';
 import { OrderModule } from './order';
+import { ReviewModule } from './review';
 import { DeliveryModule } from './delivery';
 import { DashboardModule } from './dashboard';
 import { MailModule } from './mail';
@@ -102,6 +103,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Orders
     OrderModule,
+
+    // Product reviews (public submission/list + admin moderation)
+    ReviewModule,
 
     // Nova Poshta delivery proxy (city/warehouse search + cost estimate)
     DeliveryModule,

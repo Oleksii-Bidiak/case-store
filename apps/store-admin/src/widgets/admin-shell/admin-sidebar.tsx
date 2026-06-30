@@ -7,6 +7,7 @@ import {
   Tag,
   FileText,
   ShoppingCart,
+  Star,
   Users,
   Phone,
   Settings,
@@ -24,6 +25,7 @@ const navItems = [
   { label: dict.nav.categories, href: "/categories", icon: Tag },
   { label: dict.nav.pages, href: "/pages", icon: FileText },
   { label: dict.nav.orders, href: "/orders", icon: ShoppingCart },
+  { label: dict.nav.reviews, href: "/reviews", icon: Star },
   { label: dict.nav.users, href: "/users", icon: Users },
 ];
 
