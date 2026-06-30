@@ -5,5 +5,6 @@ export type { SendOrderConfirmationParams } from './mail.service';
 export {
   buildOrderConfirmationEmail,
   type OrderConfirmationParams,
+  type OrderConfirmationMailPayload,
   type MailTemplate,
 } from './templates/order-confirmation.template';
