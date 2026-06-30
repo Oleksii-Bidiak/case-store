@@ -55,6 +55,9 @@
 | Reviews end-to-end: a logged-in user submits a review on the PDP → it does NOT show until an admin approves it in `/reviews` (moderation queue) → after approve it appears in the PDP Reviews tab with the aggregate rating; verified-purchase badge shows for buyers; duplicate submit returns 409 | TASK-078 / TASK-106 | needs a running stack |
 | Variant dots + quick-add: a product card for a grouped product shows colour dots + an advertised "from {price}"; hovering (or keyboard-focusing) the card reveals a quick-add button that adds the default (cheapest) variant to the cart; out-of-stock default disables the button | TASK-077 | needs a running stack |
 | Image optimization: product images load via `next/image` (lazy, with a blur/shimmer placeholder); first above-the-fold row loads eagerly (no layout shift); remote `/uploads/**` host renders without a Next image-host error | TASK-074 | needs a running stack |
+| Coupons: admin creates a percent + a fixed code (with min-spend/expiry/caps); in the cart, applying a valid code shows the discount and updated total, an invalid/expired/below-min/used-up code shows the typed error; the order persists `discount`/`discountCode` and increments `redeemedCount`; the server recomputes (a tampered client amount is ignored) | TASK-079 | needs a running stack |
+| Wishlist: a guest hearts products (persist across reload via `wishlistToken`); on login/register the guest list merges into the account with no duplicates; the header badge count updates; `/wishlist` lists saved items and remove works | TASK-076 | needs a running stack |
+| Mail outbox: placing an order returns immediately and writes a `mail_outbox` PENDING row in the same transaction; with `MAIL_ENABLED=true` the cron worker sends it and marks SENT; a forced SMTP failure retries with backoff then FAILED after maxAttempts; with mail disabled rows drain as no-op SENT | TASK-103 | needs a running stack (SMTP) |
 
 ---
 
@@ -139,19 +142,20 @@
 | --- | --- | --- | --- |
 | TASK-078 | Product reviews — write flow + moderation (auth'd submission, verified-purchase, PDP list, admin approval queue) | ✅ | [docs/plans/089-product-reviews.md](docs/plans/089-product-reviews.md) |
 | TASK-106 | Reviews module backend — controller/service/repository over existing `Review` model (prereq for TASK-078) | ✅ | [docs/plans/089-product-reviews.md](docs/plans/089-product-reviews.md) |
-| TASK-079 | Coupons / promo codes — `Discount` model (percent/fixed, min-spend, expiry, usage caps), apply in cart/checkout, admin CRUD | 🔄 | [docs/plans/090-coupons-discounts.md](docs/plans/090-coupons-discounts.md) |
+| TASK-079 | Coupons / promo codes — `Discount` model (percent/fixed, min-spend, expiry, usage caps), apply in cart/checkout, admin CRUD | ✅ | [docs/plans/090-coupons-discounts.md](docs/plans/090-coupons-discounts.md) |
 | TASK-075 | Full-text search + header autocomplete — Meilisearch (typo-tolerant) behind `/search`; inline header dropdown | ⬜ | — |
-| TASK-076 | Wishlist / favorites — guest-via-cookie + merge-on-login (mirrors guest-cart pattern) | 🔄 | [docs/plans/091-wishlist-favorites.md](docs/plans/091-wishlist-favorites.md) |
+| TASK-076 | Wishlist / favorites — guest-via-cookie + merge-on-login (mirrors guest-cart pattern) | ✅ | [docs/plans/091-wishlist-favorites.md](docs/plans/091-wishlist-favorites.md) |
 | TASK-077 | Variant dots + quick-add — surface variant summary on list API; color dots + hover ATC overlay | ✅ | — |
 | TASK-074 | Image optimization — `next/image` remotePatterns + shimmer placeholder | ✅ | docs/plans/042-image-optimization.md |
 | TASK-091 | Origin-side image pre-optimization — `sharp` WebP renditions + per-image LQIP `blurDataUrl` on upload | ⬜ | — |
 | TASK-048 | Sentry integration (frontend + backend) — `@sentry/nestjs` + `@sentry/nextjs`, wire to Pino error path | ⬜ | — |
-| TASK-103 | Mail reliability — replace fire-and-forget with transactional outbox + retry worker | 🔄 | [docs/plans/092-mail-outbox.md](docs/plans/092-mail-outbox.md) |
+| TASK-103 | Mail reliability — replace fire-and-forget with transactional outbox + retry worker | ✅ | [docs/plans/092-mail-outbox.md](docs/plans/092-mail-outbox.md) |
 | TASK-104-J | Soft deletes — integration green; **pending:** apply `add_soft_delete_audit` migration + Swagger DELETE smoke on a running DB | 🔄 | docs/plans/047-soft-deletes-audit.md |
 | TASK-105 / 105-D | Frontend test harness — RTL/MSW + store-admin Jest shipped; **pending:** run Playwright E2E (DB + browsers) | 🔄 | docs/plans/048-frontend-test-harness.md |
 | TASK-101 | Run the *Pending manual QA* list to closure (Redis int, dashboard int, JSON-LD live, admin CSRF smoke) | ⬜ | — |
 | TASK-157 | **[NEW]** Remove the deprecated payment-confirm path now superseded by TASK-151 — delete `OrderService.confirmPayment`, `OrderRepository.markPaid`, and the `PATCH /api/orders/:id/confirm-payment` route (+ its tests) once no external consumer depends on it. | ✅ | — |
 | TASK-159 | **[BUG]** Order e2e happy-path 500s — `OrderItemEntity.fromPrisma` reads `product.images[0]`. **Root cause: test-fixture defect, NOT production** — `ORDERS_INCLUDE` always selects `images` and `OrderItemRow.product.images` is required, but the mocked `makeOrder()` line item omitted `images`, so the contract-violating mock crashed every order happy-path (8–9 e2e). Fixed by adding the `images` array to the fixture + asserting `imageUrl` maps in `expectOrderShape`. order+rbac e2e 41/41 green. | ✅ | — |
+| TASK-160 | **[BUG]** Pre-existing **e2e harness** instability surfaced by the full `test:e2e` run (Wave-2 features all pass in isolation): (a) **same `images[0]` fixture defect as TASK-159 in the CART path** — `cart-item.entity.ts:123` reads `product.images[0]`; `cart-guest.e2e` mock omits `images` → 500s; (b) **throttler state leaks across suites** — `cart-guest`/`auth` merge-on-login get `429` after `security.e2e` exhausts the login limit (suites don't reset the `ThrottlerModule` store). Fix the cart mock like TASK-159 and isolate/reset throttler state per suite (or raise the limit in the e2e Throttler config). | ⬜ | — |
 
 ---
 
@@ -222,7 +226,7 @@
   manual visual QA remains, mark ✅ and add a line to *Pending manual QA*.
 - **Block a task:** change to ❌ with a note. **Park a task:** 🅿️ with a one-line reason.
 - **New task IDs:** use a single monotonic counter — next free integer above the current max
-  (currently TASK-156; next plain ID is TASK-157). TASK-091 and below are historical. Never reuse an old ID.
+  (currently TASK-160; next plain ID is TASK-161). TASK-091 and below are historical. Never reuse an old ID.
 - **Plans:** add the `docs/plans/NNN-*.md` path in the Plan column when one is written.
 - **Finishing a parent:** move its detailed sub-tasks into `docs/backlog-archive.md` and leave a
   one-row summary under *Completed*.
