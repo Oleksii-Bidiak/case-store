@@ -52,6 +52,9 @@
 | Dashboard shows earned vs unrealized (ordered-but-unpaid) revenue cards; run the unrealized int-spec `npm run test:int -w apps/store-api` against `store_test` | TASK-137 | needs `test:int` DB |
 | No Radix `aria-describedby` console warning when opening the mobile-menu Sheet; the "Mail disabled — skipping…" line is visible at info level when mail is disabled; link-preload warning — reproduce in a browser then fix (best-effort; may remain a follow-up) | TASK-138 | needs a running stack / browser |
 | Staff preview of deactivated products: deactivate a product → on the admin edit page click "Переглянути" → `/products/preview/{slug}` opens in a new tab showing the full detail + amber "deactivated" banner; the same slug on the storefront `/products/{slug}` still 404s for customers; a non-admin token gets 403 on `GET /api/products/admin/preview/:slug` | TASK-155 | needs a running stack |
+| Reviews end-to-end: a logged-in user submits a review on the PDP → it does NOT show until an admin approves it in `/reviews` (moderation queue) → after approve it appears in the PDP Reviews tab with the aggregate rating; verified-purchase badge shows for buyers; duplicate submit returns 409 | TASK-078 / TASK-106 | needs a running stack |
+| Variant dots + quick-add: a product card for a grouped product shows colour dots + an advertised "from {price}"; hovering (or keyboard-focusing) the card reveals a quick-add button that adds the default (cheapest) variant to the cart; out-of-stock default disables the button | TASK-077 | needs a running stack |
+| Image optimization: product images load via `next/image` (lazy, with a blur/shimmer placeholder); first above-the-fold row loads eagerly (no layout shift); remote `/uploads/**` host renders without a Next image-host error | TASK-074 | needs a running stack |
 
 ---
 
@@ -134,20 +137,21 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-078 | Product reviews — write flow + moderation (auth'd submission, verified-purchase, PDP list, admin approval queue) | 🔄 | [docs/plans/089-product-reviews.md](docs/plans/089-product-reviews.md) |
-| TASK-106 | Reviews module backend — controller/service/repository over existing `Review` model (prereq for TASK-078) | 🔄 | [docs/plans/089-product-reviews.md](docs/plans/089-product-reviews.md) |
+| TASK-078 | Product reviews — write flow + moderation (auth'd submission, verified-purchase, PDP list, admin approval queue) | ✅ | [docs/plans/089-product-reviews.md](docs/plans/089-product-reviews.md) |
+| TASK-106 | Reviews module backend — controller/service/repository over existing `Review` model (prereq for TASK-078) | ✅ | [docs/plans/089-product-reviews.md](docs/plans/089-product-reviews.md) |
 | TASK-079 | Coupons / promo codes — `Discount` model (percent/fixed, min-spend, expiry, usage caps), apply in cart/checkout, admin CRUD | ⬜ | — |
 | TASK-075 | Full-text search + header autocomplete — Meilisearch (typo-tolerant) behind `/search`; inline header dropdown | ⬜ | — |
 | TASK-076 | Wishlist / favorites — guest-via-cookie + merge-on-login (mirrors guest-cart pattern) | ⬜ | — |
-| TASK-077 | Variant dots + quick-add — surface variant summary on list API; color dots + hover ATC overlay | 🔄 | — |
-| TASK-074 | Image optimization — `next/image` remotePatterns + shimmer placeholder | 🔄 | docs/plans/042-image-optimization.md |
+| TASK-077 | Variant dots + quick-add — surface variant summary on list API; color dots + hover ATC overlay | ✅ | — |
+| TASK-074 | Image optimization — `next/image` remotePatterns + shimmer placeholder | ✅ | docs/plans/042-image-optimization.md |
 | TASK-091 | Origin-side image pre-optimization — `sharp` WebP renditions + per-image LQIP `blurDataUrl` on upload | ⬜ | — |
 | TASK-048 | Sentry integration (frontend + backend) — `@sentry/nestjs` + `@sentry/nextjs`, wire to Pino error path | ⬜ | — |
 | TASK-103 | Mail reliability — replace fire-and-forget with transactional outbox + retry worker | ⬜ | — |
 | TASK-104-J | Soft deletes — integration green; **pending:** apply `add_soft_delete_audit` migration + Swagger DELETE smoke on a running DB | 🔄 | docs/plans/047-soft-deletes-audit.md |
 | TASK-105 / 105-D | Frontend test harness — RTL/MSW + store-admin Jest shipped; **pending:** run Playwright E2E (DB + browsers) | 🔄 | docs/plans/048-frontend-test-harness.md |
 | TASK-101 | Run the *Pending manual QA* list to closure (Redis int, dashboard int, JSON-LD live, admin CSRF smoke) | ⬜ | — |
-| TASK-157 | **[NEW]** Remove the deprecated payment-confirm path now superseded by TASK-151 — delete `OrderService.confirmPayment`, `OrderRepository.markPaid`, and the `PATCH /api/orders/:id/confirm-payment` route (+ its tests) once no external consumer depends on it. | 🔄 | — |
+| TASK-157 | **[NEW]** Remove the deprecated payment-confirm path now superseded by TASK-151 — delete `OrderService.confirmPayment`, `OrderRepository.markPaid`, and the `PATCH /api/orders/:id/confirm-payment` route (+ its tests) once no external consumer depends on it. | ✅ | — |
+| TASK-159 | **[NEW][BUG]** Order detail/list returns **500** whenever a line item's product has images — `OrderItemEntity.fromPrisma` (order-item.entity.ts:75) reads `row.product.images[0]` but the order-fetch query doesn't `include` the product `images` relation, so `images` is `undefined`. Pre-existing on `develop` (surfaced by Wave-1 e2e; not caused by it): 8–9 order e2e happy-path tests fail. Fix the repository `include` (or guard the entity) and re-green `order.e2e-spec.ts` / `rbac.e2e-spec.ts`. | ⬜ | — |
 
 ---
 
