@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { RefreshTokenCleanupService } from './refresh-token-cleanup.service';
 import { JwtAccessStrategy, JwtRefreshStrategy } from './strategies';
 import { CartModule } from '../cart/cart.module';
+import { WishlistModule } from '../wishlist/wishlist.module';
 
 @Module({
   imports: [
@@ -26,6 +27,8 @@ import { CartModule } from '../cart/cart.module';
     }),
     // Provides CartService so login/register can merge a guest cart.
     CartModule,
+    // Provides WishlistService so login/register can merge a guest wishlist.
+    WishlistModule,
   ],
   controllers: [AuthController],
   providers: [
