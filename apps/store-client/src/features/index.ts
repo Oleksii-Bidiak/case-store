@@ -5,3 +5,10 @@ export { AddToCartButton } from "./add-to-cart";
 export { CancelOrderButton } from "./cancel-order";
 export { CheckoutAddressForm, useCheckout } from "./checkout";
 export { SubmitReviewForm } from "./submit-review";
+export {
+  ApplyDiscount,
+  useAppliedDiscount,
+  setAppliedDiscount,
+  clearAppliedDiscount,
+  type AppliedDiscount,
+} from "./apply-discount";

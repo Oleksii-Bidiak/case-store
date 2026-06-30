@@ -51,6 +51,7 @@ export interface OrderWithItems {
   paymentStatus: PaymentStatus;
   subtotal: { toString(): string };
   discount: { toString(): string };
+  discountCode: string | null;
   shippingCost: { toString(): string };
   tax: { toString(): string };
   total: { toString(): string };
@@ -90,4 +91,20 @@ export interface CreateOrderParams {
    * delivery estimate. Absent for free-text/manual orders → repository writes 0.
    */
   shippingCost?: number;
+  /**
+   * Optional promo-code discount to apply inside the order transaction
+   * (TASK-079). The service has already recomputed the amount authoritatively
+   * via DiscountService.computeDiscount; the repository persists `amount` +
+   * `code` on the order, subtracts it from the total, and runs `redeem` (the
+   * service's cap re-check + redemption insert) within the same `$transaction`,
+   * so a cap race or a deactivation rolls the whole order back.
+   */
+  discount?: {
+    /** Recomputed discount amount as a decimal string ("XX.YY"). */
+    amount: string;
+    /** The applied promo code (uppercase), snapshotted on the order. */
+    code: string;
+    /** Redeem callback bound to the discount + user; called with the new order id and the tx. */
+    redeem: (orderId: string, tx: Prisma.TransactionClient) => Promise<void>;
+  };
 }

@@ -64,6 +64,14 @@ export class OrderEntity {
   @ApiProperty({ description: 'Discount applied as string', example: '0.00' })
   discount!: string;
 
+  @ApiProperty({
+    description: 'Promo code applied to the order (TASK-079), or null',
+    nullable: true,
+    type: String,
+    example: 'SUMMER10',
+  })
+  discountCode!: string | null;
+
   @ApiProperty({ description: 'Shipping cost as string', example: '0.00' })
   shippingCost!: string;
 
@@ -126,6 +134,7 @@ export class OrderEntity {
     entity.paymentStatus = order.paymentStatus;
     entity.subtotal = order.subtotal.toString();
     entity.discount = order.discount.toString();
+    entity.discountCode = order.discountCode ?? null;
     entity.shippingCost = order.shippingCost.toString();
     entity.tax = order.tax.toString();
     entity.total = order.total.toString();

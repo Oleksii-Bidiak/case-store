@@ -14,6 +14,7 @@ import { CartRepository, CartWithItems } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
 import { MailOutboxService } from '../mail-outbox';
 import { DeliveryService } from '../delivery';
+import { DiscountService } from '../discount';
 import type { User } from '@prisma/client';
 import type { OrderWithItems } from './order.types';
 import type { CreateOrderDto } from './dto';
@@ -180,6 +181,11 @@ const deliveryServiceMock = {
   estimateShipping: jest.fn(),
 };
 
+const discountServiceMock = {
+  computeDiscount: jest.fn(),
+  redeem: jest.fn(),
+};
+
 const pinoLoggerMock = {
   setContext: jest.fn(),
   info: jest.fn(),
@@ -213,6 +219,7 @@ describe('OrderService', () => {
         { provide: UserRepository, useValue: userRepositoryMock },
         { provide: MailOutboxService, useValue: mailOutboxServiceMock },
         { provide: DeliveryService, useValue: deliveryServiceMock },
+        { provide: DiscountService, useValue: discountServiceMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
       ],
     }).compile();
@@ -303,6 +310,63 @@ describe('OrderService', () => {
         expect.objectContaining({ shippingCost: 0 }),
         expect.any(Function),
       );
+    });
+
+    // ─── TASK-079 discount integration ────────────────────────────────────────
+
+    it('recomputes a promo code and forwards the discount to the repository', async () => {
+      const discountDto: CreateOrderDto = { shippingAddress: address, discountCode: 'SUMMER10' };
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+      discountServiceMock.computeDiscount.mockResolvedValue({
+        discount: { id: 'd1', code: 'SUMMER10' },
+        amount: '3.00',
+      });
+
+      await service.createOrder(USER_ID, discountDto);
+
+      // Subtotal is computed server-side (29.99 × 2 + 9.99 × 1 = 69.97) and
+      // passed to the authoritative recompute — never a client-sent amount.
+      expect(discountServiceMock.computeDiscount).toHaveBeenCalledWith(
+        'SUMMER10',
+        '69.97',
+        USER_ID,
+      );
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          discount: expect.objectContaining({ amount: '3.00', code: 'SUMMER10' }),
+        }),
+        // TASK-103: createFromCart now also receives the in-transaction
+        // afterCreate callback (mail-outbox enqueue) as a second argument.
+        expect.any(Function),
+      );
+    });
+
+    it('binds a redeem closure that delegates to DiscountService.redeem', async () => {
+      const discountDto: CreateOrderDto = { shippingAddress: address, discountCode: 'SUMMER10' };
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+      discountServiceMock.computeDiscount.mockResolvedValue({
+        discount: { id: 'd1', code: 'SUMMER10' },
+        amount: '3.00',
+      });
+
+      await service.createOrder(USER_ID, discountDto);
+
+      const params = orderRepositoryMock.createFromCart.mock.calls[0][0];
+      const fakeTx = {} as never;
+      await params.discount.redeem('order-1', fakeTx);
+      expect(discountServiceMock.redeem).toHaveBeenCalledWith('d1', USER_ID, 'order-1', fakeTx);
+    });
+
+    it('does not touch the discount service when no code is supplied', async () => {
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+
+      await service.createOrder(USER_ID, createDto);
+
+      expect(discountServiceMock.computeDiscount).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.createFromCart.mock.calls[0][0]).not.toHaveProperty('discount');
     });
 
     it('should throw NotFoundException when the user has no cart', async () => {

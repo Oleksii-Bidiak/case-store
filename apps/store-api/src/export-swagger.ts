@@ -43,6 +43,7 @@ async function exportSwagger(): Promise<void> {
     .addTag('Categories', 'Category browsing and admin management')
     .addTag('Pages', 'Static / service page browsing and admin management')
     .addTag('Cart', 'Shopping cart management')
+    .addTag('Discounts', 'Promo codes — storefront preview and admin management')
     .addTag('Reviews', 'Product reviews — submission, public listing, and admin moderation')
     .build();
 

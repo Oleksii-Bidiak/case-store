@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCreateOrder, type CreateOrderDto } from "@/entities/order";
 import { getGetCartQueryKey } from "@/entities/cart";
+import {
+  useAppliedDiscount,
+  clearAppliedDiscount,
+} from "@/features/apply-discount";
 import { dict } from "@/shared/config";
 import type { CheckoutFormValues } from "./checkout-schema";
 
@@ -27,11 +31,16 @@ export function useCheckout() {
   // pending push to the confirmation page (the TASK-119 redirect race).
   const [isOrderSubmitted, setIsOrderSubmitted] = useState(false);
 
+  // Applied promo code (TASK-079) — sent as `discountCode`; the server recomputes
+  // and persists it authoritatively. Cleared once the order is placed.
+  const appliedDiscount = useAppliedDiscount();
+
   const mutation = useCreateOrder({
     mutation: {
       onSuccess: (res) => {
         const orderId = res?.data?.id;
         setIsOrderSubmitted(true);
+        clearAppliedDiscount();
         queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
         router.push(orderId ? `/orders/${orderId}/confirmation` : "/");
       },
@@ -57,6 +66,7 @@ export function useCheckout() {
           : undefined,
       },
       notes: values.notes || undefined,
+      discountCode: appliedDiscount?.code || undefined,
     };
     mutation.mutate({ data: dto });
   };

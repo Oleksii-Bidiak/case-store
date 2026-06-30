@@ -98,6 +98,8 @@ export class OrderRepository {
   ): Promise<OrderWithItems> {
     const { userId, cartId, cartItems, shippingAddress, billingAddress, notes, shippingCost } =
       params;
+    // TASK-079: optional promo-code discount, already recomputed by the service.
+    const discountParam = params.discount;
 
     // Snapshot each line's unit price (the position's price) into the order-item
     // rows. These persisted rows — not the cart — are the order's source of
@@ -117,8 +119,18 @@ export class OrderRepository {
     const subtotal = new Prisma.Decimal(centsToDecimalString(subtotalCents));
 
     // Shipping cost comes from the Nova Poshta estimate (TASK-080); 0 for
-    // free-text/manual orders. Total = subtotal + shipping (no discount/tax yet).
+    // free-text/manual orders.
     const shipping = new Prisma.Decimal((shippingCost ?? 0).toString());
+
+    // ─── TASK-079 discount block ───────────────────────────────────────────────
+    // The service already recomputed the amount authoritatively (never trusting
+    // a client value) and clamped it to the subtotal. Persist it on the order
+    // and subtract from the total; total = subtotal + shipping - discount.
+    const discountAmount = discountParam
+      ? new Prisma.Decimal(discountParam.amount)
+      : new Prisma.Decimal(0);
+    const total = subtotal.plus(shipping).minus(discountAmount);
+    // ───────────────────────────────────────────────────────────────────────────
 
     const order = await this.prisma.$transaction(async (tx) => {
       const created = await tx.order.create({
@@ -127,10 +139,11 @@ export class OrderRepository {
           status: OrderStatus.PENDING,
           paymentStatus: PaymentStatus.PENDING,
           subtotal,
-          discount: new Prisma.Decimal(0),
+          discount: discountAmount,
+          discountCode: discountParam?.code ?? null,
           shippingCost: shipping,
           tax: new Prisma.Decimal(0),
-          total: subtotal.plus(shipping),
+          total,
           shippingAddress: shippingAddress as unknown as Prisma.InputJsonValue,
           billingAddress: (billingAddress ?? shippingAddress) as unknown as Prisma.InputJsonValue,
           notes: notes ?? null,
@@ -138,6 +151,14 @@ export class OrderRepository {
         },
         include: ORDERS_INCLUDE,
       });
+
+      // TASK-079: redeem the promo code inside this same transaction — the
+      // service re-checks the caps against the live row, bumps redeemedCount,
+      // and inserts the (orderId-unique) redemption. A cap race or a mid-flight
+      // deactivation throws here and rolls back the entire order.
+      if (discountParam) {
+        await discountParam.redeem(created.id, tx);
+      }
 
       // Empty the originating cart so it cannot be ordered twice.
       await tx.cartItem.deleteMany({ where: { cartId } });

@@ -9,6 +9,7 @@ import {
   useClearCart,
   type CartTotals,
 } from "@/entities/cart";
+import { ApplyDiscount, useAppliedDiscount } from "@/features/apply-discount";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import {
@@ -29,9 +30,27 @@ import {
  * clear-cart action confirmed via an accessible Dialog (no window.confirm).
  * Total equals subtotal for MVP (no discount/shipping yet).
  */
+/** Subtract an applied discount amount from a subtotal, clamped at 0, in cents. */
+function subtractMoney(subtotal: string, amount: string): string {
+  const cents = Math.max(
+    0,
+    Math.round(parseFloat(subtotal) * 100) -
+      Math.round(parseFloat(amount) * 100),
+  );
+  return (cents / 100).toFixed(2);
+}
+
 export function CartSummary({ totals }: { totals: CartTotals }) {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const applied = useAppliedDiscount();
+
+  // Total reflects any applied promo code, recomputed against the *current*
+  // subtotal (items may have changed since the code was applied). The server
+  // re-validates and recomputes authoritatively at order creation.
+  const total = applied
+    ? subtractMoney(totals.subtotal, applied.amount)
+    : totals.subtotal;
 
   const clearCart = useClearCart({
     mutation: {
@@ -58,10 +77,15 @@ export function CartSummary({ totals }: { totals: CartTotals }) {
 
       <Separator />
 
+      {/* Promo code (TASK-079) — shows the discount line when one is applied. */}
+      <ApplyDiscount />
+
+      <Separator />
+
       <div className="flex items-baseline justify-between font-semibold text-foreground">
         <span>{dict.cart.total}</span>
         <span className="font-display text-xl font-bold tracking-tight">
-          {formatMoney(totals.subtotal)}
+          {formatMoney(total)}
         </span>
       </div>
 

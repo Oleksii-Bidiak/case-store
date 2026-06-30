@@ -4,6 +4,8 @@ export * from "./product-form";
 export * from "./product-status-toggle";
 export * from "./category-form";
 export * from "./category-status-toggle";
+export * from "./discount-form";
+export * from "./discount-status-toggle";
 export * from "./page-form";
 export * from "./site-contact-form";
 export * from "./order-status-update";
