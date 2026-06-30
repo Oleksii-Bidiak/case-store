@@ -145,7 +145,10 @@ export function ProductDetailView({ slug }: { slug: string }) {
         </div>
       </div>
 
-      <ProductSpecsTabs description={product.description ?? null} />
+      <ProductSpecsTabs
+        description={product.description ?? null}
+        productId={product.id}
+      />
 
       <ProductRelated categoryId={category.id} excludeId={product.id} />
 
