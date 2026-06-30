@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import type { OrderItemEntity } from "@/entities/order";
 import { formatMoney } from "@/shared/lib";
@@ -10,9 +11,8 @@ import { ProductThumb } from "@/shared/ui";
 /**
  * OrderItemRow — a single ordered line. Shows the product image (with a
  * placeholder fallback) and links to the product PDP. Client component because
- * the `<img>` onError fallback needs local state; the parent list stays a
- * server component. Image rendering mirrors the cart line (TASK-133); next/image
- * migration is deferred to TASK-042.
+ * the image `onError` fallback needs local state; the parent list stays a
+ * server component. Image rendering mirrors the cart line (TASK-133).
  */
 export function OrderItemRow({ item }: { item: OrderItemEntity }) {
   const [imgFailed, setImgFailed] = useState(false);
@@ -25,11 +25,12 @@ export function OrderItemRow({ item }: { item: OrderItemEntity }) {
         className="flex items-start gap-3 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {item.imageUrl && !imgFailed ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          // Fixed 56x56 thumbnail — explicit dimensions instead of `fill`.
+          <Image
             src={item.imageUrl}
             alt={item.productName}
-            loading="lazy"
+            width={56}
+            height={56}
             onError={() => setImgFailed(true)}
             className="size-14 shrink-0 rounded-lg object-cover"
           />

@@ -75,10 +75,12 @@ export function ProductList({ params, buildPageHref }: ProductListProps) {
           </div>
         )}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {products.map((product) => (
+          {products.map((product, index) => (
             <ProductCard
               key={product.id}
               product={product}
+              // First row (4 cards on desktop) is above the fold — load eagerly for LCP.
+              priority={index < 4}
               quickAdd={
                 <AddToCartButton
                   productId={product.variantSummary.defaultVariantId}

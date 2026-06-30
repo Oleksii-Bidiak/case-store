@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ImageIcon } from "lucide-react";
 import type { PublicProductEntity } from "@/shared/api/generated/models";
 import { formatMoney, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { Badge } from "./badge";
+import { ProductCardImage } from "./product-card-image";
 import { RatingStars } from "./rating-stars";
 import { ColorDots } from "./color-dots";
 
@@ -24,17 +24,24 @@ const NEW_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  * `ColorDots` row from `product.variantSummary` and an advertised "from {price}"
  * prefix. `quickAdd` is revealed on hover and on keyboard focus (focus-within),
  * so it is reachable without a pointer.
+ *
+ * The product image is optimized via `next/image` inside `ProductCardImage`,
+ * which also renders the gradient/initial fallback when there is no image.
+ * `priority` marks above-the-fold cards (the first grid row) for eager loading
+ * to improve LCP; the listing widget passes it for `index < 4`.
  */
 export function ProductCard({
   product,
   action,
   quickAdd,
+  priority = false,
 }: {
   product: PublicProductEntity;
   /** Optional control rendered below the price (always visible). */
   action?: ReactNode;
   /** Optional quick-add control overlaid on the image, shown on hover/focus. */
   quickAdd?: ReactNode;
+  priority?: boolean;
 }) {
   const summary = product.variantSummary;
   const colors = summary?.colors ?? [];
@@ -73,30 +80,12 @@ export function ProductCard({
       <div
         className={`relative aspect-square w-full overflow-hidden bg-gradient-to-br ${gradient}`}
       >
-        {product.primaryImage ? (
-          // next/image optimization + remote-host config deferred to TASK-074.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={product.primaryImage.url}
-            alt={product.primaryImage.alt ?? product.name}
-            loading="lazy"
-            className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-          />
-        ) : (
-          /* Styled placeholder — product has no image. */
-          <div className="flex h-full w-full items-center justify-center">
-            <span
-              aria-hidden="true"
-              className="text-6xl font-bold tracking-tight opacity-60 select-none font-display"
-            >
-              {(product.name?.[0] ?? "?").toUpperCase()}
-            </span>
-            <ImageIcon
-              className="absolute bottom-3 right-3 size-5 opacity-50"
-              aria-hidden="true"
-            />
-          </div>
-        )}
+        <ProductCardImage
+          src={product.primaryImage?.url}
+          alt={product.primaryImage?.alt ?? product.name}
+          initial={(product.name?.[0] ?? "?").toUpperCase()}
+          priority={priority}
+        />
 
         <div className="absolute left-2.5 top-2.5 z-20 flex flex-col gap-1">
           {onSale && (
