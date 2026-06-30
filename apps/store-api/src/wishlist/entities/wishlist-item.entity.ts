@@ -52,6 +52,7 @@ export class WishlistItemEntity {
 
   @ApiProperty({
     description: 'Original price for discount display (from product)',
+    type: String,
     example: '39.99',
     required: false,
     nullable: true,
