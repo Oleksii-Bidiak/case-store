@@ -16,6 +16,11 @@ export {
   AdminCategoryTableSkeleton,
 } from "./category-list";
 export { CreateCategoryView, EditCategoryView } from "./category-form-view";
+export {
+  AdminDiscountTable,
+  AdminDiscountTableSkeleton,
+} from "./discount-list";
+export { CreateDiscountView, EditDiscountView } from "./discount-form-view";
 export { AdminPageTable, AdminPageTableSkeleton } from "./page-list";
 export { CreatePageView, EditPageView } from "./page-form-view";
 export { SiteContactSettingsView } from "./site-contact-settings-view";
