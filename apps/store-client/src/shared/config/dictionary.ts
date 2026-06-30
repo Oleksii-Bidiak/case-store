@@ -169,6 +169,41 @@ export const dict = {
     trustDelivery: "Швидка доставка",
   },
 
+  reviews: {
+    title: "Відгуки",
+    outOf: "/ 5",
+    // Ukrainian pluralization: 1 відгук, 2–4 відгуки, 5+ відгуків.
+    ratingCount: (n: number) => {
+      const mod10 = n % 10;
+      const mod100 = n % 100;
+      let word = "відгуків";
+      if (mod10 === 1 && mod100 !== 11) word = "відгук";
+      else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20))
+        word = "відгуки";
+      return `${n} ${word}`;
+    },
+    empty: "Ще немає відгуків. Будьте першим, хто залишить відгук!",
+    loading: "Завантаження відгуків…",
+    loadError: "Не вдалося завантажити відгуки.",
+    noComment: "Без коментаря",
+    verifiedPurchase: "Підтверджена покупка",
+    anonymous: "Покупець",
+    // Submit form
+    leaveReview: "Залишити відгук",
+    loginToReview: "Увійдіть, щоб залишити відгук",
+    loginLink: "Увійти",
+    ratingLabel: "Ваша оцінка",
+    ratingRequired: "Будь ласка, оберіть оцінку",
+    starAria: (n: number) => `${n} з 5 зірок`,
+    commentLabel: "Коментар (необов'язково)",
+    commentPlaceholder: "Поділіться враженнями про товар…",
+    submitReview: "Надіслати відгук",
+    submitting: "Надсилаємо…",
+    submitSuccess: "Дякуємо! Ваш відгук надіслано на модерацію.",
+    submitError: "Не вдалося надіслати відгук. Спробуйте ще раз.",
+    alreadyReviewed: "Ви вже залишили відгук на цей товар.",
+  },
+
   addToCart: {
     idle: "Додати до кошика",
     adding: "Додаємо…",
