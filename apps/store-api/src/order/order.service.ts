@@ -8,12 +8,14 @@ import {
 import { PinoLogger } from 'nestjs-pino';
 import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
-import { CartRepository } from '../cart/cart.repository';
+import { CartRepository, type CartWithItems } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
 import { MailService } from '../mail/mail.service';
 import { DeliveryService } from '../delivery';
+import { DiscountService } from '../discount';
 import { OrderEntity } from './entities';
 import type { CreateOrderDto, OrderListQueryDto, AdminOrderListQueryDto } from './dto';
+import type { CreateOrderParams } from './order.types';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
@@ -72,6 +74,7 @@ export class OrderService {
     private readonly userRepository: UserRepository,
     private readonly mailService: MailService,
     private readonly deliveryService: DeliveryService,
+    private readonly discountService: DiscountService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(OrderService.name);
@@ -132,6 +135,28 @@ export class OrderService {
       }
     }
 
+    // ─── TASK-079 discount block ───────────────────────────────────────────────
+    // Re-validate the promo code authoritatively (never trust a client amount).
+    // computeDiscount re-runs every eligibility gate against the cart subtotal
+    // and returns the clamped amount; the redeem closure runs the cap re-check +
+    // redemption insert inside the order transaction (order.repository), so a
+    // cap race rolls the whole order back. Kept as one localized block.
+    let discount: CreateOrderParams['discount'];
+    if (dto.discountCode) {
+      const subtotal = computeSubtotalString(cart.items);
+      const { discount: applied, amount } = await this.discountService.computeDiscount(
+        dto.discountCode,
+        subtotal,
+        userId,
+      );
+      discount = {
+        amount,
+        code: applied.code,
+        redeem: (orderId, tx) => this.discountService.redeem(applied.id, userId, orderId, tx),
+      };
+    }
+    // ───────────────────────────────────────────────────────────────────────────
+
     const order = await this.orderRepository.createFromCart({
       userId,
       cartId: cart.id,
@@ -140,6 +165,7 @@ export class OrderService {
       billingAddress: dto.billingAddress,
       notes: dto.notes,
       ...(shippingCost !== undefined ? { shippingCost } : {}),
+      ...(discount ? { discount } : {}),
     });
 
     this.logger.info({ event: 'order.created', orderId: order.id, userId }, 'Order created');
@@ -334,4 +360,20 @@ export class OrderService {
 
     return OrderEntity.fromPrisma(order);
   }
+}
+
+/**
+ * Compute the cart subtotal as a "XX.YY" decimal string using integer-cents
+ * arithmetic (mirrors CartEntity/order line-total math). Feeds the authoritative
+ * discount recomputation in {@link OrderService.createOrder}.
+ */
+function computeSubtotalString(items: CartWithItems['items']): string {
+  const subtotalCents = items.reduce(
+    (cents, item) =>
+      cents + Math.round(parseFloat(item.product.price.toString()) * 100) * item.quantity,
+    0,
+  );
+  const dollars = Math.floor(subtotalCents / 100);
+  const remainder = subtotalCents % 100;
+  return `${dollars}.${remainder.toString().padStart(2, '0')}`;
 }

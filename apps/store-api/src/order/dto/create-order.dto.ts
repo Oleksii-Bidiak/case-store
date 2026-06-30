@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { IsDefined, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
 import { AddressDto } from './address.dto';
 
@@ -32,4 +32,18 @@ export class CreateOrderDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  @ApiProperty({
+    description: 'Optional promo code applied at checkout (recomputed server-side; TASK-079)',
+    required: false,
+    maxLength: 64,
+    example: 'SUMMER10',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  discountCode?: string;
 }
