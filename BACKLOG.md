@@ -151,7 +151,7 @@
 | TASK-105 / 105-D | Frontend test harness — RTL/MSW + store-admin Jest shipped; **pending:** run Playwright E2E (DB + browsers) | 🔄 | docs/plans/048-frontend-test-harness.md |
 | TASK-101 | Run the *Pending manual QA* list to closure (Redis int, dashboard int, JSON-LD live, admin CSRF smoke) | ⬜ | — |
 | TASK-157 | **[NEW]** Remove the deprecated payment-confirm path now superseded by TASK-151 — delete `OrderService.confirmPayment`, `OrderRepository.markPaid`, and the `PATCH /api/orders/:id/confirm-payment` route (+ its tests) once no external consumer depends on it. | ✅ | — |
-| TASK-159 | **[NEW][BUG]** Order detail/list returns **500** whenever a line item's product has images — `OrderItemEntity.fromPrisma` (order-item.entity.ts:75) reads `row.product.images[0]` but the order-fetch query doesn't `include` the product `images` relation, so `images` is `undefined`. Pre-existing on `develop` (surfaced by Wave-1 e2e; not caused by it): 8–9 order e2e happy-path tests fail. Fix the repository `include` (or guard the entity) and re-green `order.e2e-spec.ts` / `rbac.e2e-spec.ts`. | ⬜ | — |
+| TASK-159 | **[BUG]** Order e2e happy-path 500s — `OrderItemEntity.fromPrisma` reads `product.images[0]`. **Root cause: test-fixture defect, NOT production** — `ORDERS_INCLUDE` always selects `images` and `OrderItemRow.product.images` is required, but the mocked `makeOrder()` line item omitted `images`, so the contract-violating mock crashed every order happy-path (8–9 e2e). Fixed by adding the `images` array to the fixture + asserting `imageUrl` maps in `expectOrderShape`. order+rbac e2e 41/41 green. | ✅ | — |
 
 ---
 
