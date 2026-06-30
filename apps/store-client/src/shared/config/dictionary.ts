@@ -252,6 +252,33 @@ export const dict = {
     updateError: "Не вдалося оновити товар. Спробуйте ще раз.",
   },
 
+  // Promo code / discount (TASK-079)
+  discounts: {
+    title: "Промокод",
+    placeholder: "Введіть промокод",
+    inputAria: "Промокод",
+    apply: "Застосувати",
+    applying: "Застосування…",
+    remove: "Прибрати",
+    appliedLabel: (code: string) => `Промокод «${code}» застосовано`,
+    discountLine: "Знижка",
+    required: "Введіть промокод",
+    tooLong: "Промокод занадто довгий",
+    // Typed error codes from the API map to friendly messages.
+    errors: {
+      DISCOUNT_NOT_FOUND: "Такого промокоду не існує.",
+      DISCOUNT_INACTIVE: "Цей промокод більше не діє.",
+      DISCOUNT_NOT_STARTED: "Цей промокод ще не активний.",
+      DISCOUNT_EXPIRED: "Термін дії промокоду закінчився.",
+      DISCOUNT_MIN_SPEND_NOT_MET:
+        "Сума замовлення не досягає мінімуму для цього промокоду.",
+      DISCOUNT_MAX_REDEMPTIONS_REACHED:
+        "Ліміт використань цього промокоду вичерпано.",
+      DISCOUNT_USER_LIMIT_REACHED: "Ви вже використали цей промокод.",
+      generic: "Не вдалося застосувати промокод. Спробуйте ще раз.",
+    } as Record<string, string>,
+  },
+
   checkout: {
     title: "Оформлення замовлення",
     shippingAddress: "Адреса доставки",

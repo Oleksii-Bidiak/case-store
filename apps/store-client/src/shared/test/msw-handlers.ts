@@ -93,6 +93,7 @@ export function makeOrder(overrides: Partial<OrderEntity> = {}): {
       paymentStatus: "PENDING",
       subtotal: "998.00",
       discount: "0.00",
+      discountCode: null,
       shippingCost: "0.00",
       tax: "0.00",
       total: "998.00",
