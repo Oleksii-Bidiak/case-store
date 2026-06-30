@@ -146,6 +146,10 @@ describe('OrderController (e2e)', () => {
     items,
   });
 
+  // Primary-image URL the order line should surface — mirrors the `images`
+  // relation that `ORDERS_INCLUDE` always selects (isPrimary-first, take: 1).
+  const ORDER_ITEM_IMAGE_URL = 'https://cdn.example.com/iphone-15-pro-case.jpg';
+
   const makeOrder = (overrides: Partial<OrderWithItems> = {}): OrderWithItems => ({
     id: 'order-e2e-1',
     userId: userA.id,
@@ -170,7 +174,12 @@ describe('OrderController (e2e)', () => {
         quantity: 2,
         price: { toString: () => '29.99' },
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
-        product: { id: 'prod-e2e-1', name: 'iPhone 15 Pro Case', slug: 'iphone-15-pro-case' },
+        product: {
+          id: 'prod-e2e-1',
+          name: 'iPhone 15 Pro Case',
+          slug: 'iphone-15-pro-case',
+          images: [{ url: ORDER_ITEM_IMAGE_URL }],
+        },
         variant: { id: 'var-e2e-1', name: 'Black' },
       },
     ],
@@ -193,6 +202,9 @@ describe('OrderController (e2e)', () => {
     expect(data).toHaveProperty('paymentStatus');
     expect(data).toHaveProperty('total');
     expect(data).toHaveProperty('items');
+    // Each line surfaces the product's primary image for the order-detail thumbnail.
+    const items = data.items as Array<Record<string, unknown>>;
+    expect(items[0]).toHaveProperty('imageUrl', ORDER_ITEM_IMAGE_URL);
   }
 
   beforeAll(async () => {
