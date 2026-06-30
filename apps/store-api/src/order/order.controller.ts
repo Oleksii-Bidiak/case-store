@@ -22,11 +22,10 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { UserRole } from '@prisma/client';
 import { OrderService, PaginationMeta } from './order.service';
 import { OrderEntity, OrderItemEntity } from './entities';
 import { CreateOrderDto, OrderListQueryDto } from './dto';
-import { JwtAuthGuard, RolesGuard, Roles, CurrentUser } from '../auth';
+import { JwtAuthGuard, RolesGuard, CurrentUser } from '../auth';
 
 /**
  * Pagination metadata for paginated storefront order lists.
@@ -189,46 +188,6 @@ export class OrderController {
     @Param('orderId') orderId: string,
   ): Promise<{ data: OrderEntity }> {
     const order = await this.orderService.cancelOrder(userId, orderId);
-    return { data: order };
-  }
-
-  /**
-   * PATCH /api/orders/:orderId/confirm-payment
-   *
-   * Admin action: register that payment was received and confirm the order
-   * (PENDING → CONFIRMED, paymentStatus → PAID). Manual stand-in for the
-   * payment webhook until Stripe integration (TASK-034) lands.
-   *
-   * @deprecated Superseded by `PATCH /api/admin/orders/:id/payment-status`
-   *   (TASK-151), which sets the payment status independently of the order
-   *   status. Retained until external consumers are confirmed migrated.
-   */
-  @Patch(':orderId/confirm-payment')
-  @Roles(UserRole.ADMIN)
-  // Admin-only state transition that confirms an order; throttle to blunt any
-  // scripted misuse even from an authenticated admin token.
-  @Throttle({ default: { limit: 20, ttl: 60000 } })
-  @ApiOperation({
-    summary:
-      '[DEPRECATED — use PATCH /admin/orders/:id/payment-status] Mark payment received and confirm order (admin)',
-    operationId: 'confirmOrderPayment',
-  })
-  @ApiParam({ name: 'orderId', description: 'Order UUID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Payment recorded, order confirmed',
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(OrderResponseEnvelope) },
-        { properties: { data: { $ref: getSchemaPath(OrderEntity) } } },
-      ],
-    },
-  })
-  @ApiResponse({ status: 403, description: 'Admin role required' })
-  @ApiResponse({ status: 404, description: 'Order not found' })
-  @ApiResponse({ status: 409, description: 'Order is not PENDING' })
-  async confirmOrderPayment(@Param('orderId') orderId: string): Promise<{ data: OrderEntity }> {
-    const order = await this.orderService.confirmPayment(orderId);
     return { data: order };
   }
 }

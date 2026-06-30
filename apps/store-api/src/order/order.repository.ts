@@ -257,7 +257,7 @@ export class OrderRepository {
   /**
    * Find a single order by ID, or null if it does not exist. Excludes
    * soft-deleted orders (`deletedAt IS NOT NULL`). Because every mutating path
-   * (`updateStatus`, `cancelAndRestock`, `markPaid`) is gated behind a service
+   * (`updateStatus`, `cancelAndRestock`) is gated behind a service
    * call to this method, soft-deleted orders are uniformly unreachable.
    */
   findById(orderId: string): Promise<OrderWithItems | null> {
@@ -294,7 +294,7 @@ export class OrderRepository {
    * the increment here is exactly symmetric to {@link createFromCart}.
    *
    * Until Stripe (TASK-034) lands this is the manual counterpart to the admin
-   * `confirm-payment` action: confirm keeps the stock, cancel releases it.
+   * payment-status action: marking paid keeps the stock, cancel releases it.
    */
   async cancelAndRestock(orderId: string): Promise<OrderWithItems> {
     const updated = (await this.prisma.$transaction(async (tx) => {
@@ -331,24 +331,6 @@ export class OrderRepository {
     return this.prisma.order.update({
       where: { id: orderId },
       data: { paymentStatus },
-      include: ORDERS_INCLUDE,
-    }) as Promise<OrderWithItems>;
-  }
-
-  /**
-   * Mark an order as paid: set payment status to PAID and advance the order to
-   * CONFIRMED in a single update. Used by the admin "payment received" action
-   * (a manual stand-in until the Stripe webhook of TASK-034 lands). The service
-   * enforces that only a PENDING order reaches this point.
-   *
-   * @deprecated Superseded by {@link updatePaymentStatus} (TASK-151), which sets
-   *   the payment status independently of the order status. Retained for the
-   *   deprecated `confirmPayment` service path until that route is removed.
-   */
-  markPaid(orderId: string): Promise<OrderWithItems> {
-    return this.prisma.order.update({
-      where: { id: orderId },
-      data: { paymentStatus: PaymentStatus.PAID, status: OrderStatus.CONFIRMED },
       include: ORDERS_INCLUDE,
     }) as Promise<OrderWithItems>;
   }
