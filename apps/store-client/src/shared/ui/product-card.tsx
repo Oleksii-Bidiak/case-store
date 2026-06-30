@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ImageIcon } from "lucide-react";
 import type { PublicProductEntity } from "@/shared/api/generated/models";
 import { formatMoney, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { Badge } from "./badge";
+import { ProductCardImage } from "./product-card-image";
 import { RatingStars } from "./rating-stars";
 
 const NEW_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -13,22 +13,27 @@ const NEW_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  * ProductCard — "dumb" presentational card for a single product.
  *
  * Links to the product detail page. When the list API returns a `primaryImage`
- * the card renders it; otherwise it falls back to a styled gradient placeholder
- * (a product's initial over a deterministic gradient) so the grid never looks
- * empty. `next/image` optimization + remote-host config is deferred to TASK-074.
- * Sale, discount % and New badges derive from existing entity fields.
+ * the card renders it (optimized via `next/image` inside `ProductCardImage`);
+ * otherwise it falls back to a styled gradient placeholder (a product's initial
+ * over a deterministic gradient) so the grid never looks empty. Sale, discount %
+ * and New badges derive from existing entity fields.
  *
  * `action` is an optional slot (e.g. an AddToCart button) rendered below the
  * price. It lives OUTSIDE the navigation <Link> so an interactive control is
  * never nested in an anchor — keeps the markup valid and accessible. shared/ui
  * stays free of feature imports; widgets inject the action.
+ *
+ * `priority` marks above-the-fold cards (the first grid row) for eager loading
+ * to improve LCP; the listing widget passes it for `index < 4`.
  */
 export function ProductCard({
   product,
   action,
+  priority = false,
 }: {
   product: PublicProductEntity;
   action?: ReactNode;
+  priority?: boolean;
 }) {
   const onSale =
     product.compareAtPrice != null &&
@@ -59,30 +64,12 @@ export function ProductCard({
         <div
           className={`relative aspect-square w-full overflow-hidden bg-gradient-to-br ${gradient}`}
         >
-          {product.primaryImage ? (
-            // next/image optimization + remote-host config deferred to TASK-074.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={product.primaryImage.url}
-              alt={product.primaryImage.alt ?? product.name}
-              loading="lazy"
-              className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-            />
-          ) : (
-            /* Styled placeholder — product has no image. */
-            <div className="flex h-full w-full items-center justify-center">
-              <span
-                aria-hidden="true"
-                className="text-6xl font-bold tracking-tight opacity-60 select-none font-display"
-              >
-                {(product.name?.[0] ?? "?").toUpperCase()}
-              </span>
-              <ImageIcon
-                className="absolute bottom-3 right-3 size-5 opacity-50"
-                aria-hidden="true"
-              />
-            </div>
-          )}
+          <ProductCardImage
+            src={product.primaryImage?.url}
+            alt={product.primaryImage?.alt ?? product.name}
+            initial={(product.name?.[0] ?? "?").toUpperCase()}
+            priority={priority}
+          />
 
           <div className="absolute left-2.5 top-2.5 flex flex-col gap-1">
             {onSale && (

@@ -21,9 +21,13 @@ describe("OrderItemRow (TASK-134)", () => {
       name: dict.order.viewProductAria("Ordered Item"),
     });
     expect(link).toHaveAttribute("href", "/products/ordered-item");
+    // `next/image` rewrites the src to the optimizer URL; the original URL is
+    // carried in the encoded `url` query param.
     expect(screen.getByRole("img", { name: "Ordered Item" })).toHaveAttribute(
       "src",
-      "https://cdn.example.com/ordered-item.jpg",
+      expect.stringContaining(
+        encodeURIComponent("https://cdn.example.com/ordered-item.jpg"),
+      ),
     );
   });
 

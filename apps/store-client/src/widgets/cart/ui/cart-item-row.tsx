@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -155,12 +156,12 @@ export function CartItemRow({ item }: { item: CartItemEntity }) {
           className="flex items-start gap-3 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {item.imageUrl && !imgFailed ? (
-            // next/image optimization + remote-host config deferred to TASK-042.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            // Fixed 64x64 thumbnail — explicit dimensions instead of `fill`.
+            <Image
               src={item.imageUrl}
               alt={item.productName}
-              loading="lazy"
+              width={64}
+              height={64}
               onError={() => setImgFailed(true)}
               className="size-16 shrink-0 rounded-lg object-cover"
             />

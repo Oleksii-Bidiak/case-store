@@ -52,6 +52,8 @@ export { Toaster } from "./sonner";
 export { Skeleton } from "./skeleton";
 export { CheckoutSkeleton } from "./checkout-skeleton";
 export { ProductCard } from "./product-card";
+export { ProductCardImage } from "./product-card-image";
 export { ProductThumb } from "./product-thumb";
+export { BLUR_PLACEHOLDER } from "./image-placeholder";
 export { RatingStars } from "./rating-stars";
 export { JsonLd } from "./json-ld";

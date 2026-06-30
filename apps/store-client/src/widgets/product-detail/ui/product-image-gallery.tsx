@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import type { ProductImageEntity } from "@/entities/product";
-import { ProductThumb } from "@/shared/ui";
+import { BLUR_PLACEHOLDER, ProductThumb } from "@/shared/ui";
 
 interface ProductImageGalleryProps {
   images: ProductImageEntity[];
@@ -37,7 +38,7 @@ export function ProductImageGallery({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="aspect-square w-full overflow-hidden rounded-xl border border-border bg-muted">
+      <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-border bg-muted">
         {showPlaceholder ? (
           <ProductThumb
             name={altFallback}
@@ -45,10 +46,18 @@ export function ProductImageGallery({
             initialClassName="text-7xl"
           />
         ) : (
-          /* eslint-disable-next-line @next/next/no-img-element -- Next <Image> deferred to Phase 5 (needs dimensions + CDN) */
-          <img
+          <Image
             src={activeImage.url}
             alt={altText(activeImage, altFallback)}
+            fill
+            // PDP layout: ~100vw mobile, ~half the content column on tablet,
+            // capped at the 640px content-column width on desktop.
+            sizes="(max-width: 767px) calc(100vw - 3rem), (max-width: 1279px) calc(50vw - 4rem), 640px"
+            placeholder="blur"
+            blurDataURL={BLUR_PLACEHOLDER}
+            // Above-the-fold LCP element on the PDP — load eagerly.
+            // Next.js 16 renamed the `priority` prop to `preload`.
+            preload
             onError={() => markFailed(activeImage.id)}
             className="size-full object-cover"
           />
@@ -77,13 +86,16 @@ export function ProductImageGallery({
                       initialClassName="text-lg"
                     />
                   ) : (
-                    /* eslint-disable-next-line @next/next/no-img-element -- see above */
-                    <img
+                    // Fixed 64x64 thumbnail — explicit dimensions instead of `fill`.
+                    // No blur placeholder: at 64px the shimmer is imperceptible.
+                    <Image
                       src={image.url}
                       alt={altText(
                         image,
                         `${altFallback} thumbnail ${index + 1}`,
                       )}
+                      width={64}
+                      height={64}
                       onError={() => markFailed(image.id)}
                       className="size-full object-cover"
                     />
