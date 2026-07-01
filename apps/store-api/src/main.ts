@@ -1,3 +1,6 @@
+// Must be the FIRST import — initialises Sentry before NestJS/AppModule load so
+// the SDK can patch Node + Nest internals. No-op when SENTRY_DSN is unset.
+import './instrument';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from 'nestjs-pino';

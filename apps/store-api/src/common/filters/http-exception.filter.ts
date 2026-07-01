@@ -1,4 +1,5 @@
 import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { PinoLogger } from 'nestjs-pino';
 import { Request, Response } from 'express';
 
@@ -16,6 +17,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
     let error = 'InternalServerError';
+
+    // Non-HTTP exceptions are unhandled (bugs) and are always reported to Sentry.
+    let isUnhandled = false;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -36,10 +40,22 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }
     } else {
       // Unexpected errors — log them with structured data
+      isUnhandled = true;
       this.logger.error(
         { err: exception, path: request.url },
         exception instanceof Error ? exception.message : 'Unhandled exception',
       );
+    }
+
+    // Forward server-side failures to Sentry for alerting/aggregation: unhandled
+    // (non-HTTP) exceptions and any explicit 5xx. 4xx client/validation errors are
+    // deliberately NOT sent — they are expected and would be pure noise. Pino
+    // remains the structured-log source of truth; this is the alerting sink only.
+    // No-op when SENTRY_DSN is unset (Sentry.init ran with enabled:false).
+    if (isUnhandled || status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      Sentry.captureException(exception, {
+        tags: { path: request.url, method: request.method },
+      });
     }
 
     const responseBody = {

@@ -1,5 +1,15 @@
 import { plainToInstance } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Min, MinLength, validateSync } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  MinLength,
+  validateSync,
+} from 'class-validator';
 
 /**
  * Supported runtime environments.
@@ -185,6 +195,32 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   NP_SENDER_CITY_REF?: string;
+
+  // ─── Sentry error tracking (TASK-048) ───────────────────────────────────────
+  // All optional: the app boots without any Sentry config. When SENTRY_DSN is
+  // absent, Sentry.init runs with `enabled: false` (see `instrument.ts`) and the
+  // whole integration is a no-op — no network calls, no captured events.
+  //
+  // SENTRY_DSN: project ingest URL from the Sentry dashboard. Presence toggles
+  //   the SDK on.
+  // SENTRY_ENVIRONMENT: optional environment tag (e.g. production, staging).
+  //   Defaults to NODE_ENV when unset.
+  // SENTRY_TRACES_SAMPLE_RATE: optional performance-trace sample rate (0..1).
+  //   Defaults to 0 (tracing off).
+
+  @IsOptional()
+  @IsString()
+  SENTRY_DSN?: string;
+
+  @IsOptional()
+  @IsString()
+  SENTRY_ENVIRONMENT?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  SENTRY_TRACES_SAMPLE_RATE?: number;
 }
 
 /**
