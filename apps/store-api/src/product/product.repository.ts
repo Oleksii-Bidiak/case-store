@@ -64,6 +64,28 @@ export interface ProductRating {
 }
 
 /**
+ * Source shape for building a Meilisearch document (TASK-075). Carries the
+ * public-safe fields a result/suggestion card needs — category name + primary
+ * image are joined in so the search index is self-contained. `price` stays a
+ * Prisma Decimal here; the search service converts it to a number for the index.
+ */
+export interface ProductIndexSource {
+  id: string;
+  name: string;
+  description: string | null;
+  price: { toString(): string };
+  compareAtPrice: { toString(): string } | null;
+  slug: string;
+  categoryId: string;
+  categoryName: string;
+  primaryImageUrl: string | null;
+  blurDataUrl: string | null;
+  stock: number;
+  isActive: boolean;
+  createdAt: Date;
+}
+
+/**
  * Primary image shape attached to list rows (and used by the detail include).
  */
 export interface PrimaryImage {
@@ -456,6 +478,110 @@ export class ProductRepository {
       }
     }
     return map;
+  }
+
+  /**
+   * Enrich a set of products by id for card rendering (TASK-075 search-results
+   * hydration). Meilisearch returns the matching ids ranked by relevance; this
+   * loads the full active, non-deleted products with the same rating / primary
+   * image / variant-sibling enrichment as {@link findAll}. Order is NOT
+   * preserved here — the caller reorders by the Meili hit order.
+   */
+  async findByIdsForCards(ids: string[]): Promise<PaginatedProductsResult['products']> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: ids }, isActive: true, deletedAt: null },
+    });
+
+    const productIds = products.map((p) => p.id);
+    const groupIds = [
+      ...new Set(products.map((p) => p.groupId).filter((id): id is string => id != null)),
+    ];
+    const [ratings, primaryImages, variantSiblings] = await Promise.all([
+      this.getRatingsByProductId(productIds),
+      this.getPrimaryImagesByProductId(productIds),
+      this.getVariantSiblingsByGroupId(groupIds),
+    ]);
+    return products.map((product) => {
+      const rating = ratings.get(product.id);
+      return {
+        ...product,
+        ratingAverage: rating?.ratingAverage ?? null,
+        ratingCount: rating?.ratingCount ?? 0,
+        primaryImage: primaryImages.get(product.id) ?? null,
+        variantSiblings: product.groupId ? (variantSiblings.get(product.groupId) ?? []) : undefined,
+      };
+    });
+  }
+
+  /**
+   * Load a single active, non-deleted product as a search-index source
+   * (TASK-075). Joins the category name + primary image so the built document is
+   * self-contained. Returns null when the product is missing, soft-deleted, or
+   * deactivated — the search service then removes it from the index instead.
+   */
+  async findOneForIndex(id: string): Promise<ProductIndexSource | null> {
+    const product = await this.prisma.product.findFirst({
+      where: { id, isActive: true, deletedAt: null },
+      include: {
+        category: { select: { name: true } },
+        images: {
+          orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+          take: 1,
+          select: { url: true, blurDataUrl: true },
+        },
+      },
+    });
+    return product ? this.toIndexSource(product) : null;
+  }
+
+  /**
+   * Batch-pull active, non-deleted products as search-index sources (TASK-075
+   * `reindexAll`). Ordered by `createdAt` for a stable pagination cursor.
+   */
+  async findManyForIndex(skip: number, take: number): Promise<{ items: ProductIndexSource[] }> {
+    const rows = await this.prisma.product.findMany({
+      where: { isActive: true, deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      skip,
+      take,
+      include: {
+        category: { select: { name: true } },
+        images: {
+          orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+          take: 1,
+          select: { url: true, blurDataUrl: true },
+        },
+      },
+    });
+    return { items: rows.map((row) => this.toIndexSource(row)) };
+  }
+
+  /** Map a Prisma product (with category + primary image joined) to an index source. */
+  private toIndexSource(
+    product: Product & {
+      category: { name: string } | null;
+      images: Array<{ url: string; blurDataUrl: string | null }>;
+    },
+  ): ProductIndexSource {
+    const image = product.images[0];
+    return {
+      id: product.id,
+      name: product.name,
+      description: product.description,
+      price: product.price,
+      compareAtPrice: product.compareAtPrice,
+      slug: product.slug,
+      categoryId: product.categoryId,
+      categoryName: product.category?.name ?? '',
+      primaryImageUrl: image?.url ?? null,
+      blurDataUrl: image?.blurDataUrl ?? null,
+      stock: product.stock,
+      isActive: product.isActive,
+      createdAt: product.createdAt,
+    };
   }
 
   /**

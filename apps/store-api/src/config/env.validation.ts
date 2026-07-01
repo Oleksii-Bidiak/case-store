@@ -196,6 +196,28 @@ export class EnvironmentVariables {
   @IsString()
   NP_SENDER_CITY_REF?: string;
 
+  // ─── Meilisearch full-text search (TASK-075) ────────────────────────────────
+  // ALL optional: the app boots without a search engine. When MEILI_HOST /
+  // MEILI_MASTER_KEY are absent the search endpoints transparently fall back to
+  // the Postgres `contains` scan and index sync is inert.
+  //
+  // MEILI_HOST: engine base URL (e.g. http://localhost:7700).
+  // MEILI_MASTER_KEY: master/admin key — server-side index writes + search.
+  // MEILI_SEARCH_KEY: optional public search-only key, reserved for future
+  //   browser-side querying (unused by the backend today).
+
+  @IsOptional()
+  @IsString()
+  MEILI_HOST?: string;
+
+  @IsOptional()
+  @IsString()
+  MEILI_MASTER_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  MEILI_SEARCH_KEY?: string;
+
   // ─── Sentry error tracking (TASK-048) ───────────────────────────────────────
   // All optional: the app boots without any Sentry config. When SENTRY_DSN is
   // absent, Sentry.init runs with `enabled: false` (see `instrument.ts`) and the

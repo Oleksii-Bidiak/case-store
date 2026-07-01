@@ -15,6 +15,7 @@ import {
   SheetTrigger,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { SearchAutocomplete } from "@/features/search";
 import { HeaderAuth } from "./header-auth";
 import { HeaderCartBadge } from "./header-cart-badge";
 import { HeaderWishlistBadge } from "./header-wishlist-badge";
@@ -77,6 +78,13 @@ export function Header() {
                   MobileStore
                 </SheetTitle>
               </SheetHeader>
+              {/* Mobile search — full width at the top of the slide-out menu. */}
+              <div className="px-2 pb-2">
+                <SearchAutocomplete
+                  id="mobile-search"
+                  onNavigate={() => setMenuOpen(false)}
+                />
+              </div>
               <nav
                 className="flex flex-col gap-1 px-2"
                 aria-label={dict.header.menuTitle}
@@ -166,6 +174,11 @@ export function Header() {
           >
             MobileStore
           </Link>
+        </div>
+
+        {/* Center: desktop search box — grows to fill the middle of the bar. */}
+        <div className="hidden max-w-md flex-1 md:block">
+          <SearchAutocomplete id="desktop-search" />
         </div>
 
         {/* Center: desktop nav */}

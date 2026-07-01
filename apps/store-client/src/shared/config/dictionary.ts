@@ -59,6 +59,35 @@ export const dict = {
     searchSubmit: "Шукати",
   },
 
+  // TASK-075 — full-text search (header autocomplete + /search results page).
+  search: {
+    /** Autocomplete input placeholder + accessible names. */
+    placeholder: "Пошук товарів…",
+    inputAria: "Пошук товарів",
+    submitAria: "Виконати пошук",
+    /** Autocomplete dropdown states. */
+    loading: "Пошук…",
+    empty: "Нічого не знайдено",
+    /** Results page heading (with / without a query). */
+    resultsTitle: (q: string) => `Результати пошуку: «${q}»`,
+    resultsTitleEmpty: "Пошук товарів",
+    countFound: (n: number) => `Знайдено товарів: ${n}`,
+    /** Empty-results state for a non-blank query. */
+    emptyHeading: (q: string) => `За запитом «${q}» нічого не знайдено`,
+    emptyBody: "Спробуйте інший запит або перегляньте всі товари.",
+    /** Prompt shown when the results page is opened without a query. */
+    promptHeading: "Почніть пошук",
+    promptBody: "Введіть назву товару у рядок пошуку вгорі сторінки.",
+    /** Error + browse-all fallback. */
+    error: "Не вдалося виконати пошук. Спробуйте пізніше.",
+    browseAll: "Переглянути всі товари",
+    /** Results pagination. */
+    paginationAria: "Навігація сторінками",
+    prevPage: "‹ Попередня",
+    nextPage: "Наступна ›",
+    pageOf: (page: number, total: number) => `${page} / ${total}`,
+  },
+
   footer: {
     rights: (year: number) => `© ${year} MobileStore. Усі права захищено.`,
     tagline: "Преміальні аксесуари для ваших пристроїв.",
