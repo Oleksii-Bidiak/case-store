@@ -10,7 +10,7 @@ import { ProductImageService } from './product-image.service';
 import { ProductRepository } from './product.repository';
 import { ProductImageRepository } from './product-image.repository';
 import { CacheService } from '../cache';
-import { STORAGE_SERVICE } from '../storage';
+import { ImageProcessor, STORAGE_SERVICE } from '../storage';
 
 const PRODUCT_ID = '11111111-1111-1111-1111-111111111111';
 const SLUG = 'iphone-15-case';
@@ -42,6 +42,7 @@ describe('ProductImageService', () => {
     updateMany: jest.Mock;
   };
   let storage: { save: jest.Mock; delete: jest.Mock };
+  let imageProcessor: { process: jest.Mock };
   let cache: { del: jest.Mock; delByPrefix: jest.Mock };
 
   beforeEach(async () => {
@@ -56,8 +57,14 @@ describe('ProductImageService', () => {
       updateMany: jest.fn().mockResolvedValue(undefined),
     };
     storage = {
-      save: jest.fn().mockResolvedValue('products/abc.jpg'),
+      save: jest.fn().mockResolvedValue('products/abc.webp'),
       delete: jest.fn().mockResolvedValue(undefined),
+    };
+    imageProcessor = {
+      process: jest.fn().mockResolvedValue({
+        webp: Buffer.from('optimized-webp'),
+        blurDataUrl: 'data:image/webp;base64,BLUR',
+      }),
     };
     cache = {
       del: jest.fn().mockResolvedValue(undefined),
@@ -70,6 +77,7 @@ describe('ProductImageService', () => {
         { provide: ProductRepository, useValue: productRepository },
         { provide: ProductImageRepository, useValue: imageRepository },
         { provide: STORAGE_SERVICE, useValue: storage },
+        { provide: ImageProcessor, useValue: imageProcessor },
         { provide: CacheService, useValue: cache },
         { provide: ConfigService, useValue: { get: () => 'http://localhost:3001' } },
       ],
@@ -112,12 +120,44 @@ describe('ProductImageService', () => {
       expect(rows[1].isPrimary).toBe(false);
       expect(rows[0].sortOrder).toBe(0);
       expect(rows[1].sortOrder).toBe(1);
-      expect(rows[0].url).toBe('http://localhost:3001/uploads/products/abc.jpg');
+      expect(rows[0].url).toBe('http://localhost:3001/uploads/products/abc.webp');
       expect(rows[0].alt).toBe('a');
 
       expect(cache.del).toHaveBeenCalled();
       expect(cache.delByPrefix).toHaveBeenCalled();
       expect(result).toHaveLength(2);
+    });
+
+    it('pre-optimizes raster uploads to WebP and persists the LQIP blurDataUrl', async () => {
+      const result = await service.uploadImages(PRODUCT_ID, [makeFile()]);
+
+      // Each accepted image goes through the processor before storage.
+      expect(imageProcessor.process).toHaveBeenCalledTimes(1);
+      // The WebP buffer (not the original) is stored, with a `webp` extension.
+      const [savedBuffer, savedExt] = storage.save.mock.calls[0];
+      expect(savedBuffer).toEqual(Buffer.from('optimized-webp'));
+      expect(savedExt).toBe('webp');
+
+      const rows = imageRepository.bulkCreate.mock.calls[0][0];
+      expect(rows[0].blurDataUrl).toBe('data:image/webp;base64,BLUR');
+      // The returned entity carries the placeholder too.
+      expect(result[0].blurDataUrl).toBe('data:image/webp;base64,BLUR');
+    });
+
+    it('passes animated GIFs through unprocessed with a null blurDataUrl', async () => {
+      const gif = makeFile({ mimetype: 'image/gif', buffer: Buffer.from('gif-bytes') });
+
+      const result = await service.uploadImages(PRODUCT_ID, [gif]);
+
+      // GIFs skip the processor entirely to preserve animation.
+      expect(imageProcessor.process).not.toHaveBeenCalled();
+      const [savedBuffer, savedExt] = storage.save.mock.calls[0];
+      expect(savedBuffer).toEqual(Buffer.from('gif-bytes'));
+      expect(savedExt).toBe('gif');
+
+      const rows = imageRepository.bulkCreate.mock.calls[0][0];
+      expect(rows[0].blurDataUrl).toBeNull();
+      expect(result[0].blurDataUrl).toBeNull();
     });
 
     it('does not mark a new image primary when the product already has images', async () => {

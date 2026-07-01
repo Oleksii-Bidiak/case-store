@@ -25,6 +25,18 @@ export class ProductImageEntity {
   })
   alt!: string | null;
 
+  @ApiProperty({
+    description:
+      'Tiny blurred low-quality image placeholder (LQIP) as a base64 WebP data URI, ' +
+      'for `next/image` blur-up. Null for animated GIFs and legacy images uploaded ' +
+      'before pre-optimization (TASK-091).',
+    example: 'data:image/webp;base64,UklGR... ',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  blurDataUrl!: string | null;
+
   @ApiProperty({ description: 'Display sort order (lower = first)', example: 0 })
   sortOrder!: number;
 
@@ -50,6 +62,7 @@ export class ProductImageEntity {
     id: string;
     url: string;
     alt: string | null;
+    blurDataUrl?: string | null;
     sortOrder: number;
     isPrimary: boolean;
     productId?: string;
@@ -58,6 +71,7 @@ export class ProductImageEntity {
     entity.id = image.id;
     entity.url = image.url;
     entity.alt = image.alt;
+    entity.blurDataUrl = image.blurDataUrl ?? null;
     entity.sortOrder = image.sortOrder;
     entity.isPrimary = image.isPrimary;
     entity.productId = image.productId;

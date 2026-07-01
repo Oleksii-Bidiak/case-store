@@ -177,6 +177,7 @@ export class PublicProductEntity {
       id: string;
       url: string;
       alt: string | null;
+      blurDataUrl?: string | null;
       sortOrder: number;
       isPrimary: boolean;
     } | null;
