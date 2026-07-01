@@ -145,7 +145,7 @@
 | TASK-078 | Product reviews — write flow + moderation (auth'd submission, verified-purchase, PDP list, admin approval queue) | ✅ | [docs/plans/089-product-reviews.md](docs/plans/089-product-reviews.md) |
 | TASK-106 | Reviews module backend — controller/service/repository over existing `Review` model (prereq for TASK-078) | ✅ | [docs/plans/089-product-reviews.md](docs/plans/089-product-reviews.md) |
 | TASK-079 | Coupons / promo codes — `Discount` model (percent/fixed, min-spend, expiry, usage caps), apply in cart/checkout, admin CRUD | ✅ | [docs/plans/090-coupons-discounts.md](docs/plans/090-coupons-discounts.md) |
-| TASK-075 | Full-text search + header autocomplete — Meilisearch (typo-tolerant) behind `/search`; inline header dropdown | ⬜ | — |
+| TASK-075 | Full-text search + header autocomplete — Meilisearch (typo-tolerant) behind `/search`; inline header dropdown | ⬜ | [docs/plans/095-meilisearch-search.md](docs/plans/095-meilisearch-search.md) |
 | TASK-076 | Wishlist / favorites — guest-via-cookie + merge-on-login (mirrors guest-cart pattern) | ✅ | [docs/plans/091-wishlist-favorites.md](docs/plans/091-wishlist-favorites.md) |
 | TASK-077 | Variant dots + quick-add — surface variant summary on list API; color dots + hover ATC overlay | ✅ | — |
 | TASK-074 | Image optimization — `next/image` remotePatterns + shimmer placeholder | ✅ | docs/plans/042-image-optimization.md |
