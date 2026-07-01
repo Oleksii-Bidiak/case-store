@@ -23,6 +23,7 @@ import { OrderModule } from './order';
 import { DiscountModule } from './discount';
 import { ReviewModule } from './review';
 import { DeliveryModule } from './delivery';
+import { SearchModule } from './search';
 import { DashboardModule } from './dashboard';
 import { MailModule } from './mail';
 import { MailOutboxModule } from './mail-outbox';
@@ -123,6 +124,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Nova Poshta delivery proxy (city/warehouse search + cost estimate)
     DeliveryModule,
+
+    // Meilisearch full-text product search + autocomplete (TASK-075)
+    SearchModule,
 
     // Admin dashboard metrics
     DashboardModule,
