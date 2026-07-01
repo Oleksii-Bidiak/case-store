@@ -182,6 +182,9 @@ model ProductImage {
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   url       String
   alt       String?
+  // Tiny base64 WebP LQIP data-URI for the storefront next/image blur placeholder
+  // (TASK-091). Nullable: legacy/seed rows and passthrough GIFs have none.
+  blurDataUrl String? @map("blur_data_url")
   sortOrder Int      @default(0) @map("sort_order")
   isPrimary Boolean  @default(false) @map("is_primary")
   createdAt DateTime @default(now()) @map("created_at")
