@@ -26,6 +26,15 @@ import { buildHelmetOptions } from '../src/config/security.config';
 describe('Security hardening (e2e)', () => {
   let app: INestApplication;
 
+  // This suite is the only one that keeps the REAL ThrottlerGuard and forces the
+  // in-memory store via `process.env.REDIS_HOST = ''`. Those env mutations are
+  // process-global and, if left in place, leak into every suite that runs after
+  // this one in the same Jest worker (selecting a different throttler storage
+  // than that suite intends). Snapshot the keys we touch and restore them in
+  // afterAll so this suite stays fully isolated.
+  const envSnapshot: Record<string, string | undefined> = {};
+  const MUTATED_ENV_KEYS = ['REDIS_HOST', 'CSRF_SECRET'] as const;
+
   const authRepositoryMock = {
     findByEmail: jest.fn().mockResolvedValue(null), // login → 401
     findById: jest.fn(),
@@ -72,6 +81,12 @@ describe('Security hardening (e2e)', () => {
   };
 
   beforeAll(async () => {
+    // Snapshot the env keys we are about to mutate so afterAll can restore them
+    // and prevent cross-suite leakage of the throttler-storage selection.
+    for (const key of MUTATED_ENV_KEYS) {
+      envSnapshot[key] = process.env[key];
+    }
+
     // Force the in-memory throttler store + a deterministic CSRF secret,
     // independent of whatever the local .env contains.
     process.env.REDIS_HOST = '';
@@ -114,6 +129,16 @@ describe('Security hardening (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
+
+    // Restore the env keys this suite mutated so later suites see the original
+    // environment (and pick their own throttler storage) deterministically.
+    for (const key of MUTATED_ENV_KEYS) {
+      if (envSnapshot[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = envSnapshot[key];
+      }
+    }
   });
 
   // ─── Helmet headers ──────────────────────────────────────────────────────────

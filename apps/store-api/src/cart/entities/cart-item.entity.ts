@@ -120,7 +120,7 @@ export class CartItemEntity {
     entity.quantity = item.quantity;
     entity.productName = item.product.name;
     entity.productSlug = item.product.slug;
-    entity.imageUrl = item.product.images[0]?.url ?? null;
+    entity.imageUrl = item.product.images?.[0]?.url ?? null;
     entity.compareAtPrice = item.product.compareAtPrice
       ? item.product.compareAtPrice.toString()
       : null;
