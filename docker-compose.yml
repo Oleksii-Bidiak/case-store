@@ -56,6 +56,23 @@ services:
     networks:
       - store_network
 
+  meilisearch:
+    image: getmeili/meilisearch:v1.10
+    container_name: store_meilisearch
+    restart: unless-stopped
+    ports:
+      - "7700:7700"
+    environment:
+      # Master key gates all index/admin operations. Empty by default is rejected
+      # in production mode, so a dev default is provided; override in .env.
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-masterKeyForLocalDevOnly32chars}
+      MEILI_ENV: ${MEILI_ENV:-development}
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meili_data:/meili_data
+    networks:
+      - store_network
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: store_pgadmin
@@ -79,6 +96,7 @@ volumes:
   postgres_data:
   redis_data:
   pgadmin_data:
+  meili_data:
 
 networks:
   store_network:
