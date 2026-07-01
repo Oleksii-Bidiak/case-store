@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 // Product images are served by store-api from `${PUBLIC_BASE_URL}/uploads/...`,
 // which mirrors NEXT_PUBLIC_API_URL on the client. `next/image` refuses any
@@ -36,4 +37,18 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Wrap with Sentry to enable source-map upload + auto-instrumentation. This is
+// build-time-inert without Sentry auth/DSN: with no `SENTRY_AUTH_TOKEN` the CLI
+// skips source-map upload (a warning, not an error), and with no
+// `NEXT_PUBLIC_SENTRY_DSN` the runtime SDK is disabled (see instrumentation files).
+// The original Next config (images.remotePatterns + env) is preserved unchanged.
+export default withSentryConfig(nextConfig, {
+  // Silence the Sentry build plugin unless running in CI.
+  silent: !process.env.CI,
+  // Read from env at build time; unset in dev/CI, so upload is skipped.
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  // Do not fail the build if Sentry is unreachable / unconfigured.
+  disableLogger: true,
+});

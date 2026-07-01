@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { ScheduleModule } from '@nestjs/schedule';
 import { resolve } from 'node:path';
+import { SentryModule } from '@sentry/nestjs/setup';
 import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -35,6 +36,10 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
 @Module({
   imports: [
+    // Sentry error tracking — wires the SDK (initialised in `instrument.ts`) into
+    // NestJS. Inert when SENTRY_DSN is unset (Sentry.init ran with enabled:false).
+    SentryModule.forRoot(),
+
     // Environment variables
     ConfigModule.forRoot({
       isGlobal: true,
