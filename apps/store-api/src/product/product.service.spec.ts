@@ -12,6 +12,7 @@ import {
   productDetailSlugKey,
   PRODUCT_LIST_PREFIX,
 } from '../cache';
+import { ProductIndexer } from '../search/product-indexer';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -71,6 +72,15 @@ const configServiceMock = {
   get: jest.fn().mockReturnValue(300),
 };
 
+// ─── ProductIndexer mock (TASK-075 search-index seam) ─────────────────────────
+// Both methods resolve by default; individual tests override to simulate a
+// failing indexer and assert it never breaks the product write.
+
+const productIndexerMock = {
+  index: jest.fn().mockResolvedValue(undefined),
+  remove: jest.fn().mockResolvedValue(undefined),
+};
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('ProductService', () => {
@@ -84,6 +94,8 @@ describe('ProductService', () => {
     cacheServiceMock.del.mockResolvedValue(undefined);
     cacheServiceMock.delByPrefix.mockResolvedValue(undefined);
     configServiceMock.get.mockReturnValue(300);
+    productIndexerMock.index.mockResolvedValue(undefined);
+    productIndexerMock.remove.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -91,6 +103,7 @@ describe('ProductService', () => {
         { provide: ProductRepository, useValue: productRepositoryMock },
         { provide: CacheService, useValue: cacheServiceMock },
         { provide: ConfigService, useValue: configServiceMock },
+        { provide: ProductIndexer, useValue: productIndexerMock },
       ],
     }).compile();
 
@@ -748,6 +761,94 @@ describe('ProductService', () => {
       const result = await service.delete('product-uuid-1');
 
       expect(result).not.toHaveProperty('deletedAt');
+    });
+  });
+
+  // ─── search-index sync (TASK-075) ────────────────────────────────────────────
+  // Every mutation keeps the Meilisearch index in step via the ProductIndexer:
+  // active products are (re)indexed, inactive ones removed. Sync is best-effort
+  // and must NEVER fail the product write.
+
+  describe('search-index sync', () => {
+    it('indexes an active product on create', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockResolvedValue(mockProduct);
+
+      await service.create({
+        name: 'New Product',
+        slug: 'new-product',
+        price: 10,
+        categoryId: 'category-uuid-1',
+      });
+
+      expect(productIndexerMock.index).toHaveBeenCalledWith(mockProduct.id);
+      expect(productIndexerMock.remove).not.toHaveBeenCalled();
+    });
+
+    it('removes the product from the index when created inactive', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockResolvedValue({ ...mockProduct, isActive: false });
+
+      await service.create({
+        name: 'Hidden Product',
+        slug: 'hidden-product',
+        price: 10,
+        categoryId: 'category-uuid-1',
+        isActive: false,
+      });
+
+      expect(productIndexerMock.remove).toHaveBeenCalledWith(mockProduct.id);
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+    });
+
+    it('re-indexes on update when the product remains active', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.update.mockResolvedValue(mockProduct);
+
+      await service.update('product-uuid-1', { name: 'Renamed' });
+
+      expect(productIndexerMock.index).toHaveBeenCalledWith(mockProduct.id);
+    });
+
+    it('indexes on activate and removes on deactivate', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockInactiveProduct);
+      productRepositoryMock.activate.mockResolvedValue({ ...mockInactiveProduct, isActive: true });
+      await service.activate('product-uuid-2');
+      expect(productIndexerMock.index).toHaveBeenCalledWith('product-uuid-2');
+
+      jest.clearAllMocks();
+
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.deactivate.mockResolvedValue(mockInactiveProduct);
+      await service.deactivate('product-uuid-1');
+      expect(productIndexerMock.remove).toHaveBeenCalledWith(mockInactiveProduct.id);
+    });
+
+    it('removes the product from the index on soft-delete', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.softDelete.mockResolvedValue({ ...mockProduct, isActive: false });
+
+      await service.delete('product-uuid-1');
+
+      expect(productIndexerMock.remove).toHaveBeenCalledWith(mockProduct.id);
+    });
+
+    it('does NOT fail the mutation when the indexer throws', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockResolvedValue(mockProduct);
+      productIndexerMock.index.mockRejectedValue(new Error('meili down'));
+
+      const result = await service.create({
+        name: 'New Product',
+        slug: 'new-product',
+        price: 10,
+        categoryId: 'category-uuid-1',
+      });
+
+      expect(result).toBeInstanceOf(ProductEntity);
     });
   });
 });

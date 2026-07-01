@@ -22,6 +22,7 @@ import {
   productDetailSlugKey,
   PRODUCT_LIST_PREFIX,
 } from '../cache';
+import { ProductIndexer } from '../search/product-indexer';
 
 /** Fallback TTL (seconds) when REDIS_CACHE_TTL_SECONDS is not configured. */
 const DEFAULT_CACHE_TTL_SECONDS = 300;
@@ -80,6 +81,7 @@ export class ProductService {
     private readonly productRepository: ProductRepository,
     private readonly cache: CacheService,
     private readonly config: ConfigService,
+    private readonly productIndexer: ProductIndexer,
   ) {
     this.cacheTtlSeconds =
       this.config.get<number>('REDIS_CACHE_TTL_SECONDS') ?? DEFAULT_CACHE_TTL_SECONDS;
@@ -251,6 +253,7 @@ export class ProductService {
 
     // A new product may appear on any list page — bust every list cache entry.
     await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.syncSearchIndex(product);
 
     return ProductEntity.fromPrisma(product);
   }
@@ -294,6 +297,7 @@ export class ProductService {
     if (input.slug !== undefined && input.slug !== product.slug) {
       await this.cache.del(productDetailSlugKey(input.slug));
     }
+    await this.syncSearchIndex(updatedProduct);
 
     return ProductEntity.fromPrisma(updatedProduct);
   }
@@ -313,6 +317,7 @@ export class ProductService {
 
     await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
     await this.evictProductDetail(id, product.slug);
+    await this.syncSearchIndex(deactivatedProduct);
 
     return ProductEntity.fromPrisma(deactivatedProduct);
   }
@@ -332,6 +337,7 @@ export class ProductService {
 
     await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
     await this.evictProductDetail(id, product.slug);
+    await this.syncSearchIndex(activatedProduct);
 
     return ProductEntity.fromPrisma(activatedProduct);
   }
@@ -360,6 +366,7 @@ export class ProductService {
     // A removed product must disappear from every list page and its detail caches.
     await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
     await this.evictProductDetail(id, product.slug);
+    await this.syncSearchIndex(deleted);
 
     return ProductEntity.fromPrisma(deleted);
   }
@@ -371,5 +378,25 @@ export class ProductService {
   private async evictProductDetail(id: string, slug: string): Promise<void> {
     await this.cache.del(productDetailIdKey(id));
     await this.cache.del(productDetailSlugKey(slug));
+  }
+
+  /**
+   * Keep the Meilisearch index in step with a product mutation (TASK-075):
+   * active products are (re)indexed, inactive ones removed. **Best-effort** —
+   * any failure is swallowed here so a down/unconfigured search engine can never
+   * block or fail the product write. The `ProductIndexer` itself also logs and
+   * degrades gracefully; this catch is the belt-and-braces guard the spec
+   * asserts (a throwing indexer must not fail the mutation).
+   */
+  private async syncSearchIndex(product: { id: string; isActive: boolean }): Promise<void> {
+    try {
+      if (product.isActive) {
+        await this.productIndexer.index(product.id);
+      } else {
+        await this.productIndexer.remove(product.id);
+      }
+    } catch {
+      // Swallowed: indexing is never allowed to affect the product write.
+    }
   }
 }
