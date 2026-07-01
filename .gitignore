@@ -58,3 +58,12 @@ temp/
 .cache/
 .eslintcache
 *.tsbuildinfo
+
+# design-sync (claude.ai/design)
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
+apps/store-client/.ds-sync-css/
+.design-sync/build/.generated/

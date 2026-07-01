@@ -1,0 +1,18 @@
+{
+  "projectId": "f20dfb51-3752-4dfd-b3f7-def6adfe814e",
+  "shape": "package",
+  "pkg": "@store/store-client",
+  "globalName": "StoreClientUI",
+  "srcDir": "src/shared/ui",
+  "tsconfig": "../../../.design-sync/build/tsconfig.json",
+  "cssEntry": ".ds-sync-css/ui.css",
+  "readmeHeader": ".design-sync/conventions.md",
+  "componentSrcMap": {
+    "JsonLd": null
+  },
+  "overrides": {
+    "Dialog": { "cardMode": "single", "viewport": "680x460" },
+    "Sheet": { "cardMode": "single", "viewport": "680x460" },
+    "CheckoutSkeleton": { "cardMode": "column" }
+  }
+}
