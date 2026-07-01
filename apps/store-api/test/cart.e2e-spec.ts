@@ -106,6 +106,9 @@ describe('CartController (e2e)', () => {
     price: { toString: () => '29.99' },
     compareAtPrice: null,
     isActive: true,
+    // CartItemEntity.fromPrisma reads product.images (CART_ITEMS_INCLUDE always
+    // selects it in prod); the mock must supply it or `images[0]` throws → 500.
+    images: [],
   };
 
   const testCartItem = {
