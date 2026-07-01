@@ -1,8 +1,11 @@
-// Widgets — Composite UI blocks (HeroBanner, CategoryNav, ProductGrid, …)
+// Widgets — Composite UI blocks (HeroBanner, CategoryNav, PopularRail, …)
 export { Footer } from "./footer";
 export { HeroBanner, TrustStrip } from "./hero-banner";
 export { CategoryNav, CategoryNavSkeleton } from "./category-nav";
-export { ProductGrid, ProductGridSkeleton } from "./product-grid";
+export { PopularRail, PopularRailSkeleton } from "./product-grid";
+export { PromoBanner } from "./promo-banner";
+export { Newsletter } from "./newsletter";
+export { RecentlyViewed } from "./recently-viewed";
 export { ProductListView, ProductListSkeleton } from "./product-list";
 export { SearchResultsView, SearchResultsSkeleton } from "./search-results";
 export { ProductDetailView, ProductDetailSkeleton } from "./product-detail";

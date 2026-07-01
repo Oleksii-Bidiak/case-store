@@ -2,7 +2,7 @@ import { http, HttpResponse } from "msw";
 import { renderWithProviders, screen } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
-import { ProductGrid } from "./product-grid";
+import { PopularRail } from "./product-grid";
 
 function variantSummary(overrides: Record<string, unknown> = {}) {
   return {
@@ -50,7 +50,7 @@ function listEnvelope(products: ReturnType<typeof makeProduct>[]) {
   };
 }
 
-describe("ProductGrid — quick-add stock guard (TASK-144 / TASK-077)", () => {
+describe("PopularRail — quick-add stock guard (TASK-144 / TASK-077 / TASK-162)", () => {
   it("disables the quick-add button with an out-of-stock label when the default variant has no stock", async () => {
     server.use(
       http.get("*/api/products", () =>
@@ -64,7 +64,7 @@ describe("ProductGrid — quick-add stock guard (TASK-144 / TASK-077)", () => {
       ),
     );
 
-    renderWithProviders(<ProductGrid />);
+    renderWithProviders(<PopularRail />);
 
     // Out of stock → the override aria-label is dropped, so the accessible name
     // is the visible "Немає в наявності" label (conveys why it is disabled).
@@ -81,10 +81,10 @@ describe("ProductGrid — quick-add stock guard (TASK-144 / TASK-077)", () => {
       ),
     );
 
-    renderWithProviders(<ProductGrid />);
+    renderWithProviders(<PopularRail />);
 
     const button = await screen.findByRole("button", {
-      name: dict.productCard.quickAddAria("Tempered Glass"),
+      name: dict.productCard.buyAria("Tempered Glass"),
     });
     expect(button).toBeEnabled();
   });

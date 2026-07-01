@@ -1,2 +1,2 @@
-export { ProductGrid } from "./ui/product-grid";
-export { ProductGridSkeleton } from "./ui/product-grid-skeleton";
+export { PopularRail } from "./ui/product-grid";
+export { PopularRailSkeleton } from "./ui/product-grid-skeleton";

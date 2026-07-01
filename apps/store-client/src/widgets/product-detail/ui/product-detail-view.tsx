@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useProductControllerFindBySlug } from "@/entities/product";
+import { pushRecentlyViewed } from "@/widgets/recently-viewed";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { formatMoney } from "@/shared/lib";
@@ -35,6 +36,27 @@ export function ProductDetailView({ slug }: { slug: string }) {
     () => [...(data?.images ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
     [data],
   );
+
+  // Record this product in the guest "recently viewed" history (localStorage),
+  // so the homepage "Ви переглядали" rail has something to show. Keyed to the
+  // product id so switching between sibling positions re-records correctly.
+  const viewed = data?.data;
+  const cover = sortedImages[0];
+  useEffect(() => {
+    if (!viewed) return;
+    const alt = cover?.alt;
+    pushRecentlyViewed({
+      id: viewed.id,
+      name: viewed.name,
+      slug: viewed.slug,
+      price: viewed.price,
+      compareAtPrice: viewed.compareAtPrice,
+      imageUrl: cover?.url ?? null,
+      imageAlt: typeof alt === "string" ? alt : null,
+      blurDataUrl: cover?.blurDataUrl ?? null,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewed?.id]);
 
   if (isLoading) {
     return <ProductDetailSkeleton />;

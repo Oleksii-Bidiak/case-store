@@ -85,7 +85,7 @@ export function ProductCard({
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-[var(--shadow-lift)] has-[[data-card-link]:focus-visible]:ring-2 has-[[data-card-link]:focus-visible]:ring-ring has-[[data-card-link]:focus-visible]:ring-offset-2 has-[[data-card-link]:focus-visible]:ring-offset-background">
       <div
-        className={`relative aspect-square w-full overflow-hidden bg-gradient-to-br ${gradient}`}
+        className={`relative aspect-square w-full overflow-hidden bg-gradient-to-br [&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105 ${gradient}`}
       >
         <ProductCardImage
           src={product.primaryImage?.url}

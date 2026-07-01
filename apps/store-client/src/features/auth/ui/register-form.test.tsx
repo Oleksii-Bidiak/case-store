@@ -37,6 +37,8 @@ async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
     screen.getByLabelText(dict.auth.register.confirmPassword),
     "password123",
   );
+  // Terms consent is required before the form will submit.
+  await user.click(screen.getByRole("checkbox"));
 }
 
 describe("RegisterForm", () => {

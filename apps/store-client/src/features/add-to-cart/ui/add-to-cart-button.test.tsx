@@ -12,12 +12,12 @@ describe("AddToCartButton — out-of-stock guard (TASK-144)", () => {
     expect(button).toBeDisabled();
   });
 
-  it("renders an enabled compact button labelled 'Додати до кошика' when in stock", () => {
+  it("renders an enabled compact button labelled 'Купити' when in stock", () => {
     renderWithProviders(
       <AddToCartButton productId="p1" compact outOfStock={false} />,
     );
 
-    const button = screen.getByRole("button", { name: dict.addToCart.idle });
+    const button = screen.getByRole("button", { name: dict.addToCart.buy });
     expect(button).toBeEnabled();
   });
 });

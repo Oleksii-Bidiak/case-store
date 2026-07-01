@@ -2,7 +2,6 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ShoppingCart } from "lucide-react";
 import { getGetCartQueryKey, useAddToCart } from "@/entities/cart";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -78,22 +77,27 @@ export function AddToCartButton({
   const isDisabled = disabled || outOfStock || addToCart.isPending;
 
   if (compact) {
-    // Out-of-stock takes precedence so the card communicates the state inline.
-    const compactLabel = outOfStock ? dict.addToCart.outOfStock : label;
+    // Card "Купити" button (mockup): a filled primary CTA. Out-of-stock takes
+    // precedence so the card communicates the state inline via the label.
+    const compactLabel = outOfStock
+      ? dict.addToCart.outOfStock
+      : addToCart.isPending
+        ? dict.addToCart.adding
+        : addToCart.isSuccess
+          ? dict.addToCart.added
+          : dict.addToCart.buy;
 
     return (
       <Button
         type="button"
         size="sm"
-        variant="outline"
         onClick={handleClick}
         disabled={isDisabled}
         // Out of stock: drop the override so the visible "Немає в наявності"
         // label remains the accessible name (conveys WHY it is disabled).
         aria-label={outOfStock ? undefined : ariaLabel}
-        className={`w-full font-semibold transition-colors hover:bg-primary hover:text-primary-foreground hover:border-primary ${className}`}
+        className={`w-full cursor-pointer font-semibold transition-all active:scale-[0.99] ${className}`}
       >
-        <ShoppingCart aria-hidden="true" />
         {compactLabel}
       </Button>
     );

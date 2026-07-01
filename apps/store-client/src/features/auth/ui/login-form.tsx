@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useAuth, useAuthControllerLogin } from "@/entities/session";
 import { getGetCartQueryKey } from "@/entities/cart";
 import { getGetWishlistQueryKey } from "@/entities/wishlist";
@@ -20,14 +21,33 @@ const loginSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>;
 
 const fieldClass =
-  "rounded-lg border border-border bg-background px-3 py-2 text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "rounded-lg border border-border bg-background px-3 py-2 text-foreground transition-colors hover:border-muted-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+const socialClass =
+  "flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-background text-sm font-medium text-foreground transition-all hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]";
+
+interface LoginFormProps {
+  /**
+   * Slide-out mode: called after a successful sign-in (e.g. to close the auth
+   * sheet). When set, the form does NOT navigate — the reactive `isAuthenticated`
+   * flip is what updates the header.
+   */
+  onAuthenticated?: () => void;
+  /** Slide-out mode: switch to the register tab instead of linking to /register. */
+  onSwitchToRegister?: () => void;
+}
 
 /** LoginForm — email/password sign-in with zod validation. */
-export function LoginForm() {
+export function LoginForm({
+  onAuthenticated,
+  onSwitchToRegister,
+}: LoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { isAuthenticated, setTokens } = useAuth();
+
+  const inSheet = Boolean(onAuthenticated);
 
   // Honour a `?redirect=` param so post-login navigation returns the user to
   // where they came from (e.g. /checkout). Only same-origin paths are allowed —
@@ -44,12 +64,14 @@ export function LoginForm() {
 
   const login = useAuthControllerLogin();
 
-  // Already signed in → leave the auth page.
+  // Page mode only: already signed in → leave the auth page. In slide-out mode we
+  // stay put (the sheet closes itself and the header re-renders in place).
   useEffect(() => {
+    if (inSheet) return;
     if (isAuthenticated) {
       router.replace(redirectTarget);
     }
-  }, [isAuthenticated, router, redirectTarget]);
+  }, [inSheet, isAuthenticated, router, redirectTarget]);
 
   const onSubmit = (values: LoginValues) => {
     login.mutate(
@@ -64,7 +86,11 @@ export function LoginForm() {
           queryClient.invalidateQueries({
             queryKey: getGetWishlistQueryKey(),
           });
-          router.push(redirectTarget);
+          if (onAuthenticated) {
+            onAuthenticated();
+          } else {
+            router.push(redirectTarget);
+          }
         },
       },
     );
@@ -126,6 +152,15 @@ export function LoginForm() {
         )}
       </div>
 
+      {/* Password reset has no backend yet — stubbed (TASK-169). */}
+      <button
+        type="button"
+        onClick={() => toast(dict.auth.login.forgotSoon)}
+        className="-mt-1 cursor-pointer self-end text-sm font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {dict.auth.login.forgot}
+      </button>
+
       {errorMessage && (
         <p role="alert" className="text-sm text-destructive">
           {errorMessage}
@@ -135,17 +170,85 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={login.isPending}
-        className="rounded-lg bg-primary px-4 py-2 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+        className="cursor-pointer rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
       >
         {login.isPending ? dict.auth.login.submitting : dict.auth.login.submit}
       </button>
 
-      <p className="text-sm text-muted-foreground">
+      {/* Social sign-in has no backend yet — buttons are stubbed (TASK-168). */}
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="h-px flex-1 bg-border" />
+        {dict.auth.login.orDivider}
+        <span className="h-px flex-1 bg-border" />
+      </div>
+      <div className="flex gap-2.5">
+        <button
+          type="button"
+          onClick={() => toast(dict.auth.login.socialSoon)}
+          className={socialClass}
+        >
+          <GoogleIcon />
+          {dict.auth.login.google}
+        </button>
+        <button
+          type="button"
+          onClick={() => toast(dict.auth.login.socialSoon)}
+          className={socialClass}
+        >
+          <AppleIcon />
+          {dict.auth.login.apple}
+        </button>
+      </div>
+
+      <p className="text-center text-sm text-muted-foreground">
         {dict.auth.login.noAccount}{" "}
-        <Link href="/register" className="text-primary hover:underline">
-          {dict.auth.login.registerLink}
-        </Link>
+        {onSwitchToRegister ? (
+          <button
+            type="button"
+            onClick={onSwitchToRegister}
+            className="cursor-pointer font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {dict.auth.login.registerLink}
+          </button>
+        ) : (
+          <Link href="/register" className="text-primary hover:underline">
+            {dict.auth.login.registerLink}
+          </Link>
+        )}
       </p>
     </form>
+  );
+}
+
+/** Google brand glyph (monochrome, currentColor) — from the design import. */
+function GoogleIcon() {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M21 12.2c0-.6 0-1.2-.1-1.8H12v3.4h5c-.2 1.2-.9 2.2-1.9 2.9v2.4h3.1c1.8-1.7 2.8-4.1 2.8-6.9z" />
+      <path d="M12 21c2.4 0 4.5-.8 6-2.3l-3.1-2.4c-.8.6-1.9.9-2.9.9-2.3 0-4.2-1.5-4.9-3.6H3.9v2.4C5.4 19 8.5 21 12 21z" />
+      <path d="M7.1 13.6c-.2-.6-.3-1.1-.3-1.6s.1-1.1.3-1.6V8H3.9C3.3 9.2 3 10.6 3 12s.3 2.8.9 4l3.2-2.4z" />
+      <path d="M12 6.6c1.3 0 2.5.5 3.4 1.3l2.6-2.6C16.5 3.9 14.4 3 12 3 8.5 3 5.4 5 3.9 8l3.2 2.4C7.8 8.1 9.7 6.6 12 6.6z" />
+    </svg>
+  );
+}
+
+/** Apple brand glyph (monochrome, currentColor) — from the design import. */
+function AppleIcon() {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M16 3c.1 1-.3 2-1 2.8-.7.8-1.7 1.4-2.7 1.3-.1-1 .4-2 1-2.7C14 3.6 15 3.1 16 3zM18.5 17c-.5 1.1-.7 1.6-1.3 2.6-.9 1.4-2.1 3.1-3.6 3.1-1.3 0-1.7-.8-3.5-.8s-2.2.8-3.5.8c-1.5 0-2.6-1.5-3.5-2.9C-1 16.5-.4 11 2.4 9.4c1-.6 2-.9 3-.9 1.3 0 2.1.8 3.2.8 1 0 1.7-.8 3.2-.8 1 0 2.1.3 3 1-2.5 1.4-2.1 5 .7 6.5z" />
+    </svg>
   );
 }
