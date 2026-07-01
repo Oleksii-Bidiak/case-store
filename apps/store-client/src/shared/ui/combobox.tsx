@@ -30,6 +30,8 @@ export interface ComboboxProps {
   emptyText?: string;
   autoComplete?: string;
   "aria-invalid"?: boolean;
+  /** Extra classes merged onto the underlying input (e.g. left padding for an icon). */
+  className?: string;
 }
 
 /**
@@ -55,6 +57,7 @@ export function Combobox({
   emptyText,
   autoComplete = "off",
   "aria-invalid": ariaInvalid,
+  className,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
   const [activeIndex, setActiveIndex] = React.useState(-1);
@@ -106,6 +109,7 @@ export function Combobox({
       <Input
         id={id}
         role="combobox"
+        className={className}
         aria-expanded={showList}
         aria-controls={listId}
         aria-autocomplete="list"

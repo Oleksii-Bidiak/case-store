@@ -4,6 +4,7 @@ export { HeroBanner, TrustStrip } from "./hero-banner";
 export { CategoryNav, CategoryNavSkeleton } from "./category-nav";
 export { ProductGrid, ProductGridSkeleton } from "./product-grid";
 export { ProductListView, ProductListSkeleton } from "./product-list";
+export { SearchResultsView, SearchResultsSkeleton } from "./search-results";
 export { ProductDetailView, ProductDetailSkeleton } from "./product-detail";
 export { ProductReviewsWidget } from "./product-reviews";
 export { CartView, CartSkeleton } from "./cart";
