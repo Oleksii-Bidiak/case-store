@@ -155,6 +155,9 @@ describe('OrderController (e2e)', () => {
       price: { toString: () => '29.99' },
       compareAtPrice: null,
       isActive: true,
+      // Match the CartWithItems contract: CART_ITEMS_INCLUDE always selects
+      // product.images, so the cart fixture must carry it too.
+      images: [],
     },
     variant: {
       id: 'var-e2e-1',
