@@ -19,6 +19,9 @@ const registerSchema = z
     lastName: z.string().min(1, dict.auth.register.validationLastName),
     password: z.string().min(8, dict.auth.register.validationPassword),
     passwordConfirm: z.string(),
+    terms: z.boolean().refine((v) => v === true, {
+      message: dict.auth.register.validationTerms,
+    }),
   })
   .refine((data) => data.password === data.passwordConfirm, {
     message: dict.auth.register.validationPasswordMatch,
@@ -28,14 +31,29 @@ const registerSchema = z
 type RegisterValues = z.infer<typeof registerSchema>;
 
 const fieldClass =
-  "rounded-lg border border-border bg-background px-3 py-2 text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "rounded-lg border border-border bg-background px-3 py-2 text-foreground transition-colors hover:border-muted-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+interface RegisterFormProps {
+  /**
+   * Slide-out mode: called after a successful registration (e.g. to close the
+   * auth sheet). When set, the form does NOT navigate.
+   */
+  onAuthenticated?: () => void;
+  /** Slide-out mode: switch to the login tab instead of linking to /login. */
+  onSwitchToLogin?: () => void;
+}
 
 /** RegisterForm — account creation with zod validation. */
-export function RegisterForm() {
+export function RegisterForm({
+  onAuthenticated,
+  onSwitchToLogin,
+}: RegisterFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { isAuthenticated, setTokens } = useAuth();
+
+  const inSheet = Boolean(onAuthenticated);
 
   // Honour a `?redirect=` param so post-registration navigation returns the user
   // to where they came from (e.g. /checkout). Only same-origin paths are allowed
@@ -52,15 +70,14 @@ export function RegisterForm() {
 
   const registerUser = useAuthControllerRegister();
 
-  // Already signed in (or just authenticated via setTokens) → leave the auth
-  // page. This reactive guard is what flips the header out of guest state: it
-  // re-runs once `isAuthenticated` commits, even if the imperative push below
-  // fires before the context update propagates.
+  // Page mode only: already signed in → leave the auth page. In slide-out mode we
+  // stay put (the sheet closes itself and the header re-renders in place).
   useEffect(() => {
+    if (inSheet) return;
     if (isAuthenticated) {
       router.replace(redirectTarget);
     }
-  }, [isAuthenticated, router, redirectTarget]);
+  }, [inSheet, isAuthenticated, router, redirectTarget]);
 
   const onSubmit = (values: RegisterValues) => {
     registerUser.mutate(
@@ -85,7 +102,11 @@ export function RegisterForm() {
           queryClient.invalidateQueries({
             queryKey: getGetWishlistQueryKey(),
           });
-          router.push(redirectTarget);
+          if (onAuthenticated) {
+            onAuthenticated();
+          } else {
+            router.push(redirectTarget);
+          }
         },
       },
     );
@@ -211,6 +232,22 @@ export function RegisterForm() {
         )}
       </div>
 
+      <div className="flex flex-col gap-1">
+        <label className="flex cursor-pointer items-start gap-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4 shrink-0 cursor-pointer accent-primary"
+            {...register("terms")}
+          />
+          <span>{dict.auth.register.terms}</span>
+        </label>
+        {errors.terms && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.terms.message}
+          </p>
+        )}
+      </div>
+
       {errorMessage && (
         <p role="alert" className="text-sm text-destructive">
           {errorMessage}
@@ -220,18 +257,28 @@ export function RegisterForm() {
       <button
         type="submit"
         disabled={registerUser.isPending}
-        className="rounded-lg bg-primary px-4 py-2 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+        className="cursor-pointer rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
       >
         {registerUser.isPending
           ? dict.auth.register.submitting
           : dict.auth.register.submit}
       </button>
 
-      <p className="text-sm text-muted-foreground">
+      <p className="text-center text-sm text-muted-foreground">
         {dict.auth.register.haveAccount}{" "}
-        <Link href="/login" className="text-primary hover:underline">
-          {dict.auth.register.signInLink}
-        </Link>
+        {onSwitchToLogin ? (
+          <button
+            type="button"
+            onClick={onSwitchToLogin}
+            className="cursor-pointer font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {dict.auth.register.signInLink}
+          </button>
+        ) : (
+          <Link href="/login" className="text-primary hover:underline">
+            {dict.auth.register.signInLink}
+          </Link>
+        )}
       </p>
     </form>
   );

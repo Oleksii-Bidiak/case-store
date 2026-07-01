@@ -1,39 +1,65 @@
 "use client";
 
-import Link from "next/link";
+import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
+import { CartSheet } from "@/widgets/cart";
+import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 
 /**
- * HeaderCartBadge — cart icon link with a live item-count badge.
- * Reads the cart (guest or user) via the cached useGetCart query; the badge
- * is only rendered when there is at least one item.
+ * HeaderCartBadge — the prominent cart action: a filled primary button with the
+ * cart icon, a live item-count badge, and (from `sm` up) the "Кошик" label plus
+ * the running subtotal. Opens the mini-cart slide-out (the full `/cart` page is
+ * still reachable from inside it). Collapses to an icon + badge on small screens.
+ *
+ * Reads the cart (guest or user) via the cached useGetCart query, held until the
+ * auth bootstrap settles so it never reflects a transient empty guest cart minted
+ * during refresh (TASK-118).
  */
 export function HeaderCartBadge({ className }: { className?: string }) {
-  // Mirror CartView: hold the query until auth bootstrap settles so the badge
-  // never reflects a transient empty guest cart minted during refresh (TASK-118).
   const { isInitializing } = useAuth();
   const { data } = useGetCart({ query: { enabled: !isInitializing } });
-  const count = data?.data?.totals.itemCount ?? 0;
+  const totals = data?.data?.totals;
+  const count = totals?.itemCount ?? 0;
+
+  const [open, setOpen] = useState(false);
 
   return (
-    <Link
-      href="/cart"
-      aria-label={dict.header.cartAria}
-      className={cn(
-        "relative inline-flex h-9 w-9 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        className,
-      )}
-    >
-      <ShoppingCart className="size-5" aria-hidden="true" />
-      {count > 0 && (
-        <span className="absolute -top-1 -right-1 inline-flex min-w-5 items-center justify-center rounded-full bg-sale px-1.5 text-xs font-semibold text-sale-foreground">
-          {count > 99 ? "99+" : count}
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={dict.cart.openAria}
+        className={cn(
+          "relative inline-flex h-11 cursor-pointer items-center gap-2.5 rounded-xl bg-primary px-3 text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:pr-4",
+          className,
+        )}
+      >
+        <span className="relative inline-flex">
+          <ShoppingCart className="size-5" aria-hidden="true" />
+          {count > 0 && (
+            <span className="absolute -top-2 -right-2.5 inline-flex min-w-5 items-center justify-center rounded-full border border-primary bg-card px-1 text-[11px] font-bold text-primary">
+              {count > 99 ? "99+" : count}
+            </span>
+          )}
         </span>
-      )}
-    </Link>
+        <span className="hidden flex-col items-start leading-tight sm:flex">
+          <span className="text-[11px] opacity-80">
+            {dict.header.cartLabel}
+          </span>
+          <span
+            className="font-mono text-sm font-bold"
+            aria-label={dict.header.cartTotalAria}
+          >
+            {formatMoney(totals?.subtotal ?? "0")}
+          </span>
+        </span>
+      </button>
+
+      <CartSheet open={open} onOpenChange={setOpen} />
+    </>
   );
 }

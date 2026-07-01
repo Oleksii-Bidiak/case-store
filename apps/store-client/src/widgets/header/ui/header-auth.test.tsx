@@ -20,13 +20,15 @@ beforeEach(() => {
 });
 
 describe("HeaderAuth", () => {
-  it("shows sign-in/register links for guests and no account trigger", () => {
+  it("shows the account slide-out trigger for guests (not the dropdown trigger)", () => {
     renderWithProviders(<HeaderAuth />, {
       auth: { isAuthenticated: false, isInitializing: false },
     });
 
+    // Guests get a "Кабінет" button that opens the auth slide-out (closed here,
+    // so its login/register forms are not mounted).
     expect(
-      screen.getByRole("link", { name: dict.header.signIn }),
+      screen.getByRole("button", { name: dict.header.accountOpenAria }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: dict.header.accountTriggerAria }),

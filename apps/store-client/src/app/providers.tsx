@@ -34,7 +34,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <QueryRecovery />
       <AuthProvider>
         {children}
-        <Toaster position="top-center" richColors />
+        <Toaster />
         <ReactQueryDevtools initialIsOpen={false} />
       </AuthProvider>
     </QueryClientProvider>

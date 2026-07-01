@@ -2,6 +2,7 @@
 
 import { useProductControllerFindAll } from "@/entities/product";
 import { ProductCard, Skeleton } from "@/shared/ui";
+import { ProductCardActions } from "@/widgets/product-card-actions";
 import { dict } from "@/shared/config";
 
 interface ProductRelatedProps {
@@ -58,7 +59,11 @@ export function ProductRelated({ categoryId, excludeId }: ProductRelatedProps) {
       </h2>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {related.map((product) => (
-          <ProductCard key={product.id} product={product} />
+          <ProductCard
+            key={product.id}
+            product={product}
+            action={<ProductCardActions product={product} />}
+          />
         ))}
       </div>
     </section>

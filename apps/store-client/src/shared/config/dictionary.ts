@@ -57,6 +57,21 @@ export const dict = {
     accountMenuAria: "Меню акаунту",
     searchPlaceholder: "Пошук товарів…",
     searchSubmit: "Шукати",
+    // Top announcement bar (static — message + phone; TASK-167-A).
+    announcement: "Безкоштовна доставка від 1 000 ₴ · Відправка день у день",
+    phone: "0 800 00 00 00",
+    phoneHref: "tel:0800000000",
+    phoneAria: "Зателефонувати в підтримку",
+    // Catalog mega-menu trigger + labelled action cluster.
+    catalogButton: "Каталог",
+    catalogAria: "Каталог категорій",
+    catalogAll: "Усі категорії",
+    promoLabel: "Акції",
+    wishlistLabel: "Обране",
+    cartLabel: "Кошик",
+    accountLabel: "Кабінет",
+    accountOpenAria: "Відкрити особистий кабінет",
+    cartTotalAria: "Сума кошика",
   },
 
   // TASK-075 — full-text search (header autocomplete + /search results page).
@@ -90,7 +105,8 @@ export const dict = {
 
   footer: {
     rights: (year: number) => `© ${year} MobileStore. Усі права захищено.`,
-    tagline: "Преміальні аксесуари для ваших пристроїв.",
+    tagline:
+      "Інтернет-магазин аксесуарів та ґаджетів. Оригінальна продукція з офіційною гарантією та доставкою по Україні.",
     shopTitle: "Магазин",
     shopAll: "Усі товари",
     shopCart: "Кошик",
@@ -102,11 +118,24 @@ export const dict = {
     companyAbout: "Про нас",
     companyPrivacy: "Політика конфіденційності",
     companyTerms: "Умови використання",
-    contactTitle: "Зв'язок",
+    contactTitle: "Контакти",
     contactEmail: "support@mobilestore.ua",
     contactPhone: "+380 44 000 0000",
     contactHours: "Пн–Нд: 9:00 – 20:00",
     paymentsAria: "Способи оплати",
+    // Redesigned footer (TASK-167-B).
+    catalogTitle: "Каталог",
+    catalogAll: "Усі товари",
+    catalogNew: "Новинки",
+    catalogWishlist: "Обране",
+    infoTitle: "Інформація",
+    infoDelivery: "Доставка й оплата",
+    infoWarranty: "Гарантія та сервіс",
+    infoAbout: "Про нас",
+    infoFaq: "Часті питання",
+    freeCallout: "Безкоштовно по Україні",
+    socialsAria: "Ми в соцмережах",
+    payments: ["Visa", "Mastercard", "Apple Pay", "Google Pay", "Privat24"],
   },
 
   trust: {
@@ -129,6 +158,163 @@ export const dict = {
       audio: "Аудіо та гаджети",
     },
     ratingBadge: "4.8 середній рейтинг",
+  },
+
+  // TASK-162 — homepage redesign. All storefront homepage copy lives here.
+  // Slider slides, promo tiles, trust items and social links are static
+  // marketing content (no backend); category/product sections read real data.
+  home: {
+    hero: {
+      // Left category rail (reuses real category data; these are labels only).
+      allCategories: "Усі категорії",
+      sidebarAria: "Категорії товарів",
+      // Three promotional slides. `href` targets real routes so CTAs work.
+      slides: [
+        {
+          eyebrow: "Новинки сезону",
+          title: "Аксесуари, що тримають темп твого дня",
+          subtitle:
+            "Чохли, зарядки, аудіо та захист від офіційних брендів. Гарантія та швидка доставка по всій Україні.",
+          cta: "Перейти до каталогу",
+          href: "/products",
+        },
+        {
+          eyebrow: "Тиждень знижок",
+          title: "Знижки до −50% на топові аксесуари",
+          subtitle:
+            "Лише до неділі — встигни оновити комплект для свого смартфона за найкращою ціною.",
+          cta: "Переглянути товари",
+          href: "/products",
+        },
+        {
+          eyebrow: "Доставка",
+          title: "Безкоштовна доставка від 1 000 ₴",
+          subtitle:
+            "Нова Пошта по всій Україні · відправка день у день · оплата під час отримання.",
+          cta: "Переглянути новинки",
+          href: "/products?sortBy=createdAt&sortOrder=desc",
+        },
+      ],
+      prevSlide: "Попередній слайд",
+      nextSlide: "Наступний слайд",
+      goToSlide: (n: number) => `Перейти до слайда ${n}`,
+    },
+
+    // Device model picker — UI-only stub (API has no model→accessory filter).
+    modelPicker: {
+      title: "Підібрати аксесуари",
+      subtitle: "за моделлю вашого пристрою",
+      brandPlaceholder: "Бренд",
+      brandAria: "Бренд пристрою",
+      modelPlaceholder: "Модель",
+      modelAria: "Модель пристрою",
+      submit: "Підібрати",
+      brands: ["Apple", "Samsung", "Xiaomi", "Google", "OnePlus"],
+      models: [
+        "iPhone 15 Pro",
+        "iPhone 15",
+        "Galaxy S24",
+        "Redmi Note 13",
+        "Pixel 8",
+      ],
+    },
+
+    // Three static promo tiles under the hero.
+    promoTiles: [
+      {
+        badge: "−30%",
+        title: "Розпродаж аксесуарів",
+        text: "Чохли, зарядки та захисне скло за зниженою ціною.",
+        cta: "Дивитись акцію",
+        href: "/products",
+        accent: "sale" as const,
+      },
+      {
+        badge: "КРЕДИТ 0%",
+        title: "Покупка частинами",
+        text: "До 24 платежів без переплат на замовлення.",
+        cta: "Дізнатись більше",
+        href: "#",
+        accent: "primary" as const,
+      },
+      {
+        badge: "TRADE-IN",
+        title: "Обміняй старий ґаджет",
+        text: "Знижка на нові аксесуари за твій старий пристрій.",
+        cta: "Оцінити",
+        href: "#",
+        accent: "success" as const,
+      },
+    ],
+
+    // Trust bar — four reassurance items (icon + title + subtitle).
+    trust: [
+      {
+        title: "Доставка день у день",
+        subtitle: "Нова Пошта по всій Україні",
+      },
+      {
+        title: "Офіційна гарантія",
+        subtitle: "Лише оригінальні аксесуари",
+      },
+      {
+        title: "Повернення 30 днів",
+        subtitle: "Легкий обмін і повернення",
+      },
+      {
+        title: "Кредит 0%",
+        subtitle: "Оплата частинами до 24 міс.",
+      },
+    ],
+
+    categories: {
+      heading: "Категорії",
+      viewAll: "Усі розділи",
+    },
+
+    // Tabbed product rail. Only "Новинки" and "Акційні" are backed by real
+    // filters; "Хіти" is a best-effort placeholder (see product rail widget).
+    popular: {
+      heading: "Популярне",
+      tabs: {
+        hits: "Хіти продажів",
+        new: "Новинки",
+        sale: "Акційні",
+      },
+      tabsAria: "Категорії добірки",
+      prev: "Прокрутити назад",
+      next: "Прокрутити вперед",
+      viewAll: "Дивитись усі",
+      error: "Не вдалося завантажити товари. Спробуйте пізніше.",
+      empty: "Товарів поки немає.",
+    },
+
+    widePromo: {
+      eyebrow: "Тиждень Apple",
+      title: "Аксесуари для iPhone з вигодою до 30%",
+      subtitle:
+        "Оригінальні чохли, зарядки та захист + подарунок до кожного замовлення.",
+      cta: "Дивитись пропозицію",
+      href: "/products",
+    },
+
+    recentlyViewed: {
+      heading: "Ви переглядали",
+      clear: "Очистити історію",
+    },
+
+    newsletter: {
+      heading: "−10% на перше замовлення",
+      subtitle:
+        "Підпишись на розсилку та отримуй добірки новинок і персональні промокоди.",
+      // External social links — no real URLs yet (href "#", TODO in widget).
+      socials: [
+        { label: "Telegram", href: "#" },
+        { label: "Instagram", href: "#" },
+        { label: "YouTube", href: "#" },
+        { label: "Viber", href: "#" },
+      ],
+    },
   },
 
   catalog: {
@@ -235,6 +421,7 @@ export const dict = {
 
   addToCart: {
     idle: "Додати до кошика",
+    buy: "Купити",
     adding: "Додаємо…",
     added: "Додано ✓",
     error: "Не вдалося додати товар. Спробуйте ще раз.",
@@ -270,6 +457,10 @@ export const dict = {
     secureCheckout: "Безпечне оформлення",
     shippingNotice: "Безкоштовна доставка від 1 000 ₴",
     continueShopping: "Продовжити покупки",
+    // Mini-cart slide-out (TASK-167-A).
+    openAria: "Відкрити кошик",
+    viewCartFull: "Перейти в кошик",
+    sheetShipping: "Безкоштовна доставка Новою Поштою",
     // line item
     remove: "Видалити",
     removeItemAria: "Видалити товар",
@@ -463,6 +654,14 @@ export const dict = {
       errorInvalid: "Невірний email або пароль.",
       validationEmail: "Введіть дійсну email-адресу",
       validationPassword: "Пароль є обов'язковим",
+      // Slide-out extras (login "as in the mockup"). Social sign-in + password
+      // reset have no backend yet — stubbed with a toast (TASK-168/169).
+      forgot: "Забули пароль?",
+      orDivider: "або",
+      google: "Google",
+      apple: "Apple",
+      socialSoon: "Соціальний вхід буде доступний згодом.",
+      forgotSoon: "Відновлення пароля буде доступне згодом.",
     },
     register: {
       heading: "Створити акаунт",
@@ -481,10 +680,18 @@ export const dict = {
       validationLastName: "Прізвище є обов'язковим",
       validationPassword: "Пароль має містити щонайменше 8 символів",
       validationPasswordMatch: "Паролі не збігаються",
+      terms: "Погоджуюсь з умовами використання та політикою конфіденційності",
+      validationTerms: "Потрібно прийняти умови використання",
     },
     logout: {
       signOut: "Вийти",
       signingOut: "Виходимо…",
+    },
+    // Header account slide-out (TASK-167-A).
+    sheet: {
+      title: "Особистий кабінет",
+      tabLogin: "Вхід",
+      tabRegister: "Реєстрація",
     },
   },
 
@@ -527,6 +734,11 @@ export const dict = {
     quickAddAria: (name: string) => `Швидко додати «${name}» до кошика`,
     /** Compact label shown inside the quick-add overlay button. */
     quickAdd: "Швидке додавання",
+    /** Aria label for the card "Купити" button. */
+    buyAria: (name: string) => `Купити «${name}»`,
+    /** Availability line above the card action row. */
+    inStockLine: "В наявності · доставка 1–2 дні",
+    outOfStockLine: "Немає в наявності",
     /** Advertised "from {price}" prefix when a group has cheaper variants. */
     priceFrom: "від",
     /** Aria label for the wishlist heart when the product is NOT saved. */

@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
 @plugin '@tailwindcss/typography';
 
 /* ─────────────────────────────────────────────
@@ -198,4 +199,33 @@ body {
 /* Border global default */
 * {
   border-color: var(--color-border);
+}
+
+/* ─────────────────────────────────────────────
+   Scrollbars — standardized site-wide, driven by design tokens.
+   Thin + rounded, transparent track, branded thumb that darkens on hover.
+   Applies to the page and every scroll container (incl. the product rails).
+   `scrollbar-color`/`scrollbar-width` are inherited, so setting them on `html`
+   cascades to nested scroll areas in Firefox; WebKit uses the `*` pseudos.
+   ───────────────────────────────────────────── */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 9999px;
+  /* transparent border + content-box clip = a slimmer thumb with breathing room */
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-muted-foreground);
 }

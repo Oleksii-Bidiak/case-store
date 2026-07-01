@@ -4,8 +4,7 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useSearch } from "@/entities/search";
 import { ProductCard } from "@/shared/ui";
-import { AddToCartButton } from "@/features/add-to-cart";
-import { WishlistToggleButton } from "@/features/toggle-wishlist";
+import { ProductCardActions } from "@/widgets/product-card-actions";
 import { dict } from "@/shared/config";
 import { SearchResultsSkeleton } from "./search-results-skeleton";
 
@@ -114,20 +113,7 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
               key={product.id}
               product={product}
               priority={index < 4}
-              wishlist={
-                <WishlistToggleButton
-                  productId={product.id}
-                  productName={product.name}
-                />
-              }
-              quickAdd={
-                <AddToCartButton
-                  productId={product.variantSummary.defaultVariantId}
-                  compact
-                  outOfStock={!product.variantSummary.defaultInStock}
-                  ariaLabel={dict.productCard.quickAddAria(product.name)}
-                />
-              }
+              action={<ProductCardActions product={product} />}
             />
           ))}
         </div>
