@@ -9,7 +9,7 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { ProductRepository } from '../src/product/product.repository';
 import { ProductImageRepository } from '../src/product/product-image.repository';
-import { STORAGE_SERVICE } from '../src/storage';
+import { ImageProcessor, STORAGE_SERVICE } from '../src/storage';
 import { PrismaService } from '../src/prisma';
 
 /**
@@ -50,6 +50,12 @@ describe('ProductImageController (e2e)', () => {
     delete: jest.fn(),
   };
 
+  // The `sharp`-based processor is mocked: e2e attaches fake (non-image) buffers,
+  // which real `sharp` would reject. Unit specs cover the real encode path.
+  const imageProcessorMock = {
+    process: jest.fn(),
+  };
+
   const prismaServiceMock = {
     $connect: jest.fn(),
     $disconnect: jest.fn(),
@@ -86,6 +92,8 @@ describe('ProductImageController (e2e)', () => {
       .useValue(imageRepositoryMock)
       .overrideProvider(STORAGE_SERVICE)
       .useValue(storageMock)
+      .overrideProvider(ImageProcessor)
+      .useValue(imageProcessorMock)
       .overrideProvider(APP_GUARD)
       .useClass(ThrottlerGuardPassThrough)
       .compile();
@@ -137,7 +145,11 @@ describe('ProductImageController (e2e)', () => {
       productRepositoryMock.findById.mockResolvedValue(testProduct);
       imageRepositoryMock.getMaxSortOrder.mockResolvedValue(-1);
       imageRepositoryMock.bulkCreate.mockResolvedValue(undefined);
-      storageMock.save.mockResolvedValue('products/generated.jpg');
+      storageMock.save.mockResolvedValue('products/generated.webp');
+      imageProcessorMock.process.mockResolvedValue({
+        webp: Buffer.from('optimized-webp'),
+        blurDataUrl: 'data:image/webp;base64,BLUR',
+      });
 
       const response = await request(app.getHttpServer())
         .post(`/api/products/${PRODUCT_ID}/images`)
@@ -151,7 +163,33 @@ describe('ProductImageController (e2e)', () => {
       expect(response.body).toHaveProperty('data');
       expect(Array.isArray(response.body.data)).toBe(true);
       expect(response.body.data[0].isPrimary).toBe(true);
+      // The JPEG is pre-optimized to WebP and its LQIP is surfaced on the row.
+      expect(imageProcessorMock.process).toHaveBeenCalledTimes(1);
       expect(storageMock.save).toHaveBeenCalledTimes(1);
+      expect(storageMock.save.mock.calls[0][1]).toBe('webp');
+      expect(response.body.data[0].blurDataUrl).toBe('data:image/webp;base64,BLUR');
+    });
+
+    it('passes an animated GIF through unprocessed with a null blurDataUrl', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      imageRepositoryMock.getMaxSortOrder.mockResolvedValue(-1);
+      imageRepositoryMock.bulkCreate.mockResolvedValue(undefined);
+      storageMock.save.mockResolvedValue('products/generated.gif');
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images`)
+        .set('Authorization', `Bearer ${token}`)
+        .attach('files', Buffer.from('GIF89a-fake'), {
+          filename: 'a.gif',
+          contentType: 'image/gif',
+        })
+        .expect(201);
+
+      // GIFs bypass the processor entirely; the original ext is preserved.
+      expect(imageProcessorMock.process).not.toHaveBeenCalled();
+      expect(storageMock.save.mock.calls[0][1]).toBe('gif');
+      expect(response.body.data[0].blurDataUrl).toBeNull();
     });
 
     it('returns 413 for an oversized file', async () => {

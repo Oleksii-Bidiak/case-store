@@ -21,7 +21,7 @@ import {
   productDetailSlugKey,
   PRODUCT_LIST_PREFIX,
 } from '../cache';
-import { IStorageService, STORAGE_SERVICE } from '../storage';
+import { IStorageService, ImageProcessor, STORAGE_SERVICE } from '../storage';
 
 /** Allowed image MIME types mapped to their canonical file extension. */
 const ALLOWED_MIME_EXT: Record<string, string> = {
@@ -30,6 +30,13 @@ const ALLOWED_MIME_EXT: Record<string, string> = {
   'image/webp': 'webp',
   'image/gif': 'gif',
 };
+
+/**
+ * Animated GIFs are passed through untouched: re-encoding to a single WebP frame
+ * would kill the animation, so they keep their original bytes/extension and get
+ * no LQIP (TASK-091).
+ */
+const GIF_MIME = 'image/gif';
 
 /** Maximum accepted file size (bytes). Mirrors the Multer limit on the controller. */
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -57,6 +64,7 @@ export class ProductImageService {
     private readonly productRepository: ProductRepository,
     private readonly imageRepository: ProductImageRepository,
     @Inject(STORAGE_SERVICE) private readonly storage: IStorageService,
+    private readonly imageProcessor: ImageProcessor,
     private readonly cache: CacheService,
     private readonly config: ConfigService,
   ) {
@@ -102,13 +110,14 @@ export class ProductImageService {
     const inputs: CreateImageInput[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const ext = ALLOWED_MIME_EXT[file.mimetype];
-      const relativePath = await this.storage.save(file.buffer, ext);
+      const { buffer, ext, blurDataUrl } = await this.prepareFile(file);
+      const relativePath = await this.storage.save(buffer, ext);
       inputs.push({
         id: randomUUID(),
         productId,
         url: `${this.publicBaseUrl}${PUBLIC_UPLOADS_PREFIX}${relativePath}`,
         alt: altTexts[i] ?? null,
+        blurDataUrl,
         sortOrder: maxSortOrder + 1 + i,
         isPrimary: !hasExisting && i === 0,
       });
@@ -122,10 +131,26 @@ export class ProductImageService {
         id: input.id,
         url: input.url,
         alt: input.alt,
+        blurDataUrl: input.blurDataUrl,
         sortOrder: input.sortOrder,
         isPrimary: input.isPrimary,
       }),
     );
+  }
+
+  /**
+   * Pre-process one accepted upload for storage. JPEG/PNG/WebP are re-encoded to
+   * WebP (smaller payload) with a base64 LQIP for blur-up; animated GIFs are
+   * passed through untouched with no LQIP so the animation survives.
+   */
+  private async prepareFile(
+    file: Express.Multer.File,
+  ): Promise<{ buffer: Buffer; ext: string; blurDataUrl: string | null }> {
+    if (file.mimetype === GIF_MIME) {
+      return { buffer: file.buffer, ext: ALLOWED_MIME_EXT[GIF_MIME], blurDataUrl: null };
+    }
+    const { webp, blurDataUrl } = await this.imageProcessor.process(file.buffer);
+    return { buffer: webp, ext: 'webp', blurDataUrl };
   }
 
   /**

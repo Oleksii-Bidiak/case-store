@@ -90,6 +90,7 @@ export function ProductCard({
         <ProductCardImage
           src={product.primaryImage?.url}
           alt={product.primaryImage?.alt ?? product.name}
+          blurDataUrl={product.primaryImage?.blurDataUrl}
           initial={(product.name?.[0] ?? "?").toUpperCase()}
           priority={priority}
         />

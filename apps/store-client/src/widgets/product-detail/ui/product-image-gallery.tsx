@@ -54,7 +54,9 @@ export function ProductImageGallery({
             // capped at the 640px content-column width on desktop.
             sizes="(max-width: 767px) calc(100vw - 3rem), (max-width: 1279px) calc(50vw - 4rem), 640px"
             placeholder="blur"
-            blurDataURL={BLUR_PLACEHOLDER}
+            // Per-image LQIP when the API supplies one (TASK-091); otherwise the
+            // generic TASK-074 shimmer.
+            blurDataURL={activeImage.blurDataUrl ?? BLUR_PLACEHOLDER}
             // Above-the-fold LCP element on the PDP — load eagerly.
             // Next.js 16 renamed the `priority` prop to `preload`.
             preload

@@ -70,6 +70,7 @@ export interface PrimaryImage {
   id: string;
   url: string;
   alt: string | null;
+  blurDataUrl: string | null;
   sortOrder: number;
   isPrimary: boolean;
 }
@@ -142,6 +143,7 @@ export interface ProductWithRelations {
         id: string;
         url: string;
         alt: string | null;
+        blurDataUrl: string | null;
         sortOrder: number;
         isPrimary: boolean;
       }>;
@@ -261,6 +263,7 @@ export class ProductRepository {
             id: true,
             url: true,
             alt: true,
+            blurDataUrl: true,
             sortOrder: true,
             isPrimary: true,
           },
@@ -399,6 +402,7 @@ export class ProductRepository {
         productId: true,
         url: true,
         alt: true,
+        blurDataUrl: true,
         sortOrder: true,
         isPrimary: true,
       },

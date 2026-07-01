@@ -13,6 +13,12 @@ interface ProductCardImageProps {
   /** Product initial shown over the gradient placeholder when there is no image. */
   initial: string;
   /**
+   * Per-image LQIP data URI (TASK-091). When present it is used as the
+   * `blurDataURL`, giving a real blur-up that resembles the final image; when
+   * absent (GIF or a legacy image) the generic TASK-074 shimmer is used instead.
+   */
+  blurDataUrl?: string | null;
+  /**
    * Eager-load above-the-fold cards (first grid row) for a better LCP. Cards
    * below the fold keep the default lazy behaviour. Defaults to `false`.
    */
@@ -34,6 +40,7 @@ export function ProductCardImage({
   src,
   alt,
   initial,
+  blurDataUrl,
   priority = false,
 }: ProductCardImageProps) {
   const [failed, setFailed] = useState(false);
@@ -47,7 +54,7 @@ export function ProductCardImage({
         fill
         sizes="(max-width: 639px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), calc(25vw - 2rem)"
         placeholder="blur"
-        blurDataURL={BLUR_PLACEHOLDER}
+        blurDataURL={blurDataUrl ?? BLUR_PLACEHOLDER}
         // Next.js 16 renamed the LCP `priority` prop to `preload`.
         preload={priority}
         onError={() => setFailed(true)}

@@ -8,6 +8,8 @@ export interface CreateImageInput {
   productId: string;
   url: string;
   alt: string | null;
+  /** Base64 LQIP data URI, or null for GIF passthrough / unprocessed uploads. */
+  blurDataUrl: string | null;
   sortOrder: number;
   isPrimary: boolean;
 }
