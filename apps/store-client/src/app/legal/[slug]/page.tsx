@@ -32,13 +32,13 @@ async function getOtherDocs(currentSlug: string): Promise<LegalOtherDoc[]> {
   }
 }
 
-interface InfoPageProps {
+interface LegalDocPageProps {
   params: Promise<{ slug: string }>;
 }
 
 export async function generateMetadata({
   params,
-}: InfoPageProps): Promise<Metadata> {
+}: LegalDocPageProps): Promise<Metadata> {
   const { slug } = await params;
 
   const page = await getPage(slug);
@@ -46,7 +46,7 @@ export async function generateMetadata({
     return { title: dict.meta.pageFallbackTitle };
   }
 
-  const canonical = `${SITE_URL}/info/${page.slug}`;
+  const canonical = `${SITE_URL}/legal/${page.slug}`;
   const description = page.metaDescription ?? page.excerpt ?? undefined;
 
   return {
@@ -62,7 +62,7 @@ export async function generateMetadata({
   };
 }
 
-export default async function InfoPage({ params }: InfoPageProps) {
+export default async function LegalDocPage({ params }: LegalDocPageProps) {
   const { slug } = await params;
 
   // A draft / missing page resolves to 404 on the API; any error → Next 404.
@@ -78,7 +78,7 @@ export default async function InfoPage({ params }: InfoPageProps) {
       <JsonLd
         schema={buildBreadcrumbSchema([
           { name: dict.legal.breadcrumbHome, item: SITE_URL },
-          { name: page.title, item: `${SITE_URL}/info/${page.slug}` },
+          { name: page.title, item: `${SITE_URL}/legal/${page.slug}` },
         ])}
       />
       <LegalDocView page={page} otherDocs={otherDocs} />

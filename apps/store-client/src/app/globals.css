@@ -231,7 +231,7 @@ html {
 }
 
 /* ─────────────────────────────────────────────
-   Legal / info document body (/info/[slug], Legal.dc.html template).
+   Legal document body (/legal/[slug], Legal.dc.html template).
    Styles the sanitized admin-authored (Tiptap) HTML to match the design.
    `<h2>`s are auto-numbered via a counter (01, 02, …) and get scroll-margin
    so the sticky-TOC scroll-spy lands them below the header.

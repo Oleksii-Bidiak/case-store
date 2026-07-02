@@ -371,8 +371,8 @@ export const dict = {
     },
   },
 
-  // Admin-authored static/legal pages (/info/[slug], Legal.dc.html template).
-  // Content comes from the Page backend (TASK-153); this is only the chrome copy.
+  // Admin-authored static/legal pages (/legal + /legal/[slug], Legal.dc.html
+  // template). Content comes from the Page backend (TASK-153); chrome copy only.
   legal: {
     breadcrumbHome: "Головна",
     breadcrumbHub: "Правова інформація",
@@ -385,9 +385,24 @@ export const dict = {
     contactHeading: "Залишились питання?",
     contactSubtitle: "Напишіть нам — відповімо протягом робочого дня",
     contactCta: "Звʼязатися",
-    // Contacts destination — an admin page slug (falls back to 404 until created).
-    contactHref: "/info/contacts",
+    // Contacts destination — the upcoming "Інформація та підтримка" page
+    // (Info.dc.html) at /info; 404s until that page ships.
+    contactHref: "/info",
     otherHeading: "Інші правові документи",
+    // Legal hub index (/info, LegalHub.dc.html import).
+    hub: {
+      badge: "ДОКУМЕНТИ",
+      heading: "Правова інформація",
+      subtitle:
+        "Усі офіційні документи MobileStore в одному місці — політики, умови та гарантії. Оберіть потрібний документ, щоб прочитати повну редакцію.",
+      // "{updatedPrefix} {date}" → "Оновлено 12 черв. 2026".
+      updatedPrefix: "Оновлено",
+      empty: "Документів поки немає.",
+      supportHeading: "Не знайшли потрібне?",
+      supportSubtitle:
+        "Наша підтримка допоможе розібратись із будь-яким документом",
+      supportCta: "Звʼязатися з нами",
+    },
   },
 
   catalog: {

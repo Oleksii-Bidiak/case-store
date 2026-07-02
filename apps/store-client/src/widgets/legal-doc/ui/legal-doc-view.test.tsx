@@ -50,6 +50,6 @@ describe("LegalDocView", () => {
     expect(screen.getByText(dict.legal.otherHeading)).toBeInTheDocument();
 
     const link = screen.getByRole("link", { name: "Умови використання" });
-    expect(link).toHaveAttribute("href", "/info/terms");
+    expect(link).toHaveAttribute("href", "/legal/terms");
   });
 });

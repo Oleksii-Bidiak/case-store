@@ -143,7 +143,7 @@ export async function Footer() {
         </div>
 
         {/* Інформація — link targets are storefront-safe placeholders until the
-            admin `/info/[slug]` pages are wired (TASK-153/TASK-166). */}
+            admin `/legal/[slug]` pages are wired (TASK-153/TASK-166). */}
         <div className="flex flex-col gap-3">
           <h2 className="font-display text-sm font-bold">
             {dict.footer.infoTitle}

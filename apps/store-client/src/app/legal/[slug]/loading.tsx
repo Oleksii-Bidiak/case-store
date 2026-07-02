@@ -1,5 +1,5 @@
 /**
- * Route-level loading UI for `/info/[slug]`: a title bar plus a few content
+ * Route-level loading UI for `/legal/[slug]`: a title bar plus a few content
  * placeholder lines, matching the article layout.
  */
 export default function Loading() {
