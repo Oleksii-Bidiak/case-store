@@ -68,3 +68,25 @@ export function formatLegalDate(iso: string): string {
   if (Number.isNaN(d.getTime())) return iso;
   return `${d.getDate()} ${UK_MONTHS_GENITIVE[d.getMonth()]} ${d.getFullYear()}`;
 }
+
+const UK_MONTHS_SHORT = [
+  "січ.",
+  "лют.",
+  "бер.",
+  "квіт.",
+  "трав.",
+  "черв.",
+  "лип.",
+  "серп.",
+  "вер.",
+  "жовт.",
+  "лист.",
+  "груд.",
+];
+
+/** Format an ISO date as "12 черв. 2026" (falls back to the input on error). */
+export function formatLegalDateShort(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.getDate()} ${UK_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+}

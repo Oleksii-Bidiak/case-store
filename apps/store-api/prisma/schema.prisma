@@ -323,7 +323,7 @@ model RefreshToken {
 }
 
 /// Admin-managed static / service pages (Privacy Policy, FAQ, Returns, …).
-/// Rendered on the storefront at /info/[slug]. Content is Tiptap-generated HTML
+/// Rendered on the storefront at /legal/[slug]. Content is Tiptap-generated HTML
 /// (sanitized before display). No `deletedAt` tombstone — pages are admin content,
 /// not user-generated data, so a hard DELETE is appropriate; `isActive = false`
 /// is the draft / unpublished state.

@@ -15,7 +15,7 @@ export interface LegalOtherDoc {
 
 /**
  * LegalDocView — the Legal.dc.html template for admin-authored static/legal
- * pages served at `/info/[slug]`. Renders the sanitized `page.content` inside a
+ * pages served at `/legal/[slug]`. Renders the sanitized `page.content` inside a
  * document card with a numbered heading counter, a sticky scroll-spy TOC built
  * from the content's `<h2>`s, a contact CTA, and links to the other pages.
  */
@@ -43,7 +43,9 @@ export function LegalDocView({
         <span aria-hidden="true" className="opacity-50">
           ›
         </span>
-        <span>{dict.legal.breadcrumbHub}</span>
+        <Link href="/legal" className="transition-colors hover:text-foreground">
+          {dict.legal.breadcrumbHub}
+        </Link>
         <span aria-hidden="true" className="opacity-50">
           ›
         </span>
@@ -122,7 +124,7 @@ export function LegalDocView({
             {otherDocs.map((doc) => (
               <Link
                 key={doc.slug}
-                href={`/info/${doc.slug}`}
+                href={`/legal/${doc.slug}`}
                 className="flex items-center gap-3 rounded-[14px] border border-border bg-card px-[18px] py-4 no-underline shadow-[var(--shadow-card)] transition-[border-color,transform] hover:-translate-y-0.5 hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <span

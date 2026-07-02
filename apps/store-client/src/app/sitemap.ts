@@ -33,6 +33,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily",
       priority: 0.7,
     },
+    {
+      url: `${SITE_URL}/legal`,
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.5,
+    },
   ];
 
   // Blog posts are a static seed (no backend yet — TASK-170), so their routes
@@ -76,7 +82,7 @@ async function fetchPageRoutes(): Promise<MetadataRoute.Sitemap> {
   try {
     const pages = await fetchAllPublishedPages();
     return pages.map((page) => ({
-      url: `${SITE_URL}/info/${page.slug}`,
+      url: `${SITE_URL}/legal/${page.slug}`,
       lastModified: new Date(page.updatedAt),
       changeFrequency: "monthly",
       priority: 0.5,

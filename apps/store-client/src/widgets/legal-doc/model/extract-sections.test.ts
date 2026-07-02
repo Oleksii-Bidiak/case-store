@@ -1,4 +1,8 @@
-import { extractDocSections, formatLegalDate } from "./extract-sections";
+import {
+  extractDocSections,
+  formatLegalDate,
+  formatLegalDateShort,
+} from "./extract-sections";
 
 describe("extractDocSections", () => {
   it("injects sequential ids and collects heading labels in order", () => {
@@ -39,5 +43,15 @@ describe("formatLegalDate", () => {
 
   it("returns the input unchanged when it is not a valid date", () => {
     expect(formatLegalDate("not-a-date")).toBe("not-a-date");
+  });
+});
+
+describe("formatLegalDateShort", () => {
+  it("formats an ISO date as an abbreviated Ukrainian date", () => {
+    expect(formatLegalDateShort("2026-06-12T00:00:00")).toBe("12 черв. 2026");
+  });
+
+  it("returns the input unchanged when it is not a valid date", () => {
+    expect(formatLegalDateShort("nope")).toBe("nope");
   });
 });
