@@ -44,7 +44,7 @@ describe("CartView — auth bootstrap guard (TASK-118)", () => {
 
     expect(await screen.findByText("Merged Cable")).toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.getByText(dict.cart.summaryTitle)).toBeInTheDocument(),
+      expect(screen.getByText(dict.cart.summaryHeading)).toBeInTheDocument(),
     );
   });
 });

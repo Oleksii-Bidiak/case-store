@@ -573,6 +573,37 @@ export const dict = {
     increaseAria: "Збільшити кількість",
     quantityAria: "Кількість",
     updateError: "Не вдалося оновити товар. Спробуйте ще раз.",
+    // Cart page redesign (Cart.dc.html).
+    breadcrumbHome: "Головна",
+    breadcrumb: "Кошик",
+    countShort: (n: number) => `${n} тов.`,
+    inStock: "В наявності",
+    outOfStock: "Немає в наявності",
+    addExtra: "Додати ще товари",
+    summaryHeading: "Разом",
+    itemsLine: "Товари",
+    deliveryLine: "Доставка",
+    shippingFree: "Безкоштовно",
+    addonServicesLine: "Додаткові послуги",
+    payable: "До сплати",
+    termsNote: "Натискаючи, ви погоджуєтесь з умовами магазину",
+    // Per-item add-on offers — front-end stub (no backend yet, TASK-174).
+    offersHeading: "Додаткові пропозиції для цього товару",
+    // Delivery + payment blocks — stubs; the real selection lives in checkout.
+    deliveryTitle: "Доставка",
+    deliveryCityLabel: "Місто",
+    deliveryCities: ["Київ", "Львів", "Одеса", "Харків", "Дніпро"],
+    deliveryMethods: [
+      "Нова Пошта — відділення",
+      "Нова Пошта — поштомат",
+      "Кур'єр додому",
+      "Самовивіз із магазину",
+    ],
+    deliveryMethodAria: "Спосіб доставки",
+    paymentTitle: "Оплата",
+    paymentAria: "Спосіб оплати",
+    payOnline: "Картка онлайн",
+    payOnDelivery: "Оплата при отриманні",
   },
 
   // Promo code / discount (TASK-079)
