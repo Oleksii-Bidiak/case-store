@@ -4,6 +4,7 @@ import {
   fetchAllActiveProducts,
   fetchAllPublishedPages,
 } from "@/shared/lib/schema";
+import { BLOG_POSTS, blogPublishedAt } from "@/widgets/blog";
 
 // In Next.js 16 metadata routes are cached (statically generated) by default,
 // which would call the API at BUILD time. `force-dynamic` opts into request-time
@@ -26,7 +27,25 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily",
       priority: 0.9,
     },
+    {
+      url: `${SITE_URL}/blog`,
+      lastModified: now,
+      changeFrequency: "daily",
+      priority: 0.7,
+    },
   ];
+
+  // Blog posts are a static seed (no backend yet — TASK-170), so their routes
+  // are known synchronously and always included.
+  const blogRoutes: MetadataRoute.Sitemap = BLOG_POSTS.map((post) => {
+    const published = blogPublishedAt(post.slug);
+    return {
+      url: `${SITE_URL}/blog/${post.slug}`,
+      lastModified: published ? new Date(published) : now,
+      changeFrequency: "monthly",
+      priority: 0.6,
+    };
+  });
 
   // Published static pages are fetched independently so a failure of one source
   // never drops the other.
@@ -35,7 +54,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     fetchPageRoutes(),
   ]);
 
-  return [...staticRoutes, ...productRoutes, ...pageRoutes];
+  return [...staticRoutes, ...productRoutes, ...pageRoutes, ...blogRoutes];
 }
 
 async function fetchProductRoutes(): Promise<MetadataRoute.Sitemap> {

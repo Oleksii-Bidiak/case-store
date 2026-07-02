@@ -352,6 +352,23 @@ export const dict = {
         { label: "YouTube", href: "#" },
       ],
     },
+    // Article detail page (/blog/[slug], Article.dc.html import). The body is
+    // shared demo content until the Blog backend (TASK-170) supplies real posts.
+    article: {
+      shareLabel: "Поділитись:",
+      copyAria: "Скопіювати посилання",
+      copied: "Посилання скопійовано",
+      telegramAria: "Поділитись у Telegram",
+      facebookAria: "Поділитись у Facebook",
+      coverCaption: "[ обкладинка статті ]",
+      tocHeading: "Зміст",
+      relatedHeading: "Читайте також",
+      // "{read} читання" — e.g. "8 хв читання".
+      readSuffix: "читання",
+      authorRolePlaceholder: "Оглядач мобільної техніки",
+      authorBioPlaceholder:
+        "Тестує смартфони й ноутбуки для MobileStore понад 5 років. Любить довгі порівняння та чесні висновки без маркетингу.",
+    },
   },
 
   catalog: {

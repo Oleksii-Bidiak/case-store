@@ -201,3 +201,90 @@ export function blogCategoryCounts(): Record<BlogFilterKey, number> {
   for (const post of BLOG_POSTS) counts[post.cat] += 1;
   return counts;
 }
+
+/** Look up a single post by slug (undefined when unknown). */
+export function getBlogPost(slug: string): BlogPost | undefined {
+  return BLOG_POSTS.find((p) => p.slug === slug);
+}
+
+/**
+ * Up to `limit` posts to show under "Читайте також" — same-category first, then
+ * the rest in seed order, always excluding the current post.
+ */
+export function getRelatedBlogPosts(slug: string, limit = 3): BlogPost[] {
+  const current = getBlogPost(slug);
+  const others = BLOG_POSTS.filter((p) => p.slug !== slug);
+  if (!current) return others.slice(0, limit);
+  const sameCat = others.filter((p) => p.cat === current.cat);
+  const rest = others.filter((p) => p.cat !== current.cat);
+  return [...sameCat, ...rest].slice(0, limit);
+}
+
+// ISO publish dates by slug — placeholder until the Blog backend (TASK-170)
+// owns them. Kept separate from the display `date` string so the mockup's exact
+// UA formatting stays intact; used only for JSON-LD `datePublished` + sitemap.
+const BLOG_PUBLISHED_AT: Record<string, string> = {
+  "iphone16-vs-15": "2026-06-28",
+  "choose-headphones": "2026-06-25",
+  "powerbank-guide": "2026-06-22",
+  "galaxy-s26-review": "2026-06-20",
+  "macbook-air-m3": "2026-06-17",
+  "trade-in-how": "2026-06-14",
+  "smart-home-start": "2026-06-11",
+  "new-arrivals-june": "2026-06-08",
+  "protect-screen": "2026-06-05",
+  "gaming-laptop-2026": "2026-06-02",
+  "battery-health": "2026-05-30",
+  "tv-buying-guide": "2026-05-27",
+};
+
+/** ISO publish date for a post slug (for schema/sitemap), else undefined. */
+export function blogPublishedAt(slug: string): string | undefined {
+  return BLOG_PUBLISHED_AT[slug];
+}
+
+// Ukrainian abbreviated → genitive month names, to expand the display `date`
+// ("28 черв. 2026") into the article head's long form ("28 червня 2026").
+const MONTH_ABBR_TO_FULL: Record<string, string> = {
+  "січ.": "січня",
+  "лют.": "лютого",
+  "берез.": "березня",
+  "квіт.": "квітня",
+  "трав.": "травня",
+  "черв.": "червня",
+  "лип.": "липня",
+  "серп.": "серпня",
+  "вер.": "вересня",
+  "жовт.": "жовтня",
+  "лист.": "листопада",
+  "груд.": "грудня",
+};
+
+/** Expand a short display date ("28 черв. 2026") to "28 червня 2026". */
+export function blogLongDate(date: string): string {
+  for (const [abbr, full] of Object.entries(MONTH_ABBR_TO_FULL)) {
+    if (date.includes(abbr)) return date.replace(abbr, full);
+  }
+  return date;
+}
+
+// The article body (sections, tags, bio prose) is shared demo content mirroring
+// the Claude Design "Article.dc.html" mockup 1:1 — shown for every post until
+// the Blog backend (TASK-170) supplies real per-post bodies. Only the article
+// HEAD (title, category, author name, cover, dates) is driven by the seed post.
+
+/** Table-of-contents sections — ids MUST match the `<h2 id>`s in the body. */
+export const BLOG_ARTICLE_SECTIONS: readonly { id: string; label: string }[] = [
+  { id: "design", label: "Дизайн і матеріали" },
+  { id: "camera", label: "Камери" },
+  { id: "performance", label: "Продуктивність і батарея" },
+  { id: "verdict", label: "Підсумок" },
+] as const;
+
+/** Placeholder article tags (demo content). */
+export const BLOG_ARTICLE_TAGS: readonly string[] = [
+  "iPhone",
+  "Apple",
+  "смартфони",
+  "порівняння",
+] as const;
