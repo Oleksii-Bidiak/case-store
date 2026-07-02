@@ -749,6 +749,74 @@ export const dict = {
     signOut: "Вийти",
     loadError: "Не вдалося завантажити профіль.",
     phoneInvalid: "Вкажіть коректний номер телефону",
+    // Account dashboard redesign (Account.dc.html).
+    dashboard: {
+      backHome: "Повернутись на головну",
+      greeting: (name: string) => `Привіт, ${name}`,
+      logout: "Вихід",
+      nav: {
+        profile: "Особисті дані",
+        orders: "Історія замовлень",
+        favorites: "Обране",
+        purchases: "Покупки",
+        history: "Історія перегляду",
+        bonuses: "Бонуси",
+        compare: "Порівняння",
+        settings: "Налаштування",
+      },
+      navAria: "Розділи кабінету",
+      // Profile section
+      profileHeading: "Особисті дані",
+      contactHeading: "Контактна інформація",
+      securityHeading: "Безпека",
+      securityNote: "Змінюйте пароль регулярно, щоб захистити свій акаунт.",
+      changePassword: "Змінити пароль",
+      changePasswordStub: "Зміна пароля буде доступна незабаром",
+      // Bonuses section (stub — no loyalty backend yet)
+      bonusesHeading: "Бонуси",
+      bonusesAvailable: "Доступно бонусів",
+      bonusesHint: "знижки на наступні покупки",
+      bonusesStub:
+        "Програма лояльності готується — тут з’являться ваші бали та історія нарахувань.",
+      // Settings section (stub)
+      settingsHeading: "Налаштування",
+      appearanceHeading: "Оформлення",
+      appearanceNote:
+        "Тема інтерфейсу автоматично підлаштовується під налаштування вашої системи.",
+      themeDark: "Темна",
+      themeLight: "Світла",
+      themeSystem: "Системна",
+      notificationsHeading: "Сповіщення",
+      notifs: [
+        {
+          key: "promo",
+          label: "Акції та знижки",
+          desc: "Email про розпродажі й персональні пропозиції",
+        },
+        {
+          key: "orders",
+          label: "Статус замовлень",
+          desc: "Сповіщення про зміну статусу та доставку",
+        },
+        {
+          key: "price",
+          label: "Зниження ціни",
+          desc: "Коли товар з обраного дешевшає",
+        },
+      ],
+      notifStub: "Налаштування сповіщень зберігаються лише в цьому браузері.",
+      // Generic placeholder sections (no backend yet)
+      comingSoonTitle: "Розділ у розробці",
+      purchasesBody:
+        "Куплені товари з’являться тут. Поки що перегляньте свої замовлення.",
+      purchasesCta: "До замовлень",
+      historyBody:
+        "Історія переглядів показується на головній сторінці в блоці «Ви переглядали».",
+      historyCta: "На головну",
+      compareBody:
+        "Порівняння товарів готується. Слідкуйте за оновленнями магазину.",
+      compareCta: "До каталогу",
+    },
   },
 
   cancelOrder: {
