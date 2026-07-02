@@ -327,9 +327,14 @@ export const dict = {
     noCategories: "Категорій поки немає.",
     categoriesAria: "Категорії товарів",
     productsError: "Не вдалося завантажити товари. Спробуйте пізніше.",
-    emptyHeading: "Товари не знайдено. Спробуйте змінити фільтри.",
+    emptyHeading: "Товари не знайдено",
+    emptyBody:
+      "Спробуйте змінити параметри фільтра або скиньте їх, щоб побачити більше товарів.",
     clearFilters: "Скинути фільтри",
     countFound: (n: number) => `Знайдено товарів: ${n}`,
+    // Breadcrumb trail shown above the catalog title.
+    breadcrumbHome: "Головна",
+    breadcrumbProducts: "Товари",
   },
 
   filters: {
@@ -342,6 +347,7 @@ export const dict = {
     minPlaceholder: "Від",
     maxPlaceholder: "До",
     sortBy: "Сортування",
+    sortPrefix: "Спочатку:",
     sort: {
       newest: "Спочатку нові",
       priceAsc: "Ціна: від низької до високої",
@@ -349,8 +355,17 @@ export const dict = {
       nameAsc: "Назва: А–Я",
     },
     clear: "Скинути фільтри",
+    clearAll: "Очистити все",
     removeFilter: "Прибрати фільтр",
     filtersButton: "Фільтри",
+    // Grid / list results view toggle (catalog toolbar).
+    viewGrid: "Плитка",
+    viewList: "Список",
+    viewToggleAria: "Перемкнути вигляд",
+    // Price filter card + mobile drawer.
+    priceTitle: "Ціна, ₴",
+    priceSliderAria: "Діапазон цін",
+    mobileApply: "Показати результати",
     searchLabel: "Пошук",
     searchPlaceholder: "Пошук товарів…",
     searchAria: "Пошук товарів",

@@ -1,15 +1,16 @@
 "use client";
 
-import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { Loader2, SearchX } from "lucide-react";
 import {
   useProductControllerFindAll,
   type ProductControllerFindAllParams,
 } from "@/entities/product";
-import { ProductCard } from "@/shared/ui";
+import type { CatalogView } from "@/features/product-filters";
+import { Button, ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { dict } from "@/shared/config";
 import { ProductListSkeleton } from "./product-list-skeleton";
+import { ProductListItem } from "./product-list-item";
 import { Pagination } from "./pagination";
 
 interface ProductListProps {
@@ -17,19 +18,28 @@ interface ProductListProps {
   params: ProductControllerFindAllParams;
   /** Build a pagination href for a given page, preserving filters. */
   buildPageHref: (page: number) => string;
+  /** Grid (cards) or list (rows) results layout. */
+  view: CatalogView;
+  /** Clear every active filter (used by the empty state). */
+  onClearFilters: () => void;
 }
 
 /**
- * Renders the paginated product grid for the current filter params, with
- * loading / error / empty states. Data comes from the Orval-generated hook,
- * keyed on `params`, so any filter change refetches automatically.
+ * Renders the paginated product results for the current filter params, in grid
+ * or list layout, with loading / error / empty states. Data comes from the
+ * Orval-generated hook, keyed on `params`, so any filter change refetches.
  */
-export function ProductList({ params, buildPageHref }: ProductListProps) {
+export function ProductList({
+  params,
+  buildPageHref,
+  view,
+  onClearFilters,
+}: ProductListProps) {
   const { data, isPending, isFetching, isError } =
     useProductControllerFindAll(params);
 
   if (isPending) {
-    return <ProductListSkeleton />;
+    return <ProductListSkeleton view={view} />;
   }
 
   if (isError) {
@@ -45,16 +55,27 @@ export function ProductList({ params, buildPageHref }: ProductListProps) {
 
   if (products.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center">
-        <p className="text-sm text-muted-foreground">
+      <div className="flex flex-col items-center justify-center rounded-[18px] border border-border bg-card px-5 py-14 text-center shadow-[var(--shadow-card)]">
+        <span
+          aria-hidden="true"
+          className="mb-[18px] inline-flex size-[72px] items-center justify-center rounded-full bg-muted text-muted-foreground"
+        >
+          <SearchX className="size-8" strokeWidth={1.6} />
+        </span>
+        <p className="max-w-[460px] font-display text-[22px] font-bold text-foreground">
           {dict.catalog.emptyHeading}
         </p>
-        <Link
-          href="/products"
-          className="mt-2 inline-block text-sm font-medium text-primary hover:underline"
+        <p className="mt-2.5 max-w-[440px] text-sm text-muted-foreground">
+          {dict.catalog.emptyBody}
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-5"
+          onClick={onClearFilters}
         >
           {dict.catalog.clearFilters}
-        </Link>
+        </Button>
       </div>
     );
   }
@@ -74,17 +95,26 @@ export function ProductList({ params, buildPageHref }: ProductListProps) {
             <Loader2 className="size-8 animate-spin text-primary" />
           </div>
         )}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {products.map((product, index) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              // First row (4 cards on desktop) is above the fold — load eagerly for LCP.
-              priority={index < 4}
-              action={<ProductCardActions product={product} />}
-            />
-          ))}
-        </div>
+
+        {view === "list" ? (
+          <div className="flex flex-col gap-3.5">
+            {products.map((product) => (
+              <ProductListItem key={product.id} product={product} />
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-[18px] [grid-template-columns:repeat(auto-fill,minmax(232px,1fr))]">
+            {products.map((product, index) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                // First row is above the fold — load eagerly for LCP.
+                priority={index < 4}
+                action={<ProductCardActions product={product} />}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {meta && meta.totalPages > 1 && (

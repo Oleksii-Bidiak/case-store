@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { ProductListView, ProductListSkeleton } from "@/widgets";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import { JsonLd } from "@/shared/ui";
@@ -40,7 +41,7 @@ export default async function ProductsPage({
   };
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8">
+    <div className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 sm:py-8">
       <JsonLd
         schema={buildBreadcrumbSchema([
           { name: dict.product.breadcrumbHome, item: SITE_URL },
@@ -50,14 +51,33 @@ export default async function ProductsPage({
           },
         ])}
       />
-      <div className="mb-8">
-        <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">
+
+      {/* Breadcrumbs */}
+      <nav
+        aria-label={dict.product.breadcrumbAria}
+        className="mb-3.5 flex flex-wrap items-center gap-2.5 text-[13.5px] text-muted-foreground"
+      >
+        <Link href="/" className="transition-colors hover:text-foreground">
+          {dict.catalog.breadcrumbHome}
+        </Link>
+        <span aria-hidden="true" className="opacity-50">
+          ›
+        </span>
+        <span className="font-medium text-foreground">
+          {dict.catalog.breadcrumbProducts}
+        </span>
+      </nav>
+
+      {/* Title */}
+      <div className="mb-[18px]">
+        <h1 className="font-display text-[31px] leading-tight font-bold tracking-tight text-foreground">
           {dict.catalog.allProducts}
         </h1>
-        <p className="mt-2 max-w-2xl text-muted-foreground">
+        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           {dict.catalog.allProductsSubtitle}
         </p>
       </div>
+
       <Suspense fallback={<ProductListSkeleton />}>
         <ProductListView initialParams={initialParams} />
       </Suspense>

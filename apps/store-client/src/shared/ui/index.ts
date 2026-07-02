@@ -46,6 +46,7 @@ export {
   SheetTrigger,
 } from "./sheet";
 export { Tabs, TabsContent, TabsList, TabsTrigger } from "./tabs";
+export { Slider } from "./slider";
 export { Toaster } from "./sonner";
 
 // Custom primitives

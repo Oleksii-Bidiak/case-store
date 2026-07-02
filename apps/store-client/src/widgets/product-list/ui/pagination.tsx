@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface PaginationProps {
   currentPage: number;
@@ -27,7 +28,10 @@ function getPageItems(current: number, total: number): (number | "ellipsis")[] {
   return items;
 }
 
-const itemBase = "rounded-md px-3 py-2 text-sm";
+const arrowBase =
+  "inline-flex size-[42px] items-center justify-center rounded-[11px] border-[1.5px] border-border bg-card transition-colors";
+const numberBase =
+  "inline-flex h-[42px] min-w-[42px] items-center justify-center rounded-[11px] border-[1.5px] px-1.5 font-mono text-sm font-semibold transition-colors";
 
 export function Pagination({
   currentPage,
@@ -41,31 +45,33 @@ export function Pagination({
   return (
     <nav
       aria-label="Pagination"
-      className="flex items-center justify-center gap-1"
+      className="flex items-center justify-center gap-2"
     >
       {isFirst ? (
         <span
           aria-disabled="true"
-          className={`${itemBase} text-muted-foreground`}
+          className={`${arrowBase} pointer-events-none text-muted-foreground/50`}
         >
-          Previous
+          <ChevronLeft className="size-[18px]" />
+          <span className="sr-only">Previous</span>
         </span>
       ) : (
         <Link
           href={buildHref(currentPage - 1)}
-          className={`${itemBase} text-foreground hover:bg-muted`}
+          aria-label="Previous"
+          className={`${arrowBase} text-muted-foreground hover:border-primary hover:text-foreground`}
         >
-          Previous
+          <ChevronLeft className="size-[18px]" />
         </Link>
       )}
 
-      <ul className="flex items-center gap-1">
+      <ul className="flex items-center gap-2">
         {items.map((item, index) =>
           item === "ellipsis" ? (
             <li
               key={`ellipsis-${index}`}
               aria-hidden="true"
-              className="px-2 text-muted-foreground"
+              className="px-1 text-muted-foreground"
             >
               …
             </li>
@@ -76,8 +82,8 @@ export function Pagination({
                 aria-current={item === currentPage ? "page" : undefined}
                 className={
                   item === currentPage
-                    ? `${itemBase} bg-primary font-medium text-primary-foreground`
-                    : `${itemBase} text-foreground hover:bg-muted`
+                    ? `${numberBase} border-primary bg-primary text-primary-foreground`
+                    : `${numberBase} border-border bg-card text-foreground hover:border-primary`
                 }
               >
                 {item}
@@ -90,16 +96,18 @@ export function Pagination({
       {isLast ? (
         <span
           aria-disabled="true"
-          className={`${itemBase} text-muted-foreground`}
+          className={`${arrowBase} pointer-events-none text-muted-foreground/50`}
         >
-          Next
+          <ChevronRight className="size-[18px]" />
+          <span className="sr-only">Next</span>
         </span>
       ) : (
         <Link
           href={buildHref(currentPage + 1)}
-          className={`${itemBase} text-foreground hover:bg-muted`}
+          aria-label="Next"
+          className={`${arrowBase} text-foreground hover:border-primary`}
         >
-          Next
+          <ChevronRight className="size-[18px]" />
         </Link>
       )}
     </nav>

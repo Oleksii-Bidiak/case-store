@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import type { CategoryEntity } from "@/entities/category";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import { formatMoney } from "@/shared/lib";
@@ -13,16 +13,22 @@ interface ActiveFilterChipsProps {
 }
 
 /**
- * ActiveFilterChips — a removable chip per active filter (category, search,
+ * ActiveFilterChips — a removable pill per active filter (category, search,
  * min/max price), shown above the product grid. Each chip's × clears just that
- * filter; a trailing "clear all" clears every filter at once.
+ * filter; a trailing "clear all" clears every filter at once. The search chip
+ * is highlighted in the brand colour and carries a search glyph.
  */
 export function ActiveFilterChips({
   categories,
   currentParams,
   onFilterChange,
 }: ActiveFilterChipsProps) {
-  const chips: { key: string; label: string; clear: () => void }[] = [];
+  const chips: {
+    key: string;
+    label: string;
+    isSearch?: boolean;
+    clear: () => void;
+  }[] = [];
 
   if (currentParams.categoryId) {
     const name =
@@ -38,7 +44,8 @@ export function ActiveFilterChips({
   if (currentParams.search) {
     chips.push({
       key: "search",
-      label: `“${currentParams.search}”`,
+      label: `«${currentParams.search}»`,
+      isSearch: true,
       clear: () => onFilterChange({ search: undefined }),
     });
   }
@@ -64,16 +71,30 @@ export function ActiveFilterChips({
   }
 
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2">
+    <div className="mb-5 flex min-h-[34px] flex-wrap items-center gap-2.5">
       {chips.map((chip) => (
         <button
           key={chip.key}
           type="button"
           onClick={chip.clear}
-          className="inline-flex items-center gap-1 rounded-full border border-border bg-card py-1 pr-2 pl-3 text-xs font-medium text-foreground transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={`inline-flex h-[34px] items-center gap-2 rounded-full border py-0 pr-2 pl-3.5 text-[13.5px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
+            chip.isSearch
+              ? "border-primary/30 bg-primary/10 text-primary"
+              : "border-border bg-card text-foreground hover:border-primary/40"
+          }`}
         >
+          {chip.isSearch && <Search className="size-3.5" aria-hidden="true" />}
           {chip.label}
-          <X className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          <span
+            aria-hidden="true"
+            className={`inline-flex size-[18px] items-center justify-center rounded-full ${
+              chip.isSearch
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground"
+            }`}
+          >
+            <X className="size-[11px]" strokeWidth={3} />
+          </span>
           <span className="sr-only">{dict.filters.removeFilter}</span>
         </button>
       ))}
@@ -87,9 +108,9 @@ export function ActiveFilterChips({
             maxPrice: undefined,
           })
         }
-        className="text-xs font-medium text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="text-[13.5px] font-semibold text-muted-foreground underline decoration-1 underline-offset-[3px] outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
-        {dict.filters.clear}
+        {dict.filters.clearAll}
       </button>
     </div>
   );

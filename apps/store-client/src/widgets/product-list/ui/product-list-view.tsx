@@ -1,10 +1,25 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { SlidersHorizontal } from "lucide-react";
 import { useCategoryControllerGetRootCategories } from "@/entities/category";
 import type { ProductControllerFindAllParams } from "@/entities/product";
-import { ProductFilters, ActiveFilterChips } from "@/features/product-filters";
+import {
+  ProductFilters,
+  ActiveFilterChips,
+  SortSelect,
+  ViewToggle,
+  type CatalogView,
+} from "@/features/product-filters";
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/shared/ui";
+import { dict } from "@/shared/config";
 import { ProductList } from "./product-list";
 
 interface ProductListViewProps {
@@ -14,14 +29,26 @@ interface ProductListViewProps {
 
 const PAGE_SIZE = 20;
 
+/** Keys that clearing "all filters" removes (everything except sort/view/page). */
+const CLEARABLE_FILTERS = {
+  categoryId: undefined,
+  search: undefined,
+  minPrice: undefined,
+  maxPrice: undefined,
+} as const;
+
 /**
- * Orchestrates the product list page: keeps filter state in the URL, fetches
- * categories for the filter panel, and renders the filters + results grid.
+ * Orchestrates the catalog page: keeps filter/sort/view state in the URL, fetches
+ * categories for the filter panel, and renders the toolbar (sort + view toggle +
+ * mobile filters), active-filter chips, the sidebar (desktop aside + mobile
+ * drawer) and the results grid/list.
  */
 export function ProductListView({ initialParams }: ProductListViewProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
+
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Derive active params from the live URL, falling back to server-resolved
   // initials (which match the URL on first render).
@@ -42,6 +69,17 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
     isActive: true,
   };
 
+  const view: CatalogView =
+    searchParams.get("view") === "list" ? "list" : "grid";
+  const currentSort = `${params.sortBy}:${params.sortOrder}`;
+
+  // Count of active (clearable) filters — drives the mobile "Filters" badge.
+  const activeFilterCount =
+    (params.categoryId ? 1 : 0) +
+    (params.search ? 1 : 0) +
+    (params.minPrice != null ? 1 : 0) +
+    (params.maxPrice != null ? 1 : 0);
+
   const applyFilters = useCallback(
     (updates: Record<string, string | undefined>) => {
       const next = new URLSearchParams(searchParams.toString());
@@ -52,10 +90,29 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
           next.delete(key);
         }
       }
-      next.set("page", "1"); // reset pagination on any filter change
+      next.set("page", "1"); // reset pagination on any filter/sort change
       router.replace(`${pathname}?${next.toString()}`);
     },
     [searchParams, pathname, router],
+  );
+
+  // View toggle preserves the current page (it does not change the result set).
+  const setView = useCallback(
+    (nextView: CatalogView) => {
+      const next = new URLSearchParams(searchParams.toString());
+      if (nextView === "grid") {
+        next.delete("view");
+      } else {
+        next.set("view", nextView);
+      }
+      router.replace(`${pathname}?${next.toString()}`);
+    },
+    [searchParams, pathname, router],
+  );
+
+  const clearFilters = useCallback(
+    () => applyFilters({ ...CLEARABLE_FILTERS }),
+    [applyFilters],
   );
 
   const buildPageHref = useCallback(
@@ -75,22 +132,89 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
   const categories = categoriesData?.data ?? [];
 
   return (
-    <div className="grid grid-cols-1 gap-8 lg:grid-cols-[16rem_1fr]">
-      <aside className="lg:sticky lg:top-8 lg:self-start">
-        <ProductFilters
-          categories={categories}
-          currentParams={params}
-          onFilterChange={applyFilters}
-        />
-      </aside>
-      <div>
-        <ActiveFilterChips
-          categories={categories}
-          currentParams={params}
-          onFilterChange={applyFilters}
-        />
-        <ProductList params={params} buildPageHref={buildPageHref} />
+    <div>
+      {/* Toolbar: mobile filters button (left) + view toggle + sort (right) */}
+      <div className="mb-5 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setFiltersOpen(true)}
+          className="inline-flex h-11 items-center gap-2 rounded-xl border-[1.5px] border-border bg-card px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:border-primary focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+        >
+          <SlidersHorizontal className="size-[18px]" />
+          {dict.filters.filtersButton}
+          {activeFilterCount > 0 && (
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11.5px] font-bold text-primary-foreground">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
+
+        <div className="ml-auto flex items-center gap-3">
+          <ViewToggle
+            view={view}
+            onChange={setView}
+            className="hidden lg:flex"
+          />
+          <SortSelect currentSort={currentSort} onChange={applyFilters} />
+        </div>
       </div>
+
+      <ActiveFilterChips
+        categories={categories}
+        currentParams={params}
+        onFilterChange={applyFilters}
+      />
+
+      <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
+        {/* Desktop sidebar */}
+        <aside className="hidden lg:sticky lg:top-24 lg:block lg:self-start">
+          <ProductFilters
+            categories={categories}
+            currentParams={params}
+            onFilterChange={applyFilters}
+          />
+        </aside>
+
+        <section className="min-w-0">
+          <ProductList
+            params={params}
+            buildPageHref={buildPageHref}
+            view={view}
+            onClearFilters={clearFilters}
+          />
+        </section>
+      </div>
+
+      {/* Mobile filters drawer */}
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetContent
+          side="left"
+          className="w-[342px] max-w-[88vw] gap-0 overflow-y-auto p-0"
+        >
+          <SheetHeader className="border-b border-border">
+            <SheetTitle className="font-display text-lg font-bold">
+              {dict.filters.legend}
+            </SheetTitle>
+          </SheetHeader>
+          <div className="p-4">
+            <ProductFilters
+              idPrefix="filter-m"
+              categories={categories}
+              currentParams={params}
+              onFilterChange={applyFilters}
+            />
+          </div>
+          <SheetFooter className="border-t border-border">
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(false)}
+              className="h-12 w-full rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              {dict.filters.mobileApply}
+            </button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

@@ -10,6 +10,12 @@ interface SearchInputProps {
   initialValue?: string;
   /** Called with the debounced, trimmed value (undefined when empty). */
   onSearch: (value: string | undefined) => void;
+  /**
+   * DOM id for the input (and its label's `htmlFor`). Defaults to
+   * `filter-search`; pass a distinct value when the filters render twice
+   * (desktop aside + mobile drawer) so ids stay unique in the document.
+   */
+  id?: string;
 }
 
 /** Trim and map an empty string to `undefined` (the URL-absent shape). */
@@ -28,7 +34,11 @@ function normalise(value: string): string | undefined {
  * changes (e.g. "Clear filters", browser back/forward) re-seed the field without
  * clobbering what the user is mid-typing — our own URL echo is ignored.
  */
-export function SearchInput({ initialValue = "", onSearch }: SearchInputProps) {
+export function SearchInput({
+  initialValue = "",
+  onSearch,
+  id = "filter-search",
+}: SearchInputProps) {
   const [value, setValue] = useState(initialValue);
 
   // The last value this component pushed to the URL. Compared against incoming
@@ -52,9 +62,9 @@ export function SearchInput({ initialValue = "", onSearch }: SearchInputProps) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor="filter-search">{dict.filters.searchLabel}</Label>
+      <Label htmlFor={id}>{dict.filters.searchLabel}</Label>
       <Input
-        id="filter-search"
+        id={id}
         type="search"
         value={value}
         onChange={(event) => {
