@@ -371,6 +371,25 @@ export const dict = {
     },
   },
 
+  // Admin-authored static/legal pages (/info/[slug], Legal.dc.html template).
+  // Content comes from the Page backend (TASK-153); this is only the chrome copy.
+  legal: {
+    breadcrumbHome: "Головна",
+    breadcrumbHub: "Правова інформація",
+    badge: "ПРАВОВИЙ ДОКУМЕНТ",
+    // "{updatedPrefix} {date}" → "Чинна редакція від 12 червня 2026".
+    updatedPrefix: "Чинна редакція від",
+    print: "Завантажити PDF",
+    tocHeading: "Зміст документа",
+    tocAria: "Зміст документа",
+    contactHeading: "Залишились питання?",
+    contactSubtitle: "Напишіть нам — відповімо протягом робочого дня",
+    contactCta: "Звʼязатися",
+    // Contacts destination — an admin page slug (falls back to 404 until created).
+    contactHref: "/info/contacts",
+    otherHeading: "Інші правові документи",
+  },
+
   catalog: {
     categories: "Категорії товарів",
     latestProducts: "Рекомендовані товари",

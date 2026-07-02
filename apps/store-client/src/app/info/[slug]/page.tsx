@@ -2,7 +2,12 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { pageControllerFindBySlug } from "@/shared/api/generated/pages/pages";
 import type { PageEntity } from "@/shared/api/generated/models";
-import { sanitizeHtml } from "@/shared/lib/sanitize-html";
+import { LegalDocView, type LegalOtherDoc } from "@/widgets/legal-doc";
+import { JsonLd } from "@/shared/ui";
+import {
+  buildBreadcrumbSchema,
+  fetchAllPublishedPages,
+} from "@/shared/lib/schema";
 import { SITE_URL, dict } from "@/shared/config";
 
 /** Fetch a published page by slug; returns null on 404 / any API error. */
@@ -12,6 +17,18 @@ async function getPage(slug: string): Promise<PageEntity | null> {
     return data;
   } catch {
     return null;
+  }
+}
+
+/** Other published pages (for the "інші правові документи" grid). Never throws. */
+async function getOtherDocs(currentSlug: string): Promise<LegalOtherDoc[]> {
+  try {
+    const pages = await fetchAllPublishedPages();
+    return pages
+      .filter((page) => page.slug !== currentSlug)
+      .map((page) => ({ slug: page.slug, title: page.title }));
+  } catch {
+    return [];
   }
 }
 
@@ -54,16 +71,17 @@ export default async function InfoPage({ params }: InfoPageProps) {
     notFound();
   }
 
-  // Sanitize admin-authored HTML server-side before rendering it raw.
-  const safeHtml = sanitizeHtml(page.content);
+  const otherDocs = await getOtherDocs(slug);
 
   return (
-    <article className="mx-auto w-full max-w-3xl px-4 py-12">
-      <h1 className="mb-8 text-3xl font-bold text-foreground">{page.title}</h1>
-      <div
-        className="prose prose-slate max-w-none"
-        dangerouslySetInnerHTML={{ __html: safeHtml }}
+    <div className="mx-auto w-full max-w-[1160px] px-4 pt-[22px] pb-16 sm:px-6">
+      <JsonLd
+        schema={buildBreadcrumbSchema([
+          { name: dict.legal.breadcrumbHome, item: SITE_URL },
+          { name: page.title, item: `${SITE_URL}/info/${page.slug}` },
+        ])}
       />
-    </article>
+      <LegalDocView page={page} otherDocs={otherDocs} />
+    </div>
   );
 }

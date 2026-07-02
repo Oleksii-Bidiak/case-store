@@ -229,3 +229,87 @@ html {
 *::-webkit-scrollbar-thumb:hover {
   background-color: var(--color-muted-foreground);
 }
+
+/* ─────────────────────────────────────────────
+   Legal / info document body (/info/[slug], Legal.dc.html template).
+   Styles the sanitized admin-authored (Tiptap) HTML to match the design.
+   `<h2>`s are auto-numbered via a counter (01, 02, …) and get scroll-margin
+   so the sticky-TOC scroll-spy lands them below the header.
+   ───────────────────────────────────────────── */
+.legal-doc-body {
+  counter-reset: legal-sec;
+  color: var(--color-foreground);
+}
+.legal-doc-body > :first-child {
+  margin-top: 0;
+}
+.legal-doc-body p {
+  margin: 0 0 14px;
+  font-size: 16px;
+  line-height: 1.7;
+}
+.legal-doc-body > p:first-of-type {
+  font-size: 16.5px;
+}
+.legal-doc-body h2 {
+  counter-increment: legal-sec;
+  scroll-margin-top: 90px;
+  display: flex;
+  align-items: baseline;
+  gap: 11px;
+  margin: 32px 0 12px;
+  font-family: var(--font-sora), var(--font-geist-sans), sans-serif;
+  font-weight: 700;
+  font-size: 21px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--color-foreground);
+}
+.legal-doc-body h2::before {
+  content: counter(legal-sec, decimal-leading-zero);
+  flex-shrink: 0;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--color-primary);
+}
+.legal-doc-body h3 {
+  margin: 22px 0 10px;
+  font-family: var(--font-sora), var(--font-geist-sans), sans-serif;
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--color-foreground);
+}
+.legal-doc-body ul,
+.legal-doc-body ol {
+  margin: 0 0 14px;
+  padding-left: 22px;
+  font-size: 16px;
+  line-height: 1.65;
+}
+.legal-doc-body ul {
+  list-style: disc;
+}
+.legal-doc-body ol {
+  list-style: decimal;
+}
+.legal-doc-body li {
+  margin-bottom: 7px;
+}
+.legal-doc-body a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.legal-doc-body strong,
+.legal-doc-body b {
+  font-weight: 700;
+}
+.legal-doc-body blockquote {
+  margin: 0 0 14px;
+  padding: 12px 18px;
+  border-left: 4px solid var(--color-primary);
+  border-radius: 0 12px 12px 0;
+  background: color-mix(in oklab, var(--color-primary) 6%, var(--color-card));
+  font-style: italic;
+}
