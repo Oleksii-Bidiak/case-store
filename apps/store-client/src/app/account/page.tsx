@@ -10,10 +10,8 @@ export const metadata: Metadata = {
 
 export default function AccountPage() {
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8">
-      <Suspense fallback={<AccountSkeleton />}>
-        <AccountView />
-      </Suspense>
-    </div>
+    <Suspense fallback={<AccountSkeleton />}>
+      <AccountView />
+    </Suspense>
   );
 }
