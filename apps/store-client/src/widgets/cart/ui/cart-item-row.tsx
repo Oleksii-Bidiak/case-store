@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { Check, ShieldCheck, Trash2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetCartQueryKey,
@@ -15,6 +16,7 @@ import { formatMoney } from "@/shared/lib";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { dict } from "@/shared/config";
 import { ProductThumb } from "@/shared/ui";
+import { addonServicesForItem } from "../model/addon-services";
 
 const MAX_QUANTITY = 99;
 
@@ -35,13 +37,28 @@ function centsToString(cents: number): string {
   return `${dollars}.${remainder.toString().padStart(2, "0")}`;
 }
 
+interface CartItemRowProps {
+  item: CartItemEntity;
+  /** Whether an add-on service (stub) is selected for this line. */
+  isServiceSelected?: (itemId: string, serviceId: string) => boolean;
+  /** Toggle a stub add-on service; when omitted the offers block is hidden. */
+  onToggleService?: (itemId: string, serviceId: string) => void;
+}
+
 /**
  * CartItemRow — a single cart line item with a quantity stepper and remove
  * control. Quantity changes update the React Query cache optimistically (so the
  * line total and cart summary recalculate instantly) and write to the server on
  * a debounce; the server remains authoritative and reconciles on refetch.
+ *
+ * The "додаткові пропозиції" offers block is a front-end stub (TASK-174) — it
+ * renders only when the CartView passes `onToggleService`.
  */
-export function CartItemRow({ item }: { item: CartItemEntity }) {
+export function CartItemRow({
+  item,
+  isServiceSelected,
+  onToggleService,
+}: CartItemRowProps) {
   const queryClient = useQueryClient();
   const [qty, setQty] = useState(item.quantity);
   const [imgFailed, setImgFailed] = useState(false);
@@ -78,6 +95,10 @@ export function CartItemRow({ item }: { item: CartItemEntity }) {
   const compareAtPrice = asString(item.compareAtPrice);
   const onSale =
     compareAtPrice != null && Number(compareAtPrice) > Number(item.price);
+  const lineOldText =
+    onSale && compareAtPrice
+      ? formatMoney(centsToString(toCents(compareAtPrice) * item.quantity))
+      : null;
 
   /**
    * Optimistically patch the cached cart so the row's line total and the cart
@@ -143,106 +164,160 @@ export function CartItemRow({ item }: { item: CartItemEntity }) {
     debouncedUpdate(clamped);
   };
 
+  const offers = onToggleService ? addonServicesForItem(item) : [];
+
   return (
     <li
-      className={`flex flex-col gap-3 border-b border-border py-4 ${
+      className={`flex gap-[18px] border-b border-border p-[22px] last:border-b-0 ${
         removeItem.isPending ? "pointer-events-none opacity-60" : ""
       }`}
     >
-      <div className="flex items-start justify-between gap-4">
-        <Link
-          href={`/products/${item.productSlug}`}
-          aria-label={dict.cart.viewProductAria(item.productName)}
-          className="flex items-start gap-3 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {item.imageUrl && !imgFailed ? (
-            // Fixed 64x64 thumbnail — explicit dimensions instead of `fill`.
-            <Image
-              src={item.imageUrl}
-              alt={item.productName}
-              width={64}
-              height={64}
-              onError={() => setImgFailed(true)}
-              className="size-16 shrink-0 rounded-lg object-cover"
-            />
-          ) : (
-            <ProductThumb
-              name={item.productName}
-              className="size-16 shrink-0 rounded-lg"
-              initialClassName="text-xl"
-            />
-          )}
-          <div className="flex flex-col">
-            <p className="font-medium text-foreground">{item.productName}</p>
-            <div className="mt-1 flex items-baseline gap-2">
-              <span className="text-sm text-foreground">
-                {formatMoney(item.price)}
-              </span>
-              {onSale && compareAtPrice && (
-                <span className="text-xs text-muted-foreground line-through">
-                  {formatMoney(compareAtPrice)}
-                </span>
-              )}
-            </div>
-          </div>
-        </Link>
-        <p className="shrink-0 font-semibold text-foreground">
-          {formatMoney(item.lineTotal)}
-        </p>
-      </div>
-
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center rounded-lg border border-border">
-          <button
-            type="button"
-            aria-label={
-              qty <= 1 ? dict.cart.removeItemAria : dict.cart.decreaseAria
-            }
-            onClick={() =>
-              qty <= 1
-                ? removeItem.mutate({ itemId: item.id })
-                : commit(qty - 1)
-            }
-            className="px-3 py-1.5 text-foreground hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            −
-          </button>
-          <input
-            type="number"
-            aria-label={dict.cart.quantityAria}
-            min={1}
-            max={maxQty}
-            value={qty}
-            onChange={(e) => setQty(Number(e.target.value))}
-            onBlur={() => commit(qty)}
-            className="w-12 border-x border-border bg-background py-1.5 text-center text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      <Link
+        href={`/products/${item.productSlug}`}
+        aria-label={dict.cart.viewProductAria(item.productName)}
+        className="shrink-0 rounded-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {item.imageUrl && !imgFailed ? (
+          <Image
+            src={item.imageUrl}
+            alt={item.productName}
+            width={96}
+            height={96}
+            onError={() => setImgFailed(true)}
+            className="size-24 rounded-[13px] object-cover"
           />
+        ) : (
+          <ProductThumb
+            name={item.productName}
+            className="size-24 rounded-[13px]"
+            initialClassName="text-3xl"
+          />
+        )}
+      </Link>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex justify-between gap-3.5">
+          <div className="min-w-0">
+            <p className="mb-1 text-[15px] font-semibold text-foreground">
+              {item.productName}
+            </p>
+            <p
+              className={`flex items-center gap-1.5 text-[12.5px] ${
+                outOfStock ? "text-muted-foreground" : "text-success"
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`size-1.5 rounded-full ${
+                  outOfStock ? "bg-muted-foreground" : "bg-success"
+                }`}
+              />
+              {outOfStock ? dict.cart.outOfStock : dict.cart.inStock}
+            </p>
+          </div>
           <button
             type="button"
-            aria-label={dict.cart.increaseAria}
-            disabled={qty >= maxQty || outOfStock}
-            onClick={() => commit(qty + 1)}
-            className="px-3 py-1.5 text-foreground hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label={dict.cart.removeNamedAria(item.productName)}
+            onClick={() => removeItem.mutate({ itemId: item.id })}
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            +
+            <Trash2 className="size-[18px]" />
           </button>
         </div>
 
-        <button
-          type="button"
-          aria-label={dict.cart.removeNamedAria(item.productName)}
-          onClick={() => removeItem.mutate({ itemId: item.id })}
-          className="text-sm text-destructive hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {dict.cart.remove}
-        </button>
-      </div>
+        <div className="mt-auto flex flex-wrap items-end justify-between gap-3.5 pt-3">
+          <div className="flex items-center overflow-hidden rounded-[10px] border border-border">
+            <button
+              type="button"
+              aria-label={dict.cart.decreaseAria}
+              disabled={qty <= 1}
+              onClick={() => commit(Math.max(1, qty - 1))}
+              className="flex size-9 items-center justify-center bg-background text-lg text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              −
+            </button>
+            <input
+              type="number"
+              aria-label={dict.cart.quantityAria}
+              min={1}
+              max={maxQty}
+              value={qty}
+              onChange={(e) => setQty(Number(e.target.value))}
+              onBlur={() => commit(qty)}
+              className="w-11 bg-background py-1.5 text-center font-mono text-[15px] font-semibold text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            />
+            <button
+              type="button"
+              aria-label={dict.cart.increaseAria}
+              disabled={qty >= maxQty || outOfStock}
+              onClick={() => commit(qty + 1)}
+              className="flex size-9 items-center justify-center bg-background text-lg text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              +
+            </button>
+          </div>
 
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.cart.updateError}
-        </p>
-      )}
+          <div className="text-right">
+            {lineOldText && (
+              <span className="block text-[12.5px] text-muted-foreground line-through">
+                {lineOldText}
+              </span>
+            )}
+            <span className="font-display text-[19px] font-bold text-foreground">
+              {formatMoney(item.lineTotal)}
+            </span>
+          </div>
+        </div>
+
+        {offers.length > 0 && (
+          <div className="mt-4 border-t border-dashed border-border pt-3">
+            <p className="mb-1 flex items-center gap-1.5 text-[12.5px] font-bold text-primary">
+              <ShieldCheck className="size-[15px]" aria-hidden="true" />
+              {dict.cart.offersHeading}
+            </p>
+            {offers.map((service) => {
+              const on = isServiceSelected?.(item.id, service.id) ?? false;
+              return (
+                <label
+                  key={service.id}
+                  className="flex cursor-pointer items-center gap-2.5 border-t border-border py-[9px]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={() => onToggleService?.(item.id, service.id)}
+                    className="sr-only"
+                  />
+                  <span
+                    className={`flex size-5 shrink-0 items-center justify-center rounded-[6px] border-[1.5px] transition-colors ${
+                      on ? "border-primary bg-primary" : "border-border"
+                    }`}
+                  >
+                    {on && (
+                      <Check
+                        className="size-3 text-primary-foreground"
+                        aria-hidden="true"
+                      />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1 text-[13.5px] text-foreground">
+                    {service.label}
+                  </span>
+                  <b className="font-mono text-[13.5px] font-bold whitespace-nowrap text-foreground">
+                    +{formatMoney(String(service.price))}
+                  </b>
+                </label>
+              );
+            })}
+          </div>
+        )}
+
+        {error && (
+          <p role="alert" className="mt-2 text-sm text-destructive">
+            {dict.cart.updateError}
+          </p>
+        )}
+      </div>
     </li>
   );
 }

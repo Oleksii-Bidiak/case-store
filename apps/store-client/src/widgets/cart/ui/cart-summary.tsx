@@ -1,147 +1,90 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { Lock, Truck } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
-import {
-  getGetCartQueryKey,
-  useClearCart,
-  type CartTotals,
-} from "@/entities/cart";
+import { type CartTotals } from "@/entities/cart";
 import { ApplyDiscount, useAppliedDiscount } from "@/features/apply-discount";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
-import {
-  Button,
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Separator,
-} from "@/shared/ui";
 
-/**
- * CartSummary — order totals panel with checkout CTA, a trust strip, and a
- * clear-cart action confirmed via an accessible Dialog (no window.confirm).
- * Total equals subtotal for MVP (no discount/shipping yet).
- */
-/** Subtract an applied discount amount from a subtotal, clamped at 0, in cents. */
-function subtractMoney(subtotal: string, amount: string): string {
-  const cents = Math.max(
-    0,
-    Math.round(parseFloat(subtotal) * 100) -
-      Math.round(parseFloat(amount) * 100),
-  );
-  return (cents / 100).toFixed(2);
+interface CartSummaryProps {
+  totals: CartTotals;
+  /** Selected add-on services total in UAH (stub, TASK-174). Default 0. */
+  servicesTotal?: number;
 }
 
-export function CartSummary({ totals }: { totals: CartTotals }) {
-  const queryClient = useQueryClient();
-  const [confirmOpen, setConfirmOpen] = useState(false);
+/**
+ * CartSummary — the "Разом" order-totals panel: promo code (real coupons,
+ * TASK-079), item subtotal, free-shipping + add-on-services (stub) lines, the
+ * payable total, and the checkout CTA. The server re-validates and recomputes
+ * the coupon authoritatively at order creation. Add-on services are a front-end
+ * stub and are NOT yet persisted through checkout (TASK-174).
+ */
+export function CartSummary({ totals, servicesTotal = 0 }: CartSummaryProps) {
   const applied = useAppliedDiscount();
 
-  // Total reflects any applied promo code, recomputed against the *current*
-  // subtotal (items may have changed since the code was applied). The server
-  // re-validates and recomputes authoritatively at order creation.
-  const total = applied
-    ? subtractMoney(totals.subtotal, applied.amount)
-    : totals.subtotal;
-
-  const clearCart = useClearCart({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
-        setConfirmOpen(false);
-      },
-    },
-  });
+  const subtotalCents = Math.round(parseFloat(totals.subtotal) * 100);
+  const couponCents = applied
+    ? Math.round(parseFloat(applied.amount) * 100)
+    : 0;
+  const serviceCents = Math.round(servicesTotal * 100);
+  const payableCents = Math.max(0, subtotalCents - couponCents + serviceCents);
+  const payableText = formatMoney((payableCents / 100).toFixed(2));
 
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-6 text-card-foreground shadow-[var(--shadow-card)]">
-      <h2 className="text-lg font-semibold text-foreground">
-        {dict.cart.summaryTitle}
+    <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-[var(--shadow-card)]">
+      <h2 className="mb-4 font-display text-[18px] font-bold text-foreground">
+        {dict.cart.summaryHeading}
       </h2>
 
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-muted-foreground">{dict.cart.subtotal}</span>
-        <span className="text-foreground">{formatMoney(totals.subtotal)}</span>
-      </div>
-      <p className="text-sm text-muted-foreground">
-        {dict.cart.itemsCount(totals.itemCount)}
-      </p>
-
-      <Separator />
-
-      {/* Promo code (TASK-079) — shows the discount line when one is applied. */}
+      {/* Promo code (real coupons, TASK-079). */}
       <ApplyDiscount />
 
-      <Separator />
-
-      <div className="flex items-baseline justify-between font-semibold text-foreground">
-        <span>{dict.cart.total}</span>
-        <span className="font-display text-xl font-bold tracking-tight">
-          {formatMoney(total)}
+      <div className="mt-2 flex justify-between py-2 text-sm text-muted-foreground">
+        <span>
+          {dict.cart.itemsLine} ({dict.cart.countShort(totals.itemCount)})
+        </span>
+        <span className="font-mono text-foreground">
+          {formatMoney(totals.subtotal)}
         </span>
       </div>
 
-      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Truck className="size-4 text-primary" aria-hidden="true" />
-        {dict.cart.shippingNotice}
-      </p>
+      <div className="flex justify-between py-2 text-sm text-muted-foreground">
+        <span>{dict.cart.deliveryLine}</span>
+        <span className="font-semibold text-success">
+          {dict.cart.shippingFree}
+        </span>
+      </div>
 
-      <Button size="lg" asChild>
-        <Link href="/checkout" aria-label={dict.cart.checkoutAria}>
-          {dict.cart.checkout}
-        </Link>
-      </Button>
-
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
-          >
-            {dict.cart.clear}
-          </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{dict.cart.clearTitle}</DialogTitle>
-            <DialogDescription>{dict.cart.clearDescription}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">{dict.cart.clearCancel}</Button>
-            </DialogClose>
-            <Button
-              variant="destructive"
-              disabled={clearCart.isPending}
-              onClick={() => clearCart.mutate()}
-            >
-              {clearCart.isPending
-                ? dict.cart.clearing
-                : dict.cart.clearConfirmAction}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <p className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-        <Lock className="size-3.5" aria-hidden="true" />
-        {dict.cart.secureCheckout}
-      </p>
-
-      {clearCart.error && (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.cart.clearError}
-        </p>
+      {servicesTotal > 0 && (
+        <div className="flex justify-between py-2 text-sm text-muted-foreground">
+          <span>{dict.cart.addonServicesLine}</span>
+          <span className="font-mono text-foreground">
+            +{formatMoney(String(servicesTotal))}
+          </span>
+        </div>
       )}
+
+      <div className="my-2.5 h-px bg-border" />
+
+      <div className="mb-[18px] flex items-baseline justify-between">
+        <span className="text-[15px] font-semibold text-foreground">
+          {dict.cart.payable}
+        </span>
+        <span className="font-display text-[26px] font-bold text-foreground">
+          {payableText}
+        </span>
+      </div>
+
+      <Link
+        href="/checkout"
+        aria-label={dict.cart.checkoutAria}
+        className="flex h-[52px] items-center justify-center rounded-[13px] bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {dict.cart.checkout}
+      </Link>
+      <p className="mt-3 text-center text-xs text-muted-foreground">
+        {dict.cart.termsNote}
+      </p>
     </div>
   );
 }

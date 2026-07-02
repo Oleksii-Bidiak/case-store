@@ -1,27 +1,75 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ShoppingBag } from "lucide-react";
-import { useGetCart } from "@/entities/cart";
+import { ChevronLeft, ShoppingBag } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  getGetCartQueryKey,
+  useClearCart,
+  useGetCart,
+  type CartItemEntity,
+} from "@/entities/cart";
 import { useAuth } from "@/entities/session";
 import { dict } from "@/shared/config";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/shared/ui";
+import { addonKey, addonServicesForItem } from "../model/addon-services";
 import { CartItemRow } from "./cart-item-row";
 import { CartSummary } from "./cart-summary";
 import { CartSkeleton } from "./cart-skeleton";
+import { CartDeliveryStub, CartPaymentStub } from "./cart-delivery-payment";
+
+/** Sum the selected add-on services across all lines (stub, TASK-174). */
+function computeServicesTotal(
+  items: CartItemEntity[],
+  selected: Record<string, boolean>,
+): number {
+  let total = 0;
+  for (const item of items) {
+    for (const service of addonServicesForItem(item)) {
+      if (selected[addonKey(item.id, service.id)]) total += service.price;
+    }
+  }
+  return total;
+}
 
 /**
- * CartView — client orchestrator for the cart page. Fetches the cart (guest or
- * user) and renders loading, error, empty, and populated states. Works for
+ * CartView — client orchestrator for the cart page (Cart.dc.html redesign).
+ * Fetches the cart (guest or user), renders loading / error / empty / populated
+ * states, and owns the add-on-services stub state (TASK-174). Works for
  * anonymous visitors via the cartToken cookie — no auth required.
  */
 export function CartView() {
-  // Don't fetch until the auth bootstrap refresh has settled. Firing during the
-  // mount-time /api/auth/refresh window would request the cart as a guest (token
-  // not yet in memory, cartToken cleared by login), minting a fresh empty cart
-  // and caching it as the user's — the TASK-118 reload bug.
+  const queryClient = useQueryClient();
+
+  // Don't fetch until the auth bootstrap refresh has settled (TASK-118).
   const { isInitializing } = useAuth();
   const { data, isLoading, isError, refetch } = useGetCart({
     query: { enabled: !isInitializing },
+  });
+
+  // Add-on service selections, keyed by `${itemId}:${serviceId}` — front-end
+  // stub, not persisted through checkout.
+  const [services, setServices] = useState<Record<string, boolean>>({});
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const clearCart = useClearCart({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
+        setConfirmOpen(false);
+        setServices({});
+      },
+    },
   });
 
   if (isInitializing || isLoading) {
@@ -74,16 +122,32 @@ export function CartView() {
     );
   }
 
+  const servicesTotal = computeServicesTotal(items, services);
+  const isServiceSelected = (itemId: string, serviceId: string) =>
+    !!services[addonKey(itemId, serviceId)];
+  const toggleService = (itemId: string, serviceId: string) =>
+    setServices((prev) => {
+      const key = addonKey(itemId, serviceId);
+      return { ...prev, [key]: !prev[key] };
+    });
+
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-          {dict.cart.title}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {dict.cart.itemTypes(cart?.totals.uniqueItems ?? 0)}
-        </p>
-      </div>
+      {/* Breadcrumbs */}
+      <nav
+        aria-label={dict.product.breadcrumbAria}
+        className="flex items-center gap-1.5 text-[13px] text-muted-foreground"
+      >
+        <Link href="/" className="transition-colors hover:text-foreground">
+          {dict.cart.breadcrumbHome}
+        </Link>
+        <span aria-hidden="true">/</span>
+        <span className="text-foreground">{dict.cart.breadcrumb}</span>
+      </nav>
+
+      <h1 className="font-display text-[32px] font-bold tracking-tight text-foreground">
+        {dict.cart.title} · {dict.cart.countShort(cart?.totals.itemCount ?? 0)}
+      </h1>
 
       {/* Announce totals changes to assistive tech after each mutation refetch. */}
       <p aria-live="polite" aria-atomic="true" className="sr-only">
@@ -93,27 +157,75 @@ export function CartView() {
         )}
       </p>
 
-      <div className="flex flex-col gap-8 lg:grid lg:grid-cols-3">
-        <div className="lg:col-span-2">
+      <div className="grid gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
+        {/* Line items */}
+        <div className="overflow-hidden rounded-[18px] border border-border bg-card shadow-[var(--shadow-card)]">
           <ul>
             {items.map((item) => (
-              <CartItemRow key={item.id} item={item} />
+              <CartItemRow
+                key={item.id}
+                item={item}
+                isServiceSelected={isServiceSelected}
+                onToggleService={toggleService}
+              />
             ))}
           </ul>
-          <Link
-            href="/products"
-            className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <ArrowLeft className="size-4" aria-hidden="true" />
-            {dict.cart.continueShopping}
-          </Link>
+          <div className="flex items-center justify-between px-[22px] py-4">
+            <Link
+              href="/products"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ChevronLeft className="size-4" aria-hidden="true" />
+              {dict.cart.addExtra}
+            </Link>
+            <button
+              type="button"
+              onClick={() => setConfirmOpen(true)}
+              className="text-[13.5px] text-muted-foreground transition-colors hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {dict.cart.clear}
+            </button>
+          </div>
         </div>
+
+        {/* Summary + delivery/payment stubs */}
         {cart && (
-          <div className="lg:self-start">
-            <CartSummary totals={cart.totals} />
+          <div className="flex flex-col gap-4 lg:sticky lg:top-6">
+            <CartSummary totals={cart.totals} servicesTotal={servicesTotal} />
+            <CartDeliveryStub />
+            <CartPaymentStub />
           </div>
         )}
       </div>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{dict.cart.clearTitle}</DialogTitle>
+            <DialogDescription>{dict.cart.clearDescription}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">{dict.cart.clearCancel}</Button>
+            </DialogClose>
+            <Button
+              variant="destructive"
+              disabled={clearCart.isPending}
+              onClick={() => clearCart.mutate()}
+            >
+              {clearCart.isPending
+                ? dict.cart.clearing
+                : dict.cart.clearConfirmAction}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {clearCart.error && (
+        <p role="alert" className="text-sm text-destructive">
+          {dict.cart.clearError}
+        </p>
+      )}
     </div>
   );
 }
