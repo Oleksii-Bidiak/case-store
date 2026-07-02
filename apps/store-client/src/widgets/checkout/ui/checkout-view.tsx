@@ -19,6 +19,7 @@ import { Button, CheckoutSkeleton, Textarea } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { CheckoutStepIndicator } from "./checkout-step-indicator";
+import { CheckoutPaymentStub } from "./checkout-payment-stub";
 
 /**
  * CheckoutView — client orchestrator for the `/checkout` route.
@@ -118,54 +119,58 @@ export function CheckoutView() {
   }
 
   return (
-    <div className="flex flex-col gap-8 lg:grid lg:grid-cols-3">
-      <section className="lg:col-span-2">
-        <h1 className="mb-6 font-display text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
-          {dict.checkout.title}
-        </h1>
+    <div>
+      <h1 className="mb-6 font-display text-2xl font-bold tracking-tight text-foreground sm:text-[28px]">
+        {dict.checkout.title}
+      </h1>
 
-        <CheckoutStepIndicator current={step} />
+      <CheckoutStepIndicator current={step} />
 
+      <div className="grid gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
         <form
           onSubmit={handleSubmit(submitOrder, focusFirstError)}
-          className="flex flex-col gap-8"
+          className="flex min-w-0 flex-col gap-4"
           noValidate
         >
           {step === 1 && (
             <>
-              <CheckoutAddressForm
-                legend={dict.checkout.shippingAddress}
-                register={register}
-                control={control}
-                setValue={setValue}
-                errors={errors}
-              />
-
-              <div className="flex flex-col gap-1">
-                <label
-                  htmlFor="checkout-notes"
-                  className="text-sm font-medium text-foreground"
-                >
-                  {dict.checkout.orderNotes}{" "}
-                  <span className="text-muted-foreground">
-                    {dict.common.optional}
-                  </span>
-                </label>
-                <Textarea
-                  id="checkout-notes"
-                  rows={3}
-                  maxLength={500}
-                  {...register("notes")}
+              <section className="rounded-[18px] border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+                <CheckoutAddressForm
+                  legend={dict.checkout.shippingAddress}
+                  register={register}
+                  control={control}
+                  setValue={setValue}
+                  errors={errors}
                 />
-                <span className="self-end text-xs text-muted-foreground">
-                  {notes.length}/500
-                </span>
-                {errors.notes && (
-                  <p role="alert" className="text-sm text-destructive">
-                    {errors.notes.message}
-                  </p>
-                )}
-              </div>
+
+                <div className="mt-4 flex flex-col gap-1">
+                  <label
+                    htmlFor="checkout-notes"
+                    className="text-sm font-medium text-foreground"
+                  >
+                    {dict.checkout.orderNotes}{" "}
+                    <span className="text-muted-foreground">
+                      {dict.common.optional}
+                    </span>
+                  </label>
+                  <Textarea
+                    id="checkout-notes"
+                    rows={3}
+                    maxLength={500}
+                    {...register("notes")}
+                  />
+                  <span className="self-end text-xs text-muted-foreground">
+                    {notes.length}/500
+                  </span>
+                  {errors.notes && (
+                    <p role="alert" className="text-sm text-destructive">
+                      {errors.notes.message}
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              <CheckoutPaymentStub />
 
               <Button
                 type="button"
@@ -181,7 +186,9 @@ export function CheckoutView() {
 
           {step === 2 && (
             <>
-              <CheckoutReviewStep ref={reviewHeadingRef} control={control} />
+              <section className="rounded-[18px] border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+                <CheckoutReviewStep ref={reviewHeadingRef} control={control} />
+              </section>
 
               {isError && errorMessage && (
                 <p role="alert" className="text-sm text-destructive">
@@ -207,11 +214,11 @@ export function CheckoutView() {
             </>
           )}
         </form>
-      </section>
 
-      <aside className="lg:col-span-1 lg:self-start">
-        <CheckoutOrderSummary npCityRef={npCityRef} />
-      </aside>
+        <aside className="lg:sticky lg:top-4">
+          <CheckoutOrderSummary npCityRef={npCityRef} />
+        </aside>
+      </div>
     </div>
   );
 }

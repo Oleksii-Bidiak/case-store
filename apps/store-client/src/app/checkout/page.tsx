@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 export default function CheckoutPage() {
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8">
+    <div className="mx-auto w-full max-w-[1180px] px-4 pt-7 pb-16 sm:px-6">
       <Suspense fallback={<CheckoutSkeleton />}>
         <CheckoutView />
       </Suspense>

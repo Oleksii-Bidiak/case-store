@@ -719,6 +719,38 @@ export const dict = {
       billingRequired:
         "Адреса оплати є обов'язковою, якщо вона відрізняється від адреси доставки.",
     },
+    // Checkout redesign (Checkout.dc.html).
+    summaryHeading: "Ваше замовлення",
+    itemsLine: "Товари",
+    countShort: (n: number) => `${n} тов.`,
+    discountLine: "Знижка",
+    totalLine: "До сплати",
+    secureNote: "Безпечна оплата · Дані захищені",
+    // Payment method — a stub (no online-payment backend yet; the order is
+    // created and settled per the admin flow — TASK-034).
+    paymentHeading: "Оплата",
+    paymentMethodAria: "Спосіб оплати",
+    paymentStubNote:
+      "Онлайн-оплату буде підключено — спосіб оплати узгоджуємо при підтвердженні замовлення.",
+    paymentMethods: [
+      {
+        key: "card",
+        title: "Картка онлайн",
+        note: "Visa / Mastercard · Apple Pay, Google Pay",
+      },
+      {
+        key: "cod",
+        title: "Оплата при отриманні",
+        note: "Готівкою або карткою у відділенні",
+      },
+      {
+        key: "invoice",
+        title: "Безготівковий рахунок",
+        note: "Для юридичних осіб, з ПДВ",
+      },
+    ],
+    // Loyalty bonuses — stub (no loyalty backend — TASK-175).
+    bonusesStub: "Списати бонуси (програма лояльності — незабаром)",
   },
 
   order: {
