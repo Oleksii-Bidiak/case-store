@@ -317,6 +317,43 @@ export const dict = {
     },
   },
 
+  // Storefront /blog listing (Claude Design "Blog" import). Post content lives
+  // in widgets/blog/model/posts.ts (static seed until the Blog backend — TASK-170).
+  blog: {
+    breadcrumbHome: "Головна",
+    breadcrumb: "Блог",
+    badge: "ЖУРНАЛ MOBILESTORE",
+    heading: "Блог про техніку та ґаджети",
+    subtitle:
+      "Огляди, гайди й поради від команди MobileStore — щоб обрати саме те, що потрібно, і вичавити з ґаджета максимум.",
+    searchPlaceholder: "Пошук у блозі…",
+    searchAria: "Пошук у блозі",
+    categoryFilterAria: "Категорії блогу",
+    categories: {
+      all: "Усі статті",
+      reviews: "Огляди",
+      guides: "Гайди",
+      news: "Новини",
+      tips: "Поради",
+      compare: "Порівняння",
+    },
+    featuredBadge: "Головна тема тижня",
+    loadMore: "Показати більше статей",
+    emptyHeading: "Нічого не знайдено",
+    emptyBody: "Спробуйте іншу категорію або уточніть запит.",
+    newsletter: {
+      heading: "Не пропускай нові статті",
+      subtitle:
+        "Підписуйся на канали MobileStore — огляди, гайди та знижки першими.",
+      // External social links — no real URLs yet (href "#", TODO TASK-166/170).
+      socials: [
+        { label: "Telegram", href: "#" },
+        { label: "Instagram", href: "#" },
+        { label: "YouTube", href: "#" },
+      ],
+    },
+  },
+
   catalog: {
     categories: "Категорії товарів",
     latestProducts: "Рекомендовані товари",
@@ -736,6 +773,9 @@ export const dict = {
     accountDescription: "Керуйте профілем та переглядайте свої замовлення.",
     ordersTitle: "Мої замовлення | MobileStore",
     ordersDescription: "Історія ваших замовлень.",
+    blogTitle: "Блог",
+    blogDescription:
+      "Огляди, гайди та поради про смартфони, аксесуари й техніку — від команди MobileStore.",
   },
 
   // TASK-077 — variant dots + quick-add overlay on the product card.
