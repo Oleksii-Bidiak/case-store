@@ -425,6 +425,28 @@ export const dict = {
     breadcrumbProducts: "Товари",
   },
 
+  // Categories hub page (/categories, Categories.dc.html import).
+  categories: {
+    breadcrumbHome: "Головна",
+    navAria: "Розділи категорій",
+    descFallback: "Оберіть підкатегорію, щоб переглянути товари цього розділу.",
+    emptyHeading: "Категорій поки немає",
+    loadError: "Не вдалося завантажити категорії. Спробуйте пізніше.",
+    viewAllInCategory: "Переглянути всі товари",
+    // Popular brands strip — a stub (no brand data model yet, TASK-176).
+    brandsHeading: "Популярні бренди",
+    brands: [
+      "Apple",
+      "Samsung",
+      "Xiaomi",
+      "Sony",
+      "JBL",
+      "Anker",
+      "Baseus",
+      "Hoco",
+    ],
+  },
+
   filters: {
     legend: "Фільтри",
     category: "Категорія",
@@ -907,6 +929,9 @@ export const dict = {
     productsTitle: "Товари",
     productsDescription:
       "Перегляньте всі аксесуари для телефонів — фільтруйте за категорією, ціною та ключовим словом і сортуйте, щоб знайти саме те, що потрібно.",
+    categoriesTitle: "Категорії",
+    categoriesDescription:
+      "Усі категорії товарів магазину — оберіть розділ і перейдіть до потрібних товарів.",
     productFallbackTitle: "Товар",
     productFallbackDescription: "Переглянути деталі товару.",
     pageFallbackTitle: "Сторінка",

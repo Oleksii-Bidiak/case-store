@@ -1,0 +1,93 @@
+import { http, HttpResponse } from "msw";
+import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import { server } from "@/shared/test/msw-server";
+import { dict } from "@/shared/config";
+import { CategoriesView } from "./categories-view";
+
+const tree = {
+  data: [
+    {
+      id: "c1",
+      name: "Смартфони",
+      slug: "phones",
+      isActive: true,
+      sortOrder: 0,
+      children: [
+        {
+          id: "c1a",
+          name: "Чохли",
+          slug: "cases",
+          isActive: true,
+          sortOrder: 0,
+          children: [],
+        },
+      ],
+    },
+    {
+      id: "c2",
+      name: "Аудіо",
+      slug: "audio",
+      isActive: true,
+      sortOrder: 1,
+      children: [
+        {
+          id: "c2a",
+          name: "Навушники",
+          slug: "headphones",
+          isActive: true,
+          sortOrder: 0,
+          children: [],
+        },
+      ],
+    },
+  ],
+};
+
+describe("CategoriesView", () => {
+  beforeEach(() => {
+    server.use(
+      http.get("*/api/categories/tree", () => HttpResponse.json(tree)),
+    );
+  });
+
+  it("renders the rail and the first group's child tiles + brand strip", async () => {
+    renderWithProviders(<CategoriesView />);
+
+    // Rail lists both root categories.
+    expect(
+      await screen.findByRole("button", { name: /Смартфони/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Аудіо/ })).toBeInTheDocument();
+
+    // Default content = first root, with its child tile linking to the catalog.
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Смартфони" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Чохли" })).toHaveAttribute(
+      "href",
+      "/products?categoryId=c1a",
+    );
+
+    // Brands strip (stub).
+    expect(screen.getByText(dict.categories.brandsHeading)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Apple" })).toHaveAttribute(
+      "href",
+      "/products",
+    );
+  });
+
+  it("switches the content group when another rail item is clicked", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<CategoriesView />);
+
+    await user.click(await screen.findByRole("button", { name: /Аудіо/ }));
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Аудіо" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Навушники" })).toHaveAttribute(
+      "href",
+      "/products?categoryId=c2a",
+    );
+  });
+});

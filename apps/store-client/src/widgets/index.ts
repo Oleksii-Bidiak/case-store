@@ -2,6 +2,7 @@
 export { Footer } from "./footer";
 export { HeroBanner, TrustStrip } from "./hero-banner";
 export { CategoryNav, CategoryNavSkeleton } from "./category-nav";
+export { CategoriesView } from "./categories";
 export { PopularRail, PopularRailSkeleton } from "./product-grid";
 export { PromoBanner } from "./promo-banner";
 export { Newsletter } from "./newsletter";
