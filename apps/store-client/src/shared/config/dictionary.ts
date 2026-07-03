@@ -466,6 +466,27 @@ export const dict = {
       "Форма демонстраційна — повідомлення поки не надсилається на сервер.",
   },
 
+  notFound: {
+    /** Big gradient error code + headline. */
+    code: "404",
+    heading: "Сторінку не знайдено",
+    body: "Можливо, її переміщено або видалено. Перевірте адресу або поверніться на головну — там точно є що обрати.",
+    /** Inline search box (native GET → /search). */
+    searchPlaceholder: "Що шукаєте?",
+    searchSubmitAria: "Знайти",
+    /** Primary / secondary calls to action. */
+    home: "На головну",
+    catalog: "До каталогу",
+    /** Popular-section quick links. */
+    popularHeading: "Популярні розділи",
+    popular: {
+      smartphones: "Смартфони",
+      laptops: "Ноутбуки",
+      audio: "Аудіо",
+      promo: "Акції",
+    },
+  },
+
   // Categories hub page (/categories, Categories.dc.html import).
   categories: {
     breadcrumbHome: "Головна",
@@ -1024,6 +1045,9 @@ export const dict = {
     blogTitle: "Блог",
     blogDescription:
       "Огляди, гайди та поради про смартфони, аксесуари й техніку — від команди MobileStore.",
+    notFoundTitle: "Сторінку не знайдено",
+    notFoundDescription:
+      "Схоже, такої сторінки не існує. Скористайтеся пошуком або поверніться на головну.",
   },
 
   // TASK-077 — variant dots + quick-add overlay on the product card.
