@@ -1,5 +1,12 @@
+import * as path from "node:path";
+import { config as loadEnv } from "dotenv";
 import { PrismaClient } from "@prisma/client";
 import * as argon2 from "argon2";
+
+// Playwright's globalSetup runs from the repo root, where DATABASE_URL is not
+// set — load the API workspace's .env so PrismaClient can connect (the same DB
+// the webServer-booted API uses).
+loadEnv({ path: path.resolve(__dirname, "../../apps/store-api/.env") });
 
 /**
  * E2E seed (Playwright `globalSetup`). Inserts a deterministic fixture set the
