@@ -1,11 +1,6 @@
-﻿---
+---
 name: observability
 description: Implement structured logging with Pino (backend) and error tracking with Sentry (frontend + backend) for production monitoring.
-license: MIT
-compatibility: claude-code
-metadata:
-  audience: developers
-  workflow: scaffolding
 ---
 
 ## What I Do

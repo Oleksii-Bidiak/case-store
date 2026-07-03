@@ -1,11 +1,6 @@
-﻿---
+---
 name: nestjs-module
 description: Create a new NestJS feature module following Clean Architecture (Controller-Service-Repository pattern) with DTOs, entities, and proper module registration.
-license: MIT
-compatibility: claude-code
-metadata:
-  audience: developers
-  workflow: scaffolding
 ---
 
 ## What I Do

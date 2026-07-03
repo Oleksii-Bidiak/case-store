@@ -1,11 +1,6 @@
-﻿---
+---
 name: plan-document
 description: Generate structured implementation plan documents with task breakdowns, acceptance criteria, and file-level details. Persists plans as markdown files in docs/plans/ and updates BACKLOG.md.
-license: MIT
-compatibility: claude-code
-metadata:
-  audience: developers
-  workflow: planning
 ---
 
 ## What I Do

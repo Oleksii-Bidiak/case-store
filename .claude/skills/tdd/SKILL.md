@@ -1,11 +1,6 @@
-﻿---
+---
 name: tdd
 description: Test-Driven Development workflow for critical e-commerce modules. Enforces Red-Green-Refactor cycle with NestJS/Jest patterns.
-license: MIT
-compatibility: claude-code
-metadata:
-  audience: developers
-  workflow: testing
 ---
 
 ## What I Do

@@ -1,11 +1,6 @@
-﻿---
+---
 name: nextjs-app-router
 description: Create Next.js pages, layouts, and components using App Router with Server/Client Components, data fetching, and FSD integration.
-license: MIT
-compatibility: claude-code
-metadata:
-  audience: developers
-  workflow: scaffolding
 ---
 
 ## What I Do

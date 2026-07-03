@@ -1,11 +1,6 @@
-﻿---
+---
 name: fsd-component
 description: Create Next.js components following Feature-Sliced Design (FSD) architecture with proper layer separation and Orval-generated API hooks.
-license: MIT
-compatibility: claude-code
-metadata:
-  audience: developers
-  workflow: scaffolding
 ---
 
 ## What I Do

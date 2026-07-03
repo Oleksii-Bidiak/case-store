@@ -1,11 +1,6 @@
-﻿---
+---
 name: api-contract
 description: Configure and maintain the OpenAPI (Swagger) to Orval pipeline for generating typed API hooks. Covers Swagger decorators, Orval config, and generation workflow.
-license: MIT
-compatibility: claude-code
-metadata:
-  audience: developers
-  workflow: scaffolding
 ---
 
 ## What I Do

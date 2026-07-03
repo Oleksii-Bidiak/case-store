@@ -1,391 +1,111 @@
-﻿---
+---
 name: frontend-testing
-description: Test React/Next.js frontends. CURRENT setup is Jest + ts-jest (pure-logic unit tests). Component/hook testing with React Testing Library + MSW is documented here as the TARGET state, not yet wired up.
-license: MIT
-compatibility: claude-code
-metadata:
-  audience: developers
-  workflow: scaffolding
+description: Test React/Next.js frontends. Jest with two projects in store-client (node pure-logic + jsdom RTL/MSW component tests) and a jsdom RTL/MSW harness in store-admin. Playwright e2e scaffold at repo root.
 ---
 
 ## What I Do
 
-I provide testing patterns for the React/Next.js frontends. **The current, working setup is
-Jest + `ts-jest` for pure-logic unit tests** (zod schemas, formatters, pure helpers). The
-React Testing Library + MSW component/hook patterns below are the **target state we are
-moving toward** — they are not wired up yet.
+I provide the testing patterns for `apps/store-client` and `apps/store-admin`. Both
+apps have a **live RTL + MSW component-test harness** (shipped via TASK-105); this
+skill documents how to use it, not how to build it.
 
-## When to Use Me
+## Current Stack (in use)
 
-Use me when writing tests for `apps/store-client/src/` or `apps/store-admin/src/`.
+| Tool                                              | Purpose                                                                           |
+| ------------------------------------------------- | --------------------------------------------------------------------------------- |
+| **Jest**                                          | Test runner (per-app configs)                                                     |
+| **ts-jest**                                       | Transform for the store-client `unit` project (node env, `*.test.ts`)             |
+| **@swc/jest**                                     | Fast JSX transform for jsdom component projects (`*.test.tsx`)                    |
+| **React Testing Library + jest-dom + user-event** | Component testing                                                                 |
+| **MSW**                                           | API mocking (never mock fetch/axios directly)                                     |
+| **Playwright**                                    | E2E scaffold at repo root (`e2e/`, `npm run test:e2e:pw`) — needs a running stack |
 
-> ⚠️ **Current reality (verify before assuming):**
->
-> - `apps/store-client` runs **Jest** via `ts-jest` (`jest.config.cjs`), `testEnvironment: "node"`,
->   matching only `**/*.test.ts` — i.e. **pure-logic tests only, no React rendering**. RTL,
->   MSW, jsdom and `@testing-library/*` are **not installed**.
-> - `apps/store-admin` has **no test setup at all** (`"test": "echo 'No tests yet'"`).
->   Adopting the component/integration patterns below requires first installing the libraries
->   and switching to a `jsdom` environment (tracked as the frontend test-harness roadmap item).
+### Harness layout
 
-## Testing Stack
+- `apps/store-client/jest.config.cjs` — **two projects**: `unit` (node, ts-jest,
+  `*.test.ts` pure logic: zod schemas, formatters, builders) and `component`
+  (jsdom, @swc/jest, `*.test.tsx`, RTL + MSW). Both run via
+  `npm run test -w apps/store-client`.
+- `apps/store-admin/jest.config.cjs` — single jsdom `component` project, mirrors
+  store-client's component project.
+- `apps/*/src/shared/test/` — `setup.ts` (jest-dom + MSW server lifecycle),
+  `msw-server.ts`, `msw-handlers.ts` (shared handlers + entity factories like
+  `makeUser`), `render.tsx` (wrapper with QueryClientProvider).
+- Both configs pin `react`/`react-dom` to the app's own copy in
+  `moduleNameMapper` — multiple React copies across the workspace otherwise cause
+  a null-dispatcher crash in hooks. Don't remove those mappings.
+- jsdom needs `testEnvironmentOptions: { customExportConditions: [""] }` so
+  `msw/node` resolves — don't remove it either.
 
-### Current (in use)
+> ⚠️ **Known flakiness:** the full store-client suite can time out heavy MSW
+> suites under parallel load. Before debugging a "broken" test, re-run with
+> `--runInBand` — serial runs are the ground truth.
 
-| Tool        | Purpose                                            |
-| ----------- | -------------------------------------------------- |
-| **Jest**    | Test runner                                        |
-| **ts-jest** | TypeScript transform (`isolatedModules`, node env) |
+## Writing Tests
 
-### Target (not yet wired up)
+### Component test (RTL + MSW)
 
-| Tool                                 | Purpose                                                  |
-| ------------------------------------ | -------------------------------------------------------- |
-| **React Testing Library**            | Component testing (render, query, interact)              |
-| **@testing-library/jest-dom**        | Custom DOM matchers (`toBeVisible`, `toHaveTextContent`) |
-| **jest-environment-jsdom**           | DOM environment for component tests                      |
-| **MSW**                              | API mocking for integration tests                        |
-| **@tanstack/react-query** test utils | Query hook testing                                       |
-
-## Setup
-
-### Current Jest config (`apps/store-client/jest.config.cjs`)
-
-```javascript
-// Pure-logic unit tests only (e.g. zod schemas). React component / integration
-// coverage is deferred to a future suite (jsdom + RTL + MSW — see Target below).
-module.exports = {
-  rootDir: "src",
-  testEnvironment: "node",
-  testMatch: ["**/*.test.ts"],
-  moduleFileExtensions: ["ts", "tsx", "js", "json"],
-  moduleNameMapper: { "^@/(.*)$": "<rootDir>/$1" },
-  transform: {
-    "^.+\\.tsx?$": [
-      "ts-jest",
-      {
-        isolatedModules: true,
-        tsconfig: {
-          module: "commonjs",
-          target: "es2020",
-          esModuleInterop: true,
-          jsx: "react-jsx",
-          skipLibCheck: true,
-          verbatimModuleSyntax: false,
-        },
-      },
-    ],
-  },
-};
-```
-
-The current, idiomatic test is a **pure-logic** spec — see the real example in
-`src/features/checkout/model/checkout-schema.test.ts` (zod validation) and the
-"Zod Validation Testing" section below. These run today with `npm run test -w apps/store-client`.
-
----
-
-### Target component-test setup (not yet adopted)
-
-> Everything from here until "Zod Validation Testing" describes the **target** RTL + MSW
-> setup. To enable it: install `@testing-library/react`, `@testing-library/user-event`,
-> `@testing-library/jest-dom`, `jest-environment-jsdom`, `msw`; switch `testEnvironment` to
-> `"jsdom"`; broaden `testMatch` to `**/*.test.{ts,tsx}`; add a `setupFilesAfterEnv` file.
-
-### Test Setup (target)
-
-```typescript
-// src/shared/test/setup.ts (jest setupFilesAfterEnv)
-import "@testing-library/jest-dom";
-import { server } from "./msw-server";
-
-beforeAll(() => server.listen({ onUnhandledRequest: "warn" }));
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
-```
-
-### MSW Server (target)
-
-```typescript
-// src/shared/test/msw-server.ts
-import { setupServer } from "msw/node";
-import { handlers } from "./msw-handlers";
-
-export const server = setupServer(...handlers);
-```
-
-```typescript
-// src/shared/test/msw-handlers.ts
-import { http, HttpResponse } from "msw";
-
-export const handlers = [
-  http.get("*/products", () => {
-    return HttpResponse.json({
-      data: [
-        { id: "1", name: "iPhone Case", price: 29.99, inStock: true },
-        { id: "2", name: "Samsung Case", price: 24.99, inStock: true },
-      ],
-      meta: { page: 1, limit: 12, total: 2, totalPages: 1 },
-    });
-  }),
-
-  http.get("*/products/:id", ({ params }) => {
-    return HttpResponse.json({
-      data: { id: params.id, name: "iPhone Case", price: 29.99, inStock: true },
-    });
-  }),
-
-  http.post("*/auth/login", async ({ request }) => {
-    const body = await request.json();
-    if (body.email === "user@example.com" && body.password === "password") {
-      return HttpResponse.json({ data: { accessToken: "mock-token" } });
-    }
-    return HttpResponse.json(
-      { error: "Invalid credentials", statusCode: 401 },
-      { status: 401 },
-    );
-  }),
-];
-```
-
-## Testing Patterns by FSD Layer
-
-### Shared Layer — UI Components
-
-```typescript
-// src/shared/ui/button/button.test.tsx
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { Button } from './button';
-
-describe('Button', () => {
-  it('renders with text', () => {
-    render(<Button>Click me</Button>);
-    expect(screen.getByRole('button', { name: 'Click me' })).toBeInTheDocument();
-  });
-
-  it('calls onClick when clicked', async () => {
-    const onClick = jest.fn();
-    render(<Button onClick={onClick}>Click me</Button>);
-    await userEvent.click(screen.getByRole('button'));
-    expect(onClick).toHaveBeenCalledTimes(1);
-  });
-
-  it('is disabled when disabled prop is true', () => {
-    render(<Button disabled>Click me</Button>);
-    expect(screen.getByRole('button')).toBeDisabled();
-  });
-
-  it('applies variant styles', () => {
-    render(<Button variant="destructive">Delete</Button>);
-    expect(screen.getByRole('button')).toHaveClass('bg-destructive');
-  });
-});
-```
-
-### Entities Layer — API Hooks
-
-```typescript
-// src/entities/product/api/product-hooks.test.tsx
-import { renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useGetProducts } from '@/shared/api/generated/product/product';
-import { server } from '@/shared/test/msw-server';
-import { http, HttpResponse } from 'msw';
-
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  );
-}
-
-describe('useGetProducts', () => {
-  it('fetches products successfully', async () => {
-    const { result } = renderHook(() => useGetProducts({ limit: 12 }), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.data).toHaveLength(2);
-  });
-
-  it('handles server error', async () => {
-    server.use(
-      http.get('*/products', () => HttpResponse.json({ error: 'Server error' }, { status: 500 }))
-    );
-
-    const { result } = renderHook(() => useGetProducts({ limit: 12 }), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isError).toBe(true));
-  });
-});
-```
-
-### Features Layer — Business Interactions
-
-```typescript
+```tsx
 // src/features/add-to-cart/ui/add-to-cart-button.test.tsx
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AddToCartButton } from './add-to-cart-button';
-import { server } from '@/shared/test/msw-server';
-import { http, HttpResponse } from 'msw';
+import { render, screen } from "@/shared/test/render"; // wraps QueryClientProvider
+import userEvent from "@testing-library/user-event";
+import { server } from "@/shared/test/msw-server";
+import { http, HttpResponse } from "msw";
+import { AddToCartButton } from "./add-to-cart-button";
 
-const product = { id: '1', name: 'iPhone Case', price: 29.99, inStock: true };
-
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+it("shows error state on API failure", async () => {
+  server.use(
+    http.post("*/cart/items", () =>
+      HttpResponse.json(
+        { error: "Cart full", statusCode: 400 },
+        { status: 400 },
+      ),
+    ),
   );
-}
-
-describe('AddToCartButton', () => {
-  it('adds product to cart on click', async () => {
-    render(<AddToCartButton product={product} />, { wrapper: createWrapper() });
-
-    const button = screen.getByRole('button', { name: /add.*cart/i });
-    await userEvent.click(button);
-
-    expect(screen.getByRole('button')).toHaveTextContent('Adding...');
-  });
-
-  it('shows "Out of stock" when product is unavailable', () => {
-    render(<AddToCartButton product={{ ...product, inStock: false }} />, {
-      wrapper: createWrapper(),
-    });
-    expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.getByRole('button')).toHaveTextContent('Out of stock');
-  });
-
-  it('shows error state on API failure', async () => {
-    server.use(
-      http.post('*/cart/items', () => HttpResponse.json({ error: 'Cart full' }, { status: 400 }))
-    );
-
-    render(<AddToCartButton product={product} />, { wrapper: createWrapper() });
-
-    await userEvent.click(screen.getByRole('button'));
-    // Error handling UI assertion
-  });
+  render(<AddToCartButton productId="1" />);
+  await userEvent.click(screen.getByRole("button"));
+  // assert the visible error UI, not internal state
 });
 ```
 
-### Widgets Layer — Composite Blocks
+Override handlers per-test with `server.use(...)`; the default happy-path
+handlers live in `msw-handlers.ts` — extend the factories there instead of
+inlining big fixtures.
 
-```typescript
-// src/widgets/product-card/ui/product-card.test.tsx
-import { render, screen } from '@testing-library/react';
-import { ProductCard } from './product-card';
+### Pure-logic test (unit project, `*.test.ts`)
 
-const product = {
-  id: '1',
-  name: 'iPhone Case',
-  slug: 'iphone-case',
-  price: 29.99,
-  compareAtPrice: 39.99,
-  images: ['/img.jpg'],
-  inStock: true,
-  categoryId: 'cat1',
-};
-
-describe('ProductCard', () => {
-  it('renders product name and price', () => {
-    render(<ProductCard product={product} />);
-    expect(screen.getByText('iPhone Case')).toBeInTheDocument();
-    expect(screen.getByText('$29.99')).toBeInTheDocument();
-  });
-
-  it('shows compare-at price when available', () => {
-    render(<ProductCard product={product} />);
-    expect(screen.getByText('$39.99')).toBeInTheDocument();
-  });
-
-  it('has accessible add-to-cart button', () => {
-    render(<ProductCard product={product} />);
-    expect(screen.getByRole('button', { name: /add iphone case to cart/i })).toBeInTheDocument();
-  });
-});
-```
-
-## Zod Validation Testing
-
-```typescript
+```ts
 // src/features/checkout/model/checkout-schema.test.ts
 import { checkoutSchema } from "./checkout-schema";
 
-describe("checkoutSchema", () => {
-  it("validates a correct checkout form", () => {
-    const result = checkoutSchema.safeParse({
-      firstName: "Ivan",
-      lastName: "Petrenko",
-      email: "ivan@example.com",
-      phone: "+380991234567",
-      address: "Kyiv, Khreshchatyk 1",
-      paymentMethod: "card",
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects invalid email", () => {
-    const result = checkoutSchema.safeParse({
-      firstName: "Ivan",
-      lastName: "Petrenko",
-      email: "not-an-email",
-      phone: "+380991234567",
-      address: "Kyiv, Khreshchatyk 1",
-      paymentMethod: "card",
-    });
-    expect(result.success).toBe(false);
-    expect(result.error.issues[0].path).toContain("email");
-  });
-
-  it("rejects missing required fields", () => {
-    const result = checkoutSchema.safeParse({});
-    expect(result.success).toBe(false);
-    expect(result.error.issues.length).toBeGreaterThan(0);
-  });
+it("rejects invalid email", () => {
+  const result = checkoutSchema.safeParse({ ...valid, email: "not-an-email" });
+  expect(result.success).toBe(false);
+  expect(result.error.issues[0].path).toContain("email");
 });
 ```
 
 ## Test Commands
 
 ```bash
-# All frontend tests (Jest)
-npm run test -w apps/store-client
-npm run test -w apps/store-admin   # currently a no-op until a harness is added
-
-# Watch mode
-npx jest --watch -c apps/store-client/jest.config.cjs
-
-# Single file
-npx jest -c apps/store-client/jest.config.cjs src/features/checkout/model/checkout-schema.test.ts
-
-# Coverage
-npx jest -c apps/store-client/jest.config.cjs --coverage
+npm run test -w apps/store-client          # unit + component projects
+npm run test -w apps/store-admin           # component project
+npx jest -c apps/store-client/jest.config.cjs --runInBand   # flake check
+npx jest -c apps/store-client/jest.config.cjs src/path/to/file.test.tsx
+npm run test:e2e:pw                        # Playwright (needs DB + booted apps)
 ```
 
 ## Rules
 
-- ALWAYS test user behavior, not implementation details.
-- ALWAYS use `jest.fn()` for mock callbacks (this repo runs **Jest**, not Vitest — there is no `vi`).
-- ALWAYS place test files next to the source file: `checkout-schema.ts` → `checkout-schema.test.ts`.
-- The runner is **Jest + ts-jest** today; pure-logic specs (`*.test.ts`) run in a `node` env.
-- ALWAYS test loading, error, and empty states (once component tests are enabled).
-- NEVER test internal component state — test what the user sees and does.
-
-**Target-state rules (apply once RTL + MSW are wired up):**
-
-- ALWAYS use `screen.getByRole()` and `screen.getByText()` over `getByTestId()`.
-- ALWAYS mock API calls with MSW — never mock fetch/axios directly.
-- ALWAYS wrap hook tests with `QueryClientProvider` when testing TanStack Query hooks.
-- ALWAYS test accessibility: keyboard navigation, ARIA attributes, screen-reader text.
-- NEVER import from `shared/api/generated/` in test files — use MSW handlers instead.
+- ALWAYS test user behavior, not implementation details — `getByRole`/`getByText`
+  over `getByTestId`; never assert internal component state.
+- ALWAYS mock the API with MSW handlers — never mock fetch/axios or the
+  generated hooks directly.
+- ALWAYS place test files next to the source: `foo.ts` → `foo.test.ts`,
+  `foo.tsx` → `foo.test.tsx` (the extension picks the Jest project).
+- ALWAYS test loading, error, and empty states for data-driven components.
+- ALWAYS use `jest.fn()` (this repo runs Jest, not Vitest — there is no `vi`).
+- Forms seeded from async data follow `docs/conventions/forms.md` — test the
+  sync-guard behavior (reset keyed to entity id, no clobber of in-progress edits).
+- Radix Select under jsdom drops programmatically-reset values (jsdom-only
+  artifact) — assert Rule-2b resets through a plain input instead.
