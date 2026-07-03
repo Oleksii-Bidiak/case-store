@@ -475,6 +475,96 @@ export const dict = {
       "Форма демонстраційна — повідомлення поки не надсилається на сервер.",
   },
 
+  // TASK-167-Q — dedicated contact page (/contact, Contact.dc.html). Contact
+  // channels/hours/messengers use the real SiteContactSettings (TASK-154);
+  // the message form is a stub (no contact-message backend — TASK-177).
+  contact: {
+    breadcrumbHome: "Головна",
+    breadcrumb: "Звʼязатися з нами",
+    heading: "Звʼязатися з нами",
+    intro:
+      "Маєте питання про замовлення, доставку чи товар? Оберіть зручний спосіб — і ми відповімо якнайшвидше. Середній час відповіді — до 15 хвилин у робочі години.",
+    stats: [
+      { value: "15 хв", label: "середня відповідь" },
+      { value: "9–21", label: "щодня без вихідних" },
+    ],
+    channels: {
+      phoneLabel: "Гаряча лінія",
+      phoneNote: "Безкоштовно по Україні",
+      emailLabel: "Пошта",
+      emailNote: "Відповідь до 1 дня",
+      chatLabel: "Онлайн-чат",
+      chatValue: "Написати зараз",
+      chatNote: "Швидка відповідь у месенджерах",
+      hoursLabel: "Графік роботи",
+      hoursNote: "Без вихідних",
+    },
+    formHeading: "Напишіть нам",
+    formIntro:
+      "Заповніть форму — і менеджер звʼяжеться з вами протягом 1 робочого дня.",
+    topicLabel: "Тема звернення",
+    topics: [
+      { key: "order", label: "Замовлення" },
+      { key: "delivery", label: "Доставка" },
+      { key: "warranty", label: "Гарантія та сервіс" },
+      { key: "return", label: "Повернення" },
+      { key: "other", label: "Інше" },
+    ],
+    fieldName: "Ваше імʼя",
+    fieldNamePlaceholder: "Олександр",
+    fieldPhone: "Телефон",
+    fieldPhonePlaceholder: "+380 __ ___ __ __",
+    fieldEmail: "Email",
+    fieldEmailPlaceholder: "you@example.com",
+    fieldOrder: "Номер замовлення",
+    fieldOrderOptional: "(необовʼязково)",
+    fieldOrderPlaceholder: "#000000",
+    fieldMessage: "Повідомлення",
+    fieldMessagePlaceholder: "Опишіть ваше питання…",
+    consentBefore: "Я погоджуюсь на обробку персональних даних відповідно до ",
+    consentLink: "Політики конфіденційності",
+    submit: "Надіслати повідомлення",
+    stubNote:
+      "Форма демонстраційна — повідомлення поки не надсилається на сервер.",
+    sentHeading: "Дякуємо! Повідомлення надіслано",
+    sentBody:
+      "Ми вже отримали ваш запит і відповімо на вказану пошту найближчим часом.",
+    sentAgain: "Надіслати ще одне",
+    departmentsHeading: "Відділи",
+    departments: [
+      {
+        key: "sales",
+        title: "Відділ продажів",
+        desc: "Допомога з вибором і замовленням",
+        email: "sales@mobilestore.ua",
+      },
+      {
+        key: "service",
+        title: "Сервіс і гарантія",
+        desc: "Ремонт, обмін, повернення",
+        email: "service@mobilestore.ua",
+      },
+      {
+        key: "b2b",
+        title: "Співпраця",
+        desc: "Опт, партнерство, реклама",
+        email: "b2b@mobilestore.ua",
+      },
+    ],
+    messengersHeading: "Ми у месенджерах",
+    messengersIntro: "Швидка відповідь у зручному для вас чаті.",
+    messengersEmpty: "Зателефонуйте нам — ми на звʼязку щодня.",
+    officeHeading: "Головний офіс і шоурум",
+    officeAddress: "м. Київ, вул. Хрещатик, 22",
+    officeAddressNote: "2 поверх, ТЦ «Central»",
+    officeHours: "Пн–Нд · 10:00–20:00",
+    officeRoute: "Прокласти маршрут",
+    officeMapAria: "Розташування офісу",
+    faqHeading: "Можливо, відповідь уже є",
+    faqBody: "Перегляньте часті питання про доставку, оплату та гарантію",
+    faqCta: "До поширених питань",
+  },
+
   notFound: {
     /** Big gradient error code + headline. */
     code: "404",
@@ -1142,6 +1232,9 @@ export const dict = {
     promoTitle: "Акції та знижки",
     promoDescription:
       "Найкращі ціни сезону — промокоди тижня та товари зі знижкою на смартфони, ноутбуки та аудіо.",
+    contactTitle: "Звʼязатися з нами",
+    contactDescription:
+      "Гаряча лінія, пошта, месенджери та адреса шоуруму — оберіть зручний спосіб звʼязку з MobileStore.",
   },
 
   // TASK-077 — variant dots + quick-add overlay on the product card.
