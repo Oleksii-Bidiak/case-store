@@ -46,62 +46,12 @@ Always use TDD for these domain areas:
 - E2E tests: `npm run test:e2e`
 - Single file: `npx jest -- <file-path>`
 
-## Backend Testing Patterns (NestJS)
+## Testing Patterns
 
-```typescript
-// Unit test example (Jest)
-describe("CartService", () => {
-  let service: CartService;
-  let repository: CartRepository;
-
-  beforeEach(async () => {
-    const module = await Test.createTestingModule({
-      providers: [
-        CartService,
-        { provide: CartRepository, useValue: mockCartRepository },
-      ],
-    }).compile();
-
-    service = module.get<CartService>(CartService);
-  });
-
-  it("should calculate total with discount applied", () => {
-    // Arrange
-    const items = [{ productId: "1", quantity: 2, price: 100 }];
-    const discount = { type: "percentage", value: 10 };
-
-    // Act
-    const total = service.calculateTotal(items, discount);
-
-    // Assert
-    expect(total).toBe(180); // 200 - 10%
-  });
-});
-```
-
-## E2E Testing Patterns (Supertest)
-
-```typescript
-describe("CartController (e2e)", () => {
-  let app: INestApplication;
-
-  beforeAll(async () => {
-    const moduleFixture = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    await app.init();
-  });
-
-  it("/cart (POST) should add item to cart", () => {
-    return request(app.getHttpServer())
-      .post("/cart/items")
-      .send({ productId: "1", quantity: 2 })
-      .expect(201);
-  });
-});
-```
+Unit (Jest + `Test.createTestingModule` with mocked repositories) and e2e (Supertest)
+patterns live in the **tdd skill** (`.claude/skills/tdd/SKILL.md`) and the
+**frontend-testing skill** — load the relevant one instead of improvising. Architecture
+rules are in AGENTS.md.
 
 ## Rules
 

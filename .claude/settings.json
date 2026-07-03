@@ -1,7 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
@@ -12,13 +11,27 @@
       "Bash(npm run typecheck:*)",
       "Bash(npm run start:*)",
       "Bash(npm run dev:*)",
-      "Bash(npm run generate-api:*)",
       "Bash(npm run generate:api:*)",
       "Bash(npm run swagger:export:*)",
       "Bash(npx prisma:*)",
       "Bash(docker compose:*)",
       "Bash(ls:*)",
       "Bash(node:*)",
+      "PowerShell(git status:*)",
+      "PowerShell(git diff:*)",
+      "PowerShell(git log:*)",
+      "PowerShell(git branch:*)",
+      "PowerShell(npm run build:*)",
+      "PowerShell(npm run test:*)",
+      "PowerShell(npm run lint:*)",
+      "PowerShell(npm run typecheck:*)",
+      "PowerShell(npm run start:*)",
+      "PowerShell(npm run dev:*)",
+      "PowerShell(npm run generate:api:*)",
+      "PowerShell(npm run swagger:export:*)",
+      "PowerShell(npx prisma:*)",
+      "PowerShell(docker compose:*)",
+      "PowerShell(node:*)",
       "mcp__context7__query-docs"
     ],
     "deny": [

@@ -1,11 +1,6 @@
-﻿---
+---
 name: auth-security
 description: Implement JWT authentication with refresh token rotation, guards, CORS, Helmet, rate limiting, and security best practices for NestJS e-commerce backend.
-license: MIT
-compatibility: claude-code
-metadata:
-  audience: developers
-  workflow: scaffolding
 ---
 
 ## What I Do

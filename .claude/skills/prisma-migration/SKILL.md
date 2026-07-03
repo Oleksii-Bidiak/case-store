@@ -1,11 +1,6 @@
-﻿---
+---
 name: prisma-migration
 description: Create and manage Prisma schema changes and migrations for the e-commerce database. Includes best practices for schema design, migration strategies, and data seeding.
-license: MIT
-compatibility: claude-code
-metadata:
-  audience: developers
-  workflow: database
 ---
 
 ## What I Do

@@ -2,7 +2,10 @@
 
 ## Overview
 
-B2C e-commerce platform for mobile accessories with an admin panel. Iterative development with a focus on scalability, security, and reliability.
+B2C e-commerce platform for multi-brand accessories and Apple tech with an admin panel
+(evolving toward a CRM for content management). Iterative development with a focus on
+scalability, security, and reliability. **This file is the single source of truth for
+project rules** — other docs link here instead of restating them.
 
 ## Repository Structure
 
@@ -24,20 +27,21 @@ packages/
 - **State & Data:** TanStack Query (React Query)
 - **API Contract:** OpenAPI (Swagger) + Orval (auto-generated types & hooks)
 - **Testing:** Jest (unit), Supertest (e2e)
-- **Containerization:** Docker, docker-compose (PostgreSQL, Redis)
+- **Search:** Meilisearch (typo-tolerant full-text; graceful Postgres fallback)
+- **Containerization:** Docker, docker-compose (PostgreSQL, Redis, Meilisearch)
 
 ## Build, Lint & Test Commands
 
-| Command                      | Description                                  |
-| ---------------------------- | -------------------------------------------- |
-| `npm run build`              | Build all workspaces                         |
-| `npm run lint`               | Run ESLint across all workspaces             |
-| `npm run test`               | Run all unit tests                           |
-| `npm run test:e2e`           | Run e2e tests (store-api)                    |
-| `npm run typecheck`          | Run TypeScript type checking (`tsc --noEmit`)|
-| `npx prisma migrate dev`     | Create and apply a new Prisma migration      |
-| `npx prisma db push`         | Push schema to DB without migration (dev)    |
-| `npx prisma generate`        | Regenerate Prisma Client                     |
+| Command                  | Description                                   |
+| ------------------------ | --------------------------------------------- |
+| `npm run build`          | Build all workspaces                          |
+| `npm run lint`           | Run ESLint across all workspaces              |
+| `npm run test`           | Run all unit tests                            |
+| `npm run test:e2e`       | Run e2e tests (store-api)                     |
+| `npm run typecheck`      | Run TypeScript type checking (`tsc --noEmit`) |
+| `npx prisma migrate dev` | Create and apply a new Prisma migration       |
+| `npx prisma db push`     | Push schema to DB without migration (dev)     |
+| `npx prisma generate`    | Regenerate Prisma Client                      |
 
 **Workspace-specific commands** should be run from the workspace root:
 
@@ -174,23 +178,24 @@ type(scope): description
 
 **Template examples for this project:**
 
-| Type | Scope | Example Commit |
-|------|-------|---------------|
-| `feat` | `cart` | `feat(cart): add CartRepository with Prisma queries` |
-| `feat` | `auth` | `feat(auth): implement JWT refresh token rotation` |
-| `feat` | `product` | `feat(product): add product listing with pagination` |
-| `feat` | `ui` | `feat(ui): create ProductCard widget with AddToCart feature` |
-| `feat` | `admin` | `feat(admin): add product CRUD management page` |
-| `fix` | `cart` | `fix(cart): correct discount calculation for percentage coupons` |
-| `fix` | `auth` | `fix(auth): prevent refresh token reuse after rotation` |
-| `refactor` | `order` | `refactor(order): extract order state machine into service` |
-| `test` | `cart` | `test(cart): add unit tests for cart total with discounts` |
-| `test` | `auth` | `test(auth): add e2e tests for login and refresh flow` |
-| `docs` | — | `docs: update README with planning workflow` |
-| `chore` | — | `chore: update husky pre-commit hooks` |
-| `ci` | — | `ci: add GitHub Actions workflow for lint and test` |
+| Type       | Scope     | Example Commit                                                   |
+| ---------- | --------- | ---------------------------------------------------------------- |
+| `feat`     | `cart`    | `feat(cart): add CartRepository with Prisma queries`             |
+| `feat`     | `auth`    | `feat(auth): implement JWT refresh token rotation`               |
+| `feat`     | `product` | `feat(product): add product listing with pagination`             |
+| `feat`     | `ui`      | `feat(ui): create ProductCard widget with AddToCart feature`     |
+| `feat`     | `admin`   | `feat(admin): add product CRUD management page`                  |
+| `fix`      | `cart`    | `fix(cart): correct discount calculation for percentage coupons` |
+| `fix`      | `auth`    | `fix(auth): prevent refresh token reuse after rotation`          |
+| `refactor` | `order`   | `refactor(order): extract order state machine into service`      |
+| `test`     | `cart`    | `test(cart): add unit tests for cart total with discounts`       |
+| `test`     | `auth`    | `test(auth): add e2e tests for login and refresh flow`           |
+| `docs`     | —         | `docs: update README with planning workflow`                     |
+| `chore`    | —         | `chore: update husky pre-commit hooks`                           |
+| `ci`       | —         | `ci: add GitHub Actions workflow for lint and test`              |
 
 **Rules:**
+
 - Use **imperative mood**: "add" not "added", "fix" not "fixed"
 - Lowercase description, no period at the end
 - Scope is the feature module name (cart, auth, product, order, user, admin)
@@ -199,6 +204,7 @@ type(scope): description
 ### Pre-commit Hooks
 
 Husky + lint-staged runs automatically on commit:
+
 - ESLint on staged `.ts` / `.tsx` files
 - Prettier formatting on staged files
 
@@ -220,4 +226,8 @@ If hooks fail, fix the issues and re-commit. To skip hooks (NOT recommended): `g
 
 When working on this project, read these files for additional context:
 
-- `requirements.md` — Full project requirements document
+- `requirements.md` — Product vision & niche (UA)
+- `BACKLOG.md` — Task status and roadmap (one-line rows; details in `docs/plans/NNN-*.md`)
+- `docs/design-system.md` — Storefront design tokens & UI conventions
+- `docs/conventions/forms.md` — Form state-sync rules (async-seeded forms)
+- `docs/manual-qa-pending.md` — Outstanding manual checks on a running stack
