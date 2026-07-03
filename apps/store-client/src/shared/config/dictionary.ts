@@ -422,6 +422,15 @@ export const dict = {
     // Breadcrumb trail shown above the catalog title.
     breadcrumbHome: "Головна",
     breadcrumbProducts: "Товари",
+    // Category-scoped catalog (`/products?categoryId=…`): the mid crumb links to
+    // the categories hub, the last crumb is the selected category name.
+    breadcrumbCategories: "Категорії",
+    categoryFallback: "Категорія",
+    categorySubtitle: (name: string) =>
+      `Товари з категорії «${name}» — фільтруйте за ціною та сортуйте зручним способом.`,
+    // In-catalog keyword search (`/products?search=…`, distinct from /search).
+    searchTitle: (q: string) => `Пошук: «${q}»`,
+    searchSubtitle: (q: string) => `Результати каталогу за запитом «${q}».`,
   },
 
   // Info & support hub (/info, Info.dc.html import). Content is static (stub)
