@@ -487,6 +487,48 @@ export const dict = {
     },
   },
 
+  // TASK-167-N — Акції (promo) page. Hero copy + countdown are static marketing
+  // content; coupons are static curated codes (no public discount-list API —
+  // TASK-179); deals read real on-sale products; the subscribe form is a stub.
+  promo: {
+    breadcrumbHome: "Головна",
+    breadcrumb: "Акції",
+    hero: {
+      badge: "Гарячий тиждень",
+      heading: "Знижки до −40% на техніку",
+      subtitle:
+        "Найкращі ціни сезону на смартфони, ноутбуки та аудіо. Встигніть — пропозиція діє обмежений час.",
+      cta: "До знижок",
+    },
+    countdown: {
+      aria: "До кінця акції залишилось",
+      days: "днів",
+      hours: "год",
+      minutes: "хв",
+      seconds: "сек",
+    },
+    couponsHeading: "Промокоди тижня",
+    couponCopyAria: (code: string) => `Скопіювати промокод ${code}`,
+    couponCopied: (code: string) => `Промокод ${code} скопійовано`,
+    dealsHeading: "Товари зі знижкою",
+    dealsAll: "Усі",
+    dealsEmpty: "Наразі немає товарів зі знижкою в цьому розділі.",
+    dealsError: "Не вдалося завантажити товари. Спробуйте пізніше.",
+    dealsFilterAria: "Фільтр за категорією",
+    newsletter: {
+      heading: "Першими дізнавайтесь про знижки",
+      subtitle:
+        "Підпишіться — і ми надішлемо промокод −5% на перше замовлення та анонси розпродажів.",
+      placeholder: "Ваш email",
+      emailAria: "Email для підписки",
+      submit: "Підписатися",
+      submitted: "Готово ✓",
+      success: "Дякуємо за підписку!",
+      stubNote:
+        "Форма демонстраційна — підписка поки не надсилається на сервер.",
+    },
+  },
+
   // Categories hub page (/categories, Categories.dc.html import).
   categories: {
     breadcrumbHome: "Головна",
@@ -1088,6 +1130,9 @@ export const dict = {
     notFoundTitle: "Сторінку не знайдено",
     notFoundDescription:
       "Схоже, такої сторінки не існує. Скористайтеся пошуком або поверніться на головну.",
+    promoTitle: "Акції та знижки",
+    promoDescription:
+      "Найкращі ціни сезону — промокоди тижня та товари зі знижкою на смартфони, ноутбуки та аудіо.",
   },
 
   // TASK-077 — variant dots + quick-add overlay on the product card.
