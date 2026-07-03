@@ -155,7 +155,11 @@ export class AuthController {
    */
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  // Looser than login/register: both frontends call refresh on every page load
+  // (twice under dev StrictMode), so 5/min turned a burst of reloads into a
+  // spurious 429 → forced logout (fix/196). Possession of the HttpOnly cookie +
+  // CSRF token guards this route — it is not a credential-guessing surface.
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @UseGuards(JwtRefreshGuard)
   @ApiCookieAuth('refresh-token')
   @ApiOperation({ summary: 'Refresh access token' })
