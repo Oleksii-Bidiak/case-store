@@ -1191,6 +1191,27 @@ export const dict = {
     /** Metadata for the /wishlist route. */
     metaTitle: "Список бажань | MobileStore",
     metaDescription: "Збережені товари у вашому списку бажань.",
+    // TASK-167-P — wishlist redesign (Wishlist.dc.html): a client-side toolbar
+    // (view / sort / add-all) + sidebar filters over the fetched saved items.
+    breadcrumbHome: "Головна",
+    countInList: (n: number) =>
+      `${n} ${n === 1 ? "товар" : "товарів"} у списку`,
+    sortAria: "Сортувати обране",
+    sort: {
+      recent: "Нещодавно додані",
+      priceAsc: "Найдешевші",
+      priceDesc: "Найдорожчі",
+      sale: "Акційні",
+    },
+    quickTitle: "Обирай швидко",
+    quickSale: "Зі знижкою",
+    quickInStock: "В наявності",
+    addAll: "Додати все в кошик",
+    addAllDone: "Товари з обраного додано в кошик",
+    addAllNone: "Немає доступних товарів для додавання",
+    noMatchHeading: "Немає товарів за фільтрами",
+    noMatchBody: "Спробуйте змінити параметри або скинути фільтри.",
+    priceChip: (min: string, max: string) => `${min || "0"} – ${max || "∞"} ₴`,
   },
 } as const;
 

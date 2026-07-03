@@ -1,5 +1,10 @@
 import { QueryClient } from "@tanstack/react-query";
-import { renderWithProviders, screen, within } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  within,
+  userEvent,
+} from "@/shared/test/render";
 import {
   getGetWishlistQueryKey,
   type WishlistItemEntity,
@@ -84,5 +89,54 @@ describe("WishlistView (TASK-076)", () => {
 
     // No hydrated items → empty state, not a broken card.
     expect(screen.getByText(dict.wishlist.emptyHeading)).toBeInTheDocument();
+  });
+
+  it("renders the redesigned toolbar and defaults to the grid view", () => {
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([buildItem()]),
+    });
+
+    expect(
+      screen.getByRole("button", { name: dict.wishlist.addAll }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.filters.viewGrid }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("filters to sale items via the quick filter and surfaces a removable chip", async () => {
+    const user = userEvent.setup();
+    const saleItem = buildItem({
+      id: "s1",
+      productId: "s1",
+      productName: "Sale Phone",
+      productSlug: "sale-phone",
+      price: "100.00",
+      compareAtPrice: "150.00",
+    });
+    const fullItem = buildItem({
+      id: "f1",
+      productId: "f1",
+      productName: "Full Phone",
+      productSlug: "full-phone",
+      price: "200.00",
+      compareAtPrice: null,
+    });
+
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([saleItem, fullItem]),
+    });
+
+    expect(screen.getByText("Sale Phone")).toBeInTheDocument();
+    expect(screen.getByText("Full Phone")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: /Зі знижкою/ }));
+
+    expect(screen.getByText("Sale Phone")).toBeInTheDocument();
+    expect(screen.queryByText("Full Phone")).not.toBeInTheDocument();
+    // The active-filter chip appears (a button that removes the filter).
+    expect(
+      screen.getByRole("button", { name: new RegExp(dict.wishlist.quickSale) }),
+    ).toBeInTheDocument();
   });
 });
