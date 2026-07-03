@@ -2,27 +2,33 @@ import { ShieldCheck, RotateCcw, Truck } from "lucide-react";
 import { dict } from "@/shared/config";
 
 const ITEMS = [
-  { icon: ShieldCheck, label: dict.product.trustSecure },
-  { icon: RotateCcw, label: dict.product.trustReturns },
-  { icon: Truck, label: dict.product.trustDelivery },
+  { icon: Truck, ...dict.product.buyBoxInfo.delivery },
+  { icon: ShieldCheck, ...dict.product.buyBoxInfo.warranty },
+  { icon: RotateCcw, ...dict.product.buyBoxInfo.returns },
 ] as const;
 
 /**
- * ProductTrustBadges — a small reassurance strip shown beneath the Add-to-Cart
- * button on the product detail page. Static presentational component.
+ * ProductTrustBadges — the reassurance rows inside the PDP buy box (delivery,
+ * warranty, returns), each an icon + title + subtitle. Static presentational
+ * component; copy lives in `dict.product.buyBoxInfo`.
  */
 export function ProductTrustBadges() {
   return (
-    <ul className="grid grid-cols-3 gap-2 rounded-lg border border-border bg-muted/40 p-3">
-      {ITEMS.map(({ icon: Icon, label }) => (
-        <li
-          key={label}
-          className="flex flex-col items-center gap-1 text-center text-xs text-muted-foreground"
-        >
-          <Icon className="size-5 text-primary" aria-hidden="true" />
-          {label}
-        </li>
+    <div className="mt-[18px] flex flex-col gap-[13px] border-t border-border pt-4">
+      {ITEMS.map(({ icon: Icon, title, text }) => (
+        <div key={title} className="flex items-start gap-[11px]">
+          <Icon
+            className="size-5 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <div>
+            <b className="block text-[13.5px] font-semibold text-foreground">
+              {title}
+            </b>
+            <span className="text-[12.5px] text-muted-foreground">{text}</span>
+          </div>
+        </div>
       ))}
-    </ul>
+    </div>
   );
 }
