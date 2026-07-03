@@ -75,7 +75,7 @@ export function CategoryNav() {
           {dict.home.categories.heading}
         </h2>
         <Link
-          href="/products"
+          href="/categories"
           className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
         >
           {dict.home.categories.viewAll}
