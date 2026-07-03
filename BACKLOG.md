@@ -51,9 +51,9 @@
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
 | TASK-180 | Fix `.claude/skills` BOM-broken frontmatter, refresh frontend-testing skill, tighten permissions (`PowerShell(*)` removed, local allow-list pruned) | ✅ | — |
-| TASK-181 | Slim BACKLOG.md to one-line rows; extract `docs/manual-qa-pending.md`; archive narrative rows | 🔄 | — |
-| TASK-182 | Consolidate docs: AGENTS.md = single source of rules; requirements.md → short UA product vision; README fix (OpenCode→Claude Code, drop dup architecture); archive stale docs | ⬜ | — |
-| TASK-183 | De-duplicate `.claude/agents` + `commands` (trim re-embedded rules, drop trivial npm-wrapper commands) | ⬜ | — |
+| TASK-181 | Slim BACKLOG.md to one-line rows; extract `docs/manual-qa-pending.md`; archive narrative rows | ✅ | — |
+| TASK-182 | Consolidate docs: AGENTS.md = single source of rules; requirements.md → short UA product vision; README fix (OpenCode→Claude Code, drop dup architecture); archive stale docs | ✅ | — |
+| TASK-183 | De-duplicate `.claude/agents` + `commands` (trim re-embedded rules, drop trivial npm-wrapper commands) | ✅ | — |
 
 ### Етап 1 — Стабілізація наявної логіки
 
