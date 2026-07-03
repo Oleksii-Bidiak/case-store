@@ -2,13 +2,15 @@
 
 import { useEffect, useMemo } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
+import { BarChart3 } from "lucide-react";
 import { useProductControllerFindBySlug } from "@/entities/product";
 import { pushRecentlyViewed } from "@/widgets/recently-viewed";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
-import { Badge, RatingStars } from "@/shared/ui";
+import { RatingStars } from "@/shared/ui";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
 import { ProductImageGallery } from "./product-image-gallery";
 import { ProductSiblingNavigator } from "./product-sibling-navigator";
@@ -23,11 +25,12 @@ function truncate(value: string, max: number): string {
 }
 
 /**
- * ProductDetailView — client orchestrator for the product detail page.
- * Fetches the position by slug and composes the breadcrumb, image gallery,
- * sibling-position navigator, and info panel. Each position is a first-class
- * product, so price/stock/sku read directly from the position row; switching an
- * attribute navigates to a sibling position's slug (TASK-142).
+ * ProductDetailView — client orchestrator for the product detail page (redesign
+ * from the Product.dc.html import). Fetches the position by slug and composes
+ * the breadcrumb, a three-column hero (gallery / info / sticky buy box), the
+ * detail tabs and a related rail. Each position is a first-class product, so
+ * price/stock/sku read directly from the position row; switching an attribute
+ * navigates to a sibling position's slug (TASK-142).
  */
 export function ProductDetailView({ slug }: { slug: string }) {
   const { data, isLoading, isError } = useProductControllerFindBySlug(slug);
@@ -81,9 +84,14 @@ export function ProductDetailView({ slug }: { slug: string }) {
   const onSale =
     product.compareAtPrice != null &&
     Number(product.compareAtPrice) > Number(product.price);
+  const discountPercent = onSale
+    ? Math.round(
+        (1 - Number(product.price) / Number(product.compareAtPrice)) * 100,
+      )
+    : 0;
 
   return (
-    <article className="flex flex-col gap-8 pb-24 md:pb-0">
+    <article className="flex flex-col gap-10 pb-24 md:pb-0">
       <nav aria-label={dict.product.breadcrumbAria}>
         <ol className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <li>
@@ -91,13 +99,13 @@ export function ProductDetailView({ slug }: { slug: string }) {
               {dict.product.breadcrumbHome}
             </Link>
           </li>
-          <li aria-hidden="true">/</li>
+          <li aria-hidden="true">›</li>
           <li>
             <Link href="/products" className="hover:text-primary">
               {dict.product.breadcrumbProducts}
             </Link>
           </li>
-          <li aria-hidden="true">/</li>
+          <li aria-hidden="true">›</li>
           <li>
             <Link
               href={`/products?categoryId=${category.id}`}
@@ -106,53 +114,55 @@ export function ProductDetailView({ slug }: { slug: string }) {
               {category.name}
             </Link>
           </li>
-          <li aria-hidden="true">/</li>
-          <li aria-current="page" className="text-foreground">
+          <li aria-hidden="true">›</li>
+          <li aria-current="page" className="font-medium text-foreground">
             {truncate(product.name, 30)}
           </li>
         </ol>
       </nav>
 
-      <div className="flex flex-col gap-8 md:grid md:grid-cols-2">
-        <ProductImageGallery images={sortedImages} altFallback={product.name} />
+      {/* Hero: gallery + info + sticky buy box. */}
+      <div className="grid grid-cols-1 gap-7 lg:grid-cols-[1fr_1fr_360px] lg:items-start">
+        {/* Gallery with sale badge + wishlist overlay. */}
+        <div className="relative">
+          <ProductImageGallery
+            images={sortedImages}
+            altFallback={product.name}
+          />
+          {onSale && (
+            <span className="absolute top-4 left-4 rounded-[9px] bg-sale px-3 py-1.5 text-sm font-bold text-sale-foreground">
+              −{discountPercent}%
+            </span>
+          )}
+          <div className="absolute top-4 right-4">
+            <WishlistToggleButton
+              productId={product.id}
+              productName={product.name}
+              variant="overlay"
+              className="size-10"
+            />
+          </div>
+        </div>
 
-        <div className="flex flex-col gap-6">
-          <h1 className="font-display text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
+        {/* Info column. */}
+        <div className="flex min-w-0 flex-col gap-[18px]">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-[27px] sm:leading-tight">
             {product.name}
           </h1>
 
-          <RatingStars
-            average={product.ratingAverage}
-            count={product.ratingCount}
-            size="md"
-          />
-
-          <div className="flex items-center gap-3">
-            <p
-              className={`font-display text-3xl font-extrabold tracking-tight ${onSale ? "text-sale" : "text-foreground"}`}
-            >
-              {formatMoney(product.price)}
-            </p>
-            {onSale && product.compareAtPrice && (
-              <>
-                <p className="text-base text-muted-foreground line-through">
-                  {formatMoney(product.compareAtPrice)}
-                </p>
-                <Badge variant="sale">{dict.product.saleBadge}</Badge>
-              </>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+            <RatingStars
+              average={product.ratingAverage}
+              count={product.ratingCount}
+              size="md"
+            />
+            {typeof product.sku === "string" && product.sku.length > 0 && (
+              <span>
+                {dict.product.codeLabel}{" "}
+                <b className="font-mono text-foreground">{product.sku}</b>
+              </span>
             )}
           </div>
-
-          <ProductStockIndicator
-            inStock={product.inStock}
-            lowStock={product.lowStock}
-          />
-
-          {typeof product.sku === "string" && product.sku.length > 0 && (
-            <p className="text-sm text-muted-foreground">
-              {dict.product.sku} {product.sku}
-            </p>
-          )}
 
           {group && (
             <ProductSiblingNavigator
@@ -161,22 +171,63 @@ export function ProductDetailView({ slug }: { slug: string }) {
               currentSlug={product.slug}
             />
           )}
+        </div>
 
-          <div className="flex items-stretch gap-3">
-            <div className="flex-1">
-              <AddToCartButton
-                productId={product.id}
-                disabled={!product.inStock}
+        {/* Sticky buy box. */}
+        <div className="lg:sticky lg:top-20">
+          <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-[var(--shadow-card)]">
+            <div className="mb-1 flex flex-wrap items-end gap-3">
+              <span
+                className={`font-display text-[32px] font-bold tracking-tight ${
+                  onSale ? "text-sale" : "text-foreground"
+                }`}
+              >
+                {formatMoney(product.price)}
+              </span>
+              {onSale && product.compareAtPrice && (
+                <span className="pb-1.5 font-mono text-[17px] text-muted-foreground line-through">
+                  {formatMoney(product.compareAtPrice)}
+                </span>
+              )}
+            </div>
+
+            <div className="mb-4">
+              <ProductStockIndicator
+                inStock={product.inStock}
+                lowStock={product.lowStock}
               />
             </div>
-            <WishlistToggleButton
-              productId={product.id}
-              productName={product.name}
-              variant="inline"
-            />
-          </div>
 
-          <ProductTrustBadges />
+            <div className="mb-2.5 flex items-stretch gap-2.5">
+              <div className="flex-1">
+                <AddToCartButton
+                  productId={product.id}
+                  disabled={!product.inStock}
+                />
+              </div>
+              {/* Compare — parked feature (TASK-085); stubbed as a toast. */}
+              <button
+                type="button"
+                onClick={() => toast(dict.product.compareStub)}
+                aria-label={dict.product.compareAria}
+                className="grid size-12 shrink-0 place-items-center rounded-lg border border-border bg-background text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <BarChart3 className="size-[19px]" aria-hidden="true" />
+              </button>
+            </div>
+
+            {/* Express order — no backend yet (TASK-178); stubbed as a toast. */}
+            <button
+              type="button"
+              onClick={() => toast(dict.product.oneClickStub)}
+              disabled={!product.inStock}
+              className="h-12 w-full cursor-pointer rounded-lg border border-border bg-background text-[15px] font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {dict.product.buyOneClick}
+            </button>
+
+            <ProductTrustBadges />
+          </div>
         </div>
       </div>
 

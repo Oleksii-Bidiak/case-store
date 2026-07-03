@@ -563,12 +563,52 @@ export const dict = {
     tabDescription: "Опис",
     tabSpecs: "Характеристики",
     tabReviews: "Відгуки",
+    tabDelivery: "Доставка й оплата",
     reviewsSoon: "Відгуки незабаром.",
     specsEmpty: "Характеристики ще не додані.",
     relatedTitle: "Схожі товари",
-    trustSecure: "Безпечне оформлення",
-    trustReturns: "Легке повернення",
-    trustDelivery: "Швидка доставка",
+    relatedPrev: "Попередні товари",
+    relatedNext: "Наступні товари",
+    codeLabel: "Код:",
+    // Buy-box secondary actions — no backend yet (express order TASK-178,
+    // product compare TASK-085), so both only surface a toast.
+    buyOneClick: "Купити в 1 клік",
+    oneClickStub: "Оформлення в 1 клік зʼявиться незабаром.",
+    compareAria: "Додати до порівняння",
+    compareStub: "Порівняння товарів зʼявиться незабаром.",
+    // Static reassurance rows inside the buy box.
+    buyBoxInfo: {
+      delivery: {
+        title: "Доставка Новою Поштою",
+        text: "Безкоштовно від 1 000 ₴ · 1–2 дні",
+      },
+      warranty: {
+        title: "Офіційна гарантія 12 міс.",
+        text: "Сервісне обслуговування MobileStore",
+      },
+      returns: { title: "Повернення 14 днів", text: "Без пояснення причин" },
+    },
+    // "Доставка й оплата" tab — static delivery methods (curated copy).
+    deliveryOptions: [
+      {
+        title: "Нова Пошта — відділення / поштомат",
+        text: "1–2 робочі дні по Україні",
+        price: "від 70 ₴",
+        free: false,
+      },
+      {
+        title: "Курʼєр додому",
+        text: "Доставка день у день по місту",
+        price: "90 ₴",
+        free: false,
+      },
+      {
+        title: "Самовивіз із магазину",
+        text: "Готово до видачі за 1 годину",
+        price: "Безкоштовно",
+        free: true,
+      },
+    ],
   },
 
   reviews: {
