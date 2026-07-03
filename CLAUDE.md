@@ -1,10 +1,11 @@
 # store-ai — Claude Code guide
 
-Mobile-accessories e-commerce monorepo (npm workspaces): `apps/store-api` (NestJS,
-Clean Architecture, Prisma/PostgreSQL), `apps/store-client` & `apps/store-admin`
-(Next.js, Feature-Sliced Design). Full project rules are imported below.
+Multi-brand accessories + Apple-tech e-commerce monorepo (npm workspaces):
+`apps/store-api` (NestJS, Clean Architecture, Prisma/PostgreSQL), `apps/store-client` &
+`apps/store-admin` (Next.js, Feature-Sliced Design). Project rules are imported below;
+the product vision (UA) lives in [requirements.md](requirements.md) — read it when scoping
+features, it is intentionally not imported.
 
-@requirements.md
 @AGENTS.md
 
 ## Available subagents (`.claude/agents/`)
@@ -32,7 +33,7 @@ Invoke the matching skill when its area comes up:
 
 - **api-contract** — Swagger decorators ↔ Orval hook generation; the API contract pipeline.
 - **auth-security** — JWT/refresh, guards, RBAC, Helmet/CORS/CSRF, rate limiting (Argon2 hashing).
-- **frontend-testing** — frontend tests (current: Jest/ts-jest logic tests; RTL+MSW is target state).
+- **frontend-testing** — frontend tests: Jest two-project setup (node logic + jsdom RTL/MSW) in store-client, jsdom RTL/MSW in store-admin.
 - **fsd-component** — building/placing a component within FSD layers + import-direction rules.
 - **nestjs-module** — scaffolding a backend feature module (controller→service→repository).
 - **nextjs-app-router** — App Router routing, server/client components, metadata/SEO.
@@ -50,9 +51,12 @@ Invoke the matching skill when its area comes up:
 - Frontend imports flow **downward only**: `app → widgets → features → entities → shared`.
 - Frontend API calls use **Orval-generated hooks** only — never manual `fetch`/`axios`.
   Generated files live in `**/shared/api/generated/` and must not be hand-edited.
-- `BACKLOG.md` is the single source of task status — mark tasks ✅ when done and tested.
-- A pre-commit hook blocks editing `.env*` and generated API files, and blocks commits
-  on `main` (see `.claude/settings.json`). `.ts`/`.tsx` files are auto-formatted on save.
+- `BACKLOG.md` is the single source of task status — one-line rows only; narratives go to
+  the linked `docs/plans/NNN-*.md`. Mark tasks ✅ when done and tested; manual-only checks
+  go to `docs/manual-qa-pending.md`.
+- Claude Code PreToolUse hooks block editing `.env*` and generated API files, and block
+  commits on `main` (see `.claude/settings.json`); a separate Husky pre-commit runs
+  lint-staged. `.ts`/`.tsx` files are auto-formatted on save.
 - **Form state sync** — when a form/input is seeded from async server data, follow
   `docs/conventions/forms.md`: never seed `useState` from such a prop without a sync guard
   (render-time guard or `lastPushedRef` `useEffect`; never `key`-remount a focus-sensitive
