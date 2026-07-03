@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-195**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-227**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -59,9 +59,51 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-101 | Run [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md) to closure on a running stack; triage breakage into `fix/NNN` tasks (critical: data/security/checkout fixed immediately) | ⬜ | — |
-| TASK-105-D | Run Playwright E2E (`npm run test:e2e:pw`) — needs DB + `npx playwright install chromium` + booted API/client | 🔄 | 048 |
+| TASK-101 | Run [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md) to closure on a running stack; triage breakage into `fix/NNN` tasks. **Owner pass done 2026-07-03** → bugs TASK-195…212 below; re-run blocked rows after TASK-195/196 land; §4 (NP/SMTP/Sentry keys) pending keys | 🔄 | — |
+| TASK-105-D | Run Playwright E2E (`npm run test:e2e:pw`) — globalSetup env crash fixed (TASK-203); re-run on a booted stack | 🔄 | 048 |
 | TASK-184 | Nav tails: footer «Інформація» links → `/info` + `/legal` (now point at `/products`); admin sidebar dead `Settings` link → `/settings/contact` | ⬜ | — |
+
+#### Баги з QA-проходу 2026-07-03 *(порядок = пріоритет; спершу CRITICAL)*
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-195 | **[CRITICAL]** Checkout «Далі» does nothing — no order can be placed (blocks TASK-119/124/131/167-J re-test). Suspects: silent zod validation fail (no error render/focus) and/or hydration fallout (see TASK-197); repro on a running stack | ⬜ | — |
+| TASK-196 | **[CRITICAL]** Session lost on reload on **both** apps (storefront + admin log out on F5) and guest wishlist (possibly cart) wiped after login-merge (QA «Сценарій 1»; also admin smoke TASK-059-B row). Investigate refresh-cookie/CSRF path in dev | ⬜ | — |
+| TASK-197 | Hydration mismatch «0 грн» vs «0 ₴» in every money render (header cart badge first) — `formatMoney` now formats the number via Intl and appends ₴ manually (SSR-stable across ICU versions) | ✅ | — |
+| TASK-198 | Promo code fails on `/cart` with generic «Не вдалося застосувати промокод» but the same code applies on `/checkout` (shared `ApplyDiscount`) — capture Network status + error body on `/cart` | ⬜ | — |
+| TASK-199 | Grouped-card advertised price mismatch: «Double Pack» card shows the Single-Pack price; PDP then opens the correct Double-Pack position (card advertised-price/variant mapping, TASK-126 area) | ⬜ | — |
+| TASK-200 | Search: cyrillic «афйон» finds nothing while latin typo `ihpone` works — add UA↔EN transliteration/synonym settings to the Meili index (seed product names are EN) | ⬜ | — |
+| TASK-201 | Admin: category **parent** resets while editing — must re-select it to save (TASK-149 regression in a real browser; check Radix Select vs the id-keyed `reset()`) | ⬜ | — |
+| TASK-202 | Login says «Невірний email або пароль» for a previously-registered email (QA «Сценарій 2», `test@gmail.com`); also return a distinct message for **banned** accounts instead of the same generic error | ⬜ | — |
+| TASK-203 | Playwright `globalSetup` crashed (`PrismaClientInitializationError`) — `seed-e2e.ts` now loads `apps/store-api/.env` before constructing PrismaClient | ✅ | — |
+| TASK-204 | Cart line items: product link missing in the cart widget; clicking the image visually reloads it (TASK-133 leftover) | ⬜ | — |
+| TASK-205 | Cart API exposes raw `items[].stock` (QA-confirmed leak) — replace with a capped `maxQty` in the contract; stepper logic unchanged (stock-hiding follow-up to TASK-158) | ⬜ | — |
+| TASK-206 | Checkout «Ваше замовлення» summary slides **under** the sticky header on scroll (z-index/top offset) | ⬜ | — |
+| TASK-207 | Cart qty input: manual clear leaves «0» — restore the previous value on blur when left empty | ⬜ | — |
+| TASK-208 | Catalog price slider not synced with the min/max inputs | ⬜ | — |
+| TASK-209 | `/legal/[slug]` looked template-only in QA — verify content rendering against a published `Page` (needs repro; may be a no-seeded-pages artifact) | ⬜ | — |
+| TASK-210 | Storefront image/listing perf: catalog of 10 products ≈15-20s on 3G, images appear to load all at once — verify lazy-loading + profile a **prod build** (dev Turbopack slowness is expected; TASK-074 follow-up) | ⬜ | — |
+| TASK-211 | «Ви переглядали» uses the outdated card UI — reuse the PopularRail slider + current `ProductCard`/`ProductCardActions` | ⬜ | — |
+| TASK-212 | Font-preload console warnings (`woff2 preloaded but not used`) — best-effort fix (from TASK-138) | ⬜ | — |
+
+#### UX-покращення та discovery з QA-проходу *(виконувати після багів; частина живиться Етапами 2–3)*
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-213 | Product cards show a persistent «в кошику» state derived from the cart query (survives reload) | ⬜ | — |
+| TASK-214 | PDP gallery: loading indicator while switching images + pixel-perfect PDP skeletons matching the mockup layout | ⬜ | — |
+| TASK-215 | Colour variant axis → round colour **swatches** (map colour names to real colours) on PDP/card selectors | ⬜ | — |
+| TASK-216 | Catalog listing UX: page-size selector / «показати більше» / infinite scroll with virtualization (also for rail sliders); rethink the «Категорія» filter placement; dynamic per-category filters ride on TASK-191 | ⬜ | — |
+| TASK-217 | Move `/orders` into `/account` as a section — **waits for the owner's Claude Design mockup import** | 🅿️ | — |
+| TASK-218 | Header search: mixed suggestions — products + up to 5 blog articles with a separator, independently scrollable. Depends on TASK-170 | ⬜ | — |
+| TASK-219 | **[discovery]** Coupons v2: capability proposal (stacking, auto-apply, first-order, per-category/brand, personal codes, gift cards) + full automated coverage plan (owner request from QA) | ⬜ | — |
+| TASK-220 | **[discovery]** Reviews v2: benchmark big-store mechanics (edit window, moderator reply, re-review, spam/rate-limits, photos, helpful votes) → proposal (owner request from QA) | ⬜ | — |
+| TASK-221 | Admin contact-settings UX: structured working-hours editor (days/hours form) instead of free text | ⬜ | — |
+| TASK-222 | **[discovery]** Category & variant architecture: modern hierarchy (ktc.ua-style) + admin authoring guide («як створювати і підвʼязувати категорії/групи/варіанти») — feeds Етап 3 (TASK-189…191) | ⬜ | — |
+| TASK-223 | **[discovery]** Admin dashboard / CRM feature checklist (owner has no CRM background — propose metrics, widgets, workflows) — feeds TASK-192 | ⬜ | — |
+| TASK-224 | **[discovery]** Inventory: available-vs-reserved stock («вільні залишки») concept for the order×stock matrix — pairs with TASK-124 semantics | ⬜ | — |
+| TASK-225 | Storefront UI/UX audit: hover/cursor states, a11y, adaptivity; verify footer theming in dark mode — feeds TASK-193 | ⬜ | — |
+| TASK-226 | **[discovery]** User stories for customer journeys (best-experience scenarios) — feeds TASK-193/194 and marketing | ⬜ | — |
 
 ### Етап 2 — Контент-платформа CRM
 
@@ -73,7 +115,7 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-187 | Publishing foundation: shared publish-status pattern + cron publisher + storefront on-demand revalidation (`revalidateTag`) + retrofit onto `Page` | ⬜ | — |
+| TASK-187 | Publishing foundation: shared publish-status pattern + cron publisher + storefront on-demand revalidation (`revalidateTag`) + retrofit onto `Page`. Also fixes the QA finding «контакти на /info оновлюються лише після hard-reload» (ISR staleness) | ⬜ | — |
 | TASK-185 | Server-side HTML sanitization (`sanitize-html`) for rich-text content (`Page.content`, future blog/banners) — required before TASK-170 | ⬜ | — |
 | TASK-170 | Blog backend: `BlogPost` model (+category taxonomy) with publishing fields; public `GET /api/blog` (filter/search/pagination) + `/:slug`; Orval regen | ⬜ | — |
 | TASK-172 | Blog admin CMS: CRUD with `RichTextEditor`, draft/schedule/publish, featured, category; `/blog*` admin routes + sidebar. Depends on TASK-170 | ⬜ | — |
@@ -143,6 +185,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-195**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-227**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
