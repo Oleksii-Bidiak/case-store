@@ -1,62 +1,325 @@
-# Pending Manual QA
+# Pending Manual QA — покроковий ранбук (TASK-101, Етап 1)
 
-> Extracted from BACKLOG.md on 2026-07-03 (TASK-181). Code for every item shipped with
-> automated gates green; each needs a one-off check on a running stack.
-> Working through this list to closure is **TASK-101 (Етап 1 — стабілізація)**:
-> verify each item, tick it off, and file anything broken as a `fix/NNN` task in BACKLOG.md.
+> **Для кого:** для людини, яка **не знається на QA**. Кожен пункт розписано як
+> **Зроби:** (конкретні дії) → **Має бути:** (очікуваний результат).
+> Базові поняття (DevTools, Network, cookie, статус-коди) пояснені в
+> [`manual-qa-master.md`](./manual-qa-master.md) §«Як користуватися» — прочитай його шапку один раз.
+>
+> **Як відмічати:** пройшло — постав `- [x]`. Не пройшло — постав ❌ прямо в рядку і
+> опиши, що сталося (наприклад: `❌ купон приймається, але сума не змінюється`).
+> **Нічого не виправляй сам** — кожне ❌ потім стає задачею `fix/NNN` у `BACKLOG.md`
+> (наступний вільний ID дивись у шапці BACKLOG, зараз TASK-195).
 
-## Інтеграційні прогони (потрібні контейнери / test DB)
+---
 
-- [ ] **TASK-044-I** — Real-Redis cache hit/miss/invalidation int run. _Needs Docker Redis up._
-- [ ] **TASK-066 / TASK-152** — Dashboard raw-SQL int-spec (rewritten to current schema: `paymentStatus=PAID` revenue + top-products + low-stock): `npm run test:int -w apps/store-api` against `store_test`. Also visually confirm the dashboard shows the Top-products and low-stock tables. _Needs `test:int` DB._
-- [ ] **TASK-137** — Dashboard shows earned vs unrealized (ordered-but-unpaid) revenue cards; run the unrealized int-spec against `store_test`. _Needs `test:int` DB._
-- [ ] **TASK-105-D** — Run Playwright E2E (`npm run test:e2e:pw`, 4 specs). _Needs DB + `npx playwright install chromium` + booted API/client._
+## Крок 0. Підготовка стенду (обов'язково перед усім)
 
-## Сторфронт — флоу
+Потрібно 4 вікна терміналу (кожна команда працює постійно). Виконуй з кореня репозиторію.
 
-- [ ] **TASK-045-I** — JSON-LD present in product HTML. _Needs live API._
-- [ ] **TASK-119** — Checkout submit → lands on `/orders/{uuid}/confirmation` (not empty `/cart`); confirmation shows UA address (city, delivery address, phone, «Україна») + items/totals; empty-cart and unauth guards still redirect. _Full checklist in plan 053._
-- [ ] **TASK-118** — Guest→user cart merge: guest adds items → login/register → items present without reload; reload while logged in keeps cart non-empty.
-- [ ] **TASK-126** — Product card → PDP: a sale card opens with the cheapest/advertised variant pre-selected (not alphabetically-first); price matches the card; variant override works. _Thumbnail strip needs the TASK-128 multi-image seed; see `manual-qa-master.md` A1._
-- [ ] **TASK-120-E** — Tab freeze / bfcache restore: background the tab until the browser freezes it, then return → products/cart/header recover (no infinite skeleton); normal tab switch doesn't refetch-storm; F5 works. _Wedge guard proven via Playwright; real-browser bfcache pass still pending (headless Chromium disables true bfcache)._
-- [ ] **TASK-132 / TASK-158** — Stock hiding: PDP + cart show only a status (В наявності / Закінчується / Немає), never a raw count; public `GET /products` + `/products/:slug` expose no `stock` (only `inStock`/`lowStock`); cart qty stepper still capped per `item.stock`.
-- [ ] **TASK-133 / TASK-134** — Cart & order line items show the real product image (placeholder fallback) and link to the correct PDP `/products/{slug}`; order-details layout correct on desktop + mobile.
-- [ ] **TASK-130** — Header: logged-in user sees the account icon + dropdown (cabinet / orders / logout), guest sees login/register; mobile Sheet sections; Esc + keyboard nav + focus-return.
-- [ ] **TASK-131** — Order cancel: a PENDING order shows a Cancel button → confirm flips to CANCELLED, refetches list/detail, auto-returns stock (TASK-124 path); non-PENDING shows no button.
-- [ ] **TASK-124** — Order stock×status matrix: stock drops at creation; forward transitions don't change it; pre-shipment cancel (PENDING/CONFIRMED/PROCESSING→CANCELLED) auto-restocks; SHIPPED/DELIVERED cancel + REFUNDED do NOT; no double-credit on repeat cancel. _Run the matrix in `manual-qa-master.md` §C2-a._
-- [ ] **TASK-077** — Variant dots + quick-add: a grouped-product card shows colour dots + «from {price}»; hover/keyboard-focus reveals quick-add for the default (cheapest) variant; out-of-stock default disables it.
-- [ ] **TASK-074** — Image optimization: images load via `next/image` (lazy, blur/shimmer placeholder); first above-the-fold row loads eagerly (no layout shift); remote `/uploads/**` host renders without a Next image-host error.
-- [ ] **TASK-079** — Coupons: admin creates a percent + a fixed code (min-spend/expiry/caps); valid code in cart shows discount + updated total; invalid/expired/below-min/used-up shows the typed error; order persists `discount`/`discountCode` and increments `redeemedCount`; server recomputes (tampered client amount ignored).
-- [ ] **TASK-076** — Wishlist: guest hearts persist across reload (`wishlistToken`); on login/register the guest list merges without duplicates; header badge updates; `/wishlist` lists items and remove works.
-- [ ] **TASK-075** — Search UI (browser): header autocomplete as you type (debounced), keyboard up/down/enter/esc, suggestion opens the PDP, Enter opens `/search?q=`; results page renders cards + empty state; mobile Sheet hosts the box. _Needs the `meilisearch` container + `MEILI_HOST`/`MEILI_MASTER_KEY`; without them search falls back to Postgres. API path already live-verified._
-- [ ] **TASK-078 / TASK-106** — Reviews end-to-end: logged-in user submits on the PDP → hidden until admin approves in `/reviews` → after approve it appears in the Reviews tab with the aggregate rating; verified-purchase badge for buyers; duplicate submit returns 409.
+1. **Інфраструктура:** `docker compose up -d`
+   → Postgres (5432), Redis (6379), Meilisearch (7700) запущені. Перевір: `docker ps` — три контейнери `Up`.
+2. **Міграції + дані:** `npm run db:migrate`, потім `npm run db:seed`
+   → у консолі `✓ Users: admin=…, customer=…`, 32 товари, 13 категорій.
+3. **API:** `npm run start:dev -w apps/store-api` → працює на `http://localhost:3001`, Swagger: `http://localhost:3001/api`.
+4. **Вітрина:** `npm run dev -w apps/store-client` → `http://localhost:3000`.
+5. **Адмінка:** `npm run dev -w apps/store-admin` → `http://localhost:3002`.
+6. **Перевір `NEXT_PUBLIC_API_URL`** в `apps/store-client/.env.local` і `apps/store-admin/.env.local`:
+   має бути `http://localhost:3001` **без** `/api` в кінці (деталі — master §Крок 1).
+7. Для пошуку (пункт TASK-075) в `apps/store-api/.env` мають бути `MEILI_HOST=http://localhost:7700`
+   і `MEILI_MASTER_KEY=…` (той самий, що в `docker-compose.yml`). Після зміни `.env` перезапусти API.
 
-## Адмінка
+**Акаунти (з сіда):**
 
-- [ ] **TASK-059-B / TASK-112** — Admin login + silent refresh + CSRF path smoke. _Refresh-path bug already fixed; live smoke pending._
-- [ ] **TASK-141-B** — Product/category edit forms reflect a background refetch on pristine fields while preserving in-progress edits (open form → focus another tab → return).
-- [ ] **TASK-151** — Order detail (B4): status select offers every status; the separate payment-status select changes payment independently — CONFIRMED does NOT auto-mark PAID and vice versa; pre-shipment cancel still auto-restocks.
-- [ ] **TASK-150** — Users filter + ban (B5): «Активний/Неактивний/Усі статуси» returns the correct set; a banned customer with a live access token gets `403` on `POST /api/orders` and cannot refresh. _Gap B (other authed endpoints during the ≤15-min token window) deferred by owner decision._
-- [ ] **TASK-136** — Creating a product with an empty slug → backend derives it; live slug preview renders; dead header search removed.
-- [ ] **TASK-155** — Staff preview of deactivated products: deactivate → «Переглянути» on the edit page opens `/products/preview/{slug}` (full detail + amber banner); the same slug still 404s on the storefront; non-admin token gets 403 on the preview API.
-- [ ] **TASK-091** — Image pre-optimization: admin JPEG/PNG upload stores a smaller `.webp` + non-null `blurDataUrl`; storefront shows a real per-image blur-up (not the generic shimmer); animated GIF passes through (no `blurDataUrl`); old seed images still render via shimmer. _Optional backfill is a documented follow-up._
+- Адмін: `admin@store.com` / `Admin123!` (адмінка на :3002)
+- Покупець A: `customer@store.com` / `Customer123!`
+- Покупець B: зареєструй сам на вітрині (наприклад `customerb@store.com` / `Customer123!`) —
+  потрібен для перевірок бану і злиття кошиків.
 
-## Зовнішні інтеграції (потрібні ключі/ENV)
+**Як увімкнути темну тему для візуальних перевірок:** DevTools (F12) → `Ctrl+Shift+P` →
+набери «Rendering» → у панелі знайди **Emulate CSS media feature prefers-color-scheme** → `dark`.
+Сайт слідує системній темі, окремого перемикача немає.
 
-- [ ] **TASK-080-A…D** — Nova Poshta live: with a real `NP_API_KEY` — city search returns real settlements, warehouse list populates, checkout shows real cost + ETA, order persists NP refs + `shippingCost`. _Automated coverage mocks the NP client; this validates the live contract._
-- [ ] **TASK-103** — Mail outbox: order returns immediately and writes a `mail_outbox` PENDING row in the same transaction; with `MAIL_ENABLED=true` the cron sends → SENT; forced SMTP failure retries with backoff → FAILED after maxAttempts; with mail disabled rows drain as no-op SENT. _Needs SMTP._
-- [ ] **TASK-048** — Sentry: with DSNs set, a deliberate API 500 and a thrown storefront/admin render error land in Sentry tagged with the right `environment`; a 4xx is NOT sent; without DSN all three apps run as before. _CI source-map upload is a documented follow-up._
-- [ ] **TASK-138** — No Radix `aria-describedby` warning opening the mobile-menu Sheet; «Mail disabled — skipping…» visible at info level; reproduce the link-preload warning in a browser then fix (best-effort).
+---
 
-## Дизайн-імпорт — візуальні проходи (light + dark)
+## 1. Інтеграційні прогони (термінал, браузер майже не потрібен)
 
-- [ ] **TASK-167-A/B/C** — Chrome redesign (plan 096): search pill «Каталог ▾ / input / 🔍» with the catalog panel + typo-tolerant suggestions anchored to the pill and mutually exclusive; guest «Кабінет» opens the auth slide-out (Вхід/Реєстрація tabs, close-on-success, terms checkbox, forgot/Google/Apple stubs toast); header cart opens the mini-cart slide-out (qty stepper + remove reconcile with the cache; «Оформити» → /checkout, «Перейти в кошик» → /cart); dark footer: four columns + socials + payment pills; wishlist heart on recently-viewed + related cards. _Check footer contrast in both modes; verify slide-out login/register authenticates end-to-end; mini-cart changes reflect on /cart._
-- [ ] **TASK-167-D** — Blog listing `/blog` pixel-close to `Blog.dc.html`: hero + search, category chips with counts, featured card, responsive grid, empty state, gated load-more, newsletter block; filter/search/load-more behave; breadcrumb renders. _Static seed; `/blog` not yet in nav (TASK-173)._
-- [ ] **TASK-171** — Blog article `/blog/{slug}` pixel-close to `Article.dc.html`: head (badge/title/lead/author/share), cover, body + sticky TOC (smooth-scroll, hidden on narrow), tags, author-bio, «Читайте також» grid; copy-link fires the toast; Telegram/Facebook share windows open; every card opens its article (no 404). _Shared demo body until TASK-170._
-- [ ] **TASK-167-E** — Legal document `/legal/{slug}` in the `Legal.dc.html` template: doc head («Чинна редакція від …», «Завантажити PDF»), sticky scroll-spy TOC (numbered, smooth-scroll), auto-numbered `<h2>`s, contact CTA, «Інші правові документи» grid; print produces a clean doc. _Needs a seeded `Page`._
-- [ ] **TASK-167-F** — Legal hub `/legal` in the `LegalHub.dc.html` template: hero, a tile per published page (icon/title/excerpt/«Оновлено …»), support CTA; tiles open their document; the doc breadcrumb returns to the hub. _Needs seeded `Page`s._
-- [ ] **TASK-167-G** — Cart `/cart` matches `Cart.dc.html`: two-column layout, line items (image/name/availability/trash/stepper/sale strikethrough), «Додати ще товари» + «Очистити кошик» (confirm), summary with promo + «До сплати», delivery/payment stub cards; qty/remove/optimistic totals behave, a real coupon applies, clear-cart empties, checkout → `/checkout`; add-on-services toggles update the summary. _Services are a stub, not persisted through checkout (TASK-174)._
-- [ ] **TASK-167-H** — Account `/account` matches `Account.dc.html`: sticky sidebar (user card/nav/logout), «Особисті дані» saves name + phone (email read-only), «Історія замовлень»/«Обране» navigate, «Бонуси»/«Налаштування»/«Покупки»/«Історія перегляду»/«Порівняння» render their stubs, logout ends the session.
-- [ ] **TASK-167-I** — Categories hub `/categories` matches `Categories.dc.html`: sticky root-category rail (active state), selected group shows title + description + subcategory tiles linking to `/products?categoryId=…`, «Популярні бренди» strip (stub); rail switches the group; tiles open the filtered catalog. _Needs seeded categories._
-- [ ] **TASK-167-J** — Checkout `/checkout` matches `Checkout.dc.html`: step indicator (Доставка→Перевірка), contacts + NP delivery cards, payment stub, «Ваше замовлення» summary (avatars + qty, promo, subtotal / real NP estimate / total), «Далі» → review → «Підтвердити» creates the order → confirmation; prefill + phone mask + NP autocomplete work. _Payment radios / «списати бонуси» are inert stubs._
-- [ ] **TASK-167-K** — Info & support `/info` matches `Info.dc.html`: side nav switches Доставка/Гарантія/FAQ/Про нас/Контакти (deep-links via `#hash`), FAQ accordion expands, Контакти shows the real `SiteContactSettings` + «Напишіть нам» demo form; the legal contact CTA lands on `/info#contacts`. _Needs a seeded `SiteContactSettings`; form is a stub (TASK-177)._
+- [ ] **TASK-105-D — Playwright E2E.**
+      **Зроби:** стек запущений (Крок 0); одноразово `npx playwright install chromium`; потім `npm run test:e2e:pw`.
+      **Має бути:** 4 специфікації зелені. Якщо падають — скопіюй назву тесту й помилку в ❌.
+
+- [ ] **TASK-044-I / TASK-066 / TASK-152 / TASK-137 — інтеграційні тести на реальній БД (`test:int`).**
+      **Зроби:** створи тестову БД (одноразово):
+      `docker exec store_postgres psql -U postgres -c "CREATE DATABASE store_test;"`
+      Потім запусти: `npm run test:int -w apps/store-api`.
+      Якщо команда скаржиться на підключення — запусти з явним підключенням:
+      `DATABASE_URL="postgresql://postgres:postgres@localhost:5432/store_test" npm run test:int -w apps/store-api`
+      (звір логін/пароль зі своїм `docker-compose.yml`).
+      **Має бути:** всі int-тести зелені (Redis-кеш hit/miss/інвалідація + дашборд-виручка/топ-товари/low-stock + unrealized-виручка).
+
+- [ ] **TASK-152 / TASK-137 (візуальна частина) — дашборд адмінки.**
+      **Зроби:** зайди адміном на `http://localhost:3002` → Dashboard.
+      **Має бути:** картки виручки показують **зароблену** (оплачені замовлення) і **незароблену**
+      (замовлено, не оплачено) окремо; нижче графіків є таблиця **Топ-товари** (ранг / назва / виручка в ₴)
+      і таблиця **Закінчується на складі**. Якщо все по нулях — спершу оформи 1-2 замовлення (розділ 2)
+      і познач одне як PAID в адмінці.
+
+---
+
+## 2. Сторфронт — флоу (браузер, http://localhost:3000)
+
+- [ ] **TASK-045-I — JSON-LD на сторінці товару.**
+      **Зроби:** відкрий будь-який товар → `Ctrl+U` (вихідний код) → `Ctrl+F` → шукай `ld+json`.
+      **Має бути:** блок `<script type="application/ld+json">` з `"@type":"Product"`, назвою і ціною.
+
+- [ ] **TASK-119 — checkout від і до.**
+      **Зроби:** увійди як Покупець A → додай товар у кошик → `/checkout` → заповни форму
+      (місто/відділення через автопідказку НП, якщо без ключа — просто текстом) → «Далі» → перевір
+      дані на кроці «Перевірка» → «Підтвердити».
+      **Має бути:** редірект на `/orders/{довгий-id}/confirmation` (НЕ на порожній `/cart`);
+      на підтвердженні — адреса з містом/відділенням/телефоном і «Україна», товари й суми збігаються.
+      **Додатково:** відкрий `/checkout` з порожнім кошиком → має редіректити геть; розлогінься
+      і відкрий `/checkout` → має вести на вхід.
+
+- [ ] **TASK-118 — злиття кошика гостя.**
+      **Зроби:** розлогінься → додай 2 товари в кошик як гість → увійди як Покупець A.
+      **Має бути:** товари гостя в кошику одразу, без F5; після F5 кошик не порожніє.
+
+- [ ] **TASK-126 — картка → сторінка товару (акційний варіант).**
+      **Зроби:** знайди в каталозі картку з перекресленою ціною, запам'ятай ціну → клікни.
+      **Має бути:** відкрився саме той (найдешевший/рекламований) варіант, ціна = ціні з картки;
+      перемикання варіанта (колір/обсяг) далі працює і змінює ціну.
+
+- [ ] **TASK-132 / TASK-158 — приховання залишків.**
+      **Зроби:** відкрий товар і кошик; потім F12 → Network → онови сторінку → відкрий відповідь
+      запиту `products`.
+      **Має бути:** на сторінках лише статус («В наявності» / «Закінчується» / «Немає»), ніде немає
+      числа штук; у JSON-відповіді публічного API немає поля `stock` (лише `inStock`/`lowStock`);
+      але степер у кошику не дає набрати більше, ніж є на складі (у сіді є товар
+      «Braided USB-C … 2m» зі stock=0 — його кнопка «Купити» неактивна).
+
+- [ ] **TASK-133 / TASK-134 — фото і лінки в кошику та замовленні.**
+      **Зроби:** кошик з 2+ товарами; потім будь-яке замовлення в `/orders` → деталі. Звузь вікно до мобільної ширини.
+      **Має бути:** у рядках — реальні фото товару (не сіра заглушка), клік по назві/фото веде на
+      сторінку товару; верстка деталей замовлення не розсипається ні на десктопі, ні на мобільній ширині.
+
+- [ ] **TASK-130 — хедер: акаунт.**
+      **Зроби:** залогінений — клікни іконку акаунта; гість — подивись той самий кут; мобільна ширина — бургер-меню.
+      **Має бути:** залогінений бачить дропдаун (кабінет / замовлення / вихід), гість — вхід/реєстрацію;
+      Esc закриває меню, Tab ходить по пунктах, фокус повертається на кнопку після закриття.
+
+- [ ] **TASK-131 — скасування замовлення покупцем.**
+      **Зроби:** створи замовлення (воно PENDING) → `/orders` → деталі → «Скасувати» → підтвердь.
+      Запам'ятай залишок товару до/після (видно по статусу «Закінчується»/адмінці).
+      **Має бути:** статус стає CANCELLED без F5; склад повернувся (в адмінці stock +N); у замовлення
+      зі статусом інше ніж PENDING кнопки скасування немає.
+
+- [ ] **TASK-124 — матриця «статус × склад» (КРИТИЧНО).**
+      **Зроби:** пройди готову покрокову матрицю в [`manual-qa-master.md`](./manual-qa-master.md) §C2-a.
+      **Має бути:** склад списується при створенні; рух статусів уперед його не змінює; скасування
+      ДО відправки повертає склад; скасування після SHIPPED/DELIVERED і REFUNDED — НЕ повертає;
+      повторне скасування не нараховує склад двічі.
+
+- [ ] **TASK-077 — точки-кольори на картці.** _(поведінку оновив TASK-167-C: quick-add по ховеру
+      замінено постійною кнопкою «Купити»)._
+      **Зроби:** знайди картку товару з варіантами кольорів (чохли з сіда).
+      **Має бути:** на картці кольорові точки і ціна «від {N} ₴»; «Купити» додає в кошик
+      дефолтний (найдешевший) варіант; якщо дефолтний варіант відсутній на складі — кнопка неактивна.
+
+- [ ] **TASK-074 / TASK-091 — зображення.**
+      **Зроби:** повільно скроль каталог (можна F12 → Network → фільтр Img); окремо: в адмінці завантаж
+      у товар власний JPEG і подивись на нього на вітрині.
+      **Має бути:** нижні картинки довантажуються ліниво з blur/шимером; перший ряд — одразу, без
+      стрибків верстки; у консолі немає помилки про незареєстрований image-host. Завантажений JPEG
+      зберігся як `.webp` (видно в Network за розширенням URL), на вітрині в нього справжній blur-up
+      (розмита мініатюра, не сірий шимер); анімований GIF вантажиться і анімується як був.
+
+- [ ] **TASK-079 — купони.**
+      **Зроби:** в адмінці `/discounts` створи два коди: відсотковий і фіксований (постав min-spend
+      та термін дії). На вітрині в кошику застосуй валідний код; потім спробуй неіснуючий,
+      прострочений і код нижче min-spend. Оформи замовлення з купоном.
+      **Має бути:** валідний код показує знижку і новий підсумок; кожен невалідний — своє зрозуміле
+      повідомлення; в адмінці замовлення видно `discountCode` і суму знижки; у `/discounts` лічильник
+      використань +1.
+
+- [ ] **TASK-076 — вішліст.**
+      **Зроби:** як гість натисни сердечка на 2 товарах → F5 → перевір `/wishlist` → увійди як Покупець A.
+      **Має бути:** сердечка пережили F5 (кука `wishlistToken`); після входу гостьовий список злився
+      з акаунтом без дублікатів; лічильник на іконці в хедері оновлюється; видалення зі сторінки
+      `/wishlist` працює.
+
+- [ ] **TASK-075 — пошук (потрібен Meilisearch, див. Крок 0 п.7).**
+      **Зроби:** у полі пошуку в хедері набери з помилкою `ihpone`, потім `афйон`; пострілкуй
+      вгору/вниз, Enter на підказці і Enter на тексті; Esc.
+      **Має бути:** випадаючі підказки з правильними товарами попри помилки; стрілки ходять по
+      підказках, Enter на підказці відкриває товар, Enter на тексті — `/search?q=…` з картками
+      і порожнім станом для нісенітниці; Esc закриває. На мобільній ширині поле живе в бургер-меню.
+
+- [ ] **TASK-078 / TASK-106 — відгуки з модерацією.**
+      **Зроби:** Покупцем A на сторінці товару залиш відгук → перевір вкладку відгуків → адмінкою
+      зайди в `/reviews` і схвали → повернись на товар. Спробуй лишити другий відгук на той самий товар.
+      **Має бути:** до схвалення відгук не видно; після — з'явився, середній рейтинг перерахувався;
+      якщо Покупець A купував цей товар — біля відгуку бейдж підтвердженої покупки; повторний
+      відгук відхиляється з повідомленням (сервер відповідає 409 — видно в Network).
+
+- [ ] **TASK-120-E — «заморожена» вкладка (best-effort).**
+      **Зроби:** відкрий каталог → згорни браузер / переключись на інші програми на 10-15 хв
+      (щоб браузер заморозив вкладку) → повернись.
+      **Має бути:** сторінка ожила сама (немає вічних скелетонів); звичайне перемикання вкладок не
+      викликає шторм повторних запитів (Network); F5 працює. _Якщо не відтворюється — просто
+      постав ✅, це захисний механізм._
+
+---
+
+## 3. Адмінка (браузер, http://localhost:3002)
+
+- [ ] **TASK-059-B / TASK-112 — вхід + тихе оновлення сесії.**
+      **Зроби:** увійди адміном → F5 кілька разів → лиши вкладку на ~20 хв → поклацай розділи.
+      **Має бути:** жодного вильоту на логін; у Network періодично `POST /api/auth/refresh` зі
+      статусом 200 (це і є «тихе оновлення»).
+
+- [ ] **TASK-141-B — фонове оновлення форми не з'їдає введене.**
+      **Зроби:** відкрий редагування товару → зміни ціну, але НЕ зберігай → переключись на іншу
+      вкладку браузера на хвилину → повернись.
+      **Має бути:** твоя незбережена ціна на місці (фоновий рефетч не перезаписав поле).
+
+- [ ] **TASK-151 — статус замовлення і статус оплати незалежні (B4).**
+      **Зроби:** відкрий деталі замовлення → перемкни статус на CONFIRMED → подивись статус оплати;
+      потім постав оплату PAID → подивись статус замовлення; потім скасуй неношене замовлення (до відправки).
+      **Має бути:** селект статусу пропонує всі статуси (крім поточного); CONFIRMED **не** ставить
+      PAID автоматично; PAID **не** рухає статус; скасування до відправки повертає склад.
+
+- [ ] **TASK-150 — фільтр користувачів + бан (B5).**
+      **Зроби:** у `/users` перемкни «Активний / Неактивний / Усі статуси»; потім забань Покупця B,
+      у якого відкрита вітрина в іншому вікні, і спробуй ним оформити замовлення.
+      **Має бути:** фільтр реально фільтрує (перевір по колонці статусу); забанений отримує помилку
+      403 при оформленні (в Network `POST /api/orders` → 403) і після закінчення сесії не може
+      увійти знову.
+
+- [ ] **TASK-136 — слаг на льоту.**
+      **Зроби:** створи товар, залишивши поле slug порожнім; дивись під полем назви під час введення.
+      **Має бути:** живе прев'ю слага під час набору; після збереження бекенд сам вивів slug з назви;
+      мертвого поля пошуку в шапці адмінки більше немає.
+
+- [ ] **TASK-155 — прев'ю деактивованого товару для персоналу.**
+      **Зроби:** деактивуй будь-який товар → на сторінці редагування натисни «Переглянути» →
+      окремо відкрий цей самий слаг на вітрині `http://localhost:3000/products/{slug}`.
+      **Має бути:** прев'ю відкрилось у новій вкладці з повною сторінкою і бурштиновим банером
+      «деактивовано»; на вітрині той самий слаг — 404 для покупця.
+
+---
+
+## 4. Зовнішні інтеграції (потрібні ключі; без ключа — пропусти і лиши позначку)
+
+- [ ] **TASK-080-A…D — Нова Пошта наживо (потрібен `NP_API_KEY`).**
+      **Зроби:** додай `NP_API_KEY=…` в `apps/store-api/.env`, перезапусти API → на checkout
+      набери «Київ» у полі міста, вибери місто → відкрий список відділень → обери → дійди до
+      підсумку. Оформи замовлення і відкрий його в адмінці.
+      **Має бути:** підказки міст — реальні населені пункти; відділення підвантажились для
+      вибраного міста; у підсумку з'явилась реальна вартість доставки і термін; замовлення
+      зберегло відділення і `shippingCost`.
+
+- [ ] **TASK-103 — надійність пошти (потрібен SMTP; інструкція по вмиканню — master §«MAIL_ENABLED», §C4).**
+      **Зроби:** з `MAIL_ENABLED=true` і робочим SMTP оформи замовлення; відкрий `npm run db:studio`
+      → таблиця `mail_outbox`. Потім зіпсуй SMTP-пароль, перезапусти API, оформи ще одне.
+      **Має бути:** замовлення відповідає миттєво (лист не блокує); у `mail_outbox` рядок PENDING,
+      за хвилину-дві стає SENT і лист приходить; із зіпсованим паролем — рядок кілька разів
+      ретраїться і стає FAILED; з `MAIL_ENABLED=false` рядки просто стають SENT без відправки.
+
+- [ ] **TASK-048 — Sentry (потрібен DSN).**
+      **Зроби:** пропиши `SENTRY_DSN` (api) і `NEXT_PUBLIC_SENTRY_DSN` (client/admin), перезапусти.
+      Зупини Postgres (`docker stop store_postgres`) і відкрий `http://localhost:3001/api/products`
+      → це дасть справжню 500. Запусти Postgres назад. Потім спробуй увійти з неправильним паролем (401).
+      **Має бути:** 500-помилка з'явилась у Sentry-проєкті з правильним `environment`;
+      401/валідаційні помилки в Sentry НЕ потрапляють; без DSN усі три застосунки працюють як раніше.
+
+- [ ] **TASK-138 — чистота консолі.**
+      **Зроби:** F12 → Console; відкрий мобільне бургер-меню; переглянь стартові логи API (термінал 2).
+      **Має бути:** немає попередження Radix про `aria-describedby`; при вимкненій пошті в логах
+      API є рядок «Mail disabled — skipping…» на рівні info; якщо бачиш попередження про
+      link-preload — просто зафіксуй його текст у ❌ (це best-effort пункт).
+
+---
+
+## 5. Дизайн-імпорт — візуальні проходи
+
+> Для кожної сторінки: пройди її **у світлій і темній темі** (перемикання — Крок 0 внизу).
+> Дивись на: цілісність верстки (нічого не наїжджає/не вилазить), контраст у темній темі,
+> робочі інтерактиви. Мокапи для звірки — `*.dc.html` з дизайн-імпорту (за наявності локально);
+> якщо мокапа під рукою немає — критерій «виглядає завершено і працює».
+
+- [ ] **TASK-167-A/B/C — хедер / футер / картки.**
+      **Зроби:** на будь-якій сторінці поклацай: пошук-«пігулку» (кнопка «Каталог» зліва, ввід
+      тексту, лупа), гостьову кнопку «Кабінет», кнопку кошика, сердечка на картках; проскроль до футера.
+      **Має бути:** панель каталогу і підказки пошуку відкриваються по черзі (не одночасно) і
+      прив'язані до пігулки; «Кабінет» гостя відкриває бічну панель Вхід/Реєстрація — вхід і
+      реєстрація з неї реально працюють і панель закривається; кошик відкриває міні-кошик
+      (степер кількості і видалення синхронні зі сторінкою `/cart`, «Оформити» → checkout);
+      темний футер: 4 колонки, соцкнопки, платіжні піли — читабельні в обох темах; сердечка є
+      на «Ви переглядали» і «Схожі товари» і перемикаються.
+
+- [ ] **TASK-167-D — блог `/blog`** _(відкривається лише прямим URL — у навігації буде після TASK-173)._
+      **Зроби:** відкрий `/blog`; поклацай чипи категорій, пошук, «Показати більше статей».
+      **Має бути:** hero з пошуком, чипи з лічильниками, велика featured-картка (лише без фільтра),
+      адаптивна сітка, порожній стан для нісенітниці в пошуку; кожна картка відкриває свою статтю.
+
+- [ ] **TASK-171 — стаття блогу `/blog/{slug}`.**
+      **Зроби:** відкрий будь-яку статтю з `/blog`; поклацай зміст (TOC) праворуч, кнопки шерингу.
+      **Має бути:** шапка (бейдж/заголовок/автор), обкладинка, липкий TOC плавно скролить до
+      розділів (на вузькому екрані TOC схований); «копіювати лінк» показує тост; Telegram/Facebook
+      відкривають вікна шерингу; «Читайте також» веде на інші статті без 404. _Тіло поки демо —
+      однакове для всіх статей, це норма до TASK-170._
+
+- [ ] **TASK-167-E/F — правові сторінки `/legal` і `/legal/{slug}`.**
+      **Зроби:** переконайся, що в адмінці `/pages` є хоч одна опублікована сторінка (якщо ні — створи).
+      Відкрий `/legal` → тайл → документ; поклацай нумерований TOC; натисни «Завантажити PDF» (друк).
+      **Має бути:** хаб показує тайл на кожну опубліковану сторінку з «Оновлено …»; у документі
+      липкий TOC підсвічує поточний розділ при скролі, заголовки автонумеровані; друк дає чистий
+      документ без шапки/футера; хлібна крихта повертає на хаб.
+
+- [ ] **TASK-167-G — кошик `/cart`.**
+      **Зроби:** наповни кошик → пограйся степером, видаленням, «Очистити кошик», промокодом
+      (з TASK-079), тумблерами «Додаткові пропозиції».
+      **Має бути:** двоколонкова верстка з липким підсумком; суми перераховуються миттєво;
+      справжній купон застосовується; очищення питає підтвердження; тумблери послуг змінюють
+      рядок «Додаткові послуги» в підсумку _(це стаб — у checkout вони не переносяться, так і треба)_;
+      «Оформити» веде на `/checkout`.
+
+- [ ] **TASK-167-H — кабінет `/account`.**
+      **Зроби:** увійди Покупцем A → `/account`; зміни ім'я і телефон → збережи → F5; поклацай усі
+      пункти сайдбару; вийди з акаунта через сайдбар.
+      **Має бути:** липкий сайдбар з карткою користувача (ініціали/ім'я/телефон); збереження
+      профілю переживає F5 (email — лише читання); «Історія замовлень»/«Обране» ведуть на
+      `/orders`/`/wishlist`; «Бонуси»/«Налаштування»/«Покупки»/«Історія перегляду»/«Порівняння»
+      показують акуратні заглушки «скоро» _(це стаби — норма до TASK-175)_; вихід завершує сесію.
+
+- [ ] **TASK-167-I — хаб категорій `/categories`.**
+      **Зроби:** поклацай пункти лівої рейки; клікни кілька тайлів підкатегорій.
+      **Має бути:** рейка липка, активний пункт підсвічений; праворуч — заголовок, опис і тайли
+      підкатегорій обраної групи; тайл відкриває каталог, відфільтрований по цій категорії
+      (у каталозі — хлібна крихта і заголовок з назвою категорії); стрічка «Популярні бренди» —
+      статичний стаб _(норма до TASK-189)_.
+
+- [ ] **TASK-167-J — checkout `/checkout` (візуальна частина; флоу — пункт TASK-119 вище).**
+      **Зроби:** пройди checkout ще раз, дивлячись на верстку обох кроків.
+      **Має бути:** індикатор кроків Доставка→Перевірка відповідає реальному кроку; секції-картки
+      (контакти, доставка НП, оплата-стаб); липкий підсумок з аватарками товарів, промо, доставкою
+      і сумою; префіл з профілю і маска `+380 …` працюють; радіо оплати і «списати бонуси» —
+      неактивні заглушки _(норма до TASK-034/175)_.
+
+- [ ] **TASK-167-K — інфо-хаб `/info`.**
+      **Зроби:** поклацай бічну навігацію (Доставка / Гарантія / FAQ / Про нас / Контакти);
+      відкрий пряме посилання `http://localhost:3000/info#contacts`; розгорни питання FAQ.
+      **Має бути:** секції перемикаються і URL-hash оновлюється (діплінки працюють); акордеон FAQ
+      відкривається; у «Контакти» — реальні телефон/email/години/месенджери з адмінських налаштувань
+      (`/settings/contact` в адмінці — зміни там значення і перевір, що після ~години ISR або
+      перезапуску client воно на сторінці); форма «Напишіть нам» — демо-стаб _(норма до TASK-177)_.
+
+---
+
+## Після проходу
+
+1. Для кожного ❌ заведи рядок у `BACKLOG.md` (Етап 1, `fix/NNN`, ID з лічильника) з коротким
+   описом відтворення. Критичні (гроші/дані/безпека/checkout) — виконуються одразу.
+2. Пункти, які не вдалося перевірити без ключів (`NP_API_KEY`, SMTP, Sentry DSN), залиш
+   невідміченими з позначкою `⏸ немає ключа` — вони не блокують Етап 2.
+3. Коли всі рядки або ✅, або перетворені на задачі — TASK-101 у BACKLOG можна закривати.
