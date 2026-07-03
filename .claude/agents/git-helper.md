@@ -22,76 +22,13 @@ Never run `git add`, `git commit`, `git push`, `git merge`, `git checkout`, or a
 - Read `BACKLOG.md` to understand task context
 - Suggest commands with explanations
 
-## GitFlow for This Project
+## Project Conventions
 
-```
-main           — Production-ready code. Only merge via PR from develop.
-  └── develop  — Active development. All feature branches merge here.
-       ├── feature/XXX-name   — Feature branches
-       └── fix/XXX-name       — Bugfix branches
-```
-
-### Branch Naming
-
-| Situation      | Branch Pattern               | Example                 |
-| -------------- | ---------------------------- | ----------------------- |
-| New feature    | `feature/TASKID-short-name`  | `feature/010-auth`      |
-| Bug fix        | `fix/TASKID-short-name`      | `fix/014-discount-calc` |
-| Infrastructure | `feature/001-infrastructure` | from `develop`          |
-
-TASKID comes from BACKLOG.md task number.
-
-## Conventional Commits Reference
-
-### Format
-
-```
-type(scope): description
-```
-
-### Types
-
-| Type       | When to use                                | Example                                                          |
-| ---------- | ------------------------------------------ | ---------------------------------------------------------------- |
-| `feat`     | New feature, new functionality             | `feat(auth): implement JWT refresh token rotation`               |
-| `fix`      | Bug fix, correcting broken behavior        | `fix(cart): correct discount calculation for percentage coupons` |
-| `refactor` | Code improvement without changing behavior | `refactor(order): extract order state machine into service`      |
-| `test`     | Adding or updating tests                   | `test(auth): add e2e tests for login and refresh flow`           |
-| `docs`     | Documentation changes                      | `docs: update README with setup instructions`                    |
-| `chore`    | Technical tasks (deps, config, tooling)    | `chore: update husky pre-commit hooks`                           |
-| `ci`       | CI/CD pipeline changes                     | `ci: add GitHub Actions workflow for lint and test`              |
-| `style`    | Formatting, whitespace (no logic change)   | `style: fix indentation in auth module`                          |
-
-### Rules for Commit Messages
-
-1. **Imperative mood**: "add" not "added", "fix" not "fixed"
-2. **Lowercase description**, no period at the end
-3. **Scope** = feature module name (auth, cart, product, order, user, admin)
-4. **One commit = one logical change** (don't mix feat+fix in one commit)
-5. **Keep it under 72 characters** for the first line
-
-### WIP (Work In Progress) Commits
-
-When you need to save intermediate work that isn't ready for a clean commit:
-
-```
-feat(auth): WIP refresh token rotation
-```
-
-Or more descriptive:
-
-```
-feat(auth): WIP refresh token — service done, controller pending
-```
-
-WIP commits are useful when:
-
-- You need to save work before switching branches
-- You want a backup before a risky refactor
-- End of day and you're not done yet
-- CI needs to see the code (draft PR)
-
-**Important:** Before merging to develop, squash or amend WIP commits into clean ones.
+GitFlow branching (`main` ← `develop` ← `feature/TASKID-name` / `fix/TASKID-name`) and the
+conventional-commit format (`type(scope): description`, imperative mood, one logical change
+per commit) are defined in **AGENTS.md §Git Workflow** — read it and follow it; do not
+restate it. TASKID comes from the BACKLOG.md task number. For intermediate saves, suggest
+`type(scope): WIP …` commits and remind the user to squash them before merging to develop.
 
 ## How to Respond
 

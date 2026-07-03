@@ -21,11 +21,13 @@ features, it is intentionally not imported.
 
 ## Available commands (`.claude/commands/`)
 
-`/dev` `/build` `/test` `/lint` `/review` `/planer <feature>` `/next`
-`/commit` `/git-help` `/db-push` `/db-migrate <name>` `/db-seed` `/db-studio` `/generate-api`
+`/test` `/review` `/planer <feature>` `/next` `/commit` `/git-help`
+`/db-migrate <name>` `/generate-api`
 
 > Note: the custom planning command is `/planer` (not `/plan`) — `/plan` is left to Claude
-> Code's built-in plan mode and is intentionally not overridden.
+> Code's built-in plan mode and is intentionally not overridden. Trivial wrappers
+> (`/build`, `/lint`, `/dev`, `/db-push`, `/db-seed`, `/db-studio`) were removed — run the
+> npm scripts directly (see AGENTS.md §Build, Lint & Test Commands).
 
 ## Available skills (`.claude/skills/`)
 
