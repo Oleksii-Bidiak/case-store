@@ -45,6 +45,8 @@ logs/
 # Testing
 coverage/
 .nyc_output/
+test-results/
+playwright-report/
 
 # Temp
 tmp/
