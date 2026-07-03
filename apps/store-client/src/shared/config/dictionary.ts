@@ -385,9 +385,8 @@ export const dict = {
     contactHeading: "Залишились питання?",
     contactSubtitle: "Напишіть нам — відповімо протягом робочого дня",
     contactCta: "Звʼязатися",
-    // Contacts destination — the upcoming "Інформація та підтримка" page
-    // (Info.dc.html) at /info; 404s until that page ships.
-    contactHref: "/info",
+    // Contacts destination — the "Інформація та підтримка" page's Contacts tab.
+    contactHref: "/info#contacts",
     otherHeading: "Інші правові документи",
     // Legal hub index (/info, LegalHub.dc.html import).
     hub: {
@@ -423,6 +422,48 @@ export const dict = {
     // Breadcrumb trail shown above the catalog title.
     breadcrumbHome: "Головна",
     breadcrumbProducts: "Товари",
+  },
+
+  // Info & support hub (/info, Info.dc.html import). Content is static (stub)
+  // except Contacts, which uses SiteContactSettings (TASK-154).
+  info: {
+    breadcrumbHome: "Головна",
+    heading: "Інформація та підтримка",
+    navAria: "Розділи інформації",
+    nav: {
+      delivery: "Доставка й оплата",
+      warranty: "Гарантія та сервіс",
+      faq: "Часті питання",
+      about: "Про нас",
+      contacts: "Контакти",
+    },
+    deliveryHeading: "Доставка",
+    deliveryIntro:
+      "Відправляємо замовлення день у день при оформленні до 18:00. Безкоштовно від 1 000 ₴.",
+    paymentHeading: "Оплата",
+    paymentIntro: "Обирайте зручний спосіб — онлайн або при отриманні.",
+    warrantyHeading: "Гарантія та сервіс",
+    warrantyIntro:
+      "Уся техніка — офіційна, з гарантією виробника. Власний сервісний центр у Києві.",
+    servicesHeading: "Додаткові сервіси захисту",
+    aboutHeading: "Ми — MobileStore",
+    aboutIntro:
+      "Інтернет-магазин електроніки, який з 2018 року допомагає українцям обирати техніку без зайвого клопоту. Тільки оригінальні пристрої, офіційна гарантія та чесні ціни.",
+    valuesHeading: "Чому обирають нас",
+    contactsHeading: "Звʼяжіться з нами",
+    contactPhoneLabel: "Телефон",
+    contactEmailLabel: "Пошта",
+    contactHoursLabel: "Графік",
+    messengersLabel: "Ми у месенджерах",
+    formHeading: "Напишіть нам",
+    formIntro: "Відповідаємо протягом 1 робочого дня.",
+    formName: "Ваше імʼя",
+    formEmail: "Email",
+    formMessage: "Повідомлення",
+    formSubmit: "Надіслати повідомлення",
+    formSent: "Дякуємо! Ми звʼяжемося з вами найближчим часом.",
+    formStubNote:
+      "Форма демонстраційна — повідомлення поки не надсилається на сервер.",
   },
 
   // Categories hub page (/categories, Categories.dc.html import).
