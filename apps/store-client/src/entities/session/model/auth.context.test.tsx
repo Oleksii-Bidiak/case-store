@@ -73,3 +73,60 @@ describe("AuthProvider — cart invalidation after silent refresh (TASK-118-C)",
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * fix/196: a transient bootstrap failure (429 from the rate limiter, 5xx,
+ * network blip) must not silently sign the user out — the provider retries
+ * once. Only a 401 ("no session") is terminal.
+ */
+describe("AuthProvider — transient bootstrap refresh failures (fix/196)", () => {
+  it("retries once after a 429 and restores the session", async () => {
+    let calls = 0;
+    server.use(
+      http.post("*/api/auth/refresh", () => {
+        calls += 1;
+        if (calls === 1) {
+          return HttpResponse.json(
+            { message: "Too Many Requests" },
+            { status: 429 },
+          );
+        }
+        return HttpResponse.json({
+          data: { accessToken: "header.payload.sig" },
+        });
+      }),
+    );
+    const client = makeTestQueryClient();
+    const invalidateSpy = jest.spyOn(client, "invalidateQueries");
+
+    renderProvider(client);
+
+    // The retry waits ~2s before the second attempt — allow for it.
+    await waitFor(
+      () => expect(screen.getByTestId("init")).toHaveTextContent("ready"),
+      { timeout: 5000 },
+    );
+    expect(calls).toBe(2);
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: getGetCartQueryKey(),
+    });
+  }, 10000);
+
+  it("does not retry on 401 — a missing session is terminal", async () => {
+    let calls = 0;
+    server.use(
+      http.post("*/api/auth/refresh", () => {
+        calls += 1;
+        return HttpResponse.json({ data: {} }, { status: 401 });
+      }),
+    );
+    const client = makeTestQueryClient();
+
+    renderProvider(client);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("init")).toHaveTextContent("ready"),
+    );
+    expect(calls).toBe(1);
+  });
+});

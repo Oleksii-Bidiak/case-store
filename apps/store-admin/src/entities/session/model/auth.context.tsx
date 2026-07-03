@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { isAxiosError } from "axios";
 import { api, setAccessToken } from "@/shared/api";
 
 export interface AuthContextValue {
@@ -26,6 +27,28 @@ export interface AuthContextValue {
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
+
+/**
+ * Bootstrap refresh: only a 401 means "no session". Anything else (429 from the
+ * rate limiter, 5xx, network blip) is transient — retry once after a short
+ * pause instead of kicking the admin to /login on a page reload (fix/196).
+ */
+async function bootstrapRefresh(): Promise<string | null> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await api.post<{ data?: { accessToken?: string } }>(
+        "/api/auth/refresh",
+      );
+      return res.data?.data?.accessToken ?? null;
+    } catch (error) {
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      if (status === 401 || attempt >= 1) {
+        return null;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+}
 
 /** Decode a JWT payload (no verification — informational/UI use only). */
 function decodeJwt(token: string): { sub?: string; role?: string } | null {
@@ -85,20 +108,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let active = true;
 
     void (async () => {
-      try {
-        const res = await api.post<{ data?: { accessToken?: string } }>(
-          "/api/auth/refresh",
-        );
-        const token = res.data?.data?.accessToken;
-        if (active && token) {
-          setTokens(token);
-        }
-      } catch {
-        // No valid refresh cookie — remain signed out.
-      } finally {
-        if (active) {
-          setIsInitializing(false);
-        }
+      const token = await bootstrapRefresh();
+      if (active && token) {
+        setTokens(token);
+      }
+      // token === null → no valid refresh cookie (or refresh kept failing):
+      // remain signed out.
+      if (active) {
+        setIsInitializing(false);
       }
     })();
 
