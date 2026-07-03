@@ -3,9 +3,12 @@
 // All prices are stored as Decimal(10, 2) major-unit strings (e.g. "29.99").
 // This is the single source of truth for rendering them as Ukrainian hryvnia.
 // Output examples (uk-UA convention, non-breaking spaces): "1 299 ₴", "29,99 ₴".
+//
+// The "₴" sign is appended manually instead of `style: "currency"`: the currency
+// symbol Intl picks for uk-UA/UAH differs across ICU versions ("грн" on the SSR
+// Node runtime vs "₴" in browsers), which caused a hydration mismatch in every
+// money-rendering component (first hit: the header cart badge).
 const formatter = new Intl.NumberFormat("uk-UA", {
-  style: "currency",
-  currency: "UAH",
   minimumFractionDigits: 0,
   maximumFractionDigits: 2,
 });
@@ -16,5 +19,5 @@ const formatter = new Intl.NumberFormat("uk-UA", {
  */
 export function formatMoney(value: string): string {
   const amount = Number(value);
-  return Number.isFinite(amount) ? formatter.format(amount) : value;
+  return Number.isFinite(amount) ? `${formatter.format(amount)} ₴` : value;
 }
