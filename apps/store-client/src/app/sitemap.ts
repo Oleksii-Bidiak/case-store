@@ -51,6 +51,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "monthly",
       priority: 0.6,
     },
+    {
+      url: `${SITE_URL}/promo`,
+      lastModified: now,
+      changeFrequency: "daily",
+      priority: 0.7,
+    },
   ];
 
   // Blog posts are a static seed (no backend yet — TASK-170), so their routes

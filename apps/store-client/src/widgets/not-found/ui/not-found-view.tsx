@@ -103,7 +103,7 @@ export function NotFoundView() {
             </Link>
             {/* Акції keeps the sale accent, mirroring the header promo link. */}
             <Link
-              href="/products"
+              href="/promo"
               className={`${PILL_BASE} border-border bg-card text-sale hover:border-sale`}
             >
               {d.popular.promo}

@@ -225,7 +225,7 @@ export function Header() {
           {/* Right: action cluster */}
           <div className="ml-auto flex items-center gap-1 sm:gap-1.5">
             <Link
-              href="/products"
+              href="/promo"
               className="hidden flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-sale transition-colors hover:bg-sale/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
             >
               <Tag className="size-[22px]" aria-hidden="true" />
