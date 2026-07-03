@@ -222,7 +222,7 @@ export function HeaderSearch() {
               )}
               <li>
                 <Link
-                  href="/products"
+                  href="/categories"
                   role="menuitem"
                   onClick={() => setCatalogOpen(false)}
                   className="mt-0.5 flex items-center rounded-xl px-3 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"

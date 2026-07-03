@@ -77,7 +77,7 @@ export function HeroCategorySidebar() {
             )}
             <li>
               <Link
-                href="/products"
+                href="/categories"
                 className="mt-0.5 flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {dict.home.hero.allCategories}
