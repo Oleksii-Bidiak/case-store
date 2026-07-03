@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-227**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-228**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -67,14 +67,14 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-195 | **[CRITICAL]** Checkout «Далі» does nothing — no order can be placed (blocks TASK-119/124/131/167-J re-test). Suspects: silent zod validation fail (no error render/focus) and/or hydration fallout (see TASK-197); repro on a running stack | ⬜ | — |
-| TASK-196 | **[CRITICAL]** Session lost on reload on **both** apps (storefront + admin log out on F5) and guest wishlist (possibly cart) wiped after login-merge (QA «Сценарій 1»; also admin smoke TASK-059-B row). Investigate refresh-cookie/CSRF path in dev | ⬜ | — |
+| TASK-195 | ~~Checkout «Далі» does nothing~~ — **root cause: stale client bundle in the owner's browser** (Turbopack dev chunk URLs are path-based → old cached chunk with the TASK-197 hydration crash killed interactivity). Clean-browser Playwright run on develop: login → add-to-cart → «Далі» → «Підтвердити» → `/orders/{id}/confirmation` all green. Owner to hard-reload (Ctrl+Shift+R) and confirm | ✅ | — |
+| TASK-196 | **[re-test]** Session-loss on F5 NOT reproducible in a clean browser (Playwright: session survives reload) — same stale-bundle artifact as TASK-195. Remaining to verify after owner hard-reloads: admin F5 behaviour + guest **wishlist merge** on login (Сценарій 1 «вичищається з улюбленого») | 🔄 | — |
 | TASK-197 | Hydration mismatch «0 грн» vs «0 ₴» in every money render (header cart badge first) — `formatMoney` now formats the number via Intl and appends ₴ manually (SSR-stable across ICU versions) | ✅ | — |
 | TASK-198 | Promo code fails on `/cart` with generic «Не вдалося застосувати промокод» but the same code applies on `/checkout` (shared `ApplyDiscount`) — capture Network status + error body on `/cart` | ⬜ | — |
 | TASK-199 | Grouped-card advertised price mismatch: «Double Pack» card shows the Single-Pack price; PDP then opens the correct Double-Pack position (card advertised-price/variant mapping, TASK-126 area) | ⬜ | — |
 | TASK-200 | Search: cyrillic «афйон» finds nothing while latin typo `ihpone` works — add UA↔EN transliteration/synonym settings to the Meili index (seed product names are EN) | ⬜ | — |
 | TASK-201 | Admin: category **parent** resets while editing — must re-select it to save (TASK-149 regression in a real browser; check Radix Select vs the id-keyed `reset()`) | ⬜ | — |
-| TASK-202 | Login says «Невірний email або пароль» for a previously-registered email (QA «Сценарій 2», `test@gmail.com`); also return a distinct message for **banned** accounts instead of the same generic error | ⬜ | — |
+| TASK-202 | Login error mapping: API correctly returns 401 «Account is deactivated» for banned accounts (QA «Сценарій 2» solved: `test@gmail.com` was banned by the owner during the TASK-150 test), but the storefront maps **every** 401 to «Невірний email або пароль» — map the deactivated case to its own message (same for admin login) | ⬜ | — |
 | TASK-203 | Playwright `globalSetup` crashed (`PrismaClientInitializationError`) — `seed-e2e.ts` now loads `apps/store-api/.env` before constructing PrismaClient | ✅ | — |
 | TASK-204 | Cart line items: product link missing in the cart widget; clicking the image visually reloads it (TASK-133 leftover) | ⬜ | — |
 | TASK-205 | Cart API exposes raw `items[].stock` (QA-confirmed leak) — replace with a capped `maxQty` in the contract; stepper logic unchanged (stock-hiding follow-up to TASK-158) | ⬜ | — |
@@ -85,6 +85,7 @@
 | TASK-210 | Storefront image/listing perf: catalog of 10 products ≈15-20s on 3G, images appear to load all at once — verify lazy-loading + profile a **prod build** (dev Turbopack slowness is expected; TASK-074 follow-up) | ⬜ | — |
 | TASK-211 | «Ви переглядали» uses the outdated card UI — reuse the PopularRail slider + current `ProductCard`/`ProductCardActions` | ⬜ | — |
 | TASK-212 | Font-preload console warnings (`woff2 preloaded but not used`) — best-effort fix (from TASK-138) | ⬜ | — |
+| TASK-227 | Password policy audit: API `register` accepted `testtest` (8 chars, no upper/digit) — align the class-validator DTO policy with the frontend zod rules; add strength requirements | ⬜ | — |
 
 #### UX-покращення та discovery з QA-проходу *(виконувати після багів; частина живиться Етапами 2–3)*
 
@@ -185,6 +186,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-227**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-228**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
