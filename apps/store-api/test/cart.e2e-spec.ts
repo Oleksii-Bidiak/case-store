@@ -164,6 +164,11 @@ describe('CartController (e2e)', () => {
     expect(totals).toHaveProperty('subtotal');
     expect(totals).toHaveProperty('itemCount');
     expect(totals).toHaveProperty('uniqueItems');
+    // TASK-205: the public contract carries the capped maxQty, never raw stock.
+    for (const item of data.items as Array<Record<string, unknown>>) {
+      expect(item).toHaveProperty('maxQty');
+      expect(item).not.toHaveProperty('stock');
+    }
   }
 
   beforeAll(async () => {

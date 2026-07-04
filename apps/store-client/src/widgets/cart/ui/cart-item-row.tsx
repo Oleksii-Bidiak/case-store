@@ -19,8 +19,6 @@ import { ProductThumb } from "@/shared/ui";
 import { addonServicesForItem } from "../model/addon-services";
 import { resolveQuantityCommit } from "../model/quantity-commit";
 
-const MAX_QUANTITY = 99;
-
 /** Coerce a loosely-typed generated string field to a usable string. */
 function asString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
@@ -98,10 +96,11 @@ export function CartItemRow({
 
   const error = updateItem.error || removeItem.error;
 
-  // Each line is a product position with its own stock; cap the stepper at the
-  // available stock (or the global max, whichever is lower).
-  const maxQty = Math.min(MAX_QUANTITY, item.stock);
-  const outOfStock = item.stock <= 0;
+  // The API already caps the orderable quantity per line (min of the global
+  // per-item limit and the available stock, TASK-205) — the raw stock figure
+  // never reaches the client. 0 means the position is out of stock.
+  const maxQty = item.maxQty;
+  const outOfStock = maxQty <= 0;
 
   const compareAtPrice = asString(item.compareAtPrice);
   const onSale =

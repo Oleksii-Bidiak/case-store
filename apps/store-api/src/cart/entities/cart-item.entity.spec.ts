@@ -9,6 +9,7 @@ function buildPrismaCartItem(
   productOverrides: Partial<{
     slug: string;
     images: Array<{ url: string }>;
+    stock: number;
   }> = {},
 ) {
   return {
@@ -50,5 +51,30 @@ describe('CartItemEntity.fromPrisma', () => {
     const entity = CartItemEntity.fromPrisma(buildPrismaCartItem({ images: [] }));
 
     expect(entity.imageUrl).toBeNull();
+  });
+
+  // ─── maxQty replaces raw stock in the public contract (TASK-205) ──────────
+  it('exposes maxQty equal to stock when below the per-item cap', () => {
+    const entity = CartItemEntity.fromPrisma(buildPrismaCartItem({ stock: 50 }));
+
+    expect(entity.maxQty).toBe(50);
+  });
+
+  it('caps maxQty at MAX_QUANTITY when stock exceeds it', () => {
+    const entity = CartItemEntity.fromPrisma(buildPrismaCartItem({ stock: 500 }));
+
+    expect(entity.maxQty).toBe(99);
+  });
+
+  it('sets maxQty to 0 for an out-of-stock position', () => {
+    const entity = CartItemEntity.fromPrisma(buildPrismaCartItem({ stock: 0 }));
+
+    expect(entity.maxQty).toBe(0);
+  });
+
+  it('does not expose the raw stock figure', () => {
+    const entity = CartItemEntity.fromPrisma(buildPrismaCartItem({ stock: 500 }));
+
+    expect(entity).not.toHaveProperty('stock');
   });
 });
