@@ -16,8 +16,10 @@ export interface ShippingAddressData {
   address2?: string;
   city: string;
   state?: string;
-  postalCode: string;
-  country: string;
+  // Optional on AddressDto (TASK-229) — snapshots created before the server-side
+  // country default may lack both fields, so reads must not assume them.
+  postalCode?: string;
+  country?: string;
   phone?: string;
   /** Nova Poshta delivery refs (TASK-080) — present only for NP-routed orders. */
   npCityRef?: string;

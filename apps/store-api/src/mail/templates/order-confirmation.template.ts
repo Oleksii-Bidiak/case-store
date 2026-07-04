@@ -6,7 +6,12 @@
  * trivially unit-testable (no DI container) and free of any transport concern.
  */
 
-/** Snapshotted shipping address as stored on the order. */
+/**
+ * Snapshotted shipping address as stored on the order. Mirrors `AddressDto`:
+ * only firstName/lastName/address1/city/phone are guaranteed — orders created
+ * through the API may lack the optional fields, and pre-TASK-229 outbox rows
+ * may lack `country`, so the renderer must tolerate their absence (TASK-229).
+ */
 export interface OrderConfirmationAddress {
   firstName: string;
   lastName: string;
@@ -15,8 +20,8 @@ export interface OrderConfirmationAddress {
   address2?: string;
   city: string;
   state?: string;
-  postalCode: string;
-  country: string;
+  postalCode?: string;
+  country?: string;
   phone?: string;
 }
 
@@ -98,7 +103,9 @@ function addressLines(address: OrderConfirmationAddress): string[] {
   if (address.address2) lines.push(address.address2);
   const cityLine = [address.city, address.state, address.postalCode].filter(Boolean).join(', ');
   lines.push(cityLine);
-  lines.push(address.country);
+  // TASK-229: `country` is optional on the DTO — an unguarded push fed
+  // `undefined` into escapeHtml and crashed the render (outbox row → FAILED).
+  if (address.country) lines.push(address.country);
   if (address.phone) lines.push(address.phone);
   return lines;
 }
