@@ -1178,6 +1178,8 @@ export const dict = {
       validationFirstName: "Ім'я є обов'язковим",
       validationLastName: "Прізвище є обов'язковим",
       validationPassword: "Пароль має містити щонайменше 8 символів",
+      validationPasswordPolicy:
+        "Пароль має містити велику та малу літери й цифру",
       validationPasswordMatch: "Паролі не збігаються",
       terms: "Погоджуюсь з умовами використання та політикою конфіденційності",
       validationTerms: "Потрібно прийняти умови використання",
