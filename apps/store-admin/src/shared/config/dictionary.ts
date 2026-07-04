@@ -38,6 +38,7 @@ export const dict = {
     passwordRequired: "Вкажіть пароль",
     errorNotAdmin: "Цей акаунт не має прав адміністратора.",
     errorInvalid: "Невірний email або пароль.",
+    errorDeactivated: "Обліковий запис деактивовано. Зверніться до підтримки.",
     errorGeneric: "Щось пішло не так. Спробуйте ще раз.",
   },
 

@@ -16,6 +16,17 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>;
 
+/**
+ * Extract `message` from the API error envelope
+ * (`{ statusCode, error, message }`) without trusting the response shape —
+ * returns "" for anything unexpected.
+ */
+function getErrorEnvelopeMessage(data: unknown): string {
+  if (typeof data !== "object" || data === null) return "";
+  const message = (data as { message?: unknown }).message;
+  return typeof message === "string" ? message : "";
+}
+
 /** Decode a JWT payload to read the role claim (informational only). */
 function decodeRole(token: string): string | null {
   try {
@@ -83,13 +94,23 @@ export function AdminLoginForm() {
   };
 
   const status = login.error?.response?.status;
+  // A 401 is either bad credentials or a deactivated (banned) account — the
+  // API distinguishes them only by the error-envelope `message` ("Account is
+  // deactivated"). Matching is defensive: case-insensitive contains (TASK-202).
+  const isDeactivated =
+    status === 401 &&
+    getErrorEnvelopeMessage(login.error?.response?.data)
+      .toLowerCase()
+      .includes("deactivated");
   const errorMessage = notAdmin
     ? dict.login.errorNotAdmin
-    : status === 401
-      ? dict.login.errorInvalid
-      : login.isError
-        ? dict.login.errorGeneric
-        : null;
+    : isDeactivated
+      ? dict.login.errorDeactivated
+      : status === 401
+        ? dict.login.errorInvalid
+        : login.isError
+          ? dict.login.errorGeneric
+          : null;
 
   return (
     <form
