@@ -112,6 +112,7 @@ const makeOrder = (overrides: Partial<OrderWithItems> = {}): OrderWithItems => (
   notes: null,
   createdAt: now,
   updatedAt: now,
+  restockedAt: null,
   items: [
     {
       id: 'order-item-1',
@@ -141,6 +142,7 @@ const orderRepositoryMock = {
   findByIdForAdmin: jest.fn(),
   updateStatus: jest.fn(),
   cancelAndRestock: jest.fn(),
+  reviveAndReserve: jest.fn(),
   updatePaymentStatus: jest.fn(),
 };
 
@@ -828,6 +830,126 @@ describe('OrderService', () => {
       );
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
       expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── updateStatus — stock re-reserve on revive (TASK-228) ─────────────────────
+  // A pre-shipment cancel credits the order's stock back and stamps restockedAt.
+  // TASK-151 lets the admin move the order to ANY status afterwards, so reviving
+  // such an order into a live status must re-reserve its stock — otherwise a
+  // later re-cancel would credit the same units a second time (the double-credit
+  // bug reproduced in manual QA §C2-a).
+
+  describe('updateStatus — stock re-reserve on revive (TASK-228)', () => {
+    const restockedAt = new Date('2026-07-04T10:00:00.000Z');
+
+    const seed = (current: Partial<OrderWithItems>) => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder(current));
+      orderRepositoryMock.reviveAndReserve.mockImplementation(
+        (_id: string, status: OrderStatus, paymentStatus: PaymentStatus) =>
+          Promise.resolve(makeOrder({ status, paymentStatus, restockedAt: null })),
+      );
+      orderRepositoryMock.updateStatus.mockImplementation(
+        (_id: string, status: OrderStatus, paymentStatus: PaymentStatus) =>
+          Promise.resolve(makeOrder({ ...current, status, paymentStatus })),
+      );
+      orderRepositoryMock.cancelAndRestock.mockImplementation((_id: string) =>
+        Promise.resolve(makeOrder({ ...current, status: OrderStatus.CANCELLED, restockedAt })),
+      );
+    };
+
+    it.each([
+      OrderStatus.PENDING,
+      OrderStatus.CONFIRMED,
+      OrderStatus.PROCESSING,
+      OrderStatus.SHIPPED,
+      OrderStatus.DELIVERED,
+    ])(
+      're-reserves stock when reviving a restocked CANCELLED order (CANCELLED → %s)',
+      async (to) => {
+        seed({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID, restockedAt });
+
+        const result = await service.updateStatus('order-uuid-1', to);
+
+        expect(orderRepositoryMock.reviveAndReserve).toHaveBeenCalledWith(
+          'order-uuid-1',
+          to,
+          PaymentStatus.PAID,
+        );
+        expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+        expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+        expect(result.status).toBe(to);
+      },
+    );
+
+    it('keeps the flag and touches no stock when moving a restocked CANCELLED order to REFUNDED', async () => {
+      seed({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID, restockedAt });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.REFUNDED);
+
+      expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.REFUNDED,
+        PaymentStatus.PAID,
+      );
+    });
+
+    it('re-reserves stock when reviving a restocked REFUNDED order (flag survived CANCELLED → REFUNDED)', async () => {
+      seed({ status: OrderStatus.REFUNDED, paymentStatus: PaymentStatus.REFUNDED, restockedAt });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.PENDING);
+
+      expect(orderRepositoryMock.reviveAndReserve).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.PENDING,
+        PaymentStatus.REFUNDED,
+      );
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('does NOT reserve when reviving a post-shipment-cancelled order (its stock was never credited back)', async () => {
+      seed({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID, restockedAt: null });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.PENDING);
+
+      expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.PENDING,
+        PaymentStatus.PAID,
+      );
+    });
+
+    it('propagates the 409 from the repository and leaves the order terminal when stock is gone', async () => {
+      seed({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID, restockedAt });
+      orderRepositoryMock.reviveAndReserve.mockRejectedValue(
+        new ConflictException(
+          'Insufficient stock for "iPhone 15 Pro Case" — cannot revive the order',
+        ),
+      );
+
+      await expect(service.updateStatus('order-uuid-1', OrderStatus.PENDING)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+    });
+
+    it('belt-and-braces: does NOT restock a live order whose flag is somehow still set (no double credit)', async () => {
+      // Anomalous state (only reachable by edits outside the service): a live
+      // PENDING order with restockedAt set. Cancelling it must NOT credit stock.
+      seed({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING, restockedAt });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED);
+
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.CANCELLED,
+        PaymentStatus.PENDING,
+      );
     });
   });
 

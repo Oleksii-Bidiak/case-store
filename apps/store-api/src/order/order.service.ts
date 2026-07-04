@@ -307,11 +307,41 @@ export class OrderService {
       throw new NotFoundException('Order not found');
     }
 
+    // TASK-228: reviving an order whose cancellation already credited its stock
+    // back (restockedAt set) into a live status must re-reserve that stock, or
+    // a later re-cancel would credit it a second time. Moving between the
+    // terminal statuses (CANCELLED ↔ REFUNDED) keeps the flag and touches
+    // nothing. The repository re-reserves with the same conditional-decrement
+    // guard as order creation, so an impossible revive gets a 409 and the
+    // order keeps its terminal status.
+    // `!= null` (not `!== null`): only an actual restock timestamp marks the
+    // order as needing a re-reserve — fixtures/rows without the field must
+    // behave like unflagged orders.
+    const isRevive =
+      existing.restockedAt != null &&
+      status !== OrderStatus.CANCELLED &&
+      status !== OrderStatus.REFUNDED;
+    if (isRevive) {
+      const revived = await this.orderRepository.reviveAndReserve(
+        orderId,
+        status,
+        existing.paymentStatus,
+      );
+      this.logger.info(
+        { event: 'order.revived_reserved', orderId, from: existing.status, to: status },
+        'Cancelled order revived; stock re-reserved',
+      );
+      return OrderEntity.fromPrisma(revived);
+    }
+
     // Pre-shipment cancellation: return the reserved stock to inventory and
     // evict product caches in one transaction (reuses the customer-cancel path).
     // Post-shipment cancels and refunds are deliberately NOT auto-restocked —
     // the physical return must be received and re-stocked by hand (TASK-124).
-    if (shouldAutoRestock(existing.status, status)) {
+    // The restockedAt guard is belt-and-braces: a live pre-shipment order never
+    // has it set (revive clears it), so it only blocks double credits if a
+    // status was edited outside the service.
+    if (shouldAutoRestock(existing.status, status) && existing.restockedAt === null) {
       const restocked = await this.orderRepository.cancelAndRestock(orderId);
       this.logger.info(
         { event: 'order.cancelled_restocked', orderId, from: existing.status },

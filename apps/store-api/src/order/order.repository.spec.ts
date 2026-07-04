@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { PrismaService } from '../prisma';
 import {
@@ -255,11 +255,81 @@ describe('OrderRepository', () => {
         where: { id: 'product-uuid-1' },
         data: { stock: { increment: 2 } },
       });
+      // TASK-228: the restock is stamped so a later revive re-reserves.
       expect(tx.order.update).toHaveBeenCalledWith({
         where: { id: 'order-1' },
-        data: { status: OrderStatus.CANCELLED },
+        data: { status: OrderStatus.CANCELLED, restockedAt: expect.any(Date) },
         include: expect.any(Object),
       });
+    });
+  });
+
+  // ─── reviveAndReserve — re-reserve stock on revive (CRITICAL / TASK-228) ────
+
+  describe('reviveAndReserve', () => {
+    const seedTx = () => {
+      const tx = makeTx();
+      tx.order.findUniqueOrThrow.mockResolvedValue({
+        id: 'order-1',
+        items: [
+          { productId: 'product-uuid-1', quantity: 2, product: { name: 'iPhone 15 Pro Case' } },
+          { productId: 'product-uuid-2', quantity: 1, product: { name: 'Screen Protector' } },
+        ],
+      });
+      tx.order.update.mockResolvedValue({
+        id: 'order-1',
+        status: OrderStatus.PENDING,
+        items: [{ productId: 'product-uuid-1', product: { slug: 'iphone-15-pro-case' } }],
+      });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      return tx;
+    };
+
+    it('conditionally re-decrements stock per position, sets the new status, and clears restockedAt', async () => {
+      const tx = seedTx();
+      tx.product.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID);
+
+      // Same oversell guard as order creation: WHERE stock >= quantity.
+      expect(tx.product.updateMany).toHaveBeenCalledTimes(2);
+      expect(tx.product.updateMany).toHaveBeenCalledWith({
+        where: { id: 'product-uuid-1', stock: { gte: 2 } },
+        data: { stock: { decrement: 2 } },
+      });
+      expect(tx.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: {
+          status: OrderStatus.PENDING,
+          paymentStatus: PaymentStatus.PAID,
+          restockedAt: null,
+        },
+        include: expect.any(Object),
+      });
+    });
+
+    it('throws ConflictException and does not update the order when a position lacks stock', async () => {
+      const tx = seedTx();
+      // First line reserves fine, second line's stock is gone → whole tx throws.
+      tx.product.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+
+      await expect(
+        repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID),
+      ).rejects.toThrow(ConflictException);
+      expect(tx.order.update).not.toHaveBeenCalled();
+      // Nothing committed → nothing to evict.
+      expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+    });
+
+    it('evicts list pages and per-product detail caches after commit', async () => {
+      const tx = seedTx();
+      tx.product.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID);
+
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.del).toHaveBeenCalledWith(productDetailSlugKey('iphone-15-pro-case'));
+      expect(cacheMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
     });
   });
 

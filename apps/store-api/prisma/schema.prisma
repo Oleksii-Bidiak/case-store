@@ -243,6 +243,14 @@ model Order {
   // Audit tombstone (TASK-104). NULL = live; non-null = soft-deleted and hidden
   // from every read path. Child OrderItems are left in place.
   deletedAt       DateTime?     @map("deleted_at")
+  // TASK-228: stamped when an automatic cancellation returned this order's
+  // reserved stock to inventory; cleared when the order is revived and the
+  // stock is re-reserved. NULL = the order still "owns" its items (reserved in
+  // the warehouse or shipped with the parcel). Non-null = the items were
+  // credited back to sellable stock, so reviving the order must decrement
+  // stock again first (or 409 if it is gone). Tracks only automatic restocks —
+  // manual stock adjustments after a physical return are invisible to it.
+  restockedAt     DateTime?     @map("restocked_at")
 
   items           OrderItem[]
 

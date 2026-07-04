@@ -60,6 +60,12 @@ export interface OrderWithItems {
   notes: string | null;
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * TASK-228: when an automatic cancellation last returned this order's stock
+   * to inventory; null while the order still "owns" its items. The service
+   * consults it to re-reserve stock on revive and to prevent double restocks.
+   */
+  restockedAt: Date | null;
   items: OrderItemRow[];
   /**
    * Owning user account, selected only by the admin read paths
