@@ -158,6 +158,67 @@ describe("CartItemRow", () => {
     await waitFor(() => expect(lastBody).toEqual({ quantity: 7 }));
   });
 
+  // ─── manual clear restores previous quantity (TASK-207) ───────────────────
+  it("shows an empty field (not «0») while the input is cleared", () => {
+    const item = makeCartItem({ id: "item-1", quantity: 2, stock: 50 });
+
+    renderWithProviders(<CartItemRow item={item} />);
+    const input = screen.getByLabelText(dict.cart.quantityAria);
+    fireEvent.change(input, { target: { value: "" } });
+
+    expect(input).toHaveValue(null);
+  });
+
+  it("restores the previous quantity on blur after a manual clear", () => {
+    jest.useFakeTimers();
+    const item = makeCartItem({ id: "item-1", quantity: 2, stock: 50 });
+    let patchCount = 0;
+    let deleteCount = 0;
+    server.use(
+      http.patch("*/api/cart/items/:itemId", () => {
+        patchCount += 1;
+        return HttpResponse.json({ data: {} });
+      }),
+      http.delete("*/api/cart/items/:itemId", () => {
+        deleteCount += 1;
+        return HttpResponse.json({ data: {} });
+      }),
+    );
+
+    renderWithProviders(<CartItemRow item={item} />);
+    const input = screen.getByLabelText(dict.cart.quantityAria);
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+
+    // The previous quantity is back and no server write was dispatched, even
+    // after the debounce window.
+    expect(input).toHaveValue(2);
+    jest.advanceTimersByTime(400);
+    expect(patchCount).toBe(0);
+    expect(deleteCount).toBe(0);
+  });
+
+  it("restores the previous quantity when 0 is typed (no removal)", () => {
+    jest.useFakeTimers();
+    const item = makeCartItem({ id: "item-1", quantity: 3, stock: 50 });
+    let deleteCount = 0;
+    server.use(
+      http.delete("*/api/cart/items/:itemId", () => {
+        deleteCount += 1;
+        return HttpResponse.json({ data: {} });
+      }),
+    );
+
+    renderWithProviders(<CartItemRow item={item} />);
+    const input = screen.getByLabelText(dict.cart.quantityAria);
+    fireEvent.change(input, { target: { value: "0" } });
+    fireEvent.blur(input);
+
+    expect(input).toHaveValue(3);
+    jest.advanceTimersByTime(400);
+    expect(deleteCount).toBe(0);
+  });
+
   it("caps the increase button at the position's available stock", () => {
     const item = makeCartItem({ stock: 3, quantity: 3 });
 

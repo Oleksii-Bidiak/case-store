@@ -17,6 +17,7 @@ import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { dict } from "@/shared/config";
 import { ProductThumb } from "@/shared/ui";
 import { addonServicesForItem } from "../model/addon-services";
+import { resolveQuantityCommit } from "../model/quantity-commit";
 
 const MAX_QUANTITY = 99;
 
@@ -68,7 +69,9 @@ export function CartItemRow({
   onNavigate,
 }: CartItemRowProps) {
   const queryClient = useQueryClient();
-  const [qty, setQty] = useState(item.quantity);
+  // `""` while the user has manually cleared the field — rendering it as-is
+  // keeps the input visually empty instead of snapping to «0» (TASK-207).
+  const [qty, setQty] = useState<number | "">(item.quantity);
   const [imgFailed, setImgFailed] = useState(false);
 
   // Re-sync the local input whenever the cart's authoritative quantity changes
@@ -154,7 +157,7 @@ export function CartItemRow({
     updateItem.mutate({ itemId: item.id, data: { quantity } });
   }, 300);
 
-  /** Commit a desired quantity: 0 removes the item, otherwise update. */
+  /** Commit a stepper quantity: 0 removes the item, otherwise update. */
   const commit = (next: number) => {
     const clamped = Math.max(0, Math.min(maxQty, next));
     if (clamped <= 0) {
@@ -171,6 +174,27 @@ export function CartItemRow({
     applyOptimisticQuantity(clamped);
     debouncedUpdate(clamped);
   };
+
+  /**
+   * Commit the typed input on blur. Unlike the stepper's `commit`, an empty /
+   * zero / invalid value restores the previous quantity instead of removing
+   * the line — removal stays an explicit action via the trash button
+   * (TASK-207). The decision table lives in `resolveQuantityCommit`.
+   */
+  const commitTyped = () => {
+    const result = resolveQuantityCommit(qty, item.quantity, maxQty);
+    if (result.kind === "restore" || result.kind === "noop") {
+      setQty(item.quantity);
+      return;
+    }
+    setQty(result.quantity);
+    applyOptimisticQuantity(result.quantity);
+    debouncedUpdate(result.quantity);
+  };
+
+  // The stepper buttons need a numeric base even while the field is cleared;
+  // fall back to the cart's authoritative quantity in that transient state.
+  const stepperQty = qty === "" ? item.quantity : qty;
 
   const offers = onToggleService ? addonServicesForItem(item) : [];
 
@@ -249,8 +273,8 @@ export function CartItemRow({
             <button
               type="button"
               aria-label={dict.cart.decreaseAria}
-              disabled={qty <= 1}
-              onClick={() => commit(Math.max(1, qty - 1))}
+              disabled={stepperQty <= 1}
+              onClick={() => commit(Math.max(1, stepperQty - 1))}
               className="flex size-9 items-center justify-center bg-background text-lg text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
             >
               −
@@ -261,15 +285,17 @@ export function CartItemRow({
               min={1}
               max={maxQty}
               value={qty}
-              onChange={(e) => setQty(Number(e.target.value))}
-              onBlur={() => commit(qty)}
+              onChange={(e) =>
+                setQty(e.target.value === "" ? "" : Number(e.target.value))
+              }
+              onBlur={commitTyped}
               className="w-11 bg-background py-1.5 text-center font-mono text-[15px] font-semibold text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
             <button
               type="button"
               aria-label={dict.cart.increaseAria}
-              disabled={qty >= maxQty || outOfStock}
-              onClick={() => commit(qty + 1)}
+              disabled={stepperQty >= maxQty || outOfStock}
+              onClick={() => commit(stepperQty + 1)}
               className="flex size-9 items-center justify-center bg-background text-lg text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
             >
               +
