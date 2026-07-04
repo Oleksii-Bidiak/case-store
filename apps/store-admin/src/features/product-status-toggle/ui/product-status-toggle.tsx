@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Badge, Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
-  getProductControllerFindAllQueryKey,
+  getProductControllerAdminFindAllQueryKey,
   useProductControllerActivate,
   useProductControllerDeactivate,
 } from "@/entities/product";
@@ -39,7 +39,7 @@ export function ProductStatusToggle({
       {
         onSuccess: () => {
           void queryClient.invalidateQueries({
-            queryKey: getProductControllerFindAllQueryKey(),
+            queryKey: getProductControllerAdminFindAllQueryKey(),
           });
         },
       },

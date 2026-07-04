@@ -10,7 +10,7 @@ import {
   type ProductFormValues,
 } from "@/features/product-form";
 import {
-  getProductControllerFindAllQueryKey,
+  getProductControllerAdminFindAllQueryKey,
   useProductControllerCreate,
 } from "@/entities/product";
 import { dict } from "@/shared/config";
@@ -30,7 +30,7 @@ export function CreateProductView() {
       {
         onSuccess: () => {
           void queryClient.invalidateQueries({
-            queryKey: getProductControllerFindAllQueryKey(),
+            queryKey: getProductControllerAdminFindAllQueryKey(),
           });
           toast.success(dict.products.toastCreated);
           router.push("/products");

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCategoryControllerGetRootCategories } from "@/shared/api";
-import { useProductControllerFindAll } from "@/entities/product";
+import { useProductControllerAdminFindAll } from "@/entities/product";
 import { ProductStatusToggle } from "@/features/product-status-toggle";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import {
@@ -62,13 +62,16 @@ export function AdminProductTable() {
     updateParams,
   );
 
-  const { data, isLoading, isFetching, isError } = useProductControllerFindAll({
-    page,
-    limit: PAGE_SIZE,
-    search: searchParam || undefined,
-    sortBy,
-    sortOrder,
-  });
+  // TASK-230: the guarded admin listing — includes deactivated products (the
+  // public GET /products is active-only now) and bypasses the server cache.
+  const { data, isLoading, isFetching, isError } =
+    useProductControllerAdminFindAll({
+      page,
+      limit: PAGE_SIZE,
+      search: searchParam || undefined,
+      sortBy,
+      sortOrder,
+    });
 
   const categoriesQuery = useCategoryControllerGetRootCategories({
     limit: 100,

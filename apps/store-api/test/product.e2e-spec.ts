@@ -241,6 +241,85 @@ describe('ProductController (e2e)', () => {
         }),
       );
     });
+
+    // TASK-230: deactivated products leaked into the public list because the
+    // service forwarded `isActive` as-is (undefined = no filter). The public
+    // endpoint must be active-only whatever the caller sends. A unique search
+    // term keeps these requests out of the (real) list cache shared across
+    // tests — a cache HIT would skip the repository and void the assertion.
+    it('forces the active-only filter when no isActive is sent (no inactive leak)', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get(`/api/products?search=task230-default-${Date.now()}`)
+        .expect(200);
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: true }),
+      );
+    });
+
+    it('overrides an explicit isActive=false from a public caller', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get(`/api/products?isActive=false&search=task230-override-${Date.now()}`)
+        .expect(200);
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: true }),
+      );
+    });
+  });
+
+  // ─── GET /api/products/admin/list (admin, TASK-230) ──────────────────────────
+
+  describe('GET /api/products/admin/list', () => {
+    it('should return 401 without auth token', async () => {
+      await request(app.getHttpServer()).get('/api/products/admin/list').expect(401);
+    });
+
+    it('should return 403 for non-admin user', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .get('/api/products/admin/list')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('lists ALL products (no isActive filter) for an admin by default', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findAll.mockResolvedValue({
+        products: [{ ...testProduct, isActive: false }],
+        total: 1,
+      });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/products/admin/list')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      // The literal "list" segment must route here, not into admin/:id.
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: undefined }),
+      );
+      expect(response.body.data[0].isActive).toBe(false);
+    });
+
+    it('respects an explicit isActive=false filter for an admin', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/products/admin/list?isActive=false')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: false }),
+      );
+    });
   });
 
   // ─── GET /api/products/:slug (public) ────────────────────────────────────────

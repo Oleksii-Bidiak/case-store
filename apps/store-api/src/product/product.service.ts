@@ -89,11 +89,44 @@ export class ProductService {
 
   /**
    * Get a paginated list of products with optional filtering.
-   * Public endpoint — defaults to showing only active products.
+   * Public endpoint — ALWAYS restricted to active products (TASK-230): the
+   * query's `isActive` is deliberately overridden, so deactivated positions
+   * can never be listed publicly (the PDP already 404s them per TASK-145).
+   * The admin table uses {@link adminFindAll} instead.
    * Cache-aside: a cache hit skips the database entirely.
    */
   async findAll(query: ProductListQueryDto): Promise<PaginatedProductsResponse> {
-    const params: FindAllParams = {
+    const params: FindAllParams = { ...this.toListParams(query), isActive: true };
+
+    const cacheKey = buildProductListKey(params);
+    const cached = await this.cache.get<PaginatedProductsResponse>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const response = await this.listFromDb(params);
+
+    // NOTE: as of the line-item contract change, cached list entries hold
+    // `PublicProductEntity` items (no raw `stock`, with `inStock`/`lowStock`).
+    // Any Redis warm-up entries written before this deploy carry the old shape
+    // and must be evicted on rollout — the cache TTL otherwise self-heals.
+    await this.cache.set(cacheKey, response, this.cacheTtlSeconds);
+    return response;
+  }
+
+  /**
+   * Admin — the same paginated listing but with the `isActive` filter respected
+   * as sent (undefined = ALL products, including deactivated) and WITHOUT the
+   * cache layer: the admin table must reflect activate/deactivate toggles
+   * immediately, and admin traffic is too low to be worth caching (TASK-230).
+   */
+  async adminFindAll(query: ProductListQueryDto): Promise<PaginatedProductsResponse> {
+    return this.listFromDb(this.toListParams(query));
+  }
+
+  /** Map the list query DTO onto repository params (shared defaults). */
+  private toListParams(query: ProductListQueryDto): FindAllParams {
+    return {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
       categoryId: query.categoryId,
@@ -104,17 +137,14 @@ export class ProductService {
       sortBy: query.sortBy ?? 'createdAt',
       sortOrder: query.sortOrder ?? 'desc',
     };
+  }
 
-    const cacheKey = buildProductListKey(params);
-    const cached = await this.cache.get<PaginatedProductsResponse>(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
+  /** Run the repository listing and wrap it in the paginated envelope. */
+  private async listFromDb(params: FindAllParams): Promise<PaginatedProductsResponse> {
     const { products, total } = await this.productRepository.findAll(params);
     const totalPages = Math.ceil(total / params.limit);
 
-    const response: PaginatedProductsResponse = {
+    return {
       data: products.map((product) => PublicProductEntity.fromPrisma(product)),
       meta: {
         total,
@@ -123,13 +153,6 @@ export class ProductService {
         totalPages,
       },
     };
-
-    // NOTE: as of the line-item contract change, cached list entries hold
-    // `PublicProductEntity` items (no raw `stock`, with `inStock`/`lowStock`).
-    // Any Redis warm-up entries written before this deploy carry the old shape
-    // and must be evicted on rollout — the cache TTL otherwise self-heals.
-    await this.cache.set(cacheKey, response, this.cacheTtlSeconds);
-    return response;
   }
 
   /**

@@ -4,14 +4,16 @@
 // `@/shared/api` directly.
 
 export {
-  useProductControllerFindAll,
+  // TASK-230: the admin panel lists via the guarded admin endpoint (all
+  // statuses, no cache) — the public list is active-only and not used here.
+  useProductControllerAdminFindAll,
   useProductControllerFindById,
   useProductControllerCreate,
   useProductControllerUpdate,
   useProductControllerDeactivate,
   useProductControllerActivate,
   useProductControllerPreviewProductBySlug,
-  getProductControllerFindAllQueryKey,
+  getProductControllerAdminFindAllQueryKey,
   getProductControllerFindByIdQueryKey,
   // Product images (TASK-073)
   useProductImageControllerList,
@@ -25,7 +27,7 @@ export type {
   ProductEntity,
   CreateProductDto,
   UpdateProductDto,
-  ProductControllerFindAllParams,
+  ProductControllerAdminFindAllParams,
   ProductListResponseEnvelope,
   ProductResponseEnvelope,
   AdminProductPreviewResponseEnvelope,
