@@ -14,8 +14,9 @@ import { PrismaService } from '../src/prisma';
  * failure (the guarantee behind TASK-051-K that mocks can't prove).
  *
  * Requires an isolated `*_test` database; DATABASE_URL is forced to it by
- * setup-int.ts. Run with `npm run test:int -w apps/store-api` (DB must be up
- * and migrated — see docs/manual-qa-phase2.md / CI test-int job).
+ * setup-int.ts. Run with `npm run test:int -w apps/store-api` from the repo
+ * root (DB must be up with the current schema pushed — `npx prisma db push`
+ * against the test DB; see docs/manual-qa-pending.md §1 / CI test-int job).
  */
 describe('CartRepository (integration)', () => {
   let app: INestApplication;
@@ -25,7 +26,6 @@ describe('CartRepository (integration)', () => {
   // Fixtures (real rows the cart items reference via FK).
   let userId: string;
   let productId: string;
-  let variantId: string;
   let product2Id: string;
   let categoryId: string;
 
@@ -61,11 +61,6 @@ describe('CartRepository (integration)', () => {
     });
     productId = product.id;
 
-    const variant = await prisma.productVariant.create({
-      data: { productId, name: 'Black', price: '29.99', stock: 50 },
-    });
-    variantId = variant.id;
-
     const product2 = await prisma.product.create({
       data: { name: 'Int Product 2', slug: `int-prod2-${suffix}`, price: '9.99', categoryId },
     });
@@ -87,7 +82,6 @@ describe('CartRepository (integration)', () => {
       return;
     }
     await prisma.cart.deleteMany({});
-    await prisma.productVariant.deleteMany({ where: { productId } });
     await prisma.product.deleteMany({ where: { id: { in: [productId, product2Id] } } });
     await prisma.category.deleteMany({ where: { id: categoryId } });
     await prisma.user.deleteMany({ where: { id: userId } });
@@ -123,15 +117,15 @@ describe('CartRepository (integration)', () => {
 
   // ─── addItem ────────────────────────────────────────────────────────────────
 
-  it('addItem creates the line then increments it on the same product+variant', async () => {
+  it('addItem creates the line then increments it on the same product', async () => {
     const cart = await repo.findOrCreate({ type: 'token', token: `tok-${randomUUID()}` });
 
-    await repo.addItem({ cartId: cart.id, productId, variantId, quantity: 2 });
+    await repo.addItem({ cartId: cart.id, productId, quantity: 2 });
     let updated = await repo.findById(cart.id);
     expect(updated?.items).toHaveLength(1);
     expect(updated?.items[0].quantity).toBe(2);
 
-    await repo.addItem({ cartId: cart.id, productId, variantId, quantity: 3 });
+    await repo.addItem({ cartId: cart.id, productId, quantity: 3 });
     updated = await repo.findById(cart.id);
     expect(updated?.items).toHaveLength(1);
     expect(updated?.items[0].quantity).toBe(5);
@@ -174,15 +168,15 @@ describe('CartRepository (integration)', () => {
       userCartId: userCart.id,
       guestCartId: guest.id,
       lines: [
-        { productId, variantId, quantity: 4 },
-        { productId: product2Id, variantId: null, quantity: 1 },
+        { productId, quantity: 4 },
+        { productId: product2Id, quantity: 1 },
       ],
     });
 
     const merged = await repo.findById(userCart.id);
     expect(merged?.items).toHaveLength(2);
-    const variantLine = merged?.items.find((i) => i.variantId === variantId);
-    expect(variantLine?.quantity).toBe(4);
+    const productLine = merged?.items.find((i) => i.productId === productId);
+    expect(productLine?.quantity).toBe(4);
 
     // The guest cart is gone.
     expect(await repo.findByToken(token)).toBeNull();
@@ -191,7 +185,7 @@ describe('CartRepository (integration)', () => {
   it('mergeGuestCartIntoUser ROLLS BACK on a mid-transaction failure (no partial merge, guest cart kept)', async () => {
     const userCart = await repo.findOrCreate({ type: 'user', userId });
     // Pre-existing user line so we can prove it is untouched after rollback.
-    await repo.addItem({ cartId: userCart.id, productId, variantId, quantity: 1 });
+    await repo.addItem({ cartId: userCart.id, productId, quantity: 1 });
 
     const token = `tok-${randomUUID()}`;
     const guest = await repo.findOrCreate({ type: 'token', token });
@@ -201,8 +195,8 @@ describe('CartRepository (integration)', () => {
         userCartId: userCart.id,
         guestCartId: guest.id,
         lines: [
-          { productId: product2Id, variantId: null, quantity: 2 }, // valid line
-          { productId: MISSING_PRODUCT_ID, variantId: null, quantity: 1 }, // FK violation
+          { productId: product2Id, quantity: 2 }, // valid line
+          { productId: MISSING_PRODUCT_ID, quantity: 1 }, // FK violation
         ],
       }),
     ).rejects.toThrow();

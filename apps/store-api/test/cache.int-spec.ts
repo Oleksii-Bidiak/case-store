@@ -4,6 +4,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
+import { LoggerModule } from 'nestjs-pino';
 import { PrismaModule, PrismaService } from '../src/prisma';
 import { RedisCacheModule, CacheService, productDetailIdKey } from '../src/cache';
 import { ProductModule } from '../src/product';
@@ -53,6 +54,9 @@ describe('Product cache (integration)', () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }),
+        // CacheService (and friends) inject PinoLogger; the global LoggerModule
+        // provides it app-wide, so the testing module must register it too.
+        LoggerModule.forRoot({ pinoHttp: { level: 'silent' } }),
         PrismaModule,
         RedisCacheModule,
         ProductModule,
@@ -64,7 +68,10 @@ describe('Product cache (integration)', () => {
 
     prisma = moduleRef.get(PrismaService);
     service = moduleRef.get(ProductService);
-    repository = moduleRef.get(ProductRepository);
+    // Two ProductRepository instances live in the graph (SearchModule provides
+    // its own) — moduleRef.get() may return the wrong one, so spy on the exact
+    // instance injected into ProductService.
+    repository = (service as unknown as { productRepository: ProductRepository }).productRepository;
     cache = moduleRef.get(CacheService);
     cacheManager = moduleRef.get(CACHE_MANAGER);
 
@@ -113,7 +120,10 @@ describe('Product cache (integration)', () => {
     const second = await service.findAll(query);
 
     expect(spy).toHaveBeenCalledTimes(1); // second call was a cache hit
-    expect(second).toEqual(first);
+    // The Redis round-trip returns plain JSON (entity classes and Dates become
+    // ISO strings). HTTP responses are identical either way — the controller
+    // serializes to JSON — so compare the serialized forms.
+    expect(JSON.parse(JSON.stringify(second))).toEqual(JSON.parse(JSON.stringify(first)));
     spy.mockRestore();
   });
 
