@@ -22,6 +22,12 @@ const DATABASE_URL =
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
+  // Serial locally: parallel workers stampede the dev server's on-demand
+  // compilation (page.goto times out cold) and share one Redis rate-limit
+  // counter on auth endpoints (spurious 429s). CI builds decide themselves.
+  workers: process.env.CI ? undefined : 1,
+  // Dev-mode compiles can push a first navigation past the 30s default.
+  timeout: 60_000,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",

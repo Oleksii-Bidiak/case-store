@@ -1,6 +1,8 @@
 import * as path from "node:path";
 import { config as loadEnv } from "dotenv";
 import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 import * as argon2 from "argon2";
 
 // Playwright's globalSetup runs from the repo root, where DATABASE_URL is not
@@ -22,7 +24,10 @@ export const E2E_USER_EMAIL = "e2e@test.com";
 export const E2E_USER_PASSWORD = "E2ePassword1!";
 
 export default async function globalSetup(): Promise<void> {
-  const prisma = new PrismaClient();
+  // The generated client uses the pg driver adapter (see prisma/seed.ts) — a
+  // bare `new PrismaClient()` throws instead of reading DATABASE_URL itself.
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
   try {
     const category = await prisma.category.upsert({
       where: { slug: "e2e-category" },
@@ -30,35 +35,23 @@ export default async function globalSetup(): Promise<void> {
       create: { name: "E2E Category", slug: "e2e-category" },
     });
 
-    const product = await prisma.product.upsert({
+    // Stock lives on the Product row itself (no variant model — sibling
+    // positions in a ProductGroup are separate Products). Keep it in stock so
+    // add-to-cart always succeeds.
+    await prisma.product.upsert({
       where: { slug: E2E_PRODUCT_SLUG },
-      update: { isActive: true, deletedAt: null },
+      update: { isActive: true, deletedAt: null, stock: 100 },
       create: {
         name: "E2E Test Product",
         slug: E2E_PRODUCT_SLUG,
         description: "Deterministic product for Playwright E2E.",
         price: "499.00",
         sku: "E2E-SKU-1",
+        stock: 100,
         categoryId: category.id,
         isActive: true,
       },
     });
-
-    // Ensure the product has an in-stock variant so add-to-cart succeeds.
-    const existingVariant = await prisma.productVariant.findFirst({
-      where: { productId: product.id },
-    });
-    if (!existingVariant) {
-      await prisma.productVariant.create({
-        data: {
-          productId: product.id,
-          name: "Default",
-          sku: "E2E-VAR-1",
-          price: "499.00",
-          stock: 100,
-        },
-      });
-    }
 
     const passwordHash = await argon2.hash(E2E_USER_PASSWORD);
     await prisma.user.upsert({

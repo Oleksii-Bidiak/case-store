@@ -17,10 +17,18 @@ test.describe("guest cart flow", () => {
       page.getByRole("heading", { name: /E2E Test Product/i }),
     ).toBeVisible();
 
+    // The PDP add-to-cart CTA is «Додати до кошика». Match it exactly: the
+    // header has a «Кошик» button and the PDP a stub «Купити в 1 клік»
+    // (TASK-178) that looser regexes used to hit instead.
     await page
-      .getByRole("button", { name: /(додати|кошик|cart)/i })
-      .first()
+      .getByRole("main")
+      .getByRole("button", { name: /додати до кошика/i })
       .click();
+
+    // Wait for the add to land: the header badge switches to the cart total.
+    await expect(
+      page.getByRole("button", { name: /відкрити кошик/i }),
+    ).toContainText("499");
 
     await page.goto("/cart");
     await expect(page.getByText(/E2E Test Product/i)).toBeVisible();
