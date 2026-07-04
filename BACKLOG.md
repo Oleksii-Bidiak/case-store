@@ -59,8 +59,8 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-101 | Run [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md) to closure on a running stack; triage breakage into `fix/NNN` tasks. **Owner pass done 2026-07-03** → bugs TASK-195…212 below; re-run blocked rows after TASK-195/196 land; §4 (NP/SMTP/Sentry keys) pending keys | 🔄 | — |
-| TASK-105-D | Run Playwright E2E (`npm run test:e2e:pw`) — globalSetup env crash fixed (TASK-203); re-run on a booted stack | 🔄 | 048 |
+| TASK-101 | Run [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md) to closure on a running stack; triage breakage into `fix/NNN` tasks. Owner pass 2026-07-03 → bugs TASK-195…212; **re-test 2026-07-04 green** (checkout/cancel/wishlist/coupons). Left: TASK-124 matrix (owner, next session) + §4 (NP/SMTP/Sentry keys) | 🔄 | — |
+| TASK-105-D | Playwright E2E green 4/4 (2026-07-04): seed-e2e fixed (pg driver adapter, no ProductVariant model), cart-flow CTA selector fixed («Додати до кошика»), local runs serial | ✅ | 048 |
 | TASK-184 | Nav tails: footer «Інформація» links → `/info` + `/legal` (now point at `/products`); admin sidebar dead `Settings` link → `/settings/contact` | ⬜ | — |
 
 #### Баги з QA-проходу 2026-07-03 *(порядок = пріоритет; спершу CRITICAL)*
@@ -68,14 +68,14 @@
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
 | TASK-195 | ~~Checkout «Далі» does nothing~~ — **root cause: stale client bundle in the owner's browser** (Turbopack dev chunk URLs are path-based → old cached chunk with the TASK-197 hydration crash killed interactivity). Clean-browser Playwright run on develop: login → add-to-cart → «Далі» → «Підтвердити» → `/orders/{id}/confirmation` all green. Owner to hard-reload (Ctrl+Shift+R) and confirm | ✅ | — |
-| TASK-196 | **[re-test]** Session-loss on F5 NOT reproducible in a clean browser (Playwright: session survives reload) — same stale-bundle artifact as TASK-195. Remaining to verify after owner hard-reloads: admin F5 behaviour + guest **wishlist merge** on login (Сценарій 1 «вичищається з улюбленого») | 🔄 | — |
+| TASK-196 | Session-loss on F5: storefront part was the stale bundle (owner re-test ✅, incl. wishlist merge / Сценарій 1); **admin part was real** — `/auth/refresh` throttled 5/min while every page load calls it, so repeated F5 hit 429 and the app treated it as a dead session. Fixed: throttle → 30/min + both AuthProviders retry transient (non-401) bootstrap failures; verified 6×F5 green | ✅ | — |
 | TASK-197 | Hydration mismatch «0 грн» vs «0 ₴» in every money render (header cart badge first) — `formatMoney` now formats the number via Intl and appends ₴ manually (SSR-stable across ICU versions) | ✅ | — |
-| TASK-198 | Promo code fails on `/cart` with generic «Не вдалося застосувати промокод» but the same code applies on `/checkout` (shared `ApplyDiscount`) — capture Network status + error body on `/cart` | ⬜ | — |
+| TASK-198 | ~~Promo fails on `/cart`~~ — same stale-bundle artifact as TASK-195 (`ApplyDiscount` is one shared component); clean-browser Playwright: TEST1 applies on `/cart`, −10% shown; owner re-test of TASK-079 ✅. Coupon test coverage rides on TASK-219 | ✅ | — |
 | TASK-199 | Grouped-card advertised price mismatch: «Double Pack» card shows the Single-Pack price; PDP then opens the correct Double-Pack position (card advertised-price/variant mapping, TASK-126 area) | ⬜ | — |
 | TASK-200 | Search: cyrillic «афйон» finds nothing while latin typo `ihpone` works — add UA↔EN transliteration/synonym settings to the Meili index (seed product names are EN) | ⬜ | — |
 | TASK-201 | Admin: category **parent** resets while editing — must re-select it to save (TASK-149 regression in a real browser; check Radix Select vs the id-keyed `reset()`) | ⬜ | — |
 | TASK-202 | Login error mapping: API correctly returns 401 «Account is deactivated» for banned accounts (QA «Сценарій 2» solved: `test@gmail.com` was banned by the owner during the TASK-150 test), but the storefront maps **every** 401 to «Невірний email або пароль» — map the deactivated case to its own message (same for admin login) | ⬜ | — |
-| TASK-203 | Playwright `globalSetup` crashed (`PrismaClientInitializationError`) — `seed-e2e.ts` now loads `apps/store-api/.env` before constructing PrismaClient | ✅ | — |
+| TASK-203 | Playwright `globalSetup` crashed (`PrismaClientInitializationError`) — `seed-e2e.ts` now loads `apps/store-api/.env` **and** constructs PrismaClient with the pg driver adapter (bare constructor throws under driver-adapter setups); suite green under TASK-105-D | ✅ | — |
 | TASK-204 | Cart line items: product link missing in the cart widget; clicking the image visually reloads it (TASK-133 leftover) | ⬜ | — |
 | TASK-205 | Cart API exposes raw `items[].stock` (QA-confirmed leak) — replace with a capped `maxQty` in the contract; stepper logic unchanged (stock-hiding follow-up to TASK-158) | ⬜ | — |
 | TASK-206 | Checkout «Ваше замовлення» summary slides **under** the sticky header on scroll (z-index/top offset) | ⬜ | — |

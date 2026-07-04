@@ -107,76 +107,25 @@ https://react.dev/link/hydration-mismatch
 
 ## 1. Інтеграційні прогони (термінал, браузер майже не потрібен)
 
-- [❌] **TASK-105-D — Playwright E2E.**
+- [✅] **TASK-105-D — Playwright E2E.**
   **Зроби:** стек запущений (Крок 0); одноразово `npx playwright install chromium`; потім `npm run test:e2e:pw`.
   **Має бути:** 4 специфікації зелені. Якщо падають — скопіюй назву тесту й помилку в ❌.
-  **фактично**: обидві команди запускав в корені
-  $ npm run test:e2e:pw
+  **виправлено 2026-07-04**: сід конструював PrismaClient без pg-адаптера і посилався на
+  видалену модель ProductVariant; cart-спека кліала не ту кнопку (хедерний «Кошик» замість
+  «Додати до кошика»); локальний прогін тепер серійний (dev-компіляція + спільний Redis-тротлінг
+  не тягнуть 4 воркери). Прогнано: **4/4 зелені**.
 
-> store-test-ai@0.1.0 test:e2e:pw
-> playwright test
-
-PrismaClientInitializationError: `PrismaClient` needs to be constructed with a non-empty, valid `PrismaClientOptions`:
-
-```
-new PrismaClient({
-  ...
-})
-```
-
-or
-
-```
-constructor() {
-  super({ ... });
-}
-```
-
-at fixtures\seed-e2e.ts:18
-
-16 |
-17 | export default async function globalSetup(): Promise<void> {
-
-> 18 | const prisma = new PrismaClient();
-
-     |                  ^
-
-19 | try {
-20 | const category = await prisma.category.upsert({
-21 | where: { slug: "e2e-category" },
-at t (D:\projects\store-ai\node_modules\@prisma\client\src\runtime\getPrismaClient.ts:336:15)
-at globalSetup (D:\projects\store-ai\e2e\fixtures\seed-e2e.ts:18:18)
-
-- [❌] **TASK-044-I / TASK-066 / TASK-152 / TASK-137 — інтеграційні тести на реальній БД (`test:int`).**
-  **Зроби:** створи тестову БД (одноразово):
-  `docker exec store_postgres psql -U postgres -c "CREATE DATABASE store_test;"`
-  Потім запусти **з кореня репозиторію** (`D:\projects\store-ai`, НЕ з папки `apps/` — інакше
+- [✅] **TASK-044-I / TASK-066 / TASK-152 / TASK-137 — інтеграційні тести на реальній БД (`test:int`).**
+  **Зроби:** запусти **з кореня репозиторію** (`D:\projects\store-ai`, НЕ з папки `apps/` — інакше
   `npm error No workspaces found`): `npm run test:int -w apps/store-api`.
-  Якщо команда скаржиться на підключення — запусти з явним підключенням:
-  `DATABASE_URL="postgresql://postgres:postgres@localhost:5432/store_test" npm run test:int -w apps/store-api`
-  (звір логін/пароль зі своїм `docker-compose.yml`).
+  DATABASE_URL задавати не треба — setup-int сам цілить у `store_test`.
+  Якщо падає на «column … does not exist» — онови схему тестової бази:
+  `npm exec -w apps/store-api --no -- prisma db push --url "postgresql://postgres:postgres@localhost:5432/store_test" --accept-data-loss`
   **Має бути:** всі int-тести зелені (Redis-кеш hit/miss/інвалідація + дашборд-виручка/топ-товари/low-stock + unrealized-виручка).
-
-$ docker exec store_postgres psql -U postgres -c "CREATE DATABASE store_test;"
-ERROR: database "store_test" already exists
-
-alejandro@jioiiika MINGW64 /d/projects/store-ai/apps (develop)
-$ docker exec store_postgres psql -U postgres -c "CREATE DATABASE store_test2;"
-CREATE DATABASE
-
-alejandro@jioiiika MINGW64 /d/projects/store-ai/apps (develop)
-$ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/store_test" npm run test:int -w apps/store-api
-npm error No workspaces found:
-npm error --workspace=apps/store-api
-npm error A complete log of this run can be found in: C:\Users\jioii\AppData\Local\npm-cache_logs\2026-07-03T13_22_32_068Z-debug-0.log
-
-alejandro@jioiiika MINGW64 /d/projects/store-ai/apps (develop)
-$ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/store_test2" npm run test:int -w apps/store-api
-npm error No workspaces found:
-npm error --workspace=apps/store-api
-npm error A complete log of this run can be found in: C:\Users\jioii\AppData\Local\npm-cache_logs\2026-07-03T13_22_39_492Z-debug-0.log
-
-alejandro@jioiiika MINGW64 /d/projects/store-ai/apps (develop)
+  **виправлено 2026-07-04**: схема `store_test` була застаріла (без `products.stock`), а спеки
+  відстали від TASK-142 (ProductVariant) і observability (PinoLogger у CacheService).
+  Прогнано з кореня: **15/15 зелені**. (Базу `store_test2` можна видалити:
+  `docker exec store_postgres psql -U postgres -c "DROP DATABASE store_test2;"`)
 
 - [✅] **TASK-152 / TASK-137 (візуальна частина) — дашборд адмінки.**
   **Зроби:** зайди адміном на `http://localhost:3002` → Dashboard.
@@ -274,7 +223,7 @@ cart:
   **Має бути:** статус стає CANCELLED без F5; склад повернувся (в адмінці stock +N); у замовлення
   зі статусом інше ніж PENDING кнопки скасування немає.
 
-- [❌ - не можу протестувати, бо ще не можу зробити замовлення (кнопка Далі не працює) - думаю, ти і сам це можеш протестувати, тільки потрібно ввести поняття "вільні залишки"] **TASK-124 — матриця «статус × склад» (КРИТИЧНО).**
+- [⏳ розблоковано (checkout працює після TASK-195), заплановано на наступну сесію; ідея «вільні залишки» заведена як TASK-224] **TASK-124 — матриця «статус × склад» (КРИТИЧНО).**
   **Зроби:** пройди готову покрокову матрицю в [`manual-qa-master.md`](./manual-qa-master.md) §C2-a.
   **Має бути:** склад списується при створенні; рух статусів уперед його не змінює; скасування
   ДО відправки повертає склад; скасування після SHIPPED/DELIVERED і REFUNDED — НЕ повертає;
@@ -331,8 +280,16 @@ cart:
   викликає шторм повторних запитів (Network); F5 працює. _Якщо не відтворюється — просто
   постав ✅, це захисний механізм._
 
-- [❌] **Сценарій 1**: неавторизований користувач додає в кошик продукт, додає в улюблене продукт, авторизується, і з улюленого все вичищажться. при перезавантаженні сторінки користувача розлогінює. можливо зникають і товари в кошику.
-- [❌] **Сценарій 2**: при реєстрації test@gmail.com із паролем testtest виоітає помилка, що email вже зареєстровано (що правильно, цей email я був створював, коли тестував реєстрацію), але при логіні вилітає помилка, що парольи хибний
+- [✅] **Сценарій 1**: неавторизований користувач додає в кошик продукт, додає в улюблене продукт, авторизується, і з улюленого все вичищажться. при перезавантаженні сторінки користувача розлогінює. можливо зникають і товари в кошику.
+  **виправлено**: злиття кошика/вішліста підтвердив перепроход 2026-07-04 (TASK-118/076 ✅);
+  розлогін при F5 мав другу причину крім кешу — rate-limit 5/хв на `/auth/refresh` давав 429
+  при серії перезавантажень, і фронт трактував це як смерть сесії (fix/196: ліміт 30/хв +
+  ретрай тимчасових помилок в обох апках).
+- [❌ розгадано, лишився фікс повідомлення → TASK-202] **Сценарій 2**: при реєстрації test@gmail.com із паролем testtest виоітає помилка, що email вже зареєстровано (що правильно, цей email я був створював, коли тестував реєстрацію), але при логіні вилітає помилка, що парольи хибний
+  **причина**: `test@gmail.com` — акаунт, забанений тобою під час тесту TASK-150; API чесно
+  відповідає 401 «Account is deactivated», але фронт показує всі 401 як «Невірний email або
+  пароль» (TASK-202). Бонус: пароль `testtest` пройшов реєстрацію → парольна політика API
+  слабша за фронтову → TASK-227.
 
 **Побажання**:
 
@@ -350,7 +307,7 @@ cart:
 
 ## 3. Адмінка (браузер, http://localhost:3002)
 
-- [❌ - вилітає з акаунту після перезавантаження сторінки] **TASK-059-B / TASK-112 — вхід + тихе оновлення сесії.**
+- [✅ виправлено (fix/196): вилітало через 429 на `/auth/refresh` (ліміт був 5/хв, кожен F5 його їв); тепер ліміт 30/хв + ретрай — перевірено Playwright: 6×F5 + навігація, сесія жива] **TASK-059-B / TASK-112 — вхід + тихе оновлення сесії.**
   **Зроби:** увійди адміном → F5 кілька разів → лиши вкладку на ~20 хв → поклацай розділи.
   **Має бути:** жодного вильоту на логін; у Network періодично `POST /api/auth/refresh` зі
   статусом 200 (це і є «тихе оновлення»).
@@ -521,7 +478,7 @@ https://react.dev/link/hydration-mismatch
   липкий TOC підсвічує поточний розділ при скролі, заголовки автонумеровані; друк дає чистий
   документ без шапки/футера; хлібна крихта повертає на хаб.
 
-- [❌ - все працює, окрім промокода(його тільки в /checkout можна додати). також малий фікс - хочеться прибрати 0, коли в ручну витераєш кількиість, а якщо користувач забуде його ввести, підставляти попереднє значення. Додаткові послуги - не перевірю, немає телефонів у товарах] **TASK-167-G — кошик `/cart`.**
+- [✅ промокод на /cart працює (перевірено 2026-07-04 чистим браузером: TEST1 → −10%; то був той самий старий бандл, TASK-198 закрито); лишились дрібниці: «0» при ручному витиранні кількості → TASK-207; Додаткові послуги — стаб до TASK-174] **TASK-167-G — кошик `/cart`.**
   **Зроби:** наповни кошик → пограйся степером, видаленням, «Очистити кошик», промокодом
   (з TASK-079), тумблерами «Додаткові пропозиції».
   **Має бути:** двоколонкова верстка з липким підсумком; суми перераховуються миттєво;
