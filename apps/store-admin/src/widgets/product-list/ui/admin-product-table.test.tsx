@@ -27,7 +27,8 @@ function makeProductRow() {
 
 function stubEndpoints() {
   server.use(
-    http.get("*/api/products", () =>
+    // TASK-230: the table lists via the guarded admin endpoint (all statuses).
+    http.get("*/api/products/admin/list", () =>
       HttpResponse.json({
         data: [makeProductRow()],
         meta: { total: 1, page: 1, limit: 10, totalPages: 1 },

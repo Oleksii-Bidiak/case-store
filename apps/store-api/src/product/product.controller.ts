@@ -160,18 +160,48 @@ export class ProductController {
    * GET /api/products
    *
    * Returns a paginated list of products.
-   * Supports filtering by category, active status, price range, and text search.
-   * Public endpoint — no authentication required.
+   * Supports filtering by category, price range, and text search.
+   * Public endpoint — no authentication required. Always restricted to ACTIVE
+   * products (TASK-230): the `isActive` query param is ignored here and only
+   * honoured by the admin listing below.
    */
   @Get()
-  @ApiOperation({ summary: 'List products' })
+  @ApiOperation({ summary: 'List products (active only)' })
   @ApiResponse({
     status: 200,
-    description: 'Paginated list of products',
+    description: 'Paginated list of active products',
     type: ProductListResponseEnvelope,
   })
   async findAll(@Query() query: ProductListQueryDto): Promise<ProductListResponse> {
     return this.productService.findAll(query);
+  }
+
+  /**
+   * GET /api/products/admin/list
+   *
+   * Admin listing: same shape and filters as the public list, but the
+   * `isActive` filter is respected as sent (omitted = ALL products, including
+   * deactivated) and responses bypass the cache, so activate/deactivate
+   * toggles show up immediately (TASK-230).
+   *
+   * IMPORTANT: must be declared before `@Get('admin/:id')` — NestJS matches
+   * routes in declaration order, and `admin/:id` would capture "list" as `:id`.
+   */
+  @Get('admin/list')
+  @UseGuards(AdminGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'List products including deactivated (admin)',
+    operationId: 'productControllerAdminFindAll',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of products (all statuses)',
+    type: ProductListResponseEnvelope,
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async adminFindAll(@Query() query: ProductListQueryDto): Promise<ProductListResponse> {
+    return this.productService.adminFindAll(query);
   }
 
   /**

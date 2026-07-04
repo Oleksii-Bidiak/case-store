@@ -138,7 +138,8 @@ describe('ProductService', () => {
         page: 1,
         limit: 20,
         categoryId: undefined,
-        isActive: undefined,
+        // TASK-230: the public listing always forces the active-only filter.
+        isActive: true,
         minPrice: undefined,
         maxPrice: undefined,
         search: undefined,
@@ -186,6 +187,47 @@ describe('ProductService', () => {
         sortBy: 'price',
         sortOrder: 'asc',
       });
+    });
+
+    // TASK-230: the leak — a public caller asking for inactive products (or
+    // sending no filter) must still get only active ones.
+    it('overrides an explicit isActive=false from a public caller with true', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.findAll({ ...query, isActive: false });
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: true }),
+      );
+    });
+  });
+
+  // ─── adminFindAll (admin, TASK-230) ─────────────────────────────────────────
+
+  describe('adminFindAll', () => {
+    it('respects the isActive filter as sent (undefined = all products) and skips the cache', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [mockProduct], total: 1 });
+
+      const result = await service.adminFindAll({ page: 1, limit: 20 });
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: undefined }),
+      );
+      expect(result.data).toHaveLength(1);
+      expect(result.meta.total).toBe(1);
+      // No cache interaction: the admin table must always be fresh.
+      expect(cacheServiceMock.get).not.toHaveBeenCalled();
+      expect(cacheServiceMock.set).not.toHaveBeenCalled();
+    });
+
+    it('passes isActive=false through so the admin can list only deactivated products', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.adminFindAll({ page: 1, limit: 20, isActive: false });
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: false }),
+      );
     });
   });
 
@@ -551,7 +593,8 @@ describe('ProductService', () => {
         page: 1,
         limit: 20,
         categoryId: undefined,
-        isActive: undefined,
+        // TASK-230: public list keys always carry the forced active-only filter.
+        isActive: true,
         minPrice: undefined,
         maxPrice: undefined,
         search: undefined,

@@ -12,7 +12,7 @@ import {
   type ProductFormValues,
 } from "@/features/product-form";
 import {
-  getProductControllerFindAllQueryKey,
+  getProductControllerAdminFindAllQueryKey,
   getProductControllerFindByIdQueryKey,
   useProductControllerFindById,
   useProductControllerUpdate,
@@ -54,7 +54,7 @@ export function EditProductView({ productId }: EditProductViewProps) {
       {
         onSuccess: () => {
           void queryClient.invalidateQueries({
-            queryKey: getProductControllerFindAllQueryKey(),
+            queryKey: getProductControllerAdminFindAllQueryKey(),
           });
           void queryClient.invalidateQueries({
             queryKey: getProductControllerFindByIdQueryKey(productId),

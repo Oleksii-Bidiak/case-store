@@ -56,14 +56,21 @@ export class ProductListQueryDto {
   categoryId?: string;
 
   @ApiProperty({
-    description: 'Filter by active status (defaults to true for public)',
+    description:
+      'Filter by active status — honoured only on the admin listing; the public list is always active-only (TASK-230)',
     example: true,
     required: false,
   })
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => {
-    if (value === 'true' || value === true) return true;
-    if (value === 'false' || value === false) return false;
+  // Read the ORIGINAL query value from `obj`, not the `value` argument: the
+  // global ValidationPipe runs with `enableImplicitConversion: true`, which
+  // coerces the raw string to Boolean BEFORE this transform — and
+  // `Boolean('false')` is `true`, so `?isActive=false` used to filter to
+  // ACTIVE products. Same fix as UserListQueryDto (TASK-150 B5 / TASK-230).
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
     return undefined;
   })
   @IsBoolean({ message: 'isActive must be true or false' })
