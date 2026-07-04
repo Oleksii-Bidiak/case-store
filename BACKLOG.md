@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-228**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-229**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -86,6 +86,7 @@
 | TASK-211 | «Ви переглядали» uses the outdated card UI — reuse the PopularRail slider + current `ProductCard`/`ProductCardActions` | ⬜ | — |
 | TASK-212 | Font-preload console warnings (`woff2 preloaded but not used`) — best-effort fix (from TASK-138) | ⬜ | — |
 | TASK-227 | Password policy audit: API `register` accepted `testtest` (8 chars, no upper/digit) — align the class-validator DTO policy with the frontend zod rules; add strength requirements | ⬜ | — |
+| TASK-228 | Stock double-credit on order revive: CANCELLED → PENDING does not re-reserve stock, a second → CANCELLED restocks **again** (S+Q). TASK-151 removed the transition guard with no restock flag. Found by code reading (`shouldAutoRestock`); confirm on stack in TASK-124 §C2-a, then fix (block revive or track restock) | ⬜ | — |
 
 #### UX-покращення та discovery з QA-проходу *(виконувати після багів; частина живиться Етапами 2–3)*
 
@@ -186,6 +187,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-228**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-229**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
