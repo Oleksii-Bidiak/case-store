@@ -35,6 +35,9 @@ export function ProductListItem({ product }: { product: PublicProductEntity }) {
           alt={product.primaryImage?.alt ?? product.name}
           blurDataUrl={product.primaryImage?.blurDataUrl}
           initial={(product.name?.[0] ?? "?").toUpperCase()}
+          // Fixed 150px thumbnail (`size-[150px]` above) — without this the
+          // grid default downloads ~full-viewport candidates (TASK-210).
+          sizes="150px"
         />
         <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
           {onSale && (

@@ -38,6 +38,7 @@ export function ProductCard({
   quickAdd,
   wishlist,
   priority = false,
+  imageSizes,
 }: {
   product: PublicProductEntity;
   /** Optional control rendered below the price (always visible). */
@@ -51,6 +52,13 @@ export function ProductCard({
    */
   wishlist?: ReactNode;
   priority?: boolean;
+  /**
+   * `sizes` forwarded to the card image. Contexts where the card width is NOT
+   * the responsive grid default (e.g. fixed-width rail slides) must pass their
+   * real slot width so small viewports don't download full-width images
+   * (TASK-210).
+   */
+  imageSizes?: string;
 }) {
   const summary = product.variantSummary;
   const colors = summary?.colors ?? [];
@@ -81,6 +89,7 @@ export function ProductCard({
           blurDataUrl={product.primaryImage?.blurDataUrl}
           initial={(product.name?.[0] ?? "?").toUpperCase()}
           priority={priority}
+          sizes={imageSizes}
         />
 
         <div className="absolute left-2.5 top-2.5 z-20 flex flex-col gap-1">

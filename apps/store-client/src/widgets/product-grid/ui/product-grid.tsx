@@ -32,6 +32,9 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "sale", label: dict.home.popular.tabs.sale },
 ];
 
+/** Rail slides are fixed-width (`w-[244px] sm:w-[260px]`), not grid-fluid. */
+const RAIL_IMAGE_SIZES = "(max-width: 639px) 244px, 260px";
+
 function isOnSale(product: { price: string; compareAtPrice?: string | null }) {
   return (
     product.compareAtPrice != null &&
@@ -167,14 +170,18 @@ function RailContent({
       ref={scrollerRef}
       className="flex snap-x snap-mandatory gap-5 overflow-x-auto scroll-smooth pb-3"
     >
-      {products.map((product, index) => (
+      {products.map((product) => (
         <div
           key={product.id}
           className="w-[244px] shrink-0 snap-start sm:w-[260px]"
         >
+          {/* No `priority`: the rail sits below the hero (the homepage LCP),
+              so head-preloading its first slides only competed with the hero
+              and forced eager downloads (TASK-210). Slides lazy-load, and
+              `imageSizes` matches the fixed slide width above. */}
           <ProductCard
             product={product}
-            priority={index < 4}
+            imageSizes={RAIL_IMAGE_SIZES}
             action={<ProductCardActions product={product} />}
           />
         </div>
