@@ -165,5 +165,25 @@ describe('buildOrderConfirmationEmail', () => {
       expect(html).toContain('69.97');
       expect(text).toContain('69.97');
     });
+
+    // TASK-229: country/postalCode are optional on AddressDto — a minimal valid
+    // API payload used to crash the renderer (`undefined` into escapeHtml) and
+    // drive the outbox row to terminal FAILED.
+    it('renders a minimal address (no country/postalCode) without crashing or leaking "undefined"', () => {
+      const params = baseParams();
+      params.order.shippingAddress = {
+        firstName: 'Проба',
+        lastName: '229',
+        address1: 'вул. Тестова, 1',
+        city: 'Київ',
+        phone: '+380501234567',
+      };
+      expect(() => buildOrderConfirmationEmail(params)).not.toThrow();
+      const { html, text } = buildOrderConfirmationEmail(params);
+      expect(html).toContain('Проба 229');
+      expect(html).toContain('Київ');
+      expect(html).not.toContain('undefined');
+      expect(text).not.toContain('undefined');
+    });
   });
 });

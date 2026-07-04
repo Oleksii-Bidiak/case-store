@@ -13,7 +13,9 @@ import { IsString, IsNotEmpty, IsOptional, Length, MaxLength } from 'class-valid
  * `city` and `address1` (which carries the free-text delivery address / Nova
  * Poshta branch). `postalCode`, `state`, `country`, `company` and `address2`
  * are optional so the simplified storefront form validates. `country` defaults
- * to `UA` on the client.
+ * to `UA` on the server (TASK-229: the client also sends it, but API-only
+ * payloads must snapshot a country too — the mail renderer used to crash on
+ * its absence).
  */
 export class AddressDto {
   @ApiProperty({ description: 'Recipient first name', example: 'Olena' })
@@ -75,7 +77,9 @@ export class AddressDto {
   @IsString()
   @IsOptional()
   @Length(2, 2)
-  country?: string;
+  // TASK-229: ValidationPipe runs with transform: true, so this initializer is
+  // the server-side default when the field is omitted from the payload.
+  country?: string = 'UA';
 
   @ApiProperty({ description: 'Contact phone', example: '+380501234567' })
   @IsString()

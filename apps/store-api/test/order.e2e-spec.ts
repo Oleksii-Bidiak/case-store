@@ -344,6 +344,36 @@ describe('OrderController (e2e)', () => {
       expect(mailServiceMock.sendOrderConfirmation).not.toHaveBeenCalled();
     });
 
+    // TASK-229: `country` is optional in the payload but must be snapshotted —
+    // the ValidationPipe (transform: true) applies the DTO's server-side 'UA'
+    // default, so the mail renderer always has a country to print.
+    it('defaults the shipping-address country to UA when omitted (201)', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+
+      const minimalAddress = {
+        firstName: 'Проба',
+        lastName: '229',
+        phone: '+380501234567',
+        address1: 'вул. Тестова, 1',
+        city: 'Київ',
+      };
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ shippingAddress: minimalAddress })
+        .expect(201);
+
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          shippingAddress: expect.objectContaining({ country: 'UA' }),
+        }),
+        expect.any(Function),
+      );
+    });
+
     it('recomputes and applies a promo code at checkout (TASK-079)', async () => {
       const token = generateAccessToken(userA.id, userA.role);
       cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
