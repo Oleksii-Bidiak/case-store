@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ConflictException, INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -47,6 +47,7 @@ describe('OrderController (e2e)', () => {
     findByIdForAdmin: jest.fn(),
     updateStatus: jest.fn(),
     cancelAndRestock: jest.fn(),
+    reviveAndReserve: jest.fn(),
     updatePaymentStatus: jest.fn(),
   };
 
@@ -196,6 +197,7 @@ describe('OrderController (e2e)', () => {
     notes: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    restockedAt: null,
     items: [
       {
         id: 'order-item-e2e-1',
@@ -743,6 +745,58 @@ describe('OrderController (e2e)', () => {
         OrderStatus.PROCESSING,
         PaymentStatus.PENDING,
       );
+    });
+
+    // TASK-228: reviving a restocked CANCELLED order must go through the
+    // stock re-reserve path, not the plain status update.
+    it('should re-reserve stock when reviving a restocked cancelled order (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.CANCELLED,
+          restockedAt: new Date('2026-07-04T10:00:00.000Z'),
+        }),
+      );
+      orderRepositoryMock.reviveAndReserve.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PENDING, restockedAt: null }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.PENDING })
+        .expect(200);
+
+      expect(response.body.data.status).toBe(OrderStatus.PENDING);
+      expect(orderRepositoryMock.reviveAndReserve).toHaveBeenCalledWith(
+        'order-e2e-1',
+        OrderStatus.PENDING,
+        PaymentStatus.PENDING,
+      );
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('should return 409 when a revive cannot re-reserve stock (sold out meanwhile)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.CANCELLED,
+          restockedAt: new Date('2026-07-04T10:00:00.000Z'),
+        }),
+      );
+      orderRepositoryMock.reviveAndReserve.mockRejectedValue(
+        new ConflictException(
+          'Insufficient stock for "iPhone 15 Pro Case" — cannot revive the order',
+        ),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.PENDING })
+        .expect(409);
+
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
 
     it('should return 400 for an invalid status value', async () => {

@@ -346,14 +346,62 @@ export class OrderRepository {
         });
       }
 
+      // TASK-228: stamp restockedAt so a later revive knows this order's stock
+      // was credited back and must be re-reserved (reviveAndReserve).
       return tx.order.update({
         where: { id: orderId },
-        data: { status: OrderStatus.CANCELLED },
+        data: { status: OrderStatus.CANCELLED, restockedAt: new Date() },
         include: ORDERS_INCLUDE,
       });
     })) as OrderWithItems;
 
     // Restock changed position stock — evict the same caches as createFromCart.
+    await this.evictProductCaches(updated.items);
+
+    return updated;
+  }
+
+  /**
+   * Revive a restocked (auto-cancelled) order into a live status, re-reserving
+   * its stock in the same transaction (TASK-228). The inverse of
+   * {@link cancelAndRestock}: each line decrements product stock with the same
+   * conditional `WHERE stock >= quantity` guard as {@link createFromCart}, so a
+   * revive can never oversell — if the stock was sold in the meantime the whole
+   * transaction rolls back and the order stays CANCELLED/REFUNDED.
+   *
+   * @throws ConflictException when any line no longer has enough stock.
+   */
+  async reviveAndReserve(
+    orderId: string,
+    status: OrderStatus,
+    paymentStatus: PaymentStatus,
+  ): Promise<OrderWithItems> {
+    const updated = (await this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: ORDERS_INCLUDE,
+      });
+
+      for (const item of order.items) {
+        const { count } = await tx.product.updateMany({
+          where: { id: item.productId, stock: { gte: item.quantity } },
+          data: { stock: { decrement: item.quantity } },
+        });
+        if (count === 0) {
+          throw new ConflictException(
+            `Insufficient stock for "${item.product.name}" — cannot revive the order`,
+          );
+        }
+      }
+
+      return tx.order.update({
+        where: { id: orderId },
+        data: { status, paymentStatus, restockedAt: null },
+        include: ORDERS_INCLUDE,
+      });
+    })) as OrderWithItems;
+
+    // Reservation changed position stock — evict the same caches as createFromCart.
     await this.evictProductCaches(updated.items);
 
     return updated;
