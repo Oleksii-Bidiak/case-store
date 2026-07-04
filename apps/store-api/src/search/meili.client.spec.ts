@@ -42,10 +42,11 @@ function makeClientMock(index: MeiliIndexApi): jest.Mocked<MeiliClientApi> {
 }
 
 const SETTINGS: IndexSettings = {
-  searchableAttributes: ['name', 'description', 'categoryName'],
+  searchableAttributes: ['name', 'description', 'categoryName', 'searchTerms'],
   filterableAttributes: ['isActive', 'categoryId'],
   sortableAttributes: ['price', 'createdAt'],
   rankingRules: ['words', 'typo', 'proximity', 'attribute', 'sort', 'exactness'],
+  synonyms: { айфон: ['iphone'], iphone: ['айфон'] },
 };
 
 const DOC: ProductSearchDocument = {
@@ -62,6 +63,7 @@ const DOC: ProductSearchDocument = {
   inStock: true,
   isActive: true,
   createdAt: 1_700_000_000_000,
+  searchTerms: ['айфон', 'чохол', 'чохли'],
 };
 
 describe('MeiliClient', () => {
@@ -117,6 +119,11 @@ describe('MeiliClient', () => {
       expect(sdk.getIndex).toHaveBeenCalledWith(PRODUCTS_INDEX);
       expect(sdk.createIndex).not.toHaveBeenCalled();
       expect(index.updateSettings).toHaveBeenCalledWith(SETTINGS);
+      // Settings changes (e.g. new synonyms) must reach an ALREADY-EXISTING
+      // index — ensureIndex pushes them on every call, not only on creation.
+      expect(index.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ synonyms: SETTINGS.synonyms }),
+      );
     });
 
     it('ensureIndex creates the index first when it does not exist', async () => {
