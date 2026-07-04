@@ -59,7 +59,7 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-101 | Run [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md) to closure on a running stack; triage breakage into `fix/NNN` tasks. Owner pass 2026-07-03 → bugs TASK-195…212; **re-test 2026-07-04 green** (checkout/cancel/wishlist/coupons). TASK-124 matrix (§C2-a) run 2026-07-04 via API — all green except TASK-228 (confirmed). Left: §4 (NP/SMTP/Sentry keys) | 🔄 | — |
+| TASK-101 | Run [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md) to closure on a running stack; triage breakage into `fix/NNN` tasks. Owner pass 2026-07-03 → bugs TASK-195…212; **re-test 2026-07-04 green** (checkout/cancel/wishlist/coupons). TASK-124 matrix (§C2-a) run 2026-07-04 via API — all green; TASK-228/229/230 findings fixed same day. Left: §4 (NP/SMTP/Sentry keys) | 🔄 | — |
 | TASK-105-D | Playwright E2E green 4/4 (2026-07-04): seed-e2e fixed (pg driver adapter, no ProductVariant model), cart-flow CTA selector fixed («Додати до кошика»), local runs serial | ✅ | 048 |
 | TASK-184 | Nav tails: footer «Інформація» links → `/info` + `/legal` (now point at `/products`); admin sidebar dead `Settings` link → `/settings/contact` | ⬜ | — |
 
@@ -86,9 +86,9 @@
 | TASK-211 | «Ви переглядали» uses the outdated card UI — reuse the PopularRail slider + current `ProductCard`/`ProductCardActions` | ⬜ | — |
 | TASK-212 | Font-preload console warnings (`woff2 preloaded but not used`) — best-effort fix (from TASK-138) | ⬜ | — |
 | TASK-227 | Password policy audit: API `register` accepted `testtest` (8 chars, no upper/digit) — align the class-validator DTO policy with the frontend zod rules; add strength requirements | ⬜ | — |
-| TASK-228 | Stock double-credit on order revive: CANCELLED → PENDING does not re-reserve stock, a second → CANCELLED restocks **again** (S+Q). TASK-151 removed the transition guard with no restock flag. **Confirmed live 2026-07-04 (§C2-a: S=1,Q=1 → revive kept stock at 1, re-cancel inflated to 2)** — fix (block revive or track a restock flag) | ⬜ | — |
-| TASK-229 | Mail: order-confirmation render crashes when the address lacks the **optional** `country` — `order-confirmation.template.ts:101` pushes `address.country` (undefined) into `escapeHtml` → `undefined.replace` throws, outbox row retries to terminal FAILED, mail never sent. Valid API-only payload (checkout always sends country). Fix: guard/`?? 'UA'` in `addressLines` + default at DTO/service layer (§C4 run 2026-07-04) | ⬜ | — |
-| TASK-230 | Public `GET /api/products` list leaks **inactive** products — `product.service.ts:100` passes `query.isActive` through with no `true` default for public callers (confirmed: deactivated «Test Iphone» listed with `inStock:true`; PDP already 404s per TASK-145, add-to-cart rejects). Root cause of §B2 ❌ «неактивний товар видно на вітрині». Default public listing to active-only; keep the explicit filter for admin (§C run 2026-07-04) | ⬜ | — |
+| TASK-228 | Stock double-credit on order revive (confirmed live §C2-a) — fixed via `Order.restockedAt` flag: cancel stamps it, revive re-reserves stock with the same `WHERE stock >= qty` guard as creation (409 if sold out, order stays terminal); verified live create→cancel→revive→re-cancel holds stock at S; unit 638 + e2e 259 green | ✅ | — |
+| TASK-229 | Mail render crashed on missing optional `country` (outbox → FAILED) — template now tolerates absent optional address fields (heals old outbox rows) and AddressDto defaults `country: 'UA'` server-side; verified live (API order without country snapshots `"UA"`) | ✅ | — |
+| TASK-230 | Public `GET /products` leaked **inactive** products (root cause of §B2 ❌) — public list now forces `isActive: true` (even with `?isActive=false`); new guarded `GET /products/admin/list` (all statuses, no cache) + admin table/toggle/forms moved to it; also fixed the boolean-DTO transform (`?isActive=false` coerced to `true`); verified live | ✅ | — |
 
 #### UX-покращення та discovery з QA-проходу *(виконувати після багів; частина живиться Етапами 2–3)*
 
