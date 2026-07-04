@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import type { PublicProductEntity } from "@/shared/api/generated/models";
-import { formatMoney, pickProductGradient } from "@/shared/lib";
+import { formatMoney, getCardPricing, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { Badge } from "./badge";
 import { ProductCardImage } from "./product-card-image";
@@ -21,9 +21,11 @@ const NEW_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  * free of feature imports; widgets inject `quickAdd`/`action`.
  *
  * When the list API reports multiple variant colours, the card renders a
- * `ColorDots` row from `product.variantSummary` and an advertised "from {price}"
- * prefix. `quickAdd` is revealed on hover and on keyboard focus (focus-within),
- * so it is reachable without a pointer.
+ * `ColorDots` row from `product.variantSummary`. The price is ALWAYS this
+ * position's own `product.price` (each card is one first-class position); the
+ * "від {price}" prefix only appears on the group's cheapest position — see
+ * `getCardPricing` (TASK-199). `quickAdd` is revealed on hover and on keyboard
+ * focus (focus-within), so it is reachable without a pointer.
  *
  * The product image is optimized via `next/image` inside `ProductCardImage`,
  * which also renders the gradient/initial fallback when there is no image.
@@ -54,24 +56,10 @@ export function ProductCard({
   const colors = summary?.colors ?? [];
   const hasVariants = colors.length > 1;
 
-  // Advertised price: the group's cheapest ("from") when it is below this
-  // position's own price; otherwise the position price as-is.
-  const advertisedPrice =
-    summary && Number(summary.priceFrom) < Number(product.price)
-      ? summary.priceFrom
-      : product.price;
-  const showFrom = advertisedPrice !== product.price || hasVariants;
-
-  const onSale =
-    product.compareAtPrice != null &&
-    Number(product.compareAtPrice) > Number(advertisedPrice);
-
-  const discountPercent =
-    onSale && product.compareAtPrice
-      ? Math.round(
-          (1 - Number(advertisedPrice) / Number(product.compareAtPrice)) * 100,
-        )
-      : 0;
+  // Each card is ONE position (TASK-142), so it advertises its OWN price; the
+  // «від» prefix only survives on the group's cheapest position (TASK-199).
+  const { advertisedPrice, showFrom, onSale, discountPercent } =
+    getCardPricing(product);
 
   // "New" is a 30-day recency badge; it intentionally reads the current time.
   // The card renders server-side per request, so this is deterministic enough —

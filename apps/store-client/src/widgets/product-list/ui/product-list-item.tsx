@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { PublicProductEntity } from "@/shared/api/generated/models";
-import { formatMoney, pickProductGradient } from "@/shared/lib";
+import { formatMoney, getCardPricing, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { Badge, ProductCardImage, RatingStars } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
@@ -14,26 +14,10 @@ const NEW_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  * price and add-to-cart actions pinned to the bottom.
  */
 export function ProductListItem({ product }: { product: PublicProductEntity }) {
-  const summary = product.variantSummary;
-  const colors = summary?.colors ?? [];
-  const hasVariants = colors.length > 1;
-
-  const advertisedPrice =
-    summary && Number(summary.priceFrom) < Number(product.price)
-      ? summary.priceFrom
-      : product.price;
-  const showFrom = advertisedPrice !== product.price || hasVariants;
-
-  const onSale =
-    product.compareAtPrice != null &&
-    Number(product.compareAtPrice) > Number(advertisedPrice);
-
-  const discountPercent =
-    onSale && product.compareAtPrice
-      ? Math.round(
-          (1 - Number(advertisedPrice) / Number(product.compareAtPrice)) * 100,
-        )
-      : 0;
+  // Each card is ONE position (TASK-142), so it advertises its OWN price; the
+  // «від» prefix only survives on the group's cheapest position (TASK-199).
+  const { advertisedPrice, showFrom, onSale, discountPercent } =
+    getCardPricing(product);
 
   const createdMs = new Date(product.createdAt).getTime();
   // eslint-disable-next-line react-hooks/purity -- recency badge needs current time

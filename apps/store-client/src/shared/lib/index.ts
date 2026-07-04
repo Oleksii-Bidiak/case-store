@@ -3,6 +3,7 @@
 export * from "./schema";
 export * from "./format";
 export * from "./product-gradient";
+export * from "./product-pricing";
 export * from "./color-swatch";
 // NOTE: `use-debounced-callback` is a client-only hook ("use client"). It is
 // intentionally NOT re-exported here — adding a client module to this barrel,
