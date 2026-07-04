@@ -221,6 +221,44 @@ describe("CartItemRow", () => {
     ).toHaveAttribute("href", "/products/no-image-item");
   });
 
+  // ─── product name link + mini-cart close (TASK-204) ───────────────────────
+  it("links the product name to the same PDP as the image", () => {
+    const item = makeCartItem({
+      productName: "Named Item",
+      productSlug: "named-item",
+    });
+
+    renderWithProviders(<CartItemRow item={item} />);
+
+    const nameLink = screen.getByRole("link", { name: "Named Item" });
+    expect(nameLink).toHaveAttribute("href", "/products/named-item");
+    // Image link and name link must always agree on the destination.
+    expect(
+      screen.getByRole("link", {
+        name: dict.cart.viewProductAria("Named Item"),
+      }),
+    ).toHaveAttribute("href", "/products/named-item");
+  });
+
+  it("notifies onNavigate when a product link is clicked (mini-cart close)", () => {
+    const item = makeCartItem({
+      productName: "Sheet Item",
+      productSlug: "sheet-item",
+    });
+    const onNavigate = jest.fn();
+
+    renderWithProviders(<CartItemRow item={item} onNavigate={onNavigate} />);
+
+    fireEvent.click(screen.getByRole("link", { name: "Sheet Item" }));
+    fireEvent.click(
+      screen.getByRole("link", {
+        name: dict.cart.viewProductAria("Sheet Item"),
+      }),
+    );
+
+    expect(onNavigate).toHaveBeenCalledTimes(2);
+  });
+
   it("falls back to the placeholder thumbnail after the image errors", () => {
     const item = makeCartItem({
       productName: "Broken Image",

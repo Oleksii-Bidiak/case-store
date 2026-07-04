@@ -43,6 +43,13 @@ interface CartItemRowProps {
   isServiceSelected?: (itemId: string, serviceId: string) => boolean;
   /** Toggle a stub add-on service; when omitted the offers block is hidden. */
   onToggleService?: (itemId: string, serviceId: string) => void;
+  /**
+   * Called when the user clicks through to the product page. The mini-cart
+   * sheet passes its `close` here — without it the sheet stays open over the
+   * navigated page, which reads as "nothing happened, the image just flickered"
+   * (TASK-204), especially when the target PDP is the page already underneath.
+   */
+  onNavigate?: () => void;
 }
 
 /**
@@ -58,6 +65,7 @@ export function CartItemRow({
   item,
   isServiceSelected,
   onToggleService,
+  onNavigate,
 }: CartItemRowProps) {
   const queryClient = useQueryClient();
   const [qty, setQty] = useState(item.quantity);
@@ -166,6 +174,10 @@ export function CartItemRow({
 
   const offers = onToggleService ? addonServicesForItem(item) : [];
 
+  // Single source for the PDP link — the image and the product name must always
+  // point at the same place (TASK-204).
+  const productHref = `/products/${item.productSlug}`;
+
   return (
     <li
       className={`flex gap-[18px] border-b border-border p-[22px] last:border-b-0 ${
@@ -173,7 +185,8 @@ export function CartItemRow({
       }`}
     >
       <Link
-        href={`/products/${item.productSlug}`}
+        href={productHref}
+        onClick={onNavigate}
         aria-label={dict.cart.viewProductAria(item.productName)}
         className="shrink-0 rounded-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
@@ -199,7 +212,13 @@ export function CartItemRow({
         <div className="flex justify-between gap-3.5">
           <div className="min-w-0">
             <p className="mb-1 text-[15px] font-semibold text-foreground">
-              {item.productName}
+              <Link
+                href={productHref}
+                onClick={onNavigate}
+                className="rounded-sm transition-colors hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {item.productName}
+              </Link>
             </p>
             <p
               className={`flex items-center gap-1.5 text-[12.5px] ${
