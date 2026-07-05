@@ -113,7 +113,6 @@
 | TASK-224 | **[discovery]** Available-vs-reserved: verified `stock` already IS the free remainder (decrement at order creation); recommend derived `reserved` on admin reads (no schema change); admin gaps: no stock column in product table, low-stock widget hides sold-out | ✅ | 101 |
 | TASK-225 | Storefront UX audit: 32 findings (3H/18M/11L); footer is token-clean but inverts to light-gray in dark mode (owner decision F-06); systemic: `sr-only` inputs without visible focus ×5, English a11y strings, zero `prefers-reduced-motion` | ✅ | 103 |
 | TASK-226 | **[discovery]** Customer journeys: 4 personas grounded in real routes; top gaps = model-compat picker (TASK-190, flagship wow), brand filter (189/191), dead contact/newsletter forms (177/188); password reset (TASK-169) becomes H before launch | ✅ | 102 |
-| TASK-236 | Catalog category filter is exact-match while seed products live in subcategories — filtering by a root category returns nothing (same gap in Meilisearch docs + admin product form offers only root categories); fix = subtree rollup «Фаза 0» per plan 099 | ⬜ | 099 |
 
 ### Етап 2 — Контент-платформа CRM
 
@@ -137,13 +136,16 @@
 
 ### Етап 3 — Фундамент каталогу (ніша: мультибрендові аксесуари + Apple техніка)
 
-> Sequence 189 → 190 → 191 (each builds on the previous). Schema is generic, not Apple-only.
+> Sequence per discovery plan 099 §6: **0 → (A ∥ B) → C** — TASK-236 (Фаза 0) is a blocking
+> prerequisite for 189/190/191; 189 and 190 are parallel-safe once 236 lands; 191 is independent
+> of 190. Schema is generic, not Apple-only.
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-189 | `Brand` model + `Product.brandId` + `GET /products` brand filter + Meilisearch + admin CRUD + storefront «Виробник» filter and «Популярні бренди» strip. Absorbs TASK-176 | ⬜ | — |
-| TASK-190 | Device compatibility («Сумісні товари»): `DeviceBrand`/`DeviceModel` taxonomy + M2M product compatibility + catalog filter; wires homepage ModelPicker + PDP cross-sell. Absorbs TASK-165 + the compat part of TASK-178 | ⬜ | — |
-| TASK-191 | Structured specs: per-category `AttributeDefinition` + product values (variant-axis JSON stays separate); PDP «Характеристики» tab + highlights; basic facet filters. Absorbs the specs part of TASK-178 | ⬜ | — |
+| TASK-236 | Catalog category filter is exact-match while seed products live in subcategories — filtering by a root category returns nothing (same gap in Meilisearch docs + admin product form offers only root categories); fix = subtree rollup «Фаза 0» per plan 099 | ✅ | 109 |
+| TASK-189 | `Brand` model + `Product.brandId` + `GET /products` brand filter + Meilisearch + admin CRUD + storefront «Виробник» filter and «Популярні бренди» strip. Absorbs TASK-176 | ⬜ | 110 |
+| TASK-190 | Device compatibility («Сумісні товари»): `DeviceBrand`/`DeviceModel` taxonomy + M2M product compatibility + catalog filter; wires homepage ModelPicker + PDP cross-sell. Absorbs TASK-165 + the compat part of TASK-178 | ⬜ | 111 |
+| TASK-191 | Structured specs: per-category `AttributeDefinition` + product values (variant-axis JSON stays separate); PDP «Характеристики» tab + highlights; basic facet filters. Absorbs the specs part of TASK-178 | ⬜ | 112 |
 | TASK-164 | Bestseller signal: aggregate sold qty over PAID orders → sort/filter on `GET /products` → PopularRail «Хіти» tab | ⬜ | — |
 
 ### Етап 4 — Адмінка: локалізація + рестайл
