@@ -5,6 +5,17 @@ import Image from "next/image";
 import { ImageIcon } from "lucide-react";
 import { BLUR_PLACEHOLDER } from "./image-placeholder";
 
+/**
+ * Default `sizes` for the responsive catalog grid
+ * (`repeat(auto-fill, minmax(232px, 1fr))` inside the `max-w-7xl` container):
+ * one column on phones, two up to `lg`, then ~232–300px columns. The desktop
+ * entry is a fixed 300px cap — the old `calc(25vw - 2rem)` over-downloaded on
+ * wide screens (480px+ candidates for a ≤300px slot) since the container is
+ * capped anyway (TASK-210).
+ */
+const GRID_SIZES =
+  "(max-width: 639px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), 300px";
+
 interface ProductCardImageProps {
   /** Primary image URL, or empty/undefined when the product has no image. */
   src?: string;
@@ -23,6 +34,14 @@ interface ProductCardImageProps {
    * below the fold keep the default lazy behaviour. Defaults to `false`.
    */
   priority?: boolean;
+  /**
+   * Rendered-width hint for `next/image` srcset selection. Defaults to the
+   * responsive catalog-grid profile; contexts with a known fixed slot MUST
+   * override it (rails: card is 244/260px wide; catalog list rows: 150px
+   * thumbnail), otherwise small viewports download full-width candidates
+   * (TASK-210).
+   */
+  sizes?: string;
 }
 
 /**
@@ -42,6 +61,7 @@ export function ProductCardImage({
   initial,
   blurDataUrl,
   priority = false,
+  sizes = GRID_SIZES,
 }: ProductCardImageProps) {
   const [failed, setFailed] = useState(false);
   const showImage = Boolean(src) && !failed;
@@ -52,10 +72,14 @@ export function ProductCardImage({
         src={src as string}
         alt={alt}
         fill
-        sizes="(max-width: 639px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), calc(25vw - 2rem)"
+        sizes={sizes}
         placeholder="blur"
         blurDataURL={blurDataUrl ?? BLUR_PLACEHOLDER}
-        // Next.js 16 renamed the LCP `priority` prop to `preload`.
+        // Next.js 16 renamed the LCP `priority` prop to `preload`. With
+        // `preload={false}` and no `loading` prop, next/image emits
+        // `loading="lazy"` (verified in get-img-props: `isLazy = !preload &&
+        // loading === undefined`), so non-priority cards are NOT eagerly
+        // fetched — do not add `loading` here, it conflicts with `preload`.
         preload={priority}
         onError={() => setFailed(true)}
         className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"

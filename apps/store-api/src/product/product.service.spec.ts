@@ -50,6 +50,7 @@ const productRepositoryMock = {
   findBySku: jest.fn(),
   findBySlugWithRelations: jest.fn(),
   findAll: jest.fn(),
+  findByIdsForCards: jest.fn(),
   create: jest.fn(),
   update: jest.fn(),
   deactivate: jest.fn(),
@@ -228,6 +229,51 @@ describe('ProductService', () => {
       expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ isActive: false }),
       );
+    });
+  });
+
+  // ─── getCardsByIds (public, TASK-211) ────────────────────────────────────────
+
+  describe('getCardsByIds', () => {
+    const productA = { ...mockProduct, id: 'card-uuid-a', slug: 'card-a' };
+    const productB = { ...mockProduct, id: 'card-uuid-b', slug: 'card-b' };
+
+    it('returns PublicProductEntity cards in the requested id order', async () => {
+      // Repository returns them in DB order (not request order).
+      productRepositoryMock.findByIdsForCards.mockResolvedValue([productA, productB]);
+
+      const result = await service.getCardsByIds(['card-uuid-b', 'card-uuid-a']);
+
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0]).toBeInstanceOf(PublicProductEntity);
+      expect(result.data.map((p) => p.id)).toEqual(['card-uuid-b', 'card-uuid-a']);
+    });
+
+    it('silently drops unknown / inactive ids so a stale client history self-heals', async () => {
+      productRepositoryMock.findByIdsForCards.mockResolvedValue([productA]);
+
+      const result = await service.getCardsByIds(['missing-uuid', 'card-uuid-a']);
+
+      expect(result.data.map((p) => p.id)).toEqual(['card-uuid-a']);
+    });
+
+    it('collapses duplicate ids to the first occurrence before hitting the repository', async () => {
+      productRepositoryMock.findByIdsForCards.mockResolvedValue([productA]);
+
+      const result = await service.getCardsByIds(['card-uuid-a', 'card-uuid-a']);
+
+      expect(productRepositoryMock.findByIdsForCards).toHaveBeenCalledWith(['card-uuid-a']);
+      expect(result.data).toHaveLength(1);
+    });
+
+    it('returns an empty list when nothing matches, without touching the cache', async () => {
+      productRepositoryMock.findByIdsForCards.mockResolvedValue([]);
+
+      const result = await service.getCardsByIds(['card-uuid-a']);
+
+      expect(result.data).toEqual([]);
+      expect(cacheServiceMock.get).not.toHaveBeenCalled();
+      expect(cacheServiceMock.set).not.toHaveBeenCalled();
     });
   });
 

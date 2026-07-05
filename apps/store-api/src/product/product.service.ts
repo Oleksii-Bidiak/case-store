@@ -124,6 +124,27 @@ export class ProductService {
     return this.listFromDb(this.toListParams(query));
   }
 
+  /**
+   * Public — hydrate a bounded set of product CARDS by id (TASK-211, the
+   * «Ви переглядали» rail). Returns full {@link PublicProductEntity} items
+   * (with `variantSummary`, rating, primary image — the same enrichment as the
+   * list) for the ACTIVE, non-deleted subset of `ids`, in request order.
+   * Unknown, deactivated, or deleted ids are silently dropped, so a stale
+   * client history self-heals. Duplicates are collapsed to the first
+   * occurrence. Not cached: id combinations are per-visitor, so hit rates
+   * would be negligible.
+   */
+  async getCardsByIds(ids: string[]): Promise<{ data: PublicProductEntity[] }> {
+    const uniqueIds = [...new Set(ids)];
+    const products = await this.productRepository.findByIdsForCards(uniqueIds);
+    const byId = new Map(products.map((product) => [product.id, product]));
+    const data = uniqueIds
+      .map((id) => byId.get(id))
+      .filter((product): product is NonNullable<typeof product> => product != null)
+      .map((product) => PublicProductEntity.fromPrisma(product));
+    return { data };
+  }
+
   /** Map the list query DTO onto repository params (shared defaults). */
   private toListParams(query: ProductListQueryDto): FindAllParams {
     return {

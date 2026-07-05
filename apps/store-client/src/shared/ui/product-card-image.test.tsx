@@ -16,12 +16,18 @@ jest.mock("next/image", () => ({
     blurDataURL,
     placeholder,
     onError,
+    sizes,
+    preload,
+    loading,
   }: {
     src: string;
     alt: string;
     blurDataURL?: string;
     placeholder?: string;
     onError?: () => void;
+    sizes?: string;
+    preload?: boolean;
+    loading?: string;
   }) => (
     // eslint-disable-next-line @next/next/no-img-element
     <img
@@ -29,6 +35,9 @@ jest.mock("next/image", () => ({
       alt={alt}
       data-placeholder={placeholder}
       data-blur={blurDataURL}
+      data-sizes={sizes}
+      data-preload={String(preload)}
+      data-loading={String(loading)}
       onError={onError}
     />
   ),
@@ -77,5 +86,71 @@ describe("ProductCardImage (TASK-091)", () => {
 
     expect(screen.queryByRole("img")).toBeNull();
     expect(screen.getByText("N")).toBeInTheDocument();
+  });
+});
+
+describe("ProductCardImage — lazy loading & sizes (TASK-210)", () => {
+  it("defaults to the catalog-grid sizes profile", () => {
+    renderWithProviders(
+      <ProductCardImage
+        src="https://cdn.example.com/case.webp"
+        alt="Clear case"
+        initial="C"
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "Clear case" })).toHaveAttribute(
+      "data-sizes",
+      "(max-width: 639px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), 300px",
+    );
+  });
+
+  it("uses the caller's sizes for fixed-width slots", () => {
+    renderWithProviders(
+      <ProductCardImage
+        src="https://cdn.example.com/case.webp"
+        alt="Clear case"
+        initial="C"
+        sizes="150px"
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "Clear case" })).toHaveAttribute(
+      "data-sizes",
+      "150px",
+    );
+  });
+
+  it("does not preload by default and leaves `loading` to next/image's lazy default", () => {
+    renderWithProviders(
+      <ProductCardImage
+        src="https://cdn.example.com/case.webp"
+        alt="Clear case"
+        initial="C"
+      />,
+    );
+
+    const img = screen.getByRole("img", { name: "Clear case" });
+    // `preload={false}` + no `loading` prop → next/image renders
+    // `loading="lazy"` (its default); passing `loading` alongside `preload`
+    // would throw in next/image, so the component must NOT set it.
+    expect(img).toHaveAttribute("data-preload", "false");
+    expect(img).toHaveAttribute("data-loading", "undefined");
+  });
+
+  it("preloads only when the card is explicitly prioritized", () => {
+    renderWithProviders(
+      <ProductCardImage
+        src="https://cdn.example.com/case.webp"
+        alt="Clear case"
+        initial="C"
+        priority
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "Clear case" })).toHaveAttribute(
+      "data-preload",
+      "true",
+    );
   });
 });
