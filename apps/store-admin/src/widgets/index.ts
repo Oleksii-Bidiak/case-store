@@ -23,6 +23,8 @@ export {
 export { CreateDiscountView, EditDiscountView } from "./discount-form-view";
 export { AdminPageTable, AdminPageTableSkeleton } from "./page-list";
 export { CreatePageView, EditPageView } from "./page-form-view";
+export { AdminBannerTable, AdminBannerTableSkeleton } from "./banner-list";
+export { CreateBannerView, EditBannerView } from "./banner-form-view";
 export { SiteContactSettingsView } from "./site-contact-settings-view";
 export { AdminOrderTable, AdminOrderTableSkeleton } from "./order-list";
 export {
