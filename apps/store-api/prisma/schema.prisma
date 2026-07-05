@@ -492,3 +492,52 @@ model MailOutbox {
   @@index([status, nextAttemptAt])
   @@map("mail_outbox")
 }
+
+/// Blog category — a lightweight taxonomy for BlogPost (TASK-170). Slugs match
+/// the storefront filter chip keys (e.g. `reviews`, `guides`). No isActive:
+/// categories are always visible; posts gate their own visibility via status.
+model BlogCategory {
+  id        String     @id @default(uuid())
+  slug      String     @unique
+  name      String
+  sortOrder Int        @default(0) @map("sort_order")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  posts     BlogPost[]
+
+  @@map("blog_categories")
+}
+
+/// Blog post (TASK-170). Reuses the shared PublishStatus publishing lifecycle —
+/// `status = PUBLISHED` is the SINGLE public-visibility gate; SCHEDULED rows are
+/// flipped to PUBLISHED by the PublishingScheduler cron once `scheduledAt`
+/// passes. No `isActive` (new content models omit the legacy mirror).
+model BlogPost {
+  id               String        @id @default(uuid())
+  slug             String        @unique
+  title            String
+  excerpt          String
+  /// Tiptap-generated HTML; sanitized on write (server-side).
+  content          String        @db.Text
+  coverImageUrl    String?       @map("cover_image_url")
+  coverBlurDataUrl String?       @map("cover_blur_data_url")
+  authorName       String        @map("author_name")
+  readingMinutes   Int?          @map("reading_minutes")
+  featured         Boolean       @default(false)
+  categoryId       String        @map("category_id")
+  category         BlogCategory  @relation(fields: [categoryId], references: [id])
+  /// Publish lifecycle — the single source of truth for public visibility.
+  status           PublishStatus @default(DRAFT)
+  /// Set when the post first transitions to PUBLISHED (or when a scheduled
+  /// publish fires). Null while DRAFT / SCHEDULED.
+  publishedAt      DateTime?     @map("published_at")
+  /// Future publish instant while SCHEDULED; null otherwise.
+  scheduledAt      DateTime?     @map("scheduled_at")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([slug])
+  @@index([categoryId])
+  @@map("blog_posts")
+}
