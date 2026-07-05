@@ -120,6 +120,21 @@ describe('PageService', () => {
       );
     });
 
+    it('sanitizes the content HTML before persisting', async () => {
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.create.mockResolvedValue(mockPage);
+
+      await service.create({
+        title: 'Privacy Policy',
+        content: '<p>ok</p><script>alert(1)</script>',
+      });
+
+      const passed = pageRepositoryMock.create.mock.calls[0][0] as { content: string };
+      expect(passed.content).toContain('<p>ok</p>');
+      expect(passed.content).not.toContain('script');
+      expect(passed.content).not.toContain('alert(1)');
+    });
+
     it('throws ConflictException when the slug already exists', async () => {
       pageRepositoryMock.findBySlugAny.mockResolvedValue(mockPage);
 
@@ -169,6 +184,29 @@ describe('PageService', () => {
 
       expect(result.title).toBe('Renamed');
       expect(pageRepositoryMock.findBySlugAny).not.toHaveBeenCalled();
+    });
+
+    it('sanitizes content on update when content is provided', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage);
+      pageRepositoryMock.update.mockResolvedValue(mockPage);
+
+      await service.update('page-uuid-1', {
+        content: '<p>keep</p><img src="x" onerror="alert(1)" />',
+      });
+
+      const passed = pageRepositoryMock.update.mock.calls[0][1] as { content: string };
+      expect(passed.content).toContain('<p>keep</p>');
+      expect(passed.content).not.toContain('onerror');
+    });
+
+    it('leaves content undefined when not provided (no blanking)', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage);
+      pageRepositoryMock.update.mockResolvedValue(mockPage);
+
+      await service.update('page-uuid-1', { title: 'Renamed' });
+
+      const passed = pageRepositoryMock.update.mock.calls[0][1] as { content?: string };
+      expect(passed.content).toBeUndefined();
     });
   });
 

@@ -10,6 +10,7 @@ import {
 import { PageEntity } from './entities';
 import { CreatePageDto, UpdatePageDto, PageListQueryDto, AdminPageListQueryDto } from './dto';
 import { generateSlug } from '../common/utils';
+import { sanitizeRichText } from '../common/sanitize';
 
 /**
  * Pagination metadata returned alongside paginated results.
@@ -110,7 +111,7 @@ export class PageService {
     const input: CreatePageInput = {
       slug,
       title: dto.title,
-      content: dto.content,
+      content: sanitizeRichText(dto.content),
       excerpt: dto.excerpt,
       metaTitle: dto.metaTitle,
       metaDescription: dto.metaDescription,
@@ -145,7 +146,9 @@ export class PageService {
     const input: UpdatePageInput = {
       slug: dto.slug,
       title: dto.title,
-      content: dto.content,
+      // Only sanitize when content is actually being written; leave `undefined`
+      // untouched so a partial update never blanks the stored body.
+      content: dto.content !== undefined ? sanitizeRichText(dto.content) : undefined,
       excerpt: dto.excerpt,
       metaTitle: dto.metaTitle,
       metaDescription: dto.metaDescription,
