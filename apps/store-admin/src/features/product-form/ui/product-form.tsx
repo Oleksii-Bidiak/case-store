@@ -65,6 +65,14 @@ interface ProductFormProps {
   onSubmit: (values: ProductFormValues) => void;
   isPending: boolean;
   submitLabel?: string;
+  /**
+   * Optional slot rendered below the fields (TASK-191) — receives the LIVE
+   * selected `categoryId` so an embedded structured-spec editor re-renders its
+   * effective-definition set the moment the admin picks a different category,
+   * before saving. Omitted in create mode (a product must exist before specs
+   * can be assigned).
+   */
+  renderSpecsSection?: (categoryId: string) => React.ReactNode;
 }
 
 /** Empty form baseline used for create mode and as the merge base in edit mode. */
@@ -96,6 +104,7 @@ export function ProductForm({
   onSubmit,
   isPending,
   submitLabel = dict.productForm.submit,
+  renderSpecsSection,
 }: ProductFormProps) {
   const {
     register,
@@ -125,6 +134,9 @@ export function ProductForm({
   // computation — no state, no side effects (forms.md Rule 1/3 not triggered).
   const nameValue = useWatch({ control, name: "name" });
   const slugValue = useWatch({ control, name: "slug" });
+  // Live selected category — drives the embedded structured-spec editor's
+  // effective-definition set (TASK-191).
+  const categoryIdValue = useWatch({ control, name: "categoryId" });
 
   // TASK-236: the picker offers LEAF categories from the FULL admin tree
   // (including inactive ones) so a product is assigned to its specific
@@ -429,6 +441,11 @@ export function ProductForm({
         />
         <Label htmlFor="product-active">{dict.productForm.active}</Label>
       </div>
+
+      {/* Structured-spec editor slot (TASK-191). Its own save action targets the
+          separate specs endpoint; receives the live category so its inputs
+          track an in-form category change. */}
+      {renderSpecsSection?.(categoryIdValue)}
 
       <div>
         <Button type="submit" disabled={isPending}>

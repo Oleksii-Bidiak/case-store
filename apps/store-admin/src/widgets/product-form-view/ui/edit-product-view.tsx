@@ -18,6 +18,7 @@ import {
   useProductControllerUpdate,
 } from "@/entities/product";
 import { ProductImageManager } from "@/features/product-image-manager";
+import { ProductSpecsEditor } from "@/features/product-specs-editor";
 import { Separator } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
@@ -115,6 +116,16 @@ export function EditProductView({ productId }: EditProductViewProps) {
             onSubmit={handleSubmit}
             isPending={update.isPending}
             submitLabel={dict.common.saveChanges}
+            renderSpecsSection={(categoryId) => (
+              <>
+                <Separator />
+                <ProductSpecsEditor
+                  productId={productId}
+                  categoryId={categoryId}
+                  initialSpecs={product.specs}
+                />
+              </>
+            )}
           />
 
           <Separator />

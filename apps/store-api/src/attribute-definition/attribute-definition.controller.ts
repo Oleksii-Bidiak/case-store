@@ -74,6 +74,27 @@ export class AttributeDefinitionController {
     return { data: await this.service.findByCategory(categoryId) };
   }
 
+  /**
+   * GET /api/categories/:categoryId/effective-attribute-definitions
+   *
+   * The EFFECTIVE templates for a category (own + inherited from ancestors),
+   * for the admin product-specs editor which renders one typed input per
+   * effective definition. Admin-only.
+   */
+  @Get('categories/:categoryId/effective-attribute-definitions')
+  @ApiOperation({
+    summary: "List a category's effective (own + inherited) templates (admin)",
+    operationId: 'attributeDefinitionControllerFindEffective',
+  })
+  @ApiParam({ name: 'categoryId', description: 'Category UUID' })
+  @ApiResponse({ status: 200, type: AttributeDefinitionListResponse })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async findEffective(
+    @Param('categoryId') categoryId: string,
+  ): Promise<AttributeDefinitionListResponse> {
+    return { data: await this.service.findEffectiveForCategory(categoryId) };
+  }
+
   /** POST /api/categories/:categoryId/attribute-definitions — create a template. */
   @Post('categories/:categoryId/attribute-definitions')
   @ApiOperation({

@@ -23,6 +23,7 @@ export class ProductSpecValueDto {
   @ApiProperty({
     description: 'Optional numeric mirror (NUMBER-typed definitions)',
     example: 20,
+    type: Number,
     required: false,
     nullable: true,
   })

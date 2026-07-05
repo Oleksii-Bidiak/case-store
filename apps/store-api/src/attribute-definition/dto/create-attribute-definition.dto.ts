@@ -48,6 +48,7 @@ export class CreateAttributeDefinitionDto {
   @ApiProperty({
     description: 'Optional unit suffix appended on render',
     example: 'W',
+    type: String,
     required: false,
     nullable: true,
   })

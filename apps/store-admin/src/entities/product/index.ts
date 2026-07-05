@@ -13,6 +13,8 @@ export {
   useProductControllerDeactivate,
   useProductControllerActivate,
   useProductControllerPreviewProductBySlug,
+  // Structured specs (TASK-191)
+  useUpdateProductSpecs,
   getProductControllerAdminFindAllQueryKey,
   getProductControllerFindByIdQueryKey,
   // Product images (TASK-073)
@@ -34,6 +36,10 @@ export type {
   ProductCategoryEntity,
   ProductGroupEntity,
   ProductSiblingEntity,
+  // Structured specs (TASK-191)
+  ProductSpecEntity,
+  UpdateProductSpecsDto,
+  ProductSpecValueDto,
   // Product images (TASK-073)
   ProductImageEntity,
   ProductImageListEnvelope,

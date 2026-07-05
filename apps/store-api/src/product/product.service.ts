@@ -272,7 +272,11 @@ export class ProductService {
       throw new NotFoundException('Product not found');
     }
 
-    const entity = ProductEntity.fromPrisma(product);
+    // Hydrate structured specs (TASK-191) so the admin edit form can seed its
+    // spec editor. This detail cache is evicted whenever specs change
+    // (updateSpecs → evictProductDetail), so it stays consistent.
+    const specValues = await this.specRepository.getSpecs(id);
+    const entity = ProductEntity.fromPrisma({ ...product, specValues });
     await this.cache.set(cacheKey, entity, this.cacheTtlSeconds);
     return entity;
   }
