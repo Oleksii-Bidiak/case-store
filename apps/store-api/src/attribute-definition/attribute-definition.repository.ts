@@ -165,6 +165,39 @@ export class AttributeDefinitionRepository {
     );
   }
 
+  /**
+   * Collect the DISTINCT spec values currently in use for a set of definition
+   * keys among ACTIVE, non-deleted products in a set of categories (the subtree)
+   * — TASK-191 facet options. Matched by definition `key` (not id) so values
+   * assigned against an ancestor's definition and a leaf's override of the same
+   * key are pooled together. Returns a Map keyed by definition key, each value
+   * list sorted ascending.
+   */
+  async findDistinctValuesByKey(
+    keys: string[],
+    categoryIds: string[],
+  ): Promise<Map<string, string[]>> {
+    if (keys.length === 0 || categoryIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.prisma.productAttributeValue.findMany({
+      where: {
+        definition: { key: { in: keys } },
+        product: { categoryId: { in: categoryIds }, isActive: true, deletedAt: null },
+      },
+      select: { value: true, definition: { select: { key: true } } },
+      orderBy: { value: 'asc' },
+    });
+
+    const byKey = new Map<string, Set<string>>();
+    for (const row of rows) {
+      const bucket = byKey.get(row.definition.key) ?? new Set<string>();
+      bucket.add(row.value);
+      byKey.set(row.definition.key, bucket);
+    }
+    return new Map([...byKey.entries()].map(([k, set]) => [k, [...set]]));
+  }
+
   /** Normalize an options array into the Prisma JSON column value (or DB null). */
   private toOptionsJson(options?: string[] | null): Prisma.InputJsonValue | typeof Prisma.JsonNull {
     if (options === undefined || options === null) {

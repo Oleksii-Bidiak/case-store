@@ -10,7 +10,7 @@ import {
   CreateAttributeDefinitionInput,
 } from './attribute-definition.repository';
 import { CategoryRepository } from '../category';
-import { AttributeDefinitionEntity } from './entities';
+import { AttributeDefinitionEntity, FilterableSpecEntity } from './entities';
 import {
   CreateAttributeDefinitionDto,
   UpdateAttributeDefinitionDto,
@@ -44,6 +44,31 @@ export class AttributeDefinitionService {
   async findEffectiveForCategory(categoryId: string): Promise<AttributeDefinitionEntity[]> {
     const defs = await this.repository.findEffectiveForCategory(categoryId);
     return defs.map((def) => AttributeDefinitionEntity.fromPrisma(def));
+  }
+
+  /**
+   * Public catalog facets for a category (TASK-191): its EFFECTIVE `isFilterable`
+   * definitions, each paired with the distinct values in use among products in
+   * the category's subtree. Returns an empty list when the category declares no
+   * filterable specs, so the storefront simply renders no facet controls.
+   */
+  async getFilterableSpecs(categoryId: string): Promise<FilterableSpecEntity[]> {
+    const effective = await this.repository.findEffectiveForCategory(categoryId);
+    const filterable = effective.filter((def) => def.isFilterable);
+    if (filterable.length === 0) {
+      return [];
+    }
+
+    const subtreeIds = await this.categoryRepository.findSubtreeIds(categoryId);
+    const valuesByKey = await this.repository.findDistinctValuesByKey(
+      filterable.map((def) => def.key),
+      subtreeIds,
+    );
+
+    return filterable.map((def) => ({
+      definition: AttributeDefinitionEntity.fromPrisma(def),
+      values: valuesByKey.get(def.key) ?? [],
+    }));
   }
 
   /** Create a template on a category (admin-only). */

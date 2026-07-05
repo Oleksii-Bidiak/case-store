@@ -20,6 +20,12 @@ export interface FindAllParams {
   minPrice?: number;
   maxPrice?: number;
   search?: string;
+  /**
+   * Structured-spec facet filter (TASK-191): keep only products carrying a
+   * spec value whose definition `key` and `value` both match. A single pair for
+   * this "basic" cut (doc 099 §6); multi-pair stacking is a future enhancement.
+   */
+  specFilter?: { key: string; value: string };
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }
@@ -362,6 +368,7 @@ export class ProductRepository {
       minPrice,
       maxPrice,
       search,
+      specFilter,
       sortBy = 'createdAt',
       sortOrder = 'desc',
     } = params;
@@ -397,6 +404,14 @@ export class ProductRepository {
         { name: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
       ];
+    }
+
+    // Structured-spec facet (TASK-191): the product must have at least one spec
+    // value whose definition key AND value both match the requested pair.
+    if (specFilter) {
+      where.specValues = {
+        some: { value: specFilter.value, definition: { key: specFilter.key } },
+      };
     }
 
     // Validate and map sort field

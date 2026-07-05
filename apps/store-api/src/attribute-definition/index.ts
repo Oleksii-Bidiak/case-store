@@ -6,7 +6,7 @@ export {
   CreateAttributeDefinitionInput,
   UpdateAttributeDefinitionInput,
 } from './attribute-definition.repository';
-export { AttributeDefinitionEntity } from './entities';
+export { AttributeDefinitionEntity, FilterableSpecEntity } from './entities';
 export {
   CreateAttributeDefinitionDto,
   UpdateAttributeDefinitionDto,

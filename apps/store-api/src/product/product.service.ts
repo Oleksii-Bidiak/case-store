@@ -116,6 +116,7 @@ export class ProductService {
     const cacheKey = buildProductListKey({
       ...listParams,
       categoryId: query.categoryId,
+      specs: query.specs ? `${query.specs.key}:${query.specs.value}` : undefined,
       isActive: true,
     });
     const cached = await this.cache.get<PaginatedProductsResponse>(cacheKey);
@@ -186,6 +187,7 @@ export class ProductService {
       minPrice: query.minPrice,
       maxPrice: query.maxPrice,
       search: query.search,
+      specFilter: query.specs,
       sortBy: query.sortBy ?? 'createdAt',
       sortOrder: query.sortOrder ?? 'desc',
     };

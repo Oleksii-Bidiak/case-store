@@ -9,6 +9,7 @@ import {
   IsUUID,
   MaxLength,
   IsIn,
+  IsObject,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
@@ -115,6 +116,31 @@ export class ProductListQueryDto {
   @IsString()
   @MaxLength(200, { message: 'Search query must be at most 200 characters' })
   search?: string;
+
+  @ApiProperty({
+    description:
+      'Structured spec facet filter as a single "key:value" pair (TASK-191), e.g. "material:Силікон". ' +
+      'Parsed to a { key, value } object; malformed input is ignored.',
+    example: 'material:Силікон',
+    required: false,
+  })
+  @IsOptional()
+  // Read the ORIGINAL query string from `obj` (not the coerced `value`): the
+  // global ValidationPipe runs with `enableImplicitConversion: true`, mirroring
+  // the documented Boolean-DTO gotcha. Split on the FIRST colon only so a value
+  // may itself contain colons.
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (typeof raw !== 'string') return undefined;
+    const idx = raw.indexOf(':');
+    if (idx <= 0) return undefined;
+    const k = raw.slice(0, idx).trim();
+    const v = raw.slice(idx + 1).trim();
+    if (k === '' || v === '') return undefined;
+    return { key: k, value: v };
+  })
+  @IsObject()
+  specs?: { key: string; value: string };
 
   @ApiProperty({
     description: 'Sort field (createdAt, price, name)',

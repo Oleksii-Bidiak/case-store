@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AttributeDefinitionRepository } from './attribute-definition.repository';
 import { AttributeDefinitionService } from './attribute-definition.service';
 import { AttributeDefinitionController } from './attribute-definition.controller';
+import { CategoryFacetController } from './category-facet.controller';
 import { CategoryModule } from '../category';
 
 /**
@@ -13,7 +14,7 @@ import { CategoryModule } from '../category';
  */
 @Module({
   imports: [CategoryModule],
-  controllers: [AttributeDefinitionController],
+  controllers: [AttributeDefinitionController, CategoryFacetController],
   providers: [AttributeDefinitionRepository, AttributeDefinitionService],
   exports: [AttributeDefinitionService, AttributeDefinitionRepository],
 })

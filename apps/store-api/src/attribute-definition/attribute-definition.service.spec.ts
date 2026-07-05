@@ -12,12 +12,13 @@ describe('AttributeDefinitionService', () => {
     findById: jest.fn(),
     findByCategoryAndKey: jest.fn(),
     findEffectiveForCategory: jest.fn(),
+    findDistinctValuesByKey: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
     reorder: jest.fn(),
   };
-  const categoryRepository = { findById: jest.fn() };
+  const categoryRepository = { findById: jest.fn(), findSubtreeIds: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -85,6 +86,41 @@ describe('AttributeDefinitionService', () => {
       await expect(
         service.create('ghost', { key: 'material', label: 'Матеріал' }),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('getFilterableSpecs', () => {
+    const materialDef = {
+      id: 'd-material',
+      categoryId: 'cat',
+      key: 'material',
+      label: 'Матеріал',
+      type: AttributeType.SELECT,
+      unit: null,
+      options: ['Силікон', 'Шкіра'],
+      isFilterable: true,
+      sortOrder: 0,
+    };
+    const internalDef = { ...materialDef, id: 'd-int', key: 'internal', isFilterable: false };
+
+    it('returns only isFilterable definitions paired with distinct subtree values', async () => {
+      repo.findEffectiveForCategory.mockResolvedValue([materialDef, internalDef]);
+      categoryRepository.findSubtreeIds.mockResolvedValue(['cat', 'child']);
+      repo.findDistinctValuesByKey.mockResolvedValue(new Map([['material', ['Силікон', 'Шкіра']]]));
+
+      const result = await service.getFilterableSpecs('cat');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].definition.key).toBe('material');
+      expect(result[0].values).toEqual(['Силікон', 'Шкіра']);
+      expect(repo.findDistinctValuesByKey).toHaveBeenCalledWith(['material'], ['cat', 'child']);
+    });
+
+    it('returns an empty list (no subtree query) when no filterable specs exist', async () => {
+      repo.findEffectiveForCategory.mockResolvedValue([internalDef]);
+
+      expect(await service.getFilterableSpecs('cat')).toEqual([]);
+      expect(categoryRepository.findSubtreeIds).not.toHaveBeenCalled();
     });
   });
 
