@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma';
-import { Product, Prisma } from '@prisma/client';
+import { Product, Prisma, AttributeType } from '@prisma/client';
 
 /**
  * Parameters for paginated product queries with filtering.
@@ -176,6 +176,19 @@ export interface ProductWithRelations {
         sortOrder: number;
         isPrimary: boolean;
       }>;
+      // Structured spec values joined with their definition (TASK-191), for the
+      // PDP "Характеристики" table + highlights hydration.
+      specValues: Array<{
+        value: string;
+        definition: {
+          key: string;
+          label: string;
+          type: AttributeType;
+          unit: string | null;
+          isFilterable: boolean;
+          sortOrder: number;
+        };
+      }>;
     };
 }
 
@@ -295,6 +308,22 @@ export class ProductRepository {
             blurDataUrl: true,
             sortOrder: true,
             isPrimary: true,
+          },
+        },
+        specValues: {
+          orderBy: [{ definition: { sortOrder: 'asc' } }, { definition: { label: 'asc' } }],
+          select: {
+            value: true,
+            definition: {
+              select: {
+                key: true,
+                label: true,
+                type: true,
+                unit: true,
+                isFilterable: true,
+                sortOrder: true,
+              },
+            },
           },
         },
       },

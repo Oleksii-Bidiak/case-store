@@ -2,7 +2,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ProductRepository, CreateProductInput, UpdateProductInput } from './product.repository';
+import { ProductSpecRepository } from './product-spec.repository';
 import { CategoryRepository } from '../category';
+import { AttributeDefinitionRepository } from '../attribute-definition';
 import { ProductService } from './product.service';
 import { ProductEntity, PublicProductEntity } from './entities';
 import { ProductListQueryDto } from './dto';
@@ -66,6 +68,16 @@ const categoryRepositoryMock = {
   findSubtreeIds: jest.fn((id: string) => Promise.resolve([id])),
 };
 
+// ─── ProductSpecRepository / AttributeDefinitionRepository mocks (TASK-191) ────
+const specRepositoryMock = {
+  getSpecs: jest.fn().mockResolvedValue([]),
+  setSpecs: jest.fn().mockResolvedValue(undefined),
+};
+
+const attributeDefinitionRepositoryMock = {
+  findEffectiveForCategory: jest.fn().mockResolvedValue([]),
+};
+
 // ─── CacheService mock ────────────────────────────────────────────────────────
 // Defaults: get → null (cache miss), all writes resolve. Individual tests
 // override `get` to simulate a HIT or a backend error.
@@ -106,6 +118,9 @@ describe('ProductService', () => {
     productIndexerMock.index.mockResolvedValue(undefined);
     productIndexerMock.remove.mockResolvedValue(undefined);
     categoryRepositoryMock.findSubtreeIds.mockImplementation((id: string) => Promise.resolve([id]));
+    specRepositoryMock.getSpecs.mockResolvedValue([]);
+    specRepositoryMock.setSpecs.mockResolvedValue(undefined);
+    attributeDefinitionRepositoryMock.findEffectiveForCategory.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -115,6 +130,11 @@ describe('ProductService', () => {
         { provide: ConfigService, useValue: configServiceMock },
         { provide: ProductIndexer, useValue: productIndexerMock },
         { provide: CategoryRepository, useValue: categoryRepositoryMock },
+        { provide: ProductSpecRepository, useValue: specRepositoryMock },
+        {
+          provide: AttributeDefinitionRepository,
+          useValue: attributeDefinitionRepositoryMock,
+        },
       ],
     }).compile();
 
@@ -984,6 +1004,113 @@ describe('ProductService', () => {
       });
 
       expect(result).toBeInstanceOf(ProductEntity);
+    });
+  });
+
+  // ─── updateSpecs (TASK-191) ────────────────────────────────────────────────
+
+  describe('updateSpecs', () => {
+    const materialDef = {
+      id: 'def-material',
+      categoryId: 'category-uuid-1',
+      key: 'material',
+      label: 'Матеріал',
+      type: 'SELECT',
+      unit: null,
+      options: ['Силікон', 'Шкіра'],
+      isFilterable: true,
+      sortOrder: 0,
+    };
+    const powerDef = {
+      id: 'def-power',
+      categoryId: 'category-uuid-1',
+      key: 'power',
+      label: 'Потужність',
+      type: 'NUMBER',
+      unit: 'W',
+      options: null,
+      isFilterable: false,
+      sortOrder: 1,
+    };
+
+    it('404s when the product does not exist', async () => {
+      productRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(
+        service.updateSpecs('ghost', [{ definitionId: 'def-material', value: 'Силікон' }]),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(specRepositoryMock.setSpecs).not.toHaveBeenCalled();
+    });
+
+    it('rejects a definitionId outside the effective set (400, no write)', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      attributeDefinitionRepositoryMock.findEffectiveForCategory.mockResolvedValue([materialDef]);
+
+      await expect(
+        service.updateSpecs('product-uuid-1', [{ definitionId: 'def-unknown', value: 'x' }]),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(specRepositoryMock.setSpecs).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-numeric value for a NUMBER definition (400)', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      attributeDefinitionRepositoryMock.findEffectiveForCategory.mockResolvedValue([powerDef]);
+
+      await expect(
+        service.updateSpecs('product-uuid-1', [{ definitionId: 'def-power', value: 'abc' }]),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(specRepositoryMock.setSpecs).not.toHaveBeenCalled();
+    });
+
+    it('rejects a value outside options for a SELECT definition (400)', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      attributeDefinitionRepositoryMock.findEffectiveForCategory.mockResolvedValue([materialDef]);
+
+      await expect(
+        service.updateSpecs('product-uuid-1', [{ definitionId: 'def-material', value: 'Метал' }]),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(specRepositoryMock.setSpecs).not.toHaveBeenCalled();
+    });
+
+    it('persists valid values (SELECT + NUMBER with numeric mirror) and hydrates specs', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      attributeDefinitionRepositoryMock.findEffectiveForCategory.mockResolvedValue([
+        materialDef,
+        powerDef,
+      ]);
+      specRepositoryMock.getSpecs.mockResolvedValue([
+        { value: 'Силікон', definition: materialDef },
+      ]);
+
+      const result = await service.updateSpecs('product-uuid-1', [
+        { definitionId: 'def-material', value: 'Силікон' },
+        { definitionId: 'def-power', value: '20' },
+      ]);
+
+      expect(specRepositoryMock.setSpecs).toHaveBeenCalledWith('product-uuid-1', [
+        { definitionId: 'def-material', value: 'Силікон' },
+        { definitionId: 'def-power', value: '20', valueNumber: 20 },
+      ]);
+      expect(result).toBeInstanceOf(ProductEntity);
+      expect(result.specs).toHaveLength(1);
+      expect(cacheServiceMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+    });
+
+    it('drops blank values so a full effective set can be submitted', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      attributeDefinitionRepositoryMock.findEffectiveForCategory.mockResolvedValue([
+        materialDef,
+        powerDef,
+      ]);
+
+      await service.updateSpecs('product-uuid-1', [
+        { definitionId: 'def-material', value: 'Силікон' },
+        { definitionId: 'def-power', value: '' },
+      ]);
+
+      expect(specRepositoryMock.setSpecs).toHaveBeenCalledWith('product-uuid-1', [
+        { definitionId: 'def-material', value: 'Силікон' },
+      ]);
     });
   });
 });

@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ProductImageEntity } from './product-image.entity';
+import { ProductSpecEntity, buildProductSpecs, type SpecValueRow } from './product-spec.entity';
 
 /**
  * Domain entity representing a product.
@@ -124,6 +125,18 @@ export class ProductEntity {
   })
   primaryImage?: ProductImageEntity | null;
 
+  @ApiProperty({
+    description: 'Structured specifications (TASK-191). Empty unless the caller hydrated them.',
+    type: [ProductSpecEntity],
+  })
+  specs!: ProductSpecEntity[];
+
+  @ApiProperty({
+    description: 'The isFilterable subset of specs (capped) — PDP highlights strip.',
+    type: [ProductSpecEntity],
+  })
+  highlights!: ProductSpecEntity[];
+
   /**
    * Create a ProductEntity from a Prisma Product model.
    * Converts Decimal fields to strings and strips out relation fields.
@@ -157,6 +170,8 @@ export class ProductEntity {
       sortOrder: number;
       isPrimary: boolean;
     } | null;
+    /** Structured spec-value rows (joined with their definition), TASK-191. */
+    specValues?: SpecValueRow[];
   }): ProductEntity {
     const entity = new ProductEntity();
     entity.id = product.id;
@@ -180,6 +195,9 @@ export class ProductEntity {
     entity.primaryImage = product.primaryImage
       ? ProductImageEntity.fromPrisma(product.primaryImage)
       : null;
+    const { specs, highlights } = buildProductSpecs(product.specValues);
+    entity.specs = specs;
+    entity.highlights = highlights;
     return entity;
   }
 }

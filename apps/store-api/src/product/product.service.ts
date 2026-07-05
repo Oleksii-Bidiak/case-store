@@ -1,12 +1,20 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AttributeDefinition, AttributeType } from '@prisma/client';
 import {
   ProductRepository,
   CreateProductInput,
   UpdateProductInput,
   FindAllParams,
 } from './product.repository';
+import { ProductSpecRepository, SpecValueWrite } from './product-spec.repository';
 import { CategoryRepository } from '../category';
+import { AttributeDefinitionRepository } from '../attribute-definition';
 import {
   ProductEntity,
   PublicProductEntity,
@@ -84,6 +92,8 @@ export class ProductService {
     private readonly config: ConfigService,
     private readonly productIndexer: ProductIndexer,
     private readonly categoryRepository: CategoryRepository,
+    private readonly specRepository: ProductSpecRepository,
+    private readonly attributeDefinitionRepository: AttributeDefinitionRepository,
   ) {
     this.cacheTtlSeconds =
       this.config.get<number>('REDIS_CACHE_TTL_SECONDS') ?? DEFAULT_CACHE_TTL_SECONDS;
@@ -448,6 +458,107 @@ export class ProductService {
     await this.syncSearchIndex(deleted);
 
     return ProductEntity.fromPrisma(deleted);
+  }
+
+  /**
+   * Replace a product's structured spec VALUES (TASK-191, admin-only). Resolves
+   * the product's EFFECTIVE definitions (own category + ancestors), validates
+   * every incoming value against them, then writes the full set in one
+   * transaction (replace-all — no partial writes). Returns the product with its
+   * specs hydrated.
+   *
+   * Rejections (400, nothing written):
+   *   - a `definitionId` not in the product's effective definition set;
+   *   - a value that violates its definition's type (non-numeric for NUMBER,
+   *     an option outside `options` for SELECT, non-boolean for BOOLEAN).
+   *
+   * Blank values are treated as "no value" and dropped, so the admin form can
+   * submit its full effective-definition set with only the filled-in ones
+   * persisting.
+   */
+  async updateSpecs(
+    productId: string,
+    incoming: Array<{ definitionId: string; value: string; valueNumber?: number | null }>,
+  ): Promise<ProductEntity> {
+    const product = await this.productRepository.findById(productId);
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    const effective = await this.attributeDefinitionRepository.findEffectiveForCategory(
+      product.categoryId,
+    );
+    const byId = new Map(effective.map((def) => [def.id, def]));
+
+    const seen = new Set<string>();
+    const writes: SpecValueWrite[] = [];
+    for (const item of incoming) {
+      // Blank value → clear this spec (skip persisting it).
+      if (item.value === undefined || item.value === null || String(item.value).trim() === '') {
+        continue;
+      }
+
+      const def = byId.get(item.definitionId);
+      if (!def) {
+        throw new BadRequestException(
+          `Characteristic "${item.definitionId}" is not defined for this product's category`,
+        );
+      }
+      if (seen.has(item.definitionId)) {
+        throw new BadRequestException('Duplicate value for the same characteristic');
+      }
+      seen.add(item.definitionId);
+
+      writes.push({ definitionId: def.id, ...this.validateSpecValue(def, item.value) });
+    }
+
+    await this.specRepository.setSpecs(productId, writes);
+
+    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.evictProductDetail(productId, product.slug);
+
+    const specValues = await this.specRepository.getSpecs(productId);
+    return ProductEntity.fromPrisma({ ...product, specValues });
+  }
+
+  /**
+   * Validate and canonicalize a single spec value against its definition's type.
+   * Returns the canonical string `value` (used for exact facet matching) plus an
+   * optional numeric mirror for NUMBER-typed definitions. Throws
+   * BadRequestException on a type mismatch.
+   */
+  private validateSpecValue(
+    def: AttributeDefinition,
+    raw: string,
+  ): { value: string; valueNumber?: number | null } {
+    switch (def.type) {
+      case AttributeType.NUMBER: {
+        const num = Number(raw);
+        if (Number.isNaN(num)) {
+          throw new BadRequestException(`"${def.label}" must be a number`);
+        }
+        return { value: String(num), valueNumber: num };
+      }
+      case AttributeType.BOOLEAN: {
+        const normalized = String(raw).trim().toLowerCase();
+        if (normalized !== 'true' && normalized !== 'false') {
+          throw new BadRequestException(`"${def.label}" must be true or false`);
+        }
+        return { value: normalized };
+      }
+      case AttributeType.SELECT: {
+        const options = Array.isArray(def.options)
+          ? (def.options as unknown[]).filter((o): o is string => typeof o === 'string')
+          : [];
+        if (!options.includes(raw)) {
+          throw new BadRequestException(`"${raw}" is not an allowed option for "${def.label}"`);
+        }
+        return { value: raw };
+      }
+      case AttributeType.TEXT:
+      default:
+        return { value: String(raw) };
+    }
   }
 
   /**
