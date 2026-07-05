@@ -270,8 +270,9 @@ export const dict = {
       viewAll: "Усі розділи",
     },
 
-    // Tabbed product rail. Only "Новинки" and "Акційні" are backed by real
-    // filters; "Хіти" is a best-effort placeholder (see product rail widget).
+    // Tabbed product rail. All three tabs are backed by real filters: "Хіти"
+    // by the bestselling sort (units sold across PAID orders, TASK-164),
+    // "Новинки" by newest-first, "Акційні" by a client-side on-sale filter.
     popular: {
       heading: "Популярне",
       tabs: {

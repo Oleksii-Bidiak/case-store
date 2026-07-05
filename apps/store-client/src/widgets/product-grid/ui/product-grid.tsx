@@ -14,14 +14,12 @@ import { PopularRailSkeleton } from "./product-grid-skeleton";
 
 type TabKey = "hits" | "new" | "sale";
 
-// Query params per tab. Only "new" and "sale" are backed by real filters:
+// Query params per tab, each backed by a real filter:
+//   • hits → bestselling: units sold across PAID orders, most sold first (TASK-164)
 //   • new  → newest first (createdAt desc)
 //   • sale → fetch a wider page, then client-filter to items on sale
-//   • hits → the API has no bestseller signal yet, so this is a best-effort
-//     default listing. TODO(TASK-162): back "hits" with a real bestsellers
-//     endpoint / sort once the backend exposes one.
 const TAB_PARAMS: Record<TabKey, ProductControllerFindAllParams> = {
-  hits: { isActive: true, limit: 12 },
+  hits: { isActive: true, sortBy: "bestselling", sortOrder: "desc", limit: 12 },
   new: { isActive: true, sortBy: "createdAt", sortOrder: "desc", limit: 12 },
   sale: { isActive: true, limit: 24 },
 };

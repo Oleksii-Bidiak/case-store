@@ -149,15 +149,18 @@ export class ProductListQueryDto {
   specs?: string;
 
   @ApiProperty({
-    description: 'Sort field (createdAt, price, name)',
+    description:
+      'Sort field. `bestselling` orders by units sold across PAID orders (TASK-164); ' +
+      'zero-sales products still appear, newest-first, at the tail.',
     example: 'createdAt',
     required: false,
     default: 'createdAt',
+    enum: ['createdAt', 'price', 'name', 'bestselling'],
   })
   @IsOptional()
   @IsString()
-  @IsIn(['createdAt', 'price', 'name'], {
-    message: 'sortBy must be one of: createdAt, price, name',
+  @IsIn(['createdAt', 'price', 'name', 'bestselling'], {
+    message: 'sortBy must be one of: createdAt, price, name, bestselling',
   })
   sortBy?: string = 'createdAt';
 

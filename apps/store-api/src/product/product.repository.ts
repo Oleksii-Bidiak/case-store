@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma';
-import { Product, Prisma, AttributeType } from '@prisma/client';
+import { Product, Prisma, AttributeType, PaymentStatus } from '@prisma/client';
+import { rankProductIdsBySales } from './bestseller-rank.util';
 
 /**
  * Parameters for paginated product queries with filtering.
@@ -54,6 +55,9 @@ export interface ProductBrandSummary {
 
 /** Prisma select for the joined brand summary — shared by every read include. */
 const BRAND_SUMMARY_SELECT = { id: true, name: true, slug: true, logo: true } as const;
+
+/** A product row with its brand summary joined in — the shared list read shape. */
+type ProductWithBrand = Product & { brand: ProductBrandSummary | null };
 
 /**
  * Allowed fields for creating a product.
@@ -466,13 +470,32 @@ export class ProductRepository {
       };
     }
 
-    // Validate and map sort field
+    // Bestselling (TASK-164) ranks by an aggregate over PAID order items rather
+    // than a scalar column, so it takes a dedicated ranking path; every other
+    // sort maps to a plain column order.
+    const { products, total } =
+      sortBy === 'bestselling'
+        ? await this.findPageByBestselling(where, skip, limit)
+        : await this.findPageByColumn(where, skip, limit, sortBy, sortOrder);
+
+    const enriched = await this.enrichProducts(products);
+    return { products: enriched, total };
+  }
+
+  /** Standard column-ordered page (createdAt / price / name). */
+  private async findPageByColumn(
+    where: Prisma.ProductWhereInput,
+    skip: number,
+    limit: number,
+    sortBy: string | undefined,
+    sortOrder: 'asc' | 'desc',
+  ): Promise<{ products: ProductWithBrand[]; total: number }> {
     const allowedSortFields: Record<string, string> = {
       createdAt: 'createdAt',
       price: 'price',
       name: 'name',
     };
-    const sortField = allowedSortFields[sortBy];
+    const sortField = allowedSortFields[sortBy ?? 'createdAt'];
     if (!sortField) {
       this.logger.warn(`Invalid sort field: ${sortBy}, falling back to createdAt`);
     }
@@ -488,7 +511,71 @@ export class ProductRepository {
       }),
       this.prisma.product.count({ where }),
     ]);
+    return { products, total };
+  }
 
+  /**
+   * Bestselling page (TASK-164): rank the whole filtered candidate set by units
+   * sold across PAID orders, then page in memory. Zero-sales products remain in
+   * the list (newest-first tail) so the full catalogue stays browsable. `total`
+   * is the filtered candidate count, so pagination metadata is unaffected by the
+   * ranking.
+   */
+  private async findPageByBestselling(
+    where: Prisma.ProductWhereInput,
+    skip: number,
+    limit: number,
+  ): Promise<{ products: ProductWithBrand[]; total: number }> {
+    const candidates = await this.prisma.product.findMany({
+      where,
+      select: { id: true, createdAt: true },
+    });
+    const unitsSold = await this.getUnitsSoldByProductId(candidates.map((c) => c.id));
+    const rankedIds = rankProductIdsBySales(candidates, unitsSold);
+    const pageIds = rankedIds.slice(skip, skip + limit);
+
+    const rows = await this.prisma.product.findMany({
+      where: { id: { in: pageIds } },
+      include: { brand: { select: BRAND_SUMMARY_SELECT } },
+    });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const products = pageIds
+      .map((id) => byId.get(id))
+      .filter((product): product is ProductWithBrand => product != null);
+    return { products, total: candidates.length };
+  }
+
+  /**
+   * Sum sold quantity per product across PAID, non-deleted orders (TASK-164).
+   * Restricted to the supplied candidate ids so the aggregate never scans the
+   * whole order history. Products with no PAID sales are simply absent from the
+   * returned map (treated as zero by the ranking).
+   */
+  private async getUnitsSoldByProductId(productIds: string[]): Promise<Map<string, number>> {
+    if (productIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.prisma.orderItem.groupBy({
+      by: ['productId'],
+      where: {
+        productId: { in: productIds },
+        order: { paymentStatus: PaymentStatus.PAID, deletedAt: null },
+      },
+      _sum: { quantity: true },
+    });
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      map.set(row.productId, row._sum.quantity ?? 0);
+    }
+    return map;
+  }
+
+  /**
+   * Attach ratings, primary image and variant siblings to a page of products
+   * (shared by every sort path). Runs the three lookups in one batched pass to
+   * avoid N+1 queries.
+   */
+  private async enrichProducts(products: ProductWithBrand[]) {
     const productIds = products.map((p) => p.id);
     const groupIds = [
       ...new Set(products.map((p) => p.groupId).filter((id): id is string => id != null)),
@@ -498,7 +585,7 @@ export class ProductRepository {
       this.getPrimaryImagesByProductId(productIds),
       this.getVariantSiblingsByGroupId(groupIds),
     ]);
-    const enriched = products.map((product) => {
+    return products.map((product) => {
       const rating = ratings.get(product.id);
       return {
         ...product,
@@ -508,8 +595,6 @@ export class ProductRepository {
         variantSiblings: product.groupId ? (variantSiblings.get(product.groupId) ?? []) : undefined,
       };
     });
-
-    return { products: enriched, total };
   }
 
   /**
