@@ -27,6 +27,7 @@ import { SearchModule } from './search';
 import { DashboardModule } from './dashboard';
 import { MailModule } from './mail';
 import { MailOutboxModule } from './mail-outbox';
+import { PublishingModule } from './publishing';
 import { RedisCacheModule } from './cache';
 import { CsrfModule } from './csrf';
 import { buildThrottlerOptions } from './throttler';
@@ -137,6 +138,10 @@ import { buildPinoHttpOptions } from './config/pino.config';
     // Transactional mail outbox + retry worker (global — provides
     // MailOutboxService everywhere; cron dispatch via SchedulerRegistry).
     MailOutboxModule,
+
+    // Shared publishing infrastructure (global — provides RevalidationNotifier
+    // everywhere; cron publisher of scheduled content via SchedulerRegistry).
+    PublishingModule,
 
     // Redis cache layer (global — provides CacheService everywhere)
     RedisCacheModule,

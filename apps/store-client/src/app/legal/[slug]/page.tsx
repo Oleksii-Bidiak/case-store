@@ -1,35 +1,26 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { pageControllerFindBySlug } from "@/shared/api/generated/pages/pages";
-import type { PageEntity } from "@/shared/api/generated/models";
+import {
+  fetchPublishedPage,
+  fetchPublishedPages,
+} from "@/shared/api/pages-server";
 import { LegalDocView, type LegalOtherDoc } from "@/widgets/legal-doc";
 import { JsonLd } from "@/shared/ui";
-import {
-  buildBreadcrumbSchema,
-  fetchAllPublishedPages,
-} from "@/shared/lib/schema";
+import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import { SITE_URL, dict } from "@/shared/config";
 
-/** Fetch a published page by slug; returns null on 404 / any API error. */
-async function getPage(slug: string): Promise<PageEntity | null> {
-  try {
-    const { data } = await pageControllerFindBySlug(slug);
-    return data;
-  } catch {
-    return null;
-  }
-}
+/**
+ * Fetch a published page by slug through the ISR-tagged server fetcher; returns
+ * null on 404 (draft / scheduled / missing) or any API error.
+ */
+const getPage = fetchPublishedPage;
 
 /** Other published pages (for the "інші правові документи" grid). Never throws. */
 async function getOtherDocs(currentSlug: string): Promise<LegalOtherDoc[]> {
-  try {
-    const pages = await fetchAllPublishedPages();
-    return pages
-      .filter((page) => page.slug !== currentSlug)
-      .map((page) => ({ slug: page.slug, title: page.title }));
-  } catch {
-    return [];
-  }
+  const pages = await fetchPublishedPages();
+  return pages
+    .filter((page) => page.slug !== currentSlug)
+    .map((page) => ({ slug: page.slug, title: page.title }));
 }
 
 interface LegalDocPageProps {

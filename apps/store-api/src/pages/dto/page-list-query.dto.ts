@@ -1,6 +1,7 @@
-import { IsOptional, IsInt, IsBoolean, Min, Max } from 'class-validator';
-import { Transform, Type } from 'class-transformer';
+import { IsOptional, IsInt, IsEnum, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { PublishStatus } from '@prisma/client';
 
 /**
  * Query DTO for the public page list (published pages only).
@@ -28,26 +29,19 @@ export class PageListQueryDto {
 }
 
 /**
- * Query DTO for the admin page list (published + drafts), with an optional
- * isActive filter.
+ * Query DTO for the admin page list (all statuses), with an optional status
+ * filter.
  */
 export class AdminPageListQueryDto extends PageListQueryDto {
   @ApiProperty({
-    description: 'Filter by published status (true = published, false = drafts)',
-    example: true,
+    description: 'Filter by publish status (DRAFT, SCHEDULED, PUBLISHED)',
+    enum: PublishStatus,
+    example: PublishStatus.PUBLISHED,
     required: false,
   })
   @IsOptional()
-  // Read the ORIGINAL query value from `obj`, not the coerced `value`. The global
-  // ValidationPipe runs with `enableImplicitConversion: true`, which coerces the raw
-  // string to Boolean BEFORE this transform — and `Boolean('false')` is `true`.
-  // Deriving from `obj[key]` (the untouched string) is the only reliable way.
-  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
-    const raw = obj[key];
-    if (raw === true || raw === 'true') return true;
-    if (raw === false || raw === 'false') return false;
-    return undefined;
+  @IsEnum(PublishStatus, {
+    message: `status must be one of: ${Object.values(PublishStatus).join(', ')}`,
   })
-  @IsBoolean({ message: 'isActive must be true or false' })
-  isActive?: boolean;
+  status?: PublishStatus;
 }

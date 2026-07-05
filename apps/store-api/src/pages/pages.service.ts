@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, PublishStatus } from '@prisma/client';
 import {
   PageRepository,
   CreatePageInput,
@@ -11,6 +11,7 @@ import { PageEntity } from './entities';
 import { CreatePageDto, UpdatePageDto, PageListQueryDto, AdminPageListQueryDto } from './dto';
 import { generateSlug } from '../common/utils';
 import { sanitizeRichText } from '../common/sanitize';
+import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
 
 /**
  * Pagination metadata returned alongside paginated results.
@@ -32,7 +33,10 @@ interface PaginatedPagesResponse {
 
 @Injectable()
 export class PageService {
-  constructor(private readonly pageRepository: PageRepository) {}
+  constructor(
+    private readonly pageRepository: PageRepository,
+    private readonly revalidation: RevalidationNotifier,
+  ) {}
 
   /**
    * List published pages (public storefront).
@@ -72,7 +76,7 @@ export class PageService {
     const params: FindAllAdminParams = {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
-      isActive: query.isActive,
+      status: query.status,
     };
 
     const { pages, total } = await this.pageRepository.findAllAdmin(params);
@@ -108,6 +112,14 @@ export class PageService {
       throw new ConflictException('Slug is already taken');
     }
 
+    const publishState = resolvePublishState(
+      {
+        status: dto.status ?? PublishStatus.DRAFT,
+        scheduledAt: this.parseScheduledAt(dto.scheduledAt),
+      },
+      new Date(),
+    );
+
     const input: CreatePageInput = {
       slug,
       title: dto.title,
@@ -115,13 +127,19 @@ export class PageService {
       excerpt: dto.excerpt,
       metaTitle: dto.metaTitle,
       metaDescription: dto.metaDescription,
-      isActive: dto.isActive,
+      status: publishState.status,
+      publishedAt: publishState.publishedAt,
+      scheduledAt: publishState.scheduledAt,
       sortOrder: dto.sortOrder,
     };
 
     try {
       const page = await this.pageRepository.create(input);
-      return PageEntity.fromPrisma(page);
+      const entity = PageEntity.fromPrisma(page);
+      if (entity.status === PublishStatus.PUBLISHED) {
+        await this.notifyRevalidation(entity.slug);
+      }
+      return entity;
     } catch (error) {
       this.rethrowUniqueConflict(error);
     }
@@ -143,6 +161,8 @@ export class PageService {
       }
     }
 
+    const wasPublished = page.status === PublishStatus.PUBLISHED;
+
     const input: UpdatePageInput = {
       slug: dto.slug,
       title: dto.title,
@@ -152,34 +172,60 @@ export class PageService {
       excerpt: dto.excerpt,
       metaTitle: dto.metaTitle,
       metaDescription: dto.metaDescription,
-      isActive: dto.isActive,
       sortOrder: dto.sortOrder,
     };
 
+    // Only touch publish fields when the admin actually sent a `status`.
+    if (dto.status !== undefined) {
+      const resolved = resolvePublishState(
+        { status: dto.status, scheduledAt: this.parseScheduledAt(dto.scheduledAt) },
+        new Date(),
+      );
+      input.status = resolved.status;
+      input.scheduledAt = resolved.scheduledAt;
+      // Preserve the ORIGINAL publish time when the page was already live and
+      // stays live — re-saving a published page must not reset publishedAt.
+      input.publishedAt =
+        resolved.status === PublishStatus.PUBLISHED && wasPublished && page.publishedAt
+          ? page.publishedAt
+          : resolved.publishedAt;
+    }
+
     try {
       const updated = await this.pageRepository.update(id, input);
-      return PageEntity.fromPrisma(updated);
+      const entity = PageEntity.fromPrisma(updated);
+      // Revalidate whenever public visibility could have changed: the page is
+      // live now, or it was live before (e.g. just unpublished).
+      if (wasPublished || entity.status === PublishStatus.PUBLISHED) {
+        await this.notifyRevalidation(entity.slug);
+      }
+      return entity;
     } catch (error) {
       this.rethrowUniqueConflict(error);
     }
   }
 
   /**
-   * Publish a page (isActive = true). Throws NotFoundException when not found.
+   * Publish a page (status = PUBLISHED). Throws NotFoundException when not found.
    */
   async publish(id: string): Promise<PageEntity> {
     await this.ensureExists(id);
     const page = await this.pageRepository.publish(id);
-    return PageEntity.fromPrisma(page);
+    const entity = PageEntity.fromPrisma(page);
+    await this.notifyRevalidation(entity.slug);
+    return entity;
   }
 
   /**
-   * Unpublish a page (isActive = false). Throws NotFoundException when not found.
+   * Unpublish a page (status = DRAFT). Throws NotFoundException when not found.
    */
   async unpublish(id: string): Promise<PageEntity> {
     await this.ensureExists(id);
     const page = await this.pageRepository.unpublish(id);
-    return PageEntity.fromPrisma(page);
+    const entity = PageEntity.fromPrisma(page);
+    // Purge the now-stale published copy from the storefront cache.
+    await this.notifyRevalidation(entity.slug);
+    return entity;
   }
 
   /**
@@ -206,6 +252,24 @@ export class PageService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  /** Parse an ISO date string from the DTO into a Date (or null when absent). */
+  private parseScheduledAt(value?: string | null): Date | null {
+    return value ? new Date(value) : null;
+  }
+
+  /** Cache-revalidation target for a single page (hub + the page's own route). */
+  private revalidateTargetForSlug(slug: string): RevalidateTarget {
+    return {
+      tags: ['pages', `page:${slug}`],
+      paths: ['/legal', `/legal/${slug}`],
+    };
+  }
+
+  /** Best-effort storefront revalidation after an admin write. Never throws. */
+  private async notifyRevalidation(slug: string): Promise<void> {
+    await this.revalidation.revalidate(this.revalidateTargetForSlug(slug));
   }
 
   /**

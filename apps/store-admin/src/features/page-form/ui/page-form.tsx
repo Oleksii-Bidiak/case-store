@@ -32,7 +32,8 @@ const EMPTY_VALUES: PageFormInput = {
   metaTitle: "",
   metaDescription: "",
   sortOrder: "0",
-  isActive: false,
+  status: "DRAFT",
+  scheduledAt: "",
 };
 
 /**
@@ -75,6 +76,7 @@ export function PageForm({
   // computation — no state, no side effects.
   const titleValue = useWatch({ control, name: "title" }) ?? "";
   const slugValue = useWatch({ control, name: "slug" });
+  const statusValue = useWatch({ control, name: "status" });
 
   return (
     <form
@@ -193,15 +195,37 @@ export function PageForm({
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        <input
-          id="page-active"
-          type="checkbox"
-          className="size-4 rounded border-border accent-primary"
-          {...register("isActive")}
-        />
-        <Label htmlFor="page-active">{dict.pageForm.active}</Label>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="page-status">{dict.pageForm.status}</Label>
+        <select
+          id="page-status"
+          className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+          {...register("status")}
+        >
+          <option value="DRAFT">{dict.pageForm.statusDraft}</option>
+          <option value="SCHEDULED">{dict.pageForm.statusScheduled}</option>
+          <option value="PUBLISHED">{dict.pageForm.statusPublished}</option>
+        </select>
       </div>
+
+      {statusValue === "SCHEDULED" && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="page-scheduled-at">{dict.pageForm.scheduledAt}</Label>
+          <Input
+            id="page-scheduled-at"
+            type="datetime-local"
+            {...register("scheduledAt")}
+          />
+          <p className="text-sm text-muted-foreground">
+            {dict.pageForm.scheduledAtHint}
+          </p>
+          {errors.scheduledAt && (
+            <p role="alert" className="text-sm text-destructive">
+              {errors.scheduledAt.message}
+            </p>
+          )}
+        </div>
+      )}
 
       <div>
         <Button type="submit" disabled={isPending}>

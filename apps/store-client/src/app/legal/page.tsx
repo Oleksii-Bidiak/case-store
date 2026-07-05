@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
 import { LegalHubView, type LegalHubDoc } from "@/widgets/legal-doc";
 import { JsonLd } from "@/shared/ui";
-import {
-  buildBreadcrumbSchema,
-  fetchAllPublishedPages,
-} from "@/shared/lib/schema";
+import { buildBreadcrumbSchema } from "@/shared/lib/schema";
+import { fetchPublishedPages } from "@/shared/api/pages-server";
 import { SITE_URL, dict } from "@/shared/config";
 
 export const metadata: Metadata = {
@@ -13,19 +11,15 @@ export const metadata: Metadata = {
   alternates: { canonical: `${SITE_URL}/legal` },
 };
 
-/** All published static pages for the hub. Never throws → empty list on error. */
+/** All published static pages for the hub (ISR-tagged). Empty list on error. */
 async function getDocs(): Promise<LegalHubDoc[]> {
-  try {
-    const pages = await fetchAllPublishedPages();
-    return pages.map((page) => ({
-      slug: page.slug,
-      title: page.title,
-      excerpt: page.excerpt,
-      updatedAt: page.updatedAt,
-    }));
-  } catch {
-    return [];
-  }
+  const pages = await fetchPublishedPages();
+  return pages.map((page) => ({
+    slug: page.slug,
+    title: page.title,
+    excerpt: page.excerpt,
+    updatedAt: page.updatedAt,
+  }));
 }
 
 export default async function LegalHubPage() {

@@ -1,12 +1,15 @@
-import { IsString, IsOptional, IsBoolean, IsInt, MaxLength, Min, Matches } from 'class-validator';
+import { IsString, IsOptional, IsInt, MaxLength, Min, Matches } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { PublishFieldsDto } from '../../publishing';
 
 /**
  * DTO for creating a static page (admin-only).
- * Slug is auto-generated from the title when omitted.
+ * Slug is auto-generated from the title when omitted. Publish control comes from
+ * the shared {@link PublishFieldsDto} (`status` + `scheduledAt`); the legacy
+ * `isActive` flag is derived server-side from `status`, never accepted here.
  */
-export class CreatePageDto {
+export class CreatePageDto extends PublishFieldsDto {
   @ApiProperty({ description: 'Page title', example: 'Privacy Policy' })
   @IsString()
   @MaxLength(255, { message: 'Title must be at most 255 characters' })
@@ -62,16 +65,6 @@ export class CreatePageDto {
   @IsString()
   @MaxLength(500, { message: 'Meta description must be at most 500 characters' })
   metaDescription?: string;
-
-  @ApiProperty({
-    description: 'Whether the page is published (visible on the storefront)',
-    example: false,
-    required: false,
-    default: false,
-  })
-  @IsOptional()
-  @IsBoolean({ message: 'isActive must be true or false' })
-  isActive?: boolean;
 
   @ApiProperty({
     description: 'Sort order for display (lower values appear first)',
