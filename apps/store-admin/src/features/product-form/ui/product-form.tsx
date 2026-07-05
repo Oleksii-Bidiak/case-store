@@ -210,7 +210,23 @@ export function ProductForm({
             control={control}
             name="categoryId"
             render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
+              <Select
+                value={field.value}
+                onValueChange={(value) => {
+                  // Radix Select renders a hidden native <select> (bubble
+                  // input) inside the form and re-dispatches a `change` event
+                  // whenever the controlled value changes. When the edit page
+                  // seeds categoryId BEFORE the category options have loaded,
+                  // that native select has no matching <option>, so the
+                  // browser coerces its value to "" and Radix's autofill
+                  // handler feeds "" back here — silently clearing the seeded
+                  // category (TASK-232, same bounce as TASK-201). A real user
+                  // action is never "": every item carries a category id. So
+                  // "" can only be that bounce — ignore it.
+                  if (value === "") return;
+                  field.onChange(value);
+                }}
+              >
                 <SelectTrigger id="product-category">
                   <SelectValue
                     placeholder={
@@ -284,9 +300,16 @@ export function ProductForm({
           render={({ field }) => (
             <Select
               value={field.value ? field.value : NO_GROUP}
-              onValueChange={(value) =>
-                field.onChange(value === NO_GROUP ? "" : value)
-              }
+              onValueChange={(value) => {
+                // Same native bubble-<select> "" bounce as the category
+                // select above (TASK-232 / TASK-201): a groupId seeded before
+                // the group options mount coerces the native select to "" and
+                // Radix feeds that "" back here. A real user action is never
+                // "" — clearing the group arrives as the NO_GROUP sentinel —
+                // so "" can only be the bounce; ignore it.
+                if (value === "") return;
+                field.onChange(value === NO_GROUP ? "" : value);
+              }}
             >
               <SelectTrigger id="product-group">
                 <SelectValue
