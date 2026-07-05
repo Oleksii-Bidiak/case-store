@@ -11,7 +11,7 @@ import {
   type CartItemEntity,
 } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
-import { dict } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import {
   Button,
   Dialog,
@@ -190,7 +190,7 @@ export function CartView() {
 
         {/* Summary + delivery/payment stubs */}
         {cart && (
-          <div className="flex flex-col gap-4 lg:sticky lg:top-6">
+          <div className={`flex flex-col gap-4 lg:sticky ${STICKY_ASIDE_TOP}`}>
             <CartSummary totals={cart.totals} servicesTotal={servicesTotal} />
             <CartDeliveryStub />
             <CartPaymentStub />

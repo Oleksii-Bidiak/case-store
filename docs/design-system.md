@@ -92,6 +92,11 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
 - **Card internal padding:** `p-4` (compact) / `p-6` (roomy).
 - **Product grid:** `grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4` (2-up on mobile
   matches the benchmark UA shops — denser than typical SaaS).
+- **Sticky asides** (filter rails, summary panels, TOCs, side navs): the site header is
+  `sticky top-0 z-50` (64px), so any other sticky panel must clear it with a **96px** top
+  offset — `lg:sticky` + `STICKY_ASIDE_TOP` (`lg:top-24`) from
+  `store-client/src/shared/config/layout.ts`; scroll-spy / `scrollTo` math uses
+  `STICKY_HEADER_OFFSET` (96) from the same module. Never hardcode the offset.
 
 ---
 
