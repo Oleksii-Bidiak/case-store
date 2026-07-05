@@ -246,6 +246,45 @@ export class CategoryRepository {
   }
 
   /**
+   * Admin variant of {@link findCategoryTree} (TASK-236): the FULL tree with
+   * every `isActive` state, still capped at 3 nested levels. Backs
+   * `GET /categories/admin/tree` so staff can assign a product to a temporarily
+   * deactivated leaf without it silently vanishing from the picker. Mirrors
+   * `findCategoryTree` exactly minus the `isActive: true` filters.
+   */
+  async findCategoryTreeForAdmin(): Promise<
+    Array<
+      Category & {
+        children: Array<
+          Category & {
+            children: Array<Category & { children: Category[] }>;
+          }
+        >;
+      }
+    >
+  > {
+    return this.prisma.category.findMany({
+      where: { parentId: null },
+      orderBy: { sortOrder: 'asc' },
+      include: {
+        children: {
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            children: {
+              orderBy: { sortOrder: 'asc' },
+              include: {
+                children: {
+                  orderBy: { sortOrder: 'asc' },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /**
    * Find a category by ID with its product count.
    * Returns the category record and the count of active products.
    */

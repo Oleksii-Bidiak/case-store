@@ -57,6 +57,7 @@ const categoryRepositoryMock = {
   findRootCategories: jest.fn(),
   findAll: jest.fn(),
   findCategoryTree: jest.fn(),
+  findCategoryTreeForAdmin: jest.fn(),
   findWithProductCount: jest.fn(),
   findAllWithProductCount: jest.fn(),
   create: jest.fn(),
@@ -177,6 +178,35 @@ describe('CategoryService', () => {
       const result = await service.getCategoryTree();
 
       expect(result.data).toHaveLength(0);
+    });
+  });
+
+  // ─── getCategoryTreeForAdmin (admin, TASK-236) ───────────────────────────────
+
+  describe('getCategoryTreeForAdmin', () => {
+    it('maps the full (incl. inactive) tree to CategoryTreeNodeEntity via the admin repo call', async () => {
+      const treeData = [
+        {
+          ...mockCategory,
+          children: [
+            {
+              ...mockInactiveCategory,
+              children: [],
+            },
+          ],
+        },
+      ];
+      categoryRepositoryMock.findCategoryTreeForAdmin.mockResolvedValue(treeData as any);
+
+      const result = await service.getCategoryTreeForAdmin();
+
+      expect(categoryRepositoryMock.findCategoryTreeForAdmin).toHaveBeenCalled();
+      // Uses the admin (unfiltered) traversal, NOT the public isActive-filtered one.
+      expect(categoryRepositoryMock.findCategoryTree).not.toHaveBeenCalled();
+      expect(result.data[0]).toBeInstanceOf(CategoryTreeNodeEntity);
+      expect(result.data[0].children[0]).toBeInstanceOf(CategoryTreeNodeEntity);
+      // Inactive child is present (not filtered out).
+      expect(result.data[0].children[0].isActive).toBe(false);
     });
   });
 
