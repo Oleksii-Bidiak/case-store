@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { ProductRepository, ProductIndexSource } from '../product/product.repository';
+import { CategoryRepository } from '../category';
 import { PublicProductEntity } from '../product/entities';
 import { MeiliClient, ProductSearchDocument, IndexSettings } from './meili.client';
 import { UA_EN_SYNONYMS, extractUaSearchTerms } from './search-synonyms';
@@ -27,7 +28,7 @@ const REINDEX_BATCH = 100;
  */
 export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
   searchableAttributes: ['name', 'description', 'categoryName', 'searchTerms'],
-  filterableAttributes: ['isActive', 'categoryId'],
+  filterableAttributes: ['isActive', 'categoryIds'],
   sortableAttributes: ['price', 'createdAt'],
   rankingRules: ['words', 'typo', 'proximity', 'attribute', 'sort', 'exactness'],
   typoTolerance: {
@@ -70,6 +71,7 @@ export class SearchService implements OnModuleInit {
   constructor(
     private readonly meili: MeiliClient,
     private readonly productRepository: ProductRepository,
+    private readonly categoryRepository: CategoryRepository,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(SearchService.name);
@@ -105,7 +107,7 @@ export class SearchService implements OnModuleInit {
       await this.meili.deleteDocument(productId);
       return;
     }
-    await this.meili.indexDocuments([this.toDocument(source)]);
+    await this.meili.indexDocuments([await this.toDocument(source)]);
   }
 
   /** Remove a product from the index (deactivate / delete). */
@@ -129,7 +131,8 @@ export class SearchService implements OnModuleInit {
     for (;;) {
       const { items } = await this.productRepository.findManyForIndex(skip, REINDEX_BATCH);
       if (items.length === 0) break;
-      await this.meili.indexDocuments(items.map((item) => this.toDocument(item)));
+      const docs = await Promise.all(items.map((item) => this.toDocument(item)));
+      await this.meili.indexDocuments(docs);
       indexed += items.length;
       if (items.length < REINDEX_BATCH) break;
       skip += REINDEX_BATCH;
@@ -230,8 +233,14 @@ export class SearchService implements OnModuleInit {
     };
   }
 
-  /** Build a Meilisearch document from an index source (Decimal → number). */
-  private toDocument(source: ProductIndexSource): ProductSearchDocument {
+  /**
+   * Build a Meilisearch document from an index source (Decimal → number).
+   * `categoryIds` is expanded to the product's category plus every ancestor id
+   * (TASK-236) so a category-scoped filter rolls up subcategory products, just
+   * like the Postgres subtree rollup.
+   */
+  private async toDocument(source: ProductIndexSource): Promise<ProductSearchDocument> {
+    const categoryIds = await this.categoryRepository.findAncestorIds(source.categoryId);
     return {
       id: source.id,
       name: source.name,
@@ -240,7 +249,7 @@ export class SearchService implements OnModuleInit {
       price: Number(source.price.toString()),
       compareAtPrice:
         source.compareAtPrice != null ? Number(source.compareAtPrice.toString()) : null,
-      categoryId: source.categoryId,
+      categoryIds,
       categoryName: source.categoryName,
       primaryImageUrl: source.primaryImageUrl,
       blurDataUrl: source.blurDataUrl,

@@ -1,5 +1,6 @@
 import { PinoLogger } from 'nestjs-pino';
 import { ProductRepository } from '../product/product.repository';
+import { CategoryRepository } from '../category';
 import { PublicProductEntity } from '../product/entities';
 import { MeiliClient } from './meili.client';
 import {
@@ -88,6 +89,7 @@ describe('SearchService', () => {
       'findAll' | 'findByIdsForCards' | 'findOneForIndex' | 'findManyForIndex'
     >
   >;
+  let categoryRepo: jest.Mocked<Pick<CategoryRepository, 'findAncestorIds'>>;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -105,9 +107,15 @@ describe('SearchService', () => {
       findOneForIndex: jest.fn(),
       findManyForIndex: jest.fn(),
     };
+    // TASK-236: by default a category's ancestor chain is just itself; the
+    // toDocument tests override it to prove the rollup expansion.
+    categoryRepo = {
+      findAncestorIds: jest.fn((id: string) => Promise.resolve([id])),
+    };
     service = new SearchService(
       meili as unknown as MeiliClient,
       repo as unknown as ProductRepository,
+      categoryRepo as unknown as CategoryRepository,
       loggerMock,
     );
   });
@@ -127,7 +135,7 @@ describe('SearchService', () => {
         'categoryName',
         'searchTerms',
       ]);
-      expect(PRODUCTS_INDEX_SETTINGS.filterableAttributes).toEqual(['isActive', 'categoryId']);
+      expect(PRODUCTS_INDEX_SETTINGS.filterableAttributes).toEqual(['isActive', 'categoryIds']);
       expect(PRODUCTS_INDEX_SETTINGS.sortableAttributes).toEqual(['price', 'createdAt']);
       expect(PRODUCTS_INDEX_SETTINGS.typoTolerance).toBeDefined();
     });
@@ -162,6 +170,19 @@ describe('SearchService', () => {
           createdAt: new Date('2026-01-01T00:00:00.000Z').getTime(),
         }),
       );
+    });
+
+    it('expands categoryIds to the category + its ancestors (TASK-236 rollup)', async () => {
+      repo.findOneForIndex.mockResolvedValue(makeIndexSource({ categoryId: 'leaf-cat' }) as never);
+      categoryRepo.findAncestorIds.mockResolvedValue(['leaf-cat', 'mid-cat', 'root-cat']);
+
+      await service.indexProduct('product-1');
+
+      expect(categoryRepo.findAncestorIds).toHaveBeenCalledWith('leaf-cat');
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].categoryIds).toEqual(['leaf-cat', 'mid-cat', 'root-cat']);
+      // Old scalar field is gone.
+      expect(docs[0]).not.toHaveProperty('categoryId');
     });
 
     it('injects Cyrillic search terms derived from name + category (TASK-200)', async () => {
