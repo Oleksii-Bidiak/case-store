@@ -89,6 +89,12 @@ describe('ProductController (e2e)', () => {
       update: jest.fn(),
       updateMany: jest.fn(),
     },
+    // The public PDP hydrates device compatibility (TASK-190) via the real
+    // ProductDeviceCompatRepository; default to no compat rows so the detail
+    // path resolves cleanly with an empty `compatibleDeviceModels`.
+    productDeviceCompat: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   };
 
   // Test data

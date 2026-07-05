@@ -150,12 +150,12 @@ export class ProductListQueryDto {
 
   @ApiProperty({
     description:
-      'Sort field. `bestselling` orders by units sold across PAID orders (TASK-164); ' +
-      'zero-sales products still appear, newest-first, at the tail.',
+      'Sort field: createdAt, price, name, or bestselling. `bestselling` orders by ' +
+      'units sold across PAID orders (TASK-164); zero-sales products still appear, ' +
+      'newest-first, at the tail.',
     example: 'createdAt',
     required: false,
     default: 'createdAt',
-    enum: ['createdAt', 'price', 'name', 'bestselling'],
   })
   @IsOptional()
   @IsString()
