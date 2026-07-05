@@ -38,6 +38,7 @@ const CLEARABLE_FILTERS = {
   search: undefined,
   minPrice: undefined,
   maxPrice: undefined,
+  deviceModelId: undefined,
 } as const;
 
 /**
@@ -63,6 +64,8 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
   const params: ProductControllerFindAllParams = {
     categoryId: searchParams.get("categoryId") ?? initialParams.categoryId,
     brandId: searchParams.get("brandId") ?? initialParams.brandId,
+    deviceModelId:
+      searchParams.get("deviceModelId") ?? initialParams.deviceModelId,
     search: searchParams.get("search") ?? initialParams.search,
     sortBy: searchParams.get("sortBy") ?? initialParams.sortBy ?? "createdAt",
     sortOrder:
@@ -85,7 +88,8 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
     (params.search ? 1 : 0) +
     (params.brandId ? 1 : 0) +
     (params.minPrice != null ? 1 : 0) +
-    (params.maxPrice != null ? 1 : 0);
+    (params.maxPrice != null ? 1 : 0) +
+    (params.deviceModelId ? 1 : 0);
 
   const applyFilters = useCallback(
     (updates: Record<string, string | undefined>) => {

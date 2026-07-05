@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   ProductRepository,
@@ -6,8 +11,10 @@ import {
   UpdateProductInput,
   FindAllParams,
 } from './product.repository';
+import { ProductDeviceCompatRepository } from './product-device-compat.repository';
 import { CategoryRepository } from '../category';
 import { BrandRepository } from '../brand';
+import { DeviceRepository } from '../device';
 import {
   ProductEntity,
   PublicProductEntity,
@@ -86,6 +93,8 @@ export class ProductService {
     private readonly productIndexer: ProductIndexer,
     private readonly categoryRepository: CategoryRepository,
     private readonly brandRepository: BrandRepository,
+    private readonly deviceCompatRepository: ProductDeviceCompatRepository,
+    private readonly deviceRepository: DeviceRepository,
   ) {
     this.cacheTtlSeconds =
       this.config.get<number>('REDIS_CACHE_TTL_SECONDS') ?? DEFAULT_CACHE_TTL_SECONDS;
@@ -108,6 +117,7 @@ export class ProductService {
     const cacheKey = buildProductListKey({
       ...listParams,
       categoryId: query.categoryId,
+      deviceModelId: query.deviceModelId,
       isActive: true,
     });
     const cached = await this.cache.get<PaginatedProductsResponse>(cacheKey);
@@ -175,6 +185,7 @@ export class ProductService {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
       brandId: query.brandId,
+      deviceModelId: query.deviceModelId,
       isActive: query.isActive,
       minPrice: query.minPrice,
       maxPrice: query.maxPrice,
@@ -235,8 +246,9 @@ export class ProductService {
       throw new NotFoundException('Product not found');
     }
 
+    const compatibleDeviceModels = await this.deviceCompatRepository.getDeviceCompat(product.id);
     const response: ProductDetailResponse = {
-      data: PublicProductEntity.fromPrisma(product),
+      data: PublicProductEntity.fromPrisma({ ...product, compatibleDeviceModels }),
       category: ProductCategoryEntity.fromPrisma(product.category),
       group: product.group ? ProductGroupEntity.fromPrisma(product.group) : null,
       images: product.images.map((img) => ProductImageEntity.fromPrisma(img)),
@@ -263,7 +275,8 @@ export class ProductService {
       throw new NotFoundException('Product not found');
     }
 
-    const entity = ProductEntity.fromPrisma(product);
+    const compatibleDeviceModels = await this.deviceCompatRepository.getDeviceCompat(id);
+    const entity = ProductEntity.fromPrisma({ ...product, compatibleDeviceModels });
     await this.cache.set(cacheKey, entity, this.cacheTtlSeconds);
     return entity;
   }
@@ -474,6 +487,80 @@ export class ProductService {
     const brand = await this.brandRepository.findById(brandId);
     if (!brand) {
       throw new NotFoundException('Brand not found');
+    }
+  }
+
+  /**
+   * Replace a product's device-compatibility set (admin-only, TASK-190).
+   * Validates every device-model id exists (rejecting unknown ids with a 400
+   * BEFORE any write), replaces the compat rows in one transaction, then evicts
+   * the product's caches and re-indexes it. Returns the product with its new
+   * `compatibleDeviceModels`.
+   */
+  async updateDeviceCompat(productId: string, deviceModelIds: string[]): Promise<ProductEntity> {
+    const product = await this.productRepository.findById(productId);
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    await this.assertDeviceModelsExist(deviceModelIds);
+    await this.deviceCompatRepository.setDeviceCompat(productId, deviceModelIds);
+
+    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.evictProductDetail(productId, product.slug);
+    await this.syncSearchIndex(product);
+
+    const compatibleDeviceModels = await this.deviceCompatRepository.getDeviceCompat(productId);
+    return ProductEntity.fromPrisma({ ...product, compatibleDeviceModels });
+  }
+
+  /**
+   * Apply the same device-compatibility set to every position sharing `groupId`
+   * (admin-only bulk action, TASK-190 — doc 099 §3). Validates the ids, then
+   * writes the set to all sibling positions in one transaction. 404 if the group
+   * has zero live positions. Returns the count of positions updated.
+   */
+  async updateGroupDeviceCompat(
+    groupId: string,
+    deviceModelIds: string[],
+  ): Promise<{ updatedCount: number }> {
+    const positionCount = await this.deviceCompatRepository.countGroupPositions(groupId);
+    if (positionCount === 0) {
+      throw new NotFoundException('Product group not found or has no positions');
+    }
+
+    await this.assertDeviceModelsExist(deviceModelIds);
+    const { updatedCount, productIds } = await this.deviceCompatRepository.setDeviceCompatForGroup(
+      groupId,
+      deviceModelIds,
+    );
+
+    // Every affected position may change on any list page and its detail caches;
+    // bust the list prefix once and re-index each position.
+    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    for (const id of productIds) {
+      await this.cache.del(productDetailIdKey(id));
+      await this.syncSearchIndex({ id, isActive: true });
+    }
+
+    return { updatedCount };
+  }
+
+  /**
+   * Validate that every id in `deviceModelIds` references an existing device
+   * model. Throws 400 with the offending ids when any is unknown. An empty set
+   * is valid (clears compat).
+   */
+  private async assertDeviceModelsExist(deviceModelIds: string[]): Promise<void> {
+    const uniqueIds = [...new Set(deviceModelIds)];
+    if (uniqueIds.length === 0) {
+      return;
+    }
+    const found = await this.deviceRepository.findModelsByIds(uniqueIds);
+    const foundIds = new Set(found.map((m) => m.id));
+    const unknown = uniqueIds.filter((id) => !foundIds.has(id));
+    if (unknown.length > 0) {
+      throw new BadRequestException(`Unknown device model id(s): ${unknown.join(', ')}`);
     }
   }
 

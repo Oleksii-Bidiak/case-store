@@ -21,6 +21,12 @@ export interface FindAllParams {
    * category rollup in the same `where` clause so brand + category compose.
    */
   brandId?: string;
+  /**
+   * Device-compatibility filter (TASK-190): when set, only products with a
+   * `ProductDeviceCompat` row for this device model are returned. Applied as a
+   * nested relation filter through the join table.
+   */
+  deviceModelId?: string;
   isActive?: boolean;
   minPrice?: number;
   maxPrice?: number;
@@ -114,6 +120,8 @@ export interface ProductIndexSource {
   stock: number;
   isActive: boolean;
   createdAt: Date;
+  /** Compatible device-model ids for the Meilisearch `deviceModelIds` facet (TASK-190). */
+  deviceModelIds: string[];
 }
 
 /**
@@ -360,6 +368,7 @@ export class ProductRepository {
       limit,
       categoryIds,
       brandId,
+      deviceModelId,
       isActive,
       minPrice,
       maxPrice,
@@ -383,6 +392,13 @@ export class ProductRepository {
     // Manufacturer filter (TASK-189) — composes with the category rollup above.
     if (brandId !== undefined) {
       where.brandId = brandId;
+    }
+
+    // Device-compatibility filter (TASK-190): match products that have a compat
+    // join row for the requested device model. The `@@index([deviceModelId])` on
+    // `ProductDeviceCompat` covers this lookup direction.
+    if (deviceModelId !== undefined) {
+      where.deviceCompat = { some: { deviceModelId } };
     }
 
     if (isActive !== undefined) {
@@ -581,6 +597,7 @@ export class ProductRepository {
           take: 1,
           select: { url: true, blurDataUrl: true },
         },
+        deviceCompat: { select: { deviceModelId: true } },
       },
     });
     return product ? this.toIndexSource(product) : null;
@@ -604,6 +621,7 @@ export class ProductRepository {
           take: 1,
           select: { url: true, blurDataUrl: true },
         },
+        deviceCompat: { select: { deviceModelId: true } },
       },
     });
     return { items: rows.map((row) => this.toIndexSource(row)) };
@@ -615,6 +633,7 @@ export class ProductRepository {
       category: { name: string } | null;
       brand: { name: string } | null;
       images: Array<{ url: string; blurDataUrl: string | null }>;
+      deviceCompat: Array<{ deviceModelId: string }>;
     },
   ): ProductIndexSource {
     const image = product.images[0];
@@ -634,6 +653,7 @@ export class ProductRepository {
       stock: product.stock,
       isActive: product.isActive,
       createdAt: product.createdAt,
+      deviceModelIds: product.deviceCompat.map((c) => c.deviceModelId),
     };
   }
 

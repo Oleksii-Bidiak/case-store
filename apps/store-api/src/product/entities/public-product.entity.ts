@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ProductImageEntity } from './product-image.entity';
 import { ProductBrandEntity } from './product-brand.entity';
+import { ProductCompatibleDeviceEntity } from './product-compatible-device.entity';
 import {
   ProductVariantSummaryEntity,
   type VariantSiblingInput,
@@ -158,6 +159,13 @@ export class PublicProductEntity {
   })
   variantSummary!: ProductVariantSummaryEntity;
 
+  @ApiProperty({
+    description: 'Device models this position is compatible with (TASK-190)',
+    type: [ProductCompatibleDeviceEntity],
+    required: false,
+  })
+  compatibleDeviceModels!: ProductCompatibleDeviceEntity[];
+
   /**
    * Create a PublicProductEntity from a Prisma Product model. Accepts the same
    * shape as {@link ProductEntity.fromPrisma} (including `stock`), derives
@@ -197,6 +205,12 @@ export class PublicProductEntity {
      * standalone product — the summary derives from the product itself.
      */
     variantSiblings?: VariantSiblingInput[];
+    compatibleDeviceModels?: Array<{
+      id: string;
+      name: string;
+      slug: string;
+      brandName: string;
+    }>;
   }): PublicProductEntity {
     const entity = new PublicProductEntity();
     entity.id = product.id;
@@ -242,6 +256,9 @@ export class PublicProductEntity {
     entity.variantSummary = ProductVariantSummaryEntity.fromSiblings(
       product.groupId ?? null,
       siblings,
+    );
+    entity.compatibleDeviceModels = (product.compatibleDeviceModels ?? []).map((m) =>
+      ProductCompatibleDeviceEntity.fromSummary(m),
     );
     return entity;
   }

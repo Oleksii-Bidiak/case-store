@@ -17,6 +17,7 @@ import {
 } from "../model/price-range";
 import { SearchInput } from "./search-input";
 import { BrandFilter } from "./brand-filter";
+import { DeviceModelFilter } from "./device-model-filter";
 
 interface ProductFiltersProps {
   /** Currently-active filter params (derived from the URL). */
@@ -143,6 +144,15 @@ export function ProductFilters({
         cardClassName={cardClass}
         titleClassName={`${cardTitleClass} mb-4`}
       />
+
+      {/* Device compatibility (TASK-190) — brand → model cascade */}
+      <div className={cardClass}>
+        <h3 className={`${cardTitleClass} mb-4`}>{dict.filters.deviceTitle}</h3>
+        <DeviceModelFilter
+          currentDeviceModelId={currentParams.deviceModelId}
+          onChange={(deviceModelId) => onFilterChange({ deviceModelId })}
+        />
+      </div>
 
       {/* Price range */}
       <div className={cardClass}>

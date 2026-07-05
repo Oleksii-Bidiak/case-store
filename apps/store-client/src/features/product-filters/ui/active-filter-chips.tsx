@@ -2,6 +2,7 @@
 
 import { Search, X } from "lucide-react";
 import type { ProductControllerFindAllParams } from "@/entities/product";
+import { useDeviceControllerFindModels } from "@/entities/device";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
@@ -29,6 +30,14 @@ export function ActiveFilterChips({
   brandName,
   onFilterChange,
 }: ActiveFilterChipsProps) {
+  // Resolve the selected device model's name for its chip label (TASK-190).
+  // Only fires when a device filter is active.
+  const deviceModelId = currentParams.deviceModelId;
+  const { data: modelsData } = useDeviceControllerFindModels(undefined, {
+    query: { enabled: Boolean(deviceModelId) },
+  });
+  const deviceModel = modelsData?.data.find((m) => m.id === deviceModelId);
+
   const chips: {
     key: string;
     label: string;
@@ -66,6 +75,14 @@ export function ActiveFilterChips({
       key: "maxPrice",
       label: `${dict.filters.maxPlaceholder}: ${formatMoney(String(currentParams.maxPrice))}`,
       clear: () => onFilterChange({ maxPrice: undefined }),
+    });
+  }
+
+  if (deviceModelId) {
+    chips.push({
+      key: "deviceModelId",
+      label: `${dict.filters.deviceLabel}: ${deviceModel?.name ?? "…"}`,
+      clear: () => onFilterChange({ deviceModelId: undefined }),
     });
   }
 
@@ -110,6 +127,7 @@ export function ActiveFilterChips({
             search: undefined,
             minPrice: undefined,
             maxPrice: undefined,
+            deviceModelId: undefined,
           })
         }
         className="text-[13.5px] font-semibold text-muted-foreground underline decoration-1 underline-offset-[3px] outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"

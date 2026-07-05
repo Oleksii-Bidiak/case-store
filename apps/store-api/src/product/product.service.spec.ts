@@ -1,9 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ProductRepository, CreateProductInput, UpdateProductInput } from './product.repository';
+import { ProductDeviceCompatRepository } from './product-device-compat.repository';
 import { CategoryRepository } from '../category';
 import { BrandRepository } from '../brand';
+import { DeviceRepository } from '../device';
 import { ProductService } from './product.service';
 import { ProductEntity, PublicProductEntity } from './entities';
 import { ProductListQueryDto } from './dto';
@@ -74,6 +76,21 @@ const brandRepositoryMock = {
   findById: jest.fn().mockResolvedValue({ id: 'brand-uuid-1', name: 'Spigen', slug: 'spigen' }),
 };
 
+// ─── Device compat mocks (TASK-190) ───────────────────────────────────────────
+// Compat enrichment defaults to empty; the compat-assignment tests override.
+const deviceCompatRepositoryMock = {
+  getDeviceCompat: jest.fn().mockResolvedValue([]),
+  getDeviceCompatByProductIds: jest.fn().mockResolvedValue(new Map()),
+  getDeviceModelIds: jest.fn().mockResolvedValue([]),
+  setDeviceCompat: jest.fn().mockResolvedValue(undefined),
+  setDeviceCompatForGroup: jest.fn().mockResolvedValue({ updatedCount: 0, productIds: [] }),
+  countGroupPositions: jest.fn().mockResolvedValue(0),
+};
+
+const deviceRepositoryMock = {
+  findModelsByIds: jest.fn().mockResolvedValue([]),
+};
+
 // ─── CacheService mock ────────────────────────────────────────────────────────
 // Defaults: get → null (cache miss), all writes resolve. Individual tests
 // override `get` to simulate a HIT or a backend error.
@@ -119,6 +136,16 @@ describe('ProductService', () => {
       name: 'Spigen',
       slug: 'spigen',
     });
+    deviceCompatRepositoryMock.getDeviceCompat.mockResolvedValue([]);
+    deviceCompatRepositoryMock.getDeviceCompatByProductIds.mockResolvedValue(new Map());
+    deviceCompatRepositoryMock.getDeviceModelIds.mockResolvedValue([]);
+    deviceCompatRepositoryMock.setDeviceCompat.mockResolvedValue(undefined);
+    deviceCompatRepositoryMock.setDeviceCompatForGroup.mockResolvedValue({
+      updatedCount: 0,
+      productIds: [],
+    });
+    deviceCompatRepositoryMock.countGroupPositions.mockResolvedValue(0);
+    deviceRepositoryMock.findModelsByIds.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -129,6 +156,8 @@ describe('ProductService', () => {
         { provide: ProductIndexer, useValue: productIndexerMock },
         { provide: CategoryRepository, useValue: categoryRepositoryMock },
         { provide: BrandRepository, useValue: brandRepositoryMock },
+        { provide: ProductDeviceCompatRepository, useValue: deviceCompatRepositoryMock },
+        { provide: DeviceRepository, useValue: deviceRepositoryMock },
       ],
     }).compile();
 
@@ -998,6 +1027,79 @@ describe('ProductService', () => {
       });
 
       expect(result).toBeInstanceOf(ProductEntity);
+    });
+  });
+
+  // ─── device compatibility (TASK-190) ─────────────────────────────────────────
+
+  describe('updateDeviceCompat', () => {
+    it('rejects unknown device model ids with a 400 before writing', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      // Only 'm1' exists; 'ghost' is unknown.
+      deviceRepositoryMock.findModelsByIds.mockResolvedValue([{ id: 'm1' }]);
+
+      await expect(service.updateDeviceCompat(mockProduct.id, ['m1', 'ghost'])).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(deviceCompatRepositoryMock.setDeviceCompat).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when the product does not exist', async () => {
+      productRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.updateDeviceCompat('ghost', [])).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('replaces the compat set and returns the enriched product', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      deviceRepositoryMock.findModelsByIds.mockResolvedValue([{ id: 'm1' }]);
+      deviceCompatRepositoryMock.getDeviceCompat.mockResolvedValue([
+        { id: 'm1', name: 'iPhone 15', slug: 'iphone-15', brandName: 'Apple' },
+      ]);
+
+      const result = await service.updateDeviceCompat(mockProduct.id, ['m1']);
+
+      expect(deviceCompatRepositoryMock.setDeviceCompat).toHaveBeenCalledWith(mockProduct.id, [
+        'm1',
+      ]);
+      expect(result.compatibleDeviceModels).toHaveLength(1);
+      expect(result.compatibleDeviceModels[0]).toMatchObject({ id: 'm1', brandName: 'Apple' });
+    });
+
+    it('accepts an empty set (clears compat) without validating ids', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+
+      await service.updateDeviceCompat(mockProduct.id, []);
+
+      expect(deviceRepositoryMock.findModelsByIds).not.toHaveBeenCalled();
+      expect(deviceCompatRepositoryMock.setDeviceCompat).toHaveBeenCalledWith(mockProduct.id, []);
+    });
+  });
+
+  describe('updateGroupDeviceCompat', () => {
+    it('throws NotFoundException when the group has no positions', async () => {
+      deviceCompatRepositoryMock.countGroupPositions.mockResolvedValue(0);
+
+      await expect(service.updateGroupDeviceCompat('g1', ['m1'])).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(deviceCompatRepositoryMock.setDeviceCompatForGroup).not.toHaveBeenCalled();
+    });
+
+    it('applies the set to all positions and returns the updated count', async () => {
+      deviceCompatRepositoryMock.countGroupPositions.mockResolvedValue(3);
+      deviceRepositoryMock.findModelsByIds.mockResolvedValue([{ id: 'm1' }]);
+      deviceCompatRepositoryMock.setDeviceCompatForGroup.mockResolvedValue({
+        updatedCount: 3,
+        productIds: ['p1', 'p2', 'p3'],
+      });
+
+      const result = await service.updateGroupDeviceCompat('g1', ['m1']);
+
+      expect(result).toEqual({ updatedCount: 3 });
+      expect(deviceCompatRepositoryMock.setDeviceCompatForGroup).toHaveBeenCalledWith('g1', ['m1']);
     });
   });
 });

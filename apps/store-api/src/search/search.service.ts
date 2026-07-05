@@ -28,7 +28,7 @@ const REINDEX_BATCH = 100;
  */
 export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
   searchableAttributes: ['name', 'description', 'categoryName', 'brandName', 'searchTerms'],
-  filterableAttributes: ['isActive', 'categoryIds', 'brandId'],
+  filterableAttributes: ['isActive', 'categoryIds', 'brandId', 'deviceModelIds'],
   sortableAttributes: ['price', 'createdAt'],
   rankingRules: ['words', 'typo', 'proximity', 'attribute', 'sort', 'exactness'],
   typoTolerance: {
@@ -250,6 +250,7 @@ export class SearchService implements OnModuleInit {
       compareAtPrice:
         source.compareAtPrice != null ? Number(source.compareAtPrice.toString()) : null,
       categoryIds,
+      deviceModelIds: source.deviceModelIds,
       categoryName: source.categoryName,
       brandId: source.brandId,
       brandName: source.brandName,

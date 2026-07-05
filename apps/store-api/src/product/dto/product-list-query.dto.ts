@@ -65,6 +65,15 @@ export class ProductListQueryDto {
   brandId?: string;
 
   @ApiProperty({
+    description: 'Filter by compatible device model ID (TASK-190)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID(4, { message: 'Device model ID must be a valid UUID' })
+  deviceModelId?: string;
+
+  @ApiProperty({
     description:
       'Filter by active status — honoured only on the admin listing; the public list is always active-only (TASK-230)',
     example: true,

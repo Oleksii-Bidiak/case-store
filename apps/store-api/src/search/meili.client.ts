@@ -27,6 +27,12 @@ export interface ProductSearchDocument {
    * filed in subcategories too — mirroring the Postgres subtree rollup.
    */
   categoryIds: string[];
+  /**
+   * Compatible device-model ids (TASK-190) — a flat list so a
+   * `deviceModelIds = <id>` filter matches products that fit that device. No
+   * ancestor expansion (device models have no hierarchy beyond their brand).
+   */
+  deviceModelIds: string[];
   categoryName: string;
   /** Manufacturer id — filterable facet for the brand catalog filter (TASK-189). */
   brandId: string | null;

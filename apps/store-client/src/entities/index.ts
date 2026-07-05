@@ -1,6 +1,7 @@
 // Entities — Domain models & API hooks (Product, Category, …)
 export * from "./product";
 export * from "./category";
+export * from "./device";
 export * from "./cart";
 export * from "./wishlist";
 export * from "./session";

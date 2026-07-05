@@ -1,6 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  useDeviceControllerFindBrands,
+  useDeviceControllerFindModels,
+} from "@/entities/device";
 import {
   Button,
   Select,
@@ -11,24 +16,48 @@ import {
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
-const { brands, models } = dict.home.modelPicker;
+const t = dict.home.modelPicker;
 
 /**
- * ModelPicker — "find accessories for your device" selector under the hero.
- *
- * UI-only stub: the products API has no device-model filter yet, so submitting
- * does nothing. The button stays disabled until both a brand and a model are
- * chosen, so the control never looks broken. Wire this up once the backend
- * exposes model→accessory matching.
+ * ModelPicker — "find accessories for your device" selector under the hero
+ * (TASK-190). Brand → model cascade backed by the device-taxonomy API: the
+ * model select is disabled until a brand is chosen and its options are scoped to
+ * that brand. Submitting navigates to the catalog filtered by the chosen device
+ * model (`/products?deviceModelId=…`).
  */
 export function ModelPicker() {
-  const [brand, setBrand] = useState("");
-  const [model, setModel] = useState("");
+  const router = useRouter();
+  const [brandId, setBrandId] = useState("");
+  const [modelId, setModelId] = useState("");
+
+  const { data: brandsData, isLoading: brandsLoading } =
+    useDeviceControllerFindBrands();
+  const brands = brandsData?.data ?? [];
+
+  const { data: modelsData, isLoading: modelsLoading } =
+    useDeviceControllerFindModels(
+      { deviceBrandId: brandId },
+      { query: { enabled: Boolean(brandId) } },
+    );
+  const models = modelsData?.data ?? [];
+
+  function handleBrandChange(nextBrandId: string) {
+    setBrandId(nextBrandId);
+    // Reset the model whenever the brand changes so a stale model can't submit.
+    setModelId("");
+  }
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    // TODO(TASK-162): no model→accessory filter on the API yet — no-op for now.
+    if (!modelId) return;
+    router.push(`/products?deviceModelId=${encodeURIComponent(modelId)}`);
   }
+
+  const modelPlaceholder = !brandId
+    ? t.modelPlaceholderEmpty
+    : modelsLoading
+      ? t.loading
+      : t.modelPlaceholder;
 
   return (
     <form
@@ -37,40 +66,44 @@ export function ModelPicker() {
     >
       <div className="min-w-[12rem]">
         <p className="font-display text-base font-semibold text-foreground">
-          {dict.home.modelPicker.title}
+          {t.title}
         </p>
-        <p className="text-sm text-muted-foreground">
-          {dict.home.modelPicker.subtitle}
-        </p>
+        <p className="text-sm text-muted-foreground">{t.subtitle}</p>
       </div>
 
-      <Select value={brand} onValueChange={setBrand}>
+      <Select value={brandId} onValueChange={handleBrandChange}>
         <SelectTrigger
-          aria-label={dict.home.modelPicker.brandAria}
+          aria-label={t.brandAria}
           className="h-11 flex-1 basis-40 bg-background"
         >
-          <SelectValue placeholder={dict.home.modelPicker.brandPlaceholder} />
+          <SelectValue
+            placeholder={brandsLoading ? t.loading : t.brandPlaceholder}
+          />
         </SelectTrigger>
         <SelectContent>
           {brands.map((b) => (
-            <SelectItem key={b} value={b}>
-              {b}
+            <SelectItem key={b.id} value={b.id}>
+              {b.name}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
 
-      <Select value={model} onValueChange={setModel}>
+      <Select
+        value={modelId}
+        onValueChange={setModelId}
+        disabled={!brandId || modelsLoading}
+      >
         <SelectTrigger
-          aria-label={dict.home.modelPicker.modelAria}
+          aria-label={t.modelAria}
           className="h-11 flex-1 basis-40 bg-background"
         >
-          <SelectValue placeholder={dict.home.modelPicker.modelPlaceholder} />
+          <SelectValue placeholder={modelPlaceholder} />
         </SelectTrigger>
         <SelectContent>
           {models.map((m) => (
-            <SelectItem key={m} value={m}>
-              {m}
+            <SelectItem key={m.id} value={m.id}>
+              {m.name}
             </SelectItem>
           ))}
         </SelectContent>
@@ -79,10 +112,10 @@ export function ModelPicker() {
       <Button
         type="submit"
         size="lg"
-        disabled={!brand || !model}
+        disabled={!modelId}
         className="h-11 cursor-pointer"
       >
-        {dict.home.modelPicker.submit}
+        {t.submit}
       </Button>
     </form>
   );

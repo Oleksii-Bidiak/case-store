@@ -211,14 +211,10 @@ export const dict = {
       modelPlaceholder: "Модель",
       modelAria: "Модель пристрою",
       submit: "Підібрати",
-      brands: ["Apple", "Samsung", "Xiaomi", "Google", "OnePlus"],
-      models: [
-        "iPhone 15 Pro",
-        "iPhone 15",
-        "Galaxy S24",
-        "Redmi Note 13",
-        "Pixel 8",
-      ],
+      // Empty-state helpers for the cascade (TASK-190): the model select is
+      // disabled until a brand is chosen; brands/models come from the API now.
+      modelPlaceholderEmpty: "Спершу оберіть бренд",
+      loading: "Завантаження…",
     },
 
     // Three static promo tiles under the hero.
@@ -711,6 +707,13 @@ export const dict = {
     searchLabel: "Пошук",
     searchPlaceholder: "Пошук товарів…",
     searchAria: "Пошук товарів",
+    // Device-compatibility filter (TASK-190) — brand→model cascade.
+    deviceTitle: "Сумісний пристрій",
+    deviceBrandPlaceholder: "Бренд",
+    deviceModelPlaceholder: "Модель",
+    deviceBrandAria: "Бренд пристрою",
+    deviceModelAria: "Модель пристрою",
+    deviceLabel: "Пристрій",
   },
 
   product: {
@@ -739,6 +742,8 @@ export const dict = {
     relatedTitle: "Схожі товари",
     relatedPrev: "Попередні товари",
     relatedNext: "Наступні товари",
+    // PDP device-compatibility cross-sell rail (TASK-190).
+    compatibleTitle: "Сумісні аксесуари",
     codeLabel: "Код:",
     // Gallery image-switch loading overlay (TASK-214).
     imageLoading: "Завантаження зображення…",

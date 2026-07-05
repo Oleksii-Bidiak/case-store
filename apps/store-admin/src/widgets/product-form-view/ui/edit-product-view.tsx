@@ -18,6 +18,7 @@ import {
   useProductControllerUpdate,
 } from "@/entities/product";
 import { ProductImageManager } from "@/features/product-image-manager";
+import { ProductDeviceCompatManager } from "@/features/product-device-compat";
 import { Separator } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
@@ -124,6 +125,21 @@ export function EditProductView({ productId }: EditProductViewProps) {
               {dict.products.imagesHeading}
             </h3>
             <ProductImageManager productId={productId} />
+          </section>
+
+          <Separator />
+
+          <section className="flex flex-col gap-3">
+            <h3 className="text-lg font-semibold text-foreground">
+              {dict.productCompat.title}
+            </h3>
+            <ProductDeviceCompatManager
+              productId={productId}
+              groupId={product.groupId ?? null}
+              initialModelIds={(product.compatibleDeviceModels ?? []).map(
+                (model) => model.id,
+              )}
+            />
           </section>
         </div>
       ) : null}

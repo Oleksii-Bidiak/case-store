@@ -1250,6 +1250,127 @@ async function seedBanners(prisma: PrismaClient) {
 
 // ─── Main ───────────────────────────────────────────────────────────────────
 
+/**
+ * Seed the device-compatibility taxonomy (TASK-190): a representative slice of
+ * device brands + models grouped by `series` for the storefront ModelPicker
+ * cascade. Idempotent — brands and models upsert on their unique `slug`, safe to
+ * re-run. Compat assignment (Product ↔ DeviceModel) is intentionally NOT seeded
+ * here — admins tag products via the admin UI / a separate backfill.
+ */
+async function seedDevices(prisma: PrismaClient) {
+  // brand → ordered list of { name, series, releaseYear } models.
+  const devices: Array<{
+    brand: string;
+    sortOrder: number;
+    models: Array<{ name: string; series: string; releaseYear: number }>;
+  }> = [
+    {
+      brand: 'Apple',
+      sortOrder: 1,
+      models: [
+        // iPhone 16 series
+        { name: 'iPhone 16 Pro Max', series: 'iPhone 16', releaseYear: 2024 },
+        { name: 'iPhone 16 Pro', series: 'iPhone 16', releaseYear: 2024 },
+        { name: 'iPhone 16 Plus', series: 'iPhone 16', releaseYear: 2024 },
+        { name: 'iPhone 16', series: 'iPhone 16', releaseYear: 2024 },
+        // iPhone 15 series
+        { name: 'iPhone 15 Pro Max', series: 'iPhone 15', releaseYear: 2023 },
+        { name: 'iPhone 15 Pro', series: 'iPhone 15', releaseYear: 2023 },
+        { name: 'iPhone 15 Plus', series: 'iPhone 15', releaseYear: 2023 },
+        { name: 'iPhone 15', series: 'iPhone 15', releaseYear: 2023 },
+        // iPhone 14 series
+        { name: 'iPhone 14 Pro Max', series: 'iPhone 14', releaseYear: 2022 },
+        { name: 'iPhone 14 Pro', series: 'iPhone 14', releaseYear: 2022 },
+        { name: 'iPhone 14 Plus', series: 'iPhone 14', releaseYear: 2022 },
+        { name: 'iPhone 14', series: 'iPhone 14', releaseYear: 2022 },
+        // iPhone 13 series
+        { name: 'iPhone 13 Pro Max', series: 'iPhone 13', releaseYear: 2021 },
+        { name: 'iPhone 13 Pro', series: 'iPhone 13', releaseYear: 2021 },
+        { name: 'iPhone 13', series: 'iPhone 13', releaseYear: 2021 },
+        { name: 'iPhone 13 mini', series: 'iPhone 13', releaseYear: 2021 },
+        // iPhone 12 series
+        { name: 'iPhone 12 Pro Max', series: 'iPhone 12', releaseYear: 2020 },
+        { name: 'iPhone 12 Pro', series: 'iPhone 12', releaseYear: 2020 },
+        { name: 'iPhone 12', series: 'iPhone 12', releaseYear: 2020 },
+        { name: 'iPhone 12 mini', series: 'iPhone 12', releaseYear: 2020 },
+        // iPad
+        { name: 'iPad Pro 13" (M4)', series: 'iPad Pro', releaseYear: 2024 },
+        { name: 'iPad Pro 11" (M4)', series: 'iPad Pro', releaseYear: 2024 },
+        { name: 'iPad Air 13" (M2)', series: 'iPad Air', releaseYear: 2024 },
+        { name: 'iPad Air 11" (M2)', series: 'iPad Air', releaseYear: 2024 },
+        { name: 'iPad 10th gen', series: 'iPad', releaseYear: 2022 },
+        // Apple Watch (case sizes)
+        { name: 'Apple Watch Series 10 46mm', series: 'Apple Watch', releaseYear: 2024 },
+        { name: 'Apple Watch Series 10 42mm', series: 'Apple Watch', releaseYear: 2024 },
+        { name: 'Apple Watch Ultra 2 49mm', series: 'Apple Watch', releaseYear: 2023 },
+      ],
+    },
+    {
+      brand: 'Samsung',
+      sortOrder: 2,
+      models: [
+        { name: 'Galaxy S24 Ultra', series: 'Galaxy S24', releaseYear: 2024 },
+        { name: 'Galaxy S24+', series: 'Galaxy S24', releaseYear: 2024 },
+        { name: 'Galaxy S24', series: 'Galaxy S24', releaseYear: 2024 },
+        { name: 'Galaxy S23 Ultra', series: 'Galaxy S23', releaseYear: 2023 },
+        { name: 'Galaxy S23', series: 'Galaxy S23', releaseYear: 2023 },
+        { name: 'Galaxy A55', series: 'Galaxy A', releaseYear: 2024 },
+        { name: 'Galaxy A35', series: 'Galaxy A', releaseYear: 2024 },
+      ],
+    },
+    {
+      brand: 'Xiaomi',
+      sortOrder: 3,
+      models: [
+        { name: 'Xiaomi 14 Ultra', series: 'Xiaomi 14', releaseYear: 2024 },
+        { name: 'Xiaomi 14', series: 'Xiaomi 14', releaseYear: 2024 },
+        { name: 'Xiaomi 13', series: 'Xiaomi 13', releaseYear: 2023 },
+        { name: 'Redmi Note 13 Pro', series: 'Redmi Note 13', releaseYear: 2024 },
+        { name: 'Redmi Note 13', series: 'Redmi Note 13', releaseYear: 2024 },
+      ],
+    },
+  ];
+
+  let brandCount = 0;
+  let modelCount = 0;
+  for (const { brand, sortOrder, models } of devices) {
+    const brandSlug = slugify(brand);
+    const brandRecord = await prisma.deviceBrand.upsert({
+      where: { slug: brandSlug },
+      update: { name: brand, sortOrder, isActive: true },
+      create: { name: brand, slug: brandSlug, sortOrder, isActive: true },
+    });
+    brandCount++;
+
+    for (const model of models) {
+      // Expand '+' to ' plus ' before slugifying so e.g. "Galaxy S24+" does not
+      // collide with "Galaxy S24" (both would otherwise slug to "galaxy-s24").
+      const modelSlug = slugify(model.name.replace(/\+/g, ' plus '));
+      await prisma.deviceModel.upsert({
+        where: { slug: modelSlug },
+        update: {
+          name: model.name,
+          series: model.series,
+          releaseYear: model.releaseYear,
+          deviceBrandId: brandRecord.id,
+          isActive: true,
+        },
+        create: {
+          name: model.name,
+          slug: modelSlug,
+          series: model.series,
+          releaseYear: model.releaseYear,
+          deviceBrandId: brandRecord.id,
+          isActive: true,
+        },
+      });
+      modelCount++;
+    }
+  }
+
+  console.log(`  ✓ Seeded ${brandCount} device brands, ${modelCount} device models`);
+}
+
 async function main() {
   console.log('\n🌱 Seeding database...\n');
 
@@ -1264,6 +1385,7 @@ async function main() {
     await seedBanners(prisma);
     const categories = await seedCategories(prisma);
     await seedProducts(prisma, categories);
+    await seedDevices(prisma);
     await seedReviews(prisma);
     await seedAddresses(prisma, customer);
     await seedBlog(prisma);
