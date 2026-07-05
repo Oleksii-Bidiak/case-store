@@ -16,6 +16,7 @@ export const dict = {
     orders: "Замовлення",
     reviews: "Відгуки",
     users: "Користувачі",
+    subscribers: "Підписники",
     siteContact: "Контакти",
     settings: "Налаштування",
   },
@@ -549,6 +550,28 @@ export const dict = {
     fieldCreated: "Створено",
     fieldUpdated: "Останнє оновлення",
     loadOneError: "Не вдалося завантажити користувача. Спробуйте ще раз.",
+  },
+
+  // --- Newsletter subscribers (TASK-188) --------------------------------------
+  subscribers: {
+    metaTitle: "Підписники — Адмін",
+    heading: "Підписники розсилки",
+    searchPlaceholder: "Пошук за email…",
+    searchAria: "Пошук підписників",
+    filterStatusAria: "Фільтр за статусом",
+    allStatuses: "Усі статуси",
+    statusSubscribed: "Підписаний",
+    statusUnsubscribed: "Відписаний",
+    loadError: "Не вдалося завантажити підписників. Спробуйте ще раз.",
+    empty: "Немає підписників за поточними фільтрами.",
+    colEmail: "Email",
+    colStatus: "Статус",
+    colSource: "Джерело",
+    colDate: "Дата підписки",
+    sourceEmpty: "—",
+    exportCsv: "Експорт CSV",
+    exporting: "Експортуємо…",
+    exportError: "Не вдалося експортувати CSV. Спробуйте ще раз.",
   },
 
   userBan: {

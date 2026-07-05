@@ -31,6 +31,10 @@ export {
 } from "./review-moderation";
 export { OrderDetailView, OrderDetailSkeleton } from "./order-detail";
 export { AdminUserTable, AdminUserTableSkeleton } from "./user-list";
+export {
+  AdminSubscriberTable,
+  AdminSubscriberTableSkeleton,
+} from "./subscriber-list";
 export { UserDetailView, UserDetailSkeleton } from "./user-detail";
 export {
   AdminDashboardStats,

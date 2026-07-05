@@ -10,6 +10,7 @@ import {
   ShoppingCart,
   Star,
   Users,
+  Mail,
   Phone,
   Settings,
 } from "lucide-react";
@@ -29,6 +30,7 @@ const navItems = [
   { label: dict.nav.orders, href: "/orders", icon: ShoppingCart },
   { label: dict.nav.reviews, href: "/reviews", icon: Star },
   { label: dict.nav.users, href: "/users", icon: Users },
+  { label: dict.nav.subscribers, href: "/subscribers", icon: Mail },
 ];
 
 const bottomNavItems = [
