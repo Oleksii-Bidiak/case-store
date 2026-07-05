@@ -18,7 +18,9 @@ import { isOnSale } from "./wishlist-filters";
  */
 export function WishlistListItem({ item }: { item: WishlistItemEntity }) {
   const onSale = isOnSale(item);
-  const outOfStock = item.stock <= 0 || !item.isActive;
+  // maxQty is the API-side cap (min of the per-item limit and stock, TASK-231);
+  // 0 means out of stock — the raw stock figure never reaches the client.
+  const outOfStock = item.maxQty <= 0 || !item.isActive;
   const discount = onSale
     ? Math.round((1 - Number(item.price) / Number(item.compareAtPrice)) * 100)
     : 0;

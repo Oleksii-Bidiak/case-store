@@ -12,7 +12,7 @@ import { dict } from "@/shared/config";
  * WishlistItemCard — a single saved product on the `/wishlist` grid.
  *
  * The wishlist API returns a trimmed product summary (name, slug, image, price,
- * stock) rather than the full `PublicProductEntity` the catalog `ProductCard`
+ * maxQty) rather than the full `PublicProductEntity` the catalog `ProductCard`
  * expects (no rating / variant-summary), so this is a dedicated, lighter card.
  * It reuses the shared `ProductCardImage`, the heart toggle (which removes the
  * product here), and the compact AddToCartButton. The product position id is
@@ -22,7 +22,9 @@ export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
   const onSale =
     item.compareAtPrice != null &&
     Number(item.compareAtPrice) > Number(item.price);
-  const outOfStock = item.stock <= 0 || !item.isActive;
+  // maxQty is the API-side cap (min of the per-item limit and stock, TASK-231);
+  // 0 means out of stock — the raw stock figure never reaches the client.
+  const outOfStock = item.maxQty <= 0 || !item.isActive;
   const gradient = pickProductGradient(item.productSlug || item.productName);
 
   return (

@@ -1,12 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { MAX_QUANTITY } from '../../common/constants';
 
 /**
  * Domain entity representing a single saved product in a wishlist.
  *
  * This is a clean domain entity — not a Prisma model. It carries enough product
- * summary data (slug, image, price, stock, active flag) for the `/wishlist`
- * grid to render a `ProductCard` and link to the PDP without an extra request
- * per item. Unlike a cart line there is no quantity — a wishlist is a set.
+ * summary data (slug, image, price, active flag) for the `/wishlist` grid to
+ * render a `ProductCard` and link to the PDP without an extra request per
+ * item, plus `maxQty` — the orderable cap derived from the product's stock
+ * (`min(MAX_QUANTITY, stock)`; the raw stock figure is never exposed, the
+ * wishlist twin of TASK-205 — TASK-231). Unlike a cart line there is no
+ * quantity — a wishlist is a set.
  *
  * Decimal fields (price, compareAtPrice) are converted to strings to avoid
  * floating-point precision issues in JSON serialization.
@@ -60,10 +64,11 @@ export class WishlistItemEntity {
   compareAtPrice!: string | null;
 
   @ApiProperty({
-    description: 'Available stock for this position',
+    description:
+      'Maximum orderable quantity for this position — available stock capped at the per-item limit; 0 means out of stock. The raw stock figure is intentionally not exposed (TASK-231, mirrors the cart contract from TASK-205).',
     example: 50,
   })
-  stock!: number;
+  maxQty!: number;
 
   @ApiProperty({
     description: 'Whether the product position is active',
@@ -103,7 +108,8 @@ export class WishlistItemEntity {
     entity.compareAtPrice = item.product.compareAtPrice
       ? item.product.compareAtPrice.toString()
       : null;
-    entity.stock = item.product.stock;
+    // Public cap, never the raw stock: the client only needs min(cap, stock).
+    entity.maxQty = Math.min(MAX_QUANTITY, item.product.stock);
     entity.isActive = item.product.isActive;
     entity.createdAt = item.createdAt;
     return entity;
