@@ -714,6 +714,8 @@ export const dict = {
     relatedPrev: "Попередні товари",
     relatedNext: "Наступні товари",
     codeLabel: "Код:",
+    // Gallery image-switch loading overlay (TASK-214).
+    imageLoading: "Завантаження зображення…",
     // Buy-box secondary actions — no backend yet (express order TASK-178,
     // product compare TASK-085), so both only surface a toast.
     buyOneClick: "Купити в 1 клік",
