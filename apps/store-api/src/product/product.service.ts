@@ -6,6 +6,7 @@ import {
   UpdateProductInput,
   FindAllParams,
 } from './product.repository';
+import { CategoryRepository } from '../category';
 import {
   ProductEntity,
   PublicProductEntity,
@@ -82,6 +83,7 @@ export class ProductService {
     private readonly cache: CacheService,
     private readonly config: ConfigService,
     private readonly productIndexer: ProductIndexer,
+    private readonly categoryRepository: CategoryRepository,
   ) {
     this.cacheTtlSeconds =
       this.config.get<number>('REDIS_CACHE_TTL_SECONDS') ?? DEFAULT_CACHE_TTL_SECONDS;
@@ -96,14 +98,26 @@ export class ProductService {
    * Cache-aside: a cache hit skips the database entirely.
    */
   async findAll(query: ProductListQueryDto): Promise<PaginatedProductsResponse> {
-    const params: FindAllParams = { ...this.toListParams(query), isActive: true };
+    const listParams = this.toListParams(query);
 
-    const cacheKey = buildProductListKey(params);
+    // The cache key stays keyed on the SINGLE requested `categoryId` (not the
+    // expanded subtree list) so it is stable and computed before any DB work —
+    // a hit skips the subtree resolution entirely.
+    const cacheKey = buildProductListKey({
+      ...listParams,
+      categoryId: query.categoryId,
+      isActive: true,
+    });
     const cached = await this.cache.get<PaginatedProductsResponse>(cacheKey);
     if (cached) {
       return cached;
     }
 
+    const params: FindAllParams = {
+      ...listParams,
+      isActive: true,
+      categoryIds: await this.resolveSubtreeIds(query.categoryId),
+    };
     const response = await this.listFromDb(params);
 
     // NOTE: as of the line-item contract change, cached list entries hold
@@ -121,7 +135,11 @@ export class ProductService {
    * immediately, and admin traffic is too low to be worth caching (TASK-230).
    */
   async adminFindAll(query: ProductListQueryDto): Promise<PaginatedProductsResponse> {
-    return this.listFromDb(this.toListParams(query));
+    const params: FindAllParams = {
+      ...this.toListParams(query),
+      categoryIds: await this.resolveSubtreeIds(query.categoryId),
+    };
+    return this.listFromDb(params);
   }
 
   /**
@@ -145,12 +163,15 @@ export class ProductService {
     return { data };
   }
 
-  /** Map the list query DTO onto repository params (shared defaults). */
+  /**
+   * Map the list query DTO onto repository params (shared defaults), MINUS the
+   * category rollup — callers add `categoryIds` via {@link resolveSubtreeIds}
+   * so the async subtree expansion happens once, after the cache check.
+   */
   private toListParams(query: ProductListQueryDto): FindAllParams {
     return {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
-      categoryId: query.categoryId,
       isActive: query.isActive,
       minPrice: query.minPrice,
       maxPrice: query.maxPrice,
@@ -158,6 +179,20 @@ export class ProductService {
       sortBy: query.sortBy ?? 'createdAt',
       sortOrder: query.sortOrder ?? 'desc',
     };
+  }
+
+  /**
+   * Expand a single requested category id into its full subtree (self +
+   * descendants) so filtering by a parent category rolls up every product filed
+   * under it (TASK-236). Returns `undefined` when no category filter is
+   * requested (the repository then applies no category constraint). Shared by
+   * the public {@link findAll} and admin {@link adminFindAll} paths.
+   */
+  private async resolveSubtreeIds(categoryId?: string): Promise<string[] | undefined> {
+    if (!categoryId) {
+      return undefined;
+    }
+    return this.categoryRepository.findSubtreeIds(categoryId);
   }
 
   /** Run the repository listing and wrap it in the paginated envelope. */

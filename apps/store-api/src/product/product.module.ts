@@ -7,9 +7,10 @@ import { ProductImageService } from './product-image.service';
 import { ProductImageController } from './product-image.controller';
 import { StorageModule } from '../storage';
 import { SearchModule } from '../search';
+import { CategoryModule } from '../category';
 
 @Module({
-  imports: [StorageModule, SearchModule],
+  imports: [StorageModule, SearchModule, CategoryModule],
   controllers: [ProductController, ProductImageController],
   providers: [ProductRepository, ProductService, ProductImageRepository, ProductImageService],
   exports: [ProductService],

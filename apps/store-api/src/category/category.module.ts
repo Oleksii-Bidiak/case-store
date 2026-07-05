@@ -7,6 +7,9 @@ import { AdminCategoryController } from './admin-category.controller';
 @Module({
   controllers: [CategoryController, AdminCategoryController],
   providers: [CategoryRepository, CategoryService],
-  exports: [CategoryService],
+  // CategoryRepository is exported so ProductModule (subtree rollup, TASK-236-B)
+  // and SearchModule (ancestor expansion, TASK-236-C) can inject its traversal
+  // helpers without re-providing a second instance.
+  exports: [CategoryService, CategoryRepository],
 })
 export class CategoryModule {}

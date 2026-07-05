@@ -9,6 +9,7 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { ProductRepository } from '../src/product/product.repository';
+import { CategoryRepository } from '../src/category/category.repository';
 import { PrismaService } from '../src/prisma';
 
 /**
@@ -65,6 +66,13 @@ describe('ProductController (e2e)', () => {
     update: jest.fn(),
     deactivate: jest.fn(),
     activate: jest.fn(),
+  };
+
+  // Mock CategoryRepository — ProductService depends on it for the TASK-236
+  // subtree rollup. `findSubtreeIds` echoes the requested id as a single-element
+  // subtree so the (mocked) ProductRepository receives a well-formed id list.
+  const categoryRepositoryMock = {
+    findSubtreeIds: jest.fn((id: string) => Promise.resolve([id])),
   };
 
   // Mock PrismaService — prevents database connection errors
@@ -164,6 +172,8 @@ describe('ProductController (e2e)', () => {
       .useValue(userRepositoryMock)
       .overrideProvider(ProductRepository)
       .useValue(productRepositoryMock)
+      .overrideProvider(CategoryRepository)
+      .useValue(categoryRepositoryMock)
       .overrideProvider(APP_GUARD)
       .useClass(ThrottlerGuardPassThrough)
       .compile();
@@ -231,9 +241,15 @@ describe('ProductController (e2e)', () => {
         .expect(200);
 
       expect(response.body).toHaveProperty('data');
+      // TASK-236: the single categoryId is resolved to its subtree id list
+      // before hitting the repository (here a single-element subtree from the
+      // mock). The rollup itself is proven in product-rollup.int-spec.ts.
+      expect(categoryRepositoryMock.findSubtreeIds).toHaveBeenCalledWith(
+        '550e8400-e29b-41d4-a716-446655440000',
+      );
       expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
         expect.objectContaining({
-          categoryId: '550e8400-e29b-41d4-a716-446655440000',
+          categoryIds: ['550e8400-e29b-41d4-a716-446655440000'],
           isActive: true,
           search: 'iphone',
           page: 1,

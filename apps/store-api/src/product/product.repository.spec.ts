@@ -114,11 +114,29 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       prismaMock.product.findMany.mockResolvedValue([]);
       prismaMock.product.count.mockResolvedValue(0);
 
-      await repository.findAll({ page: 1, limit: 20, categoryId: 'cat-1', isActive: true });
+      await repository.findAll({ page: 1, limit: 20, categoryIds: ['cat-1'], isActive: true });
 
       const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
       expect(findManyArgs.where).toEqual(
-        expect.objectContaining({ deletedAt: null, categoryId: 'cat-1', isActive: true }),
+        expect.objectContaining({ deletedAt: null, categoryId: { in: ['cat-1'] }, isActive: true }),
+      );
+    });
+
+    // TASK-236: the category filter now matches the whole expanded subtree via
+    // an `IN (...)` clause, so a parent category rolls up its subcategories.
+    it('matches the full category subtree with an IN clause', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({
+        page: 1,
+        limit: 20,
+        categoryIds: ['root', 'child', 'grandchild'],
+      });
+
+      const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
+      expect(findManyArgs.where).toEqual(
+        expect.objectContaining({ categoryId: { in: ['root', 'child', 'grandchild'] } }),
       );
     });
 
