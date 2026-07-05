@@ -3,6 +3,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { ProductRepository, ProductIndexSource } from '../product/product.repository';
 import { PublicProductEntity } from '../product/entities';
 import { MeiliClient, ProductSearchDocument, IndexSettings } from './meili.client';
+import { UA_EN_SYNONYMS, extractUaSearchTerms } from './search-synonyms';
 import { SearchSuggestionEntity } from './entities';
 
 /** Default page size for the `/search` results grid. */
@@ -13,13 +14,19 @@ export const SUGGEST_LIMIT = 6;
 const REINDEX_BATCH = 100;
 
 /**
- * Index configuration applied on bootstrap. Searchable across name, description
- * and category; filterable by visibility + category; sortable by price/recency.
- * Ranking + typo tolerance use Meilisearch defaults (so "афйон" matches
- * "айфон").
+ * Index configuration applied on bootstrap. Searchable across name, description,
+ * category and the injected UA `searchTerms` (last, so direct name/description
+ * matches rank higher); filterable by visibility + category; sortable by
+ * price/recency.
+ *
+ * UA↔EN support (TASK-200) is two-fold because Meilisearch synonym expansion
+ * is exact-word only (not typo tolerant): `synonyms` covers correctly-typed
+ * cross-script queries («айфон» → iphone), while the per-document `searchTerms`
+ * attribute (see `toDocument`) puts the UA tokens into the index so typo
+ * tolerance itself covers misspellings («афйон» → «айфон»).
  */
 export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
-  searchableAttributes: ['name', 'description', 'categoryName'],
+  searchableAttributes: ['name', 'description', 'categoryName', 'searchTerms'],
   filterableAttributes: ['isActive', 'categoryId'],
   sortableAttributes: ['price', 'createdAt'],
   rankingRules: ['words', 'typo', 'proximity', 'attribute', 'sort', 'exactness'],
@@ -27,6 +34,7 @@ export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
     enabled: true,
     minWordSizeForTypos: { oneTypo: 4, twoTypos: 8 },
   },
+  synonyms: UA_EN_SYNONYMS,
 };
 
 /** Pagination metadata returned with a search result page. */
@@ -239,6 +247,7 @@ export class SearchService implements OnModuleInit {
       inStock: source.stock > 0,
       isActive: source.isActive,
       createdAt: source.createdAt.getTime(),
+      searchTerms: extractUaSearchTerms(`${source.name} ${source.categoryName}`),
     };
   }
 

@@ -29,15 +29,28 @@ export interface ProductSearchDocument {
   isActive: boolean;
   /** Unix epoch ms — sortable recency key. */
   createdAt: number;
+  /**
+   * Cyrillic UA equivalents of the (EN) name/category tokens, injected at
+   * indexing time so typo-tolerant matching works for Ukrainian queries
+   * (TASK-200). Searchable, never displayed.
+   */
+  searchTerms: string[];
 }
 
-/** Index settings applied by {@link MeiliClient.ensureIndex}. */
+/**
+ * Index settings applied by {@link MeiliClient.ensureIndex}. Note that
+ * `ensureIndex` pushes these via `updateSettings` on EVERY call — not only on
+ * index creation — so changes (e.g. new synonyms) reach existing indexes on
+ * the next bootstrap/reindex.
+ */
 export interface IndexSettings {
   searchableAttributes: string[];
   filterableAttributes: string[];
   sortableAttributes: string[];
   rankingRules: string[];
   typoTolerance?: Record<string, unknown>;
+  /** Query-side synonym map: `{ term: [equivalent, ...] }`. */
+  synonyms?: Record<string, string[]>;
 }
 
 /** Options accepted by {@link MeiliClient.search}. */

@@ -125,10 +125,17 @@ describe('SearchService', () => {
         'name',
         'description',
         'categoryName',
+        'searchTerms',
       ]);
       expect(PRODUCTS_INDEX_SETTINGS.filterableAttributes).toEqual(['isActive', 'categoryId']);
       expect(PRODUCTS_INDEX_SETTINGS.sortableAttributes).toEqual(['price', 'createdAt']);
       expect(PRODUCTS_INDEX_SETTINGS.typoTolerance).toBeDefined();
+    });
+
+    it('ships the bidirectional UA↔EN synonym map (TASK-200)', () => {
+      expect(PRODUCTS_INDEX_SETTINGS.synonyms?.['айфон']).toContain('iphone');
+      expect(PRODUCTS_INDEX_SETTINGS.synonyms?.['iphone']).toContain('айфон');
+      expect(PRODUCTS_INDEX_SETTINGS.synonyms?.['чохол']).toContain('case');
     });
   });
 
@@ -155,6 +162,17 @@ describe('SearchService', () => {
           createdAt: new Date('2026-01-01T00:00:00.000Z').getTime(),
         }),
       );
+    });
+
+    it('injects Cyrillic search terms derived from name + category (TASK-200)', async () => {
+      repo.findOneForIndex.mockResolvedValue(makeIndexSource() as never);
+
+      await service.indexProduct('product-1');
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      // "iPhone 15 Case" + "Cases" → айфон (brand) + чохол/чохли (case nouns),
+      // so a typo'd UA query («афйон») matches via ordinary typo tolerance.
+      expect(docs[0].searchTerms).toEqual(['айфон', 'чохол', 'чохли']);
     });
 
     it('removes the product when it is not indexable (source is null)', async () => {
