@@ -6,6 +6,19 @@ import { Footer } from "@/widgets";
 import { PRIMARY_COLOR, SITE_URL, SITE_NAME, dict } from "@/shared/config";
 import "./globals.css";
 
+/**
+ * TASK-212 — «woff2 preloaded but not used» console warnings: investigated,
+ * intentionally left as is. In the production build each family emits exactly
+ * one preloaded latin file (Sora's 600/700/800 resolve to a single variable
+ * woff2), and all three are consumed at first paint on every route: Sora 700 —
+ * header logo, Geist Mono — support phone in the announcement bar, Geist —
+ * body text and digits. The QA capture was from the dev server (development
+ * React stack trace in the same log), where @font-face CSS is injected late
+ * via HMR, so Chrome's ~3s post-load preload check flags all three files at
+ * once — a dev-only false positive. Do not add `preload: false` or
+ * `display: "optional"` here: it would regress production font rendering
+ * without silencing the dev warning.
+ */
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
