@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-237**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-238**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -125,14 +125,15 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-187 | Publishing foundation: shared publish-status pattern + cron publisher + storefront on-demand revalidation (`revalidateTag`) + retrofit onto `Page`. Also fixes the QA finding «контакти на /info оновлюються лише після hard-reload» (ISR staleness) | ⬜ | — |
-| TASK-185 | Server-side HTML sanitization (`sanitize-html`) for rich-text content (`Page.content`, future blog/banners) — required before TASK-170 | ⬜ | — |
-| TASK-170 | Blog backend: `BlogPost` model (+category taxonomy) with publishing fields; public `GET /api/blog` (filter/search/pagination) + `/:slug`; Orval regen | ⬜ | — |
-| TASK-172 | Blog admin CMS: CRUD with `RichTextEditor`, draft/schedule/publish, featured, category; `/blog*` admin routes + sidebar. Depends on TASK-170 | ⬜ | — |
-| TASK-173 | Blog storefront wiring: replace static seed with real data (ISR+revalidation), server-side filter/search/pagination, `/blog` in header+footer nav | ⬜ | — |
-| TASK-186 | Admin-managed homepage content: `Banner` model with `placement` (HERO_SLIDE / PROMO_TILE / PROMO_BANNER / ANNOUNCEMENT_BAR) + publishing fields; admin CRUD; storefront reads via ISR with static fallback. Absorbs the banner part of TASK-166 | ⬜ | — |
-| TASK-177 | Contact messages: `ContactMessage` model + rate-limited `POST /api/contact` + admin inbox `/messages`; wire `/contact` + `/info` forms | ⬜ | — |
-| TASK-188 | Newsletter subscriptions: `NewsletterSubscription` model + public subscribe endpoint + admin list/export; wire homepage/promo/blog newsletter blocks. Absorbs the newsletter part of TASK-166/173/179 | ⬜ | — |
+| TASK-187 | Publishing foundation: shared `PublishStatus` pattern + `PublishablePort`/`PUBLISHABLE_REPOSITORY` (auto-discovered via `DiscoveryService`, no per-module wiring) + cron `PublishingScheduler` + `RevalidationNotifier` → storefront `POST /api/revalidate` (tagged `fetch`); retrofit onto `Page` (`status` is the single visibility gate, `isActive` a derived mirror) | ✅ | 104 |
+| TASK-185 | Server-side HTML sanitization: `sanitizeRichText()` (`sanitize-html`, Tiptap-tuned allow-list) applied to `Page.content` on write; reused by blog | ✅ | 104 |
+| TASK-170 | Blog backend: `BlogPost` + `BlogCategory`, reuses publishing + sanitize; public `GET /api/blog` (category/search/pagination) + `/:slug` + `/categories`; admin CRUD; seed 5 cats/12 posts | ✅ | 105 |
+| TASK-172 | Blog admin CMS: posts + categories CRUD on `RichTextEditor`, draft/schedule/publish + featured; `/blog` routes + sidebar | ✅ | 105 |
+| TASK-173 | Blog storefront wiring: static seed replaced by API via `blog-server.ts` tagged ISR fetch, server-side filter/search/pagination, `/blog` in header+footer nav | ✅ | 105 |
+| TASK-186 | Admin-managed homepage banners: `Banner` + `BannerPlacement` (HERO_SLIDE/PROMO_TILE/PROMO_BANNER/ANNOUNCEMENT_BAR) + publishing; admin CRUD; storefront ISR (`banners-server.ts`) with hardcoded static fallback per slot. Absorbs the banner part of TASK-166 | ✅ | 106 |
+| TASK-177 | Contact messages: `ContactMessage` + rate-limited `POST /api/contact`; `/contact` + info-support forms wired (RHF+zod); admin inbox `/messages` with unread badge | ✅ | 107 |
+| TASK-188 | Newsletter subscriptions: `NewsletterSubscription` + idempotent public subscribe + admin list/CSV export; reusable `features/newsletter-subscribe` wired into homepage + promo blocks. Absorbs the newsletter part of TASK-166/173/179 | ✅ | 108 |
+| TASK-237 | Adopt the `features/newsletter-subscribe` form inside the blog newsletter block (`widgets/blog/ui/blog-newsletter.tsx`) — left as-is by the Етап-2 split to avoid a blog↔newsletter merge collision | ⬜ | 108 |
 
 ### Етап 3 — Фундамент каталогу (ніша: мультибрендові аксесуари + Apple техніка)
 
@@ -195,6 +196,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-237**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-238**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
