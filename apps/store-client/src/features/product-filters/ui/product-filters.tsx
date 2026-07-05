@@ -16,6 +16,7 @@ import {
   rangeKey,
 } from "../model/price-range";
 import { SearchInput } from "./search-input";
+import { BrandFilter } from "./brand-filter";
 
 interface ProductFiltersProps {
   /** Currently-active filter params (derived from the URL). */
@@ -115,10 +116,11 @@ export function ProductFilters({
     pushRange(next);
   };
 
-  // Only the filters this panel owns (search + price) — the category selection
-  // lives in the chips row and is cleared there, not from the sidebar.
+  // The filters this panel owns (search + brand + price) — the category
+  // selection lives in the chips row and is cleared there, not from the sidebar.
   const hasActiveFilters = Boolean(
     currentParams.search ||
+    currentParams.brandId ||
     currentParams.minPrice != null ||
     currentParams.maxPrice != null,
   );
@@ -133,6 +135,14 @@ export function ProductFilters({
           onSearch={(value) => onFilterChange({ search: value })}
         />
       </div>
+
+      {/* Manufacturer (brand) filter — TASK-189. Hidden when no brands exist. */}
+      <BrandFilter
+        activeBrandId={currentParams.brandId}
+        onSelect={(brandId) => onFilterChange({ brandId })}
+        cardClassName={cardClass}
+        titleClassName={`${cardTitleClass} mb-4`}
+      />
 
       {/* Price range */}
       <div className={cardClass}>
@@ -204,6 +214,7 @@ export function ProductFilters({
           onClick={() =>
             onFilterChange({
               search: undefined,
+              brandId: undefined,
               minPrice: undefined,
               maxPrice: undefined,
             })

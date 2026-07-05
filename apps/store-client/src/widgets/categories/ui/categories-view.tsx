@@ -7,6 +7,7 @@ import {
   useCategoryControllerGetCategoryTree,
   type CategoryTreeNodeEntity,
 } from "@/entities/category";
+import { useBrandControllerFindAll } from "@/entities/brand";
 import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import { Skeleton } from "@/shared/ui";
 import { categoryGradient, pickCategoryIcon } from "../model/category-visuals";
@@ -19,10 +20,12 @@ const activeOnly = (nodes: CategoryTreeNodeEntity[]) =>
  * data: the public category tree (`GET /api/categories/tree`) drives the rail
  * (root categories) and the tiles (their children); each tile links to the
  * filtered catalog. Product counts are omitted (categories carry none) and the
- * "популярні бренди" strip is a stub (no brand model yet — TASK-176).
+ * "популярні бренди" strip is wired to the real `Brand` model (TASK-189).
  */
 export function CategoriesView() {
   const { data, isPending, isError } = useCategoryControllerGetCategoryTree();
+  const { data: brandsData } = useBrandControllerFindAll();
+  const brands = brandsData?.data ?? [];
   const [groupId, setGroupId] = useState<string | null>(null);
 
   if (isPending) {
@@ -167,21 +170,27 @@ export function CategoriesView() {
           </Link>
         )}
 
-        {/* Popular brands — stub (no brand model yet). */}
-        <h2 className="mt-[38px] mb-4 font-display text-[20px] font-bold tracking-[-0.01em] text-foreground">
-          {dict.categories.brandsHeading}
-        </h2>
-        <div className="flex flex-wrap gap-3">
-          {dict.categories.brands.map((brand) => (
-            <Link
-              key={brand}
-              href="/products"
-              className="inline-flex h-14 min-w-[118px] items-center justify-center rounded-xl border border-border bg-card px-[22px] font-display text-base font-bold text-foreground no-underline shadow-[var(--shadow-card)] transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {brand}
-            </Link>
-          ))}
-        </div>
+        {/* Popular brands — real Brand data (TASK-189). Hidden when empty, same
+            convention as the CategoryChips empty guard. Each tile links to the
+            brand-filtered catalog. */}
+        {brands.length > 0 && (
+          <>
+            <h2 className="mt-[38px] mb-4 font-display text-[20px] font-bold tracking-[-0.01em] text-foreground">
+              {dict.categories.brandsHeading}
+            </h2>
+            <div className="flex flex-wrap gap-3">
+              {brands.map((brand) => (
+                <Link
+                  key={brand.id}
+                  href={`/products?brandId=${brand.id}`}
+                  className="inline-flex h-14 min-w-[118px] items-center justify-center rounded-xl border border-border bg-card px-[22px] font-display text-base font-bold text-foreground no-underline shadow-[var(--shadow-card)] transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {brand.name}
+                </Link>
+              ))}
+            </div>
+          </>
+        )}
       </section>
     </div>
   );

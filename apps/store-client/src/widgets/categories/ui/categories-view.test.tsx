@@ -43,14 +43,29 @@ const tree = {
   ],
 };
 
+const brands = {
+  data: [
+    {
+      id: "b1",
+      name: "Spigen",
+      slug: "spigen",
+      logo: null,
+      isActive: true,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ],
+};
+
 describe("CategoriesView", () => {
   beforeEach(() => {
     server.use(
       http.get("*/api/categories/tree", () => HttpResponse.json(tree)),
+      http.get("*/api/brands", () => HttpResponse.json(brands)),
     );
   });
 
-  it("renders the rail and the first group's child tiles + brand strip", async () => {
+  it("renders the rail and the first group's child tiles + real brand strip", async () => {
     renderWithProviders(<CategoriesView />);
 
     // Rail lists both root categories.
@@ -68,11 +83,11 @@ describe("CategoriesView", () => {
       "/products?categoryId=c1a",
     );
 
-    // Brands strip (stub).
+    // Brands strip — real Brand data, linking to the brand-filtered catalog.
     expect(screen.getByText(dict.categories.brandsHeading)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Apple" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "Spigen" })).toHaveAttribute(
       "href",
-      "/products",
+      "/products?brandId=b1",
     );
   });
 
