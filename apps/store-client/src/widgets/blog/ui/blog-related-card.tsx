@@ -1,12 +1,11 @@
 import Link from "next/link";
-import { dict } from "@/shared/config";
-import { blogGradient, type BlogPost } from "../model/posts";
+import { blogGradient, type BlogPostView } from "../model/posts";
 
 /**
  * BlogRelatedCard — a compact "Читайте також" card (cover + category badge +
  * title + date · read, no excerpt). Presentational; links to the article.
  */
-export function BlogRelatedCard({ post }: { post: BlogPost }) {
+export function BlogRelatedCard({ post }: { post: BlogPostView }) {
   return (
     <Link
       href={`/blog/${post.slug}`}
@@ -17,7 +16,7 @@ export function BlogRelatedCard({ post }: { post: BlogPost }) {
         style={{ background: blogGradient(post.hue) }}
       >
         <span className="absolute left-3.5 top-3.5 rounded-full bg-card px-3 py-[5px] text-xs font-bold text-foreground">
-          {dict.blog.categories[post.cat]}
+          {post.categoryName}
         </span>
       </div>
       <div className="flex flex-1 flex-col px-5 pt-[18px] pb-5">

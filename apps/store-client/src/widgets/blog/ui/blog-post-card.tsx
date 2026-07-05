@@ -1,13 +1,12 @@
 import Link from "next/link";
-import { dict } from "@/shared/config";
-import { authorInitial, blogGradient, type BlogPost } from "../model/posts";
+import { authorInitial, blogGradient, type BlogPostView } from "../model/posts";
 
 /**
  * BlogPostCard — a single article card in the responsive grid. Presentational;
  * links to the article page. The cover is a token-derived placeholder gradient
- * (no image backend yet — see TASK-170).
+ * when the post has no cover image.
  */
-export function BlogPostCard({ post }: { post: BlogPost }) {
+export function BlogPostCard({ post }: { post: BlogPostView }) {
   return (
     <Link
       href={`/blog/${post.slug}`}
@@ -18,7 +17,7 @@ export function BlogPostCard({ post }: { post: BlogPost }) {
         style={{ background: blogGradient(post.hue) }}
       >
         <span className="absolute left-3.5 top-3.5 rounded-full bg-card px-3 py-[5px] text-xs font-bold text-foreground">
-          {dict.blog.categories[post.cat]}
+          {post.categoryName}
         </span>
       </div>
       <div className="flex flex-1 flex-col px-[22px] pb-[22px] pt-5">

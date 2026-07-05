@@ -152,6 +152,7 @@ export async function Footer() {
           <FooterLink href="/products">{dict.footer.infoWarranty}</FooterLink>
           <FooterLink href="/products">{dict.footer.infoAbout}</FooterLink>
           <FooterLink href="/products">{dict.footer.infoFaq}</FooterLink>
+          <FooterLink href="/blog">{dict.footer.infoBlog}</FooterLink>
         </div>
 
         {/* Контакти */}
