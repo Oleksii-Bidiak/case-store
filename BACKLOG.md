@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-235**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-236**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -89,10 +89,11 @@
 | TASK-228 | Stock double-credit on order revive (confirmed live §C2-a) — fixed via `Order.restockedAt` flag: cancel stamps it, revive re-reserves stock with the same `WHERE stock >= qty` guard as creation (409 if sold out, order stays terminal); verified live create→cancel→revive→re-cancel holds stock at S; unit 638 + e2e 259 green | ✅ | — |
 | TASK-229 | Mail render crashed on missing optional `country` (outbox → FAILED) — template now tolerates absent optional address fields (heals old outbox rows) and AddressDto defaults `country: 'UA'` server-side; verified live (API order without country snapshots `"UA"`) | ✅ | — |
 | TASK-230 | Public `GET /products` leaked **inactive** products (root cause of §B2 ❌) — public list now forces `isActive: true` (even with `?isActive=false`); new guarded `GET /products/admin/list` (all statuses, no cache) + admin table/toggle/forms moved to it; also fixed the boolean-DTO transform (`?isActive=false` coerced to `true`); verified live | ✅ | — |
-| TASK-231 | Wishlist API exposes raw `items[].stock` (same leak class as TASK-205) — replace with capped `maxQty`; consumers: wishlist-item-card / wishlist-list-item / wishlist-filters; also tune wishlist image `sizes` (TASK-210 leftover) | ⬜ | — |
-| TASK-232 | Admin product-form: `categoryId`/`groupId` Radix Selects carry the same bubble-`""` bounce as TASK-201 — seeded value silently cleared when the options query resolves after `reset()`; apply the same guard + regression specs | ⬜ | — |
-| TASK-233 | Product-card quick-add uses `variantSummary.defaultVariantId` (the group's **cheapest** position, incl. its stock) instead of the card's own position — «Купити» on a Double Pack card adds the Single Pack (cart-side twin of TASK-199) | ⬜ | — |
-| TASK-234 | Sticky asides slide under the header like TASK-206: legal-doc-toc / blog-article-toc / cart-view (`lg:top-6`), categories / account (`lg:top-4`), info (`top-[18px]`) — align to the 96px convention (single shared token preferred) | ⬜ | — |
+| TASK-231 | Wishlist stock leak — `WishlistItemEntity.stock` → capped `maxQty` (shared `MAX_QUANTITY=99` moved to `common/constants`, cart re-exports); client filters/cards on `maxQty`; wishlist image `sizes` tuned (TASK-210 rider) | ✅ | — |
+| TASK-232 | Admin product-form select bounce — `""` guard on `categoryId`/`groupId` (same as TASK-201, «Без групи» sentinel preserved); RED-confirmed regression specs; sweep: all other admin selects unaffected (static options / not async-seeded) | ✅ | — |
+| TASK-233 | Product-card quick-add — now adds the card's **own** `product.id`, availability from own `inStock` (field already existed — frontend-only); `variantSummary.default*` left with zero runtime consumers → deprecation TASK-235 | ✅ | — |
+| TASK-234 | Sticky asides — shared `STICKY_ASIDE_TOP`/`STICKY_HEADER_OFFSET` (96px) in `shared/config/layout.ts`; 6 offenders fixed + 3 hardcodes retrofitted + TOC scroll-spy/anchors aligned; convention documented in design-system §4 | ✅ | — |
+| TASK-235 | Deprecate `ProductVariantSummaryEntity.defaultVariantId`/`defaultVariantSlug`/`defaultInStock` — zero runtime consumers after TASK-233 (only test fixtures satisfy the type); mark `@deprecated` in Swagger, drop in a later contract rev | ⬜ | — |
 
 #### UX-покращення та discovery з QA-проходу *(виконувати після багів; частина живиться Етапами 2–3)*
 
@@ -193,6 +194,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-235**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-236**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
