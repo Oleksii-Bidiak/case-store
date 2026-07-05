@@ -22,7 +22,12 @@ import {
   ApiProperty,
 } from '@nestjs/swagger';
 import { ProductService } from './product.service';
-import { CreateProductDto, UpdateProductDto, ProductListQueryDto } from './dto';
+import {
+  CreateProductDto,
+  UpdateProductDto,
+  ProductListQueryDto,
+  ProductCardsQueryDto,
+} from './dto';
 import { AdminGuard } from '../auth/guards';
 import {
   ProductEntity,
@@ -71,6 +76,18 @@ class ProductListResponseEnvelope {
 }
 
 /**
+ * Response envelope for the by-ids card hydration (TASK-211). No pagination
+ * meta — the request is bounded by {@link ProductCardsQueryDto}'s max-ids cap.
+ */
+class ProductCardsResponseEnvelope {
+  @ApiProperty({
+    type: [PublicProductEntity],
+    description: 'Cards in the requested id order; unknown or inactive ids are dropped',
+  })
+  data!: PublicProductEntity[];
+}
+
+/**
  * Response envelope for a product detail with relations.
  */
 class ProductDetailResponseEnvelope {
@@ -111,6 +128,7 @@ class AdminProductPreviewResponseEnvelope {
  */
 type ProductResponse = { data: ProductEntity };
 type ProductListResponse = { data: PublicProductEntity[]; meta: PaginationMeta };
+type ProductCardsResponse = { data: PublicProductEntity[] };
 type ProductDetailResponse = {
   data: PublicProductEntity;
   category: ProductCategoryEntity;
@@ -149,6 +167,7 @@ type AdminProductPreviewResponse = {
   ProductVariantColorEntity,
   ProductResponseEnvelope,
   ProductListResponseEnvelope,
+  ProductCardsResponseEnvelope,
   ProductDetailResponseEnvelope,
   AdminProductPreviewResponseEnvelope,
 )
@@ -202,6 +221,31 @@ export class ProductController {
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async adminFindAll(@Query() query: ProductListQueryDto): Promise<ProductListResponse> {
     return this.productService.adminFindAll(query);
+  }
+
+  /**
+   * GET /api/products/cards?ids=a,b,c
+   *
+   * Hydrates a bounded set of product cards by id — used by the storefront
+   * «Ви переглядали» rail (TASK-211) to refresh a locally-stored history with
+   * live prices/stock. Cards come back in the requested id order; unknown,
+   * deactivated, or deleted ids are silently dropped. Public — no auth.
+   *
+   * IMPORTANT: must be declared before `@Get(':slug')` — NestJS matches routes
+   * in declaration order, and `:slug` would capture "cards" as a slug.
+   */
+  @Get('cards')
+  @ApiOperation({
+    summary: 'Hydrate product cards by ids',
+    operationId: 'productControllerGetCards',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Product cards for the requested ids (active only, request order)',
+    type: ProductCardsResponseEnvelope,
+  })
+  async getCards(@Query() query: ProductCardsQueryDto): Promise<ProductCardsResponse> {
+    return this.productService.getCardsByIds(query.ids);
   }
 
   /**

@@ -43,20 +43,15 @@ export function ProductDetailView({ slug }: { slug: string }) {
   // Record this product in the guest "recently viewed" history (localStorage),
   // so the homepage "Ви переглядали" rail has something to show. Keyed to the
   // product id so switching between sibling positions re-records correctly.
+  // Only the minimal snapshot is stored (TASK-211) — the rail re-fetches fresh
+  // cards by id, so prices/images are never rendered from this snapshot.
   const viewed = data?.data;
-  const cover = sortedImages[0];
   useEffect(() => {
     if (!viewed) return;
-    const alt = cover?.alt;
     pushRecentlyViewed({
       id: viewed.id,
       name: viewed.name,
       slug: viewed.slug,
-      price: viewed.price,
-      compareAtPrice: viewed.compareAtPrice,
-      imageUrl: cover?.url ?? null,
-      imageAlt: typeof alt === "string" ? alt : null,
-      blurDataUrl: cover?.blurDataUrl ?? null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewed?.id]);

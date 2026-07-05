@@ -1,19 +1,23 @@
 // Recently-viewed history, persisted in localStorage (guest-friendly, no
 // backend). The homepage READS this via useSyncExternalStore; the product-detail
 // widget WRITES via pushRecentlyViewed when a product page is viewed.
+//
+// TASK-211: the store keeps only a MINIMAL snapshot (id + slug/name for
+// debuggability). Rendering always re-fetches fresh `PublicProductEntity`
+// cards by id through the Orval hook (`GET /products/cards`), so prices,
+// stock, and images can never go stale in the UI. Legacy entries that carried
+// a full price snapshot still parse — only `id` is required — and their ids
+// hydrate the same way.
 
 const STORAGE_KEY = "store-ai:recently-viewed";
 const MAX_ITEMS = 12;
 
 export interface RecentlyViewedItem {
   id: string;
-  name: string;
-  slug: string;
-  price: string;
-  compareAtPrice?: string | null;
-  imageUrl?: string | null;
-  imageAlt?: string | null;
-  blurDataUrl?: string | null;
+  /** Snapshot only — rendering refetches by id; may be absent on old entries. */
+  slug?: string;
+  /** Snapshot only — rendering refetches by id; may be absent on old entries. */
+  name?: string;
 }
 
 // Stable empty reference for the server snapshot and error fallbacks — returning
@@ -23,12 +27,7 @@ const EMPTY: readonly RecentlyViewedItem[] = Object.freeze([]);
 function isItem(value: unknown): value is RecentlyViewedItem {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
-  return (
-    typeof v.id === "string" &&
-    typeof v.name === "string" &&
-    typeof v.slug === "string" &&
-    typeof v.price === "string"
-  );
+  return typeof v.id === "string" && v.id !== "";
 }
 
 function parse(raw: string | null): readonly RecentlyViewedItem[] {
@@ -86,12 +85,18 @@ export function getRecentlyViewedServerSnapshot(): readonly RecentlyViewedItem[]
 /**
  * Prepend an item (most-recent-first, deduped by id, capped at MAX_ITEMS).
  * Called from the product-detail widget whenever a product page is viewed.
+ * Only the minimal snapshot is persisted — never prices or image URLs.
  */
 export function pushRecentlyViewed(item: RecentlyViewedItem): void {
   if (typeof window === "undefined") return;
   try {
+    const entry: RecentlyViewedItem = {
+      id: item.id,
+      slug: item.slug,
+      name: item.name,
+    };
     const next = [
-      item,
+      entry,
       ...readRecentlyViewed().filter((i) => i.id !== item.id),
     ];
     window.localStorage.setItem(
