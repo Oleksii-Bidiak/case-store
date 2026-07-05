@@ -215,7 +215,10 @@ export function CheckoutView() {
           )}
         </form>
 
-        <aside className="lg:sticky lg:top-4">
+        {/* top-24 = sticky header (h-16) + gap — same offset convention as the
+            catalog filters / wishlist asides, so the stuck summary never sits
+            under the z-50 site header (TASK-206). */}
+        <aside className="lg:sticky lg:top-24">
           <CheckoutOrderSummary npCityRef={npCityRef} />
         </aside>
       </div>
