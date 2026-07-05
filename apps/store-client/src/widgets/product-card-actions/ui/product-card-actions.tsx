@@ -16,7 +16,12 @@ export function ProductCardActions({
 }: {
   product: PublicProductEntity;
 }) {
-  const inStock = product.variantSummary.defaultInStock;
+  // Every card is ONE first-class position (TASK-142), so quick-add must target
+  // THIS product and reflect ITS availability. `variantSummary.defaultVariantId`
+  // / `defaultInStock` describe the group's CHEAPEST sibling — using them here
+  // made «Купити» on a costlier sibling add the cheapest one instead (TASK-233,
+  // the cart-side twin of the TASK-199 advertised-price fix).
+  const inStock = product.inStock;
 
   return (
     <div className="flex flex-col gap-2">
@@ -34,7 +39,7 @@ export function ProductCardActions({
       </p>
       <div className="flex gap-2">
         <AddToCartButton
-          productId={product.variantSummary.defaultVariantId}
+          productId={product.id}
           compact
           outOfStock={!inStock}
           ariaLabel={dict.productCard.buyAria(product.name)}

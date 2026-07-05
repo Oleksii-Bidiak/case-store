@@ -50,14 +50,17 @@ function listEnvelope(products: ReturnType<typeof makeProduct>[]) {
   };
 }
 
-describe("PopularRail — quick-add stock guard (TASK-144 / TASK-077 / TASK-162)", () => {
-  it("disables the quick-add button with an out-of-stock label when the default variant has no stock", async () => {
+describe("PopularRail — quick-add stock guard (TASK-144 / TASK-077 / TASK-162 / TASK-233)", () => {
+  it("disables the quick-add button with an out-of-stock label when the card's own position has no stock", async () => {
     server.use(
       http.get("*/api/products", () =>
         HttpResponse.json(
+          // Own position out of stock; the group's default (cheapest) sibling
+          // stays in stock — the card must follow its OWN signal (TASK-233).
           listEnvelope([
             makeProduct({
-              variantSummary: variantSummary({ defaultInStock: false }),
+              inStock: false,
+              variantSummary: variantSummary({ defaultInStock: true }),
             }),
           ]),
         ),
