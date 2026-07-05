@@ -27,8 +27,8 @@ const REINDEX_BATCH = 100;
  * tolerance itself covers misspellings («афйон» → «айфон»).
  */
 export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
-  searchableAttributes: ['name', 'description', 'categoryName', 'searchTerms'],
-  filterableAttributes: ['isActive', 'categoryIds'],
+  searchableAttributes: ['name', 'description', 'categoryName', 'brandName', 'searchTerms'],
+  filterableAttributes: ['isActive', 'categoryIds', 'brandId'],
   sortableAttributes: ['price', 'createdAt'],
   rankingRules: ['words', 'typo', 'proximity', 'attribute', 'sort', 'exactness'],
   typoTolerance: {
@@ -251,12 +251,16 @@ export class SearchService implements OnModuleInit {
         source.compareAtPrice != null ? Number(source.compareAtPrice.toString()) : null,
       categoryIds,
       categoryName: source.categoryName,
+      brandId: source.brandId,
+      brandName: source.brandName,
       primaryImageUrl: source.primaryImageUrl,
       blurDataUrl: source.blurDataUrl,
       inStock: source.stock > 0,
       isActive: source.isActive,
       createdAt: source.createdAt.getTime(),
-      searchTerms: extractUaSearchTerms(`${source.name} ${source.categoryName}`),
+      searchTerms: extractUaSearchTerms(
+        `${source.name} ${source.categoryName} ${source.brandName ?? ''}`,
+      ),
     };
   }
 
