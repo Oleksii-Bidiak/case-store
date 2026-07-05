@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { PublishStatus } from '@prisma/client';
 
 /**
  * Domain entity representing a static / service page.
@@ -53,7 +54,34 @@ export class PageEntity {
   metaDescription!: string | null;
 
   @ApiProperty({
-    description: 'Whether the page is published and visible on the storefront',
+    description: 'Publish lifecycle state — PUBLISHED is the public-visibility gate',
+    enum: PublishStatus,
+    example: PublishStatus.PUBLISHED,
+  })
+  status!: PublishStatus;
+
+  @ApiProperty({
+    description: 'When the page first went live (null while draft / scheduled)',
+    example: '2026-01-01T00:00:00.000Z',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    required: false,
+  })
+  publishedAt!: Date | null;
+
+  @ApiProperty({
+    description: 'Future auto-publish instant while SCHEDULED (null otherwise)',
+    example: '2026-08-01T09:00:00.000Z',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    required: false,
+  })
+  scheduledAt!: Date | null;
+
+  @ApiProperty({
+    description: 'Derived read-only mirror of (status === PUBLISHED); not a gate',
     example: true,
   })
   isActive!: boolean;
@@ -78,6 +106,9 @@ export class PageEntity {
     excerpt: string | null;
     metaTitle: string | null;
     metaDescription: string | null;
+    status: PublishStatus;
+    publishedAt: Date | null;
+    scheduledAt: Date | null;
     isActive: boolean;
     sortOrder: number;
     createdAt: Date;
@@ -91,6 +122,9 @@ export class PageEntity {
     entity.excerpt = page.excerpt;
     entity.metaTitle = page.metaTitle;
     entity.metaDescription = page.metaDescription;
+    entity.status = page.status;
+    entity.publishedAt = page.publishedAt;
+    entity.scheduledAt = page.scheduledAt;
     entity.isActive = page.isActive;
     entity.sortOrder = page.sortOrder;
     entity.createdAt = page.createdAt;

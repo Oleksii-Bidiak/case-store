@@ -49,6 +49,16 @@ enum MailOutboxStatus {
   FAILED
 }
 
+/// Shared publish lifecycle for content models (TASK-187). `status = PUBLISHED`
+/// is the SINGLE source of truth for public visibility across Pages (and, later,
+/// blog posts and banners). SCHEDULED rows are flipped to PUBLISHED by the
+/// PublishingScheduler cron once `scheduledAt` passes.
+enum PublishStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+}
+
 // Models
 
 model User {
@@ -332,27 +342,39 @@ model RefreshToken {
 
 /// Admin-managed static / service pages (Privacy Policy, FAQ, Returns, …).
 /// Rendered on the storefront at /legal/[slug]. Content is Tiptap-generated HTML
-/// (sanitized before display). No `deletedAt` tombstone — pages are admin content,
-/// not user-generated data, so a hard DELETE is appropriate; `isActive = false`
-/// is the draft / unpublished state.
+/// (sanitized on write). No `deletedAt` tombstone — pages are admin content, not
+/// user-generated data, so a hard DELETE is appropriate.
+///
+/// Publish model (TASK-187): `status` is the SINGLE gate for public visibility
+/// (`status = PUBLISHED`). `isActive` is retained ONLY as a derived read-only
+/// mirror of `status == PUBLISHED` (kept in sync by the repository on every
+/// write) so existing admin list badges/toggles keep working; it is never a
+/// gate itself. New content models (blog, banners) adopt `status` only and omit
+/// `isActive`.
 model Page {
-  id              String   @id @default(uuid())
-  slug            String   @unique
+  id              String        @id @default(uuid())
+  slug            String        @unique
   title           String
-  /// Tiptap-generated HTML; sanitized before display on the storefront.
-  content         String   @db.Text
+  /// Tiptap-generated HTML; sanitized on write (server-side).
+  content         String        @db.Text
   excerpt         String?
-  metaTitle       String?  @map("meta_title")
-  metaDescription String?  @map("meta_description")
-  /// isActive = reversible visibility toggle (admin-only, re-enabled any time).
-  /// false = draft / unpublished; true = published and visible on the storefront.
-  isActive        Boolean  @default(false) @map("is_active")
-  sortOrder       Int      @default(0) @map("sort_order")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  metaTitle       String?       @map("meta_title")
+  metaDescription String?       @map("meta_description")
+  /// Publish lifecycle — the single source of truth for public visibility.
+  status          PublishStatus @default(DRAFT)
+  /// Set when the page first transitions to PUBLISHED (or when a scheduled
+  /// publish fires). Null while DRAFT / SCHEDULED.
+  publishedAt     DateTime?     @map("published_at")
+  /// Future publish instant while SCHEDULED; null otherwise.
+  scheduledAt     DateTime?     @map("scheduled_at")
+  /// Derived read-only mirror of `status == PUBLISHED` (NOT a visibility gate).
+  isActive        Boolean       @default(false) @map("is_active")
+  sortOrder       Int           @default(0) @map("sort_order")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
 
   @@index([slug])
-  @@index([isActive])
+  @@index([status])
   @@map("pages")
 }
 

@@ -371,7 +371,13 @@ export const dict = {
     metaTitle: "SEO заголовок",
     metaDescription: "SEO опис",
     sortOrder: "Порядок сортування",
-    active: "Опубліковано (показувати на вітрині)",
+    status: "Статус публікації",
+    statusDraft: "Чернетка",
+    statusScheduled: "Заплановано",
+    statusPublished: "Опубліковано",
+    scheduledAt: "Дата публікації",
+    scheduledAtHint:
+      "Сторінка автоматично опублікується у вказаний час (для статусу «Заплановано»).",
     submit: "Зберегти сторінку",
     errors: {
       titleRequired: "Вкажіть заголовок",
@@ -383,6 +389,7 @@ export const dict = {
       metaTitleMax: "SEO заголовок має містити не більше 255 символів",
       metaDescriptionMax: "SEO опис має містити не більше 500 символів",
       sortInt: "Порядок сортування має бути невід'ємним цілим числом",
+      scheduledAtRequired: "Вкажіть дату публікації для запланованої сторінки",
     },
   },
 

@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, PublishStatus } from '@prisma/client';
 import { PageRepository } from './pages.repository';
 import { PageService } from './pages.service';
 import { PageEntity } from './entities';
+import { RevalidationNotifier } from '../publishing';
 
 const mockPage = {
   id: 'page-uuid-1',
@@ -13,13 +14,24 @@ const mockPage = {
   excerpt: null,
   metaTitle: null,
   metaDescription: null,
+  status: PublishStatus.PUBLISHED,
+  publishedAt: new Date('2026-01-01T00:00:00.000Z'),
+  scheduledAt: null,
   isActive: true,
   sortOrder: 0,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
-const draftPage = { ...mockPage, id: 'page-uuid-2', slug: 'faq', title: 'FAQ', isActive: false };
+const draftPage = {
+  ...mockPage,
+  id: 'page-uuid-2',
+  slug: 'faq',
+  title: 'FAQ',
+  status: PublishStatus.DRAFT,
+  publishedAt: null,
+  isActive: false,
+};
 
 const pageRepositoryMock = {
   findAll: jest.fn(),
@@ -34,14 +46,21 @@ const pageRepositoryMock = {
   delete: jest.fn(),
 };
 
+const revalidationMock = { revalidate: jest.fn() };
+
 describe('PageService', () => {
   let service: PageService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    revalidationMock.revalidate.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [PageService, { provide: PageRepository, useValue: pageRepositoryMock }],
+      providers: [
+        PageService,
+        { provide: PageRepository, useValue: pageRepositoryMock },
+        { provide: RevalidationNotifier, useValue: revalidationMock },
+      ],
     }).compile();
 
     service = module.get<PageService>(PageService);
@@ -77,16 +96,16 @@ describe('PageService', () => {
   });
 
   describe('findAllAdmin', () => {
-    it('forwards the isActive filter and returns drafts + published', async () => {
+    it('forwards the status filter and returns drafts + published', async () => {
       pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [mockPage, draftPage], total: 2 });
 
-      const result = await service.findAllAdmin({ page: 1, limit: 20, isActive: undefined });
+      const result = await service.findAllAdmin({ page: 1, limit: 20, status: undefined });
 
       expect(result.data).toHaveLength(2);
       expect(pageRepositoryMock.findAllAdmin).toHaveBeenCalledWith({
         page: 1,
         limit: 20,
-        isActive: undefined,
+        status: undefined,
       });
     });
   });
@@ -118,6 +137,80 @@ describe('PageService', () => {
       expect(pageRepositoryMock.create).toHaveBeenCalledWith(
         expect.objectContaining({ slug: 'privacy-policy', title: 'Privacy Policy' }),
       );
+    });
+
+    it('sanitizes the content HTML before persisting', async () => {
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.create.mockResolvedValue(mockPage);
+
+      await service.create({
+        title: 'Privacy Policy',
+        content: '<p>ok</p><script>alert(1)</script>',
+      });
+
+      const passed = pageRepositoryMock.create.mock.calls[0][0] as { content: string };
+      expect(passed.content).toContain('<p>ok</p>');
+      expect(passed.content).not.toContain('script');
+      expect(passed.content).not.toContain('alert(1)');
+    });
+
+    it('defaults to DRAFT (no publish, no revalidation) when status is omitted', async () => {
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.create.mockResolvedValue(draftPage);
+
+      await service.create({ title: 'FAQ', content: '<p>x</p>' });
+
+      const passed = pageRepositoryMock.create.mock.calls[0][0] as {
+        status: PublishStatus;
+        publishedAt: Date | null;
+      };
+      expect(passed.status).toBe(PublishStatus.DRAFT);
+      expect(passed.publishedAt).toBeNull();
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+
+    it('stamps publishedAt and revalidates when created PUBLISHED', async () => {
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.create.mockResolvedValue(mockPage);
+
+      await service.create({
+        title: 'Privacy Policy',
+        content: '<p>x</p>',
+        status: PublishStatus.PUBLISHED,
+      });
+
+      const passed = pageRepositoryMock.create.mock.calls[0][0] as {
+        status: PublishStatus;
+        publishedAt: Date | null;
+      };
+      expect(passed.status).toBe(PublishStatus.PUBLISHED);
+      expect(passed.publishedAt).toBeInstanceOf(Date);
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(
+        expect.objectContaining({ tags: ['pages', 'page:privacy-policy'] }),
+      );
+    });
+
+    it('keeps a future SCHEDULED page unpublished with scheduledAt set', async () => {
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.create.mockResolvedValue(draftPage);
+      const future = new Date(Date.now() + 86_400_000).toISOString();
+
+      await service.create({
+        title: 'FAQ',
+        content: '<p>x</p>',
+        status: PublishStatus.SCHEDULED,
+        scheduledAt: future,
+      });
+
+      const passed = pageRepositoryMock.create.mock.calls[0][0] as {
+        status: PublishStatus;
+        publishedAt: Date | null;
+        scheduledAt: Date | null;
+      };
+      expect(passed.status).toBe(PublishStatus.SCHEDULED);
+      expect(passed.publishedAt).toBeNull();
+      expect(passed.scheduledAt).toBeInstanceOf(Date);
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
     });
 
     it('throws ConflictException when the slug already exists', async () => {
@@ -170,6 +263,57 @@ describe('PageService', () => {
       expect(result.title).toBe('Renamed');
       expect(pageRepositoryMock.findBySlugAny).not.toHaveBeenCalled();
     });
+
+    it('sanitizes content on update when content is provided', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage);
+      pageRepositoryMock.update.mockResolvedValue(mockPage);
+
+      await service.update('page-uuid-1', {
+        content: '<p>keep</p><img src="x" onerror="alert(1)" />',
+      });
+
+      const passed = pageRepositoryMock.update.mock.calls[0][1] as { content: string };
+      expect(passed.content).toContain('<p>keep</p>');
+      expect(passed.content).not.toContain('onerror');
+    });
+
+    it('leaves content undefined when not provided (no blanking)', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage);
+      pageRepositoryMock.update.mockResolvedValue(mockPage);
+
+      await service.update('page-uuid-1', { title: 'Renamed' });
+
+      const passed = pageRepositoryMock.update.mock.calls[0][1] as { content?: string };
+      expect(passed.content).toBeUndefined();
+    });
+
+    it('does not touch publish fields when status is omitted', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage);
+      pageRepositoryMock.update.mockResolvedValue(mockPage);
+
+      await service.update('page-uuid-1', { title: 'Renamed' });
+
+      const passed = pageRepositoryMock.update.mock.calls[0][1] as {
+        status?: PublishStatus;
+        publishedAt?: Date | null;
+      };
+      expect(passed.status).toBeUndefined();
+      expect(passed.publishedAt).toBeUndefined();
+    });
+
+    it('preserves the original publishedAt when re-saving an already-PUBLISHED page', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage); // already PUBLISHED
+      pageRepositoryMock.update.mockResolvedValue(mockPage);
+
+      await service.update('page-uuid-1', { status: PublishStatus.PUBLISHED });
+
+      const passed = pageRepositoryMock.update.mock.calls[0][1] as {
+        status?: PublishStatus;
+        publishedAt?: Date | null;
+      };
+      expect(passed.status).toBe(PublishStatus.PUBLISHED);
+      expect(passed.publishedAt).toEqual(mockPage.publishedAt);
+    });
   });
 
   describe('publish / unpublish', () => {
@@ -178,22 +322,38 @@ describe('PageService', () => {
       await expect(service.publish('missing')).rejects.toThrow(NotFoundException);
     });
 
-    it('publish sets the page active', async () => {
+    it('publish sets the page PUBLISHED and revalidates the storefront', async () => {
       pageRepositoryMock.findById.mockResolvedValue(draftPage);
-      pageRepositoryMock.publish.mockResolvedValue({ ...draftPage, isActive: true });
+      pageRepositoryMock.publish.mockResolvedValue({
+        ...draftPage,
+        status: PublishStatus.PUBLISHED,
+        isActive: true,
+      });
 
       const result = await service.publish('page-uuid-2');
 
+      expect(result.status).toBe(PublishStatus.PUBLISHED);
       expect(result.isActive).toBe(true);
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(
+        expect.objectContaining({ tags: ['pages', 'page:faq'] }),
+      );
     });
 
-    it('unpublish sets the page inactive', async () => {
+    it('unpublish sets the page DRAFT and revalidates the storefront', async () => {
       pageRepositoryMock.findById.mockResolvedValue(mockPage);
-      pageRepositoryMock.unpublish.mockResolvedValue({ ...mockPage, isActive: false });
+      pageRepositoryMock.unpublish.mockResolvedValue({
+        ...mockPage,
+        status: PublishStatus.DRAFT,
+        isActive: false,
+      });
 
       const result = await service.unpublish('page-uuid-1');
 
+      expect(result.status).toBe(PublishStatus.DRAFT);
       expect(result.isActive).toBe(false);
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(
+        expect.objectContaining({ tags: ['pages', 'page:privacy-policy'] }),
+      );
     });
   });
 

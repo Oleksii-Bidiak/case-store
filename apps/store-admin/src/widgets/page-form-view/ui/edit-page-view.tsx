@@ -118,6 +118,19 @@ function mapPageToFormValues(page: PageEntity): Partial<PageFormInput> {
     metaTitle: page.metaTitle ?? "",
     metaDescription: page.metaDescription ?? "",
     sortOrder: String(page.sortOrder),
-    isActive: page.isActive,
+    status: page.status,
+    // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant.
+    scheduledAt: page.scheduledAt ? toDateTimeLocal(page.scheduledAt) : "",
   };
+}
+
+/** Convert an ISO instant to the `datetime-local` input value (local time). */
+function toDateTimeLocal(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
 }

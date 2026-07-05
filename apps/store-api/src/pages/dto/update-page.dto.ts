@@ -1,12 +1,15 @@
-import { IsString, IsOptional, IsBoolean, IsInt, MaxLength, Min, Matches } from 'class-validator';
+import { IsString, IsOptional, IsInt, MaxLength, Min, Matches } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { PublishFieldsDto } from '../../publishing';
 
 /**
  * DTO for updating a static page (admin-only).
- * All fields are optional — only provided fields are written.
+ * All fields are optional — only provided fields are written. Publish control
+ * (`status` + `scheduledAt`) is inherited from the shared {@link PublishFieldsDto};
+ * `isActive` is derived server-side from `status`.
  */
-export class UpdatePageDto {
+export class UpdatePageDto extends PublishFieldsDto {
   @ApiProperty({ description: 'Page title', example: 'Privacy Policy', required: false })
   @IsOptional()
   @IsString()
@@ -61,15 +64,6 @@ export class UpdatePageDto {
   @IsString()
   @MaxLength(500, { message: 'Meta description must be at most 500 characters' })
   metaDescription?: string;
-
-  @ApiProperty({
-    description: 'Whether the page is published (visible on the storefront)',
-    example: true,
-    required: false,
-  })
-  @IsOptional()
-  @IsBoolean({ message: 'isActive must be true or false' })
-  isActive?: boolean;
 
   @ApiProperty({
     description: 'Sort order for display (lower values appear first)',

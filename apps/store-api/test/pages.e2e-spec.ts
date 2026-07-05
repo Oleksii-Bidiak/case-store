@@ -59,6 +59,8 @@ describe('Pages (e2e)', () => {
     publish: jest.fn(),
     unpublish: jest.fn(),
     delete: jest.fn(),
+    publishDue: jest.fn(),
+    updateMany: jest.fn(),
   };
 
   const prismaServiceMock = {
@@ -84,6 +86,9 @@ describe('Pages (e2e)', () => {
     excerpt: null,
     metaTitle: null,
     metaDescription: null,
+    status: 'PUBLISHED' as const,
+    publishedAt: new Date('2026-01-01T00:00:00.000Z'),
+    scheduledAt: null,
     isActive: true,
     sortOrder: 0,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -95,6 +100,8 @@ describe('Pages (e2e)', () => {
     id: 'page-e2e-2',
     slug: 'faq',
     title: 'FAQ',
+    status: 'DRAFT' as const,
+    publishedAt: null,
     isActive: false,
   };
 
@@ -255,30 +262,38 @@ describe('Pages (e2e)', () => {
       expect(response.body.data).toMatchObject({ title: 'Updated', content: '<p>new</p>' });
     });
 
-    it('PATCH publish sets isActive = true', async () => {
+    it('PATCH publish sets status = PUBLISHED', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
       pageRepositoryMock.findById.mockResolvedValue(draftPage);
-      pageRepositoryMock.publish.mockResolvedValue({ ...draftPage, isActive: true });
+      pageRepositoryMock.publish.mockResolvedValue({
+        ...draftPage,
+        status: 'PUBLISHED',
+        isActive: true,
+      });
 
       const response = await request(app.getHttpServer())
         .patch(`/api/admin/pages/${draftPage.id}/publish`)
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      expect(response.body.data).toMatchObject({ isActive: true });
+      expect(response.body.data).toMatchObject({ status: 'PUBLISHED', isActive: true });
     });
 
-    it('PATCH unpublish sets isActive = false', async () => {
+    it('PATCH unpublish sets status = DRAFT', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
       pageRepositoryMock.findById.mockResolvedValue(publishedPage);
-      pageRepositoryMock.unpublish.mockResolvedValue({ ...publishedPage, isActive: false });
+      pageRepositoryMock.unpublish.mockResolvedValue({
+        ...publishedPage,
+        status: 'DRAFT',
+        isActive: false,
+      });
 
       const response = await request(app.getHttpServer())
         .patch(`/api/admin/pages/${publishedPage.id}/unpublish`)
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      expect(response.body.data).toMatchObject({ isActive: false });
+      expect(response.body.data).toMatchObject({ status: 'DRAFT', isActive: false });
     });
 
     it('DELETE removes the page (204) then GET by slug is 404', async () => {
