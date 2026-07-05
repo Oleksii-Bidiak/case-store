@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-231**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-235**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -59,7 +59,7 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-101 | Run [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md) to closure on a running stack; triage breakage into `fix/NNN` tasks. Owner pass 2026-07-03 → bugs TASK-195…212; **re-test 2026-07-04 green** (checkout/cancel/wishlist/coupons). TASK-124 matrix (§C2-a) run 2026-07-04 via API — all green; TASK-228/229/230 findings fixed same day. Left: §4 (NP/SMTP/Sentry keys) | 🔄 | — |
+| TASK-101 | Run [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md) to closure on a running stack; triage breakage into `fix/NNN` tasks. Owner pass 2026-07-03 → bugs TASK-195…212; **re-test 2026-07-04 green** (checkout/cancel/wishlist/coupons). TASK-124 matrix (§C2-a) run 2026-07-04 via API — all green; TASK-228/229/230 findings fixed same day; fix-wave 2026-07-05 closed TASK-199…212/227 (re-checks → manual-qa §6). Left: §4 (NP/SMTP/Sentry keys) + §6 | 🔄 | — |
 | TASK-105-D | Playwright E2E green 4/4 (2026-07-04): seed-e2e fixed (pg driver adapter, no ProductVariant model), cart-flow CTA selector fixed («Додати до кошика»), local runs serial | ✅ | 048 |
 | TASK-184 | Nav tails: footer «Інформація» links → `/info` + `/legal` (now point at `/products`); admin sidebar dead `Settings` link → `/settings/contact` | ⬜ | — |
 
@@ -71,24 +71,28 @@
 | TASK-196 | Session-loss on F5: storefront part was the stale bundle (owner re-test ✅, incl. wishlist merge / Сценарій 1); **admin part was real** — `/auth/refresh` throttled 5/min while every page load calls it, so repeated F5 hit 429 and the app treated it as a dead session. Fixed: throttle → 30/min + both AuthProviders retry transient (non-401) bootstrap failures; verified 6×F5 green | ✅ | — |
 | TASK-197 | Hydration mismatch «0 грн» vs «0 ₴» in every money render (header cart badge first) — `formatMoney` now formats the number via Intl and appends ₴ manually (SSR-stable across ICU versions) | ✅ | — |
 | TASK-198 | ~~Promo fails on `/cart`~~ — same stale-bundle artifact as TASK-195 (`ApplyDiscount` is one shared component); clean-browser Playwright: TEST1 applies on `/cart`, −10% shown; owner re-test of TASK-079 ✅. Coupon test coverage rides on TASK-219 | ✅ | — |
-| TASK-199 | Grouped-card advertised price mismatch: «Double Pack» card shows the Single-Pack price; PDP then opens the correct Double-Pack position (card advertised-price/variant mapping, TASK-126 area) | ⬜ | — |
-| TASK-200 | Search: cyrillic «афйон» finds nothing while latin typo `ihpone` works — add UA↔EN transliteration/synonym settings to the Meili index (seed product names are EN) | ⬜ | — |
-| TASK-201 | Admin: category **parent** resets while editing — must re-select it to save (TASK-149 regression in a real browser; check Radix Select vs the id-keyed `reset()`) | ⬜ | — |
-| TASK-202 | Login error mapping: API correctly returns 401 «Account is deactivated» for banned accounts (QA «Сценарій 2» solved: `test@gmail.com` was banned by the owner during the TASK-150 test), but the storefront maps **every** 401 to «Невірний email або пароль» — map the deactivated case to its own message (same for admin login) | ⬜ | — |
+| TASK-199 | Grouped-card advertised price — fixed: card advertises its **own** position price via shared `getCardPricing()` («від …» only on the group-cheapest position; sale-% from own `compareAtPrice`); quick-add twin spun off → TASK-233 | ✅ | — |
+| TASK-200 | Search UA↔EN — Meili `synonyms` + Cyrillic `searchTerms` injected into documents so typo tolerance catches «афйон»; needs a reindex after deploy (boot/admin reindex); live check → manual-qa §6 | ✅ | — |
+| TASK-201 | Admin category parent reset — root cause: Radix bubble-`<select>` bounces `""` through `onValueChange` while parent options still load (TASK-149 «jsdom-only» note was a misdiagnosis); guarded + 3 regression specs; same latent bug in product-form → TASK-232 | ✅ | — |
+| TASK-202 | Login error mapping — 401 «Account is deactivated» now maps to «Обліковий запис деактивовано…» in both storefront and admin (envelope-reading helper); other 401s keep «Невірний email або пароль» | ✅ | — |
 | TASK-203 | Playwright `globalSetup` crashed (`PrismaClientInitializationError`) — `seed-e2e.ts` now loads `apps/store-api/.env` **and** constructs PrismaClient with the pg driver adapter (bare constructor throws under driver-adapter setups); suite green under TASK-105-D | ✅ | — |
-| TASK-204 | Cart line items: product link missing in the cart widget; clicking the image visually reloads it (TASK-133 leftover) | ⬜ | — |
-| TASK-205 | Cart API exposes raw `items[].stock` (QA-confirmed leak) — replace with a capped `maxQty` in the contract; stepper logic unchanged (stock-hiding follow-up to TASK-158) | ⬜ | — |
-| TASK-206 | Checkout «Ваше замовлення» summary slides **under** the sticky header on scroll (z-index/top offset) | ⬜ | — |
-| TASK-207 | Cart qty input: manual clear leaves «0» — restore the previous value on blur when left empty | ⬜ | — |
-| TASK-208 | Catalog price slider not synced with the min/max inputs | ⬜ | — |
-| TASK-209 | `/legal/[slug]` looked template-only in QA — verify content rendering against a published `Page` (needs repro; may be a no-seeded-pages artifact) | ⬜ | — |
-| TASK-210 | Storefront image/listing perf: catalog of 10 products ≈15-20s on 3G, images appear to load all at once — verify lazy-loading + profile a **prod build** (dev Turbopack slowness is expected; TASK-074 follow-up) | ⬜ | — |
-| TASK-211 | «Ви переглядали» uses the outdated card UI — reuse the PopularRail slider + current `ProductCard`/`ProductCardActions` | ⬜ | — |
-| TASK-212 | Font-preload console warnings (`woff2 preloaded but not used`) — best-effort fix (from TASK-138) | ⬜ | — |
-| TASK-227 | Password policy audit: API `register` accepted `testtest` (8 chars, no upper/digit) — align the class-validator DTO policy with the frontend zod rules; add strength requirements | ⬜ | — |
+| TASK-204 | Cart line items — product name now links to the PDP (same href as the image); «image reload» was the mini-cart staying open over navigation — row exposes `onNavigate`, cart-sheet passes `close` | ✅ | — |
+| TASK-205 | Cart API stock leak — `CartItemEntity.stock` → capped `maxQty` (shared `MAX_QUANTITY=99` server-side constant); stepper semantics unchanged; wishlist twin → TASK-231 | ✅ | — |
+| TASK-206 | Checkout summary under sticky header — `lg:top-4` → `lg:top-24` (the existing 96px header-clearing convention used by catalog filters/wishlist/legal TOC); other offending asides → TASK-234 | ✅ | — |
+| TASK-207 | Cart qty manual clear — blur now restores the previous quantity with **no server write** on empty/invalid input (pure `quantity-commit` resolver, TDD: 12 unit + 3 RTL) | ✅ | — |
+| TASK-208 | Price slider ↔ inputs — single source of truth: controlled inputs (key-remount anti-pattern removed per forms.md), live mirror on drag, clamped commit on blur; 17 unit + 5 RTL | ✅ | — |
+| TASK-209 | `/legal/[slug]` — no code bug: rendering is fully data-driven (sanitized `page.content`, 404 for draft/missing); QA saw the no-seeded-pages artifact (seed creates zero `Page` rows); publish-check → manual-qa §6 | ✅ | — |
+| TASK-210 | Listing perf — non-priority images confirmed lazy; real fix was `sizes` (grid capped at 300px, fixed rail/list widths) + dropped `priority` from the below-hero rail; 3G prod profiling → manual-qa §6 | ✅ | — |
+| TASK-211 | «Ви переглядали» — rebuilt on the PopularRail slider + current `ProductCard`/`ProductCardActions` via new `GET /products/cards?ids=`; storage slimmed to id-snapshot (prices self-heal by refetch) | ✅ | — |
+| TASK-212 | Font-preload warnings — dev-only false positive (late HMR `@font-face` injection); prod build verified byte-for-byte: all three fonts used above the fold; documented in layout.tsx; prod re-check → manual-qa §6 | ✅ | — |
+| TASK-227 | Password policy — shared `@IsStrongAppPassword()` (min 8 + lower+upper+digit, Unicode-aware so «Пароль123» passes) + mirrored zod `passwordSchema` with UA message; login deliberately unaffected | ✅ | — |
 | TASK-228 | Stock double-credit on order revive (confirmed live §C2-a) — fixed via `Order.restockedAt` flag: cancel stamps it, revive re-reserves stock with the same `WHERE stock >= qty` guard as creation (409 if sold out, order stays terminal); verified live create→cancel→revive→re-cancel holds stock at S; unit 638 + e2e 259 green | ✅ | — |
 | TASK-229 | Mail render crashed on missing optional `country` (outbox → FAILED) — template now tolerates absent optional address fields (heals old outbox rows) and AddressDto defaults `country: 'UA'` server-side; verified live (API order without country snapshots `"UA"`) | ✅ | — |
 | TASK-230 | Public `GET /products` leaked **inactive** products (root cause of §B2 ❌) — public list now forces `isActive: true` (even with `?isActive=false`); new guarded `GET /products/admin/list` (all statuses, no cache) + admin table/toggle/forms moved to it; also fixed the boolean-DTO transform (`?isActive=false` coerced to `true`); verified live | ✅ | — |
+| TASK-231 | Wishlist API exposes raw `items[].stock` (same leak class as TASK-205) — replace with capped `maxQty`; consumers: wishlist-item-card / wishlist-list-item / wishlist-filters; also tune wishlist image `sizes` (TASK-210 leftover) | ⬜ | — |
+| TASK-232 | Admin product-form: `categoryId`/`groupId` Radix Selects carry the same bubble-`""` bounce as TASK-201 — seeded value silently cleared when the options query resolves after `reset()`; apply the same guard + regression specs | ⬜ | — |
+| TASK-233 | Product-card quick-add uses `variantSummary.defaultVariantId` (the group's **cheapest** position, incl. its stock) instead of the card's own position — «Купити» on a Double Pack card adds the Single Pack (cart-side twin of TASK-199) | ⬜ | — |
+| TASK-234 | Sticky asides slide under the header like TASK-206: legal-doc-toc / blog-article-toc / cart-view (`lg:top-6`), categories / account (`lg:top-4`), info (`top-[18px]`) — align to the 96px convention (single shared token preferred) | ⬜ | — |
 
 #### UX-покращення та discovery з QA-проходу *(виконувати після багів; частина живиться Етапами 2–3)*
 
@@ -189,6 +193,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-231**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-235**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
