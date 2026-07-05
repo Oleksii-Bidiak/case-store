@@ -8,4 +8,5 @@ export * from "./order";
 export * from "./user";
 export * from "./dashboard";
 export * from "./review";
+export * from "./contact";
 export * from "./discount";

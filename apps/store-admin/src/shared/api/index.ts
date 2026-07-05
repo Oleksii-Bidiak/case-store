@@ -20,6 +20,7 @@ export * from "./generated/admin-orders/admin-orders";
 export * from "./generated/admin-dashboard/admin-dashboard";
 export * from "./generated/cart/cart";
 export * from "./generated/reviews/reviews";
+export * from "./generated/contact/contact";
 export * from "./generated/discounts/discounts";
 
 // Generated DTO / entity types
