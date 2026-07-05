@@ -43,7 +43,9 @@ export function ColorDots({
             key={`${color.value}-${color.productId}`}
             aria-hidden="true"
             title={color.value}
-            style={{ backgroundColor: swatch.css }}
+            // `background` (not backgroundColor): the unknown-colour fallback
+            // is a neutral gradient, real colours are plain CSS colours.
+            style={{ background: swatch.css }}
             className={`size-3.5 rounded-full ring-1 ring-inset ${
               swatch.isLight ? "ring-border" : "ring-black/10"
             } ${color.inStock ? "" : "opacity-40"}`}

@@ -5,6 +5,13 @@ import type {
   ProductGroupEntity,
   ProductSiblingEntity,
 } from "@/entities/product";
+import { colorSwatch } from "@/shared/lib";
+
+/**
+ * Axis names treated as the COLOUR axis (rendered as round swatches instead of
+ * text chips). Attribute keys are free-form admin data — seed uses `color`.
+ */
+const COLOR_AXES = new Set(["color", "colour", "колір"]);
 
 interface ProductSiblingNavigatorProps {
   group: ProductGroupEntity;
@@ -88,10 +95,18 @@ export function ProductSiblingNavigator({
           return null;
         }
 
+        const isColorAxis = COLOR_AXES.has(axis.trim().toLowerCase());
+
         return (
           <fieldset key={axis} className="flex flex-col gap-2">
             <legend className="mb-2 text-sm font-medium capitalize text-foreground">
               {axis}
+              {/* Swatches hide the colour text, so surface the current one here. */}
+              {isColorAxis && currentValue && (
+                <span className="font-normal text-muted-foreground">
+                  : {currentValue}
+                </span>
+              )}
             </legend>
             <div className="flex flex-wrap gap-2">
               {values.map((value) => {
@@ -106,6 +121,38 @@ export function ProductSiblingNavigator({
                       value,
                     );
                 const unavailable = !isSelected && sibling === null;
+                const navigate = () => {
+                  if (sibling && sibling.slug !== currentSlug) {
+                    router.push(`/products/${sibling.slug}`);
+                  }
+                };
+
+                if (isColorAxis) {
+                  // Round swatch (TASK-215): real colour from the shared map;
+                  // the colour TEXT stays the accessible name + tooltip. Light
+                  // colours keep a visible border; the selected one gets a
+                  // primary ring per the design tokens.
+                  const swatch = colorSwatch(value);
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={isSelected}
+                      aria-label={value}
+                      title={value}
+                      disabled={unavailable}
+                      onClick={navigate}
+                      style={{ background: swatch.css }}
+                      className={`size-9 cursor-pointer rounded-full border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-40 ${
+                        swatch.isLight ? "border-border" : "border-black/10"
+                      } ${
+                        isSelected
+                          ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
+                          : "hover:scale-110"
+                      }`}
+                    />
+                  );
+                }
 
                 return (
                   <button
@@ -113,11 +160,7 @@ export function ProductSiblingNavigator({
                     type="button"
                     aria-pressed={isSelected}
                     disabled={unavailable}
-                    onClick={() => {
-                      if (sibling && sibling.slug !== currentSlug) {
-                        router.push(`/products/${sibling.slug}`);
-                      }
-                    }}
+                    onClick={navigate}
                     className={`rounded-lg border-2 px-4 py-2 text-sm font-medium capitalize focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${
                       isSelected
                         ? "border-primary bg-primary/10 text-foreground"
