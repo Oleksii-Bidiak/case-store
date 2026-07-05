@@ -98,4 +98,32 @@ export class UpdateCategoryDto {
   @IsOptional()
   @IsBoolean({ message: 'isActive must be true or false' })
   isActive?: boolean;
+
+  @ApiProperty({
+    description: 'SEO meta title override (falls back to name when empty)',
+    example: 'Phone Cases — Premium Protection | Store',
+    required: false,
+    nullable: true,
+    type: String,
+  })
+  @IsOptional()
+  // Allow an explicit `null` (clear the override); only string-validate a value.
+  @ValidateIf((o: UpdateCategoryDto) => o.metaTitle !== null)
+  @IsString()
+  @MaxLength(255, { message: 'Meta title must be at most 255 characters' })
+  metaTitle?: string | null;
+
+  @ApiProperty({
+    description: 'SEO meta description override',
+    example: 'Shop premium protective phone cases for every model.',
+    required: false,
+    nullable: true,
+    type: String,
+  })
+  @IsOptional()
+  // Allow an explicit `null` (clear the override); only string-validate a value.
+  @ValidateIf((o: UpdateCategoryDto) => o.metaDescription !== null)
+  @IsString()
+  @MaxLength(500, { message: 'Meta description must be at most 500 characters' })
+  metaDescription?: string | null;
 }

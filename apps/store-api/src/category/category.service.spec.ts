@@ -22,6 +22,8 @@ const mockCategory = {
   parentId: null,
   isActive: true,
   sortOrder: 0,
+  metaTitle: null,
+  metaDescription: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -243,6 +245,32 @@ describe('CategoryService', () => {
       expect(result).toBeInstanceOf(CategoryEntity);
       expect(result.name).toBe('Phone Cases');
       expect(categoryRepositoryMock.create).toHaveBeenCalledWith(createInput);
+    });
+
+    it('forwards SEO meta fields (TASK-236) through to the repository', async () => {
+      const inputWithMeta: CreateCategoryInput = {
+        name: 'Phone Cases',
+        slug: 'phone-cases',
+        metaTitle: 'Phone Cases — Premium Protection',
+        metaDescription: 'Shop premium protective phone cases.',
+      };
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+      categoryRepositoryMock.create.mockResolvedValue({
+        ...mockCategory,
+        metaTitle: 'Phone Cases — Premium Protection',
+        metaDescription: 'Shop premium protective phone cases.',
+      });
+
+      const result = await service.create(inputWithMeta);
+
+      expect(categoryRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metaTitle: 'Phone Cases — Premium Protection',
+          metaDescription: 'Shop premium protective phone cases.',
+        }),
+      );
+      expect(result.metaTitle).toBe('Phone Cases — Premium Protection');
+      expect(result.metaDescription).toBe('Shop premium protective phone cases.');
     });
 
     it('should auto-generate slug from name when slug is not provided', async () => {

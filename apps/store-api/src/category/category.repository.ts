@@ -39,6 +39,8 @@ export interface CreateCategoryInput {
   parentId?: string | null;
   sortOrder?: number;
   isActive?: boolean;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
 }
 
 /**
@@ -53,6 +55,8 @@ export interface UpdateCategoryInput {
   parentId?: string | null;
   sortOrder?: number;
   isActive?: boolean;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
 }
 
 /**
@@ -359,6 +363,8 @@ export class CategoryRepository {
         parentId: data.parentId ?? null,
         sortOrder: data.sortOrder ?? 0,
         isActive: data.isActive ?? true,
+        metaTitle: data.metaTitle ?? null,
+        metaDescription: data.metaDescription ?? null,
       },
     });
   }
