@@ -109,7 +109,10 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
           <>
             <ul className="flex-1 overflow-y-auto px-5">
               {items.map((item) => (
-                <CartItemRow key={item.id} item={item} />
+                // `onNavigate` closes the sheet when a line's product link is
+                // clicked — otherwise the navigation happens behind the open
+                // overlay and looks like a no-op (TASK-204).
+                <CartItemRow key={item.id} item={item} onNavigate={close} />
               ))}
             </ul>
 

@@ -3,11 +3,7 @@ import { CartRepository, AddToCartInput, CartWithItems, MergeCartLine } from './
 import { CartEntity } from './entities';
 import { AddToCartDto, UpdateCartItemDto } from './dto';
 import type { ResolvedCartIdentity } from './cart-identity.types';
-
-/**
- * Maximum quantity allowed per cart item.
- */
-const MAX_QUANTITY = 99;
+import { MAX_QUANTITY } from './cart.constants';
 
 /**
  * CartService — business logic for the shopping cart.

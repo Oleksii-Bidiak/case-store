@@ -17,8 +17,7 @@ import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { dict } from "@/shared/config";
 import { ProductThumb } from "@/shared/ui";
 import { addonServicesForItem } from "../model/addon-services";
-
-const MAX_QUANTITY = 99;
+import { resolveQuantityCommit } from "../model/quantity-commit";
 
 /** Coerce a loosely-typed generated string field to a usable string. */
 function asString(value: unknown): string | null {
@@ -43,6 +42,13 @@ interface CartItemRowProps {
   isServiceSelected?: (itemId: string, serviceId: string) => boolean;
   /** Toggle a stub add-on service; when omitted the offers block is hidden. */
   onToggleService?: (itemId: string, serviceId: string) => void;
+  /**
+   * Called when the user clicks through to the product page. The mini-cart
+   * sheet passes its `close` here — without it the sheet stays open over the
+   * navigated page, which reads as "nothing happened, the image just flickered"
+   * (TASK-204), especially when the target PDP is the page already underneath.
+   */
+  onNavigate?: () => void;
 }
 
 /**
@@ -58,9 +64,12 @@ export function CartItemRow({
   item,
   isServiceSelected,
   onToggleService,
+  onNavigate,
 }: CartItemRowProps) {
   const queryClient = useQueryClient();
-  const [qty, setQty] = useState(item.quantity);
+  // `""` while the user has manually cleared the field — rendering it as-is
+  // keeps the input visually empty instead of snapping to «0» (TASK-207).
+  const [qty, setQty] = useState<number | "">(item.quantity);
   const [imgFailed, setImgFailed] = useState(false);
 
   // Re-sync the local input whenever the cart's authoritative quantity changes
@@ -87,10 +96,11 @@ export function CartItemRow({
 
   const error = updateItem.error || removeItem.error;
 
-  // Each line is a product position with its own stock; cap the stepper at the
-  // available stock (or the global max, whichever is lower).
-  const maxQty = Math.min(MAX_QUANTITY, item.stock);
-  const outOfStock = item.stock <= 0;
+  // The API already caps the orderable quantity per line (min of the global
+  // per-item limit and the available stock, TASK-205) — the raw stock figure
+  // never reaches the client. 0 means the position is out of stock.
+  const maxQty = item.maxQty;
+  const outOfStock = maxQty <= 0;
 
   const compareAtPrice = asString(item.compareAtPrice);
   const onSale =
@@ -146,7 +156,7 @@ export function CartItemRow({
     updateItem.mutate({ itemId: item.id, data: { quantity } });
   }, 300);
 
-  /** Commit a desired quantity: 0 removes the item, otherwise update. */
+  /** Commit a stepper quantity: 0 removes the item, otherwise update. */
   const commit = (next: number) => {
     const clamped = Math.max(0, Math.min(maxQty, next));
     if (clamped <= 0) {
@@ -164,7 +174,32 @@ export function CartItemRow({
     debouncedUpdate(clamped);
   };
 
+  /**
+   * Commit the typed input on blur. Unlike the stepper's `commit`, an empty /
+   * zero / invalid value restores the previous quantity instead of removing
+   * the line — removal stays an explicit action via the trash button
+   * (TASK-207). The decision table lives in `resolveQuantityCommit`.
+   */
+  const commitTyped = () => {
+    const result = resolveQuantityCommit(qty, item.quantity, maxQty);
+    if (result.kind === "restore" || result.kind === "noop") {
+      setQty(item.quantity);
+      return;
+    }
+    setQty(result.quantity);
+    applyOptimisticQuantity(result.quantity);
+    debouncedUpdate(result.quantity);
+  };
+
+  // The stepper buttons need a numeric base even while the field is cleared;
+  // fall back to the cart's authoritative quantity in that transient state.
+  const stepperQty = qty === "" ? item.quantity : qty;
+
   const offers = onToggleService ? addonServicesForItem(item) : [];
+
+  // Single source for the PDP link — the image and the product name must always
+  // point at the same place (TASK-204).
+  const productHref = `/products/${item.productSlug}`;
 
   return (
     <li
@@ -173,7 +208,8 @@ export function CartItemRow({
       }`}
     >
       <Link
-        href={`/products/${item.productSlug}`}
+        href={productHref}
+        onClick={onNavigate}
         aria-label={dict.cart.viewProductAria(item.productName)}
         className="shrink-0 rounded-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
@@ -199,7 +235,13 @@ export function CartItemRow({
         <div className="flex justify-between gap-3.5">
           <div className="min-w-0">
             <p className="mb-1 text-[15px] font-semibold text-foreground">
-              {item.productName}
+              <Link
+                href={productHref}
+                onClick={onNavigate}
+                className="rounded-sm transition-colors hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {item.productName}
+              </Link>
             </p>
             <p
               className={`flex items-center gap-1.5 text-[12.5px] ${
@@ -230,8 +272,8 @@ export function CartItemRow({
             <button
               type="button"
               aria-label={dict.cart.decreaseAria}
-              disabled={qty <= 1}
-              onClick={() => commit(Math.max(1, qty - 1))}
+              disabled={stepperQty <= 1}
+              onClick={() => commit(Math.max(1, stepperQty - 1))}
               className="flex size-9 items-center justify-center bg-background text-lg text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
             >
               −
@@ -242,15 +284,17 @@ export function CartItemRow({
               min={1}
               max={maxQty}
               value={qty}
-              onChange={(e) => setQty(Number(e.target.value))}
-              onBlur={() => commit(qty)}
+              onChange={(e) =>
+                setQty(e.target.value === "" ? "" : Number(e.target.value))
+              }
+              onBlur={commitTyped}
               className="w-11 bg-background py-1.5 text-center font-mono text-[15px] font-semibold text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
             <button
               type="button"
               aria-label={dict.cart.increaseAria}
-              disabled={qty >= maxQty || outOfStock}
-              onClick={() => commit(qty + 1)}
+              disabled={stepperQty >= maxQty || outOfStock}
+              onClick={() => commit(stepperQty + 1)}
               className="flex size-9 items-center justify-center bg-background text-lg text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
             >
               +

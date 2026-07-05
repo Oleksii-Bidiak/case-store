@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { MAX_QUANTITY } from '../cart.constants';
 
 /**
  * Domain entity representing a single item in a shopping cart.
@@ -10,10 +11,12 @@ import { ApiProperty } from '@nestjs/swagger';
  * Decimal fields (price, compareAtPrice, lineTotal) are converted
  * to strings to avoid floating-point precision issues.
  *
- * Each cart line references a product position (TASK-142); price and stock come
- * from the product itself. `productSlug` and `imageUrl` (the product's primary
- * image, or null) let the storefront render a thumbnail and link to the PDP
- * without an extra request per line.
+ * Each cart line references a product position (TASK-142); price comes from
+ * the product itself and `maxQty` is the orderable cap derived from its stock
+ * (`min(MAX_QUANTITY, stock)` — the raw stock figure is never exposed,
+ * TASK-205). `productSlug` and `imageUrl` (the product's primary image, or
+ * null) let the storefront render a thumbnail and link to the PDP without an
+ * extra request per line.
  */
 export class CartItemEntity {
   @ApiProperty({
@@ -68,10 +71,11 @@ export class CartItemEntity {
   compareAtPrice!: string | null;
 
   @ApiProperty({
-    description: 'Available stock for this position',
+    description:
+      'Maximum orderable quantity for this line — available stock capped at the per-item limit; 0 means out of stock. The raw stock figure is intentionally not exposed (TASK-205).',
     example: 50,
   })
-  stock!: number;
+  maxQty!: number;
 
   @ApiProperty({
     description: 'Whether the product position is active',
@@ -128,7 +132,8 @@ export class CartItemEntity {
     const unitPriceStr = item.product.price.toString();
 
     entity.price = unitPriceStr;
-    entity.stock = item.product.stock;
+    // Public cap, never the raw stock: the stepper only needs min(cap, stock).
+    entity.maxQty = Math.min(MAX_QUANTITY, item.product.stock);
     entity.isActive = item.product.isActive;
 
     // Calculate line total using cents arithmetic to avoid float errors

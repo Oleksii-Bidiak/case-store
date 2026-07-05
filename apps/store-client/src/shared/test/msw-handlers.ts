@@ -26,7 +26,7 @@ export function makeCartItem(
     productSlug: "iphone-15-pro-case-clear",
     imageUrl: null,
     price: "499.00",
-    stock: 50,
+    maxQty: 50,
     isActive: true,
     lineTotal: "998.00",
     createdAt: "2026-06-01T00:00:00.000Z",
