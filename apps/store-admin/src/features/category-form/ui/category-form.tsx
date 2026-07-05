@@ -47,6 +47,8 @@ const EMPTY_VALUES: CategoryFormInput = {
   parentId: "",
   sortOrder: "0",
   isActive: true,
+  metaTitle: "",
+  metaDescription: "",
 };
 
 /**
@@ -222,6 +224,39 @@ export function CategoryForm({
             </p>
           )}
         </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="category-meta-title">
+          {dict.categoryForm.metaTitle}
+        </Label>
+        <Input
+          id="category-meta-title"
+          placeholder={dict.categoryForm.metaTitlePlaceholder}
+          {...register("metaTitle")}
+        />
+        {errors.metaTitle && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.metaTitle.message}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="category-meta-description">
+          {dict.categoryForm.metaDescription}
+        </Label>
+        <Textarea
+          id="category-meta-description"
+          rows={3}
+          placeholder={dict.categoryForm.metaDescriptionPlaceholder}
+          {...register("metaDescription")}
+        />
+        {errors.metaDescription && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.metaDescription.message}
+          </p>
+        )}
       </div>
 
       <div className="flex items-center gap-2">

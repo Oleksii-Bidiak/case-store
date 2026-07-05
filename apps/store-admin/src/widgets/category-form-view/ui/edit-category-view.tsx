@@ -122,6 +122,8 @@ function mapCategoryToFormValues(category: {
   parentId?: string | null;
   sortOrder: number;
   isActive: boolean;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
 }): Partial<CategoryFormInput> {
   return {
     name: category.name,
@@ -131,5 +133,7 @@ function mapCategoryToFormValues(category: {
     parentId: category.parentId ?? "",
     sortOrder: String(category.sortOrder),
     isActive: category.isActive,
+    metaTitle: category.metaTitle ?? "",
+    metaDescription: category.metaDescription ?? "",
   };
 }

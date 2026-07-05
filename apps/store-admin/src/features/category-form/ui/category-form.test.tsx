@@ -320,3 +320,97 @@ describe("categoryFormValuesToDto — parent mapping (TASK-149)", () => {
     );
   });
 });
+
+describe("categoryFormValuesToDto — SEO meta mapping (TASK-236)", () => {
+  const baseValues: CategoryFormValues = {
+    name: "Cat",
+    slug: "",
+    description: "",
+    image: "",
+    parentId: "",
+    sortOrder: 0,
+    isActive: true,
+    metaTitle: "",
+    metaDescription: "",
+  };
+
+  it("CREATE: blank meta fields → undefined (omitted)", () => {
+    const dto = categoryFormValuesToDto(baseValues);
+    expect(dto.metaTitle).toBeUndefined();
+    expect(dto.metaDescription).toBeUndefined();
+  });
+
+  it("UPDATE: blank meta fields → null (explicit clear)", () => {
+    const dto = categoryFormValuesToDto(baseValues, { isUpdate: true });
+    expect(dto.metaTitle).toBeNull();
+    expect(dto.metaDescription).toBeNull();
+  });
+
+  it("passes provided meta values through, trimmed, in both modes", () => {
+    const values = {
+      ...baseValues,
+      metaTitle: "  SEO Title  ",
+      metaDescription: "  SEO description  ",
+    };
+    expect(categoryFormValuesToDto(values).metaTitle).toBe("SEO Title");
+    expect(
+      categoryFormValuesToDto(values, { isUpdate: true }).metaDescription,
+    ).toBe("SEO description");
+  });
+});
+
+describe("CategoryForm — SEO meta fields (TASK-236)", () => {
+  it("CREATE: submits typed meta title and description", async () => {
+    stubCategories();
+    const onSubmit = jest.fn();
+    renderWithProviders(<CategoryForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(
+      screen.getByLabelText(dict.categoryForm.name),
+      "New Category",
+    );
+    await userEvent.type(
+      screen.getByLabelText(dict.categoryForm.metaTitle),
+      "Best Cases",
+    );
+    await userEvent.type(
+      screen.getByLabelText(dict.categoryForm.metaDescription),
+      "Shop the best cases",
+    );
+    await submitForm();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metaTitle: "Best Cases",
+        metaDescription: "Shop the best cases",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("EDIT: seeds the meta fields from defaultValues", async () => {
+    stubCategories();
+    renderWithProviders(
+      <CategoryForm
+        id="cat-1"
+        defaultValues={{
+          name: "Cases",
+          metaTitle: "Seeded Title",
+          metaDescription: "Seeded description",
+        }}
+        onSubmit={jest.fn()}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(dict.categoryForm.metaTitle)).toHaveValue(
+        "Seeded Title",
+      ),
+    );
+    expect(
+      screen.getByLabelText(dict.categoryForm.metaDescription),
+    ).toHaveValue("Seeded description");
+  });
+});
