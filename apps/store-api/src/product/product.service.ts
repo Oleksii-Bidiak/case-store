@@ -7,6 +7,7 @@ import {
   FindAllParams,
 } from './product.repository';
 import { CategoryRepository } from '../category';
+import { BrandRepository } from '../brand';
 import {
   ProductEntity,
   PublicProductEntity,
@@ -84,6 +85,7 @@ export class ProductService {
     private readonly config: ConfigService,
     private readonly productIndexer: ProductIndexer,
     private readonly categoryRepository: CategoryRepository,
+    private readonly brandRepository: BrandRepository,
   ) {
     this.cacheTtlSeconds =
       this.config.get<number>('REDIS_CACHE_TTL_SECONDS') ?? DEFAULT_CACHE_TTL_SECONDS;
@@ -172,6 +174,7 @@ export class ProductService {
     return {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
+      brandId: query.brandId,
       isActive: query.isActive,
       minPrice: query.minPrice,
       maxPrice: query.maxPrice,
@@ -325,6 +328,9 @@ export class ProductService {
       }
     }
 
+    // Reject an unknown brand id up front (TASK-189).
+    await this.ensureBrandExists(input.brandId);
+
     const product = await this.productRepository.create({
       ...input,
       slug,
@@ -365,6 +371,11 @@ export class ProductService {
       if (existingBySku && existingBySku.id !== id) {
         throw new ConflictException('A product with this SKU already exists');
       }
+    }
+
+    // Reject an unknown brand id when brandId is being (re)assigned (TASK-189).
+    if (input.brandId !== undefined) {
+      await this.ensureBrandExists(input.brandId);
     }
 
     const updatedProduct = await this.productRepository.update(id, input);
@@ -448,6 +459,22 @@ export class ProductService {
     await this.syncSearchIndex(deleted);
 
     return ProductEntity.fromPrisma(deleted);
+  }
+
+  /**
+   * Validate that a supplied brand id references an existing brand (TASK-189).
+   * A null / undefined id means "no brand" and is always allowed. Throws
+   * NotFoundException for an unknown brand so the write fails cleanly before it
+   * hits the DB foreign key.
+   */
+  private async ensureBrandExists(brandId?: string | null): Promise<void> {
+    if (brandId == null) {
+      return;
+    }
+    const brand = await this.brandRepository.findById(brandId);
+    if (!brand) {
+      throw new NotFoundException('Brand not found');
+    }
   }
 
   /**

@@ -16,6 +16,11 @@ export interface FindAllParams {
    * that cross-entity rule.
    */
   categoryIds?: string[];
+  /**
+   * Manufacturer filter (TASK-189). A single brand id, applied alongside the
+   * category rollup in the same `where` clause so brand + category compose.
+   */
+  brandId?: string;
   isActive?: boolean;
   minPrice?: number;
   maxPrice?: number;
@@ -23,6 +28,20 @@ export interface FindAllParams {
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }
+
+/**
+ * Brand summary joined onto product read rows (TASK-189). Nested on list/detail
+ * responses so the storefront can surface the manufacturer.
+ */
+export interface ProductBrandSummary {
+  id: string;
+  name: string;
+  slug: string;
+  logo: string | null;
+}
+
+/** Prisma select for the joined brand summary — shared by every read include. */
+const BRAND_SUMMARY_SELECT = { id: true, name: true, slug: true, logo: true } as const;
 
 /**
  * Allowed fields for creating a product.
@@ -37,6 +56,7 @@ export interface CreateProductInput {
   stock?: number;
   categoryId: string;
   groupId?: string | null;
+  brandId?: string | null;
   attributes?: Record<string, string> | null;
   positionOrder?: number;
   isActive?: boolean;
@@ -56,6 +76,7 @@ export interface UpdateProductInput {
   stock?: number;
   categoryId?: string;
   groupId?: string | null;
+  brandId?: string | null;
   attributes?: Record<string, string> | null;
   positionOrder?: number;
   isActive?: boolean;
@@ -85,6 +106,9 @@ export interface ProductIndexSource {
   slug: string;
   categoryId: string;
   categoryName: string;
+  /** Manufacturer id/name joined for the search brand facet (TASK-189). */
+  brandId: string | null;
+  brandName: string | null;
   primaryImageUrl: string | null;
   blurDataUrl: string | null;
   stock: number;
@@ -127,6 +151,7 @@ export interface VariantSiblingLite {
 export interface PaginatedProductsResult {
   products: (Product &
     ProductRating & {
+      brand: ProductBrandSummary | null;
       primaryImage: PrimaryImage | null;
       variantSiblings?: VariantSiblingLite[];
     })[];
@@ -167,6 +192,7 @@ export interface ProductWithRelations {
   product: Product &
     ProductRating & {
       category: { id: string; name: string; slug: string };
+      brand: ProductBrandSummary | null;
       group: ProductGroupRelation | null;
       images: Array<{
         id: string;
@@ -216,8 +242,11 @@ export class ProductRepository {
    * used instead of `findUnique` because the `deletedAt: null` guard is not part
    * of a unique index.
    */
-  findById(id: string): Promise<Product | null> {
-    return this.prisma.product.findFirst({ where: { id, deletedAt: null } });
+  findById(id: string): Promise<(Product & { brand: ProductBrandSummary | null }) | null> {
+    return this.prisma.product.findFirst({
+      where: { id, deletedAt: null },
+      include: { brand: { select: BRAND_SUMMARY_SELECT } },
+    });
   }
 
   /**
@@ -264,6 +293,7 @@ export class ProductRepository {
         category: {
           select: { id: true, name: true, slug: true },
         },
+        brand: { select: BRAND_SUMMARY_SELECT },
         group: {
           include: {
             axes: {
@@ -329,6 +359,7 @@ export class ProductRepository {
       page,
       limit,
       categoryIds,
+      brandId,
       isActive,
       minPrice,
       maxPrice,
@@ -347,6 +378,11 @@ export class ProductRepository {
     // its subcategories' products too.
     if (categoryIds !== undefined) {
       where.categoryId = { in: categoryIds };
+    }
+
+    // Manufacturer filter (TASK-189) — composes with the category rollup above.
+    if (brandId !== undefined) {
+      where.brandId = brandId;
     }
 
     if (isActive !== undefined) {
@@ -388,6 +424,7 @@ export class ProductRepository {
         skip,
         take: limit,
         orderBy: { [effectiveSortField]: sortOrder },
+        include: { brand: { select: BRAND_SUMMARY_SELECT } },
       }),
       this.prisma.product.count({ where }),
     ]);
@@ -503,6 +540,7 @@ export class ProductRepository {
     }
     const products = await this.prisma.product.findMany({
       where: { id: { in: ids }, isActive: true, deletedAt: null },
+      include: { brand: { select: BRAND_SUMMARY_SELECT } },
     });
 
     const productIds = products.map((p) => p.id);
@@ -537,6 +575,7 @@ export class ProductRepository {
       where: { id, isActive: true, deletedAt: null },
       include: {
         category: { select: { name: true } },
+        brand: { select: { name: true } },
         images: {
           orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
           take: 1,
@@ -559,6 +598,7 @@ export class ProductRepository {
       take,
       include: {
         category: { select: { name: true } },
+        brand: { select: { name: true } },
         images: {
           orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
           take: 1,
@@ -573,6 +613,7 @@ export class ProductRepository {
   private toIndexSource(
     product: Product & {
       category: { name: string } | null;
+      brand: { name: string } | null;
       images: Array<{ url: string; blurDataUrl: string | null }>;
     },
   ): ProductIndexSource {
@@ -586,6 +627,8 @@ export class ProductRepository {
       slug: product.slug,
       categoryId: product.categoryId,
       categoryName: product.category?.name ?? '',
+      brandId: product.brandId,
+      brandName: product.brand?.name ?? null,
       primaryImageUrl: image?.url ?? null,
       blurDataUrl: image?.blurDataUrl ?? null,
       stock: product.stock,
@@ -611,6 +654,7 @@ export class ProductRepository {
         stock: data.stock ?? 0,
         categoryId: data.categoryId,
         groupId: data.groupId ?? null,
+        brandId: data.brandId ?? null,
         attributes: (data.attributes ?? {}) as Prisma.InputJsonValue,
         positionOrder: data.positionOrder ?? 0,
         isActive: data.isActive ?? true,
