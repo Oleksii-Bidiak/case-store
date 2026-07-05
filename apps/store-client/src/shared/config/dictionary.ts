@@ -422,6 +422,21 @@ export const dict = {
       "Спробуйте змінити параметри фільтра або скиньте їх, щоб побачити більше товарів.",
     clearFilters: "Скинути фільтри",
     countFound: (n: number) => `Знайдено товарів: ${n}`,
+    // TASK-216 — «Показати ще» load-more append between the grid and pagination.
+    // Ukrainian pluralization: 1 товар, 2–4 товари, 5+ товарів.
+    loadMore: (n: number) => {
+      const mod10 = n % 10;
+      const mod100 = n % 100;
+      let word = "товарів";
+      if (mod10 === 1 && mod100 !== 11) word = "товар";
+      else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20))
+        word = "товари";
+      return `Показати ще ${n} ${word}`;
+    },
+    loadMoreLoading: "Завантаження…",
+    loadMoreError: "Не вдалося завантажити більше товарів. Спробуйте ще раз.",
+    shownOfTotal: (shown: number, total: number) =>
+      `Показано ${shown} з ${total}`,
     // Breadcrumb trail shown above the catalog title.
     breadcrumbHome: "Головна",
     breadcrumbProducts: "Товари",
@@ -657,6 +672,8 @@ export const dict = {
     legend: "Фільтри",
     category: "Категорія",
     allCategories: "Всі категорії",
+    // TASK-216 — horizontal category chips row above the catalog grid.
+    categoryChipsAria: "Фільтр за категорією",
     priceRange: "Ціновий діапазон",
     minPrice: "Мінімальна ціна",
     maxPrice: "Максимальна ціна",

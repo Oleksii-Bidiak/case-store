@@ -8,6 +8,7 @@ import type { ProductControllerFindAllParams } from "@/entities/product";
 import {
   ProductFilters,
   ActiveFilterChips,
+  CategoryChips,
   SortSelect,
   ViewToggle,
   type CatalogView,
@@ -39,9 +40,10 @@ const CLEARABLE_FILTERS = {
 
 /**
  * Orchestrates the catalog page: keeps filter/sort/view state in the URL, fetches
- * categories for the filter panel, and renders the toolbar (sort + view toggle +
- * mobile filters), active-filter chips, the sidebar (desktop aside + mobile
- * drawer) and the results grid/list.
+ * categories for the chips row, and renders the category chips (TASK-216 — the
+ * category selector moved out of the sidebar into a horizontal row above the
+ * grid), the toolbar (sort + view toggle + mobile filters), active-filter chips,
+ * the sidebar (desktop aside + mobile drawer) and the results grid/list.
  */
 export function ProductListView({ initialParams }: ProductListViewProps) {
   const searchParams = useSearchParams();
@@ -73,9 +75,10 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
     searchParams.get("view") === "list" ? "list" : "grid";
   const currentSort = `${params.sortBy}:${params.sortOrder}`;
 
-  // Count of active (clearable) filters — drives the mobile "Filters" badge.
+  // Count of active filters INSIDE the drawer/sidebar — drives the mobile
+  // "Filters" badge. The category is excluded: its control is the always-visible
+  // chips row, not the drawer (TASK-216).
   const activeFilterCount =
-    (params.categoryId ? 1 : 0) +
     (params.search ? 1 : 0) +
     (params.minPrice != null ? 1 : 0) +
     (params.maxPrice != null ? 1 : 0);
@@ -133,6 +136,13 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
 
   return (
     <div>
+      {/* Category chips — horizontal, scrollable on mobile; drives ?categoryId= */}
+      <CategoryChips
+        categories={categories}
+        activeCategoryId={params.categoryId}
+        onSelect={(categoryId) => applyFilters({ categoryId })}
+      />
+
       {/* Toolbar: mobile filters button (left) + view toggle + sort (right) */}
       <div className="mb-5 flex items-center gap-3">
         <button
@@ -159,11 +169,7 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
         </div>
       </div>
 
-      <ActiveFilterChips
-        categories={categories}
-        currentParams={params}
-        onFilterChange={applyFilters}
-      />
+      <ActiveFilterChips currentParams={params} onFilterChange={applyFilters} />
 
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
         {/* Desktop sidebar */}
@@ -171,7 +177,6 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
           className={`hidden lg:sticky ${STICKY_ASIDE_TOP} lg:block lg:self-start`}
         >
           <ProductFilters
-            categories={categories}
             currentParams={params}
             onFilterChange={applyFilters}
           />
@@ -201,7 +206,6 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
           <div className="p-4">
             <ProductFilters
               idPrefix="filter-m"
-              categories={categories}
               currentParams={params}
               onFilterChange={applyFilters}
             />

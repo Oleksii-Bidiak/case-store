@@ -18,6 +18,9 @@ export type {
 export {
   useProductControllerFindAll,
   getProductControllerFindAllQueryKey,
+  // Query options for parallel fetches (`useQueries` in the catalog load-more
+  // append, TASK-216) — still the generated client, not a manual fetch.
+  getProductControllerFindAllQueryOptions,
   useProductControllerFindBySlug,
   getProductControllerFindBySlugQueryKey,
   useProductControllerGetCards,

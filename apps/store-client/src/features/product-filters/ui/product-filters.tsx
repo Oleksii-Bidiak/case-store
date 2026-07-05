@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check } from "lucide-react";
-import type { CategoryEntity } from "@/entities/category";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import { dict } from "@/shared/config";
 import { formatMoney } from "@/shared/lib";
@@ -20,8 +18,6 @@ import {
 import { SearchInput } from "./search-input";
 
 interface ProductFiltersProps {
-  /** Root categories used to populate the category selector. */
-  categories: CategoryEntity[];
   /** Currently-active filter params (derived from the URL). */
   currentParams: ProductControllerFindAllParams;
   /**
@@ -44,17 +40,16 @@ const cardTitleClass =
 
 /**
  * Filter panel for the product list page, styled as stacked cards (keyword
- * search, category, price). Each control writes its change back to the URL via
+ * search, price). Each control writes its change back to the URL via
  * `onFilterChange`; sorting and the grid/list toggle live in the page toolbar.
+ * Category selection moved to the `CategoryChips` row above the grid
+ * (TASK-216) and is intentionally no longer part of this stack.
  */
 export function ProductFilters({
-  categories,
   currentParams,
   onFilterChange,
   idPrefix = "filter",
 }: ProductFiltersProps) {
-  const activeCategory = currentParams.categoryId;
-
   // Committed price bounds from the URL, clamped into the slider domain.
   const committedMin = clampPrice(currentParams.minPrice ?? 0);
   const committedMax = clampPrice(currentParams.maxPrice ?? PRICE_DOMAIN_MAX);
@@ -120,8 +115,9 @@ export function ProductFilters({
     pushRange(next);
   };
 
+  // Only the filters this panel owns (search + price) — the category selection
+  // lives in the chips row and is cleared there, not from the sidebar.
   const hasActiveFilters = Boolean(
-    currentParams.categoryId ||
     currentParams.search ||
     currentParams.minPrice != null ||
     currentParams.maxPrice != null,
@@ -137,45 +133,6 @@ export function ProductFilters({
           onSearch={(value) => onFilterChange({ search: value })}
         />
       </div>
-
-      {/* Category */}
-      {categories.length > 0 && (
-        <div className={cardClass}>
-          <h3 className={`${cardTitleClass} mb-3`}>{dict.filters.category}</h3>
-          <div className="flex flex-col">
-            {categories.map((category) => {
-              const active = category.id === activeCategory;
-              return (
-                <button
-                  key={category.id}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() =>
-                    onFilterChange({
-                      categoryId: active ? undefined : category.id,
-                    })
-                  }
-                  className="flex items-center gap-3 rounded-md py-2 text-left text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <span
-                    aria-hidden="true"
-                    className={`flex size-5 shrink-0 items-center justify-center rounded-md border-[1.5px] transition-colors ${
-                      active
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-transparent"
-                    }`}
-                  >
-                    {active && <Check className="size-3.5" strokeWidth={3} />}
-                  </span>
-                  <span className={`flex-1 ${active ? "font-semibold" : ""}`}>
-                    {category.name}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Price range */}
       <div className={cardClass}>
@@ -246,7 +203,6 @@ export function ProductFilters({
           className="self-start text-muted-foreground hover:text-foreground"
           onClick={() =>
             onFilterChange({
-              categoryId: undefined,
               search: undefined,
               minPrice: undefined,
               maxPrice: undefined,
