@@ -492,3 +492,47 @@ model MailOutbox {
   @@index([status, nextAttemptAt])
   @@map("mail_outbox")
 }
+
+/// Placement slot a banner renders in on the storefront homepage (TASK-186).
+/// The admin picks one per banner; the storefront groups published banners by
+/// placement and falls back to hardcoded content when a slot has none.
+enum BannerPlacement {
+  HERO_SLIDE
+  PROMO_TILE
+  PROMO_BANNER
+  ANNOUNCEMENT_BAR
+}
+
+/// Admin-managed homepage banner (TASK-186). STRUCTURED content (title /
+/// subtitle / CTA), NOT Tiptap HTML — plain strings, no rich-text sanitization.
+/// Reuses the shared publishing lifecycle (`status = PUBLISHED` is the single
+/// public-visibility gate; SCHEDULED rows are flipped by the PublishingScheduler
+/// cron). No `isActive` — new content models omit the legacy mirror.
+model Banner {
+  id               String          @id @default(uuid())
+  /// Homepage slot this banner renders in.
+  placement        BannerPlacement
+  title            String
+  subtitle         String?
+  imageUrl         String?         @map("image_url")
+  /// Optional base64 blur placeholder for next/image.
+  imageBlurDataUrl String?         @map("image_blur_data_url")
+  ctaLabel         String?         @map("cta_label")
+  ctaHref          String?         @map("cta_href")
+  /// Optional accent / variant key (design-token driven; interpreted by the UI).
+  theme            String?
+  sortOrder        Int             @default(0) @map("sort_order")
+  /// Publish lifecycle — the single source of truth for public visibility.
+  status           PublishStatus   @default(DRAFT)
+  /// Set when the banner first transitions to PUBLISHED (or when a scheduled
+  /// publish fires). Null while DRAFT / SCHEDULED.
+  publishedAt      DateTime?       @map("published_at")
+  /// Future publish instant while SCHEDULED; null otherwise.
+  scheduledAt      DateTime?       @map("scheduled_at")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  @@index([placement, status])
+  @@index([status])
+  @@map("banners")
+}

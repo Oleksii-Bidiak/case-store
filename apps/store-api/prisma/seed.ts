@@ -929,6 +929,110 @@ async function seedSiteContactSettings(prisma: PrismaClient) {
   console.log('  ✓ SiteContactSettings: singleton row upserted');
 }
 
+/**
+ * Seed a couple of published homepage banners per placement (TASK-186).
+ * Idempotent via a deterministic id keyed on placement + slot. The storefront
+ * renders its hardcoded fallback when a placement has none, so this seed is a
+ * convenience for local development, not a requirement.
+ */
+async function seedBanners(prisma: PrismaClient) {
+  const banners = [
+    {
+      placement: 'HERO_SLIDE' as const,
+      slot: 'hero-1',
+      title: 'Аксесуари для вашого iPhone',
+      subtitle: 'Чохли, захисне скло та зарядки — усе в одному місці',
+      imageUrl: '/images/banners/hero-accessories.jpg',
+      ctaLabel: 'До каталогу',
+      ctaHref: '/catalog',
+      theme: 'accent',
+      sortOrder: 0,
+    },
+    {
+      placement: 'HERO_SLIDE' as const,
+      slot: 'hero-2',
+      title: 'Нова колекція навушників',
+      subtitle: 'Занурся у звук без компромісів',
+      imageUrl: '/images/banners/hero-audio.jpg',
+      ctaLabel: 'Обрати',
+      ctaHref: '/catalog?category=audio',
+      theme: 'default',
+      sortOrder: 1,
+    },
+    {
+      placement: 'PROMO_TILE' as const,
+      slot: 'promo-tile-1',
+      title: 'Захисне скло',
+      subtitle: '-30% на другий комплект',
+      imageUrl: '/images/banners/promo-glass.jpg',
+      ctaLabel: 'Купити',
+      ctaHref: '/catalog?category=protection',
+      theme: 'accent',
+      sortOrder: 0,
+    },
+    {
+      placement: 'PROMO_TILE' as const,
+      slot: 'promo-tile-2',
+      title: 'Power banks',
+      subtitle: 'Заряд на весь день',
+      imageUrl: '/images/banners/promo-power.jpg',
+      ctaLabel: 'Дивитись',
+      ctaHref: '/catalog?category=power',
+      theme: 'default',
+      sortOrder: 1,
+    },
+    {
+      placement: 'PROMO_BANNER' as const,
+      slot: 'promo-banner-1',
+      title: 'Безкоштовна доставка від 1000 грн',
+      subtitle: 'Новою поштою по всій Україні',
+      imageUrl: '/images/banners/promo-shipping.jpg',
+      ctaLabel: 'Замовити',
+      ctaHref: '/catalog',
+      theme: 'accent',
+      sortOrder: 0,
+    },
+    {
+      placement: 'ANNOUNCEMENT_BAR' as const,
+      slot: 'announcement-1',
+      title: 'Літній розпродаж уже почався — знижки до -50%',
+      subtitle: null,
+      imageUrl: null,
+      ctaLabel: 'Детальніше',
+      ctaHref: '/catalog?sale=true',
+      theme: 'accent',
+      sortOrder: 0,
+    },
+  ];
+
+  const now = new Date();
+
+  for (const b of banners) {
+    const id = deterministicUuid(`banner:${b.placement}:${b.slot}`);
+    const data = {
+      placement: b.placement,
+      title: b.title,
+      subtitle: b.subtitle,
+      imageUrl: b.imageUrl,
+      ctaLabel: b.ctaLabel,
+      ctaHref: b.ctaHref,
+      theme: b.theme,
+      sortOrder: b.sortOrder,
+      status: 'PUBLISHED' as const,
+      publishedAt: now,
+      scheduledAt: null,
+    };
+
+    await prisma.banner.upsert({
+      where: { id },
+      update: data,
+      create: { id, ...data },
+    });
+  }
+
+  console.log(`  ✓ Banners: ${banners.length} published banners upserted`);
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -942,6 +1046,7 @@ async function main() {
     // Seed in dependency order
     const { customer } = await seedUsers(prisma);
     await seedSiteContactSettings(prisma);
+    await seedBanners(prisma);
     const categories = await seedCategories(prisma);
     await seedProducts(prisma, categories);
     await seedReviews(prisma);
