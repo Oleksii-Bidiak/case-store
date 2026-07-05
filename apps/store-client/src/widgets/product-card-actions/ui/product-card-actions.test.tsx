@@ -6,7 +6,7 @@ import {
   userEvent,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
-import { makeCart } from "@/shared/test/msw-handlers";
+import { makeCart, makeCartItem } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
 import type { PublicProductEntity } from "@/shared/api/generated/models";
 import { ProductCardActions } from "./product-card-actions";
@@ -113,5 +113,104 @@ describe("ProductCardActions — quick-add targets the card's own position (TASK
       }),
     ).toBeEnabled();
     expect(screen.getByText(dict.productCard.inStockLine)).toBeInTheDocument();
+  });
+});
+
+describe("ProductCardActions — persistent in-cart state (TASK-213)", () => {
+  /** GET /api/cart returns a cart already containing the card's own position. */
+  function seedCartWithOwnPosition() {
+    server.use(
+      http.get("*/api/cart", () =>
+        HttpResponse.json(
+          makeCart([
+            makeCartItem({
+              id: "item-dp",
+              productId: "product-double-pack",
+              productName: "USB-C Cable — Double Pack",
+              productSlug: "usb-c-cable-double-pack",
+            }),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  it("switches the quick-add button to «В кошику» when the cart contains this position", async () => {
+    seedCartWithOwnPosition();
+    const product = makeDoublePack();
+    renderWithProviders(<ProductCardActions product={product} />);
+
+    // Derived from the cached cart query, so it appears once the query settles.
+    const inCartButton = await screen.findByRole("button", {
+      name: dict.productCard.inCartAria(product.name),
+    });
+    expect(inCartButton).toBeEnabled();
+    expect(inCartButton).toHaveTextContent(dict.productCard.inCart);
+    // The plain buy button is replaced.
+    expect(
+      screen.queryByRole("button", {
+        name: dict.productCard.buyAria(product.name),
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps «Купити» when the cart contains only OTHER positions (e.g. the cheaper sibling)", async () => {
+    server.use(
+      http.get("*/api/cart", () =>
+        HttpResponse.json(
+          makeCart([makeCartItem({ productId: "product-single-pack" })]),
+        ),
+      ),
+    );
+    const product = makeDoublePack();
+    renderWithProviders(<ProductCardActions product={product} />);
+
+    // Let the cart query settle, then assert the state did NOT flip.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", {
+          name: dict.productCard.buyAria(product.name),
+        }),
+      ).toBeEnabled(),
+    );
+    expect(
+      screen.queryByRole("button", {
+        name: dict.productCard.inCartAria(product.name),
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the mini-cart sheet when the «В кошику» button is clicked", async () => {
+    seedCartWithOwnPosition();
+    const product = makeDoublePack();
+    renderWithProviders(<ProductCardActions product={product} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.productCard.inCartAria(product.name),
+      }),
+    );
+
+    // The same CartSheet the header badge opens — with the cart line inside.
+    const sheet = await screen.findByRole("dialog");
+    expect(sheet).toBeInTheDocument();
+    expect(await screen.findByText("USB-C Cable — Double Pack")).toBeVisible();
+  });
+
+  it("shows the in-cart state even when the position is now out of stock", async () => {
+    seedCartWithOwnPosition();
+    const product = makeDoublePack({ inStock: false });
+    renderWithProviders(<ProductCardActions product={product} />);
+
+    // The line is already in the cart, so managing it beats a dead-end
+    // disabled button; the availability line still reads out-of-stock.
+    expect(
+      await screen.findByRole("button", {
+        name: dict.productCard.inCartAria(product.name),
+      }),
+    ).toBeEnabled();
+    expect(
+      screen.getByText(dict.productCard.outOfStockLine, { selector: "p" }),
+    ).toBeInTheDocument();
   });
 });

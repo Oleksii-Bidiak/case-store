@@ -99,4 +99,35 @@ describe("ProductSiblingNavigator", () => {
     // indigo/double does not exist → the "double" value is disabled.
     expect(screen.getByRole("button", { name: "double" })).toBeDisabled();
   });
+
+  it("renders the colour axis as round swatches with the colour text as accessible name (TASK-215)", () => {
+    renderWithProviders(
+      <ProductSiblingNavigator
+        group={makeGroup()}
+        currentAttributes={{ color: "blue", pack: "single" }}
+        currentSlug="glass-blue-single"
+      />,
+    );
+
+    // Known colour → real swatch: accessible name + tooltip stay the colour
+    // TEXT while the visible face is the colour itself (no text content).
+    const blue = screen.getByRole("button", { name: "blue" });
+    expect(blue).toHaveAttribute("title", "blue");
+    expect(blue).toHaveTextContent("");
+    expect(blue.style.background).toBeTruthy();
+
+    // Unknown colour ("indigo" is not in the map) still renders a swatch —
+    // the neutral fallback, never a crash. (jsdom cannot parse the gradient
+    // background value; the fallback itself is covered by the colorSwatch
+    // unit tests.)
+    const indigo = screen.getByRole("button", { name: "indigo" });
+    expect(indigo).toHaveAttribute("title", "indigo");
+    expect(indigo).toHaveTextContent("");
+    expect(indigo).toBeEnabled();
+
+    // The non-colour axis keeps its text chips.
+    expect(screen.getByRole("button", { name: "double" })).toHaveTextContent(
+      "double",
+    );
+  });
 });

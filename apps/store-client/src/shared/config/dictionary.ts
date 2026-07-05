@@ -1259,6 +1259,10 @@ export const dict = {
     quickAdd: "Швидке додавання",
     /** Aria label for the card "Купити" button. */
     buyAria: (name: string) => `Купити «${name}»`,
+    /** Label for the card action once the product is already in the cart (TASK-213). */
+    inCart: "В кошику",
+    /** Aria label for the in-cart card action — clicking opens the mini-cart. */
+    inCartAria: (name: string) => `«${name}» вже в кошику — відкрити кошик`,
     /** Availability line above the card action row. */
     inStockLine: "В наявності · доставка 1–2 дні",
     outOfStockLine: "Немає в наявності",
