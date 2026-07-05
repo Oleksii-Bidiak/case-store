@@ -79,6 +79,15 @@ export const productSchema = z.object({
       e.groupInvalid,
     ),
 
+  // "" represents "no brand" — mapped to undefined in the DTO (TASK-189).
+  brandId: z
+    .string()
+    .optional()
+    .refine(
+      (v) => v === undefined || v === "" || UUID_PATTERN.test(v),
+      e.brandInvalid,
+    ),
+
   positionOrder: z
     .string()
     .trim()
@@ -112,6 +121,7 @@ export function productFormValuesToDto(
   const description = values.description?.trim();
   const sku = values.sku?.trim();
   const groupId = values.groupId?.trim();
+  const brandId = values.brandId?.trim();
 
   // Collapse the key-value pairs into an attribute object, dropping blank keys
   // and de-duplicating on key (last value wins).
@@ -133,6 +143,7 @@ export function productFormValuesToDto(
     stock: values.stock,
     categoryId: values.categoryId,
     groupId: groupId ? groupId : undefined,
+    brandId: brandId ? brandId : undefined,
     attributes,
     positionOrder: values.positionOrder,
     isActive: values.isActive,

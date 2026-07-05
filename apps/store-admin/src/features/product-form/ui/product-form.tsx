@@ -8,6 +8,7 @@ import {
   type CategoryTreeNodeEntity,
 } from "@/shared/api";
 import { useProductGroupControllerFindAll } from "@/entities/product-group";
+import { useBrandControllerAdminFindAll } from "@/entities/brand";
 import { slugify } from "@/shared/lib";
 import {
   Button,
@@ -29,6 +30,9 @@ import {
 
 /** Radix Select forbids an empty-string item value; this stands in for "no group". */
 const NO_GROUP = "__none__";
+
+/** Radix Select forbids an empty-string item value; this stands in for "no brand". */
+const NO_BRAND = "__no_brand__";
 
 /** A selectable LEAF category, flattened out of the admin tree with its depth. */
 interface LeafCategoryOption {
@@ -78,6 +82,7 @@ const EMPTY_VALUES: ProductFormInput = {
   stock: "0",
   categoryId: "",
   groupId: "",
+  brandId: "",
   positionOrder: "0",
   attributes: [],
   isActive: true,
@@ -136,6 +141,12 @@ export function ProductForm({
 
   const groupsQuery = useProductGroupControllerFindAll();
   const groups = groupsQuery.data?.data ?? [];
+
+  // Brand picker (TASK-189): the admin list includes inactive brands so a product
+  // already tagged with a hidden brand still shows it selected. Brands are
+  // low-volume (dozens), so a single high-limit page covers them.
+  const brandsQuery = useBrandControllerAdminFindAll({ limit: 100 });
+  const brands = brandsQuery.data?.data ?? [];
 
   return (
     <form
@@ -374,6 +385,54 @@ export function ProductForm({
         {errors.groupId && (
           <p role="alert" className="text-sm text-destructive">
             {errors.groupId.message}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="product-brand">{dict.productForm.brand}</Label>
+        <Controller
+          control={control}
+          name="brandId"
+          render={({ field }) => (
+            <Select
+              value={field.value ? field.value : NO_BRAND}
+              onValueChange={(value) => {
+                // Same native bubble-<select> "" bounce as the category/group
+                // selects above (TASK-232 / TASK-201): a brandId seeded before
+                // the brand options mount coerces the native select to "" and
+                // Radix feeds that "" back here. A real user action is never
+                // "" — clearing the brand arrives as the NO_BRAND sentinel —
+                // so "" can only be the bounce; ignore it.
+                if (value === "") return;
+                field.onChange(value === NO_BRAND ? "" : value);
+              }}
+            >
+              <SelectTrigger id="product-brand">
+                <SelectValue
+                  placeholder={
+                    brandsQuery.isLoading
+                      ? dict.productForm.loading
+                      : dict.productForm.brandNone
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_BRAND}>
+                  {dict.productForm.brandNone}
+                </SelectItem>
+                {brands.map((brand) => (
+                  <SelectItem key={brand.id} value={brand.id}>
+                    {brand.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        />
+        {errors.brandId && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.brandId.message}
           </p>
         )}
       </div>
