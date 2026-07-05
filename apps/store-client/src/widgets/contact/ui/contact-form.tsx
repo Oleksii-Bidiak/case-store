@@ -1,30 +1,72 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { Check } from "lucide-react";
+import { useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useContactControllerSubmit } from "@/entities/contact";
 import { dict } from "@/shared/config";
+import { contactSchema, type ContactFormValues } from "../model/contact-schema";
 
 const FIELD =
   "h-[46px] rounded-xl border-[1.5px] border-border bg-background px-[15px] text-[14.5px] text-foreground outline-none focus-visible:border-primary";
 const LABEL = "text-[13px] font-semibold text-foreground";
+const ERROR = "text-[12.5px] font-medium text-destructive";
 
 /**
- * ContactForm — the "Напишіть нам" message form. STUB: there is no
- * contact-message backend, so submit only flips a local confirmation (no network
- * call). Tracked with the contact/support follow-up (TASK-177).
+ * ContactForm — the "Напишіть нам" message form. Submits to `POST /api/contact`
+ * via the generated Orval mutation hook (react-hook-form + zod validation that
+ * mirrors the backend DTO). On success it swaps to a confirmation panel; a
+ * failed request (network / 429 rate-limit / validation) surfaces a friendly UA
+ * error without losing the entered values.
  */
 export function ContactForm() {
   const d = dict.contact;
-  const [topic, setTopic] = useState<string>(d.topics[0].key);
-  const [sent, setSent] = useState(false);
+  const submit = useContactControllerSubmit();
 
-  function onSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setSent(true);
-  }
+  const {
+    register,
+    handleSubmit,
+    control,
+    setValue,
+    reset,
+    formState: { errors },
+  } = useForm<ContactFormValues>({
+    resolver: zodResolver(contactSchema),
+    defaultValues: {
+      topic: d.topics[0].key,
+      name: "",
+      phone: "",
+      email: "",
+      orderRef: "",
+      message: "",
+      consent: false,
+    },
+  });
 
-  if (sent) {
+  // `useWatch` (not `watch()`) keeps the component memoizable under the React
+  // Compiler while still re-rendering the topic row as the selection changes.
+  const topic = useWatch({ control, name: "topic" });
+
+  const onSubmit = (values: ContactFormValues) => {
+    submit.mutate(
+      {
+        data: {
+          name: values.name,
+          phone: values.phone,
+          email: values.email,
+          message: values.message,
+          topic: values.topic || undefined,
+          orderRef: values.orderRef?.trim() ? values.orderRef : undefined,
+        },
+      },
+      {
+        onSuccess: () => reset(),
+      },
+    );
+  };
+
+  if (submit.isSuccess) {
     return (
       <div className="rounded-[18px] border border-border bg-card p-8 shadow-[var(--shadow-card)]">
         <div className="flex flex-col items-center py-10 text-center">
@@ -39,7 +81,7 @@ export function ContactForm() {
           </p>
           <button
             type="button"
-            onClick={() => setSent(false)}
+            onClick={() => submit.reset()}
             className="h-11 cursor-pointer rounded-xl border border-border bg-background px-6 text-sm font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {d.sentAgain}
@@ -48,6 +90,13 @@ export function ContactForm() {
       </div>
     );
   }
+
+  // 429 → dedicated rate-limit copy; any other failure → generic submit error.
+  const errorMessage = submit.isError
+    ? submit.error?.response?.status === 429
+      ? d.errors.rateLimited
+      : d.errors.submitFailed
+    : null;
 
   return (
     <div className="rounded-[18px] border border-border bg-card p-8 shadow-[var(--shadow-card)]">
@@ -58,7 +107,11 @@ export function ContactForm() {
         {d.formIntro}
       </p>
 
-      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        className="flex flex-col gap-4"
+        noValidate
+      >
         <fieldset className="flex flex-col gap-2.5">
           <legend className={`mb-1 ${LABEL}`}>{d.topicLabel}</legend>
           <div className="flex flex-wrap gap-2">
@@ -69,7 +122,9 @@ export function ContactForm() {
                   key={t.key}
                   type="button"
                   aria-pressed={active}
-                  onClick={() => setTopic(t.key)}
+                  onClick={() =>
+                    setValue("topic", t.key, { shouldDirty: true })
+                  }
                   className={`h-[38px] cursor-pointer rounded-[10px] border px-4 text-[13.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     active
                       ? "border-primary bg-primary text-primary-foreground"
@@ -87,30 +142,48 @@ export function ContactForm() {
           <label className="flex flex-col gap-[7px]">
             <span className={LABEL}>{d.fieldName}</span>
             <input
-              required
               placeholder={d.fieldNamePlaceholder}
+              aria-invalid={Boolean(errors.name)}
               className={FIELD}
+              {...register("name")}
             />
+            {errors.name && (
+              <span role="alert" className={ERROR}>
+                {errors.name.message}
+              </span>
+            )}
           </label>
           <label className="flex flex-col gap-[7px]">
             <span className={LABEL}>{d.fieldPhone}</span>
             <input
-              required
               type="tel"
               placeholder={d.fieldPhonePlaceholder}
+              aria-invalid={Boolean(errors.phone)}
               className={FIELD}
+              {...register("phone")}
             />
+            {errors.phone && (
+              <span role="alert" className={ERROR}>
+                {errors.phone.message}
+              </span>
+            )}
           </label>
         </div>
 
         <label className="flex flex-col gap-[7px]">
           <span className={LABEL}>{d.fieldEmail}</span>
           <input
-            required
             type="email"
             placeholder={d.fieldEmailPlaceholder}
+            aria-invalid={Boolean(errors.email)}
             className={FIELD}
+            {...register("email")}
           />
+          {errors.email && (
+            <span role="alert" className={ERROR}>
+              {errors.email.message}
+            </span>
+          )}
         </label>
 
         <label className="flex flex-col gap-[7px]">
@@ -123,24 +196,31 @@ export function ContactForm() {
           <input
             placeholder={d.fieldOrderPlaceholder}
             className={`${FIELD} font-mono`}
+            {...register("orderRef")}
           />
         </label>
 
         <label className="flex flex-col gap-[7px]">
           <span className={LABEL}>{d.fieldMessage}</span>
           <textarea
-            required
             rows={5}
             placeholder={d.fieldMessagePlaceholder}
+            aria-invalid={Boolean(errors.message)}
             className="resize-y rounded-xl border-[1.5px] border-border bg-background px-[15px] py-3 text-[14.5px] text-foreground outline-none focus-visible:border-primary"
+            {...register("message")}
           />
+          {errors.message && (
+            <span role="alert" className={ERROR}>
+              {errors.message.message}
+            </span>
+          )}
         </label>
 
         <label className="flex cursor-pointer items-start gap-2.5 text-[12.5px] leading-relaxed text-muted-foreground">
           <input
-            required
             type="checkbox"
             className="mt-0.5 size-4 accent-[var(--color-primary)]"
+            {...register("consent")}
           />
           <span>
             {d.consentBefore}
@@ -149,14 +229,28 @@ export function ContactForm() {
             </Link>
           </span>
         </label>
+        {errors.consent && (
+          <span role="alert" className={ERROR}>
+            {errors.consent.message}
+          </span>
+        )}
+
+        {errorMessage && (
+          <p
+            role="alert"
+            className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            {errorMessage}
+          </p>
+        )}
 
         <button
           type="submit"
-          className="h-[50px] cursor-pointer rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          disabled={submit.isPending}
+          className="h-[50px] cursor-pointer rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {d.submit}
+          {submit.isPending ? d.submitting : d.submit}
         </button>
-        <p className="text-[12px] text-muted-foreground">{d.stubNote}</p>
       </form>
     </div>
   );

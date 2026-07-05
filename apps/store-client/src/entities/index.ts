@@ -7,5 +7,6 @@ export * from "./session";
 export * from "./order";
 export * from "./user";
 export * from "./review";
+export * from "./contact";
 export * from "./discount";
 export * from "./search";
