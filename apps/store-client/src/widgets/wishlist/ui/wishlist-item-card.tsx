@@ -9,10 +9,20 @@ import { formatMoney, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
 /**
+ * Wishlist grid: `repeat(auto-fill, minmax(232px, 1fr))` inside the
+ * `max-w-[1320px]` page, minus the 268px sidebar + 28px gap on `lg`. The
+ * widest a column gets is ~313px (three 18px-gapped columns in the 976px
+ * content area), so cap the srcset hint at 320px instead of the generic
+ * viewport-based default (TASK-210).
+ */
+const WISHLIST_GRID_SIZES =
+  "(max-width: 639px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), 320px";
+
+/**
  * WishlistItemCard — a single saved product on the `/wishlist` grid.
  *
  * The wishlist API returns a trimmed product summary (name, slug, image, price,
- * stock) rather than the full `PublicProductEntity` the catalog `ProductCard`
+ * maxQty) rather than the full `PublicProductEntity` the catalog `ProductCard`
  * expects (no rating / variant-summary), so this is a dedicated, lighter card.
  * It reuses the shared `ProductCardImage`, the heart toggle (which removes the
  * product here), and the compact AddToCartButton. The product position id is
@@ -22,7 +32,9 @@ export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
   const onSale =
     item.compareAtPrice != null &&
     Number(item.compareAtPrice) > Number(item.price);
-  const outOfStock = item.stock <= 0 || !item.isActive;
+  // maxQty is the API-side cap (min of the per-item limit and stock, TASK-231);
+  // 0 means out of stock — the raw stock figure never reaches the client.
+  const outOfStock = item.maxQty <= 0 || !item.isActive;
   const gradient = pickProductGradient(item.productSlug || item.productName);
 
   return (
@@ -34,6 +46,7 @@ export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
           src={item.imageUrl ?? undefined}
           alt={item.productName}
           initial={(item.productName?.[0] ?? "?").toUpperCase()}
+          sizes={WISHLIST_GRID_SIZES}
         />
 
         {/* Heart removes the product from the wishlist (it is already saved). */}

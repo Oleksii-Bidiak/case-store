@@ -27,7 +27,9 @@ export function isOnSale(item: WishlistItemEntity): boolean {
 }
 
 export function isInStock(item: WishlistItemEntity): boolean {
-  return item.stock > 0 && item.isActive;
+  // The API exposes the capped orderable quantity (maxQty), never the raw
+  // stock figure (TASK-231); 0 means the position is out of stock.
+  return item.maxQty > 0 && item.isActive;
 }
 
 interface WishlistFiltersProps {
@@ -57,7 +59,7 @@ function clampPct(value: number): number {
 /**
  * WishlistFilters — the wishlist sidebar (quick filters + price). All real,
  * client-side over the already-fetched saved items: "Зі знижкою" and "В
- * наявності" derive from each item's compareAtPrice/stock, and the price bounds
+ * наявності" derive from each item's compareAtPrice/maxQty, and the price bounds
  * filter by the item price. Brand is intentionally omitted (the wishlist item
  * carries no brand — TASK-176), so no dead control is shown.
  */

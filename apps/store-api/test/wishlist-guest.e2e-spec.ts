@@ -131,6 +131,12 @@ describe('Wishlist — guest & merge (e2e)', () => {
     expect(data).toHaveProperty('itemCount');
     // The guest token must never leak into the JSON envelope.
     expect(data).not.toHaveProperty('token');
+    // TASK-231: the public contract carries the capped maxQty, never raw stock
+    // (mirrors the cart contract from TASK-205).
+    for (const item of data.items as Array<Record<string, unknown>>) {
+      expect(item).toHaveProperty('maxQty');
+      expect(item).not.toHaveProperty('stock');
+    }
   }
 
   beforeAll(async () => {
@@ -222,6 +228,8 @@ describe('Wishlist — guest & merge (e2e)', () => {
         .send({ productId: VALID_PRODUCT_UUID })
         .expect(201);
 
+      // With an item present, the shape helper also guards the maxQty contract.
+      expectWishlistShape(res.body);
       expect(res.body.data.items).toHaveLength(1);
       expect(res.body.data.itemCount).toBe(1);
       expect(wishlistRepositoryMock.findOrCreate).toHaveBeenCalledWith({

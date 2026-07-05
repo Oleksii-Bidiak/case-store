@@ -23,7 +23,7 @@ function buildItem(
     imageUrl: null,
     price: "29.99",
     compareAtPrice: null,
-    stock: 10,
+    maxQty: 10,
     isActive: true,
     createdAt: "2026-06-30T00:00:00.000Z",
     ...overrides,

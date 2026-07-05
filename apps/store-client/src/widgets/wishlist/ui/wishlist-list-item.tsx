@@ -18,7 +18,9 @@ import { isOnSale } from "./wishlist-filters";
  */
 export function WishlistListItem({ item }: { item: WishlistItemEntity }) {
   const onSale = isOnSale(item);
-  const outOfStock = item.stock <= 0 || !item.isActive;
+  // maxQty is the API-side cap (min of the per-item limit and stock, TASK-231);
+  // 0 means out of stock — the raw stock figure never reaches the client.
+  const outOfStock = item.maxQty <= 0 || !item.isActive;
   const discount = onSale
     ? Math.round((1 - Number(item.price) / Number(item.compareAtPrice)) * 100)
     : 0;
@@ -33,6 +35,10 @@ export function WishlistListItem({ item }: { item: WishlistItemEntity }) {
           src={item.imageUrl ?? undefined}
           alt={item.productName}
           initial={(item.productName?.[0] ?? "?").toUpperCase()}
+          // Fixed thumbnail (`size-[130px] sm:size-[150px]` above) — without
+          // this the grid default downloads ~full-viewport candidates
+          // (TASK-210).
+          sizes="(max-width: 639px) 130px, 150px"
         />
         {onSale && (
           <span className="absolute top-2 left-2 rounded-md bg-sale px-2 py-0.5 text-xs font-bold text-sale-foreground">
