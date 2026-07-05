@@ -22,7 +22,7 @@ import {
   ProductImageEntity,
   ProductCategoryEntity,
 } from './entities';
-import { ProductListQueryDto } from './dto';
+import { ProductListQueryDto, parseSpecFilter } from './dto';
 import { generateSlug } from '../common/utils';
 import {
   CacheService,
@@ -116,7 +116,11 @@ export class ProductService {
     const cacheKey = buildProductListKey({
       ...listParams,
       categoryId: query.categoryId,
-      specs: query.specs ? `${query.specs.key}:${query.specs.value}` : undefined,
+      // Normalize via the parser so an ignored/malformed specs value never
+      // fragments the cache key from an equivalent request.
+      specs: parseSpecFilter(query.specs)
+        ? `${parseSpecFilter(query.specs)!.key}:${parseSpecFilter(query.specs)!.value}`
+        : undefined,
       isActive: true,
     });
     const cached = await this.cache.get<PaginatedProductsResponse>(cacheKey);
@@ -187,7 +191,7 @@ export class ProductService {
       minPrice: query.minPrice,
       maxPrice: query.maxPrice,
       search: query.search,
-      specFilter: query.specs,
+      specFilter: parseSpecFilter(query.specs),
       sortBy: query.sortBy ?? 'createdAt',
       sortOrder: query.sortOrder ?? 'desc',
     };

@@ -718,6 +718,9 @@ export const dict = {
     searchLabel: "Пошук",
     searchPlaceholder: "Пошук товарів…",
     searchAria: "Пошук товарів",
+    // Structured-spec facets (TASK-191) — shown only when a category is active.
+    specsTitle: "Характеристики",
+    specAnyOption: "Будь-яка",
   },
 
   product: {

@@ -1,33 +1,36 @@
-import { plainToInstance } from 'class-transformer';
-import { ProductListQueryDto } from './product-list-query.dto';
+import { parseSpecFilter } from './product-list-query.dto';
 
 /**
- * Unit tests for the `specs` facet param transform (TASK-191-D). Mirrors the
- * documented Boolean-DTO gotcha: the transform reads the ORIGINAL query string
- * and parses a single `key:value` pair, ignoring malformed input.
+ * Unit tests for the `specs` facet parser (TASK-191-D). The DTO keeps `specs` a
+ * plain string on the wire (so it maps to a normal query param); the service
+ * parses a single `key:value` pair, ignoring malformed input.
  */
-describe('ProductListQueryDto — specs facet transform', () => {
-  const parse = (specs: unknown) =>
-    plainToInstance(ProductListQueryDto, { specs }, { enableImplicitConversion: true }).specs;
-
+describe('parseSpecFilter (specs facet param)', () => {
   it('parses a well-formed key:value pair', () => {
-    expect(parse('material:Силікон')).toEqual({ key: 'material', value: 'Силікон' });
+    expect(parseSpecFilter('material:Силікон')).toEqual({ key: 'material', value: 'Силікон' });
   });
 
   it('splits on the first colon only (value may contain colons)', () => {
-    expect(parse('ratio:16:9')).toEqual({ key: 'ratio', value: '16:9' });
+    expect(parseSpecFilter('ratio:16:9')).toEqual({ key: 'ratio', value: '16:9' });
+  });
+
+  it('trims surrounding whitespace', () => {
+    expect(parseSpecFilter(' material : Силікон ')).toEqual({
+      key: 'material',
+      value: 'Силікон',
+    });
   });
 
   it('ignores input with no colon', () => {
-    expect(parse('material')).toBeUndefined();
+    expect(parseSpecFilter('material')).toBeUndefined();
   });
 
   it('ignores input with an empty key or value', () => {
-    expect(parse(':Силікон')).toBeUndefined();
-    expect(parse('material:')).toBeUndefined();
+    expect(parseSpecFilter(':Силікон')).toBeUndefined();
+    expect(parseSpecFilter('material:')).toBeUndefined();
   });
 
   it('is undefined when omitted', () => {
-    expect(parse(undefined)).toBeUndefined();
+    expect(parseSpecFilter(undefined)).toBeUndefined();
   });
 });

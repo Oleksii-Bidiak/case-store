@@ -4,6 +4,7 @@ import { Search, X } from "lucide-react";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
+import { parseSpecParam } from "../model/spec-facet";
 
 interface ActiveFilterChipsProps {
   currentParams: ProductControllerFindAllParams;
@@ -54,6 +55,17 @@ export function ActiveFilterChips({
     });
   }
 
+  // Structured-spec facet chip (TASK-191). Shows the selected value; clearing
+  // removes just the specs param.
+  const specSelection = parseSpecParam(currentParams.specs);
+  if (specSelection) {
+    chips.push({
+      key: "specs",
+      label: specSelection.value,
+      clear: () => onFilterChange({ specs: undefined }),
+    });
+  }
+
   if (chips.length === 0) {
     return null;
   }
@@ -94,6 +106,7 @@ export function ActiveFilterChips({
             search: undefined,
             minPrice: undefined,
             maxPrice: undefined,
+            specs: undefined,
           })
         }
         className="text-[13.5px] font-semibold text-muted-foreground underline decoration-1 underline-offset-[3px] outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"

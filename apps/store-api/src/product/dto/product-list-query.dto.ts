@@ -9,7 +9,6 @@ import {
   IsUUID,
   MaxLength,
   IsIn,
-  IsObject,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
@@ -120,27 +119,16 @@ export class ProductListQueryDto {
   @ApiProperty({
     description:
       'Structured spec facet filter as a single "key:value" pair (TASK-191), e.g. "material:Силікон". ' +
-      'Parsed to a { key, value } object; malformed input is ignored.',
+      'Kept a plain string on the wire so it maps to a normal query param; parsed to a ' +
+      '{ key, value } pair server-side via parseSpecFilter (malformed input is ignored).',
     example: 'material:Силікон',
+    type: String,
     required: false,
   })
   @IsOptional()
-  // Read the ORIGINAL query string from `obj` (not the coerced `value`): the
-  // global ValidationPipe runs with `enableImplicitConversion: true`, mirroring
-  // the documented Boolean-DTO gotcha. Split on the FIRST colon only so a value
-  // may itself contain colons.
-  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
-    const raw = obj[key];
-    if (typeof raw !== 'string') return undefined;
-    const idx = raw.indexOf(':');
-    if (idx <= 0) return undefined;
-    const k = raw.slice(0, idx).trim();
-    const v = raw.slice(idx + 1).trim();
-    if (k === '' || v === '') return undefined;
-    return { key: k, value: v };
-  })
-  @IsObject()
-  specs?: { key: string; value: string };
+  @IsString()
+  @MaxLength(200, { message: 'specs must be at most 200 characters' })
+  specs?: string;
 
   @ApiProperty({
     description: 'Sort field (createdAt, price, name)',
@@ -167,4 +155,20 @@ export class ProductListQueryDto {
     message: 'sortOrder must be asc or desc',
   })
   sortOrder?: 'asc' | 'desc' = 'desc';
+}
+
+/**
+ * Parse the `specs=key:value` facet param into a `{ key, value }` pair
+ * (TASK-191). Splits on the FIRST colon only so a value may itself contain
+ * colons; returns `undefined` for missing or malformed input (empty key/value,
+ * no colon), so the caller simply applies no facet filter.
+ */
+export function parseSpecFilter(raw?: string): { key: string; value: string } | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const idx = raw.indexOf(':');
+  if (idx <= 0) return undefined;
+  const key = raw.slice(0, idx).trim();
+  const value = raw.slice(idx + 1).trim();
+  if (key === '' || value === '') return undefined;
+  return { key, value };
 }

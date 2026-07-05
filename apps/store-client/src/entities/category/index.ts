@@ -5,6 +5,9 @@ export type {
   CategoryTreeResponse,
   CategoryListResponse,
   CategoryControllerGetRootCategoriesParams,
+  // Structured-spec facets (TASK-191)
+  FilterableSpecEntity,
+  FilterableSpecsResponse,
 } from "@/shared/api/generated/models";
 
 export {
@@ -12,4 +15,6 @@ export {
   getCategoryControllerGetRootCategoriesQueryKey,
   useCategoryControllerGetCategoryTree,
   getCategoryControllerGetCategoryTreeQueryKey,
+  // Structured-spec facets (TASK-191)
+  useCategoryControllerGetFilterableSpecs,
 } from "@/shared/api/generated/categories/categories";

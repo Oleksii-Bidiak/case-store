@@ -16,6 +16,7 @@ import {
   rangeKey,
 } from "../model/price-range";
 import { SearchInput } from "./search-input";
+import { SpecFacets } from "./spec-facets";
 
 interface ProductFiltersProps {
   /** Currently-active filter params (derived from the URL). */
@@ -194,6 +195,15 @@ export function ProductFilters({
           <span>{formatMoney(String(range[1]))}</span>
         </div>
       </div>
+
+      {/* Structured-spec facets (TASK-191) — category-scoped; renders nothing
+          when no category is active or it has no filterable specs. */}
+      <SpecFacets
+        categoryId={currentParams.categoryId}
+        specs={currentParams.specs}
+        onFilterChange={onFilterChange}
+        idPrefix={idPrefix}
+      />
 
       {hasActiveFilters && (
         <Button

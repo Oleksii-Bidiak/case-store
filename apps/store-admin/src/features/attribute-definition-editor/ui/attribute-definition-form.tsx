@@ -1,6 +1,6 @@
 "use client";
 
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Button,
@@ -55,14 +55,13 @@ export function AttributeDefinitionForm({
     register,
     control,
     handleSubmit,
-    watch,
     formState: { errors },
   } = useForm<AttributeDefinitionFormValues>({
     resolver: zodResolver(attributeDefinitionSchema),
     defaultValues: { ...EMPTY_ATTRIBUTE_DEFINITION, ...defaultValues },
   });
 
-  const type = watch("type");
+  const type = useWatch({ control, name: "type" });
   const isSelect = type === AttributeDefinitionEntityType.SELECT;
 
   return (

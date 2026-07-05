@@ -47,6 +47,7 @@ export default async function ProductsPage({
   const search = first(resolved.search)?.trim() || undefined;
   const minPrice = first(resolved.minPrice);
   const maxPrice = first(resolved.maxPrice);
+  const specs = first(resolved.specs);
   const page = first(resolved.page);
 
   const initialParams: ProductControllerFindAllParams = {
@@ -56,6 +57,7 @@ export default async function ProductsPage({
     sortOrder: first(resolved.sortOrder) ?? "desc",
     minPrice: minPrice ? Number(minPrice) : undefined,
     maxPrice: maxPrice ? Number(maxPrice) : undefined,
+    specs: specs || undefined,
     page: page ? Number(page) : 1,
     limit: 20,
     isActive: true,

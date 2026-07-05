@@ -36,6 +36,7 @@ const CLEARABLE_FILTERS = {
   search: undefined,
   minPrice: undefined,
   maxPrice: undefined,
+  specs: undefined,
 } as const;
 
 /**
@@ -66,6 +67,7 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
       searchParams.get("sortOrder") ?? initialParams.sortOrder ?? "desc",
     minPrice: minPriceRaw ? Number(minPriceRaw) : initialParams.minPrice,
     maxPrice: maxPriceRaw ? Number(maxPriceRaw) : initialParams.maxPrice,
+    specs: searchParams.get("specs") ?? initialParams.specs,
     page: pageRaw ? Number(pageRaw) : (initialParams.page ?? 1),
     limit: PAGE_SIZE,
     isActive: true,
@@ -139,7 +141,11 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
       <CategoryChips
         categories={categories}
         activeCategoryId={params.categoryId}
-        onSelect={(categoryId) => applyFilters({ categoryId })}
+        // Changing (or clearing) the category also drops any spec facet — facet
+        // options are category-scoped and meaningless without one (TASK-191).
+        onSelect={(categoryId) =>
+          applyFilters({ categoryId, specs: undefined })
+        }
       />
 
       {/* Toolbar: mobile filters button (left) + view toggle + sort (right) */}
