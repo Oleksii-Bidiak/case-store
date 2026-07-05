@@ -9,3 +9,4 @@ export * from "./user";
 export * from "./review";
 export * from "./discount";
 export * from "./search";
+export * from "./newsletter";
