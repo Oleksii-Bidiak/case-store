@@ -43,6 +43,7 @@ export interface ProductListKeyParams {
   page: number;
   limit: number;
   categoryId?: string;
+  deviceModelId?: string;
   isActive?: boolean;
   minPrice?: number;
   maxPrice?: number;
@@ -59,6 +60,7 @@ const KEY_FIELDS: ReadonlyArray<keyof ProductListKeyParams> = [
   'page',
   'limit',
   'categoryId',
+  'deviceModelId',
   'isActive',
   'minPrice',
   'maxPrice',

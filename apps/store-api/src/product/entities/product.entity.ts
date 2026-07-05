@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ProductImageEntity } from './product-image.entity';
+import { ProductCompatibleDeviceEntity } from './product-compatible-device.entity';
 
 /**
  * Domain entity representing a product.
@@ -124,6 +125,13 @@ export class ProductEntity {
   })
   primaryImage?: ProductImageEntity | null;
 
+  @ApiProperty({
+    description: 'Device models this position is compatible with (TASK-190)',
+    type: [ProductCompatibleDeviceEntity],
+    required: false,
+  })
+  compatibleDeviceModels!: ProductCompatibleDeviceEntity[];
+
   /**
    * Create a ProductEntity from a Prisma Product model.
    * Converts Decimal fields to strings and strips out relation fields.
@@ -157,6 +165,12 @@ export class ProductEntity {
       sortOrder: number;
       isPrimary: boolean;
     } | null;
+    compatibleDeviceModels?: Array<{
+      id: string;
+      name: string;
+      slug: string;
+      brandName: string;
+    }>;
   }): ProductEntity {
     const entity = new ProductEntity();
     entity.id = product.id;
@@ -180,6 +194,9 @@ export class ProductEntity {
     entity.primaryImage = product.primaryImage
       ? ProductImageEntity.fromPrisma(product.primaryImage)
       : null;
+    entity.compatibleDeviceModels = (product.compatibleDeviceModels ?? []).map((m) =>
+      ProductCompatibleDeviceEntity.fromSummary(m),
+    );
     return entity;
   }
 }

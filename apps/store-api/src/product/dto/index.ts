@@ -4,3 +4,4 @@ export { ProductListQueryDto } from './product-list-query.dto';
 export { ProductCardsQueryDto, PRODUCT_CARDS_MAX_IDS } from './product-cards-query.dto';
 export { UploadImagesDto } from './upload-images.dto';
 export { ReorderImageDto, ReorderImagesDto } from './reorder-images.dto';
+export { SetDeviceCompatDto } from './set-device-compat.dto';

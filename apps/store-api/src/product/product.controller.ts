@@ -27,6 +27,7 @@ import {
   UpdateProductDto,
   ProductListQueryDto,
   ProductCardsQueryDto,
+  SetDeviceCompatDto,
 } from './dto';
 import { AdminGuard } from '../auth/guards';
 import {
@@ -124,9 +125,26 @@ class AdminProductPreviewResponseEnvelope {
 }
 
 /**
+ * Result payload for the bulk group-compat action (TASK-190).
+ */
+class GroupDeviceCompatResult {
+  @ApiProperty({ description: 'Number of positions updated', example: 3 })
+  updatedCount!: number;
+}
+
+/**
+ * Response envelope for the bulk group-compat action.
+ */
+class GroupDeviceCompatResponseEnvelope {
+  @ApiProperty({ type: GroupDeviceCompatResult })
+  data!: GroupDeviceCompatResult;
+}
+
+/**
  * Type aliases for controller return types.
  */
 type ProductResponse = { data: ProductEntity };
+type GroupDeviceCompatResponse = { data: { updatedCount: number } };
 type ProductListResponse = { data: PublicProductEntity[]; meta: PaginationMeta };
 type ProductCardsResponse = { data: PublicProductEntity[] };
 type ProductDetailResponse = {
@@ -170,6 +188,8 @@ type AdminProductPreviewResponse = {
   ProductCardsResponseEnvelope,
   ProductDetailResponseEnvelope,
   AdminProductPreviewResponseEnvelope,
+  GroupDeviceCompatResult,
+  GroupDeviceCompatResponseEnvelope,
 )
 @Controller('products')
 export class ProductController {
@@ -359,6 +379,65 @@ export class ProductController {
   async update(@Param('id') id: string, @Body() dto: UpdateProductDto): Promise<ProductResponse> {
     const product = await this.productService.update(id, dto);
 
+    return { data: product };
+  }
+
+  /**
+   * PUT /api/products/group/:groupId/device-compat
+   *
+   * Bulk action (TASK-190): apply the same device-compatibility set to EVERY
+   * position sharing `groupId`. Admin-only. Returns the count of positions
+   * updated. Declared before `PUT /products/:id/device-compat` so the literal
+   * `group` segment is never captured as an `:id`.
+   */
+  @Put('group/:groupId/device-compat')
+  @UseGuards(AdminGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Apply device compatibility to a whole group (admin)',
+    operationId: 'productControllerUpdateGroupDeviceCompat',
+  })
+  @ApiParam({ name: 'groupId', description: 'Product group UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Compatibility applied to all group positions',
+    type: GroupDeviceCompatResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Unknown device model id(s)' })
+  @ApiResponse({ status: 404, description: 'Product group not found or has no positions' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async updateGroupDeviceCompat(
+    @Param('groupId') groupId: string,
+    @Body() dto: SetDeviceCompatDto,
+  ): Promise<GroupDeviceCompatResponse> {
+    const result = await this.productService.updateGroupDeviceCompat(groupId, dto.deviceModelIds);
+    return { data: result };
+  }
+
+  /**
+   * PUT /api/products/:id/device-compat
+   *
+   * Replace a product position's device-compatibility set (TASK-190).
+   * Admin-only. Unknown device model ids are rejected with a 400 before any
+   * write.
+   */
+  @Put(':id/device-compat')
+  @UseGuards(AdminGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Set device compatibility for a product (admin)',
+    operationId: 'productControllerUpdateDeviceCompat',
+  })
+  @ApiParam({ name: 'id', description: 'Product UUID' })
+  @ApiResponse({ status: 200, description: 'Compatibility updated', type: ProductResponseEnvelope })
+  @ApiResponse({ status: 400, description: 'Unknown device model id(s)' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async updateDeviceCompat(
+    @Param('id') id: string,
+    @Body() dto: SetDeviceCompatDto,
+  ): Promise<ProductResponse> {
+    const product = await this.productService.updateDeviceCompat(id, dto.deviceModelIds);
     return { data: product };
   }
 

@@ -2,6 +2,7 @@ export { ProductEntity } from './product.entity';
 export { PublicProductEntity } from './public-product.entity';
 export { ProductImageEntity } from './product-image.entity';
 export { ProductCategoryEntity } from './product-category.entity';
+export { ProductCompatibleDeviceEntity } from './product-compatible-device.entity';
 export {
   ProductGroupEntity,
   ProductSiblingEntity,
