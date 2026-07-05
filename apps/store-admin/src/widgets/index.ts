@@ -17,6 +17,22 @@ export {
 } from "./category-list";
 export { CreateCategoryView, EditCategoryView } from "./category-form-view";
 export {
+  DeviceBrandTable,
+  DeviceBrandTableSkeleton,
+} from "./device-brand-list";
+export {
+  DeviceModelTable,
+  DeviceModelTableSkeleton,
+} from "./device-model-list";
+export {
+  CreateDeviceBrandView,
+  EditDeviceBrandView,
+} from "./device-brand-form-view";
+export {
+  CreateDeviceModelView,
+  EditDeviceModelView,
+} from "./device-model-form-view";
+export {
   AdminDiscountTable,
   AdminDiscountTableSkeleton,
 } from "./discount-list";
