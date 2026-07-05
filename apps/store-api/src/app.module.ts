@@ -15,6 +15,7 @@ import { UserModule } from './user';
 import { ProductModule } from './product';
 import { ProductGroupModule } from './product-group';
 import { CategoryModule } from './category';
+import { BrandModule } from './brand';
 import { PagesModule } from './pages';
 import { BlogModule } from './blog';
 import { BannersModule } from './banners';
@@ -105,6 +106,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Category management
     CategoryModule,
+
+    // Product brands / manufacturers (TASK-189)
+    BrandModule,
 
     // Admin-managed static / service pages (TASK-153)
     PagesModule,
