@@ -1,14 +1,21 @@
 "use client";
 
 import { dict, STICKY_ASIDE_TOP, STICKY_HEADER_OFFSET } from "@/shared/config";
-import { BLOG_ARTICLE_SECTIONS } from "../model/posts";
+import type { ArticleTocSection } from "../model/posts";
 
 /**
  * BlogArticleToc — the sticky "Зміст" panel. Smooth-scrolls to each `<h2 id>`
- * with a fixed-header offset. Hidden below the two-column breakpoint (the
- * mockup drops the TOC on narrow viewports). Client Component.
+ * with a fixed-header offset. Sections are derived from the article body headings
+ * (see `buildArticleToc`) and passed in. Hidden below the two-column breakpoint.
+ * Renders nothing when the article has no headings.
  */
-export function BlogArticleToc() {
+export function BlogArticleToc({
+  sections,
+}: {
+  sections: ArticleTocSection[];
+}) {
+  if (sections.length === 0) return null;
+
   function go(id: string) {
     const el = document.getElementById(id);
     if (!el) return;
@@ -25,7 +32,7 @@ export function BlogArticleToc() {
         <p className="mb-3 text-xs font-bold tracking-[0.06em] text-muted-foreground uppercase">
           {dict.blog.article.tocHeading}
         </p>
-        {BLOG_ARTICLE_SECTIONS.map((section) => (
+        {sections.map((section) => (
           <button
             key={section.id}
             type="button"

@@ -3,9 +3,9 @@ import { dict } from "@/shared/config";
 import {
   authorInitial,
   blogGradient,
-  blogLongDate,
-  getRelatedBlogPosts,
-  type BlogPost,
+  buildArticleToc,
+  formatBlogLongDate,
+  type BlogPostView,
 } from "../model/posts";
 import { BlogArticleBody } from "./blog-article-body";
 import { BlogArticleShare } from "./blog-article-share";
@@ -14,11 +14,19 @@ import { BlogRelatedCard } from "./blog-related-card";
 
 /**
  * BlogArticleView — the full blog article layout (breadcrumb, head + share,
- * cover, body + sticky TOC, related posts). The head/cover/meta are driven by
- * the seed `post`; the body is shared demo content (see BlogArticleBody).
+ * cover, body + sticky TOC, related posts). The head/cover/meta and the body are
+ * all driven by the API `post`; the TOC anchors are derived from the body's
+ * `<h2>` headings (TASK-173).
  */
-export function BlogArticleView({ post }: { post: BlogPost }) {
-  const related = getRelatedBlogPosts(post.slug);
+export function BlogArticleView({
+  post,
+  related,
+}: {
+  post: BlogPostView;
+  related: BlogPostView[];
+}) {
+  const { html, sections } = buildArticleToc(post.content);
+  const dateLabel = formatBlogLongDate(post.publishedAt);
 
   return (
     <>
@@ -51,7 +59,7 @@ export function BlogArticleView({ post }: { post: BlogPost }) {
               "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
           }}
         >
-          {dict.blog.categories[post.cat]}
+          {post.categoryName}
         </span>
         <h1 className="mt-4 mb-3.5 font-display text-[36px] font-bold leading-[1.12] tracking-[-0.025em] text-foreground">
           {post.title}
@@ -69,8 +77,10 @@ export function BlogArticleView({ post }: { post: BlogPost }) {
                 {post.author}
               </span>
               <span className="text-[13px] text-muted-foreground">
-                {blogLongDate(post.date)} · {post.read}{" "}
-                {dict.blog.article.readSuffix}
+                {dateLabel}
+                {post.read
+                  ? ` · ${post.read} ${dict.blog.article.readSuffix}`
+                  : ""}
               </span>
             </div>
           </div>
@@ -83,6 +93,14 @@ export function BlogArticleView({ post }: { post: BlogPost }) {
         className="relative mx-auto mt-[26px] h-[380px] max-w-[960px] overflow-hidden rounded-[20px] shadow-[var(--shadow-elevated)]"
         style={{ background: blogGradient(post.hue) }}
       >
+        {post.coverImageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={post.coverImageUrl}
+            alt=""
+            className="size-full object-cover"
+          />
+        )}
         <span className="absolute right-[18px] bottom-4 font-mono text-xs text-white/70">
           {dict.blog.article.coverCaption}
         </span>
@@ -90,8 +108,8 @@ export function BlogArticleView({ post }: { post: BlogPost }) {
 
       {/* Body + TOC */}
       <div className="mt-[38px] grid justify-center gap-11 lg:grid-cols-[minmax(0,760px)_240px]">
-        <BlogArticleBody post={post} />
-        <BlogArticleToc />
+        <BlogArticleBody post={post} html={html} />
+        <BlogArticleToc sections={sections} />
       </div>
 
       {/* Related */}

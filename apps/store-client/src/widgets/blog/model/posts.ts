@@ -1,182 +1,116 @@
-// Static blog content for the storefront /blog page.
+// Blog view-model + mappers for the storefront /blog pages.
 //
-// There is no Blog backend module yet (tracked in BACKLOG — TASK-170): posts,
-// categories, search and pagination are all resolved client-side from this seed
-// array, which mirrors the Claude Design "Blog" mockup 1:1. When the backend
-// Blog module ships, this file is replaced by Orval-generated hooks — the UI in
-// `widgets/blog/ui` stays as-is. The mockup's placeholder brand ("volta") is
-// localized to the storefront brand (MobileStore), consistent with prior imports.
+// The Blog backend (TASK-170) now owns posts, categories, search and pagination;
+// the storefront reads them through the tagged `fetch` helpers in
+// `shared/api/blog-server.ts`. This module maps the API `BlogPostEntity` onto the
+// presentational `BlogPostView` shape the existing `widgets/blog/ui` components
+// render (the UI stays as-is; only its data source changed).
 
-/** Real post categories (the synthetic "all" bucket is not a post category). */
-export type BlogCategoryKey =
-  | "reviews"
-  | "guides"
-  | "news"
-  | "tips"
-  | "compare";
+import type { BlogPostEntity } from "@/shared/api";
 
-/** Category filter keys used by the chip row — "all" first. */
-export type BlogFilterKey = "all" | BlogCategoryKey;
-
-export interface BlogPost {
+/** Presentational post shape consumed by the blog UI components. */
+export interface BlogPostView {
   slug: string;
-  cat: BlogCategoryKey;
+  categorySlug: string;
+  categoryName: string;
   title: string;
   excerpt: string;
   author: string;
+  /** Short display date, e.g. "28 черв. 2026". */
   date: string;
+  /** ISO publish instant (for JSON-LD / sitemap `datePublished`). */
+  publishedAt: string | null;
+  /** Reading-time label, e.g. "8 хв" (empty when unknown). */
   read: string;
   /** OKLCH hue driving the card's token-derived placeholder gradient. */
   hue: number;
-  /** Marks the "хіт тижня" hero card (shown only in the unfiltered view). */
-  featured?: boolean;
+  featured: boolean;
+  coverImageUrl: string | null;
+  /** Sanitized HTML body (present on the single-post fetch; empty in lists). */
+  content: string;
 }
 
-/** Ordered filter keys — drives the chip row. */
-export const BLOG_FILTER_KEYS: readonly BlogFilterKey[] = [
-  "all",
-  "reviews",
-  "guides",
-  "news",
-  "tips",
-  "compare",
+// Ukrainian abbreviated month names (index 0–11), matching the original mockup
+// display format ("28 черв. 2026").
+const MONTH_ABBR = [
+  "січ.",
+  "лют.",
+  "берез.",
+  "квіт.",
+  "трав.",
+  "черв.",
+  "лип.",
+  "серп.",
+  "вер.",
+  "жовт.",
+  "лист.",
+  "груд.",
 ] as const;
 
-export const BLOG_POSTS: readonly BlogPost[] = [
-  {
-    slug: "iphone16-vs-15",
-    cat: "compare",
-    title: "iPhone 16 проти iPhone 15: чи варто оновлюватись",
-    excerpt:
-      "Розібрали камери, продуктивність A18 та автономність — кому справді потрібен апгрейд, а кому вистачить попередньої моделі.",
-    author: "Олег Пилипенко",
-    date: "28 черв. 2026",
-    read: "8 хв",
-    hue: 265,
-    featured: true,
-  },
-  {
-    slug: "choose-headphones",
-    cat: "guides",
-    title: "Як обрати бездротові навушники у 2026 році",
-    excerpt:
-      "ANC, кодеки, час роботи й затримка звуку — простий чек-лист, за яким ви не помилитесь із вибором.",
-    author: "Ірина Ткач",
-    date: "25 черв. 2026",
-    read: "6 хв",
-    hue: 200,
-  },
-  {
-    slug: "powerbank-guide",
-    cat: "guides",
-    title: "Скільки mAh потрібно саме вам: гайд по павербанках",
-    excerpt:
-      "Рахуємо реальну ємність, розбираємось із швидкою зарядкою та GaN — і не переплачуємо за зайві грами.",
-    author: "Ірина Ткач",
-    date: "22 черв. 2026",
-    read: "5 хв",
-    hue: 150,
-  },
-  {
-    slug: "galaxy-s26-review",
-    cat: "reviews",
-    title: "Огляд Samsung Galaxy S26 Ultra: два тижні з флагманом",
-    excerpt:
-      "Екран, камери на 200 Мп, S Pen і батарея — що вражає, а до чого доведеться звикати.",
-    author: "Олег Пилипенко",
-    date: "20 черв. 2026",
-    read: "11 хв",
-    hue: 285,
-  },
-  {
-    slug: "macbook-air-m3",
-    cat: "reviews",
-    title: "MacBook Air M3 для роботи й навчання: чесний досвід",
-    excerpt:
-      "Чи вистачить 8 ГБ памʼяті, як щодо нагріву без кулера та скільки живе батарея в реальних задачах.",
-    author: "Марія Литвин",
-    date: "17 черв. 2026",
-    read: "9 хв",
-    hue: 235,
-  },
-  {
-    slug: "trade-in-how",
-    cat: "tips",
-    title: "Trade-in: як вигідно обміняти старий смартфон",
-    excerpt:
-      "Готуємо пристрій до оцінки, дивимось, що впливає на ціну, і не втрачаємо на дрібницях.",
-    author: "Андрій Мороз",
-    date: "14 черв. 2026",
-    read: "4 хв",
-    hue: 155,
-  },
-  {
-    slug: "smart-home-start",
-    cat: "guides",
-    title: "Розумний дім з нуля: з чого почати без зайвих витрат",
-    excerpt:
-      "Лампи, розетки, датчики та хаб — базовий набір, який реально економить час і гроші.",
-    author: "Марія Литвин",
-    date: "11 черв. 2026",
-    read: "7 хв",
-    hue: 320,
-  },
-  {
-    slug: "new-arrivals-june",
-    cat: "news",
-    title: "Новинки червня: що завезли до MobileStore цього місяця",
-    excerpt:
-      "Свіжі флагмани, аудіо та аксесуари — коротко про найцікавіші релізи та ціни.",
-    author: "Редакція MobileStore",
-    date: "8 черв. 2026",
-    read: "3 хв",
-    hue: 25,
-  },
-  {
-    slug: "protect-screen",
-    cat: "tips",
-    title: "Захисне скло чи плівка: що краще для вашого екрана",
-    excerpt:
-      "Порівнюємо типи захисту, розвіюємо міфи про олеофобне покриття та вчимось клеїти без пузирів.",
-    author: "Андрій Мороз",
-    date: "5 черв. 2026",
-    read: "5 хв",
-    hue: 120,
-  },
-  {
-    slug: "gaming-laptop-2026",
-    cat: "compare",
-    title: "Ігрові ноутбуки 2026: як не переплатити за зайве",
-    excerpt:
-      "RTX проти інтегрованої графіки, частота екрана й охолодження — на що дивитись перед покупкою.",
-    author: "Олег Пилипенко",
-    date: "2 черв. 2026",
-    read: "10 хв",
-    hue: 300,
-  },
-  {
-    slug: "battery-health",
-    cat: "tips",
-    title: "5 звичок, що збережуть батарею смартфона надовго",
-    excerpt:
-      "Прості правила зарядки й налаштувань, які реально сповільнюють деградацію акумулятора.",
-    author: "Ірина Ткач",
-    date: "30 трав. 2026",
-    read: "4 хв",
-    hue: 175,
-  },
-  {
-    slug: "tv-buying-guide",
-    cat: "guides",
-    title: "OLED, QLED чи Mini-LED: обираємо телевізор під кімнату",
-    excerpt:
-      "Розбираємось у типах матриць, яскравості та частоті — і підбираємо діагональ під відстань перегляду.",
-    author: "Марія Литвин",
-    date: "27 трав. 2026",
-    read: "8 хв",
-    hue: 210,
-  },
+// Ukrainian genitive month names, for the article head's long form
+// ("28 червня 2026").
+const MONTH_FULL = [
+  "січня",
+  "лютого",
+  "березня",
+  "квітня",
+  "травня",
+  "червня",
+  "липня",
+  "серпня",
+  "вересня",
+  "жовтня",
+  "листопада",
+  "грудня",
 ] as const;
+
+/** Format an ISO instant as a short UA date ("28 черв. 2026"). */
+export function formatBlogDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getDate()} ${MONTH_ABBR[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/** Format an ISO instant as a long UA date ("28 червня 2026"). */
+export function formatBlogLongDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getDate()} ${MONTH_FULL[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/**
+ * Deterministic hue (0–359) derived from the slug, so a post keeps the same
+ * token-driven placeholder gradient across renders even though the backend does
+ * not store one.
+ */
+export function hueForSlug(slug: string): number {
+  let hash = 0;
+  for (let i = 0; i < slug.length; i++) {
+    hash = (hash * 31 + slug.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash) % 360;
+}
+
+/** Map an API blog-post entity onto the presentational view-model. */
+export function toBlogPostView(entity: BlogPostEntity): BlogPostView {
+  return {
+    slug: entity.slug,
+    categorySlug: entity.category.slug,
+    categoryName: entity.category.name,
+    title: entity.title,
+    excerpt: entity.excerpt,
+    author: entity.authorName,
+    date: formatBlogDate(entity.publishedAt ?? null),
+    publishedAt: entity.publishedAt ?? null,
+    read: entity.readingMinutes ? `${entity.readingMinutes} хв` : "",
+    hue: hueForSlug(entity.slug),
+    featured: entity.featured,
+    coverImageUrl: entity.coverImageUrl ?? null,
+    content: entity.content ?? "",
+  };
+}
 
 /** Token-driven placeholder cover gradient for a post (mirrors the mockup). */
 export function blogGradient(hue: number): string {
@@ -188,103 +122,50 @@ export function authorInitial(author: string): string {
   return (author.trim()[0] || "?").toUpperCase();
 }
 
-/** Post count per filter key (all + each category), computed once. */
-export function blogCategoryCounts(): Record<BlogFilterKey, number> {
-  const counts: Record<BlogFilterKey, number> = {
-    all: BLOG_POSTS.length,
-    reviews: 0,
-    guides: 0,
-    news: 0,
-    tips: 0,
-    compare: 0,
-  };
-  for (const post of BLOG_POSTS) counts[post.cat] += 1;
-  return counts;
-}
-
-/** Look up a single post by slug (undefined when unknown). */
-export function getBlogPost(slug: string): BlogPost | undefined {
-  return BLOG_POSTS.find((p) => p.slug === slug);
+/** A single entry in the article table of contents. */
+export interface ArticleTocSection {
+  id: string;
+  label: string;
 }
 
 /**
- * Up to `limit` posts to show under "Читайте також" — same-category first, then
- * the rest in seed order, always excluding the current post.
+ * Derive an `id` slug from a heading's text content, so the article body's
+ * `<h2>`s and the sticky TOC entries share stable anchors even though the stored
+ * HTML carries no ids (they are stripped by the server sanitizer's allow-list).
  */
-export function getRelatedBlogPosts(slug: string, limit = 3): BlogPost[] {
-  const current = getBlogPost(slug);
-  const others = BLOG_POSTS.filter((p) => p.slug !== slug);
-  if (!current) return others.slice(0, limit);
-  const sameCat = others.filter((p) => p.cat === current.cat);
-  const rest = others.filter((p) => p.cat !== current.cat);
-  return [...sameCat, ...rest].slice(0, limit);
+function headingId(text: string, index: number): string {
+  const slug = text
+    .toLowerCase()
+    .replace(/<[^>]*>/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug ? `${slug}-${index}` : `section-${index}`;
 }
 
-// ISO publish dates by slug — placeholder until the Blog backend (TASK-170)
-// owns them. Kept separate from the display `date` string so the mockup's exact
-// UA formatting stays intact; used only for JSON-LD `datePublished` + sitemap.
-const BLOG_PUBLISHED_AT: Record<string, string> = {
-  "iphone16-vs-15": "2026-06-28",
-  "choose-headphones": "2026-06-25",
-  "powerbank-guide": "2026-06-22",
-  "galaxy-s26-review": "2026-06-20",
-  "macbook-air-m3": "2026-06-17",
-  "trade-in-how": "2026-06-14",
-  "smart-home-start": "2026-06-11",
-  "new-arrivals-june": "2026-06-08",
-  "protect-screen": "2026-06-05",
-  "gaming-laptop-2026": "2026-06-02",
-  "battery-health": "2026-05-30",
-  "tv-buying-guide": "2026-05-27",
-};
+/**
+ * Parse the sanitized article HTML: inject a stable `id` on every `<h2>` and
+ * return the transformed HTML alongside the ordered TOC sections. Pure — safe to
+ * run in a server component.
+ */
+export function buildArticleToc(html: string): {
+  html: string;
+  sections: ArticleTocSection[];
+} {
+  const sections: ArticleTocSection[] = [];
+  let index = 0;
 
-/** ISO publish date for a post slug (for schema/sitemap), else undefined. */
-export function blogPublishedAt(slug: string): string | undefined {
-  return BLOG_PUBLISHED_AT[slug];
+  const transformed = html.replace(
+    /<h2\b([^>]*)>([\s\S]*?)<\/h2>/gi,
+    (_match, attrs: string, inner: string) => {
+      const label = inner.replace(/<[^>]*>/g, "").trim();
+      const id = headingId(label, index);
+      sections.push({ id, label });
+      index += 1;
+      // Drop any pre-existing id attribute, then add our derived one.
+      const cleanedAttrs = attrs.replace(/\s+id=("[^"]*"|'[^']*')/gi, "");
+      return `<h2${cleanedAttrs} id="${id}">${inner}</h2>`;
+    },
+  );
+
+  return { html: transformed, sections };
 }
-
-// Ukrainian abbreviated → genitive month names, to expand the display `date`
-// ("28 черв. 2026") into the article head's long form ("28 червня 2026").
-const MONTH_ABBR_TO_FULL: Record<string, string> = {
-  "січ.": "січня",
-  "лют.": "лютого",
-  "берез.": "березня",
-  "квіт.": "квітня",
-  "трав.": "травня",
-  "черв.": "червня",
-  "лип.": "липня",
-  "серп.": "серпня",
-  "вер.": "вересня",
-  "жовт.": "жовтня",
-  "лист.": "листопада",
-  "груд.": "грудня",
-};
-
-/** Expand a short display date ("28 черв. 2026") to "28 червня 2026". */
-export function blogLongDate(date: string): string {
-  for (const [abbr, full] of Object.entries(MONTH_ABBR_TO_FULL)) {
-    if (date.includes(abbr)) return date.replace(abbr, full);
-  }
-  return date;
-}
-
-// The article body (sections, tags, bio prose) is shared demo content mirroring
-// the Claude Design "Article.dc.html" mockup 1:1 — shown for every post until
-// the Blog backend (TASK-170) supplies real per-post bodies. Only the article
-// HEAD (title, category, author name, cover, dates) is driven by the seed post.
-
-/** Table-of-contents sections — ids MUST match the `<h2 id>`s in the body. */
-export const BLOG_ARTICLE_SECTIONS: readonly { id: string; label: string }[] = [
-  { id: "design", label: "Дизайн і матеріали" },
-  { id: "camera", label: "Камери" },
-  { id: "performance", label: "Продуктивність і батарея" },
-  { id: "verdict", label: "Підсумок" },
-] as const;
-
-/** Placeholder article tags (demo content). */
-export const BLOG_ARTICLE_TAGS: readonly string[] = [
-  "iPhone",
-  "Apple",
-  "смартфони",
-  "порівняння",
-] as const;

@@ -1,70 +1,99 @@
 "use client";
 
-import { useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { dict } from "@/shared/config";
-import {
-  BLOG_FILTER_KEYS,
-  BLOG_POSTS,
-  blogCategoryCounts,
-  type BlogFilterKey,
-} from "../model/posts";
+import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
+import type { BlogPostView } from "../model/posts";
 import { BlogArrowDownIcon, BlogSearchIcon } from "./blog-icons";
 import { BlogEmptyState } from "./blog-empty-state";
 import { BlogFeaturedCard } from "./blog-featured-card";
 import { BlogNewsletter } from "./blog-newsletter";
 import { BlogPostCard } from "./blog-post-card";
 
-const INITIAL_LIMIT = 9;
-const LOAD_STEP = 6;
+/** A category chip descriptor (the synthetic "all" bucket is added first). */
+export interface BlogCategoryChip {
+  slug: string;
+  name: string;
+}
+
+interface BlogViewProps {
+  /** Posts to render in the grid (already server-filtered + paginated). */
+  posts: BlogPostView[];
+  /** Category chips (excluding the synthetic "all"). */
+  categories: BlogCategoryChip[];
+  /** The featured hero post (unfiltered first page only); null otherwise. */
+  featured: BlogPostView | null;
+  /** Active category slug, or "all". */
+  activeCategory: string;
+  /** Active free-text query (from the URL). */
+  query: string;
+  /** Whether more posts exist beyond the current page (drives "load more"). */
+  hasMore: boolean;
+  /** Href that reveals the next batch (category + q preserved, page + 1). */
+  nextPageHref: string;
+}
+
+/** Build a `/blog` href for a category + query selection. */
+function blogHref(category: string, query: string): string {
+  const params = new URLSearchParams();
+  if (category && category !== "all") params.set("category", category);
+  if (query.trim()) params.set("q", query.trim());
+  const qs = params.toString();
+  return qs ? `/blog?${qs}` : "/blog";
+}
 
 /**
  * BlogView — the interactive blog listing (hero + search, category chips,
  * featured hero card, responsive grid, empty state, load-more, newsletter).
  *
- * All filtering, searching and pagination run client-side over the static
- * `BLOG_POSTS` seed (no Blog backend yet — TASK-170). The featured hero card
- * only shows in the unfiltered view (no category + no query), matching the
- * mockup. Load-more is gated on there actually being more posts to reveal.
+ * Filtering, searching and pagination are resolved SERVER-side via the
+ * `?category=`/`?q=`/`?page=` URL contract (TASK-173): the search box debounces a
+ * `router.push`, category chips are plain links, and "load more" is a link to the
+ * next page. This component only renders the server-provided slice.
  */
-export function BlogView() {
-  const [query, setQuery] = useState("");
-  const [cat, setCat] = useState<BlogFilterKey>("all");
-  const [limit, setLimit] = useState(INITIAL_LIMIT);
+export function BlogView({
+  posts,
+  categories,
+  featured,
+  activeCategory,
+  query,
+  hasMore,
+  nextPageHref,
+}: BlogViewProps) {
+  const router = useRouter();
 
-  const counts = useMemo(() => blogCategoryCounts(), []);
+  // Search text mirrors the URL `query`. Seeded once, then re-synced only when
+  // the URL changes to a value we did not just push (forms.md async-seed guard).
+  const [text, setText] = useState(query);
+  const lastPushed = useRef(query);
 
-  const q = query.trim().toLowerCase();
-  const filtered = useMemo(
-    () =>
-      BLOG_POSTS.filter(
-        (p) =>
-          (cat === "all" || p.cat === cat) &&
-          (!q ||
-            p.title.toLowerCase().includes(q) ||
-            p.excerpt.toLowerCase().includes(q)),
-      ),
-    [cat, q],
-  );
+  useEffect(() => {
+    if (query !== lastPushed.current) {
+      lastPushed.current = query;
+      setText(query);
+    }
+  }, [query]);
 
-  const useFeatured = cat === "all" && !q;
-  const featured = useFeatured
-    ? (filtered.find((p) => p.featured) ?? filtered[0] ?? null)
-    : null;
-  const rest = featured ? filtered.filter((p) => p !== featured) : filtered;
-  const shown = rest.slice(0, limit);
-  const hasPosts = shown.length > 0;
-  const hasMore = shown.length < rest.length;
-  const isEmpty = filtered.length === 0;
-
-  function pickCat(key: BlogFilterKey) {
-    setCat(key);
-    setLimit(INITIAL_LIMIT);
-  }
+  const pushQuery = useDebouncedCallback((value: string) => {
+    lastPushed.current = value;
+    router.push(blogHref(activeCategory, value));
+  }, 350);
 
   function onQuery(e: ChangeEvent<HTMLInputElement>) {
-    setQuery(e.target.value);
-    setLimit(INITIAL_LIMIT);
+    const value = e.target.value;
+    setText(value);
+    pushQuery(value);
   }
+
+  const chips: BlogCategoryChip[] = [
+    { slug: "all", name: dict.blog.categories.all },
+    ...categories,
+  ];
+
+  const hasPosts = posts.length > 0;
+  const isEmpty = !featured && !hasPosts;
 
   return (
     <>
@@ -94,7 +123,7 @@ export function BlogView() {
             </span>
             <input
               type="text"
-              value={query}
+              value={text}
               onChange={onQuery}
               placeholder={dict.blog.searchPlaceholder}
               aria-label={dict.blog.searchAria}
@@ -110,25 +139,21 @@ export function BlogView() {
         aria-label={dict.blog.categoryFilterAria}
         className="mb-7 flex flex-wrap items-center gap-2.5"
       >
-        {BLOG_FILTER_KEYS.map((key) => {
-          const active = key === cat;
+        {chips.map((chip) => {
+          const active = chip.slug === activeCategory;
           return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => pickCat(key)}
-              aria-pressed={active}
-              className={`inline-flex h-[38px] cursor-pointer items-center gap-2 rounded-full border-[1.5px] px-4 text-[13.5px] font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            <Link
+              key={chip.slug}
+              href={blogHref(chip.slug, text)}
+              aria-current={active ? "true" : undefined}
+              className={`inline-flex h-[38px] cursor-pointer items-center gap-2 rounded-full border-[1.5px] px-4 text-[13.5px] font-semibold no-underline transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 active
                   ? "border-primary bg-primary text-primary-foreground"
                   : "border-border bg-card text-foreground hover:border-primary"
               }`}
             >
-              {dict.blog.categories[key]}
-              <span className="font-mono text-xs opacity-70">
-                {counts[key]}
-              </span>
-            </button>
+              {chip.name}
+            </Link>
           );
         })}
       </div>
@@ -139,7 +164,7 @@ export function BlogView() {
       {/* Grid */}
       {hasPosts && (
         <div className="grid gap-[22px] [grid-template-columns:repeat(auto-fill,minmax(304px,1fr))]">
-          {shown.map((post) => (
+          {posts.map((post) => (
             <BlogPostCard key={post.slug} post={post} />
           ))}
         </div>
@@ -149,16 +174,15 @@ export function BlogView() {
       {isEmpty && <BlogEmptyState />}
 
       {/* Load more */}
-      {hasPosts && hasMore && (
+      {hasMore && (
         <div className="mt-9 flex justify-center">
-          <button
-            type="button"
-            onClick={() => setLimit((l) => l + LOAD_STEP)}
-            className="inline-flex h-12 cursor-pointer items-center gap-2.5 rounded-xl border-[1.5px] border-border bg-card px-[26px] text-[14.5px] font-semibold text-foreground transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          <Link
+            href={nextPageHref}
+            className="inline-flex h-12 cursor-pointer items-center gap-2.5 rounded-xl border-[1.5px] border-border bg-card px-[26px] text-[14.5px] font-semibold text-foreground no-underline transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {dict.blog.loadMore}
             <BlogArrowDownIcon width={17} height={17} />
-          </button>
+          </Link>
         </div>
       )}
 

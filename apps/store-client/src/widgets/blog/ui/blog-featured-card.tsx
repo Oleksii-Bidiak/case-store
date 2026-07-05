@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { dict } from "@/shared/config";
-import { authorInitial, blogGradient, type BlogPost } from "../model/posts";
+import { authorInitial, blogGradient, type BlogPostView } from "../model/posts";
 
 /**
  * BlogFeaturedCard — the wide two-column hero card for the "хіт тижня" post,
  * shown only in the unfiltered view. Presentational; links to the article page.
  */
-export function BlogFeaturedCard({ post }: { post: BlogPost }) {
+export function BlogFeaturedCard({ post }: { post: BlogPostView }) {
   return (
     <Link
       href={`/blog/${post.slug}`}
@@ -17,7 +17,7 @@ export function BlogFeaturedCard({ post }: { post: BlogPost }) {
         style={{ background: blogGradient(post.hue) }}
       >
         <span className="absolute left-[18px] top-[18px] rounded-full bg-card px-[13px] py-1.5 text-[12.5px] font-bold text-foreground">
-          {dict.blog.categories[post.cat]}
+          {post.categoryName}
         </span>
         <span className="absolute bottom-[18px] right-[18px] rounded-full bg-black/35 px-3 py-[5px] text-xs font-semibold text-white backdrop-blur-[4px]">
           {dict.blog.featuredBadge}

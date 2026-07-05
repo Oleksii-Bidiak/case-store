@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { BlogArticleView, toBlogPostView } from "@/widgets/blog";
 import {
-  BlogArticleView,
-  BLOG_POSTS,
-  blogPublishedAt,
-  getBlogPost,
-} from "@/widgets/blog";
+  fetchPublishedPost,
+  fetchPublishedPosts,
+} from "@/shared/api/blog-server";
 import { JsonLd } from "@/shared/ui";
 import {
   buildBlogPostingSchema,
@@ -13,13 +12,7 @@ import {
 } from "@/shared/lib/schema";
 import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
 
-// The posts are a static seed (no Blog backend yet — TASK-170), so every article
-// is prerendered and any unknown slug 404s.
-export const dynamicParams = false;
-
-export function generateStaticParams() {
-  return BLOG_POSTS.map((post) => ({ slug: post.slug }));
-}
+const RELATED_LIMIT = 3;
 
 interface BlogArticlePageProps {
   params: Promise<{ slug: string }>;
@@ -29,7 +22,7 @@ export async function generateMetadata({
   params,
 }: BlogArticlePageProps): Promise<Metadata> {
   const { slug } = await params;
-  const post = getBlogPost(slug);
+  const post = await fetchPublishedPost(slug);
   if (!post) {
     return { title: dict.meta.blogTitle };
   }
@@ -48,14 +41,31 @@ export async function generateMetadata({
   };
 }
 
+/**
+ * Blog article (/blog/[slug]). Server component: reads the PUBLISHED post through
+ * the ISR-tagged fetcher (draft / scheduled / unknown slugs 404), then fetches a
+ * few same-category posts as "related" reads (TASK-173).
+ */
 export default async function BlogArticlePage({
   params,
 }: BlogArticlePageProps) {
   const { slug } = await params;
-  const post = getBlogPost(slug);
-  if (!post) {
+  const entity = await fetchPublishedPost(slug);
+  if (!entity) {
     notFound();
   }
+
+  const post = toBlogPostView(entity);
+
+  // Same-category related posts (fetch a few extra to drop the current one).
+  const { posts: relatedEntities } = await fetchPublishedPosts({
+    category: post.categorySlug,
+    limit: RELATED_LIMIT + 1,
+  });
+  const related = relatedEntities
+    .map(toBlogPostView)
+    .filter((p) => p.slug !== post.slug)
+    .slice(0, RELATED_LIMIT);
 
   const canonical = `${SITE_URL}/blog/${post.slug}`;
 
@@ -73,13 +83,13 @@ export default async function BlogArticlePage({
           url: canonical,
           headline: post.title,
           description: post.excerpt,
-          datePublished: blogPublishedAt(post.slug),
+          datePublished: post.publishedAt ?? undefined,
           authorName: post.author,
           siteName: SITE_NAME,
         })}
       />
 
-      <BlogArticleView post={post} />
+      <BlogArticleView post={post} related={related} />
     </div>
   );
 }

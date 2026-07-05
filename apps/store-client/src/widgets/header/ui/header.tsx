@@ -26,7 +26,10 @@ import { HeaderWishlistBadge } from "./header-wishlist-badge";
 const MOBILE_LINK_CLASS =
   "rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-const NAV_LINKS = [{ href: "/products", label: dict.nav.products }] as const;
+const NAV_LINKS = [
+  { href: "/products", label: dict.nav.products },
+  { href: "/blog", label: dict.nav.blog },
+] as const;
 
 /**
  * Header — sticky storefront header: a top announcement bar, a logo, the catalog
