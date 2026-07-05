@@ -403,6 +403,18 @@ export const dict = {
     phonePlaceholder: "+380 44 000 0000",
     workingHours: "Години роботи",
     workingHoursPlaceholder: "Пн–Нд: 9:00 – 20:00",
+    workingHoursClosed: "Вихідний",
+    workingHoursClosedAria: (day: string) => `${day} — вихідний`,
+    workingHoursOpenAria: (day: string) => `${day} — час відкриття`,
+    workingHoursCloseAria: (day: string) => `${day} — час закриття`,
+    workingHoursPreview: "Так це побачать відвідувачі:",
+    workingHoursPreviewInvalid:
+      "виправте помилки в розкладі, щоб побачити результат",
+    workingHoursAllClosedWarning:
+      "Усі дні позначено як вихідні — відвідувачі побачать, що магазин не працює жодного дня.",
+    workingHoursRawNotice:
+      "Поточне значення збережено як довільний текст. Відредагуйте його нижче або перейдіть на структурований редактор — він замінить текст на розклад за днями.",
+    workingHoursSwitchToStructured: "Перейти на структурований редактор",
     viberLink: "Viber",
     viberLinkPlaceholder: "https://viber.me/…",
     telegramLink: "Telegram",
@@ -413,6 +425,9 @@ export const dict = {
     errors: {
       emailInvalid: "Вкажіть коректну електронну пошту",
       urlInvalid: "Вкажіть коректний URL (https://…)",
+      workingHoursTimesRequired: "Вкажіть час відкриття та закриття",
+      workingHoursCloseAfterOpen:
+        "Час закриття має бути пізніше часу відкриття",
     },
   },
 
