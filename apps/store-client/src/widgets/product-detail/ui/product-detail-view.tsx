@@ -18,6 +18,7 @@ import { ProductStockIndicator } from "./product-stock-indicator";
 import { ProductTrustBadges } from "./product-trust-badges";
 import { ProductSpecsTabs } from "./product-specs-tabs";
 import { ProductRelated } from "./product-related";
+import { ProductCompatible } from "./product-compatible";
 import { MobileAtcBar } from "./mobile-atc-bar";
 
 function truncate(value: string, max: number): string {
@@ -230,6 +231,13 @@ export function ProductDetailView({ slug }: { slug: string }) {
         description={product.description ?? null}
         productId={product.id}
       />
+
+      {product.compatibleDeviceModels?.[0] && (
+        <ProductCompatible
+          deviceModelId={product.compatibleDeviceModels[0].id}
+          excludeId={product.id}
+        />
+      )}
 
       <ProductRelated categoryId={category.id} excludeId={product.id} />
 

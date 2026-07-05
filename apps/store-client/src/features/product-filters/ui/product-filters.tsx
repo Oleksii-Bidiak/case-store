@@ -16,6 +16,7 @@ import {
   rangeKey,
 } from "../model/price-range";
 import { SearchInput } from "./search-input";
+import { DeviceModelFilter } from "./device-model-filter";
 
 interface ProductFiltersProps {
   /** Currently-active filter params (derived from the URL). */
@@ -131,6 +132,15 @@ export function ProductFilters({
           id={`${idPrefix}-search`}
           initialValue={currentParams.search ?? ""}
           onSearch={(value) => onFilterChange({ search: value })}
+        />
+      </div>
+
+      {/* Device compatibility (TASK-190) — brand → model cascade */}
+      <div className={cardClass}>
+        <h3 className={`${cardTitleClass} mb-4`}>{dict.filters.deviceTitle}</h3>
+        <DeviceModelFilter
+          currentDeviceModelId={currentParams.deviceModelId}
+          onChange={(deviceModelId) => onFilterChange({ deviceModelId })}
         />
       </div>
 
