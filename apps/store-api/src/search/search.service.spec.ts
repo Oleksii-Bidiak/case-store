@@ -66,6 +66,7 @@ function makeIndexSource(overrides: Record<string, unknown> = {}) {
     stock: 10,
     isActive: true,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    deviceModelIds: [],
     ...overrides,
   };
 }
@@ -135,7 +136,11 @@ describe('SearchService', () => {
         'categoryName',
         'searchTerms',
       ]);
-      expect(PRODUCTS_INDEX_SETTINGS.filterableAttributes).toEqual(['isActive', 'categoryIds']);
+      expect(PRODUCTS_INDEX_SETTINGS.filterableAttributes).toEqual([
+        'isActive',
+        'categoryIds',
+        'deviceModelIds',
+      ]);
       expect(PRODUCTS_INDEX_SETTINGS.sortableAttributes).toEqual(['price', 'createdAt']);
       expect(PRODUCTS_INDEX_SETTINGS.typoTolerance).toBeDefined();
     });
@@ -183,6 +188,17 @@ describe('SearchService', () => {
       expect(docs[0].categoryIds).toEqual(['leaf-cat', 'mid-cat', 'root-cat']);
       // Old scalar field is gone.
       expect(docs[0]).not.toHaveProperty('categoryId');
+    });
+
+    it('populates deviceModelIds from the compat join (TASK-190)', async () => {
+      repo.findOneForIndex.mockResolvedValue(
+        makeIndexSource({ deviceModelIds: ['dm-1', 'dm-2'] }) as never,
+      );
+
+      await service.indexProduct('product-1');
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].deviceModelIds).toEqual(['dm-1', 'dm-2']);
     });
 
     it('injects Cyrillic search terms derived from name + category (TASK-200)', async () => {
