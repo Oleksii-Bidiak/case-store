@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-236**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-237**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -99,20 +99,21 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-213 | Product cards show a persistent «в кошику» state derived from the cart query (survives reload) | ⬜ | — |
-| TASK-214 | PDP gallery: loading indicator while switching images + pixel-perfect PDP skeletons matching the mockup layout | ⬜ | — |
-| TASK-215 | Colour variant axis → round colour **swatches** (map colour names to real colours) on PDP/card selectors | ⬜ | — |
-| TASK-216 | Catalog listing UX: page-size selector / «показати більше» / infinite scroll with virtualization (also for rail sliders); rethink the «Категорія» filter placement; dynamic per-category filters ride on TASK-191 | ⬜ | — |
+| TASK-213 | Cards show «В кошику» derived from the shared cached cart query (same hook as header badge — zero extra requests, survives reload); click opens lazily-mounted CartSheet; in-cart state beats out-of-stock | ✅ | — |
+| TASK-214 | PDP gallery: image-switch spinner with 120ms delayed visibility (no flash on cache hits, `onError`-safe, `motion-reduce` aware); skeleton rebuilt to mirror the real `1fr_1fr_360px` layout | ✅ | — |
+| TASK-215 | Colour swatches: shared map extended (UA adjective stems + Apple finishes, longest-token-first); PDP colour axis renders round swatches with ring on selected; unknown → neutral gradient; all seed colours resolve (unit-locked) | ✅ | — |
+| TASK-216 | Catalog UX: «Показати ще N товарів» appends pages client-side (`?page=` stays the URL contract; reset on filter/sort/page change); «Категорія» moved to chips row above the grid; page-size selector dropped, virtualization deliberately skipped (no profiling data); per-category filters still ride on TASK-191 | ✅ | — |
 | TASK-217 | Move `/orders` into `/account` as a section — **waits for the owner's Claude Design mockup import** | 🅿️ | — |
 | TASK-218 | Header search: mixed suggestions — products + up to 5 blog articles with a separator, independently scrollable. Depends on TASK-170 | ⬜ | — |
-| TASK-219 | **[discovery]** Coupons v2: capability proposal (stacking, auto-apply, first-order, per-category/brand, personal codes, gift cards) + full automated coverage plan (owner request from QA) | ⬜ | — |
-| TASK-220 | **[discovery]** Reviews v2: benchmark big-store mechanics (edit window, moderator reply, re-review, spam/rate-limits, photos, helpful votes) → proposal (owner request from QA) | ⬜ | — |
-| TASK-221 | Admin contact-settings UX: structured working-hours editor (days/hours form) instead of free text | ⬜ | — |
-| TASK-222 | **[discovery]** Category & variant architecture: modern hierarchy (ktc.ua-style) + admin authoring guide («як створювати і підвʼязувати категорії/групи/варіанти») — feeds Етап 3 (TASK-189…191) | ⬜ | — |
-| TASK-223 | **[discovery]** Admin dashboard / CRM feature checklist (owner has no CRM background — propose metrics, widgets, workflows) — feeds TASK-192 | ⬜ | — |
-| TASK-224 | **[discovery]** Inventory: available-vs-reserved stock («вільні залишки») concept for the order×stock matrix — pairs with TASK-124 semantics | ⬜ | — |
-| TASK-225 | Storefront UI/UX audit: hover/cursor states, a11y, adaptivity; verify footer theming in dark mode — feeds TASK-193 | ⬜ | — |
-| TASK-226 | **[discovery]** User stories for customer journeys (best-experience scenarios) — feeds TASK-193/194 and marketing | ⬜ | — |
+| TASK-219 | **[discovery]** Coupons v2 proposal: foundation = server-side applied-discount state (replaces sessionStorage), stacking via `combinesWith*`+priority, auto-apply, first-order, category scoping; gift cards as separate payment instrument; coverage pyramid incl. property-based rounding invariants | ✅ | 097 |
+| TASK-220 | **[discovery]** Reviews v2 proposal: status-enum moderation (replaces reject-as-delete), 48h edit window, `ReviewReply`; found bugs: verified-badge ignores order status, public entity leaks `userId`, PDP capped at 10 reviews with no pagination | ✅ | 098 |
+| TASK-221 | Structured working-hours editor (per-day rows, «вихідний» toggle, live preview) serializing to canonical string `Пн–Пт: 9:00–18:00; …` — contract unchanged (`workingHours` stays string); legacy free text preserved in raw mode | ✅ | — |
+| TASK-222 | **[discovery]** Category & variant architecture: ≤3-level tree, device compatibility as separate axis (`DeviceModel` + M2M), model pages = facet landings not categories; owner authoring guide; found real bug → TASK-236 (subtree rollup) | ✅ | 099 |
+| TASK-223 | **[discovery]** CRM dashboard checklist: «потребує дії» widget, AOV/repeat-rate/cancellation on existing fields, customer card v1; explicit «не потрібно нам» list; processing-speed needs `OrderStatusHistory` | ✅ | 100 |
+| TASK-224 | **[discovery]** Available-vs-reserved: verified `stock` already IS the free remainder (decrement at order creation); recommend derived `reserved` on admin reads (no schema change); admin gaps: no stock column in product table, low-stock widget hides sold-out | ✅ | 101 |
+| TASK-225 | Storefront UX audit: 32 findings (3H/18M/11L); footer is token-clean but inverts to light-gray in dark mode (owner decision F-06); systemic: `sr-only` inputs without visible focus ×5, English a11y strings, zero `prefers-reduced-motion` | ✅ | 103 |
+| TASK-226 | **[discovery]** Customer journeys: 4 personas grounded in real routes; top gaps = model-compat picker (TASK-190, flagship wow), brand filter (189/191), dead contact/newsletter forms (177/188); password reset (TASK-169) becomes H before launch | ✅ | 102 |
+| TASK-236 | Catalog category filter is exact-match while seed products live in subcategories — filtering by a root category returns nothing (same gap in Meilisearch docs + admin product form offers only root categories); fix = subtree rollup «Фаза 0» per plan 099 | ⬜ | 099 |
 
 ### Етап 2 — Контент-платформа CRM
 
@@ -194,6 +195,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-236**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-237**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
