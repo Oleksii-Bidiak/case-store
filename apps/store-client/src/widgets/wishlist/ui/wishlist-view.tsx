@@ -22,7 +22,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import { WishlistItemCard } from "./wishlist-item-card";
 import { WishlistListItem } from "./wishlist-list-item";
 import {
@@ -301,7 +301,9 @@ export function WishlistView() {
 
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
         {/* Desktop sidebar */}
-        <aside className="hidden lg:sticky lg:top-24 lg:block lg:self-start">
+        <aside
+          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} lg:block lg:self-start`}
+        >
           <WishlistFilters
             items={items}
             value={filters}

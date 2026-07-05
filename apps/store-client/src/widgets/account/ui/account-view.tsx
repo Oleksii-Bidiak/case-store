@@ -7,7 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth, useAuthControllerLogout } from "@/entities/session";
 import { useUserControllerGetProfile, type UserEntity } from "@/entities/user";
 import { Skeleton } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import {
   AccountIcon,
   AccountBackIcon,
@@ -114,7 +114,9 @@ export function AccountView() {
 
       <div className="grid items-start gap-7 lg:grid-cols-[264px_1fr]">
         {/* Sidebar */}
-        <aside className="rounded-[18px] border border-border bg-card p-2 shadow-[var(--shadow-card)] lg:sticky lg:top-4">
+        <aside
+          className={`rounded-[18px] border border-border bg-card p-2 shadow-[var(--shadow-card)] lg:sticky ${STICKY_ASIDE_TOP}`}
+        >
           <div className="flex items-center gap-3 px-3 pt-3.5 pb-4">
             <span
               className="inline-flex size-[46px] shrink-0 items-center justify-center rounded-full font-display text-[17px] font-bold text-primary"

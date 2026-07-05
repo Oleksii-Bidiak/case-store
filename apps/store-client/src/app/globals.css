@@ -253,7 +253,8 @@ html {
 }
 .legal-doc-body h2 {
   counter-increment: legal-sec;
-  scroll-margin-top: 90px;
+  /* = STICKY_HEADER_OFFSET (shared/config/layout.ts): clears the sticky header. */
+  scroll-margin-top: 96px;
   display: flex;
   align-items: baseline;
   gap: 11px;

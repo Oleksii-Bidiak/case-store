@@ -1,11 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { dict } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP, STICKY_HEADER_OFFSET } from "@/shared/config";
 import type { DocSection } from "../model/extract-sections";
-
-// Offset that clears the sticky site header when scroll-spying / scrolling.
-const HEADER_OFFSET = 96;
 
 /**
  * LegalDocToc — the sticky "Зміст документа" panel with scroll-spy. Highlights
@@ -21,7 +18,7 @@ export function LegalDocToc({ sections }: { sections: DocSection[] }) {
 
     function spy() {
       raf = 0;
-      const threshold = window.scrollY + HEADER_OFFSET + 14;
+      const threshold = window.scrollY + STICKY_HEADER_OFFSET + 14;
       let idx = 0;
       sections.forEach((section, i) => {
         const el = document.getElementById(section.id);
@@ -51,13 +48,14 @@ export function LegalDocToc({ sections }: { sections: DocSection[] }) {
   function go(section: DocSection, i: number) {
     const el = document.getElementById(section.id);
     if (!el) return;
-    const y = el.getBoundingClientRect().top + window.scrollY - HEADER_OFFSET;
+    const y =
+      el.getBoundingClientRect().top + window.scrollY - STICKY_HEADER_OFFSET;
     window.scrollTo({ top: y, behavior: "smooth" });
     setActive(i);
   }
 
   return (
-    <aside className="lg:sticky lg:top-6 print:hidden">
+    <aside className={`lg:sticky ${STICKY_ASIDE_TOP} print:hidden`}>
       <p className="mb-3 pl-3.5 text-xs font-bold tracking-[0.06em] text-muted-foreground uppercase">
         {dict.legal.tocHeading}
       </p>

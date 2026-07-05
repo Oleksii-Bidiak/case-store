@@ -16,7 +16,7 @@ import {
   type CheckoutFormValues,
 } from "@/features/checkout";
 import { Button, CheckoutSkeleton, Textarea } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { CheckoutStepIndicator } from "./checkout-step-indicator";
 import { CheckoutPaymentStub } from "./checkout-payment-stub";
@@ -215,10 +215,9 @@ export function CheckoutView() {
           )}
         </form>
 
-        {/* top-24 = sticky header (h-16) + gap — same offset convention as the
-            catalog filters / wishlist asides, so the stuck summary never sits
-            under the z-50 site header (TASK-206). */}
-        <aside className="lg:sticky lg:top-24">
+        {/* STICKY_ASIDE_TOP clears the z-50 site header so the stuck summary
+            never sits under it (TASK-206 / TASK-234). */}
+        <aside className={`lg:sticky ${STICKY_ASIDE_TOP}`}>
           <CheckoutOrderSummary npCityRef={npCityRef} />
         </aside>
       </div>

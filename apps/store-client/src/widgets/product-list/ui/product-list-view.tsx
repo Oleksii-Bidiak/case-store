@@ -19,7 +19,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import { ProductList } from "./product-list";
 
 interface ProductListViewProps {
@@ -167,7 +167,9 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
 
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
         {/* Desktop sidebar */}
-        <aside className="hidden lg:sticky lg:top-24 lg:block lg:self-start">
+        <aside
+          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} lg:block lg:self-start`}
+        >
           <ProductFilters
             categories={categories}
             currentParams={params}

@@ -7,7 +7,7 @@ import {
   useCategoryControllerGetCategoryTree,
   type CategoryTreeNodeEntity,
 } from "@/entities/category";
-import { dict } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import { Skeleton } from "@/shared/ui";
 import { categoryGradient, pickCategoryIcon } from "../model/category-visuals";
 
@@ -63,7 +63,9 @@ export function CategoriesView() {
   return (
     <div className="grid gap-7 lg:grid-cols-[264px_1fr] lg:items-start">
       {/* Rail — root categories */}
-      <aside className="rounded-[18px] border border-border bg-card p-2 shadow-[var(--shadow-card)] lg:sticky lg:top-4">
+      <aside
+        className={`rounded-[18px] border border-border bg-card p-2 shadow-[var(--shadow-card)] lg:sticky ${STICKY_ASIDE_TOP}`}
+      >
         <nav aria-label={dict.categories.navAria} className="flex flex-col">
           {roots.map((root) => {
             const Icon = pickCategoryIcon(root.name, root.slug);

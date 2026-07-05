@@ -1,6 +1,6 @@
 "use client";
 
-import { dict } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP, STICKY_HEADER_OFFSET } from "@/shared/config";
 import { BLOG_ARTICLE_SECTIONS } from "../model/posts";
 
 /**
@@ -12,12 +12,15 @@ export function BlogArticleToc() {
   function go(id: string) {
     const el = document.getElementById(id);
     if (!el) return;
-    const y = el.getBoundingClientRect().top + window.scrollY - 84;
+    const y =
+      el.getBoundingClientRect().top + window.scrollY - STICKY_HEADER_OFFSET;
     window.scrollTo({ top: y, behavior: "smooth" });
   }
 
   return (
-    <aside className="hidden self-start lg:sticky lg:top-6 lg:block">
+    <aside
+      className={`hidden self-start lg:sticky ${STICKY_ASIDE_TOP} lg:block`}
+    >
       <div className="rounded-2xl border border-border bg-card p-[18px] shadow-[var(--shadow-card)]">
         <p className="mb-3 text-xs font-bold tracking-[0.06em] text-muted-foreground uppercase">
           {dict.blog.article.tocHeading}

@@ -25,7 +25,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
-import { dict } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import {
   ABOUT_STATS,
   ABOUT_VALUES,
@@ -142,7 +142,9 @@ export function InfoView({
 
       <div className="grid items-start gap-8 lg:grid-cols-[248px_1fr]">
         {/* Side nav */}
-        <aside className="rounded-2xl border border-border bg-card p-2 shadow-[var(--shadow-card)] lg:sticky lg:top-[18px]">
+        <aside
+          className={`rounded-2xl border border-border bg-card p-2 shadow-[var(--shadow-card)] lg:sticky ${STICKY_ASIDE_TOP}`}
+        >
           <nav aria-label={d.navAria} className="flex flex-col">
             {INFO_SECTIONS.map((key) => {
               const NavIcon = NAV_ICONS[key];
