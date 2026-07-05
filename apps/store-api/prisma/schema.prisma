@@ -151,6 +151,10 @@ model Product {
   orderItems    OrderItem[]
   cartItems     CartItem[]
   wishlistItems WishlistItem[]
+  // Device compatibility (TASK-190): which device models this position fits.
+  // Compat lives on the Product (position), not the ProductGroup — see
+  // ProductDeviceCompat and doc 099 §3.
+  deviceCompat  ProductDeviceCompat[]
 
   @@index([slug])
   @@index([categoryId])
@@ -645,4 +649,57 @@ model NewsletterSubscription {
 
   @@index([status])
   @@map("newsletter_subscriptions")
+}
+
+/// Manufacturer of a compatible device (TASK-190) — e.g. Apple, Samsung, Xiaomi.
+/// Distinct from `Brand` (plan 110, the product's own manufacturer): a case made
+/// by brand "Spigen" can be compatible with an Apple device. `isActive` is a
+/// reversible admin visibility toggle (hides the brand + its models from public
+/// pickers/filters); it is never a tombstone.
+model DeviceBrand {
+  id        String  @id @default(uuid())
+  name      String
+  slug      String  @unique
+  isActive  Boolean @default(true) @map("is_active")
+  sortOrder Int     @default(0) @map("sort_order")
+
+  models DeviceModel[]
+
+  @@map("device_brands")
+}
+
+/// A specific compatible device (TASK-190) — e.g. "iPhone 15 Pro", "Galaxy S24".
+/// Belongs to a `DeviceBrand`; `series` groups models for the storefront picker
+/// cascade (e.g. "iPhone 15"), `releaseYear` is informational. Compatibility is
+/// expressed via the `ProductDeviceCompat` join to `Product` positions.
+model DeviceModel {
+  id            String      @id @default(uuid())
+  deviceBrandId String      @map("device_brand_id")
+  brand         DeviceBrand @relation(fields: [deviceBrandId], references: [id])
+  name          String
+  slug          String      @unique
+  series        String?
+  releaseYear   Int?        @map("release_year")
+  isActive      Boolean     @default(true) @map("is_active")
+
+  compat ProductDeviceCompat[]
+
+  @@index([deviceBrandId])
+  @@map("device_models")
+}
+
+/// Join table for the Product ↔ DeviceModel many-to-many device-compatibility
+/// axis (TASK-190). A row means "this product position fits this device model".
+/// `onDelete: Cascade` on both sides is correct — the join row's lifecycle is
+/// fully owned by its two parents (not a cross-aggregate reference). The
+/// composite primary key makes re-assigning the same pair idempotent (no dupes).
+model ProductDeviceCompat {
+  productId     String      @map("product_id")
+  product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  deviceModelId String      @map("device_model_id")
+  deviceModel   DeviceModel @relation(fields: [deviceModelId], references: [id], onDelete: Cascade)
+
+  @@id([productId, deviceModelId])
+  @@index([deviceModelId])
+  @@map("product_device_compat")
 }
