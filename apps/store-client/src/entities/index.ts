@@ -10,3 +10,4 @@ export * from "./review";
 export * from "./contact";
 export * from "./discount";
 export * from "./search";
+export * from "./newsletter";

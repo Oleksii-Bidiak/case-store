@@ -7,6 +7,7 @@ export { WishlistToggleButton } from "./toggle-wishlist";
 export { CancelOrderButton } from "./cancel-order";
 export { CheckoutAddressForm, useCheckout } from "./checkout";
 export { SubmitReviewForm } from "./submit-review";
+export { NewsletterSubscribeForm } from "./newsletter-subscribe";
 export {
   ApplyDiscount,
   useAppliedDiscount,

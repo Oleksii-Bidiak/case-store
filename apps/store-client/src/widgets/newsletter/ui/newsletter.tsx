@@ -1,4 +1,5 @@
 import { Send, Camera, PlayCircle, MessageCircle } from "lucide-react";
+import { NewsletterSubscribeForm } from "@/features";
 import { dict } from "@/shared/config";
 
 // Icon per social channel, paired with dict.home.newsletter.socials by index.
@@ -22,6 +23,7 @@ export function Newsletter() {
             {heading}
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
+          <NewsletterSubscribeForm source="home" className="mt-5 max-w-md" />
         </div>
         <ul className="flex flex-wrap items-center gap-2.5">
           {socials.map((social, i) => {

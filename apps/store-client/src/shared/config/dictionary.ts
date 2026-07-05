@@ -1350,6 +1350,24 @@ export const dict = {
     noMatchBody: "Спробуйте змінити параметри або скинути фільтри.",
     priceChip: (min: string, max: string) => `${min || "0"} – ${max || "∞"} ₴`,
   },
+
+  // TASK-188 — reusable newsletter subscribe form (features/newsletter-subscribe).
+  // Shared across the homepage newsletter block and the promo newsletter block.
+  newsletterForm: {
+    emailLabel: "Email для підписки",
+    placeholder: "Ваш email",
+    submit: "Підписатися",
+    pending: "Підписуємо…",
+    /** Success message — reinforces the −10% first-order incentive. */
+    success:
+      "Дякуємо за підписку! Промокод −10% на перше замовлення вже у вас.",
+    /** Inline validation message for an empty/invalid email (mirrors zod). */
+    invalidEmail: "Введіть коректний email",
+    /** Generic failure. */
+    error: "Не вдалося підписатися. Спробуйте ще раз.",
+    /** 429 — too many attempts. */
+    rateLimited: "Забагато спроб. Зачекайте хвилину та спробуйте знову.",
+  },
 } as const;
 
 export type Dictionary = typeof dict;

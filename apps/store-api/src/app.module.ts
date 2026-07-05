@@ -33,6 +33,7 @@ import { MailOutboxModule } from './mail-outbox';
 import { PublishingModule } from './publishing';
 import { RedisCacheModule } from './cache';
 import { CsrfModule } from './csrf';
+import { NewsletterModule } from './newsletter';
 import { buildThrottlerOptions } from './throttler';
 import { HttpExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
@@ -159,6 +160,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // CSRF protection (provides CsrfService + GET /api/csrf-token)
     CsrfModule,
+
+    // Newsletter subscriptions (public opt-in + admin list/export — TASK-188)
+    NewsletterModule,
   ],
   controllers: [AppController],
   providers: [

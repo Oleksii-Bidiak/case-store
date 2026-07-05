@@ -24,6 +24,7 @@ export * from "./generated/cart/cart";
 export * from "./generated/reviews/reviews";
 export * from "./generated/contact/contact";
 export * from "./generated/discounts/discounts";
+export * from "./generated/newsletter/newsletter";
 
 // Generated DTO / entity types
 export * from "./generated/models";

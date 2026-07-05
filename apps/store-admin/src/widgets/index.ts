@@ -44,6 +44,10 @@ export {
 export { MessageInbox, MessageInboxSkeleton } from "./message-inbox";
 export { OrderDetailView, OrderDetailSkeleton } from "./order-detail";
 export { AdminUserTable, AdminUserTableSkeleton } from "./user-list";
+export {
+  AdminSubscriberTable,
+  AdminSubscriberTableSkeleton,
+} from "./subscriber-list";
 export { UserDetailView, UserDetailSkeleton } from "./user-detail";
 export {
   AdminDashboardStats,

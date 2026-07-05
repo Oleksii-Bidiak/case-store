@@ -121,18 +121,25 @@ describe("PromoView", () => {
     );
   });
 
-  it("confirms the newsletter subscribe stub locally", async () => {
+  it("subscribes to the newsletter and shows the success message", async () => {
+    server.use(
+      http.post("*/api/newsletter/subscribe", () =>
+        HttpResponse.json({ data: { subscribed: true } }),
+      ),
+    );
     const user = userEvent.setup();
     renderWithProviders(<PromoView />);
 
     await user.type(
-      screen.getByRole("textbox", { name: d.newsletter.emailAria }),
+      screen.getByRole("textbox", { name: dict.newsletterForm.emailLabel }),
       "shopper@example.com",
     );
-    await user.click(screen.getByRole("button", { name: d.newsletter.submit }));
+    await user.click(
+      screen.getByRole("button", { name: dict.newsletterForm.submit }),
+    );
 
     expect(
-      screen.getByRole("button", { name: d.newsletter.submitted }),
+      await screen.findByText(dict.newsletterForm.success),
     ).toBeInTheDocument();
   });
 });

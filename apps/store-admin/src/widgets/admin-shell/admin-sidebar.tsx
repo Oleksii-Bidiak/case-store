@@ -13,6 +13,7 @@ import {
   Star,
   MessageSquare,
   Users,
+  Mail,
   Phone,
   Settings,
 } from "lucide-react";
@@ -37,6 +38,7 @@ const navItems = [
   { label: dict.nav.reviews, href: "/reviews", icon: Star },
   { label: dict.nav.messages, href: "/messages", icon: MessageSquare },
   { label: dict.nav.users, href: "/users", icon: Users },
+  { label: dict.nav.subscribers, href: "/subscribers", icon: Mail },
 ];
 
 const bottomNavItems = [
