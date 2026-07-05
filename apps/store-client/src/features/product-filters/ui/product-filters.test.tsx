@@ -34,13 +34,7 @@ function Harness({
     });
   };
 
-  return (
-    <ProductFilters
-      categories={[]}
-      currentParams={params}
-      onFilterChange={apply}
-    />
-  );
+  return <ProductFilters currentParams={params} onFilterChange={apply} />;
 }
 
 const minInput = () =>
@@ -121,7 +115,6 @@ describe("ProductFilters price range sync (TASK-208)", () => {
     const onFilterChange = jest.fn();
     const { rerender } = renderWithProviders(
       <ProductFilters
-        categories={[]}
         currentParams={{ minPrice: 1000, maxPrice: 5000 }}
         onFilterChange={onFilterChange}
       />,
@@ -131,11 +124,7 @@ describe("ProductFilters price range sync (TASK-208)", () => {
 
     // Simulates "Clear filters" / back-forward: the URL drops both bounds.
     rerender(
-      <ProductFilters
-        categories={[]}
-        currentParams={{}}
-        onFilterChange={onFilterChange}
-      />,
+      <ProductFilters currentParams={{}} onFilterChange={onFilterChange} />,
     );
 
     expect(minInput()).toHaveValue(null);

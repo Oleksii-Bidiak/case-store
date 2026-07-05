@@ -1,25 +1,24 @@
 "use client";
 
 import { Search, X } from "lucide-react";
-import type { CategoryEntity } from "@/entities/category";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
 interface ActiveFilterChipsProps {
-  categories: CategoryEntity[];
   currentParams: ProductControllerFindAllParams;
   onFilterChange: (updates: Record<string, string | undefined>) => void;
 }
 
 /**
- * ActiveFilterChips — a removable pill per active filter (category, search,
- * min/max price), shown above the product grid. Each chip's × clears just that
- * filter; a trailing "clear all" clears every filter at once. The search chip
- * is highlighted in the brand colour and carries a search glyph.
+ * ActiveFilterChips — a removable pill per active filter (search, min/max
+ * price), shown above the product grid. Each chip's × clears just that filter;
+ * a trailing "clear all" clears every filter at once (including the category,
+ * whose visible control is the `CategoryChips` row since TASK-216 — it is not
+ * duplicated here). The search chip is highlighted in the brand colour and
+ * carries a search glyph.
  */
 export function ActiveFilterChips({
-  categories,
   currentParams,
   onFilterChange,
 }: ActiveFilterChipsProps) {
@@ -29,17 +28,6 @@ export function ActiveFilterChips({
     isSearch?: boolean;
     clear: () => void;
   }[] = [];
-
-  if (currentParams.categoryId) {
-    const name =
-      categories.find((c) => c.id === currentParams.categoryId)?.name ??
-      dict.filters.category;
-    chips.push({
-      key: "categoryId",
-      label: name,
-      clear: () => onFilterChange({ categoryId: undefined }),
-    });
-  }
 
   if (currentParams.search) {
     chips.push({
