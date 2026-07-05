@@ -16,6 +16,7 @@ import {
   SheetTrigger,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import type { BannerEntity } from "@/shared/api/generated/models";
 import { SearchAutocomplete } from "@/features/search";
 import { AnnouncementBar } from "./announcement-bar";
 import { HeaderSearch } from "./header-search";
@@ -28,14 +29,22 @@ const MOBILE_LINK_CLASS =
 
 const NAV_LINKS = [{ href: "/products", label: dict.nav.products }] as const;
 
+interface HeaderProps {
+  /** ANNOUNCEMENT_BAR banner from the server layout (falls back to dict copy). */
+  announcement?: BannerEntity;
+}
+
 /**
  * Header — sticky storefront header: a top announcement bar, a logo, the catalog
  * mega-menu trigger, the search box, a live action cluster (Акції / Обране /
  * Кабінет / Кошик), and a slide-out mobile menu (Sheet) that also lists the root
  * categories. Client component because it owns the mobile-menu open state and
  * composes hook-driven sub-widgets.
+ *
+ * The announcement banner is fetched server-side (ISR) and passed in as a plain
+ * serializable prop so the client header can render it without its own fetch.
  */
-export function Header() {
+export function Header({ announcement }: HeaderProps = {}) {
   const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -65,7 +74,7 @@ export function Header() {
 
   return (
     <>
-      <AnnouncementBar />
+      <AnnouncementBar banner={announcement} />
       <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80">
         <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4">
           {/* Left: mobile menu trigger + logo */}

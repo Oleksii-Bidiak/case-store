@@ -4,6 +4,7 @@ import { Providers } from "./providers";
 import { Header } from "@/widgets/header";
 import { Footer } from "@/widgets";
 import { PRIMARY_COLOR, SITE_URL, SITE_NAME, dict } from "@/shared/config";
+import { fetchPublishedBanners } from "@/shared/api/banners-server";
 import "./globals.css";
 
 /**
@@ -57,11 +58,17 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // ANNOUNCEMENT_BAR banner is global (lives above the header on every route),
+  // so it is fetched here via the ISR-tagged helper. The same `banners` tag +
+  // URL is reused by the homepage, so Next dedupes it to a single request.
+  const banners = await fetchPublishedBanners();
+  const announcement = banners.ANNOUNCEMENT_BAR[0];
+
   return (
     <html
       lang="uk"
@@ -75,7 +82,7 @@ export default function RootLayout({
           >
             {dict.nav.skipToContent}
           </a>
-          <Header />
+          <Header announcement={announcement} />
           <main id="main-content" className="flex-1">
             {children}
           </main>

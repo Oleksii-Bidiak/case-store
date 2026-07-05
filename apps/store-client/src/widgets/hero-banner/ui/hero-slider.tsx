@@ -5,8 +5,29 @@ import Link from "next/link";
 import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import type { BannerEntity } from "@/shared/api/generated/models";
 
-const SLIDES = dict.home.hero.slides;
+/** Normalised slide shape rendered by the slider (banner- or dictionary-driven). */
+type HeroSlide = {
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
+  cta?: string;
+  href: string;
+};
+
+/** The hardcoded fallback slides — rendered when no HERO_SLIDE banners exist. */
+const FALLBACK_SLIDES: readonly HeroSlide[] = dict.home.hero.slides;
+
+/** Map admin-managed HERO_SLIDE banners onto the slider's normalised shape. */
+function bannersToSlides(banners: BannerEntity[]): HeroSlide[] {
+  return banners.map((b) => ({
+    title: b.title,
+    subtitle: b.subtitle ?? undefined,
+    cta: b.ctaLabel ?? undefined,
+    href: b.ctaHref ?? "#",
+  }));
+}
 
 const AUTOPLAY_MS = 7000;
 
@@ -62,24 +83,44 @@ const THEMES: SlideTheme[] = [
  * clear of the side arrows (px) and the bottom dots (pb); a decorative frosted
  * panel fills the right half on themed slides (hidden below lg so it never
  * crowds the text). Client Component (holds the active-slide state).
+ *
+ * `banners` (HERO_SLIDE placement) is the data source when the admin has
+ * published any; otherwise the hardcoded fallback slides render unchanged.
  */
-export function HeroSlider() {
+interface HeroSliderProps {
+  banners?: BannerEntity[];
+}
+
+export function HeroSlider({ banners }: HeroSliderProps = {}) {
+  // Banner-driven when the admin has published HERO_SLIDE banners; otherwise the
+  // hardcoded fallback slides keep the homepage looking complete.
+  const slides: readonly HeroSlide[] =
+    banners && banners.length > 0 ? bannersToSlides(banners) : FALLBACK_SLIDES;
+
   const [index, setIndex] = useState(0);
-  const count = SLIDES.length;
+  const count = slides.length;
 
-  const go = useCallback((next: number) => {
-    setIndex((next + SLIDES.length) % SLIDES.length);
-  }, []);
+  const go = useCallback(
+    (next: number) => {
+      setIndex((next + slides.length) % slides.length);
+    },
+    [slides.length],
+  );
 
-  // Autoplay — resets its timer whenever `index` changes (incl. manual nav).
+  // Clamp at render so a shrinking slide set (e.g. a revalidation swapping
+  // banners for the shorter fallback set) never indexes out of range — no
+  // setState-in-effect needed. `count` is always ≥ 1 (fallback is non-empty).
+  const activeIndex = index % count;
+
+  // Autoplay — resets its timer whenever `activeIndex` changes (incl. manual nav).
   useEffect(() => {
     if (count <= 1) return;
-    const id = window.setInterval(() => go(index + 1), AUTOPLAY_MS);
+    const id = window.setInterval(() => go(activeIndex + 1), AUTOPLAY_MS);
     return () => window.clearInterval(id);
-  }, [index, count, go]);
+  }, [activeIndex, count, go]);
 
-  const slide = SLIDES[index];
-  const theme = THEMES[index % THEMES.length];
+  const slide = slides[activeIndex];
+  const theme = THEMES[activeIndex % THEMES.length];
 
   return (
     <div
@@ -88,30 +129,36 @@ export function HeroSlider() {
     >
       {/* Active slide — re-keyed so the copy fades in on change. */}
       <div
-        key={index}
+        key={activeIndex}
         className={`absolute inset-0 flex items-center px-16 pt-12 pb-20 duration-500 animate-in fade-in-0 sm:px-24 ${theme.text}`}
       >
         <div className="relative z-10 max-w-xl">
-          <span
-            className={`inline-block rounded-full px-3.5 py-1.5 text-xs font-semibold tracking-wide uppercase ${theme.eyebrow}`}
-          >
-            {slide.eyebrow}
-          </span>
+          {slide.eyebrow && (
+            <span
+              className={`inline-block rounded-full px-3.5 py-1.5 text-xs font-semibold tracking-wide uppercase ${theme.eyebrow}`}
+            >
+              {slide.eyebrow}
+            </span>
+          )}
           <h1 className="mt-4 font-display text-3xl leading-[1.07] font-bold tracking-tight text-balance sm:text-[2.5rem]">
             {slide.title}
           </h1>
-          <p className="mt-3 max-w-md text-base opacity-90 sm:text-[17px]">
-            {slide.subtitle}
-          </p>
-          <Button
-            asChild
-            className={`mt-6 h-[52px] rounded-xl px-6 text-base font-bold shadow-[var(--shadow-lift)] ${theme.cta}`}
-          >
-            <Link href={slide.href}>
-              {slide.cta}
-              <ArrowRight className="size-4" />
-            </Link>
-          </Button>
+          {slide.subtitle && (
+            <p className="mt-3 max-w-md text-base opacity-90 sm:text-[17px]">
+              {slide.subtitle}
+            </p>
+          )}
+          {slide.cta && (
+            <Button
+              asChild
+              className={`mt-6 h-[52px] rounded-xl px-6 text-base font-bold shadow-[var(--shadow-lift)] ${theme.cta}`}
+            >
+              <Link href={slide.href}>
+                {slide.cta}
+                <ArrowRight className="size-4" />
+              </Link>
+            </Button>
+          )}
         </div>
 
         {/* Decorative frosted "product" panel — visual only, hidden on smaller
@@ -131,7 +178,7 @@ export function HeroSlider() {
       {/* Prev / next controls — sit in the side gutter, clear of the content. */}
       <button
         type="button"
-        onClick={() => go(index - 1)}
+        onClick={() => go(activeIndex - 1)}
         aria-label={dict.home.hero.prevSlide}
         className="absolute top-1/2 left-3 z-10 flex size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[var(--shadow-lift)] transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:left-4 sm:size-11"
       >
@@ -139,7 +186,7 @@ export function HeroSlider() {
       </button>
       <button
         type="button"
-        onClick={() => go(index + 1)}
+        onClick={() => go(activeIndex + 1)}
         aria-label={dict.home.hero.nextSlide}
         className="absolute top-1/2 right-3 z-10 flex size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[var(--shadow-lift)] transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-4 sm:size-11"
       >
@@ -148,15 +195,15 @@ export function HeroSlider() {
 
       {/* Dot indicators — aligned to the content, below it (pb reserves space). */}
       <div className="absolute bottom-6 left-16 z-10 flex gap-2 sm:left-24">
-        {SLIDES.map((_, i) => (
+        {slides.map((_, i) => (
           <button
             key={i}
             type="button"
             onClick={() => go(i)}
             aria-label={dict.home.hero.goToSlide(i + 1)}
-            aria-current={i === index}
+            aria-current={i === activeIndex}
             className={`h-1.5 cursor-pointer rounded-full transition-all ${
-              i === index
+              i === activeIndex
                 ? "w-6 bg-white"
                 : "w-1.5 bg-white/50 hover:bg-white/80"
             }`}
