@@ -1142,6 +1142,9 @@ async function seedBlog(prisma: PrismaClient) {
   }
 
   console.log(`  ✓ Blog: ${categoriesData.length} categories, ${postsData.length} posts upserted`);
+}
+
+/**
  * Seed a couple of published homepage banners per placement (TASK-186).
  * Idempotent via a deterministic id keyed on placement + slot. The storefront
  * renders its hardcoded fallback when a placement has none, so this seed is a
