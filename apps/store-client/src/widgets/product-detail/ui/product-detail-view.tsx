@@ -17,6 +17,7 @@ import { ProductSiblingNavigator } from "./product-sibling-navigator";
 import { ProductStockIndicator } from "./product-stock-indicator";
 import { ProductTrustBadges } from "./product-trust-badges";
 import { ProductSpecsTabs } from "./product-specs-tabs";
+import { ProductHighlights } from "./product-highlights";
 import { ProductRelated } from "./product-related";
 import { MobileAtcBar } from "./mobile-atc-bar";
 
@@ -166,6 +167,10 @@ export function ProductDetailView({ slug }: { slug: string }) {
               currentSlug={product.slug}
             />
           )}
+
+          {/* Key structured-spec highlights (TASK-191); renders nothing when
+              the product has no filterable specs. */}
+          <ProductHighlights highlights={product.highlights} />
         </div>
 
         {/* Sticky buy box. */}
@@ -229,6 +234,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
       <ProductSpecsTabs
         description={product.description ?? null}
         productId={product.id}
+        specs={product.specs}
       />
 
       <ProductRelated categoryId={category.id} excludeId={product.id} />

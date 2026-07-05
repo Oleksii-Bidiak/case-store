@@ -743,6 +743,10 @@ export const dict = {
     tabDelivery: "Доставка й оплата",
     reviewsSoon: "Відгуки незабаром.",
     specsEmpty: "Характеристики ще не додані.",
+    // Structured specs (TASK-191): PDP "Характеристики" table + highlights strip.
+    highlightsTitle: "Коротко про товар",
+    specBooleanYes: "Так",
+    specBooleanNo: "Ні",
     relatedTitle: "Схожі товари",
     relatedPrev: "Попередні товари",
     relatedNext: "Наступні товари",

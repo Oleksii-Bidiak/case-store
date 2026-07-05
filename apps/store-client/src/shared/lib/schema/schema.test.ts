@@ -83,6 +83,8 @@ const baseProduct: PublicProductEntity = {
     defaultInStock: true,
     colors: [],
   },
+  specs: [],
+  highlights: [],
 };
 
 const image = (url: string, sortOrder = 0): ProductImageEntity => ({
