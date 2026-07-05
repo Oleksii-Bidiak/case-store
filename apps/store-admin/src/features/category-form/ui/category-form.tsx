@@ -162,9 +162,20 @@ export function CategoryForm({
             render={({ field }) => (
               <Select
                 value={field.value ? field.value : ROOT_OPTION}
-                onValueChange={(value) =>
-                  field.onChange(value === ROOT_OPTION ? "" : value)
-                }
+                onValueChange={(value) => {
+                  // Radix Select renders a hidden native <select> (bubble
+                  // input) inside the form and re-dispatches a `change` event
+                  // whenever the controlled value changes. When the id-keyed
+                  // reset() seeds parentId BEFORE the parent options have
+                  // loaded, that native select has no matching <option>, so
+                  // the browser coerces its value to "" and Radix's autofill
+                  // handler feeds "" back here — silently clearing the seeded
+                  // parent (TASK-201). A real user action is never "": picking
+                  // "Root" arrives as ROOT_OPTION. So "" can only be that
+                  // bounce — ignore it.
+                  if (value === "") return;
+                  field.onChange(value === ROOT_OPTION ? "" : value);
+                }}
               >
                 <SelectTrigger id="category-parent">
                   <SelectValue

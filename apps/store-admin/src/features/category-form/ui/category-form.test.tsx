@@ -1,4 +1,4 @@
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, delay } from "msw";
 import {
   renderWithProviders,
   screen,
@@ -94,16 +94,14 @@ describe("CategoryForm — parent persistence (TASK-149)", () => {
     expect(screen.getByRole("combobox")).toHaveTextContent("Category A");
   });
 
-  // NOTE on the edit-mode (Rule 2b) tests below: the reset-keyed-to-id mechanism
-  // is asserted through the `name` field (a plain `register` input) rather than
-  // the parent Select. Radix's hidden BubbleSelect only registers its native
-  // <option>s while the listbox is open, so when `reset()` seeds a value while
-  // the list is closed, jsdom fires a spurious `change` on the optionless native
-  // <select> that resets the Radix value — a jsdom-only artifact (a real browser
-  // never fires `change` for a programmatic value change). The parent-specific
-  // behaviour is covered by the CREATE submit test, the "same id" test below
-  // (a real user selection, which the artifact does not affect), and the
-  // categoryFormValuesToDto unit tests.
+  // NOTE: what an earlier revision of this file dismissed here as a "jsdom-only
+  // artifact" was the real TASK-201 bug: Radix's hidden native bubble <select>
+  // ITSELF dispatches a `change` event whenever the controlled value changes —
+  // in every environment, browsers included. If the value is seeded before the
+  // matching <option> mounts (parent options still loading), the native select
+  // coerces it to "" and Radix's autofill handler bounces that "" back through
+  // onValueChange, clearing the seeded parent. The form now ignores that ""
+  // bounce; the edit-mode parent assertions live in the TASK-201 block below.
   it("EDIT: re-seeds fields from defaultValues on mount", async () => {
     stubCategories();
     renderWithProviders(
@@ -191,6 +189,105 @@ describe("CategoryForm — parent persistence (TASK-149)", () => {
       />,
     );
     await waitFor(() => expect(nameField()).toHaveValue("Second"));
+  });
+});
+
+describe("CategoryForm — parent survives late-loading options (TASK-201)", () => {
+  /** Stub the parent-options query with a delayed response. On a cold cache the
+   *  edit form always mounts (and runs its id-keyed `reset()`) before the
+   *  categories list arrives — this reproduces the QA sequence. */
+  function stubCategoriesDelayed(ms = 75) {
+    server.use(
+      http.get("*/api/admin/categories", async () => {
+        await delay(ms);
+        return HttpResponse.json({
+          data: [
+            makeCategoryRow(UUID_A, "Category A"),
+            makeCategoryRow(UUID_B, "Category B"),
+          ],
+          meta: { total: 2, page: 1, limit: 100, totalPages: 1 },
+        });
+      }),
+    );
+  }
+
+  it("EDIT: parentId seeded before the options load survives through submit", async () => {
+    stubCategoriesDelayed();
+    const onSubmit = jest.fn();
+    renderWithProviders(
+      <CategoryForm
+        id="cat-1"
+        defaultValues={{ name: "Sub", parentId: UUID_A }}
+        onSubmit={onSubmit}
+        isPending={false}
+      />,
+    );
+
+    // Options arrive AFTER reset(); the trigger must show the current parent
+    // once they do (not "Root"), without the user touching the field.
+    await waitFor(() =>
+      expect(screen.getByRole("combobox")).toHaveTextContent("Category A"),
+    );
+
+    await submitForm();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ parentId: UUID_A }),
+      expect.anything(),
+    );
+  });
+
+  it("EDIT: changing the parent after the options load late still sticks", async () => {
+    stubCategoriesDelayed();
+    const onSubmit = jest.fn();
+    renderWithProviders(
+      <CategoryForm
+        id="cat-1"
+        defaultValues={{ name: "Sub", parentId: UUID_A }}
+        onSubmit={onSubmit}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("combobox")).toHaveTextContent("Category A"),
+    );
+
+    await selectParent("Category B");
+    await submitForm();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ parentId: UUID_B }),
+      expect.anything(),
+    );
+  });
+
+  it("EDIT: explicitly choosing Root still clears the parent (guard must not block it)", async () => {
+    stubCategoriesDelayed();
+    const onSubmit = jest.fn();
+    renderWithProviders(
+      <CategoryForm
+        id="cat-1"
+        defaultValues={{ name: "Sub", parentId: UUID_A }}
+        onSubmit={onSubmit}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("combobox")).toHaveTextContent("Category A"),
+    );
+
+    await selectParent(dict.categoryForm.rootOption);
+    await submitForm();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ parentId: "" }),
+      expect.anything(),
+    );
   });
 });
 
