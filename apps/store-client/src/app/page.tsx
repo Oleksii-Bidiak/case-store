@@ -14,23 +14,32 @@ import {
   buildWebSiteSchema,
 } from "@/shared/lib/schema";
 import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
+import { fetchPublishedBanners } from "@/shared/api/banners-server";
 
 export const metadata: Metadata = {
   title: dict.meta.homeTitle,
   description: dict.meta.homeDescription,
 };
 
-export default function HomePage() {
+export default async function HomePage() {
+  // Admin-managed homepage banners (ISR, tag `banners`). Each region falls back
+  // to its hardcoded content when its placement group is empty, so the homepage
+  // always renders even if the API is unreachable.
+  const banners = await fetchPublishedBanners();
+
   return (
     <div className="flex flex-col gap-14 pb-16">
       <JsonLd schema={buildOrganizationSchema(SITE_URL, SITE_NAME)} />
       <JsonLd schema={buildWebSiteSchema(SITE_URL, SITE_NAME)} />
 
-      <HeroBanner />
+      <HeroBanner
+        heroSlides={banners.HERO_SLIDE}
+        promoTiles={banners.PROMO_TILE}
+      />
       <TrustStrip />
       <CategoryNav />
       <PopularRail />
-      <PromoBanner />
+      <PromoBanner banner={banners.PROMO_BANNER[0]} />
       <RecentlyViewed />
       <Newsletter />
     </div>
