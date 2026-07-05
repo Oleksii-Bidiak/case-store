@@ -49,6 +49,18 @@ enum MailOutboxStatus {
   FAILED
 }
 
+/// Data type of a structured product characteristic (TASK-191, plan 112).
+/// Drives both the admin editor's input widget (text field / number field /
+/// checkbox / select) and the server-side value validation on assignment.
+/// Distinct from the variant-axis `Product.attributes Json` — see the
+/// AttributeDefinition doc comment.
+enum AttributeType {
+  TEXT
+  NUMBER
+  BOOLEAN
+  SELECT
+}
+
 /// Shared publish lifecycle for content models (TASK-187). `status = PUBLISHED`
 /// is the SINGLE source of truth for public visibility across Pages (and, later,
 /// blog posts and banners). SCHEDULED rows are flipped to PUBLISHED by the
@@ -110,6 +122,11 @@ model Category {
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
   products Product[]
+
+  // Per-category structured-spec templates (TASK-191). Inherited down the
+  // subtree at read time via CategoryRepository.findAncestorIds — the relation
+  // itself only holds definitions declared DIRECTLY on this category.
+  attributeDefinitions AttributeDefinition[]
 
   @@index([slug])
   @@index([parentId])
@@ -183,6 +200,9 @@ model Product {
   // Compat lives on the Product (position), not the ProductGroup — see
   // ProductDeviceCompat and doc 099 §3.
   deviceCompat  ProductDeviceCompat[]
+  // Structured-spec VALUES filled in for this product (TASK-191). Separate
+  // system from `attributes Json` above (variant axes) — see plan 112.
+  specValues    ProductAttributeValue[]
 
   @@index([slug])
   @@index([categoryId])
@@ -731,4 +751,58 @@ model ProductDeviceCompat {
   @@id([productId, deviceModelId])
   @@index([deviceModelId])
   @@map("product_device_compat")
+}
+
+/// Per-category template for a structured product characteristic (TASK-191,
+/// plan 112 / doc 099 §4.3). Defines WHAT facts a category's products carry
+/// ("Матеріал", type SELECT, options ["Силікон","Шкіра"]); the filled-in value
+/// per product lives in ProductAttributeValue. Templates are inherited down the
+/// subtree at read time (a definition on "Чохли" applies to "Чохли для
+/// смартфонів" beneath it) via CategoryRepository.findAncestorIds; a leaf
+/// category may override an ancestor's same-`key` definition (deepest wins).
+///
+/// This is a SEPARATE system from `Product.attributes Json` (the variant-axis
+/// map that drives PDP sibling navigation) — the two may hold the same
+/// conceptual value for different reasons, and that overlap is expected.
+model AttributeDefinition {
+  id           String        @id @default(uuid())
+  categoryId   String        @map("category_id")
+  category     Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  /// Stable, URL/filter-safe token (kebab or camel, no spaces), e.g. `material`.
+  key          String
+  /// Human-readable label shown in admin + on the PDP, e.g. "Матеріал".
+  label        String
+  type         AttributeType @default(TEXT)
+  /// Optional unit suffix appended on render, e.g. "W", "mm".
+  unit         String?
+  /// Allowed values when `type = SELECT` (JSON string array). Null otherwise.
+  options      Json?
+  /// When true, this spec is surfaced as a catalog facet + PDP highlight.
+  isFilterable Boolean       @default(false) @map("is_filterable")
+  sortOrder    Int           @default(0) @map("sort_order")
+
+  values ProductAttributeValue[]
+
+  @@unique([categoryId, key])
+  @@index([categoryId, sortOrder])
+  @@map("attribute_definitions")
+}
+
+/// A filled-in structured-spec value for one product (TASK-191, plan 112). Ties
+/// a product to an AttributeDefinition template and stores the value. `value` is
+/// always the canonical string form (also used for exact facet matching);
+/// `valueNumber` mirrors it as a Decimal for NUMBER-typed definitions so future
+/// range filters can query numerically without parsing text.
+model ProductAttributeValue {
+  id           String              @id @default(uuid())
+  productId    String              @map("product_id")
+  product      Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  definitionId String              @map("definition_id")
+  definition   AttributeDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  value        String
+  valueNumber  Decimal?            @map("value_number") @db.Decimal(12, 3)
+
+  @@unique([productId, definitionId])
+  @@index([definitionId, value])
+  @@map("product_attribute_values")
 }

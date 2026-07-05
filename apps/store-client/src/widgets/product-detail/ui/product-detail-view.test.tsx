@@ -32,6 +32,8 @@ const baseProduct = {
   createdAt: "2026-06-01T00:00:00.000Z",
   updatedAt: "2026-06-01T00:00:00.000Z",
   primaryImage: null,
+  specs: [],
+  highlights: [],
 };
 
 /** Detail envelope for a position that belongs to a two-position group. */

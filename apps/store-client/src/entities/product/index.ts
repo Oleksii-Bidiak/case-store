@@ -13,7 +13,13 @@ export type {
   ProductGroupAxisEntity,
   ProductSiblingEntity,
   ProductImageEntity,
+  // Structured specs (TASK-191)
+  ProductSpecEntity,
+  FilterableSpecEntity,
 } from "@/shared/api/generated/models";
+
+// Runtime enum for spec value type (BOOLEAN formatting on the PDP).
+export { ProductSpecEntityType } from "@/shared/api/generated/models";
 
 export {
   useProductControllerFindAll,

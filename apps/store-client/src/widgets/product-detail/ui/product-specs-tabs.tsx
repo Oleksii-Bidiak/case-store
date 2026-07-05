@@ -3,24 +3,29 @@
 import { Truck, Package, MapPin } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import type { ProductSpecEntity } from "@/entities/product";
 import { ProductReviewsWidget } from "@/widgets/product-reviews";
+import { formatSpecValue } from "./format-spec";
 
 // Icons for the static delivery-method rows, matched to dict.product.deliveryOptions.
 const DELIVERY_ICONS = [Truck, Package, MapPin] as const;
 
 /**
  * ProductSpecsTabs — Description / Specifications / Reviews / Delivery tabs for
- * the PDP. Specifications stays a placeholder until the product entity carries
- * structured specs (TASK-178); the Reviews tab renders the live
- * {@link ProductReviewsWidget}; Delivery lists the storefront's static shipping
- * methods (curated copy — the real per-order options live in `/checkout`).
+ * the PDP. The Specifications tab renders the product's structured specs
+ * (TASK-191), falling back to the empty-state copy when a product has none; the
+ * Reviews tab renders the live {@link ProductReviewsWidget}; Delivery lists the
+ * storefront's static shipping methods (curated copy — the real per-order
+ * options live in `/checkout`).
  */
 export function ProductSpecsTabs({
   description,
   productId,
+  specs,
 }: {
   description: string | null;
   productId: string;
+  specs: ProductSpecEntity[];
 }) {
   return (
     <Tabs defaultValue="description" className="w-full">
@@ -42,8 +47,26 @@ export function ProductSpecsTabs({
           : dict.product.specsEmpty}
       </TabsContent>
 
-      <TabsContent value="specs" className="pt-5 text-sm text-muted-foreground">
-        {dict.product.specsEmpty}
+      <TabsContent value="specs" className="pt-5">
+        {specs.length > 0 ? (
+          <dl className="grid max-w-2xl grid-cols-1 gap-y-0 text-sm">
+            {specs.map((spec) => (
+              <div
+                key={spec.key}
+                className="flex items-baseline justify-between gap-4 border-b border-border py-2.5"
+              >
+                <dt className="text-muted-foreground">{spec.label}</dt>
+                <dd className="text-right font-medium text-foreground">
+                  {formatSpecValue(spec)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {dict.product.specsEmpty}
+          </p>
+        )}
       </TabsContent>
 
       <TabsContent value="reviews" className="pt-5">

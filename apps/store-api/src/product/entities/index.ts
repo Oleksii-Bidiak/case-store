@@ -14,3 +14,5 @@ export {
   ProductVariantColorEntity,
 } from './product-variant-summary.entity';
 export type { VariantSiblingInput } from './product-variant-summary.entity';
+export { ProductSpecEntity, buildProductSpecs } from './product-spec.entity';
+export type { SpecValueRow } from './product-spec.entity';

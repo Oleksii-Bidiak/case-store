@@ -11,6 +11,8 @@ import {
   type CategoryFormInput,
   type CategoryFormValues,
 } from "@/features/category-form";
+import { AttributeDefinitionEditor } from "@/features/attribute-definition-editor";
+import { Separator } from "@/shared/ui";
 import {
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
   getAdminCategoryControllerFindByIdQueryKey,
@@ -100,14 +102,23 @@ export function EditCategoryView({ categoryId }: EditCategoryViewProps) {
           {dict.categories.loadOneError}
         </p>
       ) : category ? (
-        <CategoryForm
-          id={categoryId}
-          defaultValues={mapCategoryToFormValues(category)}
-          excludeParentId={categoryId}
-          onSubmit={handleSubmit}
-          isPending={update.isPending}
-          submitLabel={dict.common.saveChanges}
-        />
+        <>
+          <CategoryForm
+            id={categoryId}
+            defaultValues={mapCategoryToFormValues(category)}
+            excludeParentId={categoryId}
+            onSubmit={handleSubmit}
+            isPending={update.isPending}
+            submitLabel={dict.common.saveChanges}
+          />
+
+          <Separator className="max-w-2xl" />
+
+          {/* Structured-spec template editor (TASK-191) — manages this
+              category's OWN characteristic templates, separate from the form
+              submit above (it has its own endpoints). */}
+          <AttributeDefinitionEditor categoryId={categoryId} />
+        </>
       ) : null}
     </div>
   );

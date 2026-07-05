@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AttributeDefinition, AttributeType } from '@prisma/client';
 import {
   ProductRepository,
   CreateProductInput,
@@ -12,9 +13,11 @@ import {
   FindAllParams,
 } from './product.repository';
 import { ProductDeviceCompatRepository } from './product-device-compat.repository';
+import { ProductSpecRepository, SpecValueWrite } from './product-spec.repository';
 import { CategoryRepository } from '../category';
 import { BrandRepository } from '../brand';
 import { DeviceRepository } from '../device';
+import { AttributeDefinitionRepository } from '../attribute-definition';
 import {
   ProductEntity,
   PublicProductEntity,
@@ -22,7 +25,7 @@ import {
   ProductImageEntity,
   ProductCategoryEntity,
 } from './entities';
-import { ProductListQueryDto } from './dto';
+import { ProductListQueryDto, parseSpecFilter } from './dto';
 import { generateSlug } from '../common/utils';
 import {
   CacheService,
@@ -95,6 +98,8 @@ export class ProductService {
     private readonly brandRepository: BrandRepository,
     private readonly deviceCompatRepository: ProductDeviceCompatRepository,
     private readonly deviceRepository: DeviceRepository,
+    private readonly specRepository: ProductSpecRepository,
+    private readonly attributeDefinitionRepository: AttributeDefinitionRepository,
   ) {
     this.cacheTtlSeconds =
       this.config.get<number>('REDIS_CACHE_TTL_SECONDS') ?? DEFAULT_CACHE_TTL_SECONDS;
@@ -118,6 +123,11 @@ export class ProductService {
       ...listParams,
       categoryId: query.categoryId,
       deviceModelId: query.deviceModelId,
+      // Normalize via the parser so an ignored/malformed specs value never
+      // fragments the cache key from an equivalent request.
+      specs: parseSpecFilter(query.specs)
+        ? `${parseSpecFilter(query.specs)!.key}:${parseSpecFilter(query.specs)!.value}`
+        : undefined,
       isActive: true,
     });
     const cached = await this.cache.get<PaginatedProductsResponse>(cacheKey);
@@ -190,6 +200,7 @@ export class ProductService {
       minPrice: query.minPrice,
       maxPrice: query.maxPrice,
       search: query.search,
+      specFilter: parseSpecFilter(query.specs),
       sortBy: query.sortBy ?? 'createdAt',
       sortOrder: query.sortOrder ?? 'desc',
     };
@@ -276,7 +287,11 @@ export class ProductService {
     }
 
     const compatibleDeviceModels = await this.deviceCompatRepository.getDeviceCompat(id);
-    const entity = ProductEntity.fromPrisma({ ...product, compatibleDeviceModels });
+    // Hydrate structured specs (TASK-191) so the admin edit form can seed its
+    // spec editor. This detail cache is evicted whenever specs change
+    // (updateSpecs → evictProductDetail), so it stays consistent.
+    const specValues = await this.specRepository.getSpecs(id);
+    const entity = ProductEntity.fromPrisma({ ...product, compatibleDeviceModels, specValues });
     await this.cache.set(cacheKey, entity, this.cacheTtlSeconds);
     return entity;
   }
@@ -561,6 +576,107 @@ export class ProductService {
     const unknown = uniqueIds.filter((id) => !foundIds.has(id));
     if (unknown.length > 0) {
       throw new BadRequestException(`Unknown device model id(s): ${unknown.join(', ')}`);
+    }
+  }
+
+  /**
+   * Replace a product's structured spec VALUES (TASK-191, admin-only). Resolves
+   * the product's EFFECTIVE definitions (own category + ancestors), validates
+   * every incoming value against them, then writes the full set in one
+   * transaction (replace-all — no partial writes). Returns the product with its
+   * specs hydrated.
+   *
+   * Rejections (400, nothing written):
+   *   - a `definitionId` not in the product's effective definition set;
+   *   - a value that violates its definition's type (non-numeric for NUMBER,
+   *     an option outside `options` for SELECT, non-boolean for BOOLEAN).
+   *
+   * Blank values are treated as "no value" and dropped, so the admin form can
+   * submit its full effective-definition set with only the filled-in ones
+   * persisting.
+   */
+  async updateSpecs(
+    productId: string,
+    incoming: Array<{ definitionId: string; value: string; valueNumber?: number | null }>,
+  ): Promise<ProductEntity> {
+    const product = await this.productRepository.findById(productId);
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    const effective = await this.attributeDefinitionRepository.findEffectiveForCategory(
+      product.categoryId,
+    );
+    const byId = new Map(effective.map((def) => [def.id, def]));
+
+    const seen = new Set<string>();
+    const writes: SpecValueWrite[] = [];
+    for (const item of incoming) {
+      // Blank value → clear this spec (skip persisting it).
+      if (item.value === undefined || item.value === null || String(item.value).trim() === '') {
+        continue;
+      }
+
+      const def = byId.get(item.definitionId);
+      if (!def) {
+        throw new BadRequestException(
+          `Characteristic "${item.definitionId}" is not defined for this product's category`,
+        );
+      }
+      if (seen.has(item.definitionId)) {
+        throw new BadRequestException('Duplicate value for the same characteristic');
+      }
+      seen.add(item.definitionId);
+
+      writes.push({ definitionId: def.id, ...this.validateSpecValue(def, item.value) });
+    }
+
+    await this.specRepository.setSpecs(productId, writes);
+
+    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.evictProductDetail(productId, product.slug);
+
+    const specValues = await this.specRepository.getSpecs(productId);
+    return ProductEntity.fromPrisma({ ...product, specValues });
+  }
+
+  /**
+   * Validate and canonicalize a single spec value against its definition's type.
+   * Returns the canonical string `value` (used for exact facet matching) plus an
+   * optional numeric mirror for NUMBER-typed definitions. Throws
+   * BadRequestException on a type mismatch.
+   */
+  private validateSpecValue(
+    def: AttributeDefinition,
+    raw: string,
+  ): { value: string; valueNumber?: number | null } {
+    switch (def.type) {
+      case AttributeType.NUMBER: {
+        const num = Number(raw);
+        if (Number.isNaN(num)) {
+          throw new BadRequestException(`"${def.label}" must be a number`);
+        }
+        return { value: String(num), valueNumber: num };
+      }
+      case AttributeType.BOOLEAN: {
+        const normalized = String(raw).trim().toLowerCase();
+        if (normalized !== 'true' && normalized !== 'false') {
+          throw new BadRequestException(`"${def.label}" must be true or false`);
+        }
+        return { value: normalized };
+      }
+      case AttributeType.SELECT: {
+        const options = Array.isArray(def.options)
+          ? (def.options as unknown[]).filter((o): o is string => typeof o === 'string')
+          : [];
+        if (!options.includes(raw)) {
+          throw new BadRequestException(`"${raw}" is not an allowed option for "${def.label}"`);
+        }
+        return { value: raw };
+      }
+      case AttributeType.TEXT:
+      default:
+        return { value: String(raw) };
     }
   }
 

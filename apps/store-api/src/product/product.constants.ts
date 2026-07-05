@@ -12,3 +12,10 @@
  * product entity does not have to depend on the dashboard layer.
  */
 export const LOW_STOCK_THRESHOLD = 5;
+
+/**
+ * Max number of `isFilterable` specs surfaced as PDP highlights ("Коротко про
+ * товар" grid, TASK-191). Keeps the strip compact regardless of how many
+ * filterable definitions a category declares.
+ */
+export const MAX_HIGHLIGHTS = 4;

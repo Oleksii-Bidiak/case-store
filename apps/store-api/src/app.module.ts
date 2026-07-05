@@ -17,6 +17,7 @@ import { ProductGroupModule } from './product-group';
 import { CategoryModule } from './category';
 import { BrandModule } from './brand';
 import { DeviceModule } from './device';
+import { AttributeDefinitionModule } from './attribute-definition';
 import { PagesModule } from './pages';
 import { BlogModule } from './blog';
 import { BannersModule } from './banners';
@@ -113,6 +114,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Device-compatibility taxonomy (device brands/models + compat, TASK-190)
     DeviceModule,
+
+    // Structured-spec templates (TASK-191)
+    AttributeDefinitionModule,
 
     // Admin-managed static / service pages (TASK-153)
     PagesModule,

@@ -6,6 +6,7 @@ import {
   ProductVariantSummaryEntity,
   type VariantSiblingInput,
 } from './product-variant-summary.entity';
+import { ProductSpecEntity, buildProductSpecs, type SpecValueRow } from './product-spec.entity';
 import { LOW_STOCK_THRESHOLD } from '../product.constants';
 
 /**
@@ -166,6 +167,21 @@ export class PublicProductEntity {
   })
   compatibleDeviceModels!: ProductCompatibleDeviceEntity[];
 
+  @ApiProperty({
+    description:
+      'Structured specifications (TASK-191): hydrated key/label/unit/value rows for the ' +
+      'PDP "Характеристики" table. Empty on list responses and for products with no specs.',
+    type: [ProductSpecEntity],
+  })
+  specs!: ProductSpecEntity[];
+
+  @ApiProperty({
+    description:
+      'The isFilterable subset of specs (capped), for the PDP "Коротко про товар" highlights strip.',
+    type: [ProductSpecEntity],
+  })
+  highlights!: ProductSpecEntity[];
+
   /**
    * Create a PublicProductEntity from a Prisma Product model. Accepts the same
    * shape as {@link ProductEntity.fromPrisma} (including `stock`), derives
@@ -211,6 +227,12 @@ export class PublicProductEntity {
       slug: string;
       brandName: string;
     }>;
+    /**
+     * Structured spec-value rows (joined with their definition) for the detail
+     * path (TASK-191). Absent on list responses — specs/highlights are then
+     * empty arrays.
+     */
+    specValues?: SpecValueRow[];
   }): PublicProductEntity {
     const entity = new PublicProductEntity();
     entity.id = product.id;
@@ -260,6 +282,9 @@ export class PublicProductEntity {
     entity.compatibleDeviceModels = (product.compatibleDeviceModels ?? []).map((m) =>
       ProductCompatibleDeviceEntity.fromSummary(m),
     );
+    const { specs, highlights } = buildProductSpecs(product.specValues);
+    entity.specs = specs;
+    entity.highlights = highlights;
     return entity;
   }
 }

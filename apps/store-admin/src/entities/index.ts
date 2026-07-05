@@ -3,6 +3,7 @@ export * from "./session";
 export * from "./product";
 export * from "./category";
 export * from "./device";
+export * from "./attribute-definition";
 export * from "./page";
 export * from "./site-contact";
 export * from "./order";

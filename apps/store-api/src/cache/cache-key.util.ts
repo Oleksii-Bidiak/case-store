@@ -49,6 +49,8 @@ export interface ProductListKeyParams {
   minPrice?: number;
   maxPrice?: number;
   search?: string;
+  /** Serialized structured-spec facet ("key:value"), TASK-191. */
+  specs?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }
@@ -67,6 +69,7 @@ const KEY_FIELDS: ReadonlyArray<keyof ProductListKeyParams> = [
   'minPrice',
   'maxPrice',
   'search',
+  'specs',
   'sortBy',
   'sortOrder',
 ];

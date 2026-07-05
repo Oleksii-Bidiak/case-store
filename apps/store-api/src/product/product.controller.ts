@@ -28,6 +28,7 @@ import {
   ProductListQueryDto,
   ProductCardsQueryDto,
   SetDeviceCompatDto,
+  UpdateProductSpecsDto,
 } from './dto';
 import { AdminGuard } from '../auth/guards';
 import {
@@ -438,6 +439,34 @@ export class ProductController {
     @Body() dto: SetDeviceCompatDto,
   ): Promise<ProductResponse> {
     const product = await this.productService.updateDeviceCompat(id, dto.deviceModelIds);
+    return { data: product };
+  }
+
+  /**
+   * PUT /api/products/:id/specs
+   *
+   * Replaces a product's structured-spec values (TASK-191). Admin-only. The
+   * body carries the full set — omitted definitions are cleared. Values are
+   * validated against the product's effective definition set (own category +
+   * ancestors) and against each definition's type before persisting.
+   */
+  @Put(':id/specs')
+  @UseGuards(AdminGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: "Replace a product's structured specs (admin)",
+    operationId: 'updateProductSpecs',
+  })
+  @ApiParam({ name: 'id', description: 'Product UUID' })
+  @ApiResponse({ status: 200, description: 'Specs updated', type: ProductResponseEnvelope })
+  @ApiResponse({ status: 400, description: 'Invalid spec value or unknown definition' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async updateSpecs(
+    @Param('id') id: string,
+    @Body() dto: UpdateProductSpecsDto,
+  ): Promise<ProductResponse> {
+    const product = await this.productService.updateSpecs(id, dto.specs);
     return { data: product };
   }
 

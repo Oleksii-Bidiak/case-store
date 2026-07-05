@@ -135,6 +135,20 @@ export class ProductListQueryDto {
   search?: string;
 
   @ApiProperty({
+    description:
+      'Structured spec facet filter as a single "key:value" pair (TASK-191), e.g. "material:Силікон". ' +
+      'Kept a plain string on the wire so it maps to a normal query param; parsed to a ' +
+      '{ key, value } pair server-side via parseSpecFilter (malformed input is ignored).',
+    example: 'material:Силікон',
+    type: String,
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200, { message: 'specs must be at most 200 characters' })
+  specs?: string;
+
+  @ApiProperty({
     description: 'Sort field (createdAt, price, name)',
     example: 'createdAt',
     required: false,
@@ -159,4 +173,20 @@ export class ProductListQueryDto {
     message: 'sortOrder must be asc or desc',
   })
   sortOrder?: 'asc' | 'desc' = 'desc';
+}
+
+/**
+ * Parse the `specs=key:value` facet param into a `{ key, value }` pair
+ * (TASK-191). Splits on the FIRST colon only so a value may itself contain
+ * colons; returns `undefined` for missing or malformed input (empty key/value,
+ * no colon), so the caller simply applies no facet filter.
+ */
+export function parseSpecFilter(raw?: string): { key: string; value: string } | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const idx = raw.indexOf(':');
+  if (idx <= 0) return undefined;
+  const key = raw.slice(0, idx).trim();
+  const value = raw.slice(idx + 1).trim();
+  if (key === '' || value === '') return undefined;
+  return { key, value };
 }
