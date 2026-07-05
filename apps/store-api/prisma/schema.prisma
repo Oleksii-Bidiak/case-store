@@ -492,3 +492,29 @@ model MailOutbox {
   @@index([status, nextAttemptAt])
   @@map("mail_outbox")
 }
+
+/// Newsletter subscription lifecycle (TASK-188). SUBSCRIBED rows are active
+/// recipients; UNSUBSCRIBED rows are kept (not deleted) so a re-subscribe
+/// re-activates the same row and history/`unsubscribedAt` is preserved.
+enum NewsletterStatus {
+  SUBSCRIBED
+  UNSUBSCRIBED
+}
+
+/// Newsletter / marketing-email subscribers (TASK-188). Email is unique and
+/// stored normalized (lowercase, trimmed); the public subscribe endpoint is
+/// idempotent — subscribing an existing address re-activates an UNSUBSCRIBED row
+/// rather than creating a duplicate or erroring. `source` records where the
+/// opt-in came from (e.g. `home`, `promo`, `blog`) for basic attribution.
+model NewsletterSubscription {
+  id             String           @id @default(uuid())
+  email          String           @unique
+  status         NewsletterStatus @default(SUBSCRIBED)
+  source         String?
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  unsubscribedAt DateTime?        @map("unsubscribed_at")
+
+  @@index([status])
+  @@map("newsletter_subscriptions")
+}

@@ -52,6 +52,7 @@ async function exportSwagger(): Promise<void> {
     .addTag('Wishlist', 'Wishlist / favorites — guest via cookie, merges on login')
     .addTag('Reviews', 'Product reviews — submission, public listing, and admin moderation')
     .addTag('Search', 'Full-text product search + autocomplete (Meilisearch, Postgres fallback)')
+    .addTag('Newsletter', 'Newsletter subscriptions — public opt-in and admin list/export')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
