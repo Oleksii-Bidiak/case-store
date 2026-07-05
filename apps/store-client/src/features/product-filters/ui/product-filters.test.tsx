@@ -1,8 +1,17 @@
 import { useState } from "react";
+import { http, HttpResponse } from "msw";
 import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import { ProductFilters } from "./product-filters";
+
+// ProductFilters now renders the «Виробник» BrandFilter, which fetches
+// GET /brands (TASK-189). Stub it empty so the control is hidden and these
+// price-focused tests stay deterministic under onUnhandledRequest: "error".
+beforeEach(() => {
+  server.use(http.get("*/api/brands", () => HttpResponse.json({ data: [] })));
+});
 
 /**
  * Mirrors the real URL round-trip of `ProductListView.applyFilters`: price

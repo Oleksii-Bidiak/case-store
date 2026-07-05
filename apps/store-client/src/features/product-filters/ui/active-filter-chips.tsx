@@ -7,6 +7,12 @@ import { dict } from "@/shared/config";
 
 interface ActiveFilterChipsProps {
   currentParams: ProductControllerFindAllParams;
+  /**
+   * Display name for the active brand (`?brandId=`), resolved by the parent from
+   * the brand list. When absent the brand chip is not rendered even if a
+   * `brandId` is set (e.g. the list is still loading).
+   */
+  brandName?: string;
   onFilterChange: (updates: Record<string, string | undefined>) => void;
 }
 
@@ -20,6 +26,7 @@ interface ActiveFilterChipsProps {
  */
 export function ActiveFilterChips({
   currentParams,
+  brandName,
   onFilterChange,
 }: ActiveFilterChipsProps) {
   const chips: {
@@ -35,6 +42,14 @@ export function ActiveFilterChips({
       label: `«${currentParams.search}»`,
       isSearch: true,
       clear: () => onFilterChange({ search: undefined }),
+    });
+  }
+
+  if (currentParams.brandId && brandName) {
+    chips.push({
+      key: "brandId",
+      label: `${dict.filters.brandTitle}: ${brandName}`,
+      clear: () => onFilterChange({ brandId: undefined }),
     });
   }
 
@@ -91,6 +106,7 @@ export function ActiveFilterChips({
         onClick={() =>
           onFilterChange({
             categoryId: undefined,
+            brandId: undefined,
             search: undefined,
             minPrice: undefined,
             maxPrice: undefined,

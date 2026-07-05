@@ -116,6 +116,29 @@ model Category {
   @@map("categories")
 }
 
+/// Product manufacturer / brand (TASK-189, e.g. "Spigen", "Baseus"). Distinct
+/// from the compatible-device brand (plan 111's DeviceBrand, e.g. "Apple"): a
+/// Spigen case is compatible with an Apple iPhone — two separate concepts, two
+/// tables. Linked to Product via a nullable `brandId` (no backfill needed to
+/// ship). `isActive` is the reversible admin visibility toggle (hides the brand
+/// from the storefront filter/strip); no `deletedAt` tombstone — brands are
+/// admin content, not audit-tracked user data.
+model Brand {
+  id       String  @id @default(uuid())
+  name     String
+  slug     String  @unique
+  logo     String?
+  isActive Boolean @default(true) @map("is_active")
+
+  products Product[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([slug])
+  @@map("brands")
+}
+
 model Product {
   id             String        @id @default(uuid())
   name           String
@@ -134,6 +157,11 @@ model Product {
   // no group.
   groupId        String?       @map("group_id")
   group          ProductGroup? @relation(fields: [groupId], references: [id])
+  // Manufacturer / brand (TASK-189). Nullable — existing products have no brand
+  // until an admin sets one; no backfill required to ship. Distinct from the
+  // future compatible-device brand (plan 111).
+  brandId        String?       @map("brand_id")
+  brand          Brand?        @relation(fields: [brandId], references: [id])
   // Structured attribute values for this position within its group, keyed by
   // the group's axis names, e.g. {"color": "blue", "pack": "single"}.
   attributes     Json?         @default("{}")
@@ -157,6 +185,7 @@ model Product {
   @@index([isActive])
   @@index([deletedAt])
   @@index([groupId])
+  @@index([brandId])
   @@map("products")
 }
 

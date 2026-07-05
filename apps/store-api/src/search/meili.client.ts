@@ -28,6 +28,10 @@ export interface ProductSearchDocument {
    */
   categoryIds: string[];
   categoryName: string;
+  /** Manufacturer id — filterable facet for the brand catalog filter (TASK-189). */
+  brandId: string | null;
+  /** Manufacturer name — searchable so "spigen чохол" matches (TASK-189). */
+  brandName: string | null;
   primaryImageUrl: string | null;
   blurDataUrl: string | null;
   inStock: boolean;

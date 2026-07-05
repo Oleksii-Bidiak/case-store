@@ -61,6 +61,8 @@ function makeIndexSource(overrides: Record<string, unknown> = {}) {
     slug: 'iphone-15-case',
     categoryId: 'cat-1',
     categoryName: 'Cases',
+    brandId: 'brand-1',
+    brandName: 'Spigen',
     primaryImageUrl: 'http://img/1.jpg',
     blurDataUrl: 'data:blur',
     stock: 10,
@@ -133,9 +135,14 @@ describe('SearchService', () => {
         'name',
         'description',
         'categoryName',
+        'brandName',
         'searchTerms',
       ]);
-      expect(PRODUCTS_INDEX_SETTINGS.filterableAttributes).toEqual(['isActive', 'categoryIds']);
+      expect(PRODUCTS_INDEX_SETTINGS.filterableAttributes).toEqual([
+        'isActive',
+        'categoryIds',
+        'brandId',
+      ]);
       expect(PRODUCTS_INDEX_SETTINGS.sortableAttributes).toEqual(['price', 'createdAt']);
       expect(PRODUCTS_INDEX_SETTINGS.typoTolerance).toBeDefined();
     });
@@ -165,6 +172,8 @@ describe('SearchService', () => {
           price: 29.99,
           compareAtPrice: 39.99,
           categoryName: 'Cases',
+          brandId: 'brand-1',
+          brandName: 'Spigen',
           inStock: true,
           isActive: true,
           createdAt: new Date('2026-01-01T00:00:00.000Z').getTime(),

@@ -3,6 +3,7 @@ import { NotFoundException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ProductRepository, CreateProductInput, UpdateProductInput } from './product.repository';
 import { CategoryRepository } from '../category';
+import { BrandRepository } from '../brand';
 import { ProductService } from './product.service';
 import { ProductEntity, PublicProductEntity } from './entities';
 import { ProductListQueryDto } from './dto';
@@ -66,6 +67,13 @@ const categoryRepositoryMock = {
   findSubtreeIds: jest.fn((id: string) => Promise.resolve([id])),
 };
 
+// ─── BrandRepository mock (TASK-189 brand validation on create/update) ────────
+// `findById` resolves to a stub brand by default so create/update pass the
+// existence check; tests override it to null to simulate an unknown brand.
+const brandRepositoryMock = {
+  findById: jest.fn().mockResolvedValue({ id: 'brand-uuid-1', name: 'Spigen', slug: 'spigen' }),
+};
+
 // ─── CacheService mock ────────────────────────────────────────────────────────
 // Defaults: get → null (cache miss), all writes resolve. Individual tests
 // override `get` to simulate a HIT or a backend error.
@@ -106,6 +114,11 @@ describe('ProductService', () => {
     productIndexerMock.index.mockResolvedValue(undefined);
     productIndexerMock.remove.mockResolvedValue(undefined);
     categoryRepositoryMock.findSubtreeIds.mockImplementation((id: string) => Promise.resolve([id]));
+    brandRepositoryMock.findById.mockResolvedValue({
+      id: 'brand-uuid-1',
+      name: 'Spigen',
+      slug: 'spigen',
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -115,6 +128,7 @@ describe('ProductService', () => {
         { provide: ConfigService, useValue: configServiceMock },
         { provide: ProductIndexer, useValue: productIndexerMock },
         { provide: CategoryRepository, useValue: categoryRepositoryMock },
+        { provide: BrandRepository, useValue: brandRepositoryMock },
       ],
     }).compile();
 

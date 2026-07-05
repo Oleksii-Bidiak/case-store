@@ -55,6 +55,12 @@ function stubFormQueries() {
       HttpResponse.json({ data: [] }),
     ),
     http.get("*/api/product-groups", () => HttpResponse.json({ data: [] })),
+    http.get("*/api/brands/admin/list", () =>
+      HttpResponse.json({
+        data: [],
+        meta: { total: 0, page: 1, limit: 100, totalPages: 0 },
+      }),
+    ),
   );
 }
 
@@ -171,6 +177,13 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
             makeGroupRow(GROUP_UUID, "Group A"),
             makeGroupRow(GROUP_UUID_B, "Group B"),
           ],
+        });
+      }),
+      http.get("*/api/brands/admin/list", async () => {
+        await delay(ms);
+        return HttpResponse.json({
+          data: [],
+          meta: { total: 0, page: 1, limit: 100, totalPages: 0 },
         });
       }),
     );
@@ -305,6 +318,12 @@ describe("ProductForm — leaf-only category picker (TASK-236)", () => {
         }),
       ),
       http.get("*/api/product-groups", () => HttpResponse.json({ data: [] })),
+      http.get("*/api/brands/admin/list", () =>
+        HttpResponse.json({
+          data: [],
+          meta: { total: 0, page: 1, limit: 100, totalPages: 0 },
+        }),
+      ),
     );
   }
 

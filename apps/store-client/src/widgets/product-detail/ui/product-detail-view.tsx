@@ -141,9 +141,19 @@ export function ProductDetailView({ slug }: { slug: string }) {
 
         {/* Info column. */}
         <div className="flex min-w-0 flex-col gap-[18px]">
-          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-[27px] sm:leading-tight">
-            {product.name}
-          </h1>
+          <div className="flex flex-col gap-1.5">
+            {product.brand && (
+              <Link
+                href={`/products?brandId=${product.brand.id}`}
+                className="text-sm font-semibold text-primary no-underline transition-colors hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {product.brand.name}
+              </Link>
+            )}
+            <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-[27px] sm:leading-tight">
+              {product.name}
+            </h1>
+          </div>
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
             <RatingStars

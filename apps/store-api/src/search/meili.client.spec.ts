@@ -58,6 +58,8 @@ const DOC: ProductSearchDocument = {
   compareAtPrice: null,
   categoryIds: ['c1'],
   categoryName: 'Cases',
+  brandId: 'b1',
+  brandName: 'Spigen',
   primaryImageUrl: null,
   blurDataUrl: null,
   inStock: true,

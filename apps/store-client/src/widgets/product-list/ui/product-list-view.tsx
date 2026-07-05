@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { SlidersHorizontal } from "lucide-react";
 import { useCategoryControllerGetCategoryTree } from "@/entities/category";
+import { useBrandControllerFindAll } from "@/entities/brand";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import {
   ProductFilters,
@@ -33,6 +34,7 @@ const PAGE_SIZE = 20;
 /** Keys that clearing "all filters" removes (everything except sort/view/page). */
 const CLEARABLE_FILTERS = {
   categoryId: undefined,
+  brandId: undefined,
   search: undefined,
   minPrice: undefined,
   maxPrice: undefined,
@@ -60,6 +62,7 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
 
   const params: ProductControllerFindAllParams = {
     categoryId: searchParams.get("categoryId") ?? initialParams.categoryId,
+    brandId: searchParams.get("brandId") ?? initialParams.brandId,
     search: searchParams.get("search") ?? initialParams.search,
     sortBy: searchParams.get("sortBy") ?? initialParams.sortBy ?? "createdAt",
     sortOrder:
@@ -80,6 +83,7 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
   // chips row, not the drawer (TASK-216).
   const activeFilterCount =
     (params.search ? 1 : 0) +
+    (params.brandId ? 1 : 0) +
     (params.minPrice != null ? 1 : 0) +
     (params.maxPrice != null ? 1 : 0);
 
@@ -133,6 +137,13 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
   const { data: categoriesData } = useCategoryControllerGetCategoryTree();
   const categories = categoriesData?.data ?? [];
 
+  // Active brands power both the sidebar «Виробник» select and the removable
+  // brand chip's label (id → name). One shared query, deduped by React Query.
+  const { data: brandsData } = useBrandControllerFindAll();
+  const activeBrandName = params.brandId
+    ? brandsData?.data.find((brand) => brand.id === params.brandId)?.name
+    : undefined;
+
   return (
     <div>
       {/* Category chips — horizontal, scrollable on mobile; drives ?categoryId= */}
@@ -168,7 +179,11 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
         </div>
       </div>
 
-      <ActiveFilterChips currentParams={params} onFilterChange={applyFilters} />
+      <ActiveFilterChips
+        currentParams={params}
+        brandName={activeBrandName}
+        onFilterChange={applyFilters}
+      />
 
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
         {/* Desktop sidebar */}

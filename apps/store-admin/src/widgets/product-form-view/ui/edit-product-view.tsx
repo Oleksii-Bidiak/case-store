@@ -142,6 +142,7 @@ function mapProductToFormValues(product: {
   stock: number;
   categoryId: string;
   groupId?: string | null;
+  brand?: { id: string } | null;
   attributes?: Record<string, unknown> | null;
   positionOrder: number;
   isActive: boolean;
@@ -156,6 +157,7 @@ function mapProductToFormValues(product: {
     stock: String(product.stock),
     categoryId: product.categoryId,
     groupId: product.groupId ?? "",
+    brandId: product.brand?.id ?? "",
     positionOrder: String(product.positionOrder),
     attributes: Object.entries(product.attributes ?? {}).map(
       ([key, value]) => ({

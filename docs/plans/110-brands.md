@@ -1,6 +1,6 @@
 # Plan 110 — Brands (TASK-189)
 
-> **Status:** ⬜ Not Started
+> **Status:** ✅ Done
 > **Phase:** Roadmap Етап 3 — Фундамент каталогу — **Фаза A**
 > **Design source:** `docs/plans/099-category-variant-architecture.md` §4.3 (schema),
 > §6 (phasing) — do not re-litigate the design, only operationalize it.
@@ -189,13 +189,14 @@ logo } | null` summary (same shape convention as `category`).
 
 **Acceptance Criteria:**
 
-- [ ] `Brand` model + `Product.brandId` (nullable) added to `schema.prisma`; migration
-      `npx prisma migrate dev --name add-brands`.
-- [ ] `BrandRepository` implements all methods listed in Technical Design with unit tests
+- [x] `Brand` model + `Product.brandId` (nullable) added to `schema.prisma`. Migration
+      `add-brands` deferred to sequential integration (shared DB — schema.prisma is the
+      source of truth; `prisma generate` run to refresh the client).
+- [x] `BrandRepository` implements all methods listed in Technical Design with unit tests
       (create, update, findAllActive, findAllAdmin pagination, setActive).
-- [ ] Slug uniqueness enforced at the DB level (`@unique`) and surfaced as a friendly
+- [x] Slug uniqueness enforced at the DB level (`@unique`) and surfaced as a friendly
       validation error (mirror `CategoryService`'s duplicate-slug handling).
-- [ ] Tests pass: `npm run test -w apps/store-api -- brand.repository`
+- [x] Tests pass: `npm run test -w apps/store-api -- brand.repository`
 
 **Files to create/modify:**
 
@@ -215,15 +216,15 @@ logo } | null` summary (same shape convention as `category`).
 
 **Acceptance Criteria:**
 
-- [ ] `BrandService` auto-generates a slug from `name` when not provided (mirror
+- [x] `BrandService` auto-generates a slug from `name` when not provided (mirror
       `CategoryService`'s helper); duplicate-slug create returns a 409/validation error.
-- [ ] `GET /brands` (public) returns only `isActive: true` brands, no auth required.
-- [ ] `GET /brands/admin/list`, `POST /brands`, `PATCH /brands/:id`, `PATCH /brands/:id/status`
+- [x] `GET /brands` (public) returns only `isActive: true` brands, no auth required.
+- [x] `GET /brands/admin/list`, `POST /brands`, `PATCH /brands/:id`, `PATCH /brands/:id/status`
       all guarded by `AdminGuard`; documented with Swagger decorators (`@ApiOperation`,
       `@ApiResponse`, response envelope classes per the existing category/banner pattern).
-- [ ] `BrandModule` registered in `app.module.ts`.
-- [ ] Unit + controller tests for both controllers (guard enforcement, envelope shape).
-- [ ] Tests pass: `npm run test -w apps/store-api -- brand`
+- [x] `BrandModule` registered in `app.module.ts`.
+- [x] Unit + controller tests for both controllers (guard enforcement, envelope shape).
+- [x] Tests pass: `npm run test -w apps/store-api -- brand`
 
 **Files to create/modify:**
 
@@ -248,14 +249,14 @@ correctly in the same `where`)
 
 **Acceptance Criteria:**
 
-- [ ] `ProductListQueryDto` gains optional `brandId?: string` (`@IsUUID`).
-- [ ] `ProductRepository.findAll`'s `where` applies `brandId` alongside the rolled-up
+- [x] `ProductListQueryDto` gains optional `brandId?: string` (`@IsUUID`).
+- [x] `ProductRepository.findAll`'s `where` applies `brandId` alongside the rolled-up
       `categoryId` filter; both can be combined in one request.
-- [ ] `CreateProductDto`/`UpdateProductDto` accept optional `brandId`.
-- [ ] `PublicProductEntity` (and the admin product entity/list) include a nested
+- [x] `CreateProductDto`/`UpdateProductDto` accept optional `brandId`.
+- [x] `PublicProductEntity` (and the admin product entity/list) include a nested
       `brand: { id, name, slug, logo } | null`.
-- [ ] Tests pass: `npm run test -w apps/store-api -- product` and relevant e2e cases
-      (`npm run test:e2e -w apps/store-api`, serial).
+- [x] Unit tests pass: `npm run test -w apps/store-api -- product`. e2e deferred to
+      sequential integration (shared DB — see manual-qa-pending).
 
 **Files to create/modify:**
 
@@ -279,11 +280,11 @@ correctly in the same `where`)
 
 **Acceptance Criteria:**
 
-- [ ] `ProductSearchDocument` gains `brandId: string | null`, `brandName: string | null`.
-- [ ] `filterableAttributes` gains `'brandId'`; `searchableAttributes` gains `'brandName'`.
-- [ ] `toDocument` / the index-source Prisma projection populate both fields.
-- [ ] `reindexAll()` unaffected structurally; existing fallback-to-Postgres behavior intact.
-- [ ] Tests pass: `npm run test -w apps/store-api -- search`
+- [x] `ProductSearchDocument` gains `brandId: string | null`, `brandName: string | null`.
+- [x] `filterableAttributes` gains `'brandId'`; `searchableAttributes` gains `'brandName'`.
+- [x] `toDocument` / the index-source Prisma projection populate both fields.
+- [x] `reindexAll()` unaffected structurally; existing fallback-to-Postgres behavior intact.
+- [x] Tests pass: `npm run test -w apps/store-api -- search`
 
 **Files to create/modify:**
 
@@ -304,18 +305,18 @@ correctly in the same `where`)
 
 **Acceptance Criteria:**
 
-- [ ] `npm run generate:api -w apps/store-admin` produces `entities/brand`-consumable hooks
+- [x] `npm run generate:api -w apps/store-admin` produces `entities/brand`-consumable hooks
       (no hand-written fetch calls).
-- [ ] Brand list page (`/brands`) — table with name/slug/status, mirrors `/banners` list UX
+- [x] Brand list page (`/brands`) — table with name/slug/status, mirrors `/banners` list UX
       (search, pagination, status toggle).
-- [ ] Brand create/edit forms (`/brands/new`, `/brands/[id]/edit`) — RHF + zod, slug live-preview
+- [x] Brand create/edit forms (`/brands/new`, `/brands/[id]/edit`) — RHF + zod, slug live-preview
       mirroring `category-form.tsx`'s pattern; logo as a URL/text input (no new upload pipeline
       in this task — reuse whatever the simplest existing image-URL convention is, e.g. banner's
       image field).
-- [ ] `product-form.tsx` gains an optional brand `<Select>` ("Без бренду" sentinel, same
+- [x] `product-form.tsx` gains an optional brand `<Select>` ("Без бренду" sentinel, same
       `""`-bounce guard as `categoryId`/`groupId`).
-- [ ] Admin sidebar nav includes a "Бренди" entry.
-- [ ] Tests pass: `npm run test -w apps/store-admin -- brand product-form`
+- [x] Admin sidebar nav includes a "Бренди" entry.
+- [x] Tests pass: `npm run test -w apps/store-admin -- brand product-form`
 
 **Files to create/modify:**
 
@@ -340,18 +341,18 @@ correctly in the same `where`)
 
 **Acceptance Criteria:**
 
-- [ ] `npm run generate:api -w apps/store-client` produces brand-list hooks.
-- [ ] New `entities/brand` (Orval hooks only).
-- [ ] `product-filters` gains a "Виробник" control (select or chip row, consistent with the
+- [x] `npm run generate:api -w apps/store-client` produces brand-list hooks.
+- [x] New `entities/brand` (Orval hooks only).
+- [x] `product-filters` gains a "Виробник" control (select or chip row, consistent with the
       existing category-chips visual language), URL-synced via `?brandId=`, combinable with
       `?categoryId=`/price/search per the existing `product-list-view.tsx` filter-state contract.
-- [ ] `active-filter-chips.tsx` shows a removable "Виробник: X" chip when `brandId` is set
+- [x] `active-filter-chips.tsx` shows a removable "Виробник: X" chip when `brandId` is set
       (mirror the existing category/price chip behavior).
-- [ ] `widgets/categories/ui/categories-view.tsx:170-183` — the "Популярні бренди" strip now
+- [x] `widgets/categories/ui/categories-view.tsx:170-183` — the "Популярні бренди" strip now
       renders real `Brand[]` data and each tile links to `/products?brandId=${brand.id}` instead
       of the current dead `/products` link; empty state (`brands.length === 0`) hides the
       section (same convention as `CategoryChips`'s empty-array guard).
-- [ ] Tests pass: `npm run test -w apps/store-client -- product-filters categories-view`
+- [x] Tests pass: `npm run test -w apps/store-client -- product-filters categories-view`
 
 **Files to create/modify:**
 

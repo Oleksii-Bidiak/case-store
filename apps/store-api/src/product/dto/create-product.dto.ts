@@ -111,6 +111,15 @@ export class CreateProductDto {
   groupId?: string;
 
   @ApiProperty({
+    description: 'Brand (manufacturer) ID this product belongs to',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID(4, { message: 'Brand ID must be a valid UUID' })
+  brandId?: string;
+
+  @ApiProperty({
     description: 'Attribute values for this position, keyed by group axis name',
     example: { color: 'blue', pack: 'single' },
     required: false,

@@ -36,6 +36,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
 
       expect(prismaMock.product.findFirst).toHaveBeenCalledWith({
         where: { id: 'product-1', deletedAt: null },
+        include: { brand: { select: { id: true, name: true, slug: true, logo: true } } },
       });
     });
   });

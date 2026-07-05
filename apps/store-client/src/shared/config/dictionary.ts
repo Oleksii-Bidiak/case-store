@@ -668,18 +668,8 @@ export const dict = {
     emptyHeading: "Категорій поки немає",
     loadError: "Не вдалося завантажити категорії. Спробуйте пізніше.",
     viewAllInCategory: "Переглянути всі товари",
-    // Popular brands strip — a stub (no brand data model yet, TASK-176).
+    // Popular brands strip — wired to the real Brand model (TASK-189).
     brandsHeading: "Популярні бренди",
-    brands: [
-      "Apple",
-      "Samsung",
-      "Xiaomi",
-      "Sony",
-      "JBL",
-      "Anker",
-      "Baseus",
-      "Hoco",
-    ],
   },
 
   filters: {
@@ -711,6 +701,9 @@ export const dict = {
     viewGrid: "Плитка",
     viewList: "Список",
     viewToggleAria: "Перемкнути вигляд",
+    // Manufacturer (brand) filter card — TASK-189.
+    brandTitle: "Виробник",
+    allBrands: "Всі виробники",
     // Price filter card + mobile drawer.
     priceTitle: "Ціна, ₴",
     priceSliderAria: "Діапазон цін",

@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ProductImageEntity } from './product-image.entity';
+import { ProductBrandEntity } from './product-brand.entity';
 import {
   ProductVariantSummaryEntity,
   type VariantSiblingInput,
@@ -97,6 +98,14 @@ export class PublicProductEntity {
   groupId!: string | null;
 
   @ApiProperty({
+    description: 'Manufacturer / brand summary, or null when the product has no brand',
+    type: ProductBrandEntity,
+    nullable: true,
+    required: false,
+  })
+  brand!: ProductBrandEntity | null;
+
+  @ApiProperty({
     description: 'Attribute values for this position within its group (keyed by group axis names)',
     example: { color: 'blue', pack: 'single' },
     type: 'object',
@@ -166,6 +175,7 @@ export class PublicProductEntity {
     stock: number;
     categoryId: string;
     groupId?: string | null;
+    brand?: { id: string; name: string; slug: string; logo: string | null } | null;
     attributes?: unknown;
     positionOrder?: number;
     isActive: boolean;
@@ -202,6 +212,7 @@ export class PublicProductEntity {
     entity.lowStock = product.stock > 0 && product.stock <= LOW_STOCK_THRESHOLD;
     entity.categoryId = product.categoryId;
     entity.groupId = product.groupId ?? null;
+    entity.brand = product.brand ? ProductBrandEntity.fromPrisma(product.brand) : null;
     entity.attributes = (product.attributes as Record<string, string> | null) ?? {};
     entity.positionOrder = product.positionOrder ?? 0;
     entity.isActive = product.isActive;

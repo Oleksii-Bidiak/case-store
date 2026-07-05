@@ -8,9 +8,10 @@ import { ProductImageController } from './product-image.controller';
 import { StorageModule } from '../storage';
 import { SearchModule } from '../search';
 import { CategoryModule } from '../category';
+import { BrandModule } from '../brand';
 
 @Module({
-  imports: [StorageModule, SearchModule, CategoryModule],
+  imports: [StorageModule, SearchModule, CategoryModule, BrandModule],
   controllers: [ProductController, ProductImageController],
   providers: [ProductRepository, ProductService, ProductImageRepository, ProductImageService],
   exports: [ProductService],
