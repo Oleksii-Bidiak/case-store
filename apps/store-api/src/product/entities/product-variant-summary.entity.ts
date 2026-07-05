@@ -55,8 +55,10 @@ export class ProductVariantColorEntity {
 /**
  * Compact variant summary surfaced on each product in the LIST response
  * (TASK-077). It lets a {@link ProductCard} render colour dots and a
- * "from {price}" advertised price plus a quick-add of the default (cheapest)
- * variant, WITHOUT a second request for the full product group.
+ * "from {price}" advertised price WITHOUT a second request for the full
+ * product group. Quick-add targets the card's own position since TASK-233,
+ * so the `default*` trio below is deprecated (TASK-235) and kept only for
+ * contract stability until a later contract rev drops it.
  *
  * For a standalone product (no group) the summary collapses to a single
  * variant: the product itself.
@@ -82,16 +84,30 @@ export class ProductVariantSummaryEntity {
   })
   priceFrom!: string;
 
-  @ApiProperty({ description: 'Id of the default (cheapest) position for quick-add' })
+  /** @deprecated TASK-235 — quick-add uses the card's own `product.id` since TASK-233. */
+  @ApiProperty({
+    deprecated: true,
+    description:
+      'Deprecated (TASK-235): id of the cheapest position. Quick-add uses the product own id since TASK-233; slated for removal in a later contract rev.',
+  })
   defaultVariantId!: string;
 
+  /** @deprecated TASK-235 — no runtime consumers; slated for removal. */
   @ApiProperty({
-    description: 'Slug of the default (cheapest) position',
+    deprecated: true,
+    description:
+      'Deprecated (TASK-235): slug of the cheapest position; no runtime consumers, slated for removal.',
     example: 'usb-c-cable-1m',
   })
   defaultVariantSlug!: string;
 
-  @ApiProperty({ description: 'Whether the default position is in stock', example: true })
+  /** @deprecated TASK-235 — availability comes from the product own `inStock` since TASK-233. */
+  @ApiProperty({
+    deprecated: true,
+    description:
+      'Deprecated (TASK-235): stock flag of the cheapest position. Cards read the product own inStock since TASK-233; slated for removal.',
+    example: true,
+  })
   defaultInStock!: boolean;
 
   @ApiProperty({
