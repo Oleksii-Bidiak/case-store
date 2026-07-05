@@ -35,6 +35,10 @@ export function WishlistListItem({ item }: { item: WishlistItemEntity }) {
           src={item.imageUrl ?? undefined}
           alt={item.productName}
           initial={(item.productName?.[0] ?? "?").toUpperCase()}
+          // Fixed thumbnail (`size-[130px] sm:size-[150px]` above) — without
+          // this the grid default downloads ~full-viewport candidates
+          // (TASK-210).
+          sizes="(max-width: 639px) 130px, 150px"
         />
         {onSale && (
           <span className="absolute top-2 left-2 rounded-md bg-sale px-2 py-0.5 text-xs font-bold text-sale-foreground">

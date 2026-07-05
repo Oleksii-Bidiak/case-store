@@ -9,6 +9,16 @@ import { formatMoney, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
 /**
+ * Wishlist grid: `repeat(auto-fill, minmax(232px, 1fr))` inside the
+ * `max-w-[1320px]` page, minus the 268px sidebar + 28px gap on `lg`. The
+ * widest a column gets is ~313px (three 18px-gapped columns in the 976px
+ * content area), so cap the srcset hint at 320px instead of the generic
+ * viewport-based default (TASK-210).
+ */
+const WISHLIST_GRID_SIZES =
+  "(max-width: 639px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), 320px";
+
+/**
  * WishlistItemCard — a single saved product on the `/wishlist` grid.
  *
  * The wishlist API returns a trimmed product summary (name, slug, image, price,
@@ -36,6 +46,7 @@ export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
           src={item.imageUrl ?? undefined}
           alt={item.productName}
           initial={(item.productName?.[0] ?? "?").toUpperCase()}
+          sizes={WISHLIST_GRID_SIZES}
         />
 
         {/* Heart removes the product from the wishlist (it is already saved). */}
