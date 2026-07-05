@@ -680,10 +680,9 @@ https://react.dev/link/hydration-mismatch
 > `add-brands` / `db push` та e2e/integration виконати послідовно** (спільна БД). Це очікувано:
 > `schema.prisma` — джерело правди.
 
-- [ ] **Міграція + e2e (обов'язково, послідовно).** **Зроби:** `prisma migrate dev --name
-    add-brands` (або `db push`) на `store_dev`/`store_test`, потім `npm run test:e2e
-    -w apps/store-api -- --runInBand`. **Має бути:** таблиця `brands` + колонка `products.brand_id`
-      створені; e2e зелені.
+- [x] **Міграція + e2e (обов'язково, послідовно).** ✅ Виконано в Етап-3 інтеграції: `prisma db
+    push` на `store_dev` + `store_test` (таблиця `brands` + `products.brand_id` створені);
+      e2e зелені (269/269, serial).
 - [ ] **Адмінка — CRUD брендів.** **Зроби:** `/brands` → «Додати бренд» (назва напр. «Spigen»,
       slug лишити порожнім), збережи; відредагуй лого-URL; перемкни статус актив/прихований; спробуй
       створити дубль slug. **Має бути:** slug автогенерується з назви; дубль slug → 409 (тост
@@ -701,21 +700,20 @@ https://react.dev/link/hydration-mismatch
 - [ ] **Вітрина — бренд на PDP.** **Зроби:** відкрий товар із заданим брендом. **Має бути:** назва
       бренду показана над заголовком і веде на `/products?brandId=…`.
 - [ ] **Meilisearch — фасет бренду.** **Зроби:** після reindex (boot або `POST
-    /api/admin/search/reindex`) шукай за назвою бренду (напр. «spigen»). **Має бути:** reindex без
+  /api/admin/search/reindex`) шукай за назвою бренду (напр. «spigen»). **Має бути:** reindex без
       помилок; `brandId` у `filterableAttributes`, `brandName` searchable — товари бренду знаходяться
       (fallback на Postgres лишається робочим без Meili).
+
 ## 11. Етап 3 — Фаза B: сумісність пристроїв (TASK-190, plan 111)
 
 > Код змерджено у `feature/190-device-compat`. Схема (`DeviceBrand`/`DeviceModel`/
 > `ProductDeviceCompat` + relation `Product.deviceCompat`) — у `schema.prisma`; міграцію та сід
 > не запускав (спільна БД). Нижче — обовʼязкові кроки на живому стенді.
 
-- [ ] **Міграція БД (обовʼязково).** **Зроби:** `npx prisma migrate dev --name add-device-compat`
-      (або `prisma db push` на dev). **Має бути:** зʼявляються таблиці `device_brands`,
-      `device_models`, `product_device_compat` без помилок.
-- [ ] **Сід моделей (обовʼязково).** **Зроби:** `npm run db:seed -w apps/store-api`. **Має бути:**
-      сід проходить чисто та ідемпотентно (повторний запуск не дублює); зʼявляються бренди
-      Apple/Samsung/Xiaomi і їх моделі, згруповані за `series`.
+- [x] **Міграція БД (обовʼязково).** ✅ `prisma db push` на `store_dev` + `store_test` —
+      таблиці `device_brands`, `device_models`, `product_device_compat` створені без помилок.
+- [x] **Сід моделей (обовʼязково).** ✅ `npx prisma db seed` на `store_dev` — 3 бренди
+      (Apple/Samsung/Xiaomi) + 40 моделей, згруповані за `series`, upsert ідемпотентний.
 - [ ] **Meilisearch reindex (після сіду/бекфілу compat).** Документ індексу отримав нове поле
       `deviceModelIds[]` + `filterableAttributes`. **Зроби:** reindex через boot API або
       `POST /api/admin/search/reindex`. **Має бути:** reindex без помилок.
@@ -739,9 +737,10 @@ https://react.dev/link/hydration-mismatch
 - [ ] **Вітрина — PDP cross-sell.** **Зроби:** відкрий товар із заданою сумісністю. **Має бути:**
       секція «Сумісні аксесуари» з іншими товарами під ту саму модель (поточний виключений);
       для товару без compat секція не рендериться.
-- [ ] **e2e (serial).** **Зроби:** `npm run test:e2e -w apps/store-api -- --runInBand` після
-      міграції. **Має бути:** зелено (плюс перевірка single/group/invalid-id/idempotent сценаріїв
-      compat, якщо додаси e2e-спеку).
+- [x] **e2e (serial).** ✅ `npm run test:e2e -w apps/store-api -- --runInBand` зелений (269/269)
+      після `db push`. Публічний PDP compat-гідрація покрита (e2e Prisma-мок доповнено
+      `productDeviceCompat`). Виділені single/group/invalid-id/idempotent compat e2e-сценарії —
+      опційно, ще не додані.
 
 ## 12. Етап 3 — Фаза C: структуровані характеристики (TASK-191, plan 112)
 
@@ -749,12 +748,9 @@ https://react.dev/link/hydration-mismatch
 > запущеного стека / БД (e2e й ручні), навмисно не виконані build-агентом (спільна БД,
 > координація паралельних агентів).
 
-- [ ] **API e2e (координатор, serial).** `npm run test:e2e -w apps/store-api -- --runInBand`.
-      **Має бути:** нові маршрути покриті — `POST/PATCH/DELETE` `attribute-definitions`
-      (AdminGuard), `PUT /products/:id/specs` (валідна прив'язка; 400 на definitionId поза
-      effective-набором; 400 на нечислове NUMBER / не-опцію SELECT), `GET /products/:slug`
-      віддає гідратовані `specs`/`highlights`, `GET /categories/:id/filterable-specs` і
-      `GET /products?specs=key:value` фільтрують коректно.
+- [x] **API e2e (координатор, serial).** ✅ `npm run test:e2e -w apps/store-api -- --runInBand`
+      зелений (269/269, 19 suites) + `test:int` зелений (28/28, реальна БД) після `db push`.
+      Нові spec/attribute-definition маршрути покриті.
 - [ ] **Admin — шаблони характеристик категорії.** **Зроби:** відкрий категорію → секція
       «Характеристики» → додай (напр. `material` / «Матеріал» / SELECT з опціями «Силікон»,
       «Шкіра», познач «фільтр»); відредагуй; перестав ↑/↓; видали. **Має бути:** тип SELECT
@@ -774,6 +770,19 @@ https://react.dev/link/hydration-mismatch
       специфікаціями → у сайдбарі зʼявляється блок «Характеристики» із селектами; обери значення.
       **Має бути:** URL отримує `?specs=key:value`, сітка звужується, чіп фасета показується й
       знімається; зміна/скидання категорії прибирає фасет; без категорії блок прихований.
+
+## 13. Етап 3 — Bestseller signal (TASK-164, plan 113)
+
+> Unit (ranking) + integration (реальна БД: PAID-агрегація, unpaid не рахується, пагінація) +
+> typecheck + lint зелені. Нижче — візуальна перевірка на живому стенді.
+
+- [ ] **Вітрина — «Хіти» rail.** **Зроби:** на головній відкрий вкладку «Хіти продажів» у
+      секції «Популярне» (потрібні PAID-замовлення в БД). **Має бути:** товари впорядковані за
+      проданою кількістю (найбільш продавані першими); товари без продажів усе одно показуються
+      у хвості (новіші першими); порожня БД замовлень → rail показує загальний каталог, не падає.
+- [ ] **API — `?sortBy=bestselling`.** **Зроби:** `GET /api/products?sortBy=bestselling`. **Має
+      бути:** 200, `meta.total` = повний відфільтрований набір (не лише продані), порядок за
+      продажами; комбінується з `categoryId`/`brandId`/`deviceModelId`/`specs`/ціною.
 
 ## Після проходу
 

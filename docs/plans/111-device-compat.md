@@ -249,7 +249,8 @@ Promise<PaginatedDeviceModelsResult>` — supports the ModelPicker's brand→mod
       iPad, Apple Watch case sizes) and a representative Samsung + Xiaomi slice, grouped by
       `series` for the ModelPicker's cascade UX.
 - [x] Seed is idempotent (`upsert` on `slug`), safe to re-run.
-- [ ] Tests pass: `npm run db:seed -w apps/store-api` runs clean against a fresh dev DB. _(manual)_
+- [x] Tests pass: `npx prisma db seed` runs clean against the dev DB (3 device brands, 40 device
+      models upserted idempotently) — verified during the Етап 3 integration.
 
 **Files to create/modify:**
 
@@ -307,7 +308,7 @@ Promise<PaginatedDeviceModelsResult>` — supports the ModelPicker's brand→mod
 - [x] `PUT /products/:id/device-compat` and `PUT /products/group/:groupId/device-compat` are
       `AdminGuard`-protected and documented with Swagger.
 - [x] Product entities (public + admin) expose `compatibleDeviceModels: { id, name, slug,
-  brandName }[]`.
+brandName }[]`.
 - [x] Unit tests cover: single-position assign, group bulk-assign across 3 sibling positions,
       invalid id rejection, and idempotent re-assignment (composite-key dedupe). _(e2e is
       **manual** — shared-DB constraint.)_
