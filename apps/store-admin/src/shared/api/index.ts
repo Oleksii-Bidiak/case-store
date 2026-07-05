@@ -14,6 +14,7 @@ export * from "./generated/users/users";
 export * from "./generated/products/products";
 export * from "./generated/product-groups/product-groups";
 export * from "./generated/categories/categories";
+export * from "./generated/attribute-definitions/attribute-definitions";
 export * from "./generated/pages/pages";
 export * from "./generated/blog/blog";
 export * from "./generated/banners/banners";
