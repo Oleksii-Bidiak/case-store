@@ -15,6 +15,7 @@ export * from "./generated/products/products";
 export * from "./generated/product-groups/product-groups";
 export * from "./generated/categories/categories";
 export * from "./generated/pages/pages";
+export * from "./generated/blog/blog";
 export * from "./generated/site-contact/site-contact";
 export * from "./generated/admin-orders/admin-orders";
 export * from "./generated/admin-dashboard/admin-dashboard";

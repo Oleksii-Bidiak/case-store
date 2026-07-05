@@ -23,6 +23,16 @@ export {
 export { CreateDiscountView, EditDiscountView } from "./discount-form-view";
 export { AdminPageTable, AdminPageTableSkeleton } from "./page-list";
 export { CreatePageView, EditPageView } from "./page-form-view";
+export { BlogPostTable, BlogPostTableSkeleton } from "./blog-post-list";
+export { CreateBlogPostView, EditBlogPostView } from "./blog-post-form-view";
+export {
+  BlogCategoryTable,
+  BlogCategoryTableSkeleton,
+} from "./blog-category-list";
+export {
+  CreateBlogCategoryView,
+  EditBlogCategoryView,
+} from "./blog-category-form-view";
 export { SiteContactSettingsView } from "./site-contact-settings-view";
 export { AdminOrderTable, AdminOrderTableSkeleton } from "./order-list";
 export {
