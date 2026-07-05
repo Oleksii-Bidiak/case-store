@@ -2,6 +2,7 @@
 // Re-export all UI components here as they are created
 
 export { Button, buttonVariants } from "./button";
+export { Checkbox } from "./checkbox";
 export {
   Dialog,
   DialogClose,
