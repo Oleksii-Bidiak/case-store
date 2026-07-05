@@ -93,7 +93,7 @@
 | TASK-232 | Admin product-form select bounce — `""` guard on `categoryId`/`groupId` (same as TASK-201, «Без групи» sentinel preserved); RED-confirmed regression specs; sweep: all other admin selects unaffected (static options / not async-seeded) | ✅ | — |
 | TASK-233 | Product-card quick-add — now adds the card's **own** `product.id`, availability from own `inStock` (field already existed — frontend-only); `variantSummary.default*` left with zero runtime consumers → deprecation TASK-235 | ✅ | — |
 | TASK-234 | Sticky asides — shared `STICKY_ASIDE_TOP`/`STICKY_HEADER_OFFSET` (96px) in `shared/config/layout.ts`; 6 offenders fixed + 3 hardcodes retrofitted + TOC scroll-spy/anchors aligned; convention documented in design-system §4 | ✅ | — |
-| TASK-235 | Deprecate `ProductVariantSummaryEntity.defaultVariantId`/`defaultVariantSlug`/`defaultInStock` — zero runtime consumers after TASK-233 (only test fixtures satisfy the type); mark `@deprecated` in Swagger, drop in a later contract rev | ⬜ | — |
+| TASK-235 | Deprecated `variantSummary.default*` trio — `deprecated: true` in Swagger + TSDoc (propagates to generated models as `@deprecated`); still populated for contract stability; actual removal rides the next breaking contract rev | ✅ | — |
 
 #### UX-покращення та discovery з QA-проходу *(виконувати після багів; частина живиться Етапами 2–3)*
 
