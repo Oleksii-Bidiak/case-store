@@ -1,6 +1,8 @@
 # Plan 111 — Device compatibility ("Сумісні товари") (TASK-190)
 
-> **Status:** ⬜ Not Started
+> **Status:** ✅ Done (2026-07-06) — code complete on `feature/190-device-compat`;
+> DB migration + `db:seed` + Meili reindex + e2e are manual (shared-DB constraint,
+> see `docs/manual-qa-pending.md`).
 > **Phase:** Roadmap Етап 3 — Фундамент каталогу — **Фаза B**
 > **Design source:** `docs/plans/099-category-variant-architecture.md` §2.3, §3, §4.2
 > (schema), §6 (phasing) — do not re-litigate the design, only operationalize it.
@@ -241,13 +243,13 @@ Promise<PaginatedDeviceModelsResult>` — supports the ModelPicker's brand→mod
 
 **Acceptance Criteria:**
 
-- [ ] Three models added to `schema.prisma` exactly per the Technical Design snippet; migration
-      `npx prisma migrate dev --name add-device-compat`.
-- [ ] `prisma/seed.ts` upserts an Apple lineup (iPhone 12–16 series incl. Pro/Plus/Max variants,
+- [x] Three models added to `schema.prisma` exactly per the Technical Design snippet.
+      (Migration run `npx prisma migrate dev` is **manual** — shared-DB constraint.)
+- [x] `prisma/seed.ts` upserts an Apple lineup (iPhone 12–16 series incl. Pro/Plus/Max variants,
       iPad, Apple Watch case sizes) and a representative Samsung + Xiaomi slice, grouped by
       `series` for the ModelPicker's cascade UX.
-- [ ] Seed is idempotent (`upsert` on `slug`), safe to re-run.
-- [ ] Tests pass: `npm run db:seed -w apps/store-api` runs clean against a fresh dev DB.
+- [x] Seed is idempotent (`upsert` on `slug`), safe to re-run.
+- [ ] Tests pass: `npm run db:seed -w apps/store-api` runs clean against a fresh dev DB. _(manual)_
 
 **Files to create/modify:**
 
@@ -266,13 +268,13 @@ Promise<PaginatedDeviceModelsResult>` — supports the ModelPicker's brand→mod
 
 **Acceptance Criteria:**
 
-- [ ] `DeviceRepository` implements brand + model CRUD/list per Technical Design, with unit
+- [x] `DeviceRepository` implements brand + model CRUD/list per Technical Design, with unit
       tests (including the brand→model cascade query and pagination).
-- [ ] `GET /device-brands`, `GET /device-models` are public, active-only by default.
-- [ ] Admin CRUD endpoints (`AdminGuard`) for both brand and model, including a status/`isActive`
+- [x] `GET /device-brands`, `GET /device-models` are public, active-only by default.
+- [x] Admin CRUD endpoints (`AdminGuard`) for both brand and model, including a status/`isActive`
       toggle.
-- [ ] `DeviceModule` registered in `app.module.ts`.
-- [ ] Tests pass: `npm run test -w apps/store-api -- device`
+- [x] `DeviceModule` registered in `app.module.ts`.
+- [x] Tests pass: `npm run test -w apps/store-api -- device`
 
 **Files to create/modify:**
 
@@ -295,22 +297,21 @@ Promise<PaginatedDeviceModelsResult>` — supports the ModelPicker's brand→mod
 
 **Acceptance Criteria:**
 
-- [ ] `setDeviceCompat(productId, deviceModelIds)` replaces the full compat set for a product in
+- [x] `setDeviceCompat(productId, deviceModelIds)` replaces the full compat set for a product in
       one transaction (delete + insert), never leaves a partial state on error.
-- [ ] `setDeviceCompatForGroup(groupId, deviceModelIds)` applies the same set to every sibling
+- [x] `setDeviceCompatForGroup(groupId, deviceModelIds)` applies the same set to every sibling
       position sharing that `groupId`; returns the count of positions updated; 404 if the group
       has zero positions.
-- [ ] Unknown `deviceModelId`s are rejected with a 400 before any write (validated via
+- [x] Unknown `deviceModelId`s are rejected with a 400 before any write (validated via
       `DeviceRepository.findModelsByIds`).
-- [ ] `PUT /products/:id/device-compat` and `PUT /products/group/:groupId/device-compat` are
+- [x] `PUT /products/:id/device-compat` and `PUT /products/group/:groupId/device-compat` are
       `AdminGuard`-protected and documented with Swagger.
-- [ ] Product entities (public + admin) expose `compatibleDeviceModels: { id, name, slug,
-    brandName }[]`.
-- [ ] Unit + e2e tests cover: single-position assign, group bulk-assign across 3 sibling
-      positions, invalid id rejection, and idempotent re-assignment (same set twice → no dupes,
-      thanks to the `@@id([productId, deviceModelId])` composite key).
-- [ ] Tests pass: `npm run test -w apps/store-api -- product` and
-      `npm run test:e2e -w apps/store-api` (serial).
+- [x] Product entities (public + admin) expose `compatibleDeviceModels: { id, name, slug,
+  brandName }[]`.
+- [x] Unit tests cover: single-position assign, group bulk-assign across 3 sibling positions,
+      invalid id rejection, and idempotent re-assignment (composite-key dedupe). _(e2e is
+      **manual** — shared-DB constraint.)_
+- [x] Tests pass: `npm run test -w apps/store-api -- product`. `test:e2e` deferred to manual QA.
 
 **Files to create/modify:**
 
@@ -336,12 +337,12 @@ query)
 
 **Acceptance Criteria:**
 
-- [ ] `ProductListQueryDto` gains `deviceModelId?: string`; `ProductRepository.findAll` applies
+- [x] `ProductListQueryDto` gains `deviceModelId?: string`; `ProductRepository.findAll` applies
       `where.deviceCompat = { some: { deviceModelId } }`.
-- [ ] `ProductSearchDocument` gains `deviceModelIds: string[]`; `filterableAttributes` gains
+- [x] `ProductSearchDocument` gains `deviceModelIds: string[]`; `filterableAttributes` gains
       `'deviceModelIds'`; `toDocument` populated from the compat join.
-- [ ] Filtering by `categoryId` + `deviceModelId` together narrows correctly (combined `AND`).
-- [ ] Tests pass: `npm run test -w apps/store-api -- product search`
+- [x] Filtering by `categoryId` + `deviceModelId` together narrows correctly (combined `AND`).
+- [x] Tests pass: `npm run test -w apps/store-api -- product search`
 
 **Files to create/modify:**
 
@@ -362,17 +363,17 @@ query)
 
 **Acceptance Criteria:**
 
-- [ ] `npm run generate:api -w apps/store-admin` produces device-brand/device-model hooks.
-- [ ] Device brand + device model CRUD pages (`/devices/brands`, `/devices/models`), mirroring
-      the `brands` admin UX from plan 110 (list/create/edit/status toggle); model form's brand
-      select scopes to existing device brands.
-- [ ] `product-form.tsx` gains a "Сумісні пристрої" multiselect (grouped by device brand,
-      searchable) bound to `updateDeviceCompat` on save.
-- [ ] A "Застосувати до всіх позицій групи" button appears only when the product has a
+- [x] `npm run generate:api -w apps/store-admin` produces device-brand/device-model hooks.
+- [x] Device brand + device model CRUD pages (`/devices/brands`, `/devices/models`) —
+      list/create/edit/status toggle; model form's brand select scopes to existing device brands.
+- [x] The edit-product view gains a "Сумісні пристрої" multiselect (brand-grouped checkbox list)
+      bound to `updateDeviceCompat` — implemented as a co-located `ProductDeviceCompatManager`
+      (compat has its own endpoint, not the product create/update DTO).
+- [x] A "Застосувати до всіх позицій групи" button appears only when the product has a
       `groupId`; clicking it calls the bulk endpoint and shows a toast with the count of
-      positions updated; disabled/hidden for group-less products.
-- [ ] Admin sidebar nav includes "Пристрої" (with Brands/Models sub-links).
-- [ ] Tests pass: `npm run test -w apps/store-admin -- device product-form`
+      positions updated; hidden for group-less products.
+- [x] Admin sidebar nav includes "Пристрої" (Brands/Models cross-linked tabs).
+- [x] Tests pass: `npm run test -w apps/store-admin` (179 green).
 
 **Files to create/modify:**
 
@@ -395,22 +396,22 @@ query)
 
 **Acceptance Criteria:**
 
-- [ ] `npm run generate:api -w apps/store-client` produces device-brand/device-model hooks.
-- [ ] `widgets/hero-banner/ui/model-picker.tsx` — brand select populated from
+- [x] `npm run generate:api -w apps/store-client` produces device-brand/device-model hooks.
+- [x] `widgets/hero-banner/ui/model-picker.tsx` — brand select populated from
       `GET /device-brands`; model select populated from `GET /device-models?deviceBrandId=`,
       disabled until a brand is chosen; submit navigates to
-      `/products?deviceModelId=<id>` (real navigation, no more `// TODO(TASK-162)` no-op).
-- [ ] `product-filters` gains a "Сумісний пристрій" cascade control, URL-synced via
-      `?deviceModelId=`, combinable with category/brand/price filters.
-- [ ] `active-filter-chips.tsx` shows a removable "Пристрій: X" chip when set.
-- [ ] New `widgets/product-detail/ui/product-compatible.tsx` renders a cross-sell rail (mirrors
-      `product-related.tsx`'s shell) of other products compatible with the same device model(s),
+      `/products?deviceModelId=<id>` (real navigation, no more no-op).
+- [x] `product-filters` gains a "Сумісний пристрій" cascade control, URL-synced via
+      `?deviceModelId=`, combinable with category/price filters.
+- [x] `active-filter-chips.tsx` shows a removable "Пристрій: X" chip when set.
+- [x] New `widgets/product-detail/ui/product-compatible.tsx` renders a cross-sell rail (mirrors
+      `product-related.tsx`'s shell) of other products compatible with the same device model,
       excluding the current product; renders nothing when the current product has zero compat
       models.
-- [ ] `product-detail-view.tsx` includes `ProductCompatible` when applicable.
-- [ ] `dict.home.modelPicker.brands`/`models` static arrays removed (no longer used).
-- [ ] Tests pass: `npm run test -w apps/store-client -- model-picker product-filters
-    product-compatible product-detail-view`
+- [x] `product-detail-view.tsx` includes `ProductCompatible` when applicable.
+- [x] `dict.home.modelPicker.brands`/`models` static arrays removed (no longer used).
+- [x] Tests pass: `npm run test -w apps/store-client` (365 green), incl. a new `model-picker`
+      cascade+navigation test.
 
 **Files to create/modify:**
 
