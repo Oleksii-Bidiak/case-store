@@ -1151,6 +1151,8 @@ export const dict = {
       noAccount: "Немає акаунту?",
       registerLink: "Реєстрація",
       errorInvalid: "Невірний email або пароль.",
+      errorDeactivated:
+        "Обліковий запис деактивовано. Зверніться до підтримки.",
       validationEmail: "Введіть дійсну email-адресу",
       validationPassword: "Пароль є обов'язковим",
       // Slide-out extras (login "as in the mockup"). Social sign-in + password
@@ -1178,6 +1180,8 @@ export const dict = {
       validationFirstName: "Ім'я є обов'язковим",
       validationLastName: "Прізвище є обов'язковим",
       validationPassword: "Пароль має містити щонайменше 8 символів",
+      validationPasswordPolicy:
+        "Пароль має містити велику та малу літери й цифру",
       validationPasswordMatch: "Паролі не збігаються",
       terms: "Погоджуюсь з умовами використання та політикою конфіденційності",
       validationTerms: "Потрібно прийняти умови використання",

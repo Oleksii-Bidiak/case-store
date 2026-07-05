@@ -18,6 +18,17 @@ const loginSchema = z.object({
   password: z.string().min(1, dict.auth.login.validationPassword),
 });
 
+/**
+ * Extract `message` from the API error envelope
+ * (`{ statusCode, error, message }`) without trusting the response shape —
+ * returns "" for anything unexpected.
+ */
+function getErrorEnvelopeMessage(data: unknown): string {
+  if (typeof data !== "object" || data === null) return "";
+  const message = (data as { message?: unknown }).message;
+  return typeof message === "string" ? message : "";
+}
+
 type LoginValues = z.infer<typeof loginSchema>;
 
 const fieldClass =
@@ -97,8 +108,18 @@ export function LoginForm({
   };
 
   const status = login.error?.response?.status;
-  const errorMessage =
-    status === 401
+  // A 401 is either bad credentials or a deactivated (banned) account — the
+  // API distinguishes them only by the error-envelope `message` ("Account is
+  // deactivated"). Read it defensively: the generated error type carries no
+  // body shape, and matching is case-insensitive contains (TASK-202).
+  const isDeactivated =
+    status === 401 &&
+    getErrorEnvelopeMessage(login.error?.response?.data)
+      .toLowerCase()
+      .includes("deactivated");
+  const errorMessage = isDeactivated
+    ? dict.auth.login.errorDeactivated
+    : status === 401
       ? dict.auth.login.errorInvalid
       : login.isError
         ? dict.common.genericError

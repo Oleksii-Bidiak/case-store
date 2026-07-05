@@ -29,13 +29,14 @@ async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
   );
   await user.type(screen.getByLabelText(dict.auth.register.firstName), "Олег");
   await user.type(screen.getByLabelText(dict.auth.register.lastName), "Коваль");
+  // Must satisfy the TASK-227 password policy (min 8 + lower + upper + digit).
   await user.type(
     screen.getByLabelText(dict.auth.register.password),
-    "password123",
+    "Password123",
   );
   await user.type(
     screen.getByLabelText(dict.auth.register.confirmPassword),
-    "password123",
+    "Password123",
   );
   // Terms consent is required before the form will submit.
   await user.click(screen.getByRole("checkbox"));
@@ -93,6 +94,42 @@ describe("RegisterForm", () => {
     });
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/"));
+  });
+
+  it("rejects a weak password (TASK-227 policy) without calling the API", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<RegisterForm />);
+
+    await user.type(
+      screen.getByLabelText(dict.auth.register.email),
+      "new@user.ua",
+    );
+    await user.type(
+      screen.getByLabelText(dict.auth.register.firstName),
+      "Олег",
+    );
+    await user.type(
+      screen.getByLabelText(dict.auth.register.lastName),
+      "Коваль",
+    );
+    // The QA sample: 8 chars but no uppercase letter and no digit.
+    await user.type(
+      screen.getByLabelText(dict.auth.register.password),
+      "testtest",
+    );
+    await user.type(
+      screen.getByLabelText(dict.auth.register.confirmPassword),
+      "testtest",
+    );
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(
+      screen.getByRole("button", { name: dict.auth.register.submit }),
+    );
+
+    expect(
+      await screen.findByText(dict.auth.register.validationPasswordPolicy),
+    ).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it("shows the conflict message when the email is already registered (409)", async () => {
