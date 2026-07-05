@@ -126,6 +126,7 @@ async function bootstrap() {
       .addTag('Blog', 'Blog posts and categories — storefront reads and admin management')
       .addTag('Banners', 'Homepage banners — public listing and admin management')
       .addTag('Cart', 'Shopping cart management')
+      .addTag('Contact', 'Customer contact messages — public submission and admin inbox')
       .addTag('Search', 'Full-text product search + autocomplete (Meilisearch, Postgres fallback)')
       .addTag('Security', 'CSRF token issuance')
       .build();

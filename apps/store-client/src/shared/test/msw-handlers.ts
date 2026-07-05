@@ -222,4 +222,10 @@ export const handlers = [
   http.get("*/api/csrf-token", () =>
     HttpResponse.json({ data: { csrfToken: "test-csrf" } }),
   ),
+
+  // Contact message submission — succeeds by default; override per-test for the
+  // rate-limit / error path.
+  http.post("*/api/contact", () =>
+    HttpResponse.json({ data: { id: "contact-1" } }, { status: 201 }),
+  ),
 ];

@@ -105,7 +105,7 @@ model Category {
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
-  products    Product[]
+  products Product[]
 
   @@index([slug])
   @@index([parentId])
@@ -113,40 +113,40 @@ model Category {
 }
 
 model Product {
-  id              String   @id @default(uuid())
-  name            String
-  slug            String   @unique
-  description     String?
-  price           Decimal  @db.Decimal(10, 2)
-  compareAtPrice  Decimal? @map("compare_at_price") @db.Decimal(10, 2)
-  sku             String?  @unique
+  id             String        @id @default(uuid())
+  name           String
+  slug           String        @unique
+  description    String?
+  price          Decimal       @db.Decimal(10, 2)
+  compareAtPrice Decimal?      @map("compare_at_price") @db.Decimal(10, 2)
+  sku            String?       @unique
   // Per-position stock (was ProductVariant.stock). DB CHECK (stock >= 0) is
   // re-applied in the TASK-142 migration; Prisma has no CHECK support.
-  stock           Int      @default(0)
-  categoryId      String   @map("category_id")
-  category        Category @relation(fields: [categoryId], references: [id])
+  stock          Int           @default(0)
+  categoryId     String        @map("category_id")
+  category       Category      @relation(fields: [categoryId], references: [id])
   // Group membership (TASK-142): sibling positions of the same item (e.g.
   // colours / pack sizes) share a group. Nullable — a standalone position has
   // no group.
-  groupId         String?       @map("group_id")
-  group           ProductGroup? @relation(fields: [groupId], references: [id])
+  groupId        String?       @map("group_id")
+  group          ProductGroup? @relation(fields: [groupId], references: [id])
   // Structured attribute values for this position within its group, keyed by
   // the group's axis names, e.g. {"color": "blue", "pack": "single"}.
-  attributes      Json?         @default("{}")
-  positionOrder   Int           @default(0) @map("position_order")
-  isActive        Boolean  @default(true) @map("is_active")
+  attributes     Json?         @default("{}")
+  positionOrder  Int           @default(0) @map("position_order")
+  isActive       Boolean       @default(true) @map("is_active")
   // Audit tombstone (TASK-104). NULL = live; non-null = soft-deleted (hidden
   // from all reads). On soft-delete the unique `slug`/`sku` are mangled. The row
   // is kept so historical OrderItems still resolve the product name.
-  deletedAt       DateTime? @map("deleted_at")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  deletedAt      DateTime?     @map("deleted_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
 
-  images          ProductImage[]
-  reviews         Review[]
-  orderItems      OrderItem[]
-  cartItems       CartItem[]
-  wishlistItems   WishlistItem[]
+  images        ProductImage[]
+  reviews       Review[]
+  orderItems    OrderItem[]
+  cartItems     CartItem[]
+  wishlistItems WishlistItem[]
 
   @@index([slug])
   @@index([categoryId])
@@ -187,17 +187,17 @@ model ProductGroupAxis {
 }
 
 model ProductImage {
-  id        String   @id @default(uuid())
-  productId String   @map("product_id")
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  url       String
-  alt       String?
+  id          String   @id @default(uuid())
+  productId   String   @map("product_id")
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url         String
+  alt         String?
   // Tiny base64 WebP LQIP data-URI for the storefront next/image blur placeholder
   // (TASK-091). Nullable: legacy/seed rows and passthrough GIFs have none.
-  blurDataUrl String? @map("blur_data_url")
-  sortOrder Int      @default(0) @map("sort_order")
-  isPrimary Boolean  @default(false) @map("is_primary")
-  createdAt DateTime @default(now()) @map("created_at")
+  blurDataUrl String?  @map("blur_data_url")
+  sortOrder   Int      @default(0) @map("sort_order")
+  isPrimary   Boolean  @default(false) @map("is_primary")
+  createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([productId, sortOrder])
   @@map("product_images")
@@ -211,7 +211,7 @@ model Cart {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  items     CartItem[]
+  items CartItem[]
 
   @@index([token])
   @@map("carts")
@@ -246,7 +246,7 @@ model Order {
   tax             Decimal       @default(0) @db.Decimal(10, 2)
   total           Decimal       @db.Decimal(10, 2)
   shippingAddress Json?         @map("shipping_address") // {city, warehouse, address, ref}
-  billingAddress  Json?         @map("billing_address")  // Same structure
+  billingAddress  Json?         @map("billing_address") // Same structure
   notes           String?
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
@@ -262,7 +262,7 @@ model Order {
   // manual stock adjustments after a physical return are invisible to it.
   restockedAt     DateTime?     @map("restocked_at")
 
-  items           OrderItem[]
+  items OrderItem[]
 
   @@index([userId])
   @@index([status])
@@ -286,23 +286,23 @@ model OrderItem {
 }
 
 model Address {
-  id          String      @id @default(uuid())
-  userId      String      @map("user_id")
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        AddressType
-  firstName   String      @map("first_name")
-  lastName    String      @map("last_name")
-  company     String?
-  address1    String      @map("address_line_1")
-  address2    String?     @map("address_line_2")
-  city        String
-  state       String?
-  postalCode  String      @map("postal_code")
-  country     String      @default("UA")
-  phone       String?
-  isDefault   Boolean     @default(false) @map("is_default")
-  createdAt   DateTime    @default(now()) @map("created_at")
-  updatedAt   DateTime    @updatedAt @map("updated_at")
+  id         String      @id @default(uuid())
+  userId     String      @map("user_id")
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       AddressType
+  firstName  String      @map("first_name")
+  lastName   String      @map("last_name")
+  company    String?
+  address1   String      @map("address_line_1")
+  address2   String?     @map("address_line_2")
+  city       String
+  state      String?
+  postalCode String      @map("postal_code")
+  country    String      @default("UA")
+  phone      String?
+  isDefault  Boolean     @default(false) @map("is_default")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
 
   @@index([userId])
   @@map("addresses")
@@ -314,7 +314,7 @@ model Review {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   productId String   @map("product_id")
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  rating    Int      // 1-5
+  rating    Int // 1-5
   comment   String?
   isActive  Boolean  @default(false) @map("is_active") // Requires admin approval
   createdAt DateTime @default(now()) @map("created_at")
@@ -417,7 +417,7 @@ model Discount {
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
-  redemptions    DiscountRedemption[]
+  redemptions DiscountRedemption[]
 
   @@index([isActive])
   @@map("discounts")
@@ -452,7 +452,7 @@ model Wishlist {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  items     WishlistItem[]
+  items WishlistItem[]
 
   @@index([token])
   @@map("wishlists")
@@ -582,4 +582,33 @@ model Banner {
   @@index([placement, status])
   @@index([status])
   @@map("banners")
+/// Status of a customer contact message (TASK-177). NEW = unread submission,
+/// READ = an admin has opened it, ARCHIVED = handled/closed. Drives the admin
+/// inbox filter and the sidebar unread badge (count of NEW).
+enum ContactMessageStatus {
+  NEW
+  READ
+  ARCHIVED
+}
+
+/// Customer contact / support message submitted from the storefront contact
+/// form (TASK-177). User-generated content — NOT published content, so no
+/// PublishStatus / isActive here. `message` is stored as plain text (never
+/// sanitized HTML) and escaped by the frontend on render. `orderRef` is an
+/// optional free-text order reference the customer types in.
+model ContactMessage {
+  id        String               @id @default(uuid())
+  name      String
+  phone     String
+  email     String
+  topic     String?
+  orderRef  String?              @map("order_ref")
+  message   String               @db.Text
+  status    ContactMessageStatus @default(NEW)
+  adminNote String?              @map("admin_note")
+  createdAt DateTime             @default(now()) @map("created_at")
+  updatedAt DateTime             @updatedAt @map("updated_at")
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("contact_messages")
 }

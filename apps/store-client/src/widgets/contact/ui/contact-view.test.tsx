@@ -1,4 +1,6 @@
+import { http, HttpResponse } from "msw";
 import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
 import { ContactView } from "./contact-view";
@@ -44,10 +46,8 @@ describe("ContactView", () => {
     expect(screen.getByText(d.messengersEmpty)).toBeInTheDocument();
   });
 
-  it("submits the message form stub and shows the confirmation", async () => {
-    const user = userEvent.setup();
-    renderWithProviders(<ContactView contact={contact} />);
-
+  /** Fill the message form with valid values, accept consent, and submit. */
+  async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>) {
     await user.type(
       screen.getByRole("textbox", { name: d.fieldName }),
       "Олександр",
@@ -66,12 +66,69 @@ describe("ContactView", () => {
     );
     await user.click(screen.getByRole("checkbox"));
     await user.click(screen.getByRole("button", { name: d.submit }));
+  }
 
-    expect(screen.getByText(d.sentHeading)).toBeInTheDocument();
+  it("posts the message to /api/contact and shows the confirmation", async () => {
+    let received: unknown = null;
+    server.use(
+      http.post("*/api/contact", async ({ request }) => {
+        received = await request.json();
+        return HttpResponse.json(
+          { data: { id: "contact-1" } },
+          { status: 201 },
+        );
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ContactView contact={contact} />);
+
+    await fillAndSubmit(user);
+
+    expect(await screen.findByText(d.sentHeading)).toBeInTheDocument();
+    expect(received).toMatchObject({
+      name: "Олександр",
+      phone: "+380501112233",
+      email: "shopper@example.com",
+      message: "Питання про доставку",
+      topic: d.topics[0].key,
+    });
+
     // "Send another" resets back to the form.
     await user.click(screen.getByRole("button", { name: d.sentAgain }));
     expect(
       screen.getByRole("heading", { name: d.formHeading }),
     ).toBeInTheDocument();
+  });
+
+  it("shows the rate-limit error message on a 429 response", async () => {
+    server.use(
+      http.post("*/api/contact", () =>
+        HttpResponse.json(
+          { statusCode: 429, message: "Too Many Requests" },
+          { status: 429 },
+        ),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ContactView contact={contact} />);
+
+    await fillAndSubmit(user);
+
+    expect(await screen.findByText(d.errors.rateLimited)).toBeInTheDocument();
+    // The form stays visible so the user can retry — no confirmation panel.
+    expect(screen.queryByText(d.sentHeading)).not.toBeInTheDocument();
+  });
+
+  it("blocks submit and surfaces validation errors when required fields are empty", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ContactView contact={contact} />);
+
+    await user.click(screen.getByRole("button", { name: d.submit }));
+
+    expect(await screen.findByText(d.errors.nameRequired)).toBeInTheDocument();
+    expect(screen.getByText(d.errors.consentRequired)).toBeInTheDocument();
+    expect(screen.queryByText(d.sentHeading)).not.toBeInTheDocument();
   });
 });

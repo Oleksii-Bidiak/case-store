@@ -19,6 +19,7 @@ import { PagesModule } from './pages';
 import { BlogModule } from './blog';
 import { BannersModule } from './banners';
 import { SiteContactModule } from './site-contact';
+import { ContactModule } from './contact';
 import { CartModule } from './cart';
 import { WishlistModule } from './wishlist';
 import { OrderModule } from './order';
@@ -114,6 +115,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Admin-managed site contact settings (TASK-154)
     SiteContactModule,
+
+    // Customer contact / support messages (public form + admin inbox, TASK-177)
+    ContactModule,
 
     // Shopping cart
     CartModule,

@@ -11,12 +11,15 @@ import {
   ImageIcon,
   ShoppingCart,
   Star,
+  MessageSquare,
   Users,
   Phone,
   Settings,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAdminContactUnreadCount } from "@/entities/contact";
+import { Badge } from "@/shared/ui";
 import { Separator } from "@/shared/ui/separator";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
@@ -32,6 +35,7 @@ const navItems = [
   { label: dict.nav.banners, href: "/banners", icon: ImageIcon },
   { label: dict.nav.orders, href: "/orders", icon: ShoppingCart },
   { label: dict.nav.reviews, href: "/reviews", icon: Star },
+  { label: dict.nav.messages, href: "/messages", icon: MessageSquare },
   { label: dict.nav.users, href: "/users", icon: Users },
 ];
 
@@ -55,6 +59,10 @@ function isNavItemActive(pathname: string, href: string): boolean {
  */
 export function AdminSidebar() {
   const pathname = usePathname();
+  // Unread (NEW) contact-message count for the sidebar badge. Refetches on
+  // window focus so the badge stays roughly current as messages arrive.
+  const { data: unreadData } = useAdminContactUnreadCount();
+  const unread = unreadData?.data?.unread ?? 0;
 
   return (
     <aside className="flex h-screen w-64 flex-col border-r border-border bg-card">
@@ -84,6 +92,14 @@ export function AdminSidebar() {
           >
             <item.icon className="size-4" />
             {item.label}
+            {item.href === "/messages" && unread > 0 && (
+              <Badge
+                aria-label={dict.messages.unreadBadgeAria(unread)}
+                className="ml-auto"
+              >
+                {unread}
+              </Badge>
+            )}
           </Link>
         ))}
       </nav>

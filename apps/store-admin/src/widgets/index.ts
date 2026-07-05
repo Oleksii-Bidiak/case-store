@@ -41,6 +41,7 @@ export {
   AdminReviewTable,
   AdminReviewTableSkeleton,
 } from "./review-moderation";
+export { MessageInbox, MessageInboxSkeleton } from "./message-inbox";
 export { OrderDetailView, OrderDetailSkeleton } from "./order-detail";
 export { AdminUserTable, AdminUserTableSkeleton } from "./user-list";
 export { UserDetailView, UserDetailSkeleton } from "./user-detail";
