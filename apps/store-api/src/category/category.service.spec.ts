@@ -22,6 +22,8 @@ const mockCategory = {
   parentId: null,
   isActive: true,
   sortOrder: 0,
+  metaTitle: null,
+  metaDescription: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -55,6 +57,7 @@ const categoryRepositoryMock = {
   findRootCategories: jest.fn(),
   findAll: jest.fn(),
   findCategoryTree: jest.fn(),
+  findCategoryTreeForAdmin: jest.fn(),
   findWithProductCount: jest.fn(),
   findAllWithProductCount: jest.fn(),
   create: jest.fn(),
@@ -178,6 +181,35 @@ describe('CategoryService', () => {
     });
   });
 
+  // ─── getCategoryTreeForAdmin (admin, TASK-236) ───────────────────────────────
+
+  describe('getCategoryTreeForAdmin', () => {
+    it('maps the full (incl. inactive) tree to CategoryTreeNodeEntity via the admin repo call', async () => {
+      const treeData = [
+        {
+          ...mockCategory,
+          children: [
+            {
+              ...mockInactiveCategory,
+              children: [],
+            },
+          ],
+        },
+      ];
+      categoryRepositoryMock.findCategoryTreeForAdmin.mockResolvedValue(treeData as any);
+
+      const result = await service.getCategoryTreeForAdmin();
+
+      expect(categoryRepositoryMock.findCategoryTreeForAdmin).toHaveBeenCalled();
+      // Uses the admin (unfiltered) traversal, NOT the public isActive-filtered one.
+      expect(categoryRepositoryMock.findCategoryTree).not.toHaveBeenCalled();
+      expect(result.data[0]).toBeInstanceOf(CategoryTreeNodeEntity);
+      expect(result.data[0].children[0]).toBeInstanceOf(CategoryTreeNodeEntity);
+      // Inactive child is present (not filtered out).
+      expect(result.data[0].children[0].isActive).toBe(false);
+    });
+  });
+
   // ─── findBySlug (public) ─────────────────────────────────────────────────────
 
   describe('findBySlug', () => {
@@ -243,6 +275,32 @@ describe('CategoryService', () => {
       expect(result).toBeInstanceOf(CategoryEntity);
       expect(result.name).toBe('Phone Cases');
       expect(categoryRepositoryMock.create).toHaveBeenCalledWith(createInput);
+    });
+
+    it('forwards SEO meta fields (TASK-236) through to the repository', async () => {
+      const inputWithMeta: CreateCategoryInput = {
+        name: 'Phone Cases',
+        slug: 'phone-cases',
+        metaTitle: 'Phone Cases — Premium Protection',
+        metaDescription: 'Shop premium protective phone cases.',
+      };
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+      categoryRepositoryMock.create.mockResolvedValue({
+        ...mockCategory,
+        metaTitle: 'Phone Cases — Premium Protection',
+        metaDescription: 'Shop premium protective phone cases.',
+      });
+
+      const result = await service.create(inputWithMeta);
+
+      expect(categoryRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metaTitle: 'Phone Cases — Premium Protection',
+          metaDescription: 'Shop premium protective phone cases.',
+        }),
+      );
+      expect(result.metaTitle).toBe('Phone Cases — Premium Protection');
+      expect(result.metaDescription).toBe('Shop premium protective phone cases.');
     });
 
     it('should auto-generate slug from name when slug is not provided', async () => {

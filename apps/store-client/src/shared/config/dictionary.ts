@@ -688,6 +688,8 @@ export const dict = {
     allCategories: "Всі категорії",
     // TASK-216 — horizontal category chips row above the catalog grid.
     categoryChipsAria: "Фільтр за категорією",
+    // TASK-236 — secondary row of subcategory chips under the active root.
+    subcategoryChipsAria: "Фільтр за підкатегорією",
     priceRange: "Ціновий діапазон",
     minPrice: "Мінімальна ціна",
     maxPrice: "Максимальна ціна",

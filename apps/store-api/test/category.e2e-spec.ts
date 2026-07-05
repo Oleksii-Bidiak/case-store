@@ -61,6 +61,7 @@ describe('CategoryController (e2e)', () => {
     findRootCategories: jest.fn(),
     findAll: jest.fn(),
     findCategoryTree: jest.fn(),
+    findCategoryTreeForAdmin: jest.fn(),
     findWithProductCount: jest.fn(),
     findAllWithProductCount: jest.fn(),
     create: jest.fn(),
@@ -240,6 +241,53 @@ describe('CategoryController (e2e)', () => {
 
       expect(response.body).toHaveProperty('data');
       expect(response.body.data).toHaveLength(0);
+    });
+  });
+
+  // ─── GET /api/categories/admin/tree (admin, TASK-236) ───────────────────────
+
+  describe('GET /api/categories/admin/tree', () => {
+    it('should return 401 without auth token', async () => {
+      await request(app.getHttpServer()).get('/api/categories/admin/tree').expect(401);
+    });
+
+    it('should return 403 for non-admin user', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .get('/api/categories/admin/tree')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('should return 200 with the full tree (incl. inactive) for admin', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      // The admin tree surfaces inactive nodes the public tree would hide.
+      categoryRepositoryMock.findCategoryTreeForAdmin.mockResolvedValue([
+        {
+          ...testCategory,
+          children: [
+            {
+              ...testChildCategory,
+              isActive: false,
+              children: [],
+            },
+          ],
+        },
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/categories/admin/tree')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body).toHaveProperty('data');
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.data[0]).toHaveProperty('children');
+      expect(response.body.data[0].children[0]).toHaveProperty('isActive', false);
+      // Must use the admin (unfiltered) traversal, not the public one.
+      expect(categoryRepositoryMock.findCategoryTreeForAdmin).toHaveBeenCalled();
     });
   });
 

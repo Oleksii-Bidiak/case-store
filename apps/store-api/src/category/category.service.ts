@@ -100,6 +100,20 @@ export class CategoryService {
   }
 
   /**
+   * Get the FULL category tree for admin tooling (TASK-236) — all `isActive`
+   * states, still capped at 3 levels. Used by the admin product form so staff
+   * can assign a product to a leaf category (including temporarily deactivated
+   * ones). Reuses {@link CategoryTreeNodeEntity}.
+   */
+  async getCategoryTreeForAdmin(): Promise<CategoryTreeResponse> {
+    const tree = await this.categoryRepository.findCategoryTreeForAdmin();
+
+    return {
+      data: tree.map((node) => CategoryTreeNodeEntity.fromPrisma(node)),
+    };
+  }
+
+  /**
    * Get a category by slug with its product count.
    * Public endpoint — used for category detail pages.
    * Throws NotFoundException if the category is not found.

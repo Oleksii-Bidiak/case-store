@@ -102,6 +102,10 @@ model Category {
   children    Category[] @relation("CategoryHierarchy")
   isActive    Boolean    @default(true) @map("is_active")
   sortOrder   Int        @default(0) @map("sort_order")
+  // SEO overrides (TASK-236). Nullable/admin-editable, mirroring Page's pattern;
+  // rendering them into storefront <head> metadata is deferred to Phase D.
+  metaTitle       String?  @map("meta_title")
+  metaDescription String?  @map("meta_description")
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 

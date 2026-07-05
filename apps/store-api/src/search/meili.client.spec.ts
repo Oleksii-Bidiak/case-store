@@ -43,7 +43,7 @@ function makeClientMock(index: MeiliIndexApi): jest.Mocked<MeiliClientApi> {
 
 const SETTINGS: IndexSettings = {
   searchableAttributes: ['name', 'description', 'categoryName', 'searchTerms'],
-  filterableAttributes: ['isActive', 'categoryId'],
+  filterableAttributes: ['isActive', 'categoryIds'],
   sortableAttributes: ['price', 'createdAt'],
   rankingRules: ['words', 'typo', 'proximity', 'attribute', 'sort', 'exactness'],
   synonyms: { айфон: ['iphone'], iphone: ['айфон'] },
@@ -56,7 +56,7 @@ const DOC: ProductSearchDocument = {
   slug: 'iphone-15-case',
   price: 29.99,
   compareAtPrice: null,
-  categoryId: 'c1',
+  categoryIds: ['c1'],
   categoryName: 'Cases',
   primaryImageUrl: null,
   blurDataUrl: null,

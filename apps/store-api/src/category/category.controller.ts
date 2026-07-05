@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -6,10 +6,12 @@ import {
   ApiParam,
   ApiProperty,
   ApiExtraModels,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { CategoryService } from './category.service';
 import { CategoryListQueryDto } from './dto';
 import { CategoryEntity, CategoryTreeNodeEntity, CategoryWithCountEntity } from './entities';
+import { AdminGuard } from '../auth/guards';
 
 /**
  * Pagination metadata for paginated category responses.
@@ -99,6 +101,33 @@ export class CategoryController {
   })
   async getCategoryTree(): Promise<CategoryTreeResponse> {
     return this.categoryService.getCategoryTree();
+  }
+
+  /**
+   * GET /api/categories/admin/tree
+   *
+   * Returns the FULL category tree including INACTIVE categories (TASK-236),
+   * still capped at 3 levels. Admin-only — backs the admin product form's
+   * leaf-category picker so staff can assign a product to a temporarily hidden
+   * subcategory. Same per-route `AdminGuard` bypass pattern as
+   * `GET /products/admin/list` (TASK-230). Declared before `@Get(':slug')` so
+   * the literal `admin/tree` path is never captured as a slug.
+   */
+  @Get('admin/tree')
+  @UseGuards(AdminGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Get full category tree including inactive (admin)',
+    operationId: 'categoryControllerGetAdminTree',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Full category tree (all statuses) for admin tooling',
+    type: CategoryTreeResponse,
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async getCategoryTreeForAdmin(): Promise<CategoryTreeResponse> {
+    return this.categoryService.getCategoryTreeForAdmin();
   }
 
   /**

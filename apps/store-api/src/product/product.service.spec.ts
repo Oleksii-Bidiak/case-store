@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ProductRepository, CreateProductInput, UpdateProductInput } from './product.repository';
+import { CategoryRepository } from '../category';
 import { ProductService } from './product.service';
 import { ProductEntity, PublicProductEntity } from './entities';
 import { ProductListQueryDto } from './dto';
@@ -58,6 +59,13 @@ const productRepositoryMock = {
   softDelete: jest.fn(),
 };
 
+// ─── CategoryRepository mock (TASK-236 subtree rollup) ────────────────────────
+// `findSubtreeIds` echoes back a single-element subtree by default; individual
+// tests override it to simulate a real parent → subcategory expansion.
+const categoryRepositoryMock = {
+  findSubtreeIds: jest.fn((id: string) => Promise.resolve([id])),
+};
+
 // ─── CacheService mock ────────────────────────────────────────────────────────
 // Defaults: get → null (cache miss), all writes resolve. Individual tests
 // override `get` to simulate a HIT or a backend error.
@@ -97,6 +105,7 @@ describe('ProductService', () => {
     configServiceMock.get.mockReturnValue(300);
     productIndexerMock.index.mockResolvedValue(undefined);
     productIndexerMock.remove.mockResolvedValue(undefined);
+    categoryRepositoryMock.findSubtreeIds.mockImplementation((id: string) => Promise.resolve([id]));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -105,6 +114,7 @@ describe('ProductService', () => {
         { provide: CacheService, useValue: cacheServiceMock },
         { provide: ConfigService, useValue: configServiceMock },
         { provide: ProductIndexer, useValue: productIndexerMock },
+        { provide: CategoryRepository, useValue: categoryRepositoryMock },
       ],
     }).compile();
 
@@ -138,7 +148,8 @@ describe('ProductService', () => {
       expect(productRepositoryMock.findAll).toHaveBeenCalledWith({
         page: 1,
         limit: 20,
-        categoryId: undefined,
+        // No category filter requested → no subtree expansion (TASK-236).
+        categoryIds: undefined,
         // TASK-230: the public listing always forces the active-only filter.
         isActive: true,
         minPrice: undefined,
@@ -147,6 +158,7 @@ describe('ProductService', () => {
         sortBy: 'createdAt',
         sortOrder: 'desc',
       });
+      expect(categoryRepositoryMock.findSubtreeIds).not.toHaveBeenCalled();
     });
 
     it('should calculate totalPages correctly for multiple pages', async () => {
@@ -180,7 +192,8 @@ describe('ProductService', () => {
       expect(productRepositoryMock.findAll).toHaveBeenCalledWith({
         page: 2,
         limit: 10,
-        categoryId: 'cat-uuid-1',
+        // Single categoryId resolved to its subtree before hitting the repo.
+        categoryIds: ['cat-uuid-1'],
         isActive: true,
         minPrice: 10,
         maxPrice: 50,
@@ -188,6 +201,27 @@ describe('ProductService', () => {
         sortBy: 'price',
         sortOrder: 'asc',
       });
+      expect(categoryRepositoryMock.findSubtreeIds).toHaveBeenCalledWith('cat-uuid-1');
+    });
+
+    // TASK-236: filtering by a ROOT category must roll up its subcategories'
+    // products — the service expands the id set before delegating to the repo.
+    it('expands a requested categoryId into its full subtree before querying', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      categoryRepositoryMock.findSubtreeIds.mockResolvedValue([
+        'root-cat',
+        'child-cat',
+        'grandchild-cat',
+      ]);
+
+      await service.findAll({ page: 1, limit: 20, categoryId: 'root-cat' });
+
+      expect(categoryRepositoryMock.findSubtreeIds).toHaveBeenCalledWith('root-cat');
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          categoryIds: ['root-cat', 'child-cat', 'grandchild-cat'],
+        }),
+      );
     });
 
     // TASK-230: the leak — a public caller asking for inactive products (or
@@ -219,6 +253,18 @@ describe('ProductService', () => {
       // No cache interaction: the admin table must always be fresh.
       expect(cacheServiceMock.get).not.toHaveBeenCalled();
       expect(cacheServiceMock.set).not.toHaveBeenCalled();
+    });
+
+    it('rolls up the category subtree on the admin path too (TASK-236)', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      categoryRepositoryMock.findSubtreeIds.mockResolvedValue(['root-cat', 'child-cat']);
+
+      await service.adminFindAll({ page: 1, limit: 20, categoryId: 'root-cat' });
+
+      expect(categoryRepositoryMock.findSubtreeIds).toHaveBeenCalledWith('root-cat');
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ categoryIds: ['root-cat', 'child-cat'] }),
+      );
     });
 
     it('passes isActive=false through so the admin can list only deactivated products', async () => {

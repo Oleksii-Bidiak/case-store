@@ -3,7 +3,10 @@
 import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2 } from "lucide-react";
-import { useCategoryControllerGetRootCategories } from "@/shared/api";
+import {
+  useCategoryControllerGetAdminTree,
+  type CategoryTreeNodeEntity,
+} from "@/shared/api";
 import { useProductGroupControllerFindAll } from "@/entities/product-group";
 import { slugify } from "@/shared/lib";
 import {
@@ -26,6 +29,36 @@ import {
 
 /** Radix Select forbids an empty-string item value; this stands in for "no group". */
 const NO_GROUP = "__none__";
+
+/** A selectable LEAF category, flattened out of the admin tree with its depth. */
+interface LeafCategoryOption {
+  id: string;
+  name: string;
+  depth: number;
+}
+
+/**
+ * Flatten the admin category tree to its LEAF nodes only (TASK-236): products
+ * are filed against the specific subcategory they belong to, never a parent
+ * bucket, and the backend rolls parents up to their subtree on read. `depth`
+ * (0-based) drives the visual indent so staff still see ancestry. A node with
+ * no `children` is a leaf regardless of level, so a shallow root with no
+ * subcategories stays selectable.
+ */
+function collectLeafCategories(
+  nodes: CategoryTreeNodeEntity[],
+  depth = 0,
+): LeafCategoryOption[] {
+  const out: LeafCategoryOption[] = [];
+  for (const node of nodes) {
+    if (node.children && node.children.length > 0) {
+      out.push(...collectLeafCategories(node.children, depth + 1));
+    } else {
+      out.push({ id: node.id, name: node.name, depth });
+    }
+  }
+  return out;
+}
 
 interface ProductFormProps {
   defaultValues?: Partial<ProductFormInput>;
@@ -93,10 +126,13 @@ export function ProductForm({
   const nameValue = useWatch({ control, name: "name" });
   const slugValue = useWatch({ control, name: "slug" });
 
-  const categoriesQuery = useCategoryControllerGetRootCategories({
-    limit: 100,
-  });
-  const categories = categoriesQuery.data?.data ?? [];
+  // TASK-236: the picker offers LEAF categories from the FULL admin tree
+  // (including inactive ones) so a product is assigned to its specific
+  // subcategory; the backend subtree rollup makes a parent filter still find it.
+  const categoriesQuery = useCategoryControllerGetAdminTree();
+  const leafCategories = collectLeafCategories(
+    categoriesQuery.data?.data ?? [],
+  );
 
   const groupsQuery = useProductGroupControllerFindAll();
   const groups = groupsQuery.data?.data ?? [];
@@ -237,9 +273,11 @@ export function ProductForm({
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {categories.map((category) => (
+                  {leafCategories.map((category) => (
                     <SelectItem key={category.id} value={category.id}>
-                      {category.name}
+                      {category.depth > 0
+                        ? `${"— ".repeat(category.depth)}${category.name}`
+                        : category.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

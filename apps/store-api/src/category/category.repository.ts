@@ -39,6 +39,8 @@ export interface CreateCategoryInput {
   parentId?: string | null;
   sortOrder?: number;
   isActive?: boolean;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
 }
 
 /**
@@ -53,6 +55,8 @@ export interface UpdateCategoryInput {
   parentId?: string | null;
   sortOrder?: number;
   isActive?: boolean;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
 }
 
 /**
@@ -242,6 +246,45 @@ export class CategoryRepository {
   }
 
   /**
+   * Admin variant of {@link findCategoryTree} (TASK-236): the FULL tree with
+   * every `isActive` state, still capped at 3 nested levels. Backs
+   * `GET /categories/admin/tree` so staff can assign a product to a temporarily
+   * deactivated leaf without it silently vanishing from the picker. Mirrors
+   * `findCategoryTree` exactly minus the `isActive: true` filters.
+   */
+  async findCategoryTreeForAdmin(): Promise<
+    Array<
+      Category & {
+        children: Array<
+          Category & {
+            children: Array<Category & { children: Category[] }>;
+          }
+        >;
+      }
+    >
+  > {
+    return this.prisma.category.findMany({
+      where: { parentId: null },
+      orderBy: { sortOrder: 'asc' },
+      include: {
+        children: {
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            children: {
+              orderBy: { sortOrder: 'asc' },
+              include: {
+                children: {
+                  orderBy: { sortOrder: 'asc' },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /**
    * Find a category by ID with its product count.
    * Returns the category record and the count of active products.
    */
@@ -359,6 +402,8 @@ export class CategoryRepository {
         parentId: data.parentId ?? null,
         sortOrder: data.sortOrder ?? 0,
         isActive: data.isActive ?? true,
+        metaTitle: data.metaTitle ?? null,
+        metaDescription: data.metaDescription ?? null,
       },
     });
   }
@@ -428,5 +473,64 @@ export class CategoryRepository {
     `;
 
     return result.map((row) => row.id);
+  }
+
+  /**
+   * Resolve the full subtree of a category — the category itself plus every
+   * descendant id, at any depth (TASK-236). Backs the product-listing rollup so
+   * filtering by a parent category returns products filed in its subcategories.
+   *
+   * Implemented as a single PostgreSQL recursive CTE over `categories(id,
+   * parent_id)` — correct at any depth and independent of the active-tree cache,
+   * so an inactive leaf still resolves. The self id is ALWAYS present in the
+   * result (even for a non-existent `categoryId`, where the CTE's base row is
+   * empty) so callers get a well-formed, non-empty `IN (...)` filter. Ordering
+   * is not guaranteed — callers only need set membership.
+   */
+  async findSubtreeIds(categoryId: string): Promise<string[]> {
+    const result = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      WITH RECURSIVE subtree AS (
+        -- Base case: the category itself
+        SELECT id, parent_id FROM categories WHERE id = ${categoryId}
+        UNION
+        -- Recursive case: children of nodes already in the subtree
+        SELECT c.id, c.parent_id FROM categories c
+        INNER JOIN subtree s ON c.parent_id = s.id
+      )
+      SELECT id FROM subtree
+    `;
+
+    const ids = new Set(result.map((row) => row.id));
+    ids.add(categoryId);
+    return [...ids];
+  }
+
+  /**
+   * Resolve the ancestor chain of a category — the category itself plus every
+   * ancestor id up to the root (TASK-236). Used to build the per-document
+   * `categoryIds[]` array for the Meilisearch rollup (and, later, plan 112
+   * attribute-definition inheritance).
+   *
+   * Single PostgreSQL recursive CTE walking `parent_id` upward. Returns
+   * `[categoryId]` for a root category (no parent) and, like {@link
+   * findSubtreeIds}, always includes the self id even for a non-existent
+   * `categoryId`. Ordering is not guaranteed.
+   */
+  async findAncestorIds(categoryId: string): Promise<string[]> {
+    const result = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      WITH RECURSIVE ancestors AS (
+        -- Base case: the category itself
+        SELECT id, parent_id FROM categories WHERE id = ${categoryId}
+        UNION
+        -- Recursive case: the parent of nodes already in the chain
+        SELECT c.id, c.parent_id FROM categories c
+        INNER JOIN ancestors a ON a.parent_id = c.id
+      )
+      SELECT id FROM ancestors
+    `;
+
+    const ids = new Set(result.map((row) => row.id));
+    ids.add(categoryId);
+    return [...ids];
   }
 }

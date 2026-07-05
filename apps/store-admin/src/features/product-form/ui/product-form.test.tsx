@@ -15,17 +15,44 @@ const CATEGORY_UUID_B = "22222222-2222-4222-8222-222222222222";
 const GROUP_UUID = "33333333-3333-4333-8333-333333333333";
 const GROUP_UUID_B = "44444444-4444-4444-8444-444444444444";
 
+interface TreeNodeStub {
+  id: string;
+  name: string;
+  slug: string;
+  description: null;
+  image: null;
+  isActive: boolean;
+  sortOrder: number;
+  children: TreeNodeStub[];
+}
+
+/** Build an admin-tree category node (TASK-236). Leaf nodes have no children. */
+function makeTreeNode(
+  id: string,
+  name: string,
+  children: TreeNodeStub[] = [],
+): TreeNodeStub {
+  return {
+    id,
+    name,
+    slug: name.toLowerCase().replace(/\s+/g, "-"),
+    description: null,
+    image: null,
+    isActive: true,
+    sortOrder: 0,
+    children,
+  };
+}
+
 /**
  * Stub the two queries the form fires on mount. Empty arrays are sufficient for
  * the slug-preview tests — none of them assert against the category/group lists.
+ * The category picker now reads the admin category TREE (TASK-236).
  */
 function stubFormQueries() {
   server.use(
-    http.get("*/api/categories", () =>
-      HttpResponse.json({
-        data: [],
-        meta: { total: 0, page: 1, limit: 100, totalPages: 0 },
-      }),
+    http.get("*/api/categories/admin/tree", () =>
+      HttpResponse.json({ data: [] }),
     ),
     http.get("*/api/product-groups", () => HttpResponse.json({ data: [] })),
   );
@@ -116,22 +143,6 @@ describe("ProductForm — live slug preview (TASK-136)", () => {
 });
 
 describe("ProductForm — category/group survive late-loading options (TASK-232)", () => {
-  function makeCategoryRow(id: string, name: string) {
-    return {
-      id,
-      name,
-      slug: name.toLowerCase().replace(/\s+/g, "-"),
-      description: null,
-      image: null,
-      parentId: null,
-      sortOrder: 0,
-      isActive: true,
-      productCount: 0,
-      createdAt: "2026-06-01T10:00:00.000Z",
-      updatedAt: "2026-06-01T10:00:00.000Z",
-    };
-  }
-
   function makeGroupRow(id: string, name: string) {
     return { id, name, isActive: true, axes: [], positionCount: 0 };
   }
@@ -143,14 +154,14 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
    *  <select>, coerces to "", and bounces "" through `onValueChange`. */
   function stubOptionQueriesDelayed(ms = 75) {
     server.use(
-      http.get("*/api/categories", async () => {
+      http.get("*/api/categories/admin/tree", async () => {
         await delay(ms);
+        // Two root-level LEAF categories — both selectable (TASK-236).
         return HttpResponse.json({
           data: [
-            makeCategoryRow(CATEGORY_UUID, "Category A"),
-            makeCategoryRow(CATEGORY_UUID_B, "Category B"),
+            makeTreeNode(CATEGORY_UUID, "Category A"),
+            makeTreeNode(CATEGORY_UUID_B, "Category B"),
           ],
-          meta: { total: 2, page: 1, limit: 100, totalPages: 1 },
         });
       }),
       http.get("*/api/product-groups", async () => {
@@ -270,6 +281,84 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ groupId: "" }),
+      expect.anything(),
+    );
+  });
+});
+
+describe("ProductForm — leaf-only category picker (TASK-236)", () => {
+  const ROOT_UUID = "55555555-5555-4555-8555-555555555555";
+  const CHILD_UUID = "66666666-6666-4666-8666-666666666666";
+  const STANDALONE_UUID = "77777777-7777-4777-8777-777777777777";
+
+  /** Root "Cases" has a child "iPhone Cases"; "Chargers" is a standalone leaf. */
+  function stubAdminTree() {
+    server.use(
+      http.get("*/api/categories/admin/tree", () =>
+        HttpResponse.json({
+          data: [
+            makeTreeNode(ROOT_UUID, "Cases", [
+              makeTreeNode(CHILD_UUID, "iPhone Cases"),
+            ]),
+            makeTreeNode(STANDALONE_UUID, "Chargers"),
+          ],
+        }),
+      ),
+      http.get("*/api/product-groups", () => HttpResponse.json({ data: [] })),
+    );
+  }
+
+  const categoryTrigger = () =>
+    screen.getByLabelText(dict.productForm.category);
+
+  it("offers leaf categories (incl. a standalone root) but NOT a branch category", async () => {
+    stubAdminTree();
+    renderWithProviders(<ProductForm onSubmit={noop} isPending={false} />);
+
+    await userEvent.click(categoryTrigger());
+
+    // The leaf child is selectable, indented to show its ancestry.
+    expect(
+      await screen.findByRole("option", { name: "— iPhone Cases" }),
+    ).toBeInTheDocument();
+    // A standalone root with no children is itself a leaf → selectable.
+    expect(
+      screen.getByRole("option", { name: "Chargers" }),
+    ).toBeInTheDocument();
+    // The branch category "Cases" (has children) must NOT be offered.
+    expect(
+      screen.queryByRole("option", { name: "Cases" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("writes the chosen leaf category id on submit", async () => {
+    stubAdminTree();
+    const onSubmit = jest.fn();
+    renderWithProviders(
+      <ProductForm
+        defaultValues={{
+          name: "Clear Case",
+          slug: "clear-case",
+          price: "29.99",
+          stock: "5",
+          isActive: true,
+        }}
+        onSubmit={onSubmit}
+        isPending={false}
+      />,
+    );
+
+    await userEvent.click(categoryTrigger());
+    await userEvent.click(
+      await screen.findByRole("option", { name: "— iPhone Cases" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.productForm.submit }),
+    );
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ categoryId: CHILD_UUID }),
       expect.anything(),
     );
   });

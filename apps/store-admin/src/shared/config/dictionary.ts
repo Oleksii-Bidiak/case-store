@@ -246,6 +246,10 @@ export const dict = {
     loading: "Завантаження…",
     sortOrder: "Порядок сортування",
     active: "Активна (показувати в магазині)",
+    metaTitle: "SEO-заголовок (meta title)",
+    metaTitlePlaceholder: "Залиште порожнім, щоб використати назву",
+    metaDescription: "SEO-опис (meta description)",
+    metaDescriptionPlaceholder: "Короткий опис для пошукових систем",
     submit: "Зберегти категорію",
     errors: {
       nameRequired: "Вкажіть назву",
@@ -256,6 +260,8 @@ export const dict = {
       imageUrl: "Вкажіть коректний URL",
       parentInvalid: "Оберіть коректну категорію",
       sortInt: "Порядок сортування має бути невід'ємним цілим числом",
+      metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
+      metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
     },
   },
 

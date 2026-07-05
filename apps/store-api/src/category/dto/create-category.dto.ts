@@ -92,4 +92,24 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsBoolean({ message: 'isActive must be true or false' })
   isActive?: boolean;
+
+  @ApiProperty({
+    description: 'SEO meta title override (falls back to name when empty)',
+    example: 'Phone Cases — Premium Protection | Store',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255, { message: 'Meta title must be at most 255 characters' })
+  metaTitle?: string;
+
+  @ApiProperty({
+    description: 'SEO meta description override',
+    example: 'Shop premium protective phone cases for every model.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500, { message: 'Meta description must be at most 500 characters' })
+  metaDescription?: string;
 }

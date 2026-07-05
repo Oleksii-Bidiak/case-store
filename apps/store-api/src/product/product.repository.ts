@@ -8,7 +8,14 @@ import { Product, Prisma } from '@prisma/client';
 export interface FindAllParams {
   page: number;
   limit: number;
-  categoryId?: string;
+  /**
+   * Category filter as an already-expanded id set (self + subtree). The service
+   * resolves a single requested `categoryId` into this list via
+   * `CategoryRepository.findSubtreeIds` (TASK-236) so filtering by a parent
+   * category rolls up every product filed under it; the repository does not own
+   * that cross-entity rule.
+   */
+  categoryIds?: string[];
   isActive?: boolean;
   minPrice?: number;
   maxPrice?: number;
@@ -321,7 +328,7 @@ export class ProductRepository {
     const {
       page,
       limit,
-      categoryId,
+      categoryIds,
       isActive,
       minPrice,
       maxPrice,
@@ -335,8 +342,11 @@ export class ProductRepository {
     // (tombstoned) must never appear in any listing, regardless of filters.
     const where: Prisma.ProductWhereInput = { deletedAt: null };
 
-    if (categoryId !== undefined) {
-      where.categoryId = categoryId;
+    // Subtree rollup (TASK-236): the service passes the expanded category id set
+    // (self + descendants), matched with `IN (...)` so a parent category returns
+    // its subcategories' products too.
+    if (categoryIds !== undefined) {
+      where.categoryId = { in: categoryIds };
     }
 
     if (isActive !== undefined) {

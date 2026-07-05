@@ -21,7 +21,12 @@ export interface ProductSearchDocument {
   slug: string;
   price: number;
   compareAtPrice: number | null;
-  categoryId: string;
+  /**
+   * The product's own category plus every ancestor id (TASK-236 rollup), so a
+   * future category-scoped filter (`categoryIds = <parent>`) matches products
+   * filed in subcategories too — mirroring the Postgres subtree rollup.
+   */
+  categoryIds: string[];
   categoryName: string;
   primaryImageUrl: string | null;
   blurDataUrl: string | null;

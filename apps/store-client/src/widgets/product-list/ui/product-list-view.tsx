@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { SlidersHorizontal } from "lucide-react";
-import { useCategoryControllerGetRootCategories } from "@/entities/category";
+import { useCategoryControllerGetCategoryTree } from "@/entities/category";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import {
   ProductFilters,
@@ -127,11 +127,10 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
     [searchParams, pathname],
   );
 
-  const { data: categoriesData } = useCategoryControllerGetRootCategories({
-    isActive: true,
-    sortBy: "sortOrder",
-    sortOrder: "asc",
-  });
+  // The public tree carries roots + their children in one payload, so the chips
+  // row can offer a second, "narrow to a subcategory" level without a second
+  // request (TASK-236). Only active categories are returned.
+  const { data: categoriesData } = useCategoryControllerGetCategoryTree();
   const categories = categoriesData?.data ?? [];
 
   return (

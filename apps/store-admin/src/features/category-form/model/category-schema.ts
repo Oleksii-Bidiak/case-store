@@ -49,6 +49,22 @@ export const categorySchema = z.object({
     .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
 
   isActive: z.boolean().optional(),
+
+  // SEO overrides (TASK-236). Optional free text; storefront <head> wiring is
+  // deferred to Phase D, this only persists the values.
+  metaTitle: z
+    .string()
+    .trim()
+    .max(255, e.metaTitleMax)
+    .optional()
+    .or(z.literal("")),
+
+  metaDescription: z
+    .string()
+    .trim()
+    .max(500, e.metaDescriptionMax)
+    .optional()
+    .or(z.literal("")),
 });
 
 export type CategoryFormInput = z.input<typeof categorySchema>;
@@ -80,6 +96,8 @@ export function categoryFormValuesToDto(
   const description = values.description?.trim();
   const image = values.image?.trim();
   const parentId = values.parentId?.trim();
+  const metaTitle = values.metaTitle?.trim();
+  const metaDescription = values.metaDescription?.trim();
 
   return {
     name: values.name,
@@ -89,5 +107,13 @@ export function categoryFormValuesToDto(
     parentId: parentId ? parentId : options.isUpdate ? null : undefined,
     sortOrder: values.sortOrder,
     isActive: values.isActive,
+    // Blank clears the override on UPDATE (explicit null so Prisma writes it),
+    // and is simply omitted on CREATE (same rule as parentId, TASK-236).
+    metaTitle: metaTitle ? metaTitle : options.isUpdate ? null : undefined,
+    metaDescription: metaDescription
+      ? metaDescription
+      : options.isUpdate
+        ? null
+        : undefined,
   };
 }

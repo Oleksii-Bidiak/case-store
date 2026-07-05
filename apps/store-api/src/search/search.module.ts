@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ProductRepository } from '../product/product.repository';
+import { CategoryModule } from '../category';
 import { MeiliClient } from './meili.client';
 import { SearchService } from './search.service';
 import { ProductIndexer, SearchProductIndexer } from './product-indexer';
@@ -18,6 +19,9 @@ import { AdminSearchController } from './admin-search.controller';
  * {@link ProductIndexer} seam, avoiding a circular module reference.
  */
 @Module({
+  // CategoryModule supplies CategoryRepository for the TASK-236 ancestor-id
+  // expansion in `toDocument`. ProductRepository stays module-local (see below).
+  imports: [CategoryModule],
   controllers: [SearchController, AdminSearchController],
   providers: [
     MeiliClient,
