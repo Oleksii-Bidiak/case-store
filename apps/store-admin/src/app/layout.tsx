@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Providers } from "./providers";
+import { dict } from "@/shared/config/dictionary";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -20,8 +21,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Admin Panel — Mobile Accessories Store",
-  description: "Admin panel for managing products, orders, and users.",
+  title: dict.app.metaTitle,
+  description: dict.app.metaDescription,
 };
 
 export default function RootLayout({
