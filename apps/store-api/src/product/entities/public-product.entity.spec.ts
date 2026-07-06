@@ -11,6 +11,8 @@ function buildPrismaProduct(
   overrides: Partial<{
     stock: number;
     ratingAverage: number | null;
+    metaTitle: string | null;
+    metaDescription: string | null;
     primaryImage: {
       id: string;
       url: string;
@@ -34,6 +36,8 @@ function buildPrismaProduct(
     attributes: {},
     positionOrder: 0,
     isActive: true,
+    metaTitle: null,
+    metaDescription: null,
     createdAt: new Date('2024-01-01T00:00:00.000Z'),
     updatedAt: new Date('2024-01-02T00:00:00.000Z'),
     ratingAverage: 4.5,
@@ -141,5 +145,26 @@ describe('PublicProductEntity.fromPrisma', () => {
     expect(entity.variantSummary.defaultVariantId).toBe('prod-1');
     expect(entity.variantSummary.defaultInStock).toBe(true);
     expect(entity.variantSummary.colors).toEqual([]);
+  });
+
+  it('passes the SEO meta overrides through untouched (TASK-241)', () => {
+    const entity = PublicProductEntity.fromPrisma(
+      buildPrismaProduct({
+        metaTitle: 'Clear MagSafe Case for iPhone 15 Pro | Store',
+        metaDescription: 'Ultra-clear, MagSafe-ready protection for the iPhone 15 Pro.',
+      }),
+    );
+
+    expect(entity.metaTitle).toBe('Clear MagSafe Case for iPhone 15 Pro | Store');
+    expect(entity.metaDescription).toBe(
+      'Ultra-clear, MagSafe-ready protection for the iPhone 15 Pro.',
+    );
+  });
+
+  it('defaults the SEO meta overrides to null when absent', () => {
+    const entity = PublicProductEntity.fromPrisma(buildPrismaProduct());
+
+    expect(entity.metaTitle).toBeNull();
+    expect(entity.metaDescription).toBeNull();
   });
 });

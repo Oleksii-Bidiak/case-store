@@ -8,6 +8,7 @@ const prismaMock = {
     findFirst: jest.fn(),
     findMany: jest.fn(),
     count: jest.fn(),
+    create: jest.fn(),
     update: jest.fn(),
   },
   productImage: {
@@ -224,6 +225,55 @@ describe('ProductRepository (soft-delete behaviour)', () => {
 
       const updateArgs = prismaMock.product.update.mock.calls[0][0];
       expect(updateArgs.data.sku).toBeNull();
+    });
+  });
+
+  // ─── SEO meta pass-through (TASK-241) ───────────────────────────────────────
+
+  describe('SEO meta (TASK-241)', () => {
+    it('create persists metaTitle/metaDescription when provided', async () => {
+      prismaMock.product.create.mockResolvedValue({ id: 'product-1' });
+
+      await repository.create({
+        name: 'Clear Case',
+        slug: 'clear-case',
+        price: 29.99,
+        categoryId: 'cat-1',
+        metaTitle: 'Clear Case | Store',
+        metaDescription: 'A crystal-clear protective case.',
+      });
+
+      const createArgs = prismaMock.product.create.mock.calls[0][0];
+      expect(createArgs.data.metaTitle).toBe('Clear Case | Store');
+      expect(createArgs.data.metaDescription).toBe('A crystal-clear protective case.');
+    });
+
+    it('create defaults metaTitle/metaDescription to null when omitted', async () => {
+      prismaMock.product.create.mockResolvedValue({ id: 'product-2' });
+
+      await repository.create({
+        name: 'Plain Case',
+        slug: 'plain-case',
+        price: 9.99,
+        categoryId: 'cat-1',
+      });
+
+      const createArgs = prismaMock.product.create.mock.calls[0][0];
+      expect(createArgs.data.metaTitle).toBeNull();
+      expect(createArgs.data.metaDescription).toBeNull();
+    });
+
+    it('update forwards metaTitle/metaDescription through the spread', async () => {
+      prismaMock.product.update.mockResolvedValue({ id: 'product-3' });
+
+      await repository.update('product-3', {
+        metaTitle: 'Updated Title',
+        metaDescription: 'Updated description.',
+      });
+
+      const updateArgs = prismaMock.product.update.mock.calls[0][0];
+      expect(updateArgs.data.metaTitle).toBe('Updated Title');
+      expect(updateArgs.data.metaDescription).toBe('Updated description.');
     });
   });
 });

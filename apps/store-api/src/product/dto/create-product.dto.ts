@@ -151,4 +151,24 @@ export class CreateProductDto {
   @IsOptional()
   @IsBoolean({ message: 'isActive must be true or false' })
   isActive?: boolean;
+
+  @ApiProperty({
+    description: 'SEO meta title override (falls back to product name when empty)',
+    example: 'iPhone 15 Pro Clear MagSafe Case | Store',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255, { message: 'Meta title must be at most 255 characters' })
+  metaTitle?: string;
+
+  @ApiProperty({
+    description: 'SEO meta description override (falls back to the product description when empty)',
+    example: 'Shop the clear MagSafe-compatible case for iPhone 15 Pro.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500, { message: 'Meta description must be at most 500 characters' })
+  metaDescription?: string;
 }

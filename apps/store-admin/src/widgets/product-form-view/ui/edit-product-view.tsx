@@ -173,6 +173,8 @@ function mapProductToFormValues(product: {
   attributes?: Record<string, unknown> | null;
   positionOrder: number;
   isActive: boolean;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
 }): Partial<ProductFormInput> {
   return {
     name: product.name,
@@ -193,5 +195,7 @@ function mapProductToFormValues(product: {
       }),
     ),
     isActive: product.isActive,
+    metaTitle: product.metaTitle ?? "",
+    metaDescription: product.metaDescription ?? "",
   };
 }

@@ -188,6 +188,11 @@ model Product {
   attributes     Json?         @default("{}")
   positionOrder  Int           @default(0) @map("position_order")
   isActive       Boolean       @default(true) @map("is_active")
+  // SEO overrides (TASK-241). Nullable/admin-editable, mirroring Category/Page.
+  // The PDP derives its <title>/description from name/description via resolveSeo()
+  // (TASK-240); these columns win as tier 1 (the admin's explicit override).
+  metaTitle       String?      @map("meta_title")
+  metaDescription String?      @map("meta_description")
   // Audit tombstone (TASK-104). NULL = live; non-null = soft-deleted (hidden
   // from all reads). On soft-delete the unique `slug`/`sku` are mangled. The row
   // is kept so historical OrderItems still resolve the product name.

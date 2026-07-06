@@ -76,6 +76,8 @@ export interface CreateProductInput {
   attributes?: Record<string, string> | null;
   positionOrder?: number;
   isActive?: boolean;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
 }
 
 /**
@@ -96,6 +98,8 @@ export interface UpdateProductInput {
   attributes?: Record<string, string> | null;
   positionOrder?: number;
   isActive?: boolean;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
 }
 
 /**
@@ -807,6 +811,8 @@ export class ProductRepository {
         attributes: (data.attributes ?? {}) as Prisma.InputJsonValue,
         positionOrder: data.positionOrder ?? 0,
         isActive: data.isActive ?? true,
+        metaTitle: data.metaTitle ?? null,
+        metaDescription: data.metaDescription ?? null,
       },
     });
   }

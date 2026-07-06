@@ -104,6 +104,22 @@ export const productSchema = z.object({
     .optional(),
 
   isActive: z.boolean().optional(),
+
+  // SEO overrides (TASK-241). Optional free text; blank is dropped on map so the
+  // storefront PDP falls back to the auto-derived title/description (resolveSeo).
+  metaTitle: z
+    .string()
+    .trim()
+    .max(255, e.metaTitleMax)
+    .optional()
+    .or(z.literal("")),
+
+  metaDescription: z
+    .string()
+    .trim()
+    .max(500, e.metaDescriptionMax)
+    .optional()
+    .or(z.literal("")),
 });
 
 export type ProductFormInput = z.input<typeof productSchema>;
@@ -122,6 +138,8 @@ export function productFormValuesToDto(
   const sku = values.sku?.trim();
   const groupId = values.groupId?.trim();
   const brandId = values.brandId?.trim();
+  const metaTitle = values.metaTitle?.trim();
+  const metaDescription = values.metaDescription?.trim();
 
   // Collapse the key-value pairs into an attribute object, dropping blank keys
   // and de-duplicating on key (last value wins).
@@ -147,5 +165,9 @@ export function productFormValuesToDto(
     attributes,
     positionOrder: values.positionOrder,
     isActive: values.isActive,
+    // Blank clears back to auto-derived SEO: omitted so the backend leaves the
+    // column untouched on update and unset on create (same rule as slug/sku).
+    metaTitle: metaTitle ? metaTitle : undefined,
+    metaDescription: metaDescription ? metaDescription : undefined,
   };
 }

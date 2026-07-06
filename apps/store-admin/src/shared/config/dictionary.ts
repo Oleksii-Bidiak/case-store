@@ -198,6 +198,14 @@ export const dict = {
     removeAttrAria: (i: number) => `Видалити атрибут ${i}`,
     addAttribute: "Додати атрибут",
     active: "Активний (показувати в магазині)",
+    metaTitle: "SEO-заголовок (meta title)",
+    metaTitlePlaceholder: "Залиште порожнім, щоб використати назву товару",
+    metaTitleHint:
+      "Заголовок сторінки товару для пошукових систем (Google) і соцмереж. Залиште порожнім — і він згенерується автоматично з назви товару.",
+    metaDescription: "SEO-опис (meta description)",
+    metaDescriptionPlaceholder: "Короткий опис товару для пошукових систем",
+    metaDescriptionHint:
+      "Короткий текст під заголовком у результатах пошуку. Залиште порожнім — і він згенерується автоматично з опису товару.",
     submit: "Зберегти товар",
     errors: {
       nameRequired: "Вкажіть назву",
@@ -216,6 +224,8 @@ export const dict = {
       groupInvalid: "Оберіть коректну групу",
       brandInvalid: "Оберіть коректний бренд",
       positionInt: "Порядок позиції має бути цілим числом ≥ 0",
+      metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
+      metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
     },
   },
 
