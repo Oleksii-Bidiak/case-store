@@ -35,6 +35,7 @@ import {
   PAYMENT_OPTIONS,
   PROTECTION_SERVICES,
   WARRANTY_CARDS,
+  type InfoFaq,
   type InfoIconKey,
   type InfoSectionKey,
 } from "../model/info-content";
@@ -90,8 +91,12 @@ const MESSENGERS: {
  */
 export function InfoView({
   contact,
+  faqs = INFO_FAQS,
 }: {
   contact: SiteContactSettingsEntity | null;
+  /** FAQ entries from the admin-managed API; falls back to the static
+   *  `INFO_FAQS` when the caller passes nothing (offline / error path). */
+  faqs?: readonly InfoFaq[];
 }) {
   const [section, setSection] = useState<InfoSectionKey>("delivery");
   const [openFaq, setOpenFaq] = useState<Record<number, boolean>>({});
@@ -314,7 +319,7 @@ export function InfoView({
 
           {section === "faq" && (
             <div className="rounded-[18px] border border-border bg-card px-[30px] py-3.5 shadow-[var(--shadow-card)]">
-              {INFO_FAQS.map((faq, i) => {
+              {faqs.map((faq, i) => {
                 const open = !!openFaq[i];
                 return (
                   <div
