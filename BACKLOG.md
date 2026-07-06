@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-245**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-248**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -186,6 +186,14 @@
 | TASK-243 | Admin onboarding guide (UA, non-technical) — catalog & commerce sections: products, categories, product-groups, brands, devices, structured specs, orders, users, discounts. `docs/admin-guide.md` (part 1, ~730 lines; part 2 → TASK-244) | ✅ | 116 |
 | TASK-244 | Admin onboarding guide — content/CRM, SEO & dashboard sections: pages, blog, banners, messages, subscribers, site-contact, SEO settings, FAQ, dashboard + pre-launch checklist. `docs/admin-guide.md` part 2 (sections 12–21) appended; TOC + §1/§2 «частина 2» markers resolved; completes the onboarding guide | ✅ | 116 |
 
+#### Follow-ups from Етап 5 *(tech-debt, non-blocking)*
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-245 | Product SEO meta: blanking `metaTitle`/`metaDescription` in the admin form omits the field (`undefined`) instead of clearing the stored column, so a once-set value can't be emptied back to auto-derived. Add a Category-style `isUpdate`→`null` clear path if managers need to reset a product's SEO override | ⬜ | 116 |
+| TASK-246 | `SiteContactSettings` writes don't trigger `RevalidationNotifier` (pre-existing gap; the new SeoSettings/FaqItem modules wire it from day one). Add a revalidation tag on the site-contact admin write so footer/contact + Organization `sameAs` refresh without a redeploy | ⬜ | 116 |
+| TASK-247 | Surface `Category.metaTitle`/`metaDescription` on the public category read so `resolveSeo()` uses the admin override as tier-1 for the category-filtered `/products` listing (TASK-240 currently only content-derives from name/description — the override columns aren't exposed to the storefront yet) | ⬜ | 116 |
+
 ### Пізніша хвиля
 
 | Task ID | Description | Status | Plan |
@@ -222,6 +230,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-245**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-248**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
