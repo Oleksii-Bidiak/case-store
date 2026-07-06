@@ -43,8 +43,8 @@
 
 ## Roadmap (Open)
 
-> Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-239**.
+> Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-245**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -168,6 +168,24 @@
 | --- | --- | --- | --- |
 | TASK-238 | `CategoryRepository.findDescendantIds` raw SQL used `"Category"`/`"parentId"` while the physical tables are snake_case → 500 on admin category re-parenting. **Fixed:** mirror `findSubtreeIds` snake_case (`categories`/`parent_id`) + added a real-DB assertion to `category.repository.int-spec`; typecheck/lint + 39 category unit specs green; **`category.repository.int-spec` verified 11/11 on real Postgres** (the 4 new `findDescendantIds` cases threw on the old SQL) | ✅ | 114 |
 
+### Етап 5 — SEO-платформа + admin onboarding
+
+> Owner cannot configure SEO themselves — everything must work zero-config out of the box AND be
+> overridable from the admin panel with plain-UA hints. Sequence: TASK-239 (SeoSettings
+> foundation) → TASK-240 (`resolveSeo()` auto-SEO wiring) → TASK-241 ∥ TASK-242 (product meta,
+> FAQPage — parallel-safe) → TASK-243 (onboarding pt.1, parallel-safe with everything) →
+> TASK-244 (onboarding pt.2, best done last). TASK-243 is flagged **needed before any deploy**,
+> even a dev/staging one. Full breakdown, Prisma models, and Design Decisions in plan 116.
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-239 | `SeoSettings` admin singleton (default meta title/description, `%s \| brand` title template, default OG image, site-wide noindex toggle, editable llms.txt intro, additional `sameAs` links) — mirrors `SiteContactSettings`; wires `RevalidationNotifier` from day one | ⬜ | 116 |
+| TASK-240 | Shared `resolveSeo()` precedence-chain helper (entity meta → SeoSettings defaults → content-derived fallback); wires root layout/homepage title, category-filtered `/products` meta (closes the schema.prisma "deferred to Phase D" TODO), `robots.ts` noindex toggle, `llms.txt` summary override | ⬜ | 116 |
+| TASK-241 | Product-level SEO meta: `metaTitle`/`metaDescription` columns + admin product-form fields (with hints) + PDP `generateMetadata` via `resolveSeo()` | ⬜ | 116 |
+| TASK-242 | `FAQPage` JSON-LD + global admin-editable FAQ (`FaqItem`) on `/info` + PDP; seeds from the existing static `INFO_FAQS` (info-content.ts) | ⬜ | 116 |
+| TASK-243 | Admin onboarding guide (UA, non-technical) — catalog & commerce sections: products, categories, product-groups, brands, devices, structured specs, orders, users, discounts | ⬜ | 116 |
+| TASK-244 | Admin onboarding guide — content/CRM, SEO & dashboard sections: pages, blog, banners, messages, subscribers, site-contact, SEO settings, FAQ, dashboard + pre-launch checklist | ⬜ | 116 |
+
 ### Пізніша хвиля
 
 | Task ID | Description | Status | Plan |
@@ -204,6 +222,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-239**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-245**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
