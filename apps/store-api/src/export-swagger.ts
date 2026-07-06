@@ -56,6 +56,7 @@ async function exportSwagger(): Promise<void> {
     .addTag('Contact', 'Customer contact messages — public submission and admin inbox')
     .addTag('Search', 'Full-text product search + autocomplete (Meilisearch, Postgres fallback)')
     .addTag('Newsletter', 'Newsletter subscriptions — public opt-in and admin list/export')
+    .addTag('SeoSettings', 'Global SEO settings singleton — public read and admin management')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);

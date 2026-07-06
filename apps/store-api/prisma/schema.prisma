@@ -455,6 +455,37 @@ model SiteContactSettings {
   @@map("site_contact_settings")
 }
 
+/// Singleton row for global/default SEO configuration (TASK-239). Feeds the root
+/// layout metadata, robots.ts (site-wide noindex), llms.txt (intro override), and
+/// the Organization JSON-LD `sameAs` (merged with SiteContactSettings' social
+/// links). Distinct SINGLETON_ID from SiteContactSettings
+/// ('00000000-0000-0000-0000-000000000002' vs ...0001) — see plan 116 Decision 1.
+/// The id is a plain String (not @default(uuid())) — always the well-known
+/// constant set by the repository and seed. No isActive / deletedAt: the
+/// singleton is always active and is never deleted.
+model SeoSettings {
+  id                     String   @id
+  defaultMetaTitle       String?  @map("default_meta_title")
+  defaultMetaDescription String?  @map("default_meta_description")
+  /// Must contain exactly one `%s` token when set, e.g. "%s | MobileStore".
+  /// Null → falls back to the current hardcoded `%s | ${SITE_NAME}` template.
+  titleTemplate          String?  @map("title_template")
+  defaultOgImage         String?  @map("default_og_image")
+  /// Site-wide noindex kill switch (staging vs prod). Default false (assume
+  /// production once this ships).
+  noindexSite            Boolean  @default(false) @map("noindex_site")
+  /// Overrides only the intro paragraph of /llms.txt — see plan 116 Decision 5.
+  llmsTxtSummary         String?  @map("llms_txt_summary") @db.Text
+  /// One-per-line brand-authority profile URLs (Facebook/YouTube/LinkedIn/X/
+  /// Google Business/Wikipedia, ...) — merged into Organization `sameAs`
+  /// alongside SiteContactSettings' viber/telegram/instagram. See Decision 4.
+  additionalSameAsLinks  String[] @default([]) @map("additional_sameas_links")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@map("seo_settings")
+}
+
 /// Promo code / coupon (TASK-079). Codes are stored UPPERCASE and matched
 /// case-insensitively. `value` is a percentage (1–100) when `type` is PERCENT,
 /// or a fixed UAH amount when FIXED. Eligibility is gated by the active flag,

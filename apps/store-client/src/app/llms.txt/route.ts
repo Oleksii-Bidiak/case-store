@@ -1,4 +1,5 @@
 import { SITE_URL, SITE_NAME } from "@/shared/config";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 
 /**
  * llms.txt (https://llmstxt.org/) — a curated, LLM-friendly map of the store so
@@ -7,15 +8,23 @@ import { SITE_URL, SITE_NAME } from "@/shared/config";
  * markdown at `/llms.txt`, mirroring the top-level routes; the exhaustive
  * per-product / per-article URL list lives in `sitemap.xml`.
  *
- * Static (no API calls) so it builds without a running backend, matching the
- * `robots.ts` convention. Added under the TASK-194 pre-deploy GEO/SEO pass.
+ * The intro blockquote is admin-editable via `SeoSettings.llmsTxtSummary`
+ * (TASK-239, plan 116 Decision 5): only that one paragraph is overridable — the
+ * curated link map below stays code-owned so a typo can't break real routes. The
+ * SeoSettings fetch is tagged (`seo-settings`) and returns null on any error, so
+ * the curated default paragraph is used whenever the API is unreachable or the
+ * field is blank.
  */
-export const dynamic = "force-static";
+const DEFAULT_INTRO =
+  "Мультибрендовий інтернет-магазин аксесуарів для смартфонів та Apple-техніки в Україні: чохли, захисні скельця, зарядні пристрої, кабелі, навушники, тримачі та інше. Ціни у гривні (₴), доставка Новою Поштою.";
 
-export function GET(): Response {
+export async function GET(): Promise<Response> {
+  const seo = await fetchSeoSettings();
+  const intro = seo?.llmsTxtSummary?.trim() || DEFAULT_INTRO;
+
   const body = `# ${SITE_NAME}
 
-> Мультибрендовий інтернет-магазин аксесуарів для смартфонів та Apple-техніки в Україні: чохли, захисні скельця, зарядні пристрої, кабелі, навушники, тримачі та інше. Ціни у гривні (₴), доставка Новою Поштою.
+> ${intro}
 
 ## Основні розділи
 - [Каталог товарів](${SITE_URL}/products): усі аксесуари з фільтрами за категорією, брендом, сумісністю з пристроєм та характеристиками

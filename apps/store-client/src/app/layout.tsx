@@ -5,6 +5,7 @@ import { Header } from "@/widgets/header";
 import { Footer } from "@/widgets";
 import { PRIMARY_COLOR, SITE_URL, SITE_NAME, dict } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import "./globals.css";
 
 /**
@@ -43,20 +44,42 @@ export const viewport: Viewport = {
   themeColor: PRIMARY_COLOR,
 };
 
-export const metadata: Metadata = {
-  metadataBase: new URL(SITE_URL),
-  title: {
-    default: dict.meta.rootTitle,
-    template: `%s | ${SITE_NAME}`,
-  },
-  description: dict.meta.rootDescription,
-  openGraph: {
-    type: "website",
-    siteName: SITE_NAME,
-    url: SITE_URL,
-    locale: "uk_UA",
-  },
-};
+/**
+ * Root metadata, seeded from the admin-managed SeoSettings singleton (TASK-239)
+ * with the hardcoded localized strings kept as the zero-config fallback:
+ *   - title.template — `SeoSettings.titleTemplate` when it contains a `%s`
+ *     token, else the default `%s | ${SITE_NAME}`.
+ *   - title.default / description — the admin defaults when set, else the
+ *     current `dict.meta.*` strings.
+ *   - openGraph.images — seeded from `SeoSettings.defaultOgImage` when set.
+ *
+ * `fetchSeoSettings()` is tagged (`seo-settings`) and returns null on any error,
+ * so an unreachable API degrades gracefully to the hardcoded defaults.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const seo = await fetchSeoSettings();
+
+  const template =
+    seo?.titleTemplate && seo.titleTemplate.includes("%s")
+      ? seo.titleTemplate
+      : `%s | ${SITE_NAME}`;
+
+  return {
+    metadataBase: new URL(SITE_URL),
+    title: {
+      default: seo?.defaultMetaTitle || dict.meta.rootTitle,
+      template,
+    },
+    description: seo?.defaultMetaDescription || dict.meta.rootDescription,
+    openGraph: {
+      type: "website",
+      siteName: SITE_NAME,
+      url: SITE_URL,
+      locale: "uk_UA",
+      ...(seo?.defaultOgImage ? { images: [{ url: seo.defaultOgImage }] } : {}),
+    },
+  };
+}
 
 export default async function RootLayout({
   children,

@@ -22,6 +22,7 @@ import { PagesModule } from './pages';
 import { BlogModule } from './blog';
 import { BannersModule } from './banners';
 import { SiteContactModule } from './site-contact';
+import { SeoSettingsModule } from './seo-settings';
 import { ContactModule } from './contact';
 import { CartModule } from './cart';
 import { WishlistModule } from './wishlist';
@@ -128,6 +129,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Admin-managed site contact settings (TASK-154)
     SiteContactModule,
+
+    // Admin-managed global SEO settings singleton (TASK-239)
+    SeoSettingsModule,
 
     // Customer contact / support messages (public form + admin inbox, TASK-177)
     ContactModule,

@@ -129,6 +129,7 @@ async function bootstrap() {
       .addTag('Contact', 'Customer contact messages — public submission and admin inbox')
       .addTag('Search', 'Full-text product search + autocomplete (Meilisearch, Postgres fallback)')
       .addTag('Newsletter', 'Newsletter subscriptions — public opt-in and admin list/export')
+      .addTag('SeoSettings', 'Global SEO settings singleton — public read and admin management')
       .addTag('Security', 'CSRF token issuance')
       .build();
 
