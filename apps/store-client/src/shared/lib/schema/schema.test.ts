@@ -17,6 +17,27 @@ describe("buildOrganizationSchema", () => {
     expect(schema.name).toBe("MobileStore");
     expect(schema.url).toBe(SITE);
   });
+
+  it("emits sameAs from configured social links, dropping blanks/nulls", () => {
+    const schema = buildOrganizationSchema(SITE, "MobileStore", [
+      "https://t.me/store",
+      "",
+      null,
+      "   ",
+      "https://instagram.com/store",
+    ]);
+    expect(schema.sameAs).toEqual([
+      "https://t.me/store",
+      "https://instagram.com/store",
+    ]);
+  });
+
+  it("omits sameAs when no usable social links are configured", () => {
+    expect(buildOrganizationSchema(SITE, "MobileStore").sameAs).toBeUndefined();
+    expect(
+      buildOrganizationSchema(SITE, "MobileStore", [null, "", "  "]).sameAs,
+    ).toBeUndefined();
+  });
 });
 
 describe("buildWebSiteSchema", () => {
@@ -148,5 +169,29 @@ describe("buildProductSchema", () => {
     });
     expect(schema.sku).toBeUndefined();
     expect(schema.offers).toBeUndefined();
+  });
+
+  it("emits aggregateRating from the approved-review summary", () => {
+    const schema = buildProductSchema({
+      product: { ...baseProduct, ratingAverage: 4.5, ratingCount: 12 },
+      images: [],
+      ...opts,
+    });
+    expect(schema.aggregateRating).toEqual({
+      "@type": "AggregateRating",
+      ratingValue: 4.5,
+      reviewCount: 12,
+      bestRating: 5,
+      worstRating: 1,
+    });
+  });
+
+  it("omits aggregateRating when the product has no reviews", () => {
+    const schema = buildProductSchema({
+      product: baseProduct, // ratingCount: 0
+      images: [],
+      ...opts,
+    });
+    expect(schema.aggregateRating).toBeUndefined();
   });
 });

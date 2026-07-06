@@ -85,12 +85,15 @@ was fixed during this pass.
 ## Quick Wins
 
 1. ✅ **Add `llms.txt`** — done (`app/llms.txt/route.ts`).
-2. **Add `AggregateRating`/`Review` to Product JSON-LD** once a product has
-   approved reviews (data already exists via the reviews module).
-3. **Add a small `FAQPage` block** on PDP + `/info` (delivery, warranty,
-   compatibility) — highly quotable by AI answer engines.
-4. **Brand the home `<title>`** (`Головна | MobileStore`).
-5. **Verify a default branded `og:image`** for link/share cards.
+2. ✅ **`AggregateRating` in Product JSON-LD** — done; emitted from
+   `ratingAverage`/`ratingCount` when a product has approved reviews.
+3. ✅ **`sameAs` in Organization JSON-LD** — done; wired from the admin-managed
+   social links (Viber/Telegram/Instagram) so the brand entity links to its
+   profiles.
+4. **Add a small `FAQPage` block** on PDP + `/info` (delivery, warranty,
+   compatibility) — highly quotable by AI answer engines. _(planned)_
+5. **Brand the home `<title>`** (`Головна | MobileStore`) + a default branded
+   `og:image`. _(planned — rolls into the admin SeoSettings work)_
 
 ## Post-launch (Brand Authority & Platform — the N/A half)
 

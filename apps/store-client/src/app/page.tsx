@@ -15,6 +15,7 @@ import {
 } from "@/shared/lib/schema";
 import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
+import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 
 export const metadata: Metadata = {
   title: dict.meta.homeTitle,
@@ -27,9 +28,21 @@ export default async function HomePage() {
   // always renders even if the API is unreachable.
   const banners = await fetchPublishedBanners();
 
+  // Admin-managed social links feed the Organization `sameAs` (brand-entity
+  // signal for AI/search). Deduped with the footer's fetch of the same tagged
+  // endpoint; degrades to no `sameAs` when unset or the API is unreachable.
+  const contact = await fetchSiteContactSettings();
+  const socialLinks = [
+    contact?.viberLink,
+    contact?.telegramLink,
+    contact?.instagramLink,
+  ];
+
   return (
     <div className="flex flex-col gap-14 pb-16">
-      <JsonLd schema={buildOrganizationSchema(SITE_URL, SITE_NAME)} />
+      <JsonLd
+        schema={buildOrganizationSchema(SITE_URL, SITE_NAME, socialLinks)}
+      />
       <JsonLd schema={buildWebSiteSchema(SITE_URL, SITE_NAME)} />
 
       <HeroBanner

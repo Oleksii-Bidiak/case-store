@@ -9,7 +9,7 @@ import {
   Send,
   Camera,
 } from "lucide-react";
-import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
+import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { dict } from "@/shared/config";
 
 const TRUST_ITEMS = [
@@ -17,31 +17,6 @@ const TRUST_ITEMS = [
   { icon: Truck, label: dict.trust.shipping },
   { icon: RotateCcw, label: dict.trust.returns },
 ] as const;
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-
-/**
- * Fetch the admin-managed contact block server-side with a 1-hour ISR cache.
- *
- * Uses a native `fetch` (not the axios-based Orval client) so Next.js can apply
- * `revalidate` caching — contact info changes at most a few times per year, so
- * the footer should not hit the API on every page render. Returns null on any
- * error; callers fall back to the localized `dict.footer.*` strings.
- */
-async function getContactSettings(): Promise<SiteContactSettingsEntity | null> {
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/site-contact`, {
-      next: { revalidate: 3600 },
-    });
-    if (!res.ok) {
-      return null;
-    }
-    const body = (await res.json()) as { data?: SiteContactSettingsEntity };
-    return body.data ?? null;
-  } catch {
-    return null;
-  }
-}
 
 const SOCIAL_LINKS = [
   { key: "viberLink", icon: MessageCircle, label: "Viber" },
@@ -58,7 +33,7 @@ const SOCIAL_LINKS = [
  */
 export async function Footer() {
   const year = new Date().getFullYear();
-  const contact = await getContactSettings();
+  const contact = await fetchSiteContactSettings();
 
   const email = contact?.email ?? dict.footer.contactEmail;
   const phone = contact?.phone ?? dict.footer.contactPhone;

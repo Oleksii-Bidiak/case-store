@@ -20,8 +20,9 @@ export interface BuildProductSchemaInput {
  * - `price` is the position's price. `offers` is omitted when no usable price.
  * - `availability` is InStock when the position has stock, else OutOfStock.
  * - `sku`, `description`, and `image` are omitted when absent.
- * - `aggregateRating` / `review` are intentionally deferred — the API exposes no
- *   review data yet (see plan 033, decision A7).
+ * - `aggregateRating` is emitted from the product's approved-review summary
+ *   (`ratingAverage` / `ratingCount`) when it has at least one review; omitted
+ *   otherwise so Google never sees an empty rating.
  *
  * Pure function — no React/routing/API dependency (unit-testable).
  */
@@ -57,6 +58,15 @@ export function buildProductSchema(
   }
   if (imageUrls.length > 0) {
     schema.image = imageUrls;
+  }
+  if (product.ratingCount > 0 && product.ratingAverage !== null) {
+    schema.aggregateRating = {
+      "@type": "AggregateRating",
+      ratingValue: product.ratingAverage,
+      reviewCount: product.ratingCount,
+      bestRating: 5,
+      worstRating: 1,
+    };
   }
   if (price !== null) {
     schema.offers = {
