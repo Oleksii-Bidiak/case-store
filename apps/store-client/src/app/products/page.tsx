@@ -4,18 +4,16 @@ import Link from "next/link";
 import { ProductListView, ProductListSkeleton } from "@/widgets";
 import {
   buildCatalogHeader,
-  findCategoryName,
+  findCategoryNode,
 } from "@/widgets/product-list/model/catalog-header";
 import type { ProductControllerFindAllParams } from "@/entities/product";
+import type { CategoryTreeNodeEntity } from "@/shared/api/generated/models";
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
-import { SITE_URL, dict } from "@/shared/config";
-
-export const metadata: Metadata = {
-  title: dict.meta.productsTitle,
-  description: dict.meta.productsDescription,
-};
+import { resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
 
 /** Take the first value when a query param appears more than once. */
 function first(value: string | string[] | undefined): string | undefined {
@@ -23,17 +21,81 @@ function first(value: string | string[] | undefined): string | undefined {
 }
 
 /**
- * Resolve the selected category's name server-side (for the breadcrumb + title +
- * JSON-LD). Uses the public category tree so any node — root or sub-category —
- * resolves. Returns null on any failure so the catalog still renders.
+ * Resolve the selected category node server-side (for the breadcrumb + title +
+ * description + JSON-LD). Uses the public category tree so any node — root or
+ * sub-category — resolves. Returns null on any failure so the catalog still
+ * renders.
  */
-async function resolveCategoryName(id: string): Promise<string | null> {
+async function resolveCategoryNode(
+  id: string,
+): Promise<CategoryTreeNodeEntity | null> {
   try {
     const { data } = await categoryControllerGetCategoryTree();
-    return findCategoryName(data ?? [], id);
+    return findCategoryNode(data ?? [], id);
   } catch {
     return null;
   }
+}
+
+/**
+ * Category-aware catalog metadata (plan 116 gap 1). For a `?categoryId=` view the
+ * title/description are resolved through the shared precedence helper so they are
+ * category-specific and SeoSettings-aware instead of the generic "Товари":
+ *
+ *   SeoSettings defaults (tier 2) → category name/description (tier 3).
+ *
+ * The category's own `metaTitle`/`metaDescription` admin overrides (tier 1) are
+ * not surfaced on the public category tree/detail endpoints yet, so they are not
+ * passed here — the entity tier lights up once those columns are exposed
+ * publicly (see plan 116 gap 1 / the `Category` schema comment). The unfiltered
+ * and keyword-search views keep the static generic metadata.
+ */
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}): Promise<Metadata> {
+  const resolvedParams = await searchParams;
+  const categoryId = first(resolvedParams.categoryId);
+
+  const [node, seo] = await Promise.all([
+    categoryId ? resolveCategoryNode(categoryId) : Promise.resolve(null),
+    fetchSeoSettings(),
+  ]);
+
+  // Category view: category-specific, SeoSettings-aware title/description.
+  if (node) {
+    const seoMeta = resolveSeo({
+      settings: seo,
+      content: { name: node.name, description: node.description },
+    });
+    return {
+      title: toMetadataTitle(seoMeta, {
+        settings: seo,
+        siteName: SITE_NAME,
+        fallback: dict.meta.productsTitle,
+      }),
+      description: seoMeta.description ?? dict.meta.productsDescription,
+    };
+  }
+
+  // Unfiltered / keyword-search / unknown-category → generic listing metadata,
+  // still branded through the same helper so the title carries the store name.
+  return {
+    title: toMetadataTitle(
+      { title: dict.meta.productsTitle, titleAbsolute: false },
+      { settings: seo, siteName: SITE_NAME, fallback: dict.meta.productsTitle },
+    ),
+    description: dict.meta.productsDescription,
+  };
+}
+
+/**
+ * Resolve just the selected category's name (breadcrumb + on-page title). Thin
+ * wrapper over `resolveCategoryNode`.
+ */
+async function resolveCategoryName(id: string): Promise<string | null> {
+  return (await resolveCategoryNode(id))?.name ?? null;
 }
 
 export default async function ProductsPage({

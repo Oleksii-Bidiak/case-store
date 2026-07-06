@@ -15,17 +15,25 @@ export interface CatalogHeader {
   currentPath: string;
 }
 
+/** Depth-first search of the category tree for a node by id (name, description, …). */
+export function findCategoryNode(
+  nodes: CategoryTreeNodeEntity[],
+  id: string,
+): CategoryTreeNodeEntity | null {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const nested = findCategoryNode(node.children ?? [], id);
+    if (nested) return nested;
+  }
+  return null;
+}
+
 /** Depth-first search of the category tree for a node's display name by id. */
 export function findCategoryName(
   nodes: CategoryTreeNodeEntity[],
   id: string,
 ): string | null {
-  for (const node of nodes) {
-    if (node.id === id) return node.name;
-    const nested = findCategoryName(node.children ?? [], id);
-    if (nested) return nested;
-  }
-  return null;
+  return findCategoryNode(nodes, id)?.name ?? null;
 }
 
 /**

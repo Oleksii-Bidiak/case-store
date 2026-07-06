@@ -6,6 +6,7 @@ import { Footer } from "@/widgets";
 import { PRIMARY_COLOR, SITE_URL, SITE_NAME, dict } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { resolveSeo, resolveTitleTemplate } from "@/shared/lib/seo";
 import "./globals.css";
 
 /**
@@ -59,24 +60,31 @@ export const viewport: Viewport = {
 export async function generateMetadata(): Promise<Metadata> {
   const seo = await fetchSeoSettings();
 
-  const template =
-    seo?.titleTemplate && seo.titleTemplate.includes("%s")
-      ? seo.titleTemplate
-      : `%s | ${SITE_NAME}`;
+  // Root defaults resolved through the shared precedence helper: the SeoSettings
+  // defaults win (tier 2), else the hardcoded localized strings (tier 3). The
+  // brand title template is picked separately and applied by Next to each page's
+  // plain-string `<title>` (`title.default` itself is never templated).
+  const resolved = resolveSeo({
+    settings: seo,
+    content: {
+      name: dict.meta.rootTitle,
+      description: dict.meta.rootDescription,
+    },
+  });
 
   return {
     metadataBase: new URL(SITE_URL),
     title: {
-      default: seo?.defaultMetaTitle || dict.meta.rootTitle,
-      template,
+      default: resolved.title || dict.meta.rootTitle,
+      template: resolveTitleTemplate(seo, SITE_NAME),
     },
-    description: seo?.defaultMetaDescription || dict.meta.rootDescription,
+    description: resolved.description ?? dict.meta.rootDescription,
     openGraph: {
       type: "website",
       siteName: SITE_NAME,
       url: SITE_URL,
       locale: "uk_UA",
-      ...(seo?.defaultOgImage ? { images: [{ url: seo.defaultOgImage }] } : {}),
+      ...(resolved.ogImage ? { images: [{ url: resolved.ogImage }] } : {}),
     },
   };
 }
