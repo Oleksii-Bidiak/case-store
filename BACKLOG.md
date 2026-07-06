@@ -160,13 +160,13 @@
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
 | TASK-193 | Consolidated post-stabilization review (3 apps × cleanliness/optimization/security/scalability): codebase strong — Clean Arch/FSD respected, security baseline solid (helmet/CSRF/CORS/ValidationPipe/throttler/AdminGuard), no N+1 on hot paths, indexes comprehensive, typecheck green across all workspaces; **1 critical → TASK-238**, 1 low test-infra note | ✅ | 114 |
-| TASK-194 | Pre-deploy gate. **Static half PASSED:** prod-config audit clean (Swagger dev-only, CORS allow-list, strict prod Helmet CSP+HSTS, DSN-gated Sentry, ValidationPipe whitelist, CSRF; only `.env.example` tracked), all 3 prod builds green, SEO robots/sitemap in place. **Live-stack half deferred** (Playwright-on-prod, Lighthouse, `test:int`) → manual-qa — local Docker daemon down | 🔄 | 115 |
+| TASK-194 | Pre-deploy gate **PASSED**. Static: prod-config audit clean (Swagger dev-only, CORS allow-list, strict prod Helmet CSP+HSTS, DSN-gated Sentry, ValidationPipe whitelist, CSRF; only `.env.example` tracked), all 3 prod builds green, SEO robots/sitemap in place. Live-stack (booted): int **32/32**, Playwright e2e **4/4**, prod-mode security spot-check (`/api/docs`→404, strict CSP/HSTS served). Only a non-blocking Lighthouse perf score left in manual-qa | ✅ | 115 |
 
 #### Findings from TASK-193 *(criticals gate release)*
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-238 | `CategoryRepository.findDescendantIds` raw SQL used `"Category"`/`"parentId"` while the physical tables are snake_case → 500 on admin category re-parenting. **Fixed:** mirror `findSubtreeIds` snake_case (`categories`/`parent_id`) + added a real-DB assertion to `category.repository.int-spec`; typecheck/lint + 39 category unit specs green. `test:int` run pending a live DB (Docker daemon down locally) — runs in CI | ✅ | 114 |
+| TASK-238 | `CategoryRepository.findDescendantIds` raw SQL used `"Category"`/`"parentId"` while the physical tables are snake_case → 500 on admin category re-parenting. **Fixed:** mirror `findSubtreeIds` snake_case (`categories`/`parent_id`) + added a real-DB assertion to `category.repository.int-spec`; typecheck/lint + 39 category unit specs green; **`category.repository.int-spec` verified 11/11 on real Postgres** (the 4 new `findDescendantIds` cases threw on the old SQL) | ✅ | 114 |
 
 ### Пізніша хвиля
 

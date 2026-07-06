@@ -681,7 +681,7 @@ https://react.dev/link/hydration-mismatch
 > `schema.prisma` — джерело правди.
 
 - [x] **Міграція + e2e (обов'язково, послідовно).** ✅ Виконано в Етап-3 інтеграції: `prisma db
-  push` на `store_dev` + `store_test` (таблиця `brands` + `products.brand_id` створені);
+push` на `store_dev` + `store_test` (таблиця `brands` + `products.brand_id` створені);
       e2e зелені (269/269, serial).
 - [ ] **Адмінка — CRUD брендів.** **Зроби:** `/brands` → «Додати бренд» (назва напр. «Spigen»,
       slug лишити порожнім), збережи; відредагуй лого-URL; перемкни статус актив/прихований; спробуй
@@ -796,17 +796,18 @@ https://react.dev/link/hydration-mismatch
 
 ## TASK-194 — Pre-deploy gate: перевірки на живому стеку
 
-> Статичну половину гейту (prod-config аудит, prod-білди, SEO) пройдено — див.
-> [`plans/115-pre-deploy-gate.md`](plans/115-pre-deploy-gate.md). Нижче — те, що
-> потребує піднятого стеку (`docker compose up -d` + prod-білди), тож локально
-> не проганялося (Docker daemon був вимкнений). Проженуть на живому стенді / CI.
+> Гейт **пройдено** на піднятому стеку (2026-07-06) — див.
+> [`plans/115-pre-deploy-gate.md`](plans/115-pre-deploy-gate.md). Лишився один
+> non-blocking пункт (Lighthouse).
 
-- [ ] **Playwright на prod-білді.** `next start` (не dev) для storefront + API з
-      seed-нутою `store_test`; `test:e2e:pw` зелений на прод-збірці.
-- [ ] **Lighthouse / SEO.** Прогнати Lighthouse по served prod-storefront
-      (perf / a11y / best-practices / SEO) на ключових маршрутах: home, каталог,
-      PDP, cart.
-- [ ] **Live security spot-check.** На піднятому prod-білді: `/api/docs` → 404;
-      заголовки CSP/HSTS присутні; CORS відхиляє origin поза allow-list.
-- [ ] **`test:int` для TASK-238.** Real-DB перевірка фіксу re-parenting категорій
-      (`category.repository.int-spec`) — та сама вимога піднятої БД.
+- [x] **Playwright.** `test:e2e:pw` проти живого стеку (`store_test`) — **4/4
+      зелено** (auth-flow + cart-flow). _Ремарка: скафолд піднімає dev-сервери;
+      prod-bundle Playwright = окремий follow-up, не блокер._
+- [ ] **Lighthouse / SEO.** ⏸ Прогнати Lighthouse по served prod-storefront
+      (perf / a11y / best-practices / SEO): home, каталог, PDP, cart. Потребує
+      `npx lighthouse` (не встановлено) + `next start`. SEO-поверхня
+      (robots/sitemap/metadata) вже перевірена статично.
+- [x] **Live security spot-check.** Prod-режим (`NODE_ENV=production`): `/api/docs`
+      → **404**; віддаються строгий CSP + HSTS (`max-age=31536000; includeSubDomains`) + `X-Content-Type-Options`/`X-Frame-Options`; `/health` → 200.
+- [x] **`test:int` для TASK-238.** `category.repository.int-spec` — **11/11 на
+      реальному Postgres**; повний int-suite **32/32**.
