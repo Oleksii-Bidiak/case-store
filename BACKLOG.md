@@ -166,7 +166,7 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-238 | `CategoryRepository.findDescendantIds` raw SQL targets `"Category"`/`"parentId"`, but the physical tables are snake_case (`categories`/`parent_id`) → 500 on admin category re-parenting (cycle-detection path); mock tests green, no real-DB coverage. Fix = mirror `findSubtreeIds` snake_case + add an integration assertion | ⬜ | 114 |
+| TASK-238 | `CategoryRepository.findDescendantIds` raw SQL used `"Category"`/`"parentId"` while the physical tables are snake_case → 500 on admin category re-parenting. **Fixed:** mirror `findSubtreeIds` snake_case (`categories`/`parent_id`) + added a real-DB assertion to `category.repository.int-spec`; typecheck/lint + 39 category unit specs green. `test:int` run pending a live DB (Docker daemon down locally) — runs in CI | ✅ | 114 |
 
 ### Пізніша хвиля
 

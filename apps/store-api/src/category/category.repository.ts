@@ -463,11 +463,11 @@ export class CategoryRepository {
     const result = await this.prisma.$queryRaw<Array<{ id: string }>>`
       WITH RECURSIVE descendants AS (
         -- Base case: direct children of the category
-        SELECT id FROM "Category" WHERE "parentId" = ${categoryId}
+        SELECT id FROM categories WHERE parent_id = ${categoryId}
         UNION
         -- Recursive case: children of children
-        SELECT c.id FROM "Category" c
-        INNER JOIN descendants d ON c."parentId" = d.id
+        SELECT c.id FROM categories c
+        INNER JOIN descendants d ON c.parent_id = d.id
       )
       SELECT id FROM descendants
     `;
