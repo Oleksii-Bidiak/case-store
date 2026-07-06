@@ -9,7 +9,7 @@ export function AdminDashboardStatsSkeleton() {
       {Array.from({ length: SKELETON_CARDS }).map((_, index) => (
         <div
           key={index}
-          className="rounded-lg border border-border bg-card p-6"
+          className="rounded-lg border border-border bg-card p-6 shadow-card"
         >
           <div className="h-4 w-24 animate-pulse rounded bg-muted" />
           <div className="mt-3 h-8 w-20 animate-pulse rounded bg-muted" />

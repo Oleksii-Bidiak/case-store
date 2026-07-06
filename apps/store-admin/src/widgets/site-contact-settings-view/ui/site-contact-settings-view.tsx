@@ -16,7 +16,7 @@ export function SiteContactSettingsView() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h2 className="text-2xl font-bold text-foreground">
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
           {dict.siteContact.heading}
         </h2>
         <p className="text-sm text-muted-foreground">

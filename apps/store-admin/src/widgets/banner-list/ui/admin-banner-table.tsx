@@ -120,7 +120,7 @@ export function AdminBannerTable() {
             <h3 className="text-lg font-semibold text-foreground">
               {dict.banners.placements[placement]}
             </h3>
-            <div className="rounded-md border border-border">
+            <div className="rounded-lg border border-border shadow-card overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>

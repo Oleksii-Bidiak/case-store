@@ -14,7 +14,7 @@ const COLUMN_COUNT = 7;
 /** Loading placeholder matching the AdminDiscountTable column structure. */
 export function AdminDiscountTableSkeleton() {
   return (
-    <div className="rounded-md border border-border">
+    <div className="rounded-lg border border-border shadow-card overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>

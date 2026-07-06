@@ -13,7 +13,7 @@ export default function BlogPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-foreground">
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
           {dict.blogPosts.heading}
         </h2>
         <div className="flex gap-2">

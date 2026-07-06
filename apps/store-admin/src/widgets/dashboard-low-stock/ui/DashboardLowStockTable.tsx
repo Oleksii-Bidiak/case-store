@@ -16,14 +16,14 @@ interface DashboardLowStockTableProps {
 
 /**
  * Low-stock alert table. Pure presentational — receives the already-fetched
- * position list. A red badge flags critical stock (<= 2), yellow flags low
- * (<= 5).
+ * position list. A red `destructive` badge flags critical stock (<= 2), an
+ * amber `warning` badge flags low stock (<= 5) — color carries meaning.
  */
 export function DashboardLowStockTable({
   products,
 }: DashboardLowStockTableProps) {
   return (
-    <div className="rounded-lg border border-border bg-card p-6">
+    <div className="rounded-lg border border-border bg-card p-6 shadow-card">
       <h3 className="mb-4 text-sm font-medium text-muted-foreground">
         {dict.dashboard.lowStock}
       </h3>
@@ -54,9 +54,7 @@ export function DashboardLowStockTable({
                   {product.stock <= 2 ? (
                     <Badge variant="destructive">{product.stock}</Badge>
                   ) : (
-                    <Badge variant="outline" className="text-yellow-600">
-                      {product.stock}
-                    </Badge>
+                    <Badge variant="warning">{product.stock}</Badge>
                   )}
                 </TableCell>
               </TableRow>

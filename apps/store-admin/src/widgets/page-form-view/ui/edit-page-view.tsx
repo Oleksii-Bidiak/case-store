@@ -77,7 +77,7 @@ export function EditPageView({ pageId }: EditPageViewProps) {
         >
           {dict.pages.back}
         </Link>
-        <h2 className="text-2xl font-bold text-foreground">
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
           {dict.pages.editHeading}
         </h2>
       </div>

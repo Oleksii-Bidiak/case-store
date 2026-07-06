@@ -14,7 +14,7 @@ const COLUMN_COUNT = 4;
 /** Loading placeholder matching the BlogCategoryTable column structure. */
 export function BlogCategoryTableSkeleton() {
   return (
-    <div className="rounded-md border border-border">
+    <div className="rounded-lg border border-border shadow-card overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>

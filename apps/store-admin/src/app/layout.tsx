@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Sora } from "next/font/google";
 import { Providers } from "./providers";
 import { dict } from "@/shared/config/dictionary";
 import "./globals.css";
@@ -14,10 +14,18 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Display font for headings — geometric, confident, retail-friendly. Mirrors
+// the storefront (apps/store-client) so both surfaces share one type voice.
+const sora = Sora({
+  variable: "--font-sora",
+  subsets: ["latin"],
+  weight: ["600", "700", "800"],
+});
+
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#0f172a",
+  themeColor: "#4f46e5",
 };
 
 export const metadata: Metadata = {
@@ -33,7 +41,7 @@ export default function RootLayout({
   return (
     <html
       lang="uk"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${sora.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground">
         {/* Root layout stays minimal: route groups supply their own chrome —

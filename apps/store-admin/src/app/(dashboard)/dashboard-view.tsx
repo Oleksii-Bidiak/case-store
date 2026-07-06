@@ -30,7 +30,7 @@ export function DashboardView() {
   return (
     <div>
       <section className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-2xl font-bold text-foreground">
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
           {dict.dashboard.heading}
         </h2>
         {data ? (

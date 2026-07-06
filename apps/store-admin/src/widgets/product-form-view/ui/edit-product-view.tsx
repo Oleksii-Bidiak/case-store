@@ -81,7 +81,7 @@ export function EditProductView({ productId }: EditProductViewProps) {
           {dict.products.back}
         </Link>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-2xl font-bold text-foreground">
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
             {dict.products.editHeading}
           </h2>
           {product && (

@@ -152,8 +152,8 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-115 | Finish store-admin UA localization (~60 hardcoded strings in products/categories/orders/users CRUD: tables, forms, toasts, zod messages) | 🔄 | — |
-| TASK-192 | Restyle store-admin to the storefront design language (tokens per `docs/design-system.md`): shell → tables/forms → dashboard. After TASK-115 | ⬜ | — |
+| TASK-115 | Finish store-admin UA localization — last hardcoded strings outside the dictionary now localized (root/dashboard metadata + shadcn dialog/sheet close labels via `dict.app`/`dict.dashboard.metaTitle`/`dict.common.close`); the CRUD dictionary was already complete | ✅ | — |
+| TASK-192 | Restyle store-admin to the storefront design language: token parity with `store-client` (indigo primary, sale/success/warning, elevation, radius 0.75rem, Sora `font-display`, scrollbars); shell (indigo active nav + shadows), shared table/badge primitives, semantic status/stock colors, dashboard cards (`shadow-card`, tabular-nums, tonal metrics); build/lint/typecheck + 193 tests green | ✅ | — |
 
 ### Review gates (обов'язкові, послідовні)
 

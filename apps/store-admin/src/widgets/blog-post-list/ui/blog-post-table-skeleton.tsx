@@ -14,7 +14,7 @@ const COLUMN_COUNT = 5;
 /** Loading placeholder matching the BlogPostTable column structure. */
 export function BlogPostTableSkeleton() {
   return (
-    <div className="rounded-md border border-border">
+    <div className="rounded-lg border border-border shadow-card overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>

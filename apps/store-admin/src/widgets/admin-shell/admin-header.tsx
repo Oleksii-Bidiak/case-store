@@ -19,9 +19,9 @@ export function AdminHeader() {
   const { userId } = useAuth();
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-border px-6">
+    <header className="flex h-16 items-center justify-between border-b border-border bg-card px-6 shadow-card">
       <div className="flex items-center gap-4">
-        <h1 className="text-lg font-semibold text-foreground">
+        <h1 className="font-display text-lg font-semibold tracking-tight text-foreground">
           {dict.header.title}
         </h1>
       </div>
