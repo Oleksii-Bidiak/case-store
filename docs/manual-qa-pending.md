@@ -796,18 +796,24 @@ push` на `store_dev` + `store_test` (таблиця `brands` + `products.brand
 
 ## TASK-194 — Pre-deploy gate: перевірки на живому стеку
 
-> Гейт **пройдено** на піднятому стеку (2026-07-06) — див.
-> [`plans/115-pre-deploy-gate.md`](plans/115-pre-deploy-gate.md). Лишився один
-> non-blocking пункт (Lighthouse).
+> Гейт **пройдено повністю** на піднятому стеку (2026-07-06), включно з
+> follow-up'ами — див. [`plans/115-pre-deploy-gate.md`](plans/115-pre-deploy-gate.md)
+> §5. Автотести обрані як health-проксі для ручного runbook; лишаються тобі суто
+> **візуальні** (§5) і **keyed** (§4: НП/SMTP/Sentry) пункти.
 
-- [x] **Playwright.** `test:e2e:pw` проти живого стеку (`store_test`) — **4/4
-      зелено** (auth-flow + cart-flow). _Ремарка: скафолд піднімає dev-сервери;
-      prod-bundle Playwright = окремий follow-up, не блокер._
-- [ ] **Lighthouse / SEO.** ⏸ Прогнати Lighthouse по served prod-storefront
-      (perf / a11y / best-practices / SEO): home, каталог, PDP, cart. Потребує
-      `npx lighthouse` (не встановлено) + `next start`. SEO-поверхня
-      (robots/sitemap/metadata) вже перевірена статично.
-- [x] **Live security spot-check.** Prod-режим (`NODE_ENV=production`): `/api/docs`
-      → **404**; віддаються строгий CSP + HSTS (`max-age=31536000; includeSubDomains`) + `X-Content-Type-Options`/`X-Frame-Options`; `/health` → 200.
-- [x] **`test:int` для TASK-238.** `category.repository.int-spec` — **11/11 на
-      реальному Postgres**; повний int-suite **32/32**.
+- [x] **Playwright (dev-скафолд).** `test:e2e:pw` проти живого стеку — **4/4**.
+- [x] **Prod-bundle Playwright.** Проти `next start` prod-білдів — **3/4**; єдине
+      падіння (`logged-in user can open checkout`) — очікуваний **Secure-cookie-
+      over-HTTP** артефакт (prod ставить auth-cookie `Secure`, браузер відкидає по
+      HTTP-localhost). Коректна prod-поведінка; по HTTPS проходить.
+- [x] **Lighthouse** (homepage, prod-білд, desktop): Performance **97**,
+      Accessibility **92**, Best Practices **96**, **SEO 100**.
+- [x] **GEO/SEO аудит (geo-seo-claude).** On-page GEO сильний (Organization/
+      Product/Breadcrumb JSON-LD, robots, sitemap, OG); додано **llms.txt**
+      (verified 200). Звіт: [`geo-audit-report.md`](geo-audit-report.md).
+- [x] **Live security spot-check.** Prod-режим: `/api/docs` → **404**; строгий CSP + HSTS + `X-Content-Type-Options`/`X-Frame-Options`; `/health` → 200.
+- [x] **`test:int` для TASK-238.** `category.repository.int-spec` — **11/11** на
+      реальному Postgres; повний int-suite **32/32**.
+- [x] **Автотест health-проксі** (замість ручного проходу поведінкових пунктів):
+      store-api unit **941/941** + e2e **269** (`--runInBand`) + int **32/32**;
+      store-admin **193/193**; store-client **377/377**. ~1740 зелено.

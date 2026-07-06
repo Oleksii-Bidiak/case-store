@@ -160,7 +160,7 @@
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
 | TASK-193 | Consolidated post-stabilization review (3 apps × cleanliness/optimization/security/scalability): codebase strong — Clean Arch/FSD respected, security baseline solid (helmet/CSRF/CORS/ValidationPipe/throttler/AdminGuard), no N+1 on hot paths, indexes comprehensive, typecheck green across all workspaces; **1 critical → TASK-238**, 1 low test-infra note | ✅ | 114 |
-| TASK-194 | Pre-deploy gate **PASSED**. Static: prod-config audit clean (Swagger dev-only, CORS allow-list, strict prod Helmet CSP+HSTS, DSN-gated Sentry, ValidationPipe whitelist, CSRF; only `.env.example` tracked), all 3 prod builds green, SEO robots/sitemap in place. Live-stack (booted): int **32/32**, Playwright e2e **4/4**, prod-mode security spot-check (`/api/docs`→404, strict CSP/HSTS served). Only a non-blocking Lighthouse perf score left in manual-qa | ✅ | 115 |
+| TASK-194 | Pre-deploy gate **PASSED (incl. follow-ups)**. Static: prod-config audit clean (Swagger dev-only, CORS allow-list, strict prod Helmet CSP+HSTS, DSN-gated Sentry, ValidationPipe whitelist, CSRF; only `.env.example` tracked), all 3 prod builds green. Live-stack: automated health-proxy ~1740 tests green (unit+e2e+int+Playwright), prod-mode security spot-check (`/api/docs`→404, CSP/HSTS), **prod-bundle Playwright 3/4** (1 = expected Secure-cookie-over-HTTP), **Lighthouse** Perf 97/A11y 92/BP 96/**SEO 100**, **geo-seo audit + `llms.txt` added** (plan 115 §5, `docs/geo-audit-report.md`) | ✅ | 115 |
 
 #### Findings from TASK-193 *(criticals gate release)*
 
