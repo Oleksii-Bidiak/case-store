@@ -132,7 +132,7 @@
 | TASK-186 | Admin-managed homepage banners: `Banner` + `BannerPlacement` (HERO_SLIDE/PROMO_TILE/PROMO_BANNER/ANNOUNCEMENT_BAR) + publishing; admin CRUD; storefront ISR (`banners-server.ts`) with hardcoded static fallback per slot. Absorbs the banner part of TASK-166 | ✅ | 106 |
 | TASK-177 | Contact messages: `ContactMessage` + rate-limited `POST /api/contact`; `/contact` + info-support forms wired (RHF+zod); admin inbox `/messages` with unread badge | ✅ | 107 |
 | TASK-188 | Newsletter subscriptions: `NewsletterSubscription` + idempotent public subscribe + admin list/CSV export; reusable `features/newsletter-subscribe` wired into homepage + promo blocks. Absorbs the newsletter part of TASK-166/173/179 | ✅ | 108 |
-| TASK-237 | Adopt the `features/newsletter-subscribe` form inside the blog newsletter block (`widgets/blog/ui/blog-newsletter.tsx`) — left as-is by the Етап-2 split to avoid a blog↔newsletter merge collision | ⬜ | 108 |
+| TASK-237 | Adopt the `features/newsletter-subscribe` form inside the blog newsletter block (`widgets/blog/ui/blog-newsletter.tsx`) — left as-is by the Етап-2 split to avoid a blog↔newsletter merge collision | ✅ | 108 |
 
 ### Етап 3 — Фундамент каталогу (ніша: мультибрендові аксесуари + Apple техніка)
 
