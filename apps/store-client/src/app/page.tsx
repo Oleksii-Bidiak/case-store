@@ -16,6 +16,7 @@ import {
 import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 
 export const metadata: Metadata = {
   title: dict.meta.homeTitle,
@@ -31,11 +32,18 @@ export default async function HomePage() {
   // Admin-managed social links feed the Organization `sameAs` (brand-entity
   // signal for AI/search). Deduped with the footer's fetch of the same tagged
   // endpoint; degrades to no `sameAs` when unset or the API is unreachable.
-  const contact = await fetchSiteContactSettings();
+  // The SiteContactSettings support channels (viber/telegram/instagram) are
+  // merged with the broader brand-authority profiles from SeoSettings
+  // (`additionalSameAsLinks` — Facebook/YouTube/LinkedIn/... — TASK-239).
+  const [contact, seo] = await Promise.all([
+    fetchSiteContactSettings(),
+    fetchSeoSettings(),
+  ]);
   const socialLinks = [
     contact?.viberLink,
     contact?.telegramLink,
     contact?.instagramLink,
+    ...(seo?.additionalSameAsLinks ?? []),
   ];
 
   return (

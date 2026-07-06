@@ -931,6 +931,42 @@ async function seedSiteContactSettings(prisma: PrismaClient) {
 }
 
 /**
+ * Seed the singleton SEO-settings row (TASK-239) with sensible zero-config
+ * defaults so an untouched install already has decent SEO. Uses the same
+ * well-known fixed ID as `SeoSettingsRepository.SINGLETON_ID`.
+ *
+ * Defaults per plan 116 §TASK-239:
+ *   - defaultMetaTitle: null — let the content-derived fallback build titles
+ *   - defaultMetaDescription: a generic store one-liner
+ *   - titleTemplate: null — use the code default (`%s | ${SITE_NAME}`)
+ *   - noindexSite: false — assume production once this ships
+ *   - additionalSameAsLinks: [] — none configured out of the box
+ *
+ * Idempotent: `update: {}` preserves any admin edits on re-seed.
+ */
+async function seedSeoSettings(prisma: PrismaClient) {
+  const SINGLETON_ID = '00000000-0000-0000-0000-000000000002';
+
+  await prisma.seoSettings.upsert({
+    where: { id: SINGLETON_ID },
+    update: {},
+    create: {
+      id: SINGLETON_ID,
+      defaultMetaTitle: null,
+      defaultMetaDescription:
+        'Мультибрендовий інтернет-магазин аксесуарів для смартфонів та Apple-техніки в Україні. Доставка Новою Поштою, оплата у гривні.',
+      titleTemplate: null,
+      defaultOgImage: null,
+      noindexSite: false,
+      llmsTxtSummary: null,
+      additionalSameAsLinks: [],
+    },
+  });
+
+  console.log('  ✓ SeoSettings: singleton row upserted');
+}
+
+/**
  * Seed the blog: 5 categories + the 12 posts that were previously hardcoded in
  * the storefront (`store-client/src/widgets/blog/model/posts.ts`). Every post is
  * seeded PUBLISHED with the ISO publish date from that file, and shares the demo
@@ -1382,6 +1418,7 @@ async function main() {
     // Seed in dependency order
     const { customer } = await seedUsers(prisma);
     await seedSiteContactSettings(prisma);
+    await seedSeoSettings(prisma);
     await seedBanners(prisma);
     const categories = await seedCategories(prisma);
     await seedProducts(prisma, categories);

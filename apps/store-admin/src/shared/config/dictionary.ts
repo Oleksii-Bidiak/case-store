@@ -29,6 +29,7 @@ export const dict = {
     users: "Користувачі",
     subscribers: "Підписники",
     siteContact: "Контакти",
+    seoSettings: "SEO",
     settings: "Налаштування",
   },
 
@@ -887,6 +888,61 @@ export const dict = {
       workingHoursTimesRequired: "Вкажіть час відкриття та закриття",
       workingHoursCloseAfterOpen:
         "Час закриття має бути пізніше часу відкриття",
+    },
+  },
+
+  seoSettings: {
+    metaTitle: "SEO — Адмін",
+    heading: "SEO-налаштування",
+    subheading:
+      "Глобальні параметри для пошукових систем: заголовки, описи, зображення для соцмереж і видимість сайту.",
+    loadError: "Не вдалося завантажити SEO-налаштування. Спробуйте ще раз.",
+    toastUpdated: "SEO-налаштування оновлено",
+    toastUpdateFailed: "Не вдалося оновити SEO-налаштування",
+  },
+
+  seoSettingsForm: {
+    defaultMetaTitle: "Заголовок сайту за замовчуванням",
+    defaultMetaTitlePlaceholder: "MobileStore — аксесуари для смартфонів",
+    defaultMetaTitleHint:
+      "Заголовок, який показується у вкладці браузера та в результатах пошуку, коли у сторінки немає власного заголовка. Залиште порожнім — і заголовок згенерується автоматично з назви сторінки.",
+    defaultMetaDescription: "Опис сайту за замовчуванням",
+    defaultMetaDescriptionPlaceholder:
+      "Мультибрендовий магазин аксесуарів та Apple-техніки. Доставка по Україні.",
+    defaultMetaDescriptionHint:
+      "Короткий опис магазину (1–2 речення), який Google показує під заголовком у результатах пошуку — коли у сторінки немає власного опису.",
+    titleTemplate: "Шаблон заголовка сторінки",
+    titleTemplatePlaceholder: "%s | MobileStore",
+    titleTemplateHint:
+      "Шаблон заголовка сторінки. %s буде замінено на назву конкретної сторінки. Залиште порожнім — і ми додамо назву магазину після заголовка автоматично.",
+    defaultOgImage: "Зображення для соцмереж (OG-картинка)",
+    defaultOgImagePlaceholder: "https://mobilestore.ua/og-image.jpg",
+    defaultOgImageHint:
+      "Картинка для попереднього перегляду, коли посилання на магазин поширюють у соцмережах чи месенджерах (Facebook, Telegram, Viber). Вкажіть повне посилання на зображення (https://…).",
+    llmsTxtSummary: "Опис для AI-асистентів (llms.txt)",
+    llmsTxtSummaryPlaceholder:
+      "Магазин аксесуарів для смартфонів та Apple-техніки в Україні…",
+    llmsTxtSummaryHint:
+      "Короткий опис вашого бізнесу для AI-асистентів на кшталт ChatGPT. Замінює вступний абзац у файлі /llms.txt. Залиште порожнім — використаємо стандартний опис.",
+    additionalSameAsLinks: "Додаткові посилання на профілі бренду",
+    additionalSameAsLinksPlaceholder:
+      "https://facebook.com/mobilestore\nhttps://youtube.com/@mobilestore",
+    additionalSameAsLinksHint:
+      "Посилання на офіційні сторінки магазину в інших мережах (Facebook, YouTube, LinkedIn тощо) — по одному в рядку. Це показує пошуковим системам, що це офіційні профілі вашого бренду.",
+    noindexSite: "Приховати сайт від пошукових систем",
+    noindexSiteHint:
+      "Повністю приховує весь сайт від Google та інших пошукових систем. Вмикайте лише на тестовому сайті. УВАГА: якщо увімкнути на робочому магазині — сайт зникне з пошуку Google.",
+    submit: "Зберегти SEO-налаштування",
+    errors: {
+      urlInvalid: "Вкажіть коректний URL (https://…)",
+      metaTitleTooLong: "Заголовок задовгий (максимум 255 символів)",
+      metaDescriptionTooLong: "Опис задовгий (максимум 500 символів)",
+      titleTemplateTooLong: "Шаблон задовгий (максимум 255 символів)",
+      titleTemplateNoToken:
+        "Шаблон має містити рівно один символ %s (без інших знаків %)",
+      llmsTxtSummaryTooLong: "Опис задовгий (максимум 2000 символів)",
+      sameAsInvalid:
+        "Кожне посилання має бути коректним URL (https://…), по одному в рядку.",
     },
   },
 
