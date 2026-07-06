@@ -967,6 +967,70 @@ async function seedSeoSettings(prisma: PrismaClient) {
 }
 
 /**
+ * Seed the global FAQ list (TASK-242, plan 116 Decision 3) with the 6 Q&A pairs
+ * migrated verbatim from the storefront's former static `INFO_FAQS`
+ * (`store-client/src/widgets/info-support/model/info-content.ts`) so the admin
+ * sees real content on first load instead of an empty list. Fixed UUIDs make the
+ * upsert idempotent; `update: {}` preserves any admin edits on re-seed.
+ */
+async function seedFaqItems(prisma: PrismaClient) {
+  const faqs = [
+    {
+      id: 'fa900000-0000-4000-8000-000000000001',
+      question: 'Скільки коштує доставка?',
+      answer:
+        'Доставка Новою Поштою — за тарифами перевізника, безкоштовно при замовленні від 1 000 ₴. Курʼєр по місту — 90 ₴, самовивіз із магазину — безкоштовно.',
+    },
+    {
+      id: 'fa900000-0000-4000-8000-000000000002',
+      question: 'Як швидко відправляєте замовлення?',
+      answer:
+        'Товари в наявності відправляємо день у день, якщо замовлення оформлене до 18:00. В інших випадках — наступного робочого дня.',
+    },
+    {
+      id: 'fa900000-0000-4000-8000-000000000003',
+      question: 'Чи можна повернути товар?',
+      answer:
+        'Так, протягом 14 днів ви можете повернути товар належної якості в повній комплектації. Гроші повертаємо протягом 3–7 банківських днів.',
+    },
+    {
+      id: 'fa900000-0000-4000-8000-000000000004',
+      question: 'Яка гарантія на техніку?',
+      answer:
+        'Уся техніка має офіційну гарантію виробника від 12 до 24 місяців. Гарантійний талон додається до замовлення.',
+    },
+    {
+      id: 'fa900000-0000-4000-8000-000000000005',
+      question: 'Чи перевіряєте товар перед відправкою?',
+      answer:
+        'Так, кожен пристрій проходить передпродажну перевірку комплектації та зовнішнього стану.',
+    },
+    {
+      id: 'fa900000-0000-4000-8000-000000000006',
+      question: 'Як скористатися бонусами?',
+      answer:
+        'Бонуси нараховуються за кожну покупку та зберігаються в кабінеті. Ними можна оплатити до 30% суми наступного замовлення.',
+    },
+  ];
+
+  for (const [index, faq] of faqs.entries()) {
+    await prisma.faqItem.upsert({
+      where: { id: faq.id },
+      update: {},
+      create: {
+        id: faq.id,
+        question: faq.question,
+        answer: faq.answer,
+        sortOrder: index,
+        isActive: true,
+      },
+    });
+  }
+
+  console.log(`  ✓ Seeded ${faqs.length} FAQ items`);
+}
+
+/**
  * Seed the blog: 5 categories + the 12 posts that were previously hardcoded in
  * the storefront (`store-client/src/widgets/blog/model/posts.ts`). Every post is
  * seeded PUBLISHED with the ISO publish date from that file, and shares the demo
@@ -1419,6 +1483,7 @@ async function main() {
     const { customer } = await seedUsers(prisma);
     await seedSiteContactSettings(prisma);
     await seedSeoSettings(prisma);
+    await seedFaqItems(prisma);
     await seedBanners(prisma);
     const categories = await seedCategories(prisma);
     await seedProducts(prisma, categories);

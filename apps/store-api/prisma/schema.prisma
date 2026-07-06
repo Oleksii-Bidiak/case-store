@@ -490,6 +490,25 @@ model SeoSettings {
   @@map("seo_settings")
 }
 
+/// Global, admin-editable FAQ entries (TASK-242, plan 116 Decision 3). One
+/// reusable list (NOT per-product) reused on /info and the PDP, and emitted as
+/// FAQPage JSON-LD for AI/search visibility. No publish lifecycle (simpler than
+/// Page/Banner) — just isActive (reversible visibility) + sortOrder, mirroring
+/// the Brand module's simple-CRUD shape. Seeded from the storefront's static
+/// INFO_FAQS (6 Q&A) so the admin sees real content on first load.
+model FaqItem {
+  id        String   @id @default(uuid())
+  question  String
+  answer    String   @db.Text
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive])
+  @@map("faq_items")
+}
+
 /// Promo code / coupon (TASK-079). Codes are stored UPPERCASE and matched
 /// case-insensitively. `value` is a percentage (1–100) when `type` is PERCENT,
 /// or a fixed UAH amount when FIXED. Eligibility is gated by the active flag,

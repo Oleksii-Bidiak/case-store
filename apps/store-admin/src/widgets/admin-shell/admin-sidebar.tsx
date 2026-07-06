@@ -18,6 +18,7 @@ import {
   Mail,
   Phone,
   Search,
+  HelpCircle,
   Settings,
 } from "lucide-react";
 import Link from "next/link";
@@ -49,6 +50,7 @@ const navItems = [
 const bottomNavItems = [
   { label: dict.nav.siteContact, href: "/settings/contact", icon: Phone },
   { label: dict.nav.seoSettings, href: "/settings/seo", icon: Search },
+  { label: dict.nav.faq, href: "/faq", icon: HelpCircle },
   { label: dict.nav.settings, href: "#", icon: Settings },
 ];
 

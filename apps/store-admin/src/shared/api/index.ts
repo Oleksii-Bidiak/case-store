@@ -22,6 +22,7 @@ export * from "./generated/blog/blog";
 export * from "./generated/banners/banners";
 export * from "./generated/site-contact/site-contact";
 export * from "./generated/seo-settings/seo-settings";
+export * from "./generated/faq/faq";
 export * from "./generated/admin-orders/admin-orders";
 export * from "./generated/admin-dashboard/admin-dashboard";
 export * from "./generated/cart/cart";

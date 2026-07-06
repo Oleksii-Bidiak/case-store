@@ -7,5 +7,7 @@ export { buildProductSchema } from "./buildProductSchema";
 export type { BuildProductSchemaInput } from "./buildProductSchema";
 export { buildBlogPostingSchema } from "./buildBlogPostingSchema";
 export type { BuildBlogPostingSchemaInput } from "./buildBlogPostingSchema";
+export { buildFaqPageSchema } from "./buildFaqPageSchema";
+export type { FaqSchemaItem } from "./buildFaqPageSchema";
 export { fetchAllActiveProducts } from "./fetchAllProducts";
 export { fetchAllPublishedPages } from "./fetchAllPages";

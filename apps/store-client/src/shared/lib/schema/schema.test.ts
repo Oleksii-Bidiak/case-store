@@ -1,6 +1,7 @@
 import { buildOrganizationSchema } from "./buildOrganizationSchema";
 import { buildWebSiteSchema } from "./buildWebSiteSchema";
 import { buildBreadcrumbSchema } from "./buildBreadcrumbSchema";
+import { buildFaqPageSchema } from "./buildFaqPageSchema";
 import { buildProductSchema } from "./buildProductSchema";
 import type {
   PublicProductEntity,
@@ -71,6 +72,44 @@ describe("buildBreadcrumbSchema", () => {
       name: "iPhone 15 Case",
       item: `${SITE}/products/iphone-15-case`,
     });
+  });
+});
+
+describe("buildFaqPageSchema", () => {
+  it("emits a FAQPage with a Question/acceptedAnswer per entry", () => {
+    const schema = buildFaqPageSchema([
+      {
+        question: "Скільки коштує доставка?",
+        answer: "Безкоштовно від 1000 ₴.",
+      },
+      { question: "Яка гарантія?", answer: "12–24 місяці." },
+    ]);
+    expect(schema["@context"]).toBe("https://schema.org");
+    expect(schema["@type"]).toBe("FAQPage");
+
+    const entities = schema.mainEntity as Array<Record<string, unknown>>;
+    expect(entities).toHaveLength(2);
+    expect(entities[0]).toMatchObject({
+      "@type": "Question",
+      name: "Скільки коштує доставка?",
+      acceptedAnswer: { "@type": "Answer", text: "Безкоштовно від 1000 ₴." },
+    });
+  });
+
+  it("drops entries with a blank question or answer", () => {
+    const schema = buildFaqPageSchema([
+      { question: "Питання?", answer: "Відповідь." },
+      { question: "   ", answer: "Немає питання." },
+      { question: "Немає відповіді?", answer: "  " },
+    ]);
+    const entities = schema.mainEntity as Array<Record<string, unknown>>;
+    expect(entities).toHaveLength(1);
+    expect(entities[0]).toMatchObject({ name: "Питання?" });
+  });
+
+  it("emits an empty mainEntity array when there are no entries", () => {
+    const schema = buildFaqPageSchema([]);
+    expect(schema.mainEntity).toEqual([]);
   });
 });
 
