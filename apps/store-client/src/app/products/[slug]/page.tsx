@@ -4,6 +4,8 @@ import { ProductDetailView, ProductDetailSkeleton } from "@/widgets";
 import { productControllerFindBySlug } from "@/shared/api/generated/products/products";
 import { JsonLd } from "@/shared/ui";
 import { buildProductSchema, buildBreadcrumbSchema } from "@/shared/lib/schema";
+import { resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { SITE_URL, SITE_NAME, CURRENCY, dict } from "@/shared/config";
 
 interface ProductDetailPageProps {
@@ -16,20 +18,36 @@ export async function generateMetadata({
   const { slug } = await params;
 
   try {
-    const { data: product, images } = await productControllerFindBySlug(slug);
+    const [{ data: product, images }, seo] = await Promise.all([
+      productControllerFindBySlug(slug),
+      fetchSeoSettings(),
+    ]);
+
+    // Precedence via the shared helper: SeoSettings defaults (tier 2) → the
+    // product name/description (tier 3), with the localized fallback kept as the
+    // innermost description. Product has no metaTitle/metaDescription columns yet
+    // — TASK-241 adds them and passes `entityTitle`/`entityDescription` here, so
+    // this call is already shaped for the tier-1 override to slot in.
+    const resolved = resolveSeo({
+      settings: seo,
+      content: { name: product.name, description: product.description },
+    });
+    const title = toMetadataTitle(resolved, {
+      settings: seo,
+      siteName: SITE_NAME,
+      fallback: product.name,
+    });
     const description =
-      typeof product.description === "string" && product.description.length > 0
-        ? product.description
-        : dict.meta.productFallbackDescription;
+      resolved.description ?? dict.meta.productFallbackDescription;
     const canonical = `${SITE_URL}/products/${product.slug}`;
-    const firstImage = images[0]?.url;
+    const firstImage = images[0]?.url ?? resolved.ogImage;
 
     return {
-      title: product.name,
+      title,
       description,
       alternates: { canonical },
       openGraph: {
-        title: product.name,
+        title: title.absolute,
         description,
         url: canonical,
         type: "website",

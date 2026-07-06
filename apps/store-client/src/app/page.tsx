@@ -17,11 +17,35 @@ import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
 
-export const metadata: Metadata = {
-  title: dict.meta.homeTitle,
-  description: dict.meta.homeDescription,
-};
+/**
+ * Homepage metadata routed through the shared precedence helper (SeoSettings
+ * defaults → the localized home strings). `toMetadataTitle` brands the derived
+ * title (`Головна | ${SITE_NAME}`) explicitly — Next 16 does not apply the root
+ * `title.template` to a `generateMetadata` title — closing the geo-audit
+ * "Головна without brand" gap (plan 116 gap 3). `fetchSeoSettings()` is a tagged
+ * native fetch, deduped with the component's own call below within the request.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const seo = await fetchSeoSettings();
+  const resolved = resolveSeo({
+    settings: seo,
+    content: {
+      name: dict.meta.homeTitle,
+      description: dict.meta.homeDescription,
+    },
+  });
+
+  return {
+    title: toMetadataTitle(resolved, {
+      settings: seo,
+      siteName: SITE_NAME,
+      fallback: dict.meta.homeTitle,
+    }),
+    description: resolved.description ?? dict.meta.homeDescription,
+  };
+}
 
 export default async function HomePage() {
   // Admin-managed homepage banners (ISR, tag `banners`). Each region falls back

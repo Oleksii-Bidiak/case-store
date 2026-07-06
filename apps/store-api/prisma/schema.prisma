@@ -114,8 +114,12 @@ model Category {
   children    Category[] @relation("CategoryHierarchy")
   isActive    Boolean    @default(true) @map("is_active")
   sortOrder   Int        @default(0) @map("sort_order")
-  // SEO overrides (TASK-236). Nullable/admin-editable, mirroring Page's pattern;
-  // rendering them into storefront <head> metadata is deferred to Phase D.
+  // SEO overrides (TASK-236). Nullable/admin-editable, mirroring Page's pattern.
+  // The category-filtered catalog listing now derives its <title>/description
+  // from the category name/description via resolveSeo() (TASK-240, closing plan
+  // 116 gap 1). Surfacing these override columns on a public category endpoint
+  // (so the admin's metaTitle/metaDescription win as tier 1) is the remaining
+  // follow-up — the storefront tree/detail responses don't expose them yet.
   metaTitle       String?  @map("meta_title")
   metaDescription String?  @map("meta_description")
   createdAt   DateTime   @default(now()) @map("created_at")
