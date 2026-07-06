@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-238**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-239**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -159,8 +159,14 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-193 | Consolidated post-stabilization review across all 3 apps: cleanliness (dead code, FSD/Clean Architecture), optimization (N+1, caches, indexes, bundle, ISR), security (`/security-review`), scalability. After Етапи 2–3; criticals block Етап 4 | ⬜ | — |
+| TASK-193 | Consolidated post-stabilization review (3 apps × cleanliness/optimization/security/scalability): codebase strong — Clean Arch/FSD respected, security baseline solid (helmet/CSRF/CORS/ValidationPipe/throttler/AdminGuard), no N+1 on hot paths, indexes comprehensive, typecheck green across all workspaces; **1 critical → TASK-238**, 1 low test-infra note | ✅ | 114 |
 | TASK-194 | Pre-deploy gate: full security review + prod-config audit (env/CORS/Helmet/Swagger-off/Sentry), prod builds, Playwright on prod build, Lighthouse/SEO pass | ⬜ | — |
+
+#### Findings from TASK-193 *(criticals gate release)*
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-238 | `CategoryRepository.findDescendantIds` raw SQL targets `"Category"`/`"parentId"`, but the physical tables are snake_case (`categories`/`parent_id`) → 500 on admin category re-parenting (cycle-detection path); mock tests green, no real-DB coverage. Fix = mirror `findSubtreeIds` snake_case + add an integration assertion | ⬜ | 114 |
 
 ### Пізніша хвиля
 
@@ -198,6 +204,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-238**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-239**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
