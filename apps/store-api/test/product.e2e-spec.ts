@@ -512,6 +512,41 @@ describe('ProductController (e2e)', () => {
       expect(response.body.data).toHaveProperty('slug');
     });
 
+    it('accepts and persists metaTitle/metaDescription (TASK-241)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.create.mockResolvedValue({
+        ...testProduct,
+        metaTitle: 'Clear MagSafe Case | Store',
+        metaDescription: 'MagSafe-ready clear case for iPhone 15 Pro.',
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/products')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'iPhone 15 Pro Case — Clear MagSafe',
+          slug: 'iphone-15-pro-case-clear-magsafe',
+          price: 29.99,
+          categoryId: '550e8400-e29b-41d4-a716-446655440000',
+          metaTitle: 'Clear MagSafe Case | Store',
+          metaDescription: 'MagSafe-ready clear case for iPhone 15 Pro.',
+        })
+        .expect(201);
+
+      expect(productRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metaTitle: 'Clear MagSafe Case | Store',
+          metaDescription: 'MagSafe-ready clear case for iPhone 15 Pro.',
+        }),
+      );
+      expect(response.body.data.metaTitle).toBe('Clear MagSafe Case | Store');
+      expect(response.body.data.metaDescription).toBe(
+        'MagSafe-ready clear case for iPhone 15 Pro.',
+      );
+    });
+
     it('should return 409 when slug is already taken', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 

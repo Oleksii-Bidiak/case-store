@@ -8,7 +8,11 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { ProductForm } from "./product-form";
-import type { ProductFormInput } from "../model/product-schema";
+import {
+  productFormValuesToDto,
+  type ProductFormInput,
+  type ProductFormValues,
+} from "../model/product-schema";
 
 const CATEGORY_UUID = "11111111-1111-4111-8111-111111111111";
 const CATEGORY_UUID_B = "22222222-2222-4222-8222-222222222222";
@@ -296,6 +300,114 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
       expect.objectContaining({ groupId: "" }),
       expect.anything(),
     );
+  });
+});
+
+describe("productFormValuesToDto — SEO meta mapping (TASK-241)", () => {
+  const baseValues: ProductFormValues = {
+    name: "Clear Case",
+    slug: "",
+    description: "",
+    price: 29.99,
+    compareAtPrice: undefined,
+    sku: "",
+    stock: 0,
+    categoryId: CATEGORY_UUID,
+    groupId: "",
+    brandId: "",
+    positionOrder: 0,
+    attributes: [],
+    isActive: true,
+    metaTitle: "",
+    metaDescription: "",
+  };
+
+  it("blank meta fields → undefined (omitted, not empty string)", () => {
+    const dto = productFormValuesToDto(baseValues);
+    expect(dto.metaTitle).toBeUndefined();
+    expect(dto.metaDescription).toBeUndefined();
+  });
+
+  it("passes provided meta values through, trimmed", () => {
+    const dto = productFormValuesToDto({
+      ...baseValues,
+      metaTitle: "  SEO Title  ",
+      metaDescription: "  SEO description  ",
+    });
+    expect(dto.metaTitle).toBe("SEO Title");
+    expect(dto.metaDescription).toBe("SEO description");
+  });
+});
+
+describe("ProductForm — SEO meta fields (TASK-241)", () => {
+  const validDefaults: Partial<ProductFormInput> = {
+    name: "Clear Case",
+    slug: "clear-case",
+    price: "29.99",
+    stock: "5",
+    categoryId: CATEGORY_UUID,
+    isActive: true,
+  };
+
+  const metaTitleField = () =>
+    screen.getByLabelText(dict.productForm.metaTitle);
+  const metaDescriptionField = () =>
+    screen.getByLabelText(dict.productForm.metaDescription);
+
+  it("renders the meta title/description fields with their plain-UA hints", () => {
+    renderWithProviders(<ProductForm onSubmit={noop} isPending={false} />);
+
+    expect(metaTitleField()).toBeInTheDocument();
+    expect(metaDescriptionField()).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.productForm.metaTitleHint),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.productForm.metaDescriptionHint),
+    ).toBeInTheDocument();
+  });
+
+  it("submits typed meta title and description", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(
+      <ProductForm
+        defaultValues={validDefaults}
+        onSubmit={onSubmit}
+        isPending={false}
+      />,
+    );
+
+    await userEvent.type(metaTitleField(), "Best Clear Case");
+    await userEvent.type(metaDescriptionField(), "Shop the best clear case");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.productForm.submit }),
+    );
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metaTitle: "Best Clear Case",
+        metaDescription: "Shop the best clear case",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("EDIT: seeds the meta fields from defaultValues", async () => {
+    renderWithProviders(
+      <ProductForm
+        defaultValues={{
+          ...validDefaults,
+          metaTitle: "Seeded Title",
+          metaDescription: "Seeded description",
+        }}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() => expect(metaTitleField()).toHaveValue("Seeded Title"));
+    expect(metaDescriptionField()).toHaveValue("Seeded description");
   });
 });
 

@@ -94,6 +94,8 @@ const EMPTY_VALUES: ProductFormInput = {
   positionOrder: "0",
   attributes: [],
   isActive: true,
+  metaTitle: "",
+  metaDescription: "",
 };
 
 /**
@@ -489,6 +491,43 @@ export function ProductForm({
           <Plus className="size-4" />
           {dict.productForm.addAttribute}
         </Button>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="product-meta-title">{dict.productForm.metaTitle}</Label>
+        <Input
+          id="product-meta-title"
+          placeholder={dict.productForm.metaTitlePlaceholder}
+          {...register("metaTitle")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.productForm.metaTitleHint}
+        </p>
+        {errors.metaTitle && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.metaTitle.message}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="product-meta-description">
+          {dict.productForm.metaDescription}
+        </Label>
+        <Textarea
+          id="product-meta-description"
+          rows={3}
+          placeholder={dict.productForm.metaDescriptionPlaceholder}
+          {...register("metaDescription")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.productForm.metaDescriptionHint}
+        </p>
+        {errors.metaDescription && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.metaDescription.message}
+          </p>
+        )}
       </div>
 
       <div className="flex items-center gap-2">

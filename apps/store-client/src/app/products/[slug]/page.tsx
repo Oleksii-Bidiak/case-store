@@ -28,12 +28,13 @@ export async function generateMetadata({
       fetchSeoSettings(),
     ]);
 
-    // Precedence via the shared helper: SeoSettings defaults (tier 2) → the
-    // product name/description (tier 3), with the localized fallback kept as the
-    // innermost description. Product has no metaTitle/metaDescription columns yet
-    // — TASK-241 adds them and passes `entityTitle`/`entityDescription` here, so
-    // this call is already shaped for the tier-1 override to slot in.
+    // Precedence via the shared helper: the product's own metaTitle/
+    // metaDescription (tier 1, admin override) → SeoSettings defaults (tier 2) →
+    // the product name/description (tier 3), with the localized fallback kept as
+    // the innermost description (TASK-241).
     const resolved = resolveSeo({
+      entityTitle: product.metaTitle,
+      entityDescription: product.metaDescription,
       settings: seo,
       content: { name: product.name, description: product.description },
     });

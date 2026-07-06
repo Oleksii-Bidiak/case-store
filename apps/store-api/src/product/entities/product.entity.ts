@@ -106,6 +106,24 @@ export class ProductEntity {
   @ApiProperty({ description: 'Whether the product is active', example: true })
   isActive!: boolean;
 
+  @ApiProperty({
+    description: 'SEO meta title override (falls back to name when empty)',
+    example: 'iPhone 15 Pro Clear MagSafe Case | Store',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  metaTitle!: string | null;
+
+  @ApiProperty({
+    description: 'SEO meta description override (falls back to the product description when empty)',
+    example: 'Shop the clear MagSafe-compatible case for iPhone 15 Pro.',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  metaDescription!: string | null;
+
   @ApiProperty({ description: 'Creation timestamp', example: '2024-01-01T00:00:00.000Z' })
   createdAt!: Date;
 
@@ -177,6 +195,8 @@ export class ProductEntity {
     attributes?: unknown;
     positionOrder?: number;
     isActive: boolean;
+    metaTitle?: string | null;
+    metaDescription?: string | null;
     createdAt: Date;
     updatedAt: Date;
     ratingAverage?: number | null;
@@ -212,6 +232,8 @@ export class ProductEntity {
     entity.attributes = (product.attributes as Record<string, string> | null) ?? {};
     entity.positionOrder = product.positionOrder ?? 0;
     entity.isActive = product.isActive;
+    entity.metaTitle = product.metaTitle ?? null;
+    entity.metaDescription = product.metaDescription ?? null;
     entity.createdAt = product.createdAt;
     entity.updatedAt = product.updatedAt;
     entity.ratingAverage =
