@@ -183,7 +183,7 @@
 | TASK-240 | Shared `resolveSeo()` precedence-chain helper (entity meta → SeoSettings defaults → content-derived fallback); wires root layout/homepage title, category-filtered `/products` meta (closes the schema.prisma "deferred to Phase D" TODO), `robots.ts` noindex toggle, `llms.txt` summary override | ⬜ | 116 |
 | TASK-241 | Product-level SEO meta: `metaTitle`/`metaDescription` columns + admin product-form fields (with hints) + PDP `generateMetadata` via `resolveSeo()` | ⬜ | 116 |
 | TASK-242 | `FAQPage` JSON-LD + global admin-editable FAQ (`FaqItem`) on `/info` + PDP; seeds from the existing static `INFO_FAQS` (info-content.ts) | ⬜ | 116 |
-| TASK-243 | Admin onboarding guide (UA, non-technical) — catalog & commerce sections: products, categories, product-groups, brands, devices, structured specs, orders, users, discounts | ⬜ | 116 |
+| TASK-243 | Admin onboarding guide (UA, non-technical) — catalog & commerce sections: products, categories, product-groups, brands, devices, structured specs, orders, users, discounts. `docs/admin-guide.md` (part 1, ~730 lines; part 2 → TASK-244) | ✅ | 116 |
 | TASK-244 | Admin onboarding guide — content/CRM, SEO & dashboard sections: pages, blog, banners, messages, subscribers, site-contact, SEO settings, FAQ, dashboard + pre-launch checklist | ⬜ | 116 |
 
 ### Пізніша хвиля
