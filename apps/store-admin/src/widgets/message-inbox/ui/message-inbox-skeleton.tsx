@@ -16,7 +16,7 @@ const COLUMN_COUNT = 6;
  */
 export function MessageInboxSkeleton() {
   return (
-    <div className="rounded-md border border-border">
+    <div className="rounded-lg border border-border shadow-card overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>

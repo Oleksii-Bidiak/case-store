@@ -19,7 +19,7 @@ export function DashboardSectionSkeleton({
     <div
       role="status"
       aria-busy="true"
-      className={`flex flex-col gap-3 rounded-lg border border-border bg-card p-6 ${className}`}
+      className={`flex flex-col gap-3 rounded-lg border border-border bg-card p-6 shadow-card ${className}`}
     >
       <div className="h-5 w-40 animate-pulse rounded bg-muted" />
       {Array.from({ length: rows }).map((_, index) => (

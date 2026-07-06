@@ -2,19 +2,22 @@
 
 /* ─────────────────────────────────────────────
    Semantic Design Tokens (Light Mode)
+   Mirrors the storefront (apps/store-client) so the admin and the customer
+   site share one visual language. See docs/design-system.md.
    ───────────────────────────────────────────── */
 :root {
   /* Core colors */
   --color-background: #ffffff;
   --color-foreground: #0f172a;
 
-  /* Primary — main brand color (buttons, links) */
-  --color-primary: #0f172a;
+  /* Primary — main brand color (buttons, links). Warmer indigo for a retail
+     feel rather than the generic SaaS blue. */
+  --color-primary: #4f46e5;
   --color-primary-foreground: #ffffff;
 
-  /* Secondary — secondary actions */
-  --color-secondary: #f1f5f9;
-  --color-secondary-foreground: #0f172a;
+  /* Secondary — secondary CTAs (e.g. "View details") */
+  --color-secondary: #f4f4f5;
+  --color-secondary-foreground: #18181b;
 
   /* Muted — subtle backgrounds, secondary text */
   --color-muted: #f1f5f9;
@@ -28,6 +31,18 @@
   --color-destructive: #ef4444;
   --color-destructive-foreground: #ffffff;
 
+  /* Sale — promotional / discount accent (vivid rose) */
+  --color-sale: #e11d48;
+  --color-sale-foreground: #ffffff;
+
+  /* Success — in stock, order confirmed */
+  --color-success: #16a34a;
+  --color-success-foreground: #ffffff;
+
+  /* Warning — low stock, awaiting action */
+  --color-warning: #d97706;
+  --color-warning-foreground: #ffffff;
+
   /* Card — card and popover backgrounds */
   --color-card: #ffffff;
   --color-card-foreground: #0f172a;
@@ -39,13 +54,22 @@
   /* Border & Input */
   --color-border: #e2e8f0;
   --color-input: #e2e8f0;
-  --color-ring: #0f172a;
+  --color-ring: #4f46e5;
 
   /* Overlay */
   --color-overlay: rgba(0, 0, 0, 0.8);
 
-  /* Radius */
-  --radius: 0.5rem;
+  /* Radius — softened for a modern retail feel (was 0.5rem) */
+  --radius: 0.75rem;
+
+  /* Elevation — layered, soft shadows so cards "float" on white without
+     looking heavy. `lift` is used on hover for the rise effect. */
+  --shadow-card:
+    0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
+  --shadow-elevated:
+    0 2px 4px -1px rgb(15 23 42 / 0.06), 0 4px 12px -2px rgb(15 23 42 / 0.10);
+  --shadow-lift:
+    0 4px 8px -2px rgb(15 23 42 / 0.08), 0 12px 28px -6px rgb(15 23 42 / 0.16);
 }
 
 /* ─────────────────────────────────────────────
@@ -58,8 +82,8 @@
     --color-foreground: #ededed;
 
     /* Primary */
-    --color-primary: #ededed;
-    --color-primary-foreground: #0a0a0a;
+    --color-primary: #6366f1;
+    --color-primary-foreground: #ffffff;
 
     /* Secondary */
     --color-secondary: #1e293b;
@@ -77,6 +101,14 @@
     --color-destructive: #dc2626;
     --color-destructive-foreground: #ffffff;
 
+    /* Sale / Success / Warning */
+    --color-sale: #f43f5e;
+    --color-sale-foreground: #ffffff;
+    --color-success: #22c55e;
+    --color-success-foreground: #052e16;
+    --color-warning: #f59e0b;
+    --color-warning-foreground: #271100;
+
     /* Card */
     --color-card: #0f0f0f;
     --color-card-foreground: #ededed;
@@ -88,13 +120,18 @@
     /* Border & Input */
     --color-border: #334155;
     --color-input: #334155;
-    --color-ring: #ededed;
+    --color-ring: #6366f1;
 
     /* Overlay */
     --color-overlay: rgba(0, 0, 0, 0.8);
 
     /* Radius */
-    --radius: 0.5rem;
+    --radius: 0.75rem;
+
+    /* Elevation — deeper, since soft shadows read weaker on dark surfaces */
+    --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+    --shadow-elevated: 0 4px 12px -2px rgb(0 0 0 / 0.5);
+    --shadow-lift: 0 12px 28px -6px rgb(0 0 0 / 0.6);
   }
 }
 
@@ -102,6 +139,7 @@
    Tailwind v4 Theme — maps CSS vars to utilities
    e.g. --color-primary → bg-primary, text-primary
         --radius        → rounded-[var(--radius)]
+        --shadow-card   → shadow-card
    ───────────────────────────────────────────── */
 @theme inline {
   /* Colors */
@@ -117,6 +155,12 @@
   --color-accent-foreground: var(--color-accent-foreground);
   --color-destructive: var(--color-destructive);
   --color-destructive-foreground: var(--color-destructive-foreground);
+  --color-sale: var(--color-sale);
+  --color-sale-foreground: var(--color-sale-foreground);
+  --color-success: var(--color-success);
+  --color-success-foreground: var(--color-success-foreground);
+  --color-warning: var(--color-warning);
+  --color-warning-foreground: var(--color-warning-foreground);
   --color-card: var(--color-card);
   --color-card-foreground: var(--color-card-foreground);
   --color-popover: var(--color-popover);
@@ -126,15 +170,22 @@
   --color-ring: var(--color-ring);
   --color-overlay: var(--color-overlay);
 
+  /* Elevation */
+  --shadow-card: var(--shadow-card);
+  --shadow-elevated: var(--shadow-elevated);
+  --shadow-lift: var(--shadow-lift);
+
   /* Radius */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
 
   /* Fonts */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-sora), var(--font-geist-sans);
 }
 
 /* ─────────────────────────────────────────────
@@ -149,4 +200,33 @@ body {
 /* Border global default */
 * {
   border-color: var(--color-border);
+}
+
+/* ─────────────────────────────────────────────
+   Scrollbars — standardized to match the storefront and driven by design
+   tokens. Thin + rounded, transparent track, branded thumb that darkens on
+   hover. `scrollbar-color`/`scrollbar-width` are inherited, so setting them on
+   `html` cascades to nested scroll areas in Firefox; WebKit uses the `*`
+   pseudos.
+   ───────────────────────────────────────────── */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 9999px;
+  /* transparent border + content-box clip = a slimmer thumb with breathing room */
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-muted-foreground);
 }

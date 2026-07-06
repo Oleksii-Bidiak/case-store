@@ -15,7 +15,7 @@ export default function DeviceBrandsPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h2 className="text-2xl font-bold text-foreground">
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
             {dict.devices.brandsHeading}
           </h2>
           <nav className="flex items-center gap-3 text-sm">

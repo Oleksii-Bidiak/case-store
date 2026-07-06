@@ -100,7 +100,7 @@ export function AdminCategoryTable() {
             : dict.categories.empty}
         </div>
       ) : (
-        <div className="rounded-md border border-border">
+        <div className="rounded-lg border border-border shadow-card overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>

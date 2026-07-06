@@ -71,67 +71,72 @@ export function AdminSidebar() {
   const unread = unreadData?.data?.unread ?? 0;
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r border-border bg-card">
+    <aside className="flex h-screen w-64 flex-col border-r border-border bg-card shadow-card">
       {/* Brand */}
       <div className="flex h-16 items-center gap-2 px-4">
         <Package className="size-6 text-primary" />
-        <span className="text-lg font-bold text-foreground">MobileStore</span>
+        <span className="font-display text-lg font-bold tracking-tight text-foreground">
+          MobileStore
+        </span>
       </div>
 
       <Separator />
 
       {/* Main navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {navItems.map((item) => (
-          <Link
-            key={item.label}
-            href={item.href}
-            aria-current={
-              isNavItemActive(pathname, item.href) ? "page" : undefined
-            }
-            className={cn(
-              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
-              isNavItemActive(pathname, item.href)
-                ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground",
-            )}
-          >
-            <item.icon className="size-4" />
-            {item.label}
-            {item.href === "/messages" && unread > 0 && (
-              <Badge
-                aria-label={dict.messages.unreadBadgeAria(unread)}
-                className="ml-auto"
-              >
-                {unread}
-              </Badge>
-            )}
-          </Link>
-        ))}
+        {navItems.map((item) => {
+          const active = isNavItemActive(pathname, item.href);
+          return (
+            <Link
+              key={item.label}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                active
+                  ? "bg-primary text-primary-foreground shadow-card"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+              )}
+            >
+              <item.icon className="size-4" />
+              {item.label}
+              {item.href === "/messages" && unread > 0 && (
+                <Badge
+                  variant={active ? "secondary" : "default"}
+                  aria-label={dict.messages.unreadBadgeAria(unread)}
+                  className="ml-auto"
+                >
+                  {unread}
+                </Badge>
+              )}
+            </Link>
+          );
+        })}
       </nav>
 
       <Separator />
 
       {/* Bottom navigation */}
       <nav className="space-y-1 px-3 py-4">
-        {bottomNavItems.map((item) => (
-          <Link
-            key={item.label}
-            href={item.href}
-            aria-current={
-              isNavItemActive(pathname, item.href) ? "page" : undefined
-            }
-            className={cn(
-              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
-              isNavItemActive(pathname, item.href)
-                ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground",
-            )}
-          >
-            <item.icon className="size-4" />
-            {item.label}
-          </Link>
-        ))}
+        {bottomNavItems.map((item) => {
+          const active = isNavItemActive(pathname, item.href);
+          return (
+            <Link
+              key={item.label}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                active
+                  ? "bg-primary text-primary-foreground shadow-card"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+              )}
+            >
+              <item.icon className="size-4" />
+              {item.label}
+            </Link>
+          );
+        })}
       </nav>
     </aside>
   );

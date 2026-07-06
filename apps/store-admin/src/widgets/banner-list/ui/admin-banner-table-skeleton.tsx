@@ -16,7 +16,7 @@ const COLUMN_COUNT = 4;
  */
 export function AdminBannerTableSkeleton() {
   return (
-    <div className="rounded-md border border-border">
+    <div className="rounded-lg border border-border shadow-card overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>

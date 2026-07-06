@@ -77,7 +77,7 @@ export function EditBrandView({ brandId }: EditBrandViewProps) {
         >
           {dict.brands.back}
         </Link>
-        <h2 className="text-2xl font-bold text-foreground">
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
           {dict.brands.editHeading}
         </h2>
       </div>

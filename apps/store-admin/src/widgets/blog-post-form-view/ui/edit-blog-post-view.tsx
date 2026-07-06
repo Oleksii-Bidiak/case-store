@@ -77,7 +77,7 @@ export function EditBlogPostView({ postId }: EditBlogPostViewProps) {
         >
           {dict.blogPosts.back}
         </Link>
-        <h2 className="text-2xl font-bold text-foreground">
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
           {dict.blogPosts.editHeading}
         </h2>
       </div>

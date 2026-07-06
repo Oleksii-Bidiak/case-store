@@ -16,7 +16,7 @@ const COLUMN_COUNT = 5;
  */
 export function AdminPageTableSkeleton() {
   return (
-    <div className="rounded-md border border-border">
+    <div className="rounded-lg border border-border shadow-card overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>

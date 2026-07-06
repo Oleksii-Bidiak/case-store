@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export default function SubscribersPage() {
   return (
     <div className="flex flex-col gap-6">
-      <h2 className="text-2xl font-bold text-foreground">
+      <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
         {dict.subscribers.heading}
       </h2>
 

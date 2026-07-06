@@ -99,7 +99,7 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
         >
           {dict.orders.back}
         </Link>
-        <h2 className="text-2xl font-bold text-foreground">
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
           {dict.orders.title(order.id.slice(0, 8))}
         </h2>
       </div>
@@ -143,7 +143,7 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
             </div>
           </section>
 
-          <section className="rounded-md border border-border">
+          <section className="rounded-lg border border-border shadow-card overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>

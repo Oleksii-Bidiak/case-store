@@ -79,7 +79,7 @@ export function EditDiscountView({ discountId }: EditDiscountViewProps) {
         >
           {dict.discounts.back}
         </Link>
-        <h2 className="text-2xl font-bold text-foreground">
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
           {dict.discounts.editHeading}
         </h2>
       </div>

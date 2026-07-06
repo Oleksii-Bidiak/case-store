@@ -113,7 +113,7 @@ export function DeviceModelTable() {
           {dict.devices.modelsEmpty}
         </div>
       ) : (
-        <div className="rounded-md border border-border">
+        <div className="rounded-lg border border-border shadow-card overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>

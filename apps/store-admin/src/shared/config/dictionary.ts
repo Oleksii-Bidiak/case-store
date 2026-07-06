@@ -6,6 +6,12 @@
 export const dict = {
   brand: "MobileStore",
 
+  app: {
+    metaTitle: "Адмін-панель — Магазин мобільних аксесуарів",
+    metaDescription:
+      "Адмін-панель для керування товарами, замовленнями та користувачами.",
+  },
+
   nav: {
     dashboard: "Панель",
     products: "Товари",
@@ -49,6 +55,7 @@ export const dict = {
   },
 
   dashboard: {
+    metaTitle: "Панель — Адмін",
     heading: "Огляд",
     updatedAt: (time: string) => `Оновлено ${time}`,
     loadError: "Не вдалося завантажити показники. Спробуйте ще раз.",
@@ -91,6 +98,7 @@ export const dict = {
     create: "Створити",
     edit: "Редагувати",
     delete: "Видалити",
+    close: "Закрити",
     back: "Назад",
     loading: "Завантаження…",
     actions: "Дії",

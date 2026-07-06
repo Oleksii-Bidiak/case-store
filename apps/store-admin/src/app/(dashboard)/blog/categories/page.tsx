@@ -20,7 +20,7 @@ export default function BlogCategoriesPage() {
           >
             {dict.blogCategories.backToPosts}
           </Link>
-          <h2 className="text-2xl font-bold text-foreground">
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
             {dict.blogCategories.heading}
           </h2>
         </div>

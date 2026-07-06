@@ -73,7 +73,7 @@ export function AdminProductPreviewView({
       {!product.isActive && (
         <div
           role="alert"
-          className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200"
+          className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm font-medium text-foreground"
         >
           {dict.products.previewDeactivatedBanner}
         </div>
@@ -81,7 +81,9 @@ export function AdminProductPreviewView({
 
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-2xl font-bold text-foreground">{product.name}</h2>
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
+            {product.name}
+          </h2>
           <Badge variant={product.isActive ? "default" : "secondary"}>
             {product.isActive
               ? dict.products.previewActive

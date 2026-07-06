@@ -120,7 +120,7 @@ export function AdminProductTable() {
             : dict.products.empty}
         </div>
       ) : (
-        <div className="relative rounded-md border border-border">
+        <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
           {isFetching && !isLoading && (
             <div
               aria-hidden="true"

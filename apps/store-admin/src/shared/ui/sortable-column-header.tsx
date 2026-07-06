@@ -56,7 +56,7 @@ export function SortableColumnHeader({
         type="button"
         onClick={() => onSort(field)}
         aria-label={dict.common.sortByAria(label)}
-        className="flex w-full items-center gap-1 px-2 py-2 text-left font-medium hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        className="flex w-full items-center gap-1 px-4 py-2 text-left font-medium hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
         <span>{label}</span>
         <Icon

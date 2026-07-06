@@ -46,7 +46,7 @@ export function CreateDeviceBrandView() {
         >
           {dict.devices.backToBrands}
         </Link>
-        <h2 className="text-2xl font-bold text-foreground">
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
           {dict.devices.createBrandHeading}
         </h2>
       </div>

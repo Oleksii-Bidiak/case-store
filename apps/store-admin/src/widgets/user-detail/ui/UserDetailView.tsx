@@ -65,7 +65,9 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
         >
           {dict.users.back}
         </Link>
-        <h2 className="text-2xl font-bold text-foreground">{user.email}</h2>
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
+          {user.email}
+        </h2>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

@@ -12,7 +12,7 @@ export default function LoginPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1 text-center">
-        <h1 className="text-2xl font-bold text-foreground">
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
           {dict.login.heading}
         </h1>
         <p className="text-sm text-muted-foreground">{dict.login.subtitle}</p>
