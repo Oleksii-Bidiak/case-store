@@ -1,3 +1,4 @@
+import { NewsletterSubscribeForm } from "@/features";
 import { dict } from "@/shared/config";
 import {
   BlogInstagramIcon,
@@ -13,9 +14,10 @@ const SOCIAL_ICONS = [
 ] as const;
 
 /**
- * BlogNewsletter — the "не пропускай нові статті" block with social channel
- * links. Static. The links have no real URLs yet (href "#", see TASK-170 /
- * TASK-166 for the real signup + social destinations).
+ * BlogNewsletter — the "не пропускай нові статті" block. Wired to the real
+ * newsletter backend (TASK-188) via the reusable NewsletterSubscribeForm feature
+ * (TASK-237); `source="blog"` tags the opt-in origin. The social channel links
+ * still have no real URLs (href "#", see TASK-166 for the destinations).
  */
 export function BlogNewsletter() {
   const { heading, subtitle, socials } = dict.blog.newsletter;
@@ -27,6 +29,7 @@ export function BlogNewsletter() {
           {heading}
         </h2>
         <p className="text-[15px] text-muted-foreground">{subtitle}</p>
+        <NewsletterSubscribeForm source="blog" className="mt-5 max-w-md" />
       </div>
       <ul className="flex flex-wrap items-center gap-2.5">
         {socials.map((social, i) => {

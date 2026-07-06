@@ -64,6 +64,10 @@ describe("BlogView", () => {
       screen.getByRole("link", { name: dict.blog.categories.all }),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Огляди" })).toBeInTheDocument();
+    // The newsletter block now hosts the real subscribe form (TASK-237).
+    expect(
+      screen.getByPlaceholderText(dict.newsletterForm.placeholder),
+    ).toBeInTheDocument();
   });
 
   it("shows the empty state when there are no posts and no featured", () => {
