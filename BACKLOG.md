@@ -160,7 +160,7 @@
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
 | TASK-193 | Consolidated post-stabilization review (3 apps × cleanliness/optimization/security/scalability): codebase strong — Clean Arch/FSD respected, security baseline solid (helmet/CSRF/CORS/ValidationPipe/throttler/AdminGuard), no N+1 on hot paths, indexes comprehensive, typecheck green across all workspaces; **1 critical → TASK-238**, 1 low test-infra note | ✅ | 114 |
-| TASK-194 | Pre-deploy gate: full security review + prod-config audit (env/CORS/Helmet/Swagger-off/Sentry), prod builds, Playwright on prod build, Lighthouse/SEO pass | ⬜ | — |
+| TASK-194 | Pre-deploy gate. **Static half PASSED:** prod-config audit clean (Swagger dev-only, CORS allow-list, strict prod Helmet CSP+HSTS, DSN-gated Sentry, ValidationPipe whitelist, CSRF; only `.env.example` tracked), all 3 prod builds green, SEO robots/sitemap in place. **Live-stack half deferred** (Playwright-on-prod, Lighthouse, `test:int`) → manual-qa — local Docker daemon down | 🔄 | 115 |
 
 #### Findings from TASK-193 *(criticals gate release)*
 

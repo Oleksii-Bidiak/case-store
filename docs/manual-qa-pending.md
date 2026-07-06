@@ -681,7 +681,7 @@ https://react.dev/link/hydration-mismatch
 > `schema.prisma` — джерело правди.
 
 - [x] **Міграція + e2e (обов'язково, послідовно).** ✅ Виконано в Етап-3 інтеграції: `prisma db
-    push` на `store_dev` + `store_test` (таблиця `brands` + `products.brand_id` створені);
+  push` на `store_dev` + `store_test` (таблиця `brands` + `products.brand_id` створені);
       e2e зелені (269/269, serial).
 - [ ] **Адмінка — CRUD брендів.** **Зроби:** `/brands` → «Додати бренд» (назва напр. «Spigen»,
       slug лишити порожнім), збережи; відредагуй лого-URL; перемкни статус актив/прихований; спробуй
@@ -700,7 +700,7 @@ https://react.dev/link/hydration-mismatch
 - [ ] **Вітрина — бренд на PDP.** **Зроби:** відкрий товар із заданим брендом. **Має бути:** назва
       бренду показана над заголовком і веде на `/products?brandId=…`.
 - [ ] **Meilisearch — фасет бренду.** **Зроби:** після reindex (boot або `POST
-  /api/admin/search/reindex`) шукай за назвою бренду (напр. «spigen»). **Має бути:** reindex без
+/api/admin/search/reindex`) шукай за назвою бренду (напр. «spigen»). **Має бути:** reindex без
       помилок; `brandId` у `filterableAttributes`, `brandName` searchable — товари бренду знаходяться
       (fallback на Postgres лишається робочим без Meili).
 
@@ -791,3 +791,22 @@ https://react.dev/link/hydration-mismatch
 2. Пункти, які не вдалося перевірити без ключів (`NP_API_KEY`, SMTP, Sentry DSN), залиш
    невідміченими з позначкою `⏸ немає ключа` — вони не блокують Етап 2.
 3. Коли всі рядки або ✅, або перетворені на задачі — TASK-101 у BACKLOG можна закривати.
+
+---
+
+## TASK-194 — Pre-deploy gate: перевірки на живому стеку
+
+> Статичну половину гейту (prod-config аудит, prod-білди, SEO) пройдено — див.
+> [`plans/115-pre-deploy-gate.md`](plans/115-pre-deploy-gate.md). Нижче — те, що
+> потребує піднятого стеку (`docker compose up -d` + prod-білди), тож локально
+> не проганялося (Docker daemon був вимкнений). Проженуть на живому стенді / CI.
+
+- [ ] **Playwright на prod-білді.** `next start` (не dev) для storefront + API з
+      seed-нутою `store_test`; `test:e2e:pw` зелений на прод-збірці.
+- [ ] **Lighthouse / SEO.** Прогнати Lighthouse по served prod-storefront
+      (perf / a11y / best-practices / SEO) на ключових маршрутах: home, каталог,
+      PDP, cart.
+- [ ] **Live security spot-check.** На піднятому prod-білді: `/api/docs` → 404;
+      заголовки CSP/HSTS присутні; CORS відхиляє origin поза allow-list.
+- [ ] **`test:int` для TASK-238.** Real-DB перевірка фіксу re-parenting категорій
+      (`category.repository.int-spec`) — та сама вимога піднятої БД.
