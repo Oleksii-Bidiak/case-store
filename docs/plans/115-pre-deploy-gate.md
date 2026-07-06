@@ -35,7 +35,7 @@ Source of truth: `apps/store-api/src/main.ts`, `config/security.config.ts`,
 > `.env.*.local` but not a bare `.env.production`. No such file exists today;
 > keep it out of commits when provisioning prod.
 
-## 2. Prod builds — ✅ (api + admin), store-client confirming
+## 2. Prod builds — ✅ all three green
 
 | App            | `npm run build`                                              |
 | -------------- | ------------------------------------------------------------ |
