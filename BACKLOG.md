@@ -190,7 +190,7 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-245 | Product SEO meta: blanking `metaTitle`/`metaDescription` in the admin form omits the field (`undefined`) instead of clearing the stored column, so a once-set value can't be emptied back to auto-derived. Add a Category-style `isUpdate`→`null` clear path if managers need to reset a product's SEO override | ⬜ | 117 |
+| TASK-245 | Product SEO meta: blanking `metaTitle`/`metaDescription` in the admin form omits the field (`undefined`) instead of clearing the stored column, so a once-set value can't be emptied back to auto-derived. Add a Category-style `isUpdate`→`null` clear path if managers need to reset a product's SEO override | ✅ | 117 |
 | TASK-246 | `SiteContactSettings` writes don't trigger `RevalidationNotifier` (pre-existing gap; the new SeoSettings/FaqItem modules wire it from day one). Add a revalidation tag on the site-contact admin write so footer/contact + Organization `sameAs` refresh without a redeploy | ⬜ | 117 |
 | TASK-247 | Surface `Category.metaTitle`/`metaDescription` on the public category read so `resolveSeo()` uses the admin override as tier-1 for the category-filtered `/products` listing (TASK-240 currently only content-derives from name/description — the override columns aren't exposed to the storefront yet) | ⬜ | 117 |
 

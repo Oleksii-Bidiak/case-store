@@ -52,7 +52,10 @@ export function EditProductView({ productId }: EditProductViewProps) {
 
   const handleSubmit = (values: ProductFormValues) => {
     update.mutate(
-      { id: productId, data: productFormValuesToDto(values) },
+      {
+        id: productId,
+        data: productFormValuesToDto(values, { isUpdate: true }),
+      },
       {
         onSuccess: () => {
           void queryClient.invalidateQueries({

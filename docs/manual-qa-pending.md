@@ -817,3 +817,16 @@ push` на `store_dev` + `store_test` (таблиця `brands` + `products.brand
 - [x] **Автотест health-проксі** (замість ручного проходу поведінкових пунктів):
       store-api unit **941/941** + e2e **269** (`--runInBand`) + int **32/32**;
       store-admin **193/193**; store-client **377/377**. ~1740 зелено.
+
+## 14. Етап 5 — SEO follow-ups (plan 117)
+
+> Автогейти для TASK-245 зелені (store-admin typecheck + lint чисті; product-form
+> `productFormValuesToDto` unit — CREATE→undefined / UPDATE→null; store-api typecheck +
+> `product.repository.spec` пас-тру). Нижче — те, що видно лише на живому стенді + БД.
+
+- [ ] **TASK-245 — очищення SEO-оверайду товару до auto.** **Зроби:** у товарі, який уже має
+      заповнений «SEO-заголовок» (`metaTitle`), витри поле начисто, збережи; потім відкрий
+      `npm run db:studio` (або SQL) і подивись на рядок товару. **Має бути:** `metaTitle` у БД
+      став `NULL` (не лишився старим і не порожнім рядком); на вітрині PDP `generateMetadata`
+      падає назад на `resolveSeo()` tier 2/3 (авто-заголовок з назви товару). Те саме для
+      `metaDescription`. Значення, яке НЕ чіпали, лишається без змін (омітиться з payload).

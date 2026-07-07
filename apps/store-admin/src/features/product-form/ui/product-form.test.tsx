@@ -322,18 +322,37 @@ describe("productFormValuesToDto — SEO meta mapping (TASK-241)", () => {
     metaDescription: "",
   };
 
-  it("blank meta fields → undefined (omitted, not empty string)", () => {
+  it("CREATE: blank meta fields → undefined (omitted, not empty string)", () => {
     const dto = productFormValuesToDto(baseValues);
     expect(dto.metaTitle).toBeUndefined();
     expect(dto.metaDescription).toBeUndefined();
   });
 
-  it("passes provided meta values through, trimmed", () => {
+  it("UPDATE: blank meta fields → null (explicit clear back to auto-derived, TASK-245)", () => {
+    const dto = productFormValuesToDto(baseValues, { isUpdate: true });
+    expect(dto.metaTitle).toBeNull();
+    expect(dto.metaDescription).toBeNull();
+  });
+
+  it("passes provided meta values through, trimmed (create)", () => {
     const dto = productFormValuesToDto({
       ...baseValues,
       metaTitle: "  SEO Title  ",
       metaDescription: "  SEO description  ",
     });
+    expect(dto.metaTitle).toBe("SEO Title");
+    expect(dto.metaDescription).toBe("SEO description");
+  });
+
+  it("passes provided meta values through, trimmed (update)", () => {
+    const dto = productFormValuesToDto(
+      {
+        ...baseValues,
+        metaTitle: "  SEO Title  ",
+        metaDescription: "  SEO description  ",
+      },
+      { isUpdate: true },
+    );
     expect(dto.metaTitle).toBe("SEO Title");
     expect(dto.metaDescription).toBe("SEO description");
   });

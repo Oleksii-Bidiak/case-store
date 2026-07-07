@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CreateProductDto } from "@/entities/product";
+import type { CreateProductDto, UpdateProductDto } from "@/entities/product";
 import { dict } from "@/shared/config";
 
 const e = dict.productForm.errors;
@@ -129,10 +129,25 @@ export type ProductFormValues = z.output<typeof productSchema>;
  * Map parsed form values to a create/update payload, dropping blank optional
  * strings so the backend treats them as "not provided" (e.g. an empty slug is
  * auto-generated rather than failing the slug-format validator).
+ *
+ * SEO-override handling differs by mode (mirrors `categoryFormValuesToDto`):
+ * - CREATE (`isUpdate` false): blank `metaTitle`/`metaDescription` → `undefined`
+ *   (omitted; backend leaves the column unset).
+ * - UPDATE (`isUpdate` true): blank → `null` (explicit clear). With `undefined`
+ *   Prisma would treat the field as "no change", so a once-set override could
+ *   never be blanked back to the auto-derived value (TASK-245).
  */
 export function productFormValuesToDto(
   values: ProductFormValues,
-): CreateProductDto {
+): CreateProductDto;
+export function productFormValuesToDto(
+  values: ProductFormValues,
+  options: { isUpdate: true },
+): UpdateProductDto;
+export function productFormValuesToDto(
+  values: ProductFormValues,
+  options: { isUpdate?: boolean } = {},
+): CreateProductDto | UpdateProductDto {
   const slug = values.slug?.trim();
   const description = values.description?.trim();
   const sku = values.sku?.trim();
@@ -165,9 +180,14 @@ export function productFormValuesToDto(
     attributes,
     positionOrder: values.positionOrder,
     isActive: values.isActive,
-    // Blank clears back to auto-derived SEO: omitted so the backend leaves the
-    // column untouched on update and unset on create (same rule as slug/sku).
-    metaTitle: metaTitle ? metaTitle : undefined,
-    metaDescription: metaDescription ? metaDescription : undefined,
+    // Blank clears the override on UPDATE (explicit null so Prisma writes it,
+    // reverting to auto-derived SEO), and is simply omitted on CREATE (same
+    // rule as parentId on the category form, TASK-245).
+    metaTitle: metaTitle ? metaTitle : options.isUpdate ? null : undefined,
+    metaDescription: metaDescription
+      ? metaDescription
+      : options.isUpdate
+        ? null
+        : undefined,
   };
 }
