@@ -888,3 +888,33 @@ push` на `store_dev` + `store_test` (таблиця `brands` + `products.brand
       веде у відповідний розділ (банерні зони — на `/banners?placement=…` з предзастосованим
       фільтром); власник з нульовим досвідом знаходить, де редагується будь-який видимий елемент,
       за **≤2 кліки**.
+
+## 16. Етап 6 — Хвиля 2 (staging-деплой): TASK-271
+
+> Пайплайн `deploy-staging` (у `.github/workflows/ci.yml`) і ранбук `docs/deploy.md`
+> написані й провалідовані офлайн (YAML коректний, шляхи/імена сервісів звірені з
+> `docker-compose.prod.yml`, Dockerfile'ами й `Caddyfile`). **Перший реальний деплой —
+> це і є ручна перевірка нижче.** До неї staging не існує, тож задача запускатись не буде.
+
+- [ ] **TASK-271 — перша підготовка сервера + перший авто-деплой.** **Зроби:** пройди
+      `docs/deploy.md` §7 (орендуй VPS, встанови Docker, `/opt/store-ai`, SSH-ключ,
+      **DNS** на `<домен>`/`admin.`/`api.`, порти 80/443), заповни в GitHub Environment
+      `staging` 4 секрети (`SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `STAGING_ENV_FILE` —
+      **повний** `.env.production`) і змінну `STAGING_DOMAIN`; потім зроби push у `develop`
+      (або Re-run останнього CI). **Має бути:** задача **Deploy to Staging** зелена; у її
+      Summary — коміт, тег `staging-<SHA>` і три посилання; `https://api.<домен>/health`
+      → **200**, вітрина й адмінка відкриваються; в Environments → `staging` з'явився запис.
+- [ ] **TASK-271 — `prisma db push` наживо.** **Зроби:** після першого деплою глянь лог
+      кроку **Deploy on staging**. **Має бути:** `db push` відпрацював без «prisma: not
+      found» (образ або має CLI, або його підтягнув `npx --yes prisma@7`). Якщо впав —
+      див. `docs/deploy.md` «Якщо db push впав» і, за потреби, заведи `fix/NNN` на внесення
+      `prisma` у прод-залежності образу `store-api` (Dockerfile з TASK-270).
+- [ ] **TASK-271 — навчальний відкат.** **Зроби:** пройди `docs/deploy.md` §5 —
+      залогінься у GHCR персональним токеном (`read:packages`), підніми **попередній**
+      `staging-<SHA>`, звір `docker compose … images`. **Має бути:** стек піднявся на
+      старому образі; smoke-адреси знову віддають 200. (Разова навчальна репетиція відкату.)
+- [ ] **TASK-271 — сторонні дії (перевірити на першому запуску).** **Зроби:** переконайся,
+      що теги `appleboy/scp-action@v0.1.7` та `appleboy/ssh-action@v1.2.0` резолвляться в
+      Actions (мережі під час авторингу не було). **Має бути:** кроки **Copy deploy files**
+      і **Deploy on staging** проходять; інакше — онови тег на актуальний і, за бажання,
+      запінь на конкретний commit-SHA дії.
