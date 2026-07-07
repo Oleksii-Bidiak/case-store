@@ -817,3 +817,17 @@ push` на `store_dev` + `store_test` (таблиця `brands` + `products.brand
 - [x] **Автотест health-проксі** (замість ручного проходу поведінкових пунктів):
       store-api unit **941/941** + e2e **269** (`--runInBand`) + int **32/32**;
       store-admin **193/193**; store-client **377/377**. ~1740 зелено.
+
+## 14. Етап 5 — SEO follow-ups (plan 117)
+
+> Потрібні env для ревалідації (без них ISR-очистка мовчки no-op — не помилка):
+> store-api `STOREFRONT_REVALIDATE_URL` (напр. `http://localhost:3000/api/revalidate`) +
+> `REVALIDATE_SECRET`; store-client — той самий `REVALIDATE_SECRET`.
+
+- [ ] **TASK-246 — ревалідація site-contact на запис.** **Зроби:** в адмінці
+      `/settings/contact` зміни телефон/години або один із `sameAs`-лінків (Viber/Telegram/
+      Instagram) → «Зберегти». **Має бути:** футер вітрини і `/info#contacts` показують нове
+      значення, а Organization JSON-LD на головній (`Ctrl+U` → `ld+json` → `sameAs`) оновлює
+      посилання — **без** перезбірки і без очікування 1-годинного ISR-вікна (тег `site-contact`
+      чиститься одразу після запису). Без env ревалідації зміна підтягнеться лише за ~годину —
+      це очікувано, не баг.

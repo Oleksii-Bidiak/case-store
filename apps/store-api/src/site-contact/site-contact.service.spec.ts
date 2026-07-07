@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { SiteContactRepository, SINGLETON_ID } from './site-contact.repository';
 import { SiteContactService } from './site-contact.service';
 import { SiteContactSettingsEntity } from './entities';
+import { RevalidationNotifier } from '../publishing';
 
 const mockRow = {
   id: SINGLETON_ID,
@@ -20,12 +21,20 @@ const repositoryMock = {
   upsertSettings: jest.fn(),
 };
 
+const revalidationMock = {
+  revalidate: jest.fn(),
+};
+
 describe('SiteContactService', () => {
   let service: SiteContactService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [SiteContactService, { provide: SiteContactRepository, useValue: repositoryMock }],
+      providers: [
+        SiteContactService,
+        { provide: SiteContactRepository, useValue: repositoryMock },
+        { provide: RevalidationNotifier, useValue: revalidationMock },
+      ],
     }).compile();
 
     service = module.get<SiteContactService>(SiteContactService);
@@ -58,13 +67,16 @@ describe('SiteContactService', () => {
   });
 
   describe('updateSettings', () => {
-    it('upserts via the repository and maps the result to an entity', async () => {
+    it('upserts via the repository, maps the result, and revalidates the site-contact tag', async () => {
       const dto = { email: 'hello@test.ua', phone: '+380 67 000 0000' };
       repositoryMock.upsertSettings.mockResolvedValue({ ...mockRow, ...dto });
+      revalidationMock.revalidate.mockResolvedValue(undefined);
 
       const result = await service.updateSettings(dto);
 
       expect(repositoryMock.upsertSettings).toHaveBeenCalledWith(dto);
+      expect(revalidationMock.revalidate).toHaveBeenCalledTimes(1);
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith({ tags: ['site-contact'] });
       expect(result).toBeInstanceOf(SiteContactSettingsEntity);
       expect(result.email).toBe('hello@test.ua');
       expect(result.phone).toBe('+380 67 000 0000');
