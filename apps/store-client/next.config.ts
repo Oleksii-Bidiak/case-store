@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
@@ -15,6 +16,13 @@ const apiUrl = new URL(
 );
 
 const nextConfig: NextConfig = {
+  // Produce a self-contained `.next/standalone` server for Docker (TASK-270).
+  // `outputFileTracingRoot` points at the monorepo root (two levels up) so the
+  // dependency trace reaches the hoisted root node_modules + packages/*; in a
+  // monorepo this emits server.js nested at
+  // `.next/standalone/apps/store-client/server.js` (see the Dockerfile CMD).
+  output: "standalone",
+  outputFileTracingRoot: path.join(__dirname, "../../"),
   // Environment variables exposed to the browser
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
