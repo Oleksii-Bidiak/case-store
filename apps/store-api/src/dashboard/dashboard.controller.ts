@@ -2,6 +2,7 @@ import { Controller, Get, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiExtraModels } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import {
+  CustomerMetricsDto,
   DailyDataPointDto,
   DashboardSummaryResponse,
   InventoryMetricsDto,
@@ -32,6 +33,7 @@ import { AdminGuard } from '../auth/guards';
   RevenueMetricsDto,
   OrderMetricsDto,
   UserMetricsDto,
+  CustomerMetricsDto,
   ProductMetricsDto,
   InventoryMetricsDto,
   DailyDataPointDto,

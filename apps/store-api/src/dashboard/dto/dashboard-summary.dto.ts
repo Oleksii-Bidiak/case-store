@@ -51,8 +51,33 @@ export class RevenueMetricsDto {
   })
   unrealizedRevenueLast30Days!: number;
 
+  @ApiProperty({
+    type: Number,
+    description:
+      'Average order value over the last 30 days: earned revenue ÷ count of PAID orders in the ' +
+      'window, 0 when there are no paid orders',
+    example: 812.04,
+  })
+  averageOrderValueLast30Days!: number;
+
   @ApiProperty({ type: [DailyDataPointDto], description: 'Daily revenue for the last 30 days' })
   revenueByDay!: DailyDataPointDto[];
+}
+
+export class CustomerMetricsDto {
+  @ApiProperty({
+    type: Number,
+    description: 'All-time share (0..1) of customers with 2+ non-CANCELLED orders (repeat buyers)',
+    example: 0.24,
+  })
+  repeatBuyerRate!: number;
+
+  @ApiProperty({
+    type: Number,
+    description: 'Repeat-buyer share (0..1) restricted to orders created in the last 90 days',
+    example: 0.31,
+  })
+  repeatBuyerRateLast90Days!: number;
 }
 
 export class OrderMetricsDto {
@@ -135,6 +160,9 @@ export class DashboardSummaryResponse {
 
   @ApiProperty({ type: UserMetricsDto })
   users!: UserMetricsDto;
+
+  @ApiProperty({ type: CustomerMetricsDto })
+  customers!: CustomerMetricsDto;
 
   @ApiProperty({ type: ProductMetricsDto })
   products!: ProductMetricsDto;

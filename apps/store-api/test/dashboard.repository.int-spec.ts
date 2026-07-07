@@ -224,6 +224,169 @@ describe('DashboardRepository (integration)', () => {
   });
 
   /**
+   * Average order value (TASK-249): earned revenue in the 30-day window divided
+   * by the number of PAID orders in that window. Seeds a deterministic set of
+   * PAID orders (plus an unpaid order that must be ignored), then verifies the
+   * divide-by-zero guard by clearing every order.
+   */
+  describe('getSummary — average order value', () => {
+    beforeAll(async () => {
+      await prisma.orderItem.deleteMany({});
+      await prisma.order.deleteMany({});
+
+      // Two PAID orders in the window: $100 + $50 = $150 over 2 orders → AOV $75.
+      await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PAID,
+          subtotal: '100.00',
+          total: '100.00',
+        },
+      });
+      await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PAID,
+          subtotal: '50.00',
+          total: '50.00',
+        },
+      });
+      // An unpaid order must NOT inflate the count or revenue.
+      await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.PENDING,
+          paymentStatus: PaymentStatus.PENDING,
+          subtotal: '999.00',
+          total: '999.00',
+        },
+      });
+    });
+
+    it('divides window revenue by the paid-order count ($150 / 2 = $75)', async () => {
+      const summary = await repo.getSummary();
+      expect(summary.revenue.averageOrderValueLast30Days).toBe(75);
+    });
+
+    it('returns 0 (no divide-by-zero) when there are no paid orders in the window', async () => {
+      await prisma.order.deleteMany({});
+      const summary = await repo.getSummary();
+      expect(summary.revenue.averageOrderValueLast30Days).toBe(0);
+    });
+  });
+
+  /**
+   * Repeat-buyer rate (TASK-249): the share of customers with 2+ non-CANCELLED
+   * orders. CANCELLED orders are excluded from the count; the 90-day variant
+   * windows both numerator and denominator to orders created in the last 90 days.
+   */
+  describe('getSummary — repeat buyer rate', () => {
+    let repeatUserId: string;
+    let mixedUserId: string;
+    let singleUserId: string;
+
+    beforeAll(async () => {
+      await prisma.orderItem.deleteMany({});
+      await prisma.order.deleteMany({});
+
+      const suffix = randomUUID();
+      const repeatUser = await prisma.user.create({
+        data: { email: `repeat-${suffix}@test.local`, passwordHash: 'x' },
+      });
+      const mixedUser = await prisma.user.create({
+        data: { email: `mixed-${suffix}@test.local`, passwordHash: 'x' },
+      });
+      const singleUser = await prisma.user.create({
+        data: { email: `single-${suffix}@test.local`, passwordHash: 'x' },
+      });
+      repeatUserId = repeatUser.id;
+      mixedUserId = mixedUser.id;
+      singleUserId = singleUser.id;
+
+      const ninetyOneDaysAgo = new Date();
+      ninetyOneDaysAgo.setDate(ninetyOneDaysAgo.getDate() - 91);
+
+      // Repeat buyer: two non-CANCELLED orders, but the SECOND one is backdated
+      // > 90 days so it falls out of the 90-day window (createdAt has no
+      // @updatedAt auto-touch, so an explicit past date sticks).
+      await prisma.order.create({
+        data: {
+          userId: repeatUserId,
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PAID,
+          subtotal: '10.00',
+          total: '10.00',
+        },
+      });
+      await prisma.order.create({
+        data: {
+          userId: repeatUserId,
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PAID,
+          subtotal: '10.00',
+          total: '10.00',
+          createdAt: ninetyOneDaysAgo,
+        },
+      });
+
+      // Mixed buyer: 1 non-CANCELLED + 1 CANCELLED → only 1 real order, NOT a repeat.
+      await prisma.order.create({
+        data: {
+          userId: mixedUserId,
+          status: OrderStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.PENDING,
+          subtotal: '10.00',
+          total: '10.00',
+        },
+      });
+      await prisma.order.create({
+        data: {
+          userId: mixedUserId,
+          status: OrderStatus.CANCELLED,
+          paymentStatus: PaymentStatus.PENDING,
+          subtotal: '10.00',
+          total: '10.00',
+        },
+      });
+
+      // Single buyer: exactly one order, NOT a repeat.
+      await prisma.order.create({
+        data: {
+          userId: singleUserId,
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PAID,
+          subtotal: '10.00',
+          total: '10.00',
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.order.deleteMany({});
+      await prisma.user.deleteMany({
+        where: { id: { in: [repeatUserId, mixedUserId, singleUserId] } },
+      });
+    });
+
+    it('counts only customers with 2+ non-CANCELLED orders all-time (1 of 3 = 1/3)', async () => {
+      const summary = await repo.getSummary();
+      // repeatUser (2 non-cancelled) is the only repeat buyer; mixedUser's
+      // CANCELLED order is excluded, leaving 1 real order; singleUser has 1.
+      expect(summary.customers.repeatBuyerRate).toBeCloseTo(1 / 3, 5);
+    });
+
+    it('windows the 90-day rate so a backdated second order no longer counts', async () => {
+      const summary = await repo.getSummary();
+      // Within 90 days repeatUser has only 1 order (the other is 91 days old), so
+      // NO customer has 2+ recent orders → 0, while the all-time rate stays 1/3.
+      expect(summary.customers.repeatBuyerRateLast90Days).toBe(0);
+      expect(summary.customers.repeatBuyerRate).toBeCloseTo(1 / 3, 5);
+    });
+  });
+
+  /**
    * getNeedsAction runs four COUNT reads over live tables (TASK-248). This block
    * clears orders/reviews/mail to a deterministic baseline (it runs last, after
    * the getSummary assertions above), seeds one of each in/out-of-scope row, and
