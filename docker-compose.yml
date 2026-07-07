@@ -11,6 +11,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-store_dev}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Bootstrap the extra `umami` database (TASK-261). Runs only on a fresh
+      # volume; existing volumes need the manual fallback (see `umami` below).
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test:
         [
@@ -70,6 +73,35 @@ services:
       MEILI_NO_ANALYTICS: "true"
     volumes:
       - meili_data:/meili_data
+    networks:
+      - store_network
+
+  # Umami self-hosted analytics (TASK-261). Postgres-backed image variant — it
+  # expects an external DATABASE_URL and stores its own schema in a separate
+  # `umami` database inside the shared `postgres` container above.
+  #
+  # SECOND-DATABASE BOOTSTRAP: the `umami` database is auto-created by
+  # docker/postgres-init/00-create-umami-db.sql ONLY on a fresh Postgres volume.
+  # If you already have a populated volume, create it once by hand:
+  #   docker exec store_postgres psql -U postgres -c "CREATE DATABASE umami"
+  # then (re)start this service. Umami applies its own schema migrations on boot.
+  umami:
+    image: docker.umami.is/umami-software/umami:postgresql-latest
+    container_name: store_umami
+    restart: unless-stopped
+    ports:
+      - "3003:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/umami
+      # Signs Umami session/JWT cookies. Must be set — generate with:
+      #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      APP_SECRET: ${UMAMI_APP_SECRET:?UMAMI_APP_SECRET must be set}
+      # Opt out of Umami's OWN anonymous usage telemetry (unrelated to the
+      # visitor data Umami collects for us).
+      DISABLE_TELEMETRY: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - store_network
 
