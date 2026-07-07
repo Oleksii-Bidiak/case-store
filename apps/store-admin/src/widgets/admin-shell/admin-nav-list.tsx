@@ -20,6 +20,7 @@ import {
   Search,
   HelpCircle,
   Settings,
+  Map,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -49,6 +50,7 @@ const navItems = [
 ];
 
 const bottomNavItems = [
+  { label: dict.nav.contentMap, href: "/content-map", icon: Map },
   { label: dict.nav.siteContact, href: "/settings/contact", icon: Phone },
   { label: dict.nav.seoSettings, href: "/settings/seo", icon: Search },
   { label: dict.nav.faq, href: "/faq", icon: HelpCircle },
