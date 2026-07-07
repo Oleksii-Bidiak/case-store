@@ -234,8 +234,7 @@ docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml --env-fi
 
 ```bash
 docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml --env-file .env.production \
-  exec -T -u root -e NPM_CONFIG_CACHE=/tmp/.npm store-api \
-  npx --yes prisma@7 db push --schema=prisma/schema.prisma --skip-generate --accept-data-loss
+  exec -T store-api npx prisma db push --schema=prisma/schema.prisma --skip-generate --accept-data-loss
 ```
 
 ---
@@ -252,11 +251,12 @@ docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml --env-fi
   версіонується лише одна міграція, `schema.prisma` — джерело правди. `migrate
 deploy` на чистій staging-базі впав би. Squash-baseline + перехід на `migrate
 deploy` — це вже задача продакшену (TASK-272).
-- **Якщо `db push` впав** із «prisma: not found» — рантайм-образ `store-api`
-  вирізає devDependencies (`npm prune --omit=dev`), тому CLI `prisma` в ньому може
-  бути відсутній. Команда деплою це обходить (`npx --yes prisma@7`, від root, зі
-  своїм кешем). Радикальне рішення на майбутнє — внести `prisma` у прод-залежності
-  образу (це вже зона Dockerfile з TASK-270).
+- **`db push` і CLI `prisma`.** Рантайм-образ `store-api` містить CLI `prisma`:
+  його внесено у прод-залежності (`dependencies`, версія 7.8), тож він переживає
+  `npm prune --omit=dev` і «запікається» в образ. Тому `db push` запускає локальний
+  бінарник — без завантаження з мережі й від імені звичайного (non-root) користувача.
+  Якщо колись побачиш «prisma: not found» — переконайся, що `prisma` лишається у
+  `dependencies` (а не `devDependencies`) у `apps/store-api/package.json`.
 - **Одноразові образи staging.** `NEXT_PUBLIC_*` «запікаються» у бандл на етапі
   збірки, тож образ прив'язаний до домену staging і **не** може бути промоутнутий
   у прод — прод збирає свої образи (TASK-272).

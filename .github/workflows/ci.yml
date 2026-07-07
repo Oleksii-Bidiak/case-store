@@ -379,12 +379,10 @@ jobs:
             # 4. Apply the schema. STAGING uses `prisma db push` (NOT
             #    migrate deploy) — a locked owner decision; staging data is
             #    disposable, so --accept-data-loss is acceptable here (and MUST
-            #    NOT be copied into the production pipeline). Run as root with a
-            #    writable npm cache so `npx` can supply the prisma CLI even
-            #    though the runtime image prunes devDependencies (see
-            #    docs/deploy.md "Якщо db push впав").
-            $COMPOSE exec -T -u root -e NPM_CONFIG_CACHE=/tmp/.npm store-api \
-              npx --yes prisma@7 db push \
+            #    NOT be copied into the production pipeline). The store-api image
+            #    ships the pinned prisma CLI (a runtime dependency), so this runs
+            #    the in-image binary directly — no network download, non-root.
+            $COMPOSE exec -T store-api npx prisma db push \
               --schema=prisma/schema.prisma --skip-generate --accept-data-loss
 
             # 5. Drop dangling images from previous deploys (keeps tagged
