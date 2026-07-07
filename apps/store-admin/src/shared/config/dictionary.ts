@@ -37,6 +37,7 @@ export const dict = {
   header: {
     title: "Панель керування",
     adminLabel: "Адміністратор",
+    openMenu: "Відкрити меню",
   },
 
   login: {
