@@ -462,6 +462,49 @@ describe('OrderRepository', () => {
     });
   });
 
+  describe('findAll — multi-status filter (TASK-250)', () => {
+    it('maps a single-status array to status: { in: [...] }', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ status: [OrderStatus.PENDING] });
+
+      expect(prismaMock.order.count).toHaveBeenCalledWith({
+        where: expect.objectContaining({ status: { in: [OrderStatus.PENDING] } }),
+      });
+      expect(prismaMock.order.findMany.mock.calls[0][0].where).toEqual(
+        expect.objectContaining({ status: { in: [OrderStatus.PENDING] } }),
+      );
+    });
+
+    it('maps a two-status array to status: { in: [...] }', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ status: [OrderStatus.CONFIRMED, OrderStatus.PROCESSING] });
+
+      expect(prismaMock.order.findMany.mock.calls[0][0].where).toEqual(
+        expect.objectContaining({
+          status: { in: [OrderStatus.CONFIRMED, OrderStatus.PROCESSING] },
+        }),
+      );
+    });
+
+    it('omits the status key entirely when status is absent', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({});
+
+      expect(prismaMock.order.findMany.mock.calls[0][0].where).not.toHaveProperty('status');
+    });
+
+    it('omits the status key entirely when status is an empty array', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ status: [] });
+
+      expect(prismaMock.order.findMany.mock.calls[0][0].where).not.toHaveProperty('status');
+    });
+  });
+
   describe('findAll — sorting (TASK-147)', () => {
     it('defaults to createdAt desc when no sort is provided', async () => {
       prismaMock.$transaction.mockResolvedValue([0, []]);
