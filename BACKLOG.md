@@ -211,7 +211,7 @@
 | TASK-249 | [A/H] Dashboard metrics v2 — unreceived «in-transit» revenue (absorbs TASK-137/plan 083, +2 `RevenueMetricsDto` fields), AOV 30d, repeat-buyer % (all-time + 90d), last-5-orders table; revenue ground truth `paymentStatus=PAID`; unit-test formulas (repeat-rate excludes CANCELLED), skeletons + plain-UA tooltips | ✅ | 120 |
 | TASK-250 | [A/H] Order lifecycle preset tabs on `/orders` — Нові (PENDING) / В обробці (CONFIRMED+PROCESSING) / Відправлені (SHIPPED) / Всі over existing `?status=` (additive admin-only `status[]` CSV param), deep-link URL contract preserved | ✅ | 119 |
 | TASK-264 | [F/H] «Карта контенту» `/content-map` (sidebar «Де що на сайті») — static schematic of storefront pages → placement zones (HERO_SLIDE/PROMO_TILE/ANNOUNCEMENT_BAR/FAQ/Pages/contacts/SEO) linking to admin sections (pre-filtered by placement), active-count + shown/hidden marker per zone; FSD widget, CSS diagrams (no screenshots); ≤2 clicks to any editable text/image | ⬜ | — |
-| TASK-257 | [D/H] Admin mobile shell (owner manages from phone) — `<lg` sidebar → shadcn `Sheet` drawer + burger in `AdminHeader`, close-on-navigate (TASK-204 pattern); header fits 360–430px; `main p-4 lg:p-6`; TASK-248 count badges visible in drawer; smoke 360/390/768/1024, no page horizontal scroll | 🔄 | 121 |
+| TASK-257 | [D/H] Admin mobile shell (owner manages from phone) — `<lg` sidebar → shadcn `Sheet` drawer + burger in `AdminHeader`, close-on-navigate (TASK-204 pattern); header fits 360–430px; `main p-4 lg:p-6`; TASK-248 count badges visible in drawer; smoke 360/390/768/1024, no page horizontal scroll | ✅ | 121 |
 
 #### Хвиля 2 — Деплой (staging рано) + аналітика паралельно
 
