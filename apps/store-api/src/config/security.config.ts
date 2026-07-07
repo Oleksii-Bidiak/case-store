@@ -11,17 +11,28 @@ import type { HelmetOptions } from 'helmet';
  * - Development: CSP relaxed so the Swagger UI (`/api/docs`) — which injects
  *   inline scripts and loads assets from cdn.jsdelivr.net — works; HSTS off so
  *   browsers don't pin the insecure HTTP host.
+ *
+ * @param umamiOrigin Optional public origin serving self-hosted Umami (TASK-261).
+ *   When set in production, it is added to the `scriptSrc` and `connectSrc`
+ *   directives (the tracker both loads from and beacons back to that origin).
+ *   CAVEAT: this header is only sent on responses `store-api` itself serves —
+ *   it does NOT gate the storefront pages, which send no CSP header of their
+ *   own. It is defense-in-depth on API-served surfaces + future-proofing.
  */
-export function buildHelmetOptions(isProduction: boolean): HelmetOptions {
+export function buildHelmetOptions(isProduction: boolean, umamiOrigin?: string): HelmetOptions {
+  // In production, widen the two Umami-relevant directives only when an origin
+  // is configured; otherwise both stay locked to `'self'`.
+  const umamiSources = isProduction && umamiOrigin ? [umamiOrigin] : [];
+
   return {
     contentSecurityPolicy: isProduction
       ? {
           directives: {
             defaultSrc: ["'self'"],
-            scriptSrc: ["'self'"],
+            scriptSrc: ["'self'", ...umamiSources],
             styleSrc: ["'self'"],
             imgSrc: ["'self'", 'data:'],
-            connectSrc: ["'self'"],
+            connectSrc: ["'self'", ...umamiSources],
             fontSrc: ["'self'"],
             objectSrc: ["'none'"],
             upgradeInsecureRequests: [],

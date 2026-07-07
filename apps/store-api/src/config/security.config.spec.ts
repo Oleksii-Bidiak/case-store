@@ -34,4 +34,27 @@ describe('buildHelmetOptions', () => {
       policy: 'strict-origin-when-cross-origin',
     });
   });
+
+  // ── TASK-261: optional Umami origin allowance ─────────────────────────────
+  it('keeps scriptSrc/connectSrc at self-only in production when no Umami origin is given', () => {
+    const csp = buildHelmetOptions(true).contentSecurityPolicy as CspOption;
+    expect(csp.directives.scriptSrc).toEqual(["'self'"]);
+    expect(csp.directives.connectSrc).toEqual(["'self'"]);
+  });
+
+  it('adds the Umami origin to scriptSrc and connectSrc in production when configured', () => {
+    const origin = 'https://analytics.mystore.ua';
+    const csp = buildHelmetOptions(true, origin).contentSecurityPolicy as CspOption;
+    expect(csp.directives.scriptSrc).toEqual(["'self'", origin]);
+    expect(csp.directives.connectSrc).toEqual(["'self'", origin]);
+    // Unrelated directives are untouched.
+    expect(csp.directives.styleSrc).toEqual(["'self'"]);
+  });
+
+  it('ignores the Umami origin outside production (dev CSP unchanged)', () => {
+    const csp = buildHelmetOptions(false, 'https://analytics.mystore.ua')
+      .contentSecurityPolicy as CspOption;
+    expect(csp.directives.scriptSrc).not.toContain('https://analytics.mystore.ua');
+    expect(csp.directives.connectSrc).toEqual(["'self'"]);
+  });
 });

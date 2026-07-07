@@ -36,7 +36,7 @@ async function bootstrap() {
   // DTOs cap free-text length via `@MaxLength` to bound payload size. If a future
   // feature renders descriptions as raw HTML (rich text), add a sanitizer then.
   const isProduction = nodeEnv === 'production';
-  app.use(helmet(buildHelmetOptions(isProduction)));
+  app.use(helmet(buildHelmetOptions(isProduction, configService.get<string>('UMAMI_ORIGIN'))));
 
   // Parse cookies from incoming requests (needed for refresh token + CSRF)
   app.use(cookieParser());
