@@ -1,0 +1,60 @@
+# Docker build-context ignore (TASK-270).
+#
+# The build context for all three images is the monorepo ROOT (npm workspaces),
+# so a single root-level .dockerignore is correct — Docker only honors one, at
+# the context root. Everything the image needs (workspace manifests, source,
+# prisma schema, next configs, public assets, packages/*) is installed/built
+# INSIDE the image, so host build output and dependencies are excluded to keep
+# the context small and to guarantee no host secrets ever enter an image layer.
+
+# ─── Dependencies & build output (rebuilt in the image) ─────────────────────
+**/node_modules
+**/dist
+**/.next
+**/out
+**/build
+**/coverage
+**/.turbo
+**/.swc
+
+# ─── Secrets — never bake any env file into a build context ──────────────────
+.env
+.env.*
+**/.env
+**/.env.*
+
+# ─── Local dev uploads — must not leak into an image layer (a named volume
+#     provides these at runtime, see docker-compose.prod.yml) ────────────────
+apps/store-api/uploads
+apps/store-*/uploads
+
+# ─── VCS / tooling / editor noise ───────────────────────────────────────────
+.git
+.gitignore
+.github
+.husky
+.vscode
+.idea
+**/*.log
+npm-debug.log*
+**/.DS_Store
+
+# ─── Tests, docs & CI artifacts not needed to build a runnable image ────────
+**/*.spec.ts
+**/*.e2e-spec.ts
+**/*.int-spec.ts
+**/__tests__
+**/__mocks__
+**/test-results
+**/playwright-report
+**/.playwright
+docs
+requirements.md
+BACKLOG.md
+
+# ─── Docker / compose files themselves ──────────────────────────────────────
+Dockerfile
+**/Dockerfile
+.dockerignore
+docker-compose*.yml
+Caddyfile
