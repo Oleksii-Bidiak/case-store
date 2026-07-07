@@ -71,4 +71,44 @@ describe("OrderConfirmationView", () => {
       ),
     );
   });
+
+  // ── TASK-261: purchase analytics ───────────────────────────────────────────
+  describe("purchase analytics", () => {
+    afterEach(() => {
+      delete window.umami;
+    });
+
+    it("reports purchase once with the order id and amount after the order loads", async () => {
+      const track = jest.fn();
+      window.umami = { track };
+      server.use(
+        http.get("*/api/orders/:id", () => HttpResponse.json(makeOrder())),
+      );
+
+      renderWithProviders(<OrderConfirmationView orderId="order-1" />, authed);
+      await screen.findByRole("heading", { name: dict.order.thankYou });
+
+      await waitFor(() =>
+        expect(track).toHaveBeenCalledWith("purchase", {
+          orderId: "order-1",
+          amount: "998.00",
+        }),
+      );
+      expect(
+        track.mock.calls.filter(([name]) => name === "purchase"),
+      ).toHaveLength(1);
+    });
+
+    it("does not report purchase for an unauthenticated visitor (order never loads)", async () => {
+      const track = jest.fn();
+      window.umami = { track };
+
+      renderWithProviders(<OrderConfirmationView orderId="order-1" />, {
+        auth: { isAuthenticated: false, isInitializing: false },
+      });
+
+      await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+      expect(track).not.toHaveBeenCalled();
+    });
+  });
 });

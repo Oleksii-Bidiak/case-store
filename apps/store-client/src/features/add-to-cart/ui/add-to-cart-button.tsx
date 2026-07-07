@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { getGetCartQueryKey, useAddToCart } from "@/entities/cart";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { trackEvent } from "@/shared/lib";
 
 interface AddToCartButtonProps {
   productId: string;
@@ -55,6 +56,8 @@ export function AddToCartButton({
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
         toast.success(dict.addToCart.added);
+        // Analytics: report the add-to-cart (funnel step 2).
+        trackEvent("add_to_cart", { productId, quantity });
       },
       onError: () => {
         if (compact) toast.error(dict.addToCart.error);

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/entities/session";
 import { useGetOrder } from "@/entities/order";
 import { CancelOrderButton } from "@/features/cancel-order";
 import { dict } from "@/shared/config";
+import { trackEvent } from "@/shared/lib";
 import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
 import { OrderItemList } from "./order-item-list";
@@ -46,6 +47,17 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
       router.replace(`/login?redirect=/orders/${orderId}/confirmation`);
     }
   }, [isInitializing, isAuthenticated, orderId, router]);
+
+  // Analytics: report the completed purchase (funnel step 4) once, after the
+  // order first loads. The ref is keyed on the order id so a later refetch of
+  // the same order does not double-count it and inflate the funnel.
+  const purchaseTracked = useRef<string | null>(null);
+  useEffect(() => {
+    const loaded = data?.data;
+    if (!loaded || purchaseTracked.current === loaded.id) return;
+    purchaseTracked.current = loaded.id;
+    trackEvent("purchase", { orderId: loaded.id, amount: loaded.total });
+  }, [data?.data]);
 
   if (isInitializing || !isAuthenticated || isLoading) {
     return <OrderConfirmationSkeleton />;

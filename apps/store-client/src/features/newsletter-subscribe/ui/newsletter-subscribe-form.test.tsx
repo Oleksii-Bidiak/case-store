@@ -122,4 +122,61 @@ describe("NewsletterSubscribeForm", () => {
       await screen.findByText(dict.newsletterForm.rateLimited),
     ).toBeInTheDocument();
   });
+
+  // ── TASK-261: newsletter_subscribe analytics ───────────────────────────────
+  describe("newsletter_subscribe analytics", () => {
+    afterEach(() => {
+      delete window.umami;
+    });
+
+    it("reports newsletter_subscribe with the source after a successful subscribe", async () => {
+      const track = jest.fn();
+      window.umami = { track };
+      const user = userEvent.setup();
+      server.use(
+        http.post(SUBSCRIBE_URL, () =>
+          HttpResponse.json({ data: { subscribed: true } }),
+        ),
+      );
+
+      renderWithProviders(<NewsletterSubscribeForm source="home" />);
+
+      await user.type(
+        screen.getByRole("textbox", { name: dict.newsletterForm.emailLabel }),
+        "shopper@example.com",
+      );
+      await user.click(
+        screen.getByRole("button", { name: dict.newsletterForm.submit }),
+      );
+
+      await screen.findByText(dict.newsletterForm.success);
+      await waitFor(() =>
+        expect(track).toHaveBeenCalledWith("newsletter_subscribe", {
+          source: "home",
+        }),
+      );
+      expect(
+        track.mock.calls.filter(([name]) => name === "newsletter_subscribe"),
+      ).toHaveLength(1);
+    });
+
+    it("does not report newsletter_subscribe when client-side validation fails", async () => {
+      const track = jest.fn();
+      window.umami = { track };
+      const user = userEvent.setup();
+
+      renderWithProviders(<NewsletterSubscribeForm source="home" />);
+
+      await user.type(
+        screen.getByRole("textbox", { name: dict.newsletterForm.emailLabel }),
+        "not-an-email",
+      );
+      await user.click(
+        screen.getByRole("button", { name: dict.newsletterForm.submit }),
+      );
+
+      await screen.findByText(dict.newsletterForm.invalidEmail);
+      expect(track).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -17,6 +17,7 @@ import {
 } from "@/features/checkout";
 import { Button, CheckoutSkeleton, Textarea } from "@/shared/ui";
 import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
+import { trackEvent } from "@/shared/lib";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { CheckoutStepIndicator } from "./checkout-step-indicator";
 import { CheckoutPaymentStub } from "./checkout-payment-stub";
@@ -92,6 +93,18 @@ export function CheckoutView() {
 
   const items = data?.data?.items ?? [];
   const cartIsEmpty = isAuthenticated && !isCartLoading && items.length === 0;
+
+  // Analytics: report checkout start (funnel step 3) exactly once, after the
+  // auth/empty-cart guards have passed and the cart has loaded with ≥1 item. The
+  // ref guard keeps it from re-firing on later re-renders (e.g. form edits).
+  const beginCheckoutTracked = useRef(false);
+  useEffect(() => {
+    if (beginCheckoutTracked.current) return;
+    if (isAuthenticated && !isCartLoading && items.length > 0) {
+      beginCheckoutTracked.current = true;
+      trackEvent("begin_checkout", { itemCount: items.length });
+    }
+  }, [isAuthenticated, isCartLoading, items.length]);
 
   // Redirect unauthenticated visitors to login (once init has settled).
   useEffect(() => {

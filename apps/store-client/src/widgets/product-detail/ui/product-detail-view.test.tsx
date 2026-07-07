@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen } from "@/shared/test/render";
+import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { ProductDetailView } from "./product-detail-view";
 
@@ -115,5 +115,32 @@ describe("ProductDetailView — position model (TASK-142)", () => {
       "aria-pressed",
       "false",
     );
+  });
+
+  // TASK-261 — view_product analytics event.
+  it("reports view_product once with the slug and does not re-fire on re-render", async () => {
+    const track = jest.fn();
+    window.umami = { track };
+
+    const { rerender } = renderWithProviders(
+      <ProductDetailView slug="glass-blue-single" />,
+    );
+    await screen.findByRole("heading", {
+      name: "Tempered Glass — Blue Single",
+    });
+
+    await waitFor(() =>
+      expect(track).toHaveBeenCalledWith("view_product", {
+        slug: "glass-blue-single",
+      }),
+    );
+
+    // An unrelated re-render (same position id) must not re-fire the effect.
+    rerender(<ProductDetailView slug="glass-blue-single" />);
+    expect(
+      track.mock.calls.filter(([name]) => name === "view_product"),
+    ).toHaveLength(1);
+
+    delete window.umami;
   });
 });

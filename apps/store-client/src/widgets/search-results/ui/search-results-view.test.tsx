@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen } from "@/shared/test/render";
+import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { SearchResultsView } from "./search-results-view";
@@ -104,5 +104,41 @@ describe("SearchResultsView", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       dict.search.error,
     );
+  });
+
+  // ── TASK-261: search analytics ─────────────────────────────────────────────
+  describe("search analytics", () => {
+    afterEach(() => {
+      delete window.umami;
+    });
+
+    it("reports search with the query term for a non-empty query", async () => {
+      const track = jest.fn();
+      window.umami = { track };
+      server.use(
+        http.get("*/api/search", () =>
+          HttpResponse.json(resultsEnvelope([makeProduct()])),
+        ),
+      );
+
+      renderWithProviders(<SearchResultsView query="айфон" page={1} />);
+      await screen.findByText("iPhone 15 Case");
+
+      await waitFor(() =>
+        expect(track).toHaveBeenCalledWith("search", { query: "айфон" }),
+      );
+      expect(
+        track.mock.calls.filter(([name]) => name === "search"),
+      ).toHaveLength(1);
+    });
+
+    it("does not report search for a blank query (no search performed)", () => {
+      const track = jest.fn();
+      window.umami = { track };
+
+      renderWithProviders(<SearchResultsView query="" page={1} />);
+
+      expect(track).not.toHaveBeenCalled();
+    });
   });
 });

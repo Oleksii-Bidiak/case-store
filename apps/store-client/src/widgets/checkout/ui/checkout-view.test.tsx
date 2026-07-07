@@ -418,4 +418,41 @@ describe("CheckoutView", () => {
     expect(review).toHaveTextContent("Харків");
     expect(review).toHaveTextContent("Відділення №5");
   });
+
+  // ── TASK-261: begin_checkout analytics ─────────────────────────────────────
+  describe("begin_checkout analytics", () => {
+    afterEach(() => {
+      delete window.umami;
+    });
+
+    it("reports begin_checkout once with the cart item count after the cart loads", async () => {
+      const track = jest.fn();
+      window.umami = { track };
+      server.use(http.get("*/api/cart", () => HttpResponse.json(makeCart())));
+
+      renderWithProviders(<CheckoutView />, authed);
+      await screen.findByRole("heading", { name: dict.checkout.title });
+
+      await waitFor(() =>
+        expect(track).toHaveBeenCalledWith("begin_checkout", { itemCount: 1 }),
+      );
+      expect(
+        track.mock.calls.filter(([name]) => name === "begin_checkout"),
+      ).toHaveLength(1);
+    });
+
+    it("does not report begin_checkout for an unauthenticated visitor", async () => {
+      const track = jest.fn();
+      window.umami = { track };
+
+      renderWithProviders(<CheckoutView />, {
+        auth: { isAuthenticated: false, isInitializing: false },
+      });
+
+      await waitFor(() =>
+        expect(mockReplace).toHaveBeenCalledWith("/login?redirect=/checkout"),
+      );
+      expect(track).not.toHaveBeenCalled();
+    });
+  });
 });

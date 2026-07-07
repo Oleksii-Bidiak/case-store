@@ -1,11 +1,13 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useSearch } from "@/entities/search";
 import { ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { dict } from "@/shared/config";
+import { trackEvent } from "@/shared/lib";
 import { SearchResultsSkeleton } from "./search-results-skeleton";
 
 const PAGE_SIZE = 20;
@@ -41,6 +43,14 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
     { q: trimmed, page, limit: PAGE_SIZE },
     { query: { enabled } },
   );
+
+  // Analytics: report the search term once per distinct non-empty query. Keyed
+  // on `trimmed`, so paging through the same query does not re-fire, and the
+  // no-query state emits nothing.
+  useEffect(() => {
+    if (!enabled) return;
+    trackEvent("search", { query: trimmed });
+  }, [enabled, trimmed]);
 
   // No query yet — invite the shopper to search (no request fired).
   if (!enabled) {
