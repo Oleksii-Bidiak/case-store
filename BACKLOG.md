@@ -43,8 +43,8 @@
 
 ## Roadmap (Open)
 
-> Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-248**.
+> Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-273**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -61,7 +61,6 @@
 | --- | --- | --- | --- |
 | TASK-101 | Run [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md) to closure on a running stack; triage breakage into `fix/NNN` tasks. Owner pass 2026-07-03 → bugs TASK-195…212; **re-test 2026-07-04 green** (checkout/cancel/wishlist/coupons). TASK-124 matrix (§C2-a) run 2026-07-04 via API — all green; TASK-228/229/230 findings fixed same day; fix-wave 2026-07-05 closed TASK-199…212/227 (re-checks → manual-qa §6). Left: §4 (NP/SMTP/Sentry keys) + §6 | 🔄 | — |
 | TASK-105-D | Playwright E2E green 4/4 (2026-07-04): seed-e2e fixed (pg driver adapter, no ProductVariant model), cart-flow CTA selector fixed («Додати до кошика»), local runs serial | ✅ | 048 |
-| TASK-184 | Nav tails: footer «Інформація» links → `/info` + `/legal` (now point at `/products`); admin sidebar dead `Settings` link → `/settings/contact` | ⬜ | — |
 
 #### Баги з QA-проходу 2026-07-03 *(порядок = пріоритет; спершу CRITICAL)*
 
@@ -104,7 +103,6 @@
 | TASK-215 | Colour swatches: shared map extended (UA adjective stems + Apple finishes, longest-token-first); PDP colour axis renders round swatches with ring on selected; unknown → neutral gradient; all seed colours resolve (unit-locked) | ✅ | — |
 | TASK-216 | Catalog UX: «Показати ще N товарів» appends pages client-side (`?page=` stays the URL contract; reset on filter/sort/page change); «Категорія» moved to chips row above the grid; page-size selector dropped, virtualization deliberately skipped (no profiling data); per-category filters still ride on TASK-191 | ✅ | — |
 | TASK-217 | Move `/orders` into `/account` as a section — **waits for the owner's Claude Design mockup import** | 🅿️ | — |
-| TASK-218 | Header search: mixed suggestions — products + up to 5 blog articles with a separator, independently scrollable. Depends on TASK-170 | ⬜ | — |
 | TASK-219 | **[discovery]** Coupons v2 proposal: foundation = server-side applied-discount state (replaces sessionStorage), stacking via `combinesWith*`+priority, auto-apply, first-order, category scoping; gift cards as separate payment instrument; coverage pyramid incl. property-based rounding invariants | ✅ | 097 |
 | TASK-220 | **[discovery]** Reviews v2 proposal: status-enum moderation (replaces reject-as-delete), 48h edit window, `ReviewReply`; found bugs: verified-badge ignores order status, public entity leaks `userId`, PDP capped at 10 reviews with no pagination | ✅ | 098 |
 | TASK-221 | Structured working-hours editor (per-day rows, «вихідний» toggle, live preview) serializing to canonical string `Пн–Пт: 9:00–18:00; …` — contract unchanged (`workingHours` stays string); legacy free text preserved in raw mode | ✅ | — |
@@ -194,16 +192,79 @@
 | TASK-246 | `SiteContactSettings` writes don't trigger `RevalidationNotifier` (pre-existing gap; the new SeoSettings/FaqItem modules wire it from day one). Add a revalidation tag on the site-contact admin write so footer/contact + Organization `sameAs` refresh without a redeploy. **Done:** `SiteContactService` injects `RevalidationNotifier` (from `@Global()` PublishingModule — no module import needed) and `updateSettings()` purges the `site-contact` tag after the upsert (mirrors `SeoSettingsService`); storefront `site-contact-server.ts` fetch tagged `site-contact` alongside the 1h ISR floor; service spec asserts the revalidate call. store-api + store-client typecheck/lint clean, site-contact spec 3/3 green | ✅ | 117 |
 | TASK-247 | Surface `Category.metaTitle`/`metaDescription` on the public category read so `resolveSeo()` uses the admin override as tier-1 for the category-filtered `/products` listing (TASK-240 currently only content-derives from name/description — the override columns aren't exposed to the storefront yet). **Done:** `CategoryTreeNodeEntity` gains `metaTitle`/`metaDescription` (`@ApiProperty` matching `CategoryEntity`) mapped in `fromPrisma` at every nesting level (root + recursive children); `findCategoryTree` already uses `include` (full rows) so no `select`/query change (pinned by a repo test). Orval regen → generated `CategoryTreeNodeEntity` model has both nullable fields; storefront `products/page` `generateMetadata` passes `entityTitle: node.metaTitle`/`entityDescription: node.metaDescription` into `resolveSeo` (tier-1 override now wins), stale "not surfaced yet" comment removed. Tests: category repo (tree-fetch round-trips both fields root+child, guards against a `select` regression) + service (surfaces both, missing→null) + storefront `resolveSeo` call-site (metaTitle wins over content-derived name, verbatim/unbranded). store-api + store-client typecheck/lint green; store-api category specs 43, store-client unit 148 | ✅ | 117 |
 
+### Етап 6 — Доробки після Етапу 5 (CRM, аналітика, контент/SEO-зручність, адаптив, CI/CD)
+
+> Program from `docs/handoff-2026-07-07.md` (develop @ 847a1fb, 2026-07-07). Rows follow the
+> handoff's «Рекомендований порядок виконання» (5 хвиль). Each row tags source **Block**
+> (A CRM-dashboard · B functional gaps · C pre-launch · D responsive/design · E analytics-Umami ·
+> F content-map · G SEO-UX · H CI/CD) and **severity** (H/M/L). Owner priority (2026-07-07):
+> ① CRM + analytics(E) + CI/CD(H) → ② functional gaps → ③ pre-launch → ④ responsive/design;
+> exception: TASK-257 (admin mobile shell) is H — owner manages the panel from a phone. Existing
+> IDs 169/178/179/184/218 relocated here unchanged in number. Each task still gets a
+> `docs/plans/NNN-*.md` via `/planer` before implementation.
+
+#### Хвиля 1 — CRM-ядро + quick-win контент-мапа + мобільний доступ
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-248 | [A/H] «Потребує дії» dashboard widget + sidebar count badges (new orders PENDING, reviews awaiting moderation `isActive=false`, unpaid in-transit, `MailOutbox.FAILED`); extend `GET /admin/dashboard/summary` with COUNT aggregates (no N+1); reuse `useAdminContactUnreadCount` badge pattern; counters deep-link to filtered sections + invalidate after mutations | ⬜ | — |
+| TASK-249 | [A/H] Dashboard metrics v2 — unreceived «in-transit» revenue (absorbs TASK-137/plan 083, +2 `RevenueMetricsDto` fields), AOV 30d, repeat-buyer % (all-time + 90d), last-5-orders table; revenue ground truth `paymentStatus=PAID`; unit-test formulas (repeat-rate excludes CANCELLED), skeletons + plain-UA tooltips | ⬜ | — |
+| TASK-250 | [A/H] Order lifecycle preset tabs on `/orders` — Нові (PENDING) / В обробці (CONFIRMED+PROCESSING) / Відправлені (SHIPPED) / Всі over existing `?status=`, no new API, deep-link URL contract preserved | ⬜ | — |
+| TASK-264 | [F/H] «Карта контенту» `/content-map` (sidebar «Де що на сайті») — static schematic of storefront pages → placement zones (HERO_SLIDE/PROMO_TILE/ANNOUNCEMENT_BAR/FAQ/Pages/contacts/SEO) linking to admin sections (pre-filtered by placement), active-count + shown/hidden marker per zone; FSD widget, CSS diagrams (no screenshots); ≤2 clicks to any editable text/image | ⬜ | — |
+| TASK-257 | [D/H] Admin mobile shell (owner manages from phone) — `<lg` sidebar → shadcn `Sheet` drawer + burger in `AdminHeader`, close-on-navigate (TASK-204 pattern); header fits 360–430px; `main p-4 lg:p-6`; TASK-248 count badges visible in drawer; smoke 360/390/768/1024, no page horizontal scroll | ⬜ | — |
+
+#### Хвиля 2 — Деплой (staging рано) + аналітика паралельно
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-270 | [H/H] Prod packaging — multi-stage Dockerfiles for store-api/client/admin (Next standalone; API prisma-generate on build, non-root); `docker-compose.prod.yml` (3 apps + Postgres/Redis/Meili + Umami + Caddy/Nginx reverse-proxy, вітрина/`admin.`/`api.` domains); healthchecks + volumes (Postgres/Meili/uploads survive redeploy); `.env.production.example`; smoke home/admin-login/create-order | ⬜ | — |
+| TASK-271 | [H/H] Staging deploy (after 270) — GitHub Actions: push develop (green CI) → build → GHCR → SSH staging → `compose pull && up -d` → `prisma migrate deploy` → curl health; secrets in `staging` Environment; concurrency group; result notice; runbook `docs/deploy.md` (logs/restart/rollback) in plain UA | ⬜ | — |
+| TASK-261 | [E/H] Umami self-hosted — `docker-compose` service (postgres-image, `umami` DB) + `.env.example`; storefront `next/script` afterInteractive, dev-off, prod-Helmet CSP allow; e-commerce events via `shared/lib/analytics.ts` facade (view_product/add_to_cart/begin_checkout/purchase/search/newsletter_subscribe); configure funnel; storefront works without Umami env | ⬜ | — |
+
+#### Хвиля 3 — Функціональні прогалини + SEO-зручність
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-253 | [B/H] Stock phase S (no schema change) — rename «Запас»→«Вільний залишок» in admin dictionary + tooltip; low-stock widget drops `gt:0` and shows sold-out (`stock=0`) on top with «Розпродано» badge; manual-qa §C2-a wording | ⬜ | — |
+| TASK-184 | [B/H] Nav dead links (quick-win) — admin sidebar `Settings` `href="#"` → `/settings/contact` (or remove); storefront footer «Інформація» 4 links (currently → `/products`) → real `/legal/*`, `/info`, `/contact` (overlaps F-17) | ⬜ | — |
+| TASK-254 | [B/M] Stock phase M — derived reserved: OrderItem groupBy pre-ship statuses (PENDING/CONFIRMED/PROCESSING) in admin product repo → `reservedQty`/`physicalQty` in admin contract only (Swagger+Orval; public contract untouched); «Вільно/Резерв/Фізично» column + product-form; `/orders/[id]` holds-stock badge + `restockedAt`; unit-test derivation (revive, soft-deleted, SHIPPED excluded) | ⬜ | — |
+| TASK-267 | [B/M] Stub audit — inventory every non-working storefront UI (cart add-ons TASK-174, account loyalty/notifications TASK-175, compare TASK-085, quick-view TASK-086, social login TASK-168, social `#` links F-18…); per item decide hide-until-built (default) or build; table in plan, hides as small commits | ⬜ | — |
+| TASK-268 | [G/M] SERP preview for meta fields (product/category/pages/`/settings/seo`) — live Google snippet under fields (title via `%s \| brand`, green URL, truncated desc), char counters (title ~60 / desc ~160) + «blank = auto» hint (matches `resolveSeo()`); one shared `seo-snippet-preview` in admin shared/ui | ⬜ | — |
+| TASK-269 | [G/M] «SEO-здоров'я» page/section on `/settings/seo` — auto checklist: products/categories/pages without own metaTitle («автоматично», not error), SeoSettings defaults filled, global noindex (RED warning if ON), links to sitemap/robots/llms.txt; one light COUNT endpoint | ⬜ | — |
+
+#### Хвиля 4 — Передзапускові фічі + решта CRM
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-169 | [C/H] Password reset (activated from parked) — request endpoint + emailed token via mail-outbox + reset form (auth slide-out stub exists); TDD (critical auth module) | ⬜ | — |
+| TASK-178 | [C/M] «Купити в 1 клік» express order — remaining backend slice (name+phone), rate-limited public endpoint per `POST /api/contact` (specs/compat moved to TASK-190/191) | ⬜ | — |
+| TASK-179 | [C/M] Promo page logic — public active-discounts feed + server `onSale` filter on `GET /products` (pairs with bestsellers TASK-164; newsletter part in TASK-188) | ⬜ | — |
+| TASK-251 | [A/M] `OrderStatusHistory` (orderId, fromStatus, toStatus, changedAt, changedBy) written transactionally on every status/paymentStatus change; order timeline on `/orders/[id]`; «>48h in PENDING» indicator + «Потребує дії» row; processing-speed stat; TDD incl. revive/`restockedAt` | ⬜ | — |
+| TASK-252 | [A/M] Customer card v1 on `/users/[id]` — LTV (`SUM(Order.total) WHERE paymentStatus=PAID`), order count + linked orders, user reviews, redeemed coupons (`DiscountRedemption.userId`), contact-inbox by email; single enriched admin endpoint (no waterfall); notes/tags deferred (note in plan) | ⬜ | — |
+
+#### Хвиля 5 — Адаптив/дизайн + прев'ю контенту + хвости
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-258 | [D/M] Mobile admin tables & forms — card/column-priority layout on `<md` (orders→products→messages→reviews); single-column forms + sticky submit; full-height dialogs/sheets; dashboard 1-col + recharts responsive; build one shared primitive first (per TASK-140) | ⬜ | — |
+| TASK-259 | [D/M] Storefront UX audit top-10 (plan 103 §6) — F-01 focus rings, F-02 carousel pause+reduced-motion, F-03 button-cursor policy, F-04/05/06 dark-theme pack (F-06 owner decision), F-16 promo in mobile Sheet, F-17/18 placeholder links (w/ TASK-184), F-11…14 a11y strings→UA, F-19 2-col mobile catalog, F-20/F-09 44px targets, F-15 `aria-describedby` | ⬜ | — |
+| TASK-265 | [F/M] Live banner preview in `banner-form` — renders banner in its placement (HERO_SLIDE/PROMO_TILE/PROMO_BANNER/ANNOUNCEMENT_BAR), live from form fields; no store-client imports (rebuild simplified presentation OR iframe draft-preview — decide in `/planer`, default rebuild); mobile/desktop size toggle | ⬜ | — |
+| TASK-266 | [F/M] Page/blog preview beside editor — `page-form`/`blog-post-form` preview tab/split of sanitized HTML in storefront typography; product preview already exists (`/products/preview/[slug]`) → add prominent «Переглянути як на сайті» button if missing | ⬜ | — |
+| TASK-255 | [B/L] Admin identity in header — `AdminHeader` shows generic «Admin» (JWT carries only `{sub, role}`); light profile-fetch (email) on session bootstrap, fallback «Admin» on error | ⬜ | — |
+| TASK-256 | [B/L] Contact inbox — add `ContactMessage.status = IN_PROGRESS` between NEW/CLOSED; match messages to `User` by email → show in customer card (TASK-252) + profile link from `/messages` | ⬜ | — |
+| TASK-218 | [C/L] Header search mixed suggestions — products + up to 5 blog articles with separator, independently scrollable (unblocked by TASK-170 ✅) | ⬜ | — |
+| TASK-260 | [D/L] Lint rule against arbitrary Tailwind values (F-21) — 242 `text-[Npx]`-style entries in 61 files; ESLint/tailwind rule blocking new arbitrary values, existing reduced to the scale opportunistically | ⬜ | — |
+| TASK-262 | [E/M] Traffic mirror in admin dashboard (after 261) — min: «Відвідуваність → open Umami» card; max (only if owner asks): 2–3 numbers via Umami API; do NOT rebuild Umami's charts | ⬜ | — |
+| TASK-263 | [E/L] «Аналітика» section in `docs/admin-guide.md` — plain-UA: visits/unique/conversion/funnel, reading the Umami funnel, which events we send, why Umami numbers ≠ order numbers | ⬜ | — |
+| TASK-272 | [H/H] Production deploy (after 271 rehearsal) — same pipeline on push `main` + manual approval via `production` Environment (owner reviewer); dated `pg_dump` pre-migrate + nightly cron (14d retention); post-deploy revalidate + Meili reindex (closes manual-qa §6/TASK-200); full cycle + one rehearsed rollback | ⬜ | — |
+
 ### Пізніша хвиля
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
 | TASK-174 | Add-on services / protection plans: catalog + per-product applicability + cart/order persistence + admin (cart UI stub exists) | ⬜ | — |
 | TASK-175 | Loyalty & account extras: points/cashback model + accrual/redeem API + purchases feed + persisted notification prefs (account UI stubs exist) | ⬜ | — |
-| TASK-169 | Password reset: request endpoint + emailed token + reset form (auth slide-out stub; uses mail-outbox) | 🅿️ | — |
 | TASK-168 | Social sign-in (Google/Apple OAuth): backend OAuth module + account linking (auth slide-out stubs) | 🅿️ | — |
-| TASK-178 | «Купити в 1 клік» express order (name+phone quick-order backend) — remaining slice; specs + compat parts moved to TASK-191/190 | ⬜ | — |
-| TASK-179 | Promo page logic: public active-discounts feed + `onSale` server filter (pairs with TASK-164); newsletter part moved to TASK-188 | ⬜ | — |
 | TASK-080-E | Admin-configurable NP dispatch origin (`DeliverySetting`) — deferred until real NP API key + running DB (owner decision 2026-06-27) | 🅿️ | 068 |
 
 ### Parked
@@ -230,6 +291,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-248**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-273**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
