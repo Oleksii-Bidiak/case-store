@@ -27,6 +27,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatCurrency } from "@/shared/lib";
@@ -44,6 +47,29 @@ const STATUS_FILTER_OPTIONS = [
   OrderEntityStatus.CANCELLED,
   OrderEntityStatus.REFUNDED,
 ];
+
+/**
+ * Lifecycle preset tabs (TASK-250) — a quick-access layer over the existing
+ * `?status=` param. "В обробці" is a multi-status filter (`CONFIRMED,PROCESSING`),
+ * only valid because the admin endpoint accepts a CSV `status` param. Each `value`
+ * is written verbatim to the URL; "Всі" clears the filter (`value: ""`).
+ */
+const STATUS_TABS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: OrderEntityStatus.PENDING, label: dict.orders.tabNew },
+  {
+    value: `${OrderEntityStatus.CONFIRMED},${OrderEntityStatus.PROCESSING}`,
+    label: dict.orders.tabProcessing,
+  },
+  { value: OrderEntityStatus.SHIPPED, label: dict.orders.tabShipped },
+  { value: "", label: dict.orders.tabAll },
+];
+
+/**
+ * Radix `Tabs.Root` value used when the current `?status=` doesn't match any
+ * preset (e.g. a `DELIVERED` deep link or a single `CONFIRMED` from the Select):
+ * it matches no `TabsTrigger`, so no tab renders active — the honest state.
+ */
+const CUSTOM_TAB = "__custom__";
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
@@ -87,9 +113,10 @@ export function AdminOrderTable() {
     useAdminOrderControllerFindAll({
       page,
       limit: PAGE_SIZE,
-      status: statusParam
-        ? (statusParam as (typeof OrderEntityStatus)[keyof typeof OrderEntityStatus])
-        : undefined,
+      // The generated `status` param is a plain string (CSV) since TASK-250, so
+      // single (`PENDING`) and multi (`CONFIRMED,PROCESSING`) values pass straight
+      // through — no enum cast needed.
+      status: statusParam || undefined,
       sortBy,
       sortOrder,
     });
@@ -104,8 +131,28 @@ export function AdminOrderTable() {
     });
   };
 
+  // The active preset tab is the one whose value exactly matches the current
+  // `?status=` string; otherwise CUSTOM_TAB → no tab renders active.
+  const activeTab = STATUS_TABS.some((tab) => tab.value === statusParam)
+    ? statusParam
+    : CUSTOM_TAB;
+
+  const handleTabChange = (value: string) => {
+    updateParams({ status: value || undefined, page: undefined });
+  };
+
   return (
     <div className="flex flex-col gap-4">
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList aria-label={dict.orders.tabsAria}>
+          {STATUS_TABS.map((tab) => (
+            <TabsTrigger key={tab.value || "all"} value={tab.value}>
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
       <div className="flex items-center gap-2">
         <Select
           value={statusParam || ALL_OPTION}
