@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useNewsletterControllerSubscribe } from "@/entities/newsletter";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
+import { trackEvent } from "@/shared/lib";
 import {
   newsletterSchema,
   type NewsletterFormValues,
@@ -55,7 +56,14 @@ export function NewsletterSubscribeForm({
   const onSubmit = (values: NewsletterFormValues) => {
     subscribe.mutate(
       { data: { email: values.email, source } },
-      { onSuccess: () => reset({ email: "" }) },
+      {
+        onSuccess: () => {
+          reset({ email: "" });
+          // Analytics: report the subscription, tagged with the form's optional
+          // attribution source when present.
+          trackEvent("newsletter_subscribe", source ? { source } : undefined);
+        },
+      },
     );
   };
 

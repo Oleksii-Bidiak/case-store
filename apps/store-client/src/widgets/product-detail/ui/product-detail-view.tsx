@@ -8,7 +8,7 @@ import { useProductControllerFindBySlug } from "@/entities/product";
 import { pushRecentlyViewed } from "@/widgets/recently-viewed";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
-import { formatMoney } from "@/shared/lib";
+import { formatMoney, trackEvent } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { RatingStars } from "@/shared/ui";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
@@ -55,6 +55,9 @@ export function ProductDetailView({ slug }: { slug: string }) {
       name: viewed.name,
       slug: viewed.slug,
     });
+    // Analytics: report the product view (funnel step 1). Keyed on the same
+    // viewed.id, so switching sibling positions re-fires once per position.
+    trackEvent("view_product", { slug: viewed.slug });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewed?.id]);
 
