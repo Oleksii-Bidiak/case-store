@@ -675,7 +675,9 @@ describe('OrderController (e2e)', () => {
 
       expect(orderRepositoryMock.findAll).toHaveBeenCalledWith(
         expect.objectContaining({
-          status: OrderStatus.SHIPPED,
+          // TASK-250: admin order `status` is now multi-value — a single
+          // `?status=SHIPPED` is transformed to a one-element array.
+          status: [OrderStatus.SHIPPED],
           userId: filterUserId,
           dateFrom: '2026-01-01',
         }),
