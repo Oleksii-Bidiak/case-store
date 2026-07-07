@@ -889,12 +889,35 @@ push` на `store_dev` + `store_test` (таблиця `brands` + `products.brand
       фільтром); власник з нульовим досвідом знаходить, де редагується будь-який видимий елемент,
       за **≤2 кліки**.
 
-## 16. Етап 6 — Хвиля 2 (staging-деплой): TASK-271
+## 16. Етап 6 — Хвиля 2 (staging-деплой + аналітика): TASK-270 / 271 / 261
 
-> Пайплайн `deploy-staging` (у `.github/workflows/ci.yml`) і ранбук `docs/deploy.md`
-> написані й провалідовані офлайн (YAML коректний, шляхи/імена сервісів звірені з
-> `docker-compose.prod.yml`, Dockerfile'ами й `Caddyfile`). **Перший реальний деплой —
-> це і є ручна перевірка нижче.** До неї staging не існує, тож задача запускатись не буде.
+> **Локально вже перевірено** (не потребувало стенду): typecheck/lint/build усіх трьох
+> застосунків зелені; `next build` дає standalone-вихід зі шляхами, що збігаються з
+> Dockerfile'ами (`.next/standalone/apps/<app>/server.js`); `docker compose -f
+docker-compose.prod.yml config` валідний; Umami-фасад покрито юніт-тестами (no-op без
+> env + усі 6 подій); пайплайн `deploy-staging` провалідований офлайн (YAML коректний,
+> імена сервісів/шляхи звірені). Нижче — те, що потребує **живого Docker-демона / VPS /
+> реального стенду Umami**. Реальний білд образів локально не робили (обмеження диску).
+
+### TASK-270 — прод-образи на живому Docker
+
+- [ ] **Збірка трьох образів.** **Зроби:** на машині з Docker (бажано чиста VM) —
+      `docker build -f apps/store-api/Dockerfile -t store-api .`, і так само для
+      `store-client`/`store-admin` (з `--build-arg NEXT_PUBLIC_API_URL=…` тощо).
+      store-client/admin потребують `apps/store-api/swagger.json` у контексті — згенеруй
+      його перед білдом (`npm run swagger:export -w apps/store-api`). **Має бути:** усі три
+      образи збираються; контейнери стартують під non-root. **Особлива увага:** store-api на
+      alpine — перевір, що нативні `argon2`/`sharp`/`prisma` (musl) збираються без
+      node-gyp-помилок.
+- [ ] **`docker compose -f docker-compose.prod.yml up` — smoke.** **Зроби:** заповни
+      `.env.production` з прикладу, підніми стек, зайди на вітрину (home), залогінься в
+      адмінку, створи замовлення. **Має бути:** усі сервіси healthy; home/логін/створення
+      замовлення працюють; Caddy віддає HTTPS (локально — internal CA).
+- [ ] **Persistence.** **Зроби:** `docker compose … down` (без `-v`), потім `up -d` знову.
+      **Має бути:** товари/зображення/індекс на місці — volumes Postgres/Meili/uploads
+      пережили редеплой.
+
+### TASK-271 — реальний staging-деплой
 
 - [ ] **TASK-271 — перша підготовка сервера + перший авто-деплой.** **Зроби:** пройди
       `docs/deploy.md` §7 (орендуй VPS, встанови Docker, `/opt/store-ai`, SSH-ключ,
@@ -905,10 +928,9 @@ push` на `store_dev` + `store_test` (таблиця `brands` + `products.brand
       Summary — коміт, тег `staging-<SHA>` і три посилання; `https://api.<домен>/health`
       → **200**, вітрина й адмінка відкриваються; в Environments → `staging` з'явився запис.
 - [ ] **TASK-271 — `prisma db push` наживо.** **Зроби:** після першого деплою глянь лог
-      кроку **Deploy on staging**. **Має бути:** `db push` відпрацював без «prisma: not
-      found» (образ або має CLI, або його підтягнув `npx --yes prisma@7`). Якщо впав —
-      див. `docs/deploy.md` «Якщо db push впав» і, за потреби, заведи `fix/NNN` на внесення
-      `prisma` у прод-залежності образу `store-api` (Dockerfile з TASK-270).
+      кроку **Deploy on staging**. **Має бути:** `db push` відпрацював без помилок — образ
+      `store-api` містить CLI `prisma` (він у прод-залежностях, версія запечена в образ), тож
+      запускається локальний бінарник без завантаження з мережі й від non-root користувача.
 - [ ] **TASK-271 — навчальний відкат.** **Зроби:** пройди `docs/deploy.md` §5 —
       залогінься у GHCR персональним токеном (`read:packages`), підніми **попередній**
       `staging-<SHA>`, звір `docker compose … images`. **Має бути:** стек піднявся на
@@ -918,3 +940,18 @@ push` на `store_dev` + `store_test` (таблиця `brands` + `products.brand
       Actions (мережі під час авторингу не було). **Має бути:** кроки **Copy deploy files**
       і **Deploy on staging** проходять; інакше — онови тег на актуальний і, за бажання,
       запінь на конкретний commit-SHA дії.
+
+### TASK-261 — Umami на стенді
+
+- [ ] **Події видно в Umami.** **Зроби:** підніми Umami (`docker compose up -d umami`),
+      створи website, підстав `NEXT_PUBLIC_UMAMI_SRC`/`NEXT_PUBLIC_UMAMI_WEBSITE_ID` у
+      вітрину, вимкни ад-блокер і пройди PDP → додати в кошик → checkout → confirmation,
+      плюс пошук і підписку на розсилку. **Має бути:** у Umami → Events усі 6 подій
+      (`view_product`, `add_to_cart`, `begin_checkout`, `purchase` із сумою, `search`,
+      `newsletter_subscribe`).
+- [ ] **Воронка.** **Зроби:** Umami → Reports → Funnel, кроки
+      `view_product → add_to_cart → begin_checkout → purchase` (клік-шлях у
+      `docs/admin-guide.md`, розділ «Аналітика»). **Має бути:** воронка збережена, крок 1
+      має ненульове значення.
+- [ ] **Без Umami-env.** **Зроби:** відкрий вітрину з порожніми Umami-змінними, глянь
+      консоль браузера. **Має бути:** жодних нових помилок; скрипт Umami не підключається.
