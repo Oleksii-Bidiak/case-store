@@ -11,6 +11,7 @@ import {
   useAdminReviewControllerList,
   useAdminReviewControllerReject,
 } from "@/entities/review";
+import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
 import {
   Button,
   Select,
@@ -112,10 +113,16 @@ export function AdminReviewTable() {
   const totalPages = data?.meta?.totalPages ?? 1;
   const isPending = statusParam === AdminReviewControllerListStatus.pending;
 
-  const invalidateList = () =>
-    queryClient.invalidateQueries({
+  const invalidateList = () => {
+    void queryClient.invalidateQueries({
       queryKey: getAdminReviewControllerListQueryKey(),
     });
+    // TASK-248: approving/rejecting changes the pending-reviews counter, so
+    // refresh the needs-action widget + sidebar badge too.
+    void queryClient.invalidateQueries({
+      queryKey: getAdminDashboardControllerGetNeedsActionQueryKey(),
+    });
+  };
 
   const handleApprove = (id: string) => {
     approve.mutate(

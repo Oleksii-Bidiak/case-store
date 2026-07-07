@@ -251,6 +251,16 @@ export class OrderRepository {
       ...(query.dateFrom || query.dateTo ? { createdAt } : {}),
     };
 
+    // TASK-248: active-but-unpaid ("in-transit") deep-link filter — the same
+    // compound condition as DashboardRepository's unrealized-revenue figure
+    // (paymentStatus != PAID AND status NOT IN (CANCELLED, REFUNDED)). Additive:
+    // composes with the userId/date-range conditions above; only applied when the
+    // flag is explicitly true.
+    if (query.unpaidInTransit) {
+      where.paymentStatus = { not: PaymentStatus.PAID };
+      where.status = { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] };
+    }
+
     // Allow-listed sort (TASK-147). The DTO `@IsIn` already rejects unknown
     // fields at the API boundary; this fallback is a defensive default. NOTE:
     // `status` sorts by the enum's alphabetical order in Postgres, not by

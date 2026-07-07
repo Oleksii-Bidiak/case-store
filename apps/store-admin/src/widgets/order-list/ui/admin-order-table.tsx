@@ -62,6 +62,10 @@ export function AdminOrderTable() {
   const searchParams = useSearchParams();
 
   const statusParam = searchParams.get("status") ?? "";
+  // TASK-248 deep-link: `?unpaidInTransit=true` filters to active-but-unpaid
+  // orders (the needs-action widget's target). The status <Select> has no option
+  // for this compound preset — reconciling it is deferred to TASK-250's tabs.
+  const unpaidInTransit = searchParams.get("unpaidInTransit") === "true";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
 
   const updateParams = (next: Record<string, string | undefined>) => {
@@ -90,6 +94,7 @@ export function AdminOrderTable() {
       status: statusParam
         ? (statusParam as (typeof OrderEntityStatus)[keyof typeof OrderEntityStatus])
         : undefined,
+      unpaidInTransit: unpaidInTransit || undefined,
       sortBy,
       sortOrder,
     });

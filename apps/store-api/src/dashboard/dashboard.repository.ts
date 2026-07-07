@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { MailOutboxStatus, OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import {
   DASHBOARD_WINDOW_DAYS,
@@ -9,6 +9,7 @@ import {
   type DailyDataPoint,
   type DashboardSummary,
   type LowStockProduct,
+  type NeedsAction,
   type OrderStatusCount,
   type TopProduct,
 } from './dashboard.types';
@@ -148,6 +149,22 @@ export class DashboardRepository {
   }
 
   /**
+   * The "active but unpaid" order predicate — `paymentStatus != PAID` AND
+   * `status NOT IN (CANCELLED, REFUNDED)`. Single source of truth for the
+   * receivable-pipeline filter, shared by `getUnrealizedRevenue`,
+   * `getUnrealizedRevenueSince`, and the `unpaidInTransit` needs-action count
+   * (TASK-248) so the three never drift apart. Private to this repository —
+   * `OrderRepository.findAll()`'s own `unpaidInTransit` filter is written
+   * independently (no cross-module `dashboard`→`order` dependency).
+   */
+  private unrealizedOrderWhere(): Prisma.OrderWhereInput {
+    return {
+      paymentStatus: { not: PaymentStatus.PAID },
+      status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+    };
+  }
+
+  /**
    * Unrealized (pending-payment) revenue: sum of `Order.total` for orders that
    * are still active but not yet paid — `paymentStatus != PAID` AND `status NOT
    * IN (CANCELLED, REFUNDED)`. This is the receivable pipeline, the complement to
@@ -156,10 +173,7 @@ export class DashboardRepository {
   private async getUnrealizedRevenue(): Promise<number> {
     const result = await this.prisma.order.aggregate({
       _sum: { total: true },
-      where: {
-        paymentStatus: { not: PaymentStatus.PAID },
-        status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
-      },
+      where: this.unrealizedOrderWhere(),
     });
     return Number(result._sum.total ?? 0);
   }
@@ -168,13 +182,29 @@ export class DashboardRepository {
   private async getUnrealizedRevenueSince(since: Date): Promise<number> {
     const result = await this.prisma.order.aggregate({
       _sum: { total: true },
-      where: {
-        paymentStatus: { not: PaymentStatus.PAID },
-        status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
-        createdAt: { gte: since },
-      },
+      where: { ...this.unrealizedOrderWhere(), createdAt: { gte: since } },
     });
     return Number(result._sum.total ?? 0);
+  }
+
+  /**
+   * "Needs action" counters for the dashboard widget + sidebar badges
+   * (TASK-248). Four independent COUNT reads run in a single `Promise.all` —
+   * no N+1, no joins, mirroring the `getSummary()` parallelization style:
+   *   - `newOrders`       — orders awaiting confirmation (`status = PENDING`)
+   *   - `pendingReviews`  — reviews awaiting moderation (`isActive = false`,
+   *                         matching `ReviewRepository.findForModeration('pending')`)
+   *   - `unpaidInTransit` — active-but-unpaid orders ({@link unrealizedOrderWhere})
+   *   - `failedMails`     — outbox rows permanently failed (`status = FAILED`)
+   */
+  async getNeedsAction(): Promise<NeedsAction> {
+    const [newOrders, pendingReviews, unpaidInTransit, failedMails] = await Promise.all([
+      this.prisma.order.count({ where: { status: OrderStatus.PENDING, deletedAt: null } }),
+      this.prisma.review.count({ where: { isActive: false } }),
+      this.prisma.order.count({ where: this.unrealizedOrderWhere() }),
+      this.prisma.mailOutbox.count({ where: { status: MailOutboxStatus.FAILED } }),
+    ]);
+    return { newOrders, pendingReviews, unpaidInTransit, failedMails };
   }
 
   /** Order counts grouped by status. */

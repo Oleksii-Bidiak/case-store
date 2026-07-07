@@ -24,6 +24,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAdminContactUnreadCount } from "@/entities/contact";
+import { useAdminDashboardControllerGetNeedsAction } from "@/entities/dashboard";
 import { Badge } from "@/shared/ui";
 import { Separator } from "@/shared/ui/separator";
 import { cn } from "@/shared/lib/utils";
@@ -74,6 +75,13 @@ export function AdminSidebar() {
   const { data: unreadData } = useAdminContactUnreadCount();
   const unread = unreadData?.data?.unread ?? 0;
 
+  // Needs-action counters (TASK-248) — same shared query key the dashboard
+  // widget reads, so both refetch from one cache entry. Drives the count badges
+  // next to «Замовлення» (new orders) and «Відгуки» (reviews awaiting moderation).
+  const { data: needsActionData } = useAdminDashboardControllerGetNeedsAction();
+  const newOrders = needsActionData?.data?.newOrders ?? 0;
+  const pendingReviews = needsActionData?.data?.pendingReviews ?? 0;
+
   return (
     <aside className="flex h-screen w-64 flex-col border-r border-border bg-card shadow-card">
       {/* Brand */}
@@ -111,6 +119,26 @@ export function AdminSidebar() {
                   className="ml-auto"
                 >
                   {unread}
+                </Badge>
+              )}
+              {item.href === "/orders" && newOrders > 0 && (
+                <Badge
+                  variant={active ? "secondary" : "default"}
+                  aria-label={dict.dashboard.newOrdersBadgeAria(newOrders)}
+                  className="ml-auto"
+                >
+                  {newOrders}
+                </Badge>
+              )}
+              {item.href === "/reviews" && pendingReviews > 0 && (
+                <Badge
+                  variant={active ? "secondary" : "default"}
+                  aria-label={dict.dashboard.pendingReviewsBadgeAria(
+                    pendingReviews,
+                  )}
+                  className="ml-auto"
+                >
+                  {pendingReviews}
                 </Badge>
               )}
             </Link>

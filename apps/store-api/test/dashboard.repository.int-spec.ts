@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { MailOutboxStatus, OrderStatus, PaymentStatus } from '@prisma/client';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
 import { LOW_STOCK_THRESHOLD } from '../src/dashboard/dashboard.types';
 import { PrismaService } from '../src/prisma';
@@ -220,6 +220,97 @@ describe('DashboardRepository (integration)', () => {
       const stocks = products.map((p) => p.stock);
       const sorted = [...stocks].sort((a, b) => a - b);
       expect(stocks).toEqual(sorted);
+    });
+  });
+
+  /**
+   * getNeedsAction runs four COUNT reads over live tables (TASK-248). This block
+   * clears orders/reviews/mail to a deterministic baseline (it runs last, after
+   * the getSummary assertions above), seeds one of each in/out-of-scope row, and
+   * asserts every counter is exact. Reuses the module-scope user/products for FKs.
+   */
+  describe('getNeedsAction', () => {
+    beforeAll(async () => {
+      // Deterministic baseline — wipe every table the four counters read.
+      await prisma.orderItem.deleteMany({});
+      await prisma.order.deleteMany({});
+      await prisma.review.deleteMany({});
+      await prisma.mailOutbox.deleteMany({});
+
+      // Orders: 1 PENDING (new + in-transit), 1 CONFIRMED-unpaid (in-transit),
+      // 1 CANCELLED-unpaid (excluded from both counters).
+      await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.PENDING,
+          paymentStatus: PaymentStatus.PENDING,
+          subtotal: '10.00',
+          total: '10.00',
+        },
+      });
+      await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.PENDING,
+          subtotal: '20.00',
+          total: '20.00',
+        },
+      });
+      await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.CANCELLED,
+          paymentStatus: PaymentStatus.PENDING,
+          subtotal: '30.00',
+          total: '30.00',
+        },
+      });
+
+      // Reviews: 1 awaiting moderation (isActive: false), 1 approved (excluded).
+      // Unique per (userId, productId), so two distinct products.
+      await prisma.review.create({
+        data: { userId, productId: paidProductId, rating: 4, isActive: false },
+      });
+      await prisma.review.create({
+        data: { userId, productId: unpaidProductId, rating: 5, isActive: true },
+      });
+
+      // Mail outbox: 1 FAILED (counted), 1 SENT (excluded).
+      await prisma.mailOutbox.create({
+        data: {
+          type: 'ORDER_CONFIRMATION',
+          recipient: 'buyer@test.local',
+          payload: {},
+          status: MailOutboxStatus.FAILED,
+        },
+      });
+      await prisma.mailOutbox.create({
+        data: {
+          type: 'ORDER_CONFIRMATION',
+          recipient: 'buyer@test.local',
+          payload: {},
+          status: MailOutboxStatus.SENT,
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.review.deleteMany({});
+      await prisma.mailOutbox.deleteMany({});
+    });
+
+    it('counts PENDING orders, unmoderated reviews, in-transit orders, and failed mail exactly', async () => {
+      const needsAction = await repo.getNeedsAction();
+
+      // Only the PENDING order.
+      expect(needsAction.newOrders).toBe(1);
+      // Only the isActive: false review.
+      expect(needsAction.pendingReviews).toBe(1);
+      // PENDING + CONFIRMED-unpaid; the CANCELLED order is excluded.
+      expect(needsAction.unpaidInTransit).toBe(2);
+      // Only the FAILED outbox row; the SENT row is excluded.
+      expect(needsAction.failedMails).toBe(1);
     });
   });
 });

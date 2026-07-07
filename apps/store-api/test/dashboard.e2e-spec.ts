@@ -8,7 +8,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
-import type { DashboardSummary } from '../src/dashboard/dashboard.types';
+import type { DashboardSummary, NeedsAction } from '../src/dashboard/dashboard.types';
 import { PrismaService } from '../src/prisma';
 
 /**
@@ -77,8 +77,16 @@ describe('Admin Dashboard (e2e)', () => {
     },
   };
 
+  const needsActionFixture: NeedsAction = {
+    newOrders: 4,
+    pendingReviews: 2,
+    unpaidInTransit: 7,
+    failedMails: 1,
+  };
+
   const dashboardRepositoryMock = {
     getSummary: jest.fn().mockResolvedValue(summaryFixture),
+    getNeedsAction: jest.fn().mockResolvedValue(needsActionFixture),
   };
 
   const authRepositoryMock = {
@@ -152,6 +160,7 @@ describe('Admin Dashboard (e2e)', () => {
   afterEach(() => {
     jest.clearAllMocks();
     dashboardRepositoryMock.getSummary.mockResolvedValue(summaryFixture);
+    dashboardRepositoryMock.getNeedsAction.mockResolvedValue(needsActionFixture);
   });
 
   describe('GET /api/admin/dashboard/summary', () => {
@@ -251,6 +260,66 @@ describe('Admin Dashboard (e2e)', () => {
       expect(body.users.totalUsers).toBeGreaterThanOrEqual(0);
       expect(body.products.totalProducts).toBeGreaterThanOrEqual(0);
       expect(body.inventory.lowStockProducts).toEqual([]);
+    });
+  });
+
+  describe('GET /api/admin/dashboard/needs-action', () => {
+    it('should return 401 without an auth token', async () => {
+      await request(app.getHttpServer()).get('/api/admin/dashboard/needs-action').expect(401);
+    });
+
+    it('should return 403 for a non-admin (CUSTOMER) token', async () => {
+      const token = generateAccessToken('customer-e2e-1', 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .get('/api/admin/dashboard/needs-action')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('should return 200 with the four counters wrapped in a data envelope for an admin token', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/dashboard/needs-action')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body).toEqual({
+        data: {
+          newOrders: 4,
+          pendingReviews: 2,
+          unpaidInTransit: 7,
+          failedMails: 1,
+        },
+      });
+      expect(typeof response.body.data.newOrders).toBe('number');
+      expect(typeof response.body.data.pendingReviews).toBe('number');
+      expect(typeof response.body.data.unpaidInTransit).toBe('number');
+      expect(typeof response.body.data.failedMails).toBe('number');
+    });
+
+    it('should return zeroed counters when nothing needs action', async () => {
+      dashboardRepositoryMock.getNeedsAction.mockResolvedValueOnce({
+        newOrders: 0,
+        pendingReviews: 0,
+        unpaidInTransit: 0,
+        failedMails: 0,
+      });
+
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/dashboard/needs-action')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data).toEqual({
+        newOrders: 0,
+        pendingReviews: 0,
+        unpaidInTransit: 0,
+        failedMails: 0,
+      });
     });
   });
 });

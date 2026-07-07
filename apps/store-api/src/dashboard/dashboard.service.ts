@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DashboardRepository } from './dashboard.repository';
-import { DashboardSummaryResponse } from './dto';
+import { DashboardSummaryResponse, NeedsActionDto } from './dto';
 
 /**
  * Thin pass-through service for the admin dashboard.
@@ -20,5 +20,14 @@ export class DashboardService {
    */
   async getSummary(): Promise<DashboardSummaryResponse> {
     return this.dashboardRepository.getSummary();
+  }
+
+  /**
+   * "Needs action" counters for the dashboard widget + sidebar badges
+   * (TASK-248). Thin pass-through — the repository returns an object structurally
+   * identical to {@link NeedsActionDto}; the controller wraps it in `{ data }`.
+   */
+  async getNeedsAction(): Promise<NeedsActionDto> {
+    return this.dashboardRepository.getNeedsAction();
   }
 }
