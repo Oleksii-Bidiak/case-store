@@ -5,6 +5,10 @@ export * from "./format";
 export * from "./product-gradient";
 export * from "./product-pricing";
 export * from "./color-swatch";
+// Vendor-agnostic analytics facade (TASK-261). Safe to re-export here — a plain
+// module with no "use client" and no React import, unlike the intentionally
+// excluded client-only `use-debounced-callback` noted below.
+export * from "./analytics";
 // NOTE: `use-debounced-callback` is a client-only hook ("use client"). It is
 // intentionally NOT re-exported here — adding a client module to this barrel,
 // which server components also import (e.g. for `formatMoney`), splits the

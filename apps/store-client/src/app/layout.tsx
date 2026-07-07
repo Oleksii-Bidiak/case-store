@@ -1,9 +1,18 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Sora } from "next/font/google";
+import Script from "next/script";
 import { Providers } from "./providers";
 import { Header } from "@/widgets/header";
 import { Footer } from "@/widgets";
-import { PRIMARY_COLOR, SITE_URL, SITE_NAME, dict } from "@/shared/config";
+import {
+  PRIMARY_COLOR,
+  SITE_URL,
+  SITE_NAME,
+  dict,
+  UMAMI_ENABLED,
+  UMAMI_SRC,
+  UMAMI_WEBSITE_ID,
+} from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSeo, resolveTitleTemplate } from "@/shared/lib/seo";
@@ -119,6 +128,17 @@ export default async function RootLayout({
           </main>
           <Footer />
         </Providers>
+        {/* Umami self-hosted analytics (TASK-261). Rendered only when both env
+            keys are set — empty in local dev, so no tracker loads there. The
+            default `afterInteractive` strategy is the one Next recommends for
+            analytics scripts and works from this Server Component (no onLoad). */}
+        {UMAMI_ENABLED && (
+          <Script
+            src={UMAMI_SRC}
+            data-website-id={UMAMI_WEBSITE_ID}
+            strategy="afterInteractive"
+          />
+        )}
       </body>
     </html>
   );
