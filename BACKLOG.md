@@ -217,9 +217,9 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-270 | [H/H] Prod packaging — multi-stage Dockerfiles for store-api/client/admin (Next standalone; API prisma-generate on build, non-root); `docker-compose.prod.yml` (3 apps + Postgres/Redis/Meili + Umami + Caddy/Nginx reverse-proxy, вітрина/`admin.`/`api.` domains); healthchecks + volumes (Postgres/Meili/uploads survive redeploy); `.env.production.example`; smoke home/admin-login/create-order | ⬜ | — |
-| TASK-271 | [H/H] Staging deploy (after 270) — GitHub Actions: push develop (green CI) → build → GHCR → SSH staging → `compose pull && up -d` → `prisma migrate deploy` → curl health; secrets in `staging` Environment; concurrency group; result notice; runbook `docs/deploy.md` (logs/restart/rollback) in plain UA | ⬜ | — |
-| TASK-261 | [E/H] Umami self-hosted — `docker-compose` service (postgres-image, `umami` DB) + `.env.example`; storefront `next/script` afterInteractive, dev-off, prod-Helmet CSP allow; e-commerce events via `shared/lib/analytics.ts` facade (view_product/add_to_cart/begin_checkout/purchase/search/newsletter_subscribe); configure funnel; storefront works without Umami env | ⬜ | — |
+| TASK-270 | [H/H] Prod packaging — multi-stage Dockerfiles for store-api/client/admin (Next standalone; API prisma-generate on build, non-root); `docker-compose.prod.yml` (3 apps + Postgres/Redis/Meili + Umami + Caddy/Nginx reverse-proxy, вітрина/`admin.`/`api.` domains); healthchecks + volumes (Postgres/Meili/uploads survive redeploy); `.env.production.example`; smoke home/admin-login/create-order | ⬜ | 123 |
+| TASK-271 | [H/H] Staging deploy (after 270) — GitHub Actions: push develop (green CI) → build → GHCR → SSH staging → `compose pull && up -d` → `prisma migrate deploy` → curl health; secrets in `staging` Environment; concurrency group; result notice; runbook `docs/deploy.md` (logs/restart/rollback) in plain UA | ⬜ | 124 |
+| TASK-261 | [E/H] Umami self-hosted — `docker-compose` service (postgres-image, `umami` DB) + `.env.example`; storefront `next/script` afterInteractive, dev-off, prod-Helmet CSP allow; e-commerce events via `shared/lib/analytics.ts` facade (view_product/add_to_cart/begin_checkout/purchase/search/newsletter_subscribe); configure funnel; storefront works without Umami env | ⬜ | 125 |
 
 #### Хвиля 3 — Функціональні прогалини + SEO-зручність
 
