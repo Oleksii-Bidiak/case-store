@@ -462,6 +462,46 @@ describe('OrderRepository', () => {
     });
   });
 
+  describe('findAll — unpaidInTransit filter (TASK-248)', () => {
+    it('merges the active-but-unpaid compound condition when unpaidInTransit is true', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ unpaidInTransit: true });
+
+      const where = prismaMock.order.count.mock.calls[0][0].where;
+      // paymentStatus != PAID AND status NOT IN (CANCELLED, REFUNDED).
+      expect(where.paymentStatus).toEqual({ not: PaymentStatus.PAID });
+      expect(where.status).toEqual({
+        notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
+      });
+      // Still excludes soft-deleted orders.
+      expect(where.deletedAt).toBeNull();
+    });
+
+    it('composes the unpaidInTransit filter with the created-at date range', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ unpaidInTransit: true, dateFrom: '2026-01-01' });
+
+      const where = prismaMock.order.count.mock.calls[0][0].where;
+      expect(where.paymentStatus).toEqual({ not: PaymentStatus.PAID });
+      expect(where.status).toEqual({
+        notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
+      });
+      expect(where.createdAt).toEqual({ gte: new Date('2026-01-01') });
+    });
+
+    it('does not add the payment/status compound condition when the flag is absent', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({});
+
+      const where = prismaMock.order.count.mock.calls[0][0].where;
+      expect(where.paymentStatus).toBeUndefined();
+      expect(where.status).toBeUndefined();
+    });
+  });
+
   describe('findAll — sorting (TASK-147)', () => {
     it('defaults to createdAt desc when no sort is provided', async () => {
       prismaMock.$transaction.mockResolvedValue([0, []]);

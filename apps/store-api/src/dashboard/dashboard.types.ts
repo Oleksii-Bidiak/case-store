@@ -70,6 +70,23 @@ export interface DashboardSummary {
   inventory: InventoryMetrics;
 }
 
+/**
+ * "Needs action" counters for the admin dashboard widget + sidebar badges
+ * (TASK-248). Four independent COUNT reads over existing columns — no writes,
+ * no migration. Plain mirror of {@link NeedsActionDto} (the decorated Swagger
+ * class the controller returns), carrying no decorator metadata.
+ */
+export interface NeedsAction {
+  /** Orders awaiting confirmation (`status = PENDING`). */
+  newOrders: number;
+  /** Reviews awaiting moderation (`isActive = false`). */
+  pendingReviews: number;
+  /** Active orders not yet paid (`paymentStatus != PAID` AND `status NOT IN (CANCELLED, REFUNDED)`). */
+  unpaidInTransit: number;
+  /** Outbound emails permanently failed (`MailOutbox.status = FAILED`). */
+  failedMails: number;
+}
+
 /** Rolling window (in days) used for all time-series metrics. */
 export const DASHBOARD_WINDOW_DAYS = 30;
 

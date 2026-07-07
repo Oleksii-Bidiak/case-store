@@ -10,3 +10,5 @@ export {
   InventoryMetricsDto,
   DashboardSummaryResponse,
 } from './dashboard-summary.dto';
+
+export { NeedsActionDto, NeedsActionResponse } from './dashboard-needs-action.dto';
