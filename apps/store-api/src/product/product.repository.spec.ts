@@ -275,5 +275,20 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       expect(updateArgs.data.metaTitle).toBe('Updated Title');
       expect(updateArgs.data.metaDescription).toBe('Updated description.');
     });
+
+    it('update forwards an explicit null to clear the override (TASK-245)', async () => {
+      prismaMock.product.update.mockResolvedValue({ id: 'product-4' });
+
+      await repository.update('product-4', {
+        metaTitle: null,
+        metaDescription: null,
+      });
+
+      const updateArgs = prismaMock.product.update.mock.calls[0][0];
+      // null must survive untouched (not stripped to undefined) so Prisma
+      // writes NULL and the SEO override reverts to auto-derived.
+      expect(updateArgs.data.metaTitle).toBeNull();
+      expect(updateArgs.data.metaDescription).toBeNull();
+    });
   });
 });
