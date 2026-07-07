@@ -101,6 +101,30 @@ export const dict = {
     // Sidebar count-badge aria labels (mirror messages.unreadBadgeAria).
     newOrdersBadgeAria: (n: number) => `${n} нових замовлень`,
     pendingReviewsBadgeAria: (n: number) => `${n} відгуків на модерації`,
+    // Dashboard metrics v2 (TASK-249) — AOV, repeat-buyer rate, tooltips.
+    averageOrderValue30: "Середній чек (30 днів)",
+    averageOrderValue30Sub: "Виручка ÷ кількість оплачених замовлень",
+    averageOrderValue30Tooltip:
+      "Скільки в середньому витрачає покупець за одне оплачене замовлення за " +
+      "останні 30 днів. Допомагає зрозуміти, чи варто піднімати поріг безкоштовної доставки.",
+    repeatBuyerRate: "Повторні покупці (весь час)",
+    repeatBuyerRateSub: "Частка клієнтів із 2+ замовленнями",
+    repeatBuyerRateTooltip:
+      "Частка клієнтів, які оформили 2 і більше замовлень (скасовані не рахуються) за " +
+      "весь час роботи магазину. Показує, чи повертаються покупці.",
+    repeatBuyerRate90: "Повторні покупці (90 днів)",
+    repeatBuyerRate90Sub: "Серед замовлень за останні 90 днів",
+    repeatBuyerRate90Tooltip:
+      "Те саме, але лише серед замовлень за останні 90 днів — показує свіжу динаміку " +
+      "повернення покупців, а не історію за весь час.",
+    unrealizedRevenueTooltip:
+      "Сума активних замовлень, які покупець ще не оплатив (наприклад, накладений " +
+      "платіж Нової Пошти, який ще не інкасовано).",
+    unrealizedRevenue30Tooltip:
+      "Те саме, але лише замовлення за останні 30 днів.",
+    metricInfoAria: (label: string) => `Що означає «${label}»`,
+    lastOrders: "Останні замовлення",
+    noLastOrders: "Замовлень ще немає.",
   },
 
   common: {
