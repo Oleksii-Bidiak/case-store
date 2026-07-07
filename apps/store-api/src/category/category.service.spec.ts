@@ -179,6 +179,49 @@ describe('CategoryService', () => {
 
       expect(result.data).toHaveLength(0);
     });
+
+    // TASK-247: the admin SEO overrides must reach the public tree so the
+    // storefront's resolveSeo() tier-1 (entity meta) can light up for the
+    // category-filtered /products listing.
+    it('surfaces metaTitle/metaDescription unchanged at both root and nested-child level', async () => {
+      const treeData = [
+        {
+          ...mockCategory,
+          metaTitle: 'Чохли — Преміум захист',
+          metaDescription: 'Магазин преміальних чохлів для будь-якої моделі.',
+          children: [
+            {
+              ...mockChildCategory,
+              metaTitle: 'Чохли для iPhone | Store',
+              metaDescription: 'Захисні чохли для всіх моделей iPhone.',
+              children: [],
+            },
+          ],
+        },
+      ];
+      categoryRepositoryMock.findCategoryTree.mockResolvedValue(treeData as any);
+
+      const result = await service.getCategoryTree();
+
+      expect(result.data[0].metaTitle).toBe('Чохли — Преміум захист');
+      expect(result.data[0].metaDescription).toBe(
+        'Магазин преміальних чохлів для будь-якої моделі.',
+      );
+      expect(result.data[0].children[0].metaTitle).toBe('Чохли для iPhone | Store');
+      expect(result.data[0].children[0].metaDescription).toBe(
+        'Захисні чохли для всіх моделей iPhone.',
+      );
+    });
+
+    it('maps a missing metaTitle/metaDescription to null (not undefined)', async () => {
+      const treeData = [{ ...mockChildCategory, children: [] }]; // mockChildCategory omits both fields
+      categoryRepositoryMock.findCategoryTree.mockResolvedValue(treeData as any);
+
+      const result = await service.getCategoryTree();
+
+      expect(result.data[0].metaTitle).toBeNull();
+      expect(result.data[0].metaDescription).toBeNull();
+    });
   });
 
   // ─── getCategoryTreeForAdmin (admin, TASK-236) ───────────────────────────────

@@ -38,17 +38,18 @@ async function resolveCategoryNode(
 }
 
 /**
- * Category-aware catalog metadata (plan 116 gap 1). For a `?categoryId=` view the
- * title/description are resolved through the shared precedence helper so they are
- * category-specific and SeoSettings-aware instead of the generic "Товари":
+ * Category-aware catalog metadata (plan 116 gap 1, plan 117 TASK-247). For a
+ * `?categoryId=` view the title/description are resolved through the shared
+ * precedence helper so they are category-specific and SeoSettings-aware instead
+ * of the generic "Товари", across all three tiers:
  *
- *   SeoSettings defaults (tier 2) → category name/description (tier 3).
+ *   category metaTitle/metaDescription (tier 1) → SeoSettings defaults (tier 2)
+ *   → category name/description (tier 3).
  *
  * The category's own `metaTitle`/`metaDescription` admin overrides (tier 1) are
- * not surfaced on the public category tree/detail endpoints yet, so they are not
- * passed here — the entity tier lights up once those columns are exposed
- * publicly (see plan 116 gap 1 / the `Category` schema comment). The unfiltered
- * and keyword-search views keep the static generic metadata.
+ * now surfaced on the public category tree (TASK-247), so they are passed here
+ * as `entityTitle`/`entityDescription` and win when set. The unfiltered and
+ * keyword-search views keep the static generic metadata.
  */
 export async function generateMetadata({
   searchParams,
@@ -67,6 +68,8 @@ export async function generateMetadata({
   if (node) {
     const seoMeta = resolveSeo({
       settings: seo,
+      entityTitle: node.metaTitle,
+      entityDescription: node.metaDescription,
       content: { name: node.name, description: node.description },
     });
     return {

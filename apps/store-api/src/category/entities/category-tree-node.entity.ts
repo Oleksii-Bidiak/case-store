@@ -47,6 +47,24 @@ export class CategoryTreeNodeEntity {
   @ApiProperty({ description: 'Display sort order (lower = first)', example: 0 })
   sortOrder!: number;
 
+  @ApiProperty({
+    description: 'SEO meta title override (falls back to name when empty)',
+    example: 'Phone Cases — Premium Protection | Store',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  metaTitle!: string | null;
+
+  @ApiProperty({
+    description: 'SEO meta description override',
+    example: 'Shop premium protective phone cases for every model.',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  metaDescription!: string | null;
+
   @ApiProperty({ description: 'Child categories', type: [CategoryTreeNodeEntity] })
   children!: CategoryTreeNodeEntity[];
 
@@ -65,6 +83,8 @@ export class CategoryTreeNodeEntity {
     image: string | null;
     isActive: boolean;
     sortOrder: number;
+    metaTitle?: string | null;
+    metaDescription?: string | null;
     children: Array<{
       id: string;
       name: string;
@@ -73,6 +93,8 @@ export class CategoryTreeNodeEntity {
       image: string | null;
       isActive: boolean;
       sortOrder: number;
+      metaTitle?: string | null;
+      metaDescription?: string | null;
       children: unknown[];
     }>;
   }): CategoryTreeNodeEntity {
@@ -84,6 +106,8 @@ export class CategoryTreeNodeEntity {
     entity.image = category.image;
     entity.isActive = category.isActive;
     entity.sortOrder = category.sortOrder;
+    entity.metaTitle = category.metaTitle ?? null;
+    entity.metaDescription = category.metaDescription ?? null;
     entity.children = (category.children ?? []).map((child) =>
       CategoryTreeNodeEntity.fromPrisma(
         child as Parameters<typeof CategoryTreeNodeEntity.fromPrisma>[0],
