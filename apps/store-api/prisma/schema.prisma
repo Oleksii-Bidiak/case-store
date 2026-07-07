@@ -115,11 +115,11 @@ model Category {
   isActive    Boolean    @default(true) @map("is_active")
   sortOrder   Int        @default(0) @map("sort_order")
   // SEO overrides (TASK-236). Nullable/admin-editable, mirroring Page's pattern.
-  // The category-filtered catalog listing now derives its <title>/description
-  // from the category name/description via resolveSeo() (TASK-240, closing plan
-  // 116 gap 1). Surfacing these override columns on a public category endpoint
-  // (so the admin's metaTitle/metaDescription win as tier 1) is the remaining
-  // follow-up — the storefront tree/detail responses don't expose them yet.
+  // The public category tree read now exposes these via CategoryTreeNodeEntity
+  // (TASK-247): the admin's metaTitle/metaDescription win as resolveSeo() tier-1
+  // for the category-filtered /products <title>/description, falling back to the
+  // category name/description (tier 3) when unset (TASK-240, closing plan 116
+  // gap 1).
   metaTitle       String?  @map("meta_title")
   metaDescription String?  @map("meta_description")
   createdAt   DateTime   @default(now()) @map("created_at")

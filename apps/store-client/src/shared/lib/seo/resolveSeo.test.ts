@@ -224,3 +224,70 @@ describe("toMetadataTitle", () => {
     ).toEqual({ absolute: "Товари | MobileStore" });
   });
 });
+
+/**
+ * Mirrors the category branch of `app/products/page.tsx` `generateMetadata()`
+ * (plan 117 TASK-247): a `?categoryId=` view feeds the resolved category node's
+ * admin SEO overrides into `resolveSeo` as tier-1 `entityTitle`/`entityDescription`,
+ * then brands the result via `toMetadataTitle`. These assertions prove the
+ * override now wins over the content-derived (name/description) fallback — the
+ * gap TASK-247 closed by exposing the columns on the public category tree.
+ */
+describe("resolveSeo — category /products call-site (TASK-247)", () => {
+  // The page passes the one full SeoSettings object to both resolveSeo (reads the
+  // default* fields) and toMetadataTitle (reads titleTemplate), so the test's stub
+  // carries both shapes just like the real generateMetadata call.
+  const seo: ResolveSeoSettings & { titleTemplate: string | null } = {
+    defaultMetaTitle: null,
+    defaultMetaDescription: null,
+    defaultOgImage: null,
+    titleTemplate: null,
+  };
+  const opts = { settings: seo, siteName: "MobileStore", fallback: "Товари" };
+
+  /** Replicates the page's category-branch title/description composition. */
+  function categoryMetadata(node: {
+    name: string;
+    description: string | null;
+    metaTitle: string | null;
+    metaDescription: string | null;
+  }) {
+    const seoMeta = resolveSeo({
+      settings: seo,
+      entityTitle: node.metaTitle,
+      entityDescription: node.metaDescription,
+      content: { name: node.name, description: node.description },
+    });
+    return {
+      title: toMetadataTitle(seoMeta, opts),
+      description: seoMeta.description ?? "Товари opис",
+    };
+  }
+
+  it("tier 1: a category metaTitle wins over the content-derived name, used verbatim (unbranded)", () => {
+    const meta = categoryMetadata({
+      name: "Чохли для iPhone",
+      description: "Похідний опис категорії",
+      metaTitle: "Чохли для iPhone — офіційний магазин | MobileStore",
+      metaDescription: "Адмінський опис для пошуку.",
+    });
+
+    expect(meta.title).toEqual({
+      absolute: "Чохли для iPhone — офіційний магазин | MobileStore",
+    });
+    expect(meta.description).toBe("Адмінський опис для пошуку.");
+  });
+
+  it("tier 3: with no metaTitle the title falls back to the branded category name", () => {
+    const meta = categoryMetadata({
+      name: "Чохли для iPhone",
+      description: "Похідний опис категорії",
+      metaTitle: null,
+      metaDescription: null,
+    });
+
+    // Derived (non-absolute) name → root template appends the brand.
+    expect(meta.title).toEqual({ absolute: "Чохли для iPhone | MobileStore" });
+    expect(meta.description).toBe("Похідний опис категорії");
+  });
+});
