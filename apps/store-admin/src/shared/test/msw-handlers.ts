@@ -27,6 +27,13 @@ export const handlers = [
     }),
   ),
 
+  // Unread (NEW) contact-message count for the nav «Повідомлення» badge — none
+  // by default; both AdminNavList mount points (sidebar + drawer) read it, so a
+  // shared stub keeps every shell test off onUnhandledRequest. Override per-test.
+  http.get("*/api/contact/admin/unread-count", () =>
+    HttpResponse.json({ data: { unread: 0 } }),
+  ),
+
   // Admin order list — empty page by default; tolerates any `status` CSV so the
   // lifecycle tabs (TASK-250) never hit onUnhandledRequest. Override per-test.
   http.get("*/api/admin/orders", () =>
