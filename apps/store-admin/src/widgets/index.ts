@@ -86,3 +86,4 @@ export {
 } from "./dashboard-charts";
 export { DashboardLowStockTable } from "./dashboard-low-stock";
 export { DashboardTopProductsTable } from "./dashboard-top-products";
+export { DashboardLastOrdersTable } from "./dashboard-last-orders";
