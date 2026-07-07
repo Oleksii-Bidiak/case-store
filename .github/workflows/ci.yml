@@ -169,3 +169,260 @@ jobs:
       - run: npm run test:int -w apps/store-api
         env:
           DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/store_test
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # deploy-staging (TASK-271) — build the three app images, push to GHCR, then
+  # SSH into the staging VPS and roll the stack.
+  #
+  # TRIGGER: runs ONLY on a push to `develop` and ONLY after the blocking test
+  # jobs above are green. The `needs:` graph IS the "after green CI" gate — no
+  # extra webhook/polling. `test-e2e-playwright` is deliberately NOT in `needs:`
+  # (it is `continue-on-error` and must never gate a deploy).
+  #
+  # FIRST REAL DEPLOY IS MANUAL: this job cannot run until the owner provisions
+  # the VPS, points DNS, and fills the `staging` GitHub Environment (4 secrets +
+  # STAGING_DOMAIN). See docs/deploy.md and docs/manual-qa-pending.md §16.
+  # ──────────────────────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build, test-unit, test-e2e, test-int]
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment:
+      name: staging
+      url: https://${{ vars.STAGING_DOMAIN }}
+    concurrency:
+      # One staging deploy at a time. cancel-in-progress:false QUEUES a second
+      # push rather than killing an in-flight `docker compose up` (which could
+      # leave the stack half-restarted).
+      group: deploy-staging
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write # push/pull GHCR images with the built-in GITHUB_TOKEN
+    services:
+      # Throwaway Postgres — ONLY so `swagger:export` can boot AppModule
+      # (PrismaService.$connect() opens a real connection). No schema/tables are
+      # needed: the export just connects and reads Swagger decorator metadata,
+      # and SearchService.onModuleInit returns early when Meili is unconfigured,
+      # so nothing queries a table at boot. Mirrors the test-e2e/test-int env.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: store_swagger
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # ── swagger.json gotcha (MUST run before any docker build) ────────────
+      # apps/store-api/swagger.json is GITIGNORED, so a clean checkout does not
+      # contain it — yet the store-client / store-admin Dockerfiles run
+      # `npm run generate:api` INSIDE the image, and Orval reads that exact file
+      # from the build context (../store-api/swagger.json). We therefore
+      # regenerate it on the runner FIRST, the same way a local build would.
+      # The existing `build` job does NOT do this (a pre-existing gap noted in
+      # the TASK-271 handoff); we mirror the test jobs' env pattern instead:
+      # `prisma generate` + a reachable Postgres + the two JWT secrets that env
+      # validation requires. The dummy secrets below are throwaway build-time
+      # inputs — never used at runtime.
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=apps/store-api/prisma/schema.prisma
+      - name: Export OpenAPI spec into the build context
+        run: npm run swagger:export -w apps/store-api
+        env:
+          NODE_ENV: production
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/store_swagger?schema=public
+          JWT_SECRET: ci-dummy-jwt-secret-min-32-chars-000000
+          JWT_REFRESH_SECRET: ci-dummy-jwt-refresh-secret-min-32-000
+
+      # ── image coordinates ────────────────────────────────────────────────
+      # GHCR requires a LOWERCASE path; the repo owner renders mixed-case
+      # (Oleksii-Bidiak), so lowercase it once here (keep in sync with
+      # docker-compose.staging.yml).
+      - name: Compute image coordinates
+        id: img
+        run: |
+          owner_lc="$(printf '%s' "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          echo "prefix=ghcr.io/${owner_lc}" >> "$GITHUB_OUTPUT"
+          echo "tag_sha=staging-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Each image is tagged twice: an immutable staging-<sha> (used for rollback)
+      # and a floating staging-latest. context is the monorepo root (npm
+      # workspaces) exactly like plan 123's Dockerfiles expect.
+      - name: Build & push store-api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/store-api/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.img.outputs.prefix }}/store-api:${{ steps.img.outputs.tag_sha }}
+            ${{ steps.img.outputs.prefix }}/store-api:staging-latest
+          cache-from: type=gha,scope=store-api
+          cache-to: type=gha,mode=max,scope=store-api
+
+      # NEXT_PUBLIC_* are BAKED at build time → these images are tied to the
+      # staging domain and can never be promoted to prod (prod builds its own).
+      # Values come from the `staging` Environment's variables (public URLs, not
+      # secrets). Optional vars (Sentry/Umami) default to empty via the
+      # Dockerfile ARGs when the corresponding `vars.*` are unset.
+      - name: Build & push store-client
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/store-client/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://api.${{ vars.STAGING_DOMAIN }}
+            NEXT_PUBLIC_APP_URL=https://${{ vars.STAGING_DOMAIN }}
+            NEXT_PUBLIC_SITE_URL=https://${{ vars.STAGING_DOMAIN }}
+            NEXT_PUBLIC_CURRENCY=${{ vars.NEXT_PUBLIC_CURRENCY || 'UAH' }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
+            NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging
+            NEXT_PUBLIC_UMAMI_SRC=${{ vars.NEXT_PUBLIC_UMAMI_SRC }}
+            NEXT_PUBLIC_UMAMI_WEBSITE_ID=${{ vars.NEXT_PUBLIC_UMAMI_WEBSITE_ID }}
+          tags: |
+            ${{ steps.img.outputs.prefix }}/store-client:${{ steps.img.outputs.tag_sha }}
+            ${{ steps.img.outputs.prefix }}/store-client:staging-latest
+          cache-from: type=gha,scope=store-client
+          cache-to: type=gha,mode=max,scope=store-client
+
+      - name: Build & push store-admin
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/store-admin/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://api.${{ vars.STAGING_DOMAIN }}
+            NEXT_PUBLIC_APP_URL=https://${{ vars.STAGING_DOMAIN }}
+            NEXT_PUBLIC_ADMIN_URL=https://admin.${{ vars.STAGING_DOMAIN }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
+            NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging
+          tags: |
+            ${{ steps.img.outputs.prefix }}/store-admin:${{ steps.img.outputs.tag_sha }}
+            ${{ steps.img.outputs.prefix }}/store-admin:staging-latest
+          cache-from: type=gha,scope=store-admin
+          cache-to: type=gha,mode=max,scope=store-admin
+
+      # ── sync the deploy files to the server ──────────────────────────────
+      # The server keeps only what `docker compose` needs at /opt/store-ai
+      # (both compose files + Caddyfile + the postgres init dir). Copying them
+      # on every deploy guarantees the running stack matches THIS commit — no
+      # git checkout or registry auth is required on the server for the sync.
+      - name: Copy deploy files to staging
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "docker-compose.prod.yml,docker-compose.staging.yml,Caddyfile,docker"
+          target: /opt/store-ai
+          overwrite: true
+
+      # ── deploy on the server: env → pull → up → db push ──────────────────
+      - name: Deploy on staging
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE_TAG: ${{ steps.img.outputs.tag_sha }}
+          GHCR_ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STAGING_ENV_FILE: ${{ secrets.STAGING_ENV_FILE }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: IMAGE_TAG,GHCR_ACTOR,GHCR_TOKEN,STAGING_ENV_FILE
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd /opt/store-ai
+
+            # 1. Materialise the runtime env file from the single Environment
+            #    secret (a complete, filled-in .env.production as one blob).
+            #    umask keeps it private; GitHub masks the value in the logs.
+            umask 077
+            printf '%s' "$STAGING_ENV_FILE" > .env.production
+
+            COMPOSE="docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml --env-file .env.production"
+
+            # 2. Log in to GHCR so compose can PULL the private images. The
+            #    workflow's GITHUB_TOKEN is valid for the life of this run.
+            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
+
+            # 3. Pull the exact SHA-tagged images and roll the stack.
+            export IMAGE_TAG
+            $COMPOSE pull
+            $COMPOSE up -d
+
+            # 4. Apply the schema. STAGING uses `prisma db push` (NOT
+            #    migrate deploy) — a locked owner decision; staging data is
+            #    disposable, so --accept-data-loss is acceptable here (and MUST
+            #    NOT be copied into the production pipeline). Run as root with a
+            #    writable npm cache so `npx` can supply the prisma CLI even
+            #    though the runtime image prunes devDependencies (see
+            #    docs/deploy.md "Якщо db push впав").
+            $COMPOSE exec -T -u root -e NPM_CONFIG_CACHE=/tmp/.npm store-api \
+              npx --yes prisma@7 db push \
+              --schema=prisma/schema.prisma --skip-generate --accept-data-loss
+
+            # 5. Drop dangling images from previous deploys (keeps tagged
+            #    staging-<sha> images for rollback) and log out of GHCR.
+            docker image prune -f
+            docker logout ghcr.io || true
+
+      # ── smoke check from the runner, against the public URLs ─────────────
+      # Exercises DNS + Caddy TLS + each app end-to-end. Retries because Caddy
+      # can take a moment to provision Let's Encrypt certs and containers to
+      # become ready. Fails the job loudly if any app is not 2xx/3xx in time.
+      - name: Smoke check the three apps
+        env:
+          DOMAIN: ${{ vars.STAGING_DOMAIN }}
+        run: |
+          set -u
+          urls="https://api.${DOMAIN}/health https://${DOMAIN}/ https://admin.${DOMAIN}/"
+          for url in $urls; do
+            ok=0
+            for i in $(seq 1 15); do
+              code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" || true)"
+              if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
+                echo "OK   ${url}  (HTTP ${code})"; ok=1; break
+              fi
+              echo "wait ${url}  (attempt ${i}, HTTP ${code})"; sleep 10
+            done
+            [ "$ok" = 1 ] || { echo "SMOKE FAILED: ${url}"; exit 1; }
+          done
+
+      - name: Deploy summary
+        if: always()
+        run: |
+          {
+            echo "### Staging deploy"
+            echo ""
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Image tag: \`${{ steps.img.outputs.tag_sha }}\`"
+            echo "- Storefront: https://${{ vars.STAGING_DOMAIN }}/"
+            echo "- Admin: https://admin.${{ vars.STAGING_DOMAIN }}/"
+            echo "- API health: https://api.${{ vars.STAGING_DOMAIN }}/health"
+          } >> "$GITHUB_STEP_SUMMARY"

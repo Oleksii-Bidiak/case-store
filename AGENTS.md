@@ -232,3 +232,4 @@ When working on this project, read these files for additional context:
 - `docs/conventions/forms.md` — Form state-sync rules (async-seeded forms)
 - `docs/manual-qa-pending.md` — Outstanding manual checks on a running stack
 - `docs/admin-guide.md` — Admin-panel onboarding guide (UA, for non-technical operators)
+- `docs/deploy.md` — Staging deploy runbook (UA, for non-technical operators): logs, restart, rollback, server prep
