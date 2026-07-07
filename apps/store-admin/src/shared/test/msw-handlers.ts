@@ -27,6 +27,15 @@ export const handlers = [
     }),
   ),
 
+  // Admin order list — empty page by default; tolerates any `status` CSV so the
+  // lifecycle tabs (TASK-250) never hit onUnhandledRequest. Override per-test.
+  http.get("*/api/admin/orders", () =>
+    HttpResponse.json({
+      data: [],
+      meta: { total: 0, page: 1, limit: 20, totalPages: 0 },
+    }),
+  ),
+
   // Auth — admin session bootstrap.
   http.post("*/api/auth/login", () =>
     HttpResponse.json({ data: { accessToken: "test.access.token" } }),

@@ -247,7 +247,7 @@ export class OrderRepository {
     const where: Prisma.OrderWhereInput = {
       deletedAt: null,
       ...(query.userId ? { userId: query.userId } : {}),
-      ...(query.status ? { status: query.status } : {}),
+      ...(query.status?.length ? { status: { in: query.status } } : {}),
       ...(query.dateFrom || query.dateTo ? { createdAt } : {}),
     };
 

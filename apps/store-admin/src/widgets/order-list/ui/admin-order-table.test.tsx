@@ -5,12 +5,19 @@ import { dict } from "@/shared/config";
 import { AdminOrderTable } from "./admin-order-table";
 
 // next/navigation is unavailable under jsdom — mock the router + URL state.
+// `mockSearchParams` is mutable so deep-link tests can seed the URL (TASK-250).
 const mockReplace = jest.fn();
+let mockSearchParams = new URLSearchParams("");
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
   usePathname: () => "/orders",
-  useSearchParams: () => new URLSearchParams(""),
+  useSearchParams: () => mockSearchParams,
 }));
+
+beforeEach(() => {
+  mockReplace.mockClear();
+  mockSearchParams = new URLSearchParams("");
+});
 
 /** One admin order row with a joined customer (TASK-125). */
 function makeOrderRow(customer: unknown) {
@@ -77,6 +84,115 @@ describe("AdminOrderTable — customer column (TASK-125)", () => {
     renderWithProviders(<AdminOrderTable />);
 
     expect(await screen.findByText("user-uui…")).toBeInTheDocument();
+  });
+});
+
+describe("AdminOrderTable — lifecycle tabs (TASK-250)", () => {
+  it.each([
+    [dict.orders.tabNew, "/orders?status=PENDING"],
+    [dict.orders.tabProcessing, "/orders?status=CONFIRMED,PROCESSING"],
+    [dict.orders.tabShipped, "/orders?status=SHIPPED"],
+  ])("clicking «%s» writes %s and resets page", async (label, expectedUrl) => {
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.orders.empty);
+
+    await userEvent.click(screen.getByRole("tab", { name: label }));
+
+    // Radix automatic activation may fire onValueChange on both focus and click;
+    // every call carries the same (idempotent) URL, so assert on the value written.
+    expect(mockReplace).toHaveBeenCalled();
+    // URLSearchParams percent-encodes the comma in CONFIRMED,PROCESSING (%2C);
+    // decode before comparing so the CSV contract reads literally.
+    for (const [url] of mockReplace.mock.calls) {
+      expect(decodeURIComponent(url)).toBe(expectedUrl);
+    }
+  });
+
+  it("clicking «Всі» clears the status filter", async () => {
+    mockSearchParams = new URLSearchParams("status=PENDING");
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(/Немає замовлень зі статусом/);
+
+    await userEvent.click(
+      screen.getByRole("tab", { name: dict.orders.tabAll }),
+    );
+
+    expect(mockReplace).toHaveBeenCalledWith("/orders");
+  });
+
+  it("resets ?page= to 1 (drops it) when switching tabs", async () => {
+    mockSearchParams = new URLSearchParams("page=3");
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.orders.empty);
+
+    await userEvent.click(
+      screen.getByRole("tab", { name: dict.orders.tabShipped }),
+    );
+
+    const url = mockReplace.mock.calls[0][0];
+    expect(url).toContain("status=SHIPPED");
+    expect(url).not.toContain("page=");
+  });
+
+  it("deep-links: ?status=CONFIRMED,PROCESSING renders В обробці active + filters the table", async () => {
+    mockSearchParams = new URLSearchParams("status=CONFIRMED,PROCESSING");
+    let capturedStatus: string | null = null;
+    server.use(
+      http.get("*/api/admin/orders", ({ request }) => {
+        capturedStatus = new URL(request.url).searchParams.get("status");
+        return HttpResponse.json({
+          data: [makeOrderRow(null)],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        });
+      }),
+    );
+
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText("user-uui…");
+
+    // The table is filtered server-side with the CSV status.
+    expect(capturedStatus).toBe("CONFIRMED,PROCESSING");
+    // Only the В обробці tab is active.
+    expect(
+      screen.getByRole("tab", { name: dict.orders.tabProcessing }),
+    ).toHaveAttribute("data-state", "active");
+    expect(
+      screen.getByRole("tab", { name: dict.orders.tabNew }),
+    ).toHaveAttribute("data-state", "inactive");
+    expect(
+      screen.getByRole("tab", { name: dict.orders.tabAll }),
+    ).toHaveAttribute("data-state", "inactive");
+  });
+
+  it("deep-links: ?status=DELIVERED filters the table with no preset tab active", async () => {
+    mockSearchParams = new URLSearchParams("status=DELIVERED");
+    let capturedStatus: string | null = null;
+    server.use(
+      http.get("*/api/admin/orders", ({ request }) => {
+        capturedStatus = new URL(request.url).searchParams.get("status");
+        return HttpResponse.json({
+          data: [makeOrderRow(null)],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        });
+      }),
+    );
+
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText("user-uui…");
+
+    expect(capturedStatus).toBe("DELIVERED");
+    // No preset tab matches DELIVERED — every tab renders inactive.
+    for (const label of [
+      dict.orders.tabNew,
+      dict.orders.tabProcessing,
+      dict.orders.tabShipped,
+      dict.orders.tabAll,
+    ]) {
+      expect(screen.getByRole("tab", { name: label })).toHaveAttribute(
+        "data-state",
+        "inactive",
+      );
+    }
   });
 });
 

@@ -1,20 +1,15 @@
 import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { OrderStatus } from '@prisma/client';
 import { AdminOrderListQueryDto } from './admin-order-list-query.dto';
 
-/**
- * Regression tests for the `unpaidInTransit` boolean query filter (TASK-248).
- *
- * The global ValidationPipe runs with `enableImplicitConversion: true`, which
- * coerces raw query strings to their target type BEFORE the DTO's `@Transform`
- * runs — and `Boolean('false')` is `true`. Without the explicit `obj[key]`
- * guard, `?unpaidInTransit=false` would resolve to `true` and wrongly filter to
- * in-transit orders. These tests pin the coercion, mirroring the existing
- * `ProductListQueryDto.isActive` case (TASK-150-B5 / TASK-230).
- */
-describe('AdminOrderListQueryDto — unpaidInTransit boolean transform', () => {
-  const toDto = (raw: Record<string, unknown>) =>
-    plainToInstance(AdminOrderListQueryDto, raw, { enableImplicitConversion: true });
+// Mirrors the global ValidationPipe behaviour from `main.ts` (transform +
+// `enableImplicitConversion: true`) — transforms must read the ORIGINAL query
+// value from `obj` (see ProductCardsQueryDto / ProductListQueryDto specs).
+const toDto = (query: Record<string, unknown>): AdminOrderListQueryDto =>
+  plainToInstance(AdminOrderListQueryDto, query, { enableImplicitConversion: true });
 
+describe('AdminOrderListQueryDto — unpaidInTransit boolean transform (TASK-248)', () => {
   it('resolves ?unpaidInTransit=true to boolean true', () => {
     expect(toDto({ unpaidInTransit: 'true' }).unpaidInTransit).toBe(true);
   });
@@ -30,5 +25,98 @@ describe('AdminOrderListQueryDto — unpaidInTransit boolean transform', () => {
   it('coerces an already-boolean value through unchanged', () => {
     expect(toDto({ unpaidInTransit: true }).unpaidInTransit).toBe(true);
     expect(toDto({ unpaidInTransit: false }).unpaidInTransit).toBe(false);
+  });
+});
+
+describe('AdminOrderListQueryDto — status transform (TASK-250)', () => {
+  it('resolves a single value to a one-element array', () => {
+    expect(toDto({ status: 'PENDING' }).status).toEqual(['PENDING']);
+  });
+
+  it('splits a comma-separated string into a status array', () => {
+    expect(toDto({ status: 'CONFIRMED,PROCESSING' }).status).toEqual(['CONFIRMED', 'PROCESSING']);
+  });
+
+  it('tolerates repeated query params (?status=a&status=b)', () => {
+    expect(toDto({ status: ['CONFIRMED', 'PROCESSING'] }).status).toEqual([
+      'CONFIRMED',
+      'PROCESSING',
+    ]);
+  });
+
+  it('trims whitespace and drops empty segments', () => {
+    expect(toDto({ status: ' CONFIRMED , ,PROCESSING,' }).status).toEqual([
+      'CONFIRMED',
+      'PROCESSING',
+    ]);
+  });
+
+  it('resolves an absent status to undefined (no filter — all statuses)', () => {
+    expect(toDto({}).status).toBeUndefined();
+  });
+
+  it('resolves an empty / whitespace-only status to undefined', () => {
+    expect(toDto({ status: '' }).status).toBeUndefined();
+    expect(toDto({ status: ' , ' }).status).toBeUndefined();
+  });
+});
+
+describe('AdminOrderListQueryDto — status validation (TASK-250)', () => {
+  it('accepts a single valid status', async () => {
+    const errors = await validate(toDto({ status: 'PENDING' }));
+    expect(errors).toHaveLength(0);
+  });
+
+  it('accepts a well-formed multi-status CSV', async () => {
+    const errors = await validate(toDto({ status: 'CONFIRMED,PROCESSING' }));
+    expect(errors).toHaveLength(0);
+  });
+
+  it('accepts an absent status (all statuses)', async () => {
+    const errors = await validate(toDto({}));
+    expect(errors.some((e) => e.property === 'status')).toBe(false);
+  });
+
+  it('rejects a CSV containing an invalid status', async () => {
+    const errors = await validate(toDto({ status: 'CONFIRMED,BOGUS' }));
+    expect(errors.some((e) => e.property === 'status')).toBe(true);
+  });
+
+  it('rejects more statuses than the enum has values', async () => {
+    const tooMany = [...Object.values(OrderStatus), 'PENDING'].join(',');
+    const errors = await validate(toDto({ status: tooMany }));
+    expect(errors.some((e) => e.property === 'status')).toBe(true);
+  });
+});
+
+describe('AdminOrderListQueryDto — inherited fields survive OmitType (TASK-250)', () => {
+  it('still validates pagination + admin-only fields', async () => {
+    const dto = toDto({
+      status: 'PENDING',
+      page: 2,
+      limit: 20,
+      userId: '550e8400-e29b-41d4-a716-446655440000',
+      dateFrom: '2026-01-01',
+      dateTo: '2026-12-31',
+      sortBy: 'total',
+      sortOrder: 'asc',
+    });
+
+    const errors = await validate(dto);
+    expect(errors).toHaveLength(0);
+    expect(dto.page).toBe(2);
+    expect(dto.limit).toBe(20);
+    expect(dto.sortBy).toBe('total');
+    expect(dto.sortOrder).toBe('asc');
+  });
+
+  it('rejects an out-of-range page inherited from the base DTO', async () => {
+    const errors = await validate(toDto({ page: 0 }));
+    expect(errors.some((e) => e.property === 'page')).toBe(true);
+  });
+
+  it('rejects a non-allow-listed sortBy', async () => {
+    const errors = await validate(toDto({ sortBy: 'bogus' }));
+    expect(errors.some((e) => e.property === 'sortBy')).toBe(true);
   });
 });
