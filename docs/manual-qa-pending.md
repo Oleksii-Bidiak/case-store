@@ -820,10 +820,17 @@ push` на `store_dev` + `store_test` (таблиця `brands` + `products.brand
 
 ## 14. Етап 5 — SEO follow-ups (plan 117)
 
-> Потрібні env для ревалідації (без них ISR-очистка мовчки no-op — не помилка):
-> store-api `STOREFRONT_REVALIDATE_URL` (напр. `http://localhost:3000/api/revalidate`) +
-> `REVALIDATE_SECRET`; store-client — той самий `REVALIDATE_SECRET`.
+> Автогейти зелені для follow-ups (typecheck + lint + профільні unit-специ). Нижче — те, що
+> видно лише на запущеному стенді + БД. **TASK-246** потребує env ревалідації: store-api
+> `STOREFRONT_REVALIDATE_URL` (напр. `http://localhost:3000/api/revalidate`) + `REVALIDATE_SECRET`;
+> store-client — той самий `REVALIDATE_SECRET` (без них ISR-очистка мовчки no-op — не баг).
 
+- [ ] **TASK-245 — очищення SEO-оверайду товару до auto.** **Зроби:** у товарі, який уже має
+      заповнений «SEO-заголовок» (`metaTitle`), витри поле начисто, збережи; потім відкрий
+      `npm run db:studio` (або SQL) і подивись на рядок товару. **Має бути:** `metaTitle` у БД
+      став `NULL` (не лишився старим і не порожнім рядком); на вітрині PDP `generateMetadata`
+      падає назад на `resolveSeo()` tier 2/3 (авто-заголовок з назви товару). Те саме для
+      `metaDescription`. Значення, яке НЕ чіпали, лишається без змін (омітиться з payload).
 - [ ] **TASK-246 — ревалідація site-contact на запис.** **Зроби:** в адмінці
       `/settings/contact` зміни телефон/години або один із `sameAs`-лінків (Viber/Telegram/
       Instagram) → «Зберегти». **Має бути:** футер вітрини і `/info#contacts` показують нове

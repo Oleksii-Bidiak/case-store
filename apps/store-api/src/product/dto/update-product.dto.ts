@@ -9,6 +9,7 @@ import {
   MaxLength,
   Min,
   Matches,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -161,19 +162,29 @@ export class UpdateProductDto {
     description: 'SEO meta title override (falls back to product name when empty)',
     example: 'iPhone 15 Pro Clear MagSafe Case | Store',
     required: false,
+    nullable: true,
+    type: String,
   })
   @IsOptional()
+  // Allow an explicit `null` (clear the override → auto-derived); only
+  // string-validate a real value.
+  @ValidateIf((o: UpdateProductDto) => o.metaTitle !== null)
   @IsString()
   @MaxLength(255, { message: 'Meta title must be at most 255 characters' })
-  metaTitle?: string;
+  metaTitle?: string | null;
 
   @ApiProperty({
     description: 'SEO meta description override (falls back to the product description when empty)',
     example: 'Shop the clear MagSafe-compatible case for iPhone 15 Pro.',
     required: false,
+    nullable: true,
+    type: String,
   })
   @IsOptional()
+  // Allow an explicit `null` (clear the override → auto-derived); only
+  // string-validate a real value.
+  @ValidateIf((o: UpdateProductDto) => o.metaDescription !== null)
   @IsString()
   @MaxLength(500, { message: 'Meta description must be at most 500 characters' })
-  metaDescription?: string;
+  metaDescription?: string | null;
 }
