@@ -74,6 +74,19 @@ describe("AdminNavList — needs-action badges (TASK-248)", () => {
   });
 });
 
+describe("AdminNavList — content map entry (TASK-264)", () => {
+  it("renders the «Де що на сайті» bottom-nav entry linking to /content-map", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    renderWithProviders(<AdminNavList />);
+
+    const link = await screen.findByRole("link", {
+      name: dict.nav.contentMap,
+    });
+    expect(link).toHaveAttribute("href", "/content-map");
+  });
+});
+
 describe("AdminNavList — onNavigate (close-on-navigate, TASK-204 pattern)", () => {
   it("calls onNavigate exactly once when a nav link is clicked", async () => {
     mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });

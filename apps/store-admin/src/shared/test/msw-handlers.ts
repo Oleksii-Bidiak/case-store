@@ -43,6 +43,25 @@ export const handlers = [
     }),
   ),
 
+  // Content-map count sources (TASK-264) — each of the four list endpoints the
+  // /content-map widget fetches returns an empty collection by default so any
+  // shell/nav test that mounts near it stays off onUnhandledRequest. The
+  // content-map view test overrides these per-case with real counts.
+  http.get("*/api/admin/banners", () => HttpResponse.json({ data: [] })),
+  http.get("*/api/admin/faq", () => HttpResponse.json({ data: [] })),
+  http.get("*/api/admin/pages", () =>
+    HttpResponse.json({
+      data: [],
+      meta: { total: 0, page: 1, limit: 1, totalPages: 0 },
+    }),
+  ),
+  http.get("*/api/admin/blog/posts", () =>
+    HttpResponse.json({
+      data: [],
+      meta: { total: 0, page: 1, limit: 1, totalPages: 0 },
+    }),
+  ),
+
   // Auth — admin session bootstrap.
   http.post("*/api/auth/login", () =>
     HttpResponse.json({ data: { accessToken: "test.access.token" } }),

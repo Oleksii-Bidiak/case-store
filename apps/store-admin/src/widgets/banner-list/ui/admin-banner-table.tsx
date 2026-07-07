@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -34,6 +35,19 @@ const PLACEMENT_ORDER = [
 ] as const;
 
 /**
+ * Narrow a raw `?placement=` value to a real placement. An unknown/absent value
+ * is rejected so the render loop falls back to the full grouped view (TASK-264-C
+ * deep link from the content map).
+ */
+function isValidPlacement(
+  value: string | null,
+): value is BannerEntityPlacement {
+  return (
+    value !== null && (PLACEMENT_ORDER as readonly string[]).includes(value)
+  );
+}
+
+/**
  * Admin banners view: banners grouped by placement, each group a table of
  * title, status badge, sort order, and per-row actions (edit, publish/unpublish
  * toggle keyed on `status`, delete with confirm). Banners are low-volume content,
@@ -41,6 +55,18 @@ const PLACEMENT_ORDER = [
  */
 export function AdminBannerTable() {
   const queryClient = useQueryClient();
+
+  // Optional `?placement=` deep link (TASK-264-C): when it names a real
+  // placement, only that one section renders; otherwise the full grouped view is
+  // byte-for-byte unchanged. The query itself is NOT narrowed — a manager
+  // arriving here still sees drafts for that placement, not just published rows.
+  const searchParams = useSearchParams();
+  const placementParam = searchParams.get("placement");
+  const visiblePlacements: readonly BannerEntityPlacement[] = isValidPlacement(
+    placementParam,
+  )
+    ? [placementParam]
+    : PLACEMENT_ORDER;
 
   const { data, isLoading, isError } = useAdminBannerControllerFindAll();
   const publish = useAdminBannerControllerPublish();
@@ -111,7 +137,7 @@ export function AdminBannerTable() {
 
   return (
     <div className="flex flex-col gap-8">
-      {PLACEMENT_ORDER.map((placement) => {
+      {visiblePlacements.map((placement) => {
         const group = banners.filter((b) => b.placement === placement);
         if (group.length === 0) return null;
 
