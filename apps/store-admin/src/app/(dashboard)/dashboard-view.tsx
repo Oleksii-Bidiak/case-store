@@ -9,6 +9,7 @@ import {
   DashboardLowStockTable,
   DashboardSectionSkeleton,
   DashboardTopProductsTable,
+  NeedsActionWidget,
 } from "@/widgets";
 import { Button, Separator } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -41,6 +42,12 @@ export function DashboardView() {
           </p>
         ) : null}
       </section>
+
+      <Separator className="my-6" />
+
+      {/* Needs-action widget (TASK-248) — self-fetching, independent of the
+          summary below, so it surfaces "what needs my attention" at the top. */}
+      <NeedsActionWidget />
 
       <Separator className="my-6" />
 

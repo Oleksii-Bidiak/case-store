@@ -90,6 +90,17 @@ export const dict = {
     topProducts: "Топ товари за виручкою",
     rank: "#",
     noTopProducts: "Немає даних про продажі.",
+    // Needs-action widget + sidebar badges (TASK-248).
+    needsActionHeading: "Потребує дії",
+    needsActionAllClear: "Все під контролем — нічого не очікує на дію.",
+    needsActionLoadError: "Не вдалося завантажити список дій.",
+    needsActionNewOrders: "Нові замовлення",
+    needsActionPendingReviews: "Відгуки на модерації",
+    needsActionUnpaidInTransit: "Очікують оплати",
+    needsActionFailedMails: "Помилки надсилання пошти",
+    // Sidebar count-badge aria labels (mirror messages.unreadBadgeAria).
+    newOrdersBadgeAria: (n: number) => `${n} нових замовлень`,
+    pendingReviewsBadgeAria: (n: number) => `${n} відгуків на модерації`,
   },
 
   common: {

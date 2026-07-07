@@ -6,6 +6,8 @@
 export {
   useAdminDashboardControllerGetSummary,
   getAdminDashboardControllerGetSummaryQueryKey,
+  useAdminDashboardControllerGetNeedsAction,
+  getAdminDashboardControllerGetNeedsActionQueryKey,
 } from "@/shared/api";
 
 export type {
@@ -19,4 +21,6 @@ export type {
   TopProductDto,
   LowStockProductDto,
   OrderStatusCountDto,
+  NeedsActionDto,
+  NeedsActionResponse,
 } from "@/shared/api";

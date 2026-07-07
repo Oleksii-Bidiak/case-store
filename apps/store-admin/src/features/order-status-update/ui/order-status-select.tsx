@@ -9,6 +9,7 @@ import {
   useAdminOrderControllerUpdateStatus,
   type UpdateOrderStatusDto,
 } from "@/entities/order";
+import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
 import {
   Select,
   SelectContent,
@@ -56,6 +57,11 @@ export function OrderStatusSelect({
           });
           void queryClient.invalidateQueries({
             queryKey: getAdminOrderControllerFindByIdQueryKey(orderId),
+          });
+          // TASK-248: a status change can move an order in/out of the PENDING and
+          // unpaid-in-transit counters — refresh the needs-action widget + badges.
+          void queryClient.invalidateQueries({
+            queryKey: getAdminDashboardControllerGetNeedsActionQueryKey(),
           });
           toast.success(dict.orderStatus.toastUpdated(orderStatusLabel(value)));
         },

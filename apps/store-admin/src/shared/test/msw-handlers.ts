@@ -15,6 +15,18 @@ export const handlers = [
     }),
   ),
 
+  // Needs-action counters (TASK-248) — all-clear by default; override per-test.
+  http.get("*/api/admin/dashboard/needs-action", () =>
+    HttpResponse.json({
+      data: {
+        newOrders: 0,
+        pendingReviews: 0,
+        unpaidInTransit: 0,
+        failedMails: 0,
+      },
+    }),
+  ),
+
   // Auth — admin session bootstrap.
   http.post("*/api/auth/login", () =>
     HttpResponse.json({ data: { accessToken: "test.access.token" } }),

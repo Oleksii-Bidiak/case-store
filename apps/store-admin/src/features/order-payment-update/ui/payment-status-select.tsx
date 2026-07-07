@@ -10,6 +10,7 @@ import {
   useAdminOrderControllerUpdatePaymentStatus,
   type UpdateOrderPaymentStatusDto,
 } from "@/entities/order";
+import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
 import {
   Select,
   SelectContent,
@@ -61,6 +62,11 @@ export function PaymentStatusSelect({
           });
           void queryClient.invalidateQueries({
             queryKey: getAdminOrderControllerFindByIdQueryKey(orderId),
+          });
+          // TASK-248: marking an order paid/unpaid moves it in/out of the
+          // unpaid-in-transit counter — refresh the needs-action widget + badges.
+          void queryClient.invalidateQueries({
+            queryKey: getAdminDashboardControllerGetNeedsActionQueryKey(),
           });
           toast.success(
             dict.orderStatus.paymentToastUpdated(paymentStatusLabel(value)),
