@@ -28,6 +28,7 @@ export const dict = {
     messages: "Повідомлення",
     users: "Користувачі",
     subscribers: "Підписники",
+    contentMap: "Де що на сайті",
     siteContact: "Контакти",
     seoSettings: "SEO",
     faq: "FAQ",
@@ -1317,6 +1318,82 @@ export const dict = {
     toastReorderFailed: "Не вдалося змінити порядок зображень",
     toastDeleted: "Зображення видалено",
     toastDeleteFailed: "Не вдалося видалити зображення",
+  },
+
+  // Content map («Де що на сайті», TASK-264) — an orientation page that maps each
+  // storefront region to the admin section that edits it, with a live active
+  // count + shown/hidden marker. Copy is written at the category level ("N
+  // active items exist here"), reusing the FAQ "Показується"/"Приховано" wording.
+  contentMap: {
+    metaTitle: "Карта контенту — Адмін",
+    heading: "Карта контенту",
+    subheading:
+      "Що де показується на сайті — і в якому розділі це редагувати. Оберіть блок, щоб перейти прямо до потрібного розділу.",
+    loadError: "Не вдалося порахувати",
+    loading: "Рахуємо…",
+    statusShown: "Показується",
+    statusHidden: "Приховано",
+    // aria-label for the numeric active-item count sitting next to a zone.
+    countAria: (count: number) => `Активних елементів: ${count}`,
+    // Small caption clarifying which storefront page(s) a zone appears on.
+    appliesToLabel: "Де видно:",
+    // The static, non-clickable note covering catalog/PDP product content.
+    catalogNote:
+      "Назви, ціни, зображення й категорії товарів редагуються в розділах «Товари» та «Категорії» у верхньому меню.",
+    groups: {
+      global: "Глобально — на кожній сторінці",
+      home: "Головна сторінка",
+      info: "«Інформація» та картка товару",
+      blog: "Блог",
+      legal: "Правові та інші сторінки",
+    },
+    zones: {
+      announcementBar: {
+        source: "Стрічка оголошень зверху",
+        target: "Банери",
+        appliesTo: "Кожна сторінка (шапка)",
+      },
+      heroSlide: {
+        source: "Hero-слайдер",
+        target: "Банери",
+        appliesTo: "Головна",
+      },
+      promoTile: {
+        source: "Промо-плитки",
+        target: "Банери",
+        appliesTo: "Головна",
+      },
+      promoBanner: {
+        source: "Широкий промо-банер",
+        target: "Банери",
+        appliesTo: "Головна",
+      },
+      faq: {
+        source: "FAQ-блок",
+        target: "FAQ",
+        appliesTo: "Сторінка «Інформація» та кожна картка товару",
+      },
+      legalPages: {
+        source: "Правові та інші статичні сторінки",
+        target: "Сторінки",
+        appliesTo: "Розділ «Правова інформація» та кожен документ",
+      },
+      blog: {
+        source: "Стрічка блогу",
+        target: "Блог",
+        appliesTo: "Сторінка «Блог»",
+      },
+      siteContact: {
+        source: "Контакти (телефон, адреса, соцмережі)",
+        target: "Налаштування → Контакти",
+        appliesTo: "Футер кожної сторінки та сторінка «Контакти»",
+      },
+      seoSettings: {
+        source: "Meta-заголовки та SEO за замовчуванням",
+        target: "Налаштування → SEO",
+        appliesTo: "Кожна сторінка (невидимо: title, meta, robots)",
+      },
+    },
   },
 } as const;
 
