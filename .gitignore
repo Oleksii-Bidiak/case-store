@@ -15,8 +15,12 @@ out/
 .env.local
 .env.development.local
 .env.test.local
+.env.production
 .env.production.local
+.env.staging
 .env.*.local
+# Keep committed templates (…example) tracked despite the rules above.
+!.env.production.example
 
 # Prisma
 apps/store-api/prisma/migrations/*_*/

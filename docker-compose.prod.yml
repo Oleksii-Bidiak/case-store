@@ -1,0 +1,323 @@
+# ============================================================================
+# docker-compose.prod.yml — production stack for the store-ai monorepo (TASK-270)
+#
+# Brings up the three application images + their supporting infrastructure +
+# Umami analytics + a Caddy reverse proxy (automatic HTTPS) behind three
+# domains: the storefront (root), admin.<domain>, api.<domain>.
+#
+# Usage:
+#   cp .env.production.example .env.production   # then fill in real secrets
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# All values come from `.env.production` (docker compose auto-loads `.env`; pass
+# `--env-file .env.production` explicitly, or copy it to `.env`). App images are
+# built from the monorepo root as context (npm workspaces). NEXT_PUBLIC_* values
+# are baked at BUILD time — see the build.args blocks and .env.production.example.
+#
+# This file runs NO database migration. Applying the schema (`prisma db push` /
+# `migrate deploy`) is a deploy-time step owned by TASK-271, not packaging.
+# ============================================================================
+
+services:
+  # ─── PostgreSQL ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    container_name: store_prod_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      # Creates the separate `umami` DB on a fresh volume (runs once). For an
+      # already-initialised volume, create it once manually:
+      #   docker compose -f docker-compose.prod.yml exec postgres \
+      #     psql -U "$POSTGRES_USER" -c "CREATE DATABASE umami"
+      - ./docker/postgres-init-prod:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - store_network
+
+  # ─── Redis (cache + rate-limit store) ──────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: store_prod_redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+    # A password is REQUIRED in production (unlike dev). `$$` defers expansion to
+    # the container shell so the value is never interpolated by compose.
+    command: >
+      sh -c 'redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"'
+    volumes:
+      - redis_prod_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - store_network
+
+  # ─── Meilisearch (full-text search; app falls back to Postgres if down) ─────
+  meilisearch:
+    image: getmeili/meilisearch:v1.10
+    container_name: store_prod_meilisearch
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?MEILI_MASTER_KEY must be set (>=16 chars)}
+      MEILI_ENV: ${MEILI_ENV:-production}
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meili_prod_data:/meili_data
+    healthcheck:
+      # The meilisearch image bundles curl and exposes an unauthenticated /health.
+      test: ["CMD", "curl", "-fsS", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - store_network
+
+  # ─── Umami analytics (own DB in the shared Postgres) ────────────────────────
+  # Mirrors TASK-261's dev umami service and shares its env-var contract. Kept on
+  # the internal network + a loopback-only host port (dashboard via SSH tunnel);
+  # to serve its tracking script publicly, add an `analytics.<domain>` Caddy
+  # block and point NEXT_PUBLIC_UMAMI_SRC at it (future, owner's choice).
+  umami:
+    image: docker.umami.is/umami-software/umami:postgresql-latest
+    container_name: store_prod_umami
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/umami
+      APP_SECRET: ${UMAMI_APP_SECRET:?UMAMI_APP_SECRET must be set}
+      DISABLE_TELEMETRY: "1"
+    ports:
+      - "127.0.0.1:3003:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Umami is a node image; use node's http client (curl/wget may be absent).
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:3000/api/heartbeat',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - store_network
+
+  # ─── store-api (NestJS) ─────────────────────────────────────────────────────
+  store-api:
+    build:
+      context: .
+      dockerfile: apps/store-api/Dockerfile
+    image: store-api
+    container_name: store_prod_api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-3001}
+      # `postgres` is the service DNS name on store_network. URL-encode any
+      # special chars in POSTGRES_PASSWORD.
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set (>=32 chars)}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set (>=32 chars)}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-15m}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+      CSRF_SECRET: ${CSRF_SECRET:?CSRF_SECRET must be set (>=32 chars)}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL must be set (api public origin)}
+      UPLOAD_DEST: ${UPLOAD_DEST:-./uploads}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_CACHE_TTL_SECONDS: ${REDIS_CACHE_TTL_SECONDS:-60}
+      MEILI_HOST: ${MEILI_HOST:-http://meilisearch:7700}
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      NP_API_KEY: ${NP_API_KEY:-}
+      NP_SENDER_CITY_REF: ${NP_SENDER_CITY_REF:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
+      UMAMI_ORIGIN: ${UMAMI_ORIGIN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      # Uploaded product images (TASK-093 image pipeline) — must survive redeploys.
+      - uploads_data:/app/apps/store-api/uploads
+    ports:
+      # Loopback-only: local health/debug access. Public traffic goes via Caddy.
+      - "127.0.0.1:${PORT:-3001}:${PORT:-3001}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://localhost:${PORT:-3001}/health >/dev/null 2>&1 || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+    networks:
+      - store_network
+
+  # ─── store-client (Next.js storefront) ──────────────────────────────────────
+  store-client:
+    build:
+      context: .
+      dockerfile: apps/store-client/Dockerfile
+      # NEXT_PUBLIC_* are baked into the bundle at build time. A built image is
+      # therefore tied to ONE API domain — rebuild to change NEXT_PUBLIC_API_URL.
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL must be set}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?NEXT_PUBLIC_APP_URL must be set}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}
+        NEXT_PUBLIC_CURRENCY: ${NEXT_PUBLIC_CURRENCY:-UAH}
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+        NEXT_PUBLIC_SENTRY_ENVIRONMENT: ${NEXT_PUBLIC_SENTRY_ENVIRONMENT:-production}
+        NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE: ${NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE:-0}
+        NEXT_PUBLIC_UMAMI_SRC: ${NEXT_PUBLIC_UMAMI_SRC:-}
+        NEXT_PUBLIC_UMAMI_WEBSITE_ID: ${NEXT_PUBLIC_UMAMI_WEBSITE_ID:-}
+        SENTRY_ORG: ${SENTRY_ORG:-}
+        SENTRY_PROJECT: ${SENTRY_PROJECT:-}
+        SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}
+    image: store-client
+    container_name: store_prod_client
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    ports:
+      - "127.0.0.1:3000:3000"
+    # Not health-gated: the storefront should still boot and degrade gracefully
+    # if the API is briefly down, rather than refuse to start.
+    depends_on:
+      - store-api
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://localhost:3000/ >/dev/null 2>&1 || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - store_network
+
+  # ─── store-admin (Next.js admin panel) ──────────────────────────────────────
+  store-admin:
+    build:
+      context: .
+      dockerfile: apps/store-admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL must be set}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?NEXT_PUBLIC_APP_URL must be set}
+        NEXT_PUBLIC_ADMIN_URL: ${NEXT_PUBLIC_ADMIN_URL:?NEXT_PUBLIC_ADMIN_URL must be set}
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+        NEXT_PUBLIC_SENTRY_ENVIRONMENT: ${NEXT_PUBLIC_SENTRY_ENVIRONMENT:-production}
+        NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE: ${NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE:-0}
+        SENTRY_ORG: ${SENTRY_ORG:-}
+        SENTRY_PROJECT: ${SENTRY_PROJECT:-}
+        SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}
+    image: store-admin
+    container_name: store_prod_admin
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3002"
+      HOSTNAME: "0.0.0.0"
+    ports:
+      - "127.0.0.1:3002:3002"
+    depends_on:
+      - store-api
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://localhost:3002/ >/dev/null 2>&1 || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - store_network
+
+  # ─── Caddy reverse proxy (automatic HTTPS) ──────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: store_prod_caddy
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN must be set (e.g. mystore.ua or localhost)}
+      PORT: ${PORT:-3001}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Persist ACME certs/account across redeploys — losing these would hit
+      # Let's Encrypt rate limits on every deploy.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - store-client
+      - store-admin
+      - store-api
+    healthcheck:
+      # Caddy's admin API (localhost:2019) returns the running config JSON.
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://localhost:2019/config/ >/dev/null 2>&1 || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - store_network
+
+volumes:
+  postgres_prod_data:
+  redis_prod_data:
+  meili_prod_data:
+  uploads_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  store_network:
+    driver: bridge

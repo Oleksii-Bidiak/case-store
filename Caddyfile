@@ -1,0 +1,33 @@
+# Caddyfile — production reverse proxy for the store-ai stack (TASK-270).
+#
+# Caddy provisions and renews Let's Encrypt (or ZeroSSL) certificates
+# automatically for all three sites, provided the domains' A/AAAA records point
+# at this host and ports 80/443 are publicly reachable. No manual certbot/nginx.
+#
+# {$DOMAIN} / {$PORT} are substituted from the container environment (sourced
+# from .env.production via docker-compose.prod.yml). Locally, set DOMAIN=localhost
+# and Caddy serves HTTPS via its own internal CA (self-signed, browser-untrusted
+# but functional) instead of hitting a public ACME endpoint.
+#
+# To receive certificate-expiry notices, add a global options block with your
+# email:  {  email you@example.com  }
+
+# ─── Storefront (root domain) ───────────────────────────────────────────────
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy store-client:3000
+}
+
+# ─── Admin panel (admin. subdomain) ─────────────────────────────────────────
+admin.{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy store-admin:3002
+}
+
+# ─── API + uploaded images (api. subdomain) ─────────────────────────────────
+# store-api serves /api/*, the unprefixed /health probe, and static product
+# images at /uploads/* — all proxied through here on the app's configured PORT.
+api.{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy store-api:{$PORT}
+}
