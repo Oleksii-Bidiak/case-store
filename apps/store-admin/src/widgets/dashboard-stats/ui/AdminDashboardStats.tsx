@@ -1,6 +1,8 @@
+import { Info } from "lucide-react";
 import type { DashboardSummaryResponse } from "@/entities/dashboard";
 import { dict } from "@/shared/config";
-import { formatCurrency } from "@/shared/lib";
+import { formatCurrency, formatPercent } from "@/shared/lib";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui";
 
 interface AdminDashboardStatsProps {
   summary: DashboardSummaryResponse;
@@ -18,6 +20,11 @@ interface StatCardProps {
   value: string;
   subText: string;
   tone?: StatTone;
+  /**
+   * Optional plain-UA explanation (TASK-249). When present, an info-icon trigger
+   * renders next to the label and reveals this copy on hover/focus.
+   */
+  tooltip?: string;
 }
 
 const TONE_VALUE_CLASS: Record<StatTone, string> = {
@@ -26,10 +33,30 @@ const TONE_VALUE_CLASS: Record<StatTone, string> = {
   warning: "text-warning",
 };
 
-function StatCard({ label, value, subText, tone = "default" }: StatCardProps) {
+function StatCard({
+  label,
+  value,
+  subText,
+  tone = "default",
+  tooltip,
+}: StatCardProps) {
   return (
     <div className="rounded-lg border border-border bg-card p-6 shadow-card">
-      <h3 className="text-sm font-medium text-muted-foreground">{label}</h3>
+      <div className="flex items-center gap-1.5">
+        <h3 className="text-sm font-medium text-muted-foreground">{label}</h3>
+        {tooltip ? (
+          <Tooltip>
+            <TooltipTrigger
+              type="button"
+              aria-label={dict.dashboard.metricInfoAria(label)}
+              className="inline-flex rounded-sm text-muted-foreground/70 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+            >
+              <Info className="size-3.5" aria-hidden="true" />
+            </TooltipTrigger>
+            <TooltipContent>{tooltip}</TooltipContent>
+          </Tooltip>
+        ) : null}
+      </div>
       <p
         className={`mt-2 font-display text-3xl font-bold tracking-tight tabular-nums ${TONE_VALUE_CLASS[tone]}`}
       >
@@ -44,7 +71,9 @@ function StatCard({ label, value, subText, tone = "default" }: StatCardProps) {
  * Headline metric cards for the admin dashboard. Pure presentational —
  * receives the already-fetched summary and renders; no hooks, no data fetching.
  * Earned (PAID) revenue is shown separately from unrealized revenue —
- * ordered-but-not-yet-paid money (TASK-137).
+ * ordered-but-not-yet-paid money (TASK-137). TASK-249 adds average order value
+ * and the two repeat-buyer-rate cards, plus plain-UA tooltips on the new cards
+ * and the two unrealized-revenue cards.
  */
 export function AdminDashboardStats({ summary }: AdminDashboardStatsProps) {
   const pendingOrders =
@@ -70,12 +99,20 @@ export function AdminDashboardStats({ summary }: AdminDashboardStatsProps) {
         value={formatCurrency(summary.revenue.unrealizedRevenue)}
         subText={dict.dashboard.unrealizedLifetime}
         tone="warning"
+        tooltip={dict.dashboard.unrealizedRevenueTooltip}
       />
       <StatCard
         label={dict.dashboard.unrealizedRevenue30}
         value={formatCurrency(summary.revenue.unrealizedRevenueLast30Days)}
         subText={dict.dashboard.last30}
         tone="warning"
+        tooltip={dict.dashboard.unrealizedRevenue30Tooltip}
+      />
+      <StatCard
+        label={dict.dashboard.averageOrderValue30}
+        value={formatCurrency(summary.revenue.averageOrderValueLast30Days)}
+        subText={dict.dashboard.averageOrderValue30Sub}
+        tooltip={dict.dashboard.averageOrderValue30Tooltip}
       />
       <StatCard
         label={dict.dashboard.totalOrders}
@@ -86,6 +123,18 @@ export function AdminDashboardStats({ summary }: AdminDashboardStatsProps) {
         label={dict.dashboard.totalUsers}
         value={String(summary.users.totalUsers)}
         subText={dict.dashboard.registeredCustomers}
+      />
+      <StatCard
+        label={dict.dashboard.repeatBuyerRate}
+        value={formatPercent(summary.customers.repeatBuyerRate)}
+        subText={dict.dashboard.repeatBuyerRateSub}
+        tooltip={dict.dashboard.repeatBuyerRateTooltip}
+      />
+      <StatCard
+        label={dict.dashboard.repeatBuyerRate90}
+        value={formatPercent(summary.customers.repeatBuyerRateLast90Days)}
+        subText={dict.dashboard.repeatBuyerRate90Sub}
+        tooltip={dict.dashboard.repeatBuyerRate90Tooltip}
       />
     </div>
   );

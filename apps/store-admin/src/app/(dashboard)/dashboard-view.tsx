@@ -6,6 +6,7 @@ import {
   AdminDashboardStats,
   AdminDashboardStatsSkeleton,
   DashboardCharts,
+  DashboardLastOrdersTable,
   DashboardLowStockTable,
   DashboardSectionSkeleton,
   DashboardTopProductsTable,
@@ -88,6 +89,13 @@ export function DashboardView() {
           <DashboardLowStockTable products={data.inventory.lowStockProducts} />
         </>
       )}
+
+      <Separator className="my-6" />
+
+      {/* Last orders (TASK-249) — self-fetching, independent of the summary
+          fetch (same pattern as NeedsActionWidget); manages its own loading /
+          error / empty state, so it renders even if the summary above fails. */}
+      <DashboardLastOrdersTable />
 
       <Separator className="my-6" />
 

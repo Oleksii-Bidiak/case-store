@@ -15,6 +15,7 @@ export type {
   RevenueMetricsDto,
   OrderMetricsDto,
   UserMetricsDto,
+  CustomerMetricsDto,
   ProductMetricsDto,
   InventoryMetricsDto,
   DailyDataPointDto,

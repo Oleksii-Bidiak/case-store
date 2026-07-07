@@ -69,6 +69,12 @@ export {
   TableRow,
 } from "./table";
 export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";
+export {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "./tooltip";
 export { SortableColumnHeader } from "./sortable-column-header";
 export { Skeleton } from "./skeleton";
 export { AdminFormSkeleton } from "./admin-form-skeleton";

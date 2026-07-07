@@ -5,6 +5,7 @@ import {
   DASHBOARD_WINDOW_DAYS,
   LOW_STOCK_LIMIT,
   LOW_STOCK_THRESHOLD,
+  REPEAT_BUYER_WINDOW_DAYS,
   TOP_PRODUCTS_LIMIT,
   type DailyDataPoint,
   type DashboardSummary,
@@ -13,6 +14,7 @@ import {
   type OrderStatusCount,
   type TopProduct,
 } from './dashboard.types';
+import { computeAverageOrderValue, computeRepeatBuyerRate } from './dashboard.formulas';
 
 /**
  * Revenue is counted only for orders the admin has actually marked PAID
@@ -29,6 +31,13 @@ import {
  * (CANCELLED, REFUNDED)`). This is the receivable pipeline — money expected but
  * not yet collected (e.g. COD awaiting collection, or a failed payment pending a
  * retry) — shown beside earned revenue so the admin can read both at a glance.
+ *
+ * TASK-249 (dashboard metrics v2, `docs/plans/120-dashboard-metrics-v2.md`)
+ * absorbs this in-transit/unrealized revenue metric as-is with no further
+ * changes — see that plan for why it deliberately keeps a single all-active-unpaid
+ * figure rather than splitting off a narrower "shipped-but-unpaid" number. What
+ * TASK-249 adds instead is average order value and repeat-buyer rate (see
+ * `dashboard.formulas.ts` + `getPaidOrderCountSince` / `getRepeatBuyerRate` below).
  */
 
 /** Raw-query row shape for the gap-filled daily series. */
@@ -69,12 +78,15 @@ export class DashboardRepository {
       revenueLast30Days,
       unrealizedRevenue,
       unrealizedRevenueLast30Days,
+      paidOrderCountLast30Days,
       revenueByDay,
       totalOrders,
       ordersByStatus,
       ordersByDay,
       totalUsers,
       newUsersByDay,
+      repeatBuyerRate,
+      repeatBuyerRateLast90Days,
       totalProducts,
       activeProducts,
       topProducts,
@@ -84,12 +96,15 @@ export class DashboardRepository {
       this.getRevenueSince(windowStart),
       this.getUnrealizedRevenue(),
       this.getUnrealizedRevenueSince(windowStart),
+      this.getPaidOrderCountSince(windowStart),
       this.getRevenueByDay(windowDays),
       this.prisma.order.count(),
       this.getOrderCountByStatus(),
       this.getOrdersByDay(windowDays),
       this.prisma.user.count(),
       this.getNewUsersByDay(windowDays),
+      this.getRepeatBuyerRate(),
+      this.getRepeatBuyerRate(this.windowStart(REPEAT_BUYER_WINDOW_DAYS)),
       this.prisma.product.count(),
       this.prisma.product.count({ where: { isActive: true } }),
       this.getTopProducts(TOP_PRODUCTS_LIMIT),
@@ -102,10 +117,15 @@ export class DashboardRepository {
         revenueLast30Days,
         unrealizedRevenue,
         unrealizedRevenueLast30Days,
+        averageOrderValueLast30Days: computeAverageOrderValue(
+          revenueLast30Days,
+          paidOrderCountLast30Days,
+        ),
         revenueByDay,
       },
       orders: { totalOrders, ordersByStatus, ordersByDay },
       users: { totalUsers, newUsersByDay },
+      customers: { repeatBuyerRate, repeatBuyerRateLast90Days },
       products: { totalProducts, activeProducts, topProducts },
       inventory: { lowStockProducts },
     };
@@ -185,6 +205,43 @@ export class DashboardRepository {
       where: { ...this.unrealizedOrderWhere(), createdAt: { gte: since } },
     });
     return Number(result._sum.total ?? 0);
+  }
+
+  /**
+   * Count of PAID orders created since a given date — the denominator for the
+   * 30-day average-order-value figure (TASK-249). Uses the same `paymentStatus =
+   * PAID` ground truth as `getRevenueSince` so AOV = revenue ÷ count stays
+   * internally consistent (both count the same set of orders).
+   */
+  private async getPaidOrderCountSince(since: Date): Promise<number> {
+    return this.prisma.order.count({
+      where: { paymentStatus: PaymentStatus.PAID, createdAt: { gte: since } },
+    });
+  }
+
+  /**
+   * Repeat-buyer rate (TASK-249): the share (0..1) of customers who placed 2+
+   * non-CANCELLED orders. Groups orders by `userId` and hands the per-user counts
+   * to the pure {@link computeRepeatBuyerRate} formula.
+   *
+   * CANCELLED orders are excluded (an order the customer backed out of never
+   * happened); REFUNDED orders are kept (a real completed transaction and
+   * relationship) — deliberately narrower than {@link unrealizedOrderWhere}'s
+   * two-status exclusion (plan 120 Design Decision 3). When `since` is provided,
+   * both numerator and denominator are windowed to orders created on/after it.
+   */
+  private async getRepeatBuyerRate(since?: Date): Promise<number> {
+    const grouped = await this.prisma.order.groupBy({
+      by: ['userId'],
+      where: {
+        status: { not: OrderStatus.CANCELLED },
+        ...(since ? { createdAt: { gte: since } } : {}),
+      },
+      _count: { id: true },
+    });
+    return computeRepeatBuyerRate(
+      grouped.map((row) => ({ userId: row.userId, count: row._count.id })),
+    );
   }
 
   /**

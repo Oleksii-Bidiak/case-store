@@ -38,6 +38,7 @@ describe('Admin Dashboard (e2e)', () => {
       revenueLast30Days: 8120.4,
       unrealizedRevenue: 12400.0,
       unrealizedRevenueLast30Days: 3800.0,
+      averageOrderValueLast30Days: 812.04,
       revenueByDay: [
         { date: '2026-06-12', value: 1200.5 },
         { date: '2026-06-13', value: 0 },
@@ -60,6 +61,10 @@ describe('Admin Dashboard (e2e)', () => {
         { date: '2026-06-12', value: 3 },
         { date: '2026-06-13', value: 1 },
       ],
+    },
+    customers: {
+      repeatBuyerRate: 0.24,
+      repeatBuyerRateLast90Days: 0.31,
     },
     products: {
       totalProducts: 128,
@@ -192,10 +197,15 @@ describe('Admin Dashboard (e2e)', () => {
       expect(typeof body.revenue.revenueLast30Days).toBe('number');
       expect(typeof body.revenue.unrealizedRevenue).toBe('number');
       expect(typeof body.revenue.unrealizedRevenueLast30Days).toBe('number');
+      expect(typeof body.revenue.averageOrderValueLast30Days).toBe('number');
       expect(Array.isArray(body.revenue.revenueByDay)).toBe(true);
       expect(body.revenue.revenueByDay[0]).toEqual(
         expect.objectContaining({ date: expect.any(String), value: expect.any(Number) }),
       );
+
+      // customers (TASK-249)
+      expect(typeof body.customers.repeatBuyerRate).toBe('number');
+      expect(typeof body.customers.repeatBuyerRateLast90Days).toBe('number');
 
       // orders
       expect(typeof body.orders.totalOrders).toBe('number');
@@ -239,10 +249,12 @@ describe('Admin Dashboard (e2e)', () => {
           revenueLast30Days: 0,
           unrealizedRevenue: 0,
           unrealizedRevenueLast30Days: 0,
+          averageOrderValueLast30Days: 0,
           revenueByDay: [],
         },
         orders: { totalOrders: 0, ordersByStatus: [], ordersByDay: [] },
         users: { totalUsers: 0, newUsersByDay: [] },
+        customers: { repeatBuyerRate: 0, repeatBuyerRateLast90Days: 0 },
         products: { totalProducts: 0, activeProducts: 0, topProducts: [] },
         inventory: { lowStockProducts: [] },
       });

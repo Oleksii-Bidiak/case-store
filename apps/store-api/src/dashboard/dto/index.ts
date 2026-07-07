@@ -4,6 +4,7 @@ export {
   RevenueMetricsDto,
   OrderMetricsDto,
   UserMetricsDto,
+  CustomerMetricsDto,
   TopProductDto,
   ProductMetricsDto,
   LowStockProductDto,

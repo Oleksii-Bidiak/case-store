@@ -26,7 +26,24 @@ export interface RevenueMetrics {
   unrealizedRevenue: number;
   /** Unrealized revenue created in the rolling window (TASK-137). */
   unrealizedRevenueLast30Days: number;
+  /**
+   * Average order value over the last 30 days: earned revenue in the window
+   * divided by the number of PAID orders in the window, `0` if none (TASK-249).
+   */
+  averageOrderValueLast30Days: number;
   revenueByDay: DailyDataPoint[];
+}
+
+/**
+ * Customer-relationship metrics (TASK-249). `repeatBuyerRate` is the share
+ * (0..1) of customers with 2+ non-CANCELLED orders; the 90-day variant windows
+ * both numerator and denominator to orders created in the last 90 days.
+ */
+export interface CustomerMetrics {
+  /** All-time share (0..1) of customers with 2+ non-CANCELLED orders. */
+  repeatBuyerRate: number;
+  /** Same share, restricted to orders created in the last 90 days. */
+  repeatBuyerRateLast90Days: number;
 }
 
 export interface OrderMetrics {
@@ -66,6 +83,7 @@ export interface DashboardSummary {
   revenue: RevenueMetrics;
   orders: OrderMetrics;
   users: UserMetrics;
+  customers: CustomerMetrics;
   products: ProductMetrics;
   inventory: InventoryMetrics;
 }
@@ -89,6 +107,13 @@ export interface NeedsAction {
 
 /** Rolling window (in days) used for all time-series metrics. */
 export const DASHBOARD_WINDOW_DAYS = 30;
+
+/**
+ * Fixed window (in days) for the recent repeat-buyer rate (TASK-249). This is a
+ * metric-specific window, not a global dashboard period selector (see plan 120
+ * Design Decision 2 — the whole-dashboard 7/30/90 selector stays out of scope).
+ */
+export const REPEAT_BUYER_WINDOW_DAYS = 90;
 
 /**
  * Low-stock threshold for the dashboard restock query. Re-exported from the
