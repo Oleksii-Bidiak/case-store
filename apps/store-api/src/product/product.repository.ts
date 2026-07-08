@@ -499,6 +499,8 @@ export class ProductRepository {
       createdAt: 'createdAt',
       price: 'price',
       name: 'name',
+      // Admin "Вільно" sort by available stock (TASK-254).
+      stock: 'stock',
     };
     const sortField = allowedSortFields[sortBy ?? 'createdAt'];
     if (!sortField) {

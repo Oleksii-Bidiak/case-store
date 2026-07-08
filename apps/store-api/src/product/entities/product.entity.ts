@@ -63,10 +63,28 @@ export class ProductEntity {
   sku!: string | null;
 
   @ApiProperty({
-    description: 'Available stock quantity for this position',
+    description: 'Available (free-to-sell) stock quantity for this position',
     example: 150,
   })
   stock!: number;
+
+  @ApiProperty({
+    description:
+      'Reserved quantity — units tied up in unshipped (PENDING/CONFIRMED/PROCESSING) ' +
+      'orders, derived on read (TASK-254). Admin-only informational figure; `stock` ' +
+      'already had these units subtracted at order creation. Optional on the input, ' +
+      'always present on the output (defaults to 0 on mutation-echo reads).',
+    example: 5,
+  })
+  reservedQty!: number;
+
+  @ApiProperty({
+    description:
+      'Physical on-shelf quantity = stock + reservedQty (derived arithmetic, TASK-254). ' +
+      'Admin-only informational figure. Always present on the output.',
+    example: 155,
+  })
+  physicalQty!: number;
 
   @ApiProperty({
     description: 'Category ID the product belongs to',
@@ -179,6 +197,12 @@ export class ProductEntity {
    * `ratingAverage` / `ratingCount` are optional: list and detail queries
    * enrich the product with review aggregates, while admin/mutation paths
    * (create, update, findById) omit them and default to "no reviews".
+   *
+   * `reservedQty` follows the same optional-input/always-present-output contract
+   * (TASK-254): admin list/detail/preview reads pass the derived aggregate,
+   * while mutation-echo reads (create/update/activate/deactivate/delete) omit it
+   * and default to 0 (physicalQty = stock) — accurate in the common case and
+   * self-healing on the next list/detail read, exactly like ratingAverage.
    */
   static fromPrisma(product: {
     id: string;
@@ -189,6 +213,7 @@ export class ProductEntity {
     compareAtPrice: { toString(): string } | null;
     sku: string | null;
     stock: number;
+    reservedQty?: number;
     categoryId: string;
     groupId?: string | null;
     brand?: { id: string; name: string; slug: string; logo: string | null } | null;
@@ -226,6 +251,8 @@ export class ProductEntity {
     entity.compareAtPrice = product.compareAtPrice ? product.compareAtPrice.toString() : null;
     entity.sku = product.sku;
     entity.stock = product.stock;
+    entity.reservedQty = product.reservedQty ?? 0;
+    entity.physicalQty = entity.stock + entity.reservedQty;
     entity.categoryId = product.categoryId;
     entity.groupId = product.groupId ?? null;
     entity.brand = product.brand ? ProductBrandEntity.fromPrisma(product.brand) : null;

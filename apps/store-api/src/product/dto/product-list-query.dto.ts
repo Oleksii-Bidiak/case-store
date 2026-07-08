@@ -150,17 +150,19 @@ export class ProductListQueryDto {
 
   @ApiProperty({
     description:
-      'Sort field: createdAt, price, name, or bestselling. `bestselling` orders by ' +
+      'Sort field: createdAt, price, name, stock, or bestselling. `bestselling` orders by ' +
       'units sold across PAID orders (TASK-164); zero-sales products still appear, ' +
-      'newest-first, at the tail.',
+      'newest-first, at the tail. `stock` sorts by available (free-to-sell) stock — the ' +
+      'admin list "Вільно" sort (TASK-254); harmless on the public list, which never ' +
+      'exposes raw stock.',
     example: 'createdAt',
     required: false,
     default: 'createdAt',
   })
   @IsOptional()
   @IsString()
-  @IsIn(['createdAt', 'price', 'name', 'bestselling'], {
-    message: 'sortBy must be one of: createdAt, price, name, bestselling',
+  @IsIn(['createdAt', 'price', 'name', 'stock', 'bestselling'], {
+    message: 'sortBy must be one of: createdAt, price, name, stock, bestselling',
   })
   sortBy?: string = 'createdAt';
 

@@ -66,6 +66,9 @@ describe('ProductController (e2e)', () => {
     update: jest.fn(),
     deactivate: jest.fn(),
     activate: jest.fn(),
+    // TASK-254: adminFindAll/findById/preview enrich with the derived reserved
+    // aggregate; default to an empty map (no reservations) for these mocked reads.
+    getReservedQtyByProductId: jest.fn().mockResolvedValue(new Map<string, number>()),
   };
 
   // Mock CategoryRepository — ProductService depends on it for the TASK-236
