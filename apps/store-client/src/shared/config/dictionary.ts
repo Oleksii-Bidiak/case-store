@@ -130,8 +130,6 @@ export const dict = {
     catalogNew: "Новинки",
     catalogWishlist: "Обране",
     infoTitle: "Інформація",
-    infoDelivery: "Доставка й оплата",
-    infoWarranty: "Гарантія та сервіс",
     infoAbout: "Про нас",
     infoFaq: "Часті питання",
     infoBlog: "Блог",
@@ -309,13 +307,15 @@ export const dict = {
       heading: "−10% на перше замовлення",
       subtitle:
         "Підпишись на розсилку та отримуй добірки новинок і персональні промокоди.",
-      // External social links — no real URLs yet (href "#", TODO in widget).
+      // External social links — no real URLs yet (href "#"). The widget renders a
+      // "coming soon" toast for any placeholder href and a real <a> once set.
       socials: [
         { label: "Telegram", href: "#" },
         { label: "Instagram", href: "#" },
         { label: "YouTube", href: "#" },
         { label: "Viber", href: "#" },
       ],
+      socialSoon: "Наші канали скоро запрацюють.",
     },
   },
 
@@ -347,12 +347,14 @@ export const dict = {
       heading: "Не пропускай нові статті",
       subtitle:
         "Підписуйся на канали MobileStore — огляди, гайди та знижки першими.",
-      // External social links — no real URLs yet (href "#", TODO TASK-166/170).
+      // External social links — no real URLs yet (href "#"). The widget renders a
+      // "coming soon" toast for any placeholder href and a real <a> once set.
       socials: [
         { label: "Telegram", href: "#" },
         { label: "Instagram", href: "#" },
         { label: "YouTube", href: "#" },
       ],
+      socialSoon: "Наші канали скоро запрацюють.",
     },
     // Article detail page (/blog/[slug], Article.dc.html import). The body is
     // shared demo content until the Blog backend (TASK-170) supplies real posts.

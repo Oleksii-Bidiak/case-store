@@ -32,7 +32,6 @@ export const dict = {
     siteContact: "Контакти",
     seoSettings: "SEO",
     faq: "FAQ",
-    settings: "Налаштування",
   },
 
   header: {
