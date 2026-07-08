@@ -5,6 +5,13 @@ export type {
   DiscountPreviewEntity,
   DiscountPreviewResponseEnvelope,
   PreviewDiscountDto,
+  // Public active-discounts feed (TASK-179).
+  PublicDiscountEntity,
+  PublicDiscountEntityType,
 } from "@/shared/api/generated/models";
 
-export { usePreviewDiscount } from "@/shared/api/generated/discounts/discounts";
+export {
+  usePreviewDiscount,
+  // Live promo feed for the storefront /promo page (TASK-179).
+  useListActiveDiscounts,
+} from "@/shared/api/generated/discounts/discounts";

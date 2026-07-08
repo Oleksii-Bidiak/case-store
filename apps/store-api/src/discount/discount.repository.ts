@@ -115,6 +115,27 @@ export class DiscountRepository {
     return { discounts, total };
   }
 
+  /**
+   * Candidate rows for the public active-discounts feed (TASK-179): active codes
+   * whose redemption window contains `now` — a null-or-past `startsAt` AND a
+   * null-or-future `expiresAt`. Every comparison here is column-vs-literal, so
+   * the fluent `where` handles it natively; the redemption-cap check
+   * (`redeemedCount < maxRedemptions`, a same-row column-vs-column comparison)
+   * is applied in the service over this small candidate set. Ordered by
+   * `expiresAt ASC` — Postgres's default `NULLS LAST` trails never-expiring
+   * codes after the soonest-expiring ones (a reasonable promo default).
+   */
+  findActiveWindowCandidates(now: Date): Promise<Discount[]> {
+    return this.prisma.discount.findMany({
+      where: {
+        isActive: true,
+        OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+        AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }],
+      },
+      orderBy: { expiresAt: 'asc' },
+    });
+  }
+
   /** Create a discount. */
   create(data: CreateDiscountInput): Promise<Discount> {
     return this.prisma.discount.create({

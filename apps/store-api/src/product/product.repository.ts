@@ -39,6 +39,13 @@ export interface FindAllParams {
    * this "basic" cut (doc 099 §6); multi-pair stacking is a future enhancement.
    */
   specFilter?: { key: string; value: string };
+  /**
+   * On-sale filter (TASK-179): keep only products whose `compareAtPrice` is set
+   * and strictly greater than `price`. A same-row column-to-column comparison
+   * Prisma's typed `where` can't express, so it is resolved via a raw-SQL id
+   * prefetch (`getOnSaleProductIds`) fed into `where.id IN (...)`.
+   */
+  onSale?: boolean;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }
@@ -418,6 +425,7 @@ export class ProductRepository {
       maxPrice,
       search,
       specFilter,
+      onSale,
       sortBy = 'createdAt',
       sortOrder = 'desc',
     } = params;
@@ -475,6 +483,17 @@ export class ProductRepository {
       };
     }
 
+    // On-sale (TASK-179): `compareAtPrice > price` is a same-row column-to-column
+    // comparison Prisma's typed `where` cannot express, so resolve the matching
+    // ids with one raw query and AND them into `where.id`. Baked into `where`
+    // BEFORE skip/take/count and BEFORE the bestselling branch, so it composes
+    // with every other filter AND both sort paths, and pagination stays correct.
+    // Only queried when the filter is active — zero added cost otherwise.
+    if (onSale) {
+      const onSaleIds = await this.getOnSaleProductIds();
+      where.id = { in: onSaleIds };
+    }
+
     // Bestselling (TASK-164) ranks by an aggregate over PAID order items rather
     // than a scalar column, so it takes a dedicated ranking path; every other
     // sort maps to a plain column order.
@@ -485,6 +504,22 @@ export class ProductRepository {
 
     const enriched = await this.enrichProducts(products);
     return { products: enriched, total };
+  }
+
+  /**
+   * Ids of every product currently on sale — `compareAtPrice` set AND strictly
+   * greater than `price` (TASK-179). A raw query because Prisma's typed `where`
+   * can't compare two columns of the same row. Queries the real snake_case
+   * table/columns (`products` / `compare_at_price` / `price`). No
+   * `deleted_at`/`is_active` guard here: the caller ANDs these ids into the
+   * outer `where`, which already enforces both — a soft-deleted or inactive
+   * on-sale row simply intersects to nothing.
+   */
+  private async getOnSaleProductIds(): Promise<string[]> {
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>(
+      Prisma.sql`SELECT id FROM products WHERE compare_at_price IS NOT NULL AND compare_at_price > price`,
+    );
+    return rows.map((row) => row.id);
   }
 
   /** Standard column-ordered page (createdAt / price / name). */

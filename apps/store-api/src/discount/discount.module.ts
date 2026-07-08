@@ -4,6 +4,7 @@ import { DiscountRepository } from './discount.repository';
 import { DiscountService } from './discount.service';
 import { DiscountController } from './discount.controller';
 import { AdminDiscountController } from './admin-discount.controller';
+import { PublicDiscountController } from './public-discount.controller';
 
 /**
  * DiscountModule — promo-code validation, calculation, redemption, and admin
@@ -13,7 +14,7 @@ import { AdminDiscountController } from './admin-discount.controller';
  */
 @Module({
   imports: [CartModule],
-  controllers: [DiscountController, AdminDiscountController],
+  controllers: [DiscountController, AdminDiscountController, PublicDiscountController],
   providers: [DiscountRepository, DiscountService],
   exports: [DiscountService],
 })

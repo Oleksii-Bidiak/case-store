@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma';
 // ─── Mock PrismaService ──────────────────────────────────────────────────────
 
 const prismaMock = {
+  $queryRaw: jest.fn(),
   product: {
     findFirst: jest.fn(),
     findMany: jest.fn(),
@@ -199,6 +200,67 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       // Only the page query ran — no second product.findMany for siblings.
       expect(prismaMock.product.findMany).toHaveBeenCalledTimes(1);
       expect(result.products[0].variantSiblings).toBeUndefined();
+    });
+  });
+
+  // ─── onSale filter (TASK-179) ───────────────────────────────────────────────
+  // `compareAtPrice > price` can't be a typed Prisma where, so the repository
+  // prefetches the matching ids with a raw query and ANDs them into `where.id`.
+  describe('onSale filter (TASK-179)', () => {
+    it('ANDs the raw-SQL id set into where.id alongside existing filters', async () => {
+      prismaMock.$queryRaw.mockResolvedValue([{ id: 'p1' }, { id: 'p3' }]);
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({
+        page: 1,
+        limit: 20,
+        onSale: true,
+        categoryIds: ['cat-1'],
+      });
+
+      expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(1);
+      const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
+      // The category filter is preserved (ANDed), not replaced.
+      expect(findManyArgs.where).toEqual(
+        expect.objectContaining({
+          categoryId: { in: ['cat-1'] },
+          id: { in: ['p1', 'p3'] },
+        }),
+      );
+      const countArgs = prismaMock.product.count.mock.calls[0][0];
+      expect(countArgs.where).toEqual(expect.objectContaining({ id: { in: ['p1', 'p3'] } }));
+    });
+
+    it('composes with the bestselling sort — the candidate where carries id: in', async () => {
+      prismaMock.$queryRaw.mockResolvedValue([{ id: 'p1' }, { id: 'p2' }]);
+      // bestselling: candidates query (id + createdAt), then the page rows query.
+      prismaMock.product.findMany
+        .mockResolvedValueOnce([
+          { id: 'p1', createdAt: new Date('2026-01-01') },
+          { id: 'p2', createdAt: new Date('2026-01-02') },
+        ])
+        .mockResolvedValueOnce([{ id: 'p1', groupId: null }]);
+      prismaMock.orderItem.groupBy.mockResolvedValue([]);
+      prismaMock.review.groupBy.mockResolvedValue([]);
+      prismaMock.productImage.findMany.mockResolvedValue([]);
+
+      await repository.findAll({ page: 1, limit: 20, onSale: true, sortBy: 'bestselling' });
+
+      const candidateWhere = prismaMock.product.findMany.mock.calls[0][0].where;
+      expect(candidateWhere).toEqual(
+        expect.objectContaining({ id: { in: ['p1', 'p2'] }, deletedAt: null }),
+      );
+    });
+
+    it('does not run the raw query when onSale is absent/false', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20 });
+      await repository.findAll({ page: 1, limit: 20, onSale: false });
+
+      expect(prismaMock.$queryRaw).not.toHaveBeenCalled();
     });
   });
 

@@ -7,7 +7,7 @@ import {
 } from './discount.repository';
 import { CartService } from '../cart';
 import type { ResolvedCartIdentity } from '../cart/cart-identity.types';
-import { DiscountEntity, DiscountPreviewEntity } from './entities';
+import { DiscountEntity, DiscountPreviewEntity, PublicDiscountEntity } from './entities';
 import { CreateDiscountDto, UpdateDiscountDto, DiscountListQueryDto } from './dto';
 import { DiscountErrorCode, badDiscount, conflictDiscount } from './discount.errors';
 
@@ -176,6 +176,26 @@ export class DiscountService {
 
     await this.discountRepository.incrementRedeemed(discountId, tx);
     await this.discountRepository.createRedemption({ discountId, userId, orderId }, tx);
+  }
+
+  /**
+   * Public active-discounts feed (TASK-179, `GET /api/discounts/active`). Loads
+   * the DB-expressible window candidates (active + null-or-past `startsAt` +
+   * null-or-future `expiresAt`), then applies the remaining cap gate in JS —
+   * `maxRedemptions === null || redeemedCount < maxRedemptions` — a same-row
+   * column-vs-column comparison the SQL `where` can't express (mirrors how
+   * {@link computeDiscount} checks the cap over an already-loaded row). Survivors
+   * are mapped to the public-safe {@link PublicDiscountEntity} (no caps/counts,
+   * no id). No pagination: a curated promo list is bounded (dozens, not
+   * hundreds).
+   */
+  async findActivePublic(): Promise<{ data: PublicDiscountEntity[] }> {
+    const candidates = await this.discountRepository.findActiveWindowCandidates(new Date());
+    const redeemable = candidates.filter(
+      (discount) =>
+        discount.maxRedemptions === null || discount.redeemedCount < discount.maxRedemptions,
+    );
+    return { data: redeemable.map((discount) => PublicDiscountEntity.fromPrisma(discount)) };
   }
 
   // ─── Admin CRUD ─────────────────────────────────────────────────────────

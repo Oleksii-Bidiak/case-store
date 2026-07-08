@@ -64,30 +64,48 @@ describe("PromoView", () => {
           ],
         }),
       ),
-      http.get("*/api/products", () =>
+      // The on-sale grid now relies on SERVER-side filtering (TASK-179): the
+      // handler must branch on the `onSale` query param, otherwise the
+      // "only on-sale products" test would pass vacuously.
+      http.get("*/api/products", ({ request }) => {
+        const onSale = new URL(request.url).searchParams.get("onSale");
+        const saleProduct = makeProduct({
+          id: "p-sale",
+          name: "Знижений товар",
+          slug: "deal-1",
+          price: "100.00",
+          compareAtPrice: "150.00",
+        });
+        const fullProduct = makeProduct({
+          id: "p-full",
+          name: "Повна ціна",
+          slug: "full-1",
+          compareAtPrice: null,
+        });
+        const data =
+          onSale === "true" ? [saleProduct] : [saleProduct, fullProduct];
+        return HttpResponse.json({
+          data,
+          meta: { total: data.length, page: 1, limit: 12, totalPages: 1 },
+        });
+      }),
+      http.get("*/api/discounts/active", () =>
         HttpResponse.json({
           data: [
-            makeProduct({
-              id: "p-sale",
-              name: "Знижений товар",
-              slug: "deal-1",
-              price: "100.00",
-              compareAtPrice: "150.00",
-            }),
-            makeProduct({
-              id: "p-full",
-              name: "Повна ціна",
-              slug: "full-1",
-              compareAtPrice: null,
-            }),
+            {
+              code: "SUMMER10",
+              type: "PERCENT",
+              value: "10",
+              minSpend: "500.00",
+              expiresAt: null,
+            },
           ],
-          meta: { total: 2, page: 1, limit: 48, totalPages: 1 },
         }),
       ),
     );
   });
 
-  it("renders the hero, coupon codes and the countdown", () => {
+  it("renders the hero, coupon codes and the countdown", async () => {
     renderWithProviders(<PromoView />);
 
     expect(
@@ -96,7 +114,8 @@ describe("PromoView", () => {
     expect(
       screen.getByRole("heading", { level: 2, name: d.couponsHeading }),
     ).toBeInTheDocument();
-    expect(screen.getByText("MOBILE5")).toBeInTheDocument();
+    // The coupon code comes from the live active-discounts feed (TASK-179).
+    expect(await screen.findByText("SUMMER10")).toBeInTheDocument();
     expect(screen.getByRole("timer")).toBeInTheDocument();
   });
 

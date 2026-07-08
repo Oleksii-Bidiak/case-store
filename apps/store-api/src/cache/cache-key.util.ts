@@ -51,6 +51,8 @@ export interface ProductListKeyParams {
   search?: string;
   /** Serialized structured-spec facet ("key:value"), TASK-191. */
   specs?: string;
+  /** On-sale filter (compareAtPrice > price), TASK-179. */
+  onSale?: boolean;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }
@@ -70,6 +72,7 @@ const KEY_FIELDS: ReadonlyArray<keyof ProductListKeyParams> = [
   'maxPrice',
   'search',
   'specs',
+  'onSale',
   'sortBy',
   'sortOrder',
 ];

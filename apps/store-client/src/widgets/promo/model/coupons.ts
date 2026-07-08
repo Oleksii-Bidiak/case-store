@@ -1,11 +1,13 @@
+import { dict } from "@/shared/config";
+import type { PublicDiscountEntity } from "@/entities/discount";
+
 /**
- * Static "coupon of the week" cards for the promo page. There is no public
- * discount-list endpoint yet (only per-code preview + admin CRUD), so these are
- * curated marketing codes — copy-to-clipboard is real, but the codes are not
- * guaranteed to resolve against the Discount catalog until TASK-179 wires a
- * public active-discounts feed. Brand-localized (VOLTA → MobileStore).
+ * View model for a promo "coupon of the week" ticket card. Built at render time
+ * from the live public active-discounts feed (TASK-179) — no more hardcoded
+ * array; every code shown resolves against the real Discount catalog and is
+ * currently redeemable.
  */
-export interface PromoCoupon {
+export interface PromoCouponView {
   /** The promo code, shown on the copy button and copied to the clipboard. */
   code: string;
   /** Big accent amount, e.g. "−5%" or "−500". */
@@ -16,26 +18,36 @@ export interface PromoCoupon {
   condition: string;
 }
 
-export const PROMO_COUPONS: PromoCoupon[] = [
-  {
-    code: "MOBILE5",
-    amount: "−5%",
-    unit: "на все",
-    title: "Перше замовлення",
-    condition: "Мінімальна сума 1 000 ₴",
-  },
-  {
-    code: "PLUS500",
-    amount: "−500",
-    unit: "гривень",
-    title: "На аксесуари",
-    condition: "При покупці від 3 000 ₴",
-  },
-  {
-    code: "SOUND10",
-    amount: "−10%",
-    unit: "на аудіо",
-    title: "Навушники та колонки",
-    condition: "Діє до кінця тижня",
-  },
-];
+/** Format a discount's condition line from its minSpend / expiry, else a generic fallback. */
+function couponCondition(discount: PublicDiscountEntity): string {
+  if (discount.minSpend !== null) {
+    return dict.promo.couponMinSpend(String(Number(discount.minSpend)));
+  }
+  if (discount.expiresAt) {
+    const date = new Date(discount.expiresAt).toLocaleDateString("uk-UA", {
+      day: "numeric",
+      month: "long",
+    });
+    return dict.promo.couponExpires(date);
+  }
+  return dict.promo.couponGeneric;
+}
+
+/**
+ * Map a `PublicDiscountEntity` onto the ticket-card view model. PERCENT →
+ * `−{value}%` / "на все"; FIXED → `−{value}` / "гривень". `Number(value)`
+ * normalizes the decimal string ("10.00" → 10) for a clean display amount.
+ */
+export function mapDiscountToCoupon(
+  discount: PublicDiscountEntity,
+): PromoCouponView {
+  const amount = Number(discount.value);
+  const isPercent = discount.type === "PERCENT";
+  return {
+    code: discount.code,
+    amount: isPercent ? `−${amount}%` : `−${amount}`,
+    unit: isPercent ? dict.promo.couponUnitPercent : dict.promo.couponUnitFixed,
+    title: dict.promo.couponTitle,
+    condition: couponCondition(discount),
+  };
+}

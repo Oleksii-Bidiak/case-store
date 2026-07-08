@@ -121,3 +121,56 @@ export class DiscountPreviewEntity {
   @ApiProperty({ description: 'New subtotal after the discount as string', example: '135.00' })
   newTotal!: string;
 }
+
+/**
+ * Public-safe projection of a discount for the storefront promo feed (TASK-179,
+ * `GET /api/discounts/active`). Deliberately exposes ONLY what a shopper needs
+ * to see a redeemable code — `code`, `type`, `value`, `minSpend`, `expiresAt` —
+ * and NEVER the internal `id`, redemption caps/counts (`maxRedemptions`,
+ * `redeemedCount`, `perUserLimit`), `startsAt`, `isActive`, or timestamps, some
+ * of which are competitively/operationally sensitive.
+ */
+export class PublicDiscountEntity {
+  @ApiProperty({ description: 'Promo code (stored uppercase)', example: 'SUMMER10' })
+  code!: string;
+
+  @ApiProperty({ description: 'Discount type', enum: DiscountType, example: DiscountType.PERCENT })
+  type!: DiscountType;
+
+  @ApiProperty({
+    description: 'Discount value as string — PERCENT: 1–100; FIXED: UAH amount',
+    example: '10.00',
+  })
+  value!: string;
+
+  @ApiProperty({
+    description: 'Minimum cart subtotal required to apply, as string (null = no minimum)',
+    nullable: true,
+    type: String,
+    example: '500.00',
+  })
+  minSpend!: string | null;
+
+  @ApiProperty({
+    description: 'Expiry timestamp — code is invalid after this (null = never expires)',
+    nullable: true,
+    type: String,
+    example: '2026-09-01T00:00:00.000Z',
+  })
+  expiresAt!: Date | null;
+
+  /**
+   * Project a Prisma Discount onto the public-safe shape. Converts the Decimal
+   * money fields to strings (`value` always; `minSpend` may be null), mirroring
+   * {@link DiscountEntity.fromPrisma}.
+   */
+  static fromPrisma(discount: Discount): PublicDiscountEntity {
+    const entity = new PublicDiscountEntity();
+    entity.code = discount.code;
+    entity.type = discount.type;
+    entity.value = discount.value.toString();
+    entity.minSpend = discount.minSpend !== null ? discount.minSpend.toString() : null;
+    entity.expiresAt = discount.expiresAt;
+    return entity;
+  }
+}
