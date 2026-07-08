@@ -3,7 +3,7 @@ import { NotFoundException, ConflictException, ForbiddenException } from '@nestj
 import { UserRole } from '@prisma/client';
 import { UserRepository, UpdateUserInput } from './user.repository';
 import { UserService } from './user.service';
-import { UserEntity } from './entities';
+import { UserEntity, UserAdminCardEntity } from './entities';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
 import { AuthRepository } from '../auth/auth.repository';
 
@@ -46,6 +46,13 @@ const userRepositoryMock = {
   deactivate: jest.fn(),
   activate: jest.fn(),
   softDelete: jest.fn(),
+  // Admin customer card enrichment reads (TASK-252).
+  getLtv: jest.fn(),
+  getOrderCount: jest.fn(),
+  getRecentOrders: jest.fn(),
+  getReviewsByUserId: jest.fn(),
+  getRedeemedCoupons: jest.fn(),
+  getContactMessagesByEmail: jest.fn(),
 };
 
 // AuthRepository is injected into UserService so a ban can revoke all of the
@@ -302,6 +309,156 @@ describe('UserService', () => {
 
       await expect(service.findById('nonexistent-id')).rejects.toThrow(NotFoundException);
       expect(repository.findById).toHaveBeenCalledWith('nonexistent-id');
+    });
+  });
+
+  // ─── getAdminCard (customer card, TASK-252) ───────────────────────────────────
+
+  describe('getAdminCard', () => {
+    const recentOrders = [
+      {
+        id: 'order-1',
+        status: 'DELIVERED',
+        paymentStatus: 'PAID',
+        total: 129.99,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ];
+    const reviews = [
+      {
+        id: 'review-1',
+        productId: 'prod-1',
+        productName: 'iPhone 15 Pro Case',
+        rating: 5,
+        comment: 'Great!',
+        isActive: true,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ];
+    const coupons = [
+      {
+        id: 'redemption-1',
+        code: 'SUMMER20',
+        type: 'PERCENT',
+        value: 20,
+        orderId: 'order-1',
+        redeemedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ];
+    const messages = [
+      {
+        id: 'message-1',
+        name: 'John',
+        phone: '+380991234567',
+        email: 'test@example.com',
+        topic: 'Order question',
+        orderRef: null,
+        message: 'When will my order ship?',
+        status: 'NEW',
+        adminNote: null,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ];
+
+    function stubEnrichmentReads() {
+      repository.getLtv.mockResolvedValue(1299.5);
+      repository.getOrderCount.mockResolvedValue(12);
+      repository.getRecentOrders.mockResolvedValue(recentOrders as never);
+      repository.getReviewsByUserId.mockResolvedValue(reviews as never);
+      repository.getRedeemedCoupons.mockResolvedValue(coupons as never);
+      repository.getContactMessagesByEmail.mockResolvedValue(messages as never);
+    }
+
+    it('throws NotFoundException and runs NO enrichment reads when the user is absent', async () => {
+      repository.findById.mockResolvedValue(null);
+
+      await expect(service.getAdminCard('missing')).rejects.toThrow(NotFoundException);
+
+      // No wasted parallel work on a 404.
+      expect(repository.getLtv).not.toHaveBeenCalled();
+      expect(repository.getOrderCount).not.toHaveBeenCalled();
+      expect(repository.getRecentOrders).not.toHaveBeenCalled();
+      expect(repository.getReviewsByUserId).not.toHaveBeenCalled();
+      expect(repository.getRedeemedCoupons).not.toHaveBeenCalled();
+      expect(repository.getContactMessagesByEmail).not.toHaveBeenCalled();
+    });
+
+    it('calls all six enrichment reads with the correct arguments and assembles the card', async () => {
+      repository.findById.mockResolvedValue(mockUser);
+      stubEnrichmentReads();
+
+      const result = await service.getAdminCard('user-uuid-1');
+
+      expect(result).toBeInstanceOf(UserAdminCardEntity);
+      expect(result.user).toBeInstanceOf(UserEntity);
+      expect(result.user.id).toBe('user-uuid-1');
+      // Sensitive fields must not leak through the nested user entity.
+      expect((result.user as unknown as Record<string, unknown>).passwordHash).toBeUndefined();
+
+      expect(result.ltv).toBe(1299.5);
+      expect(result.orderCount).toBe(12);
+      expect(result.recentOrders).toEqual(recentOrders);
+      expect(result.reviews).toEqual(reviews);
+      expect(result.redeemedCoupons).toEqual(coupons);
+      expect(result.contactMessages).toEqual([
+        {
+          id: 'message-1',
+          topic: 'Order question',
+          message: 'When will my order ship?',
+          status: 'NEW',
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ]);
+
+      // Argument-shape assertions: userId for five reads, the user's email + limit
+      // for the contact-message read.
+      expect(repository.getLtv).toHaveBeenCalledWith('user-uuid-1');
+      expect(repository.getOrderCount).toHaveBeenCalledWith('user-uuid-1');
+      expect(repository.getRecentOrders).toHaveBeenCalledWith('user-uuid-1', 10);
+      expect(repository.getReviewsByUserId).toHaveBeenCalledWith('user-uuid-1', 20);
+      expect(repository.getRedeemedCoupons).toHaveBeenCalledWith('user-uuid-1', 20);
+      expect(repository.getContactMessagesByEmail).toHaveBeenCalledWith('test@example.com', 20);
+    });
+
+    it('fans the six enrichment reads out in parallel (no waterfall)', async () => {
+      repository.findById.mockResolvedValue(mockUser);
+
+      // Each enrichment mock blocks until we release it. If the service awaited
+      // them sequentially, only the first would be invoked before any resolves;
+      // a parallel Promise.all invokes all six synchronously in the same tick.
+      const releasers: Array<() => void> = [];
+      const blocking = (value: unknown) =>
+        jest.fn().mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              releasers.push(() => resolve(value));
+            }),
+        );
+
+      repository.getLtv.mockImplementation(blocking(0));
+      repository.getOrderCount.mockImplementation(blocking(0));
+      repository.getRecentOrders.mockImplementation(blocking([]));
+      repository.getReviewsByUserId.mockImplementation(blocking([]));
+      repository.getRedeemedCoupons.mockImplementation(blocking([]));
+      repository.getContactMessagesByEmail.mockImplementation(blocking([]));
+
+      const promise = service.getAdminCard('user-uuid-1');
+
+      // Let the synchronous portion of getAdminCard run up to the Promise.all.
+      await Promise.resolve();
+
+      // All six were invoked before ANY of them resolved — proving parallelism.
+      expect(repository.getLtv).toHaveBeenCalledTimes(1);
+      expect(repository.getOrderCount).toHaveBeenCalledTimes(1);
+      expect(repository.getRecentOrders).toHaveBeenCalledTimes(1);
+      expect(repository.getReviewsByUserId).toHaveBeenCalledTimes(1);
+      expect(repository.getRedeemedCoupons).toHaveBeenCalledTimes(1);
+      expect(repository.getContactMessagesByEmail).toHaveBeenCalledTimes(1);
+
+      // Release all reads so the service can finish and we don't leak a pending promise.
+      releasers.forEach((release) => release());
+      await promise;
     });
   });
 
