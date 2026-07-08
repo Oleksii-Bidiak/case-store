@@ -1106,4 +1106,21 @@ describe('OrderService', () => {
       });
     });
   });
+
+  // ─── OrderEntity.fromPrisma — restockedAt pass-through (TASK-254) ─────────────
+
+  describe('OrderEntity.fromPrisma — restockedAt', () => {
+    it('round-trips restockedAt when null (order still holds stock / never restocked)', () => {
+      const entity = OrderEntity.fromPrisma(makeOrder({ restockedAt: null }));
+
+      expect(entity.restockedAt).toBeNull();
+    });
+
+    it('round-trips restockedAt when a Date (stock returned on cancellation, TASK-228)', () => {
+      const restockedAt = new Date('2026-07-08T10:30:00.000Z');
+      const entity = OrderEntity.fromPrisma(makeOrder({ restockedAt }));
+
+      expect(entity.restockedAt).toEqual(restockedAt);
+    });
+  });
 });
