@@ -614,7 +614,7 @@ describe('OrderController (e2e)', () => {
         .expect(200);
 
       expect(response.body.data.status).toBe(OrderStatus.CANCELLED);
-      expect(orderRepositoryMock.cancelAndRestock).toHaveBeenCalledWith('order-e2e-1');
+      expect(orderRepositoryMock.cancelAndRestock).toHaveBeenCalledWith('order-e2e-1', userA.id);
     });
 
     it('should return 409 when cancelling a CONFIRMED order', async () => {

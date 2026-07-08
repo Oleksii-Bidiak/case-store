@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiProperty, ApiExtraModels } from '@nestjs/swagger';
 import { DiscountService } from './discount.service';
 import { PublicDiscountEntity } from './entities';
@@ -40,6 +41,10 @@ export class PublicDiscountController {
    * Public — no authentication.
    */
   @Get('active')
+  // Tighter than the global 100/min default to blunt scraping of promo data
+  // (cheap read, no side effects — but competitor-sensitive). Cf. the wave's
+  // other public endpoints, which all set their own limit.
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @ApiOperation({
     summary: 'List currently active, redeemable discounts',
     operationId: 'listActiveDiscounts',
