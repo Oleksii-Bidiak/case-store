@@ -24,4 +24,5 @@ export type {
   OrderStatusCountDto,
   NeedsActionDto,
   NeedsActionResponse,
+  OperationsMetricsDto,
 } from "@/shared/api";

@@ -79,7 +79,8 @@ export function NeedsActionWidget() {
     counts.newOrders === 0 &&
     counts.pendingReviews === 0 &&
     counts.unpaidInTransit === 0 &&
-    counts.failedMails === 0;
+    counts.failedMails === 0 &&
+    counts.pendingOver48h === 0;
 
   return (
     <section aria-label={dict.dashboard.needsActionHeading}>
@@ -94,7 +95,7 @@ export function NeedsActionWidget() {
         ) : null}
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-5">
         <NeedsActionCard
           label={dict.dashboard.needsActionNewOrders}
           count={counts.newOrders}
@@ -109,6 +110,13 @@ export function NeedsActionWidget() {
           label={dict.dashboard.needsActionUnpaidInTransit}
           count={counts.unpaidInTransit}
           href="/orders?unpaidInTransit=true"
+        />
+        {/* TASK-251: PENDING orders sitting longer than 48h — a subset of new
+            orders, so it deep-links to the same PENDING-filtered list. */}
+        <NeedsActionCard
+          label={dict.dashboard.needsActionPendingOver48h}
+          count={counts.pendingOver48h}
+          href="/orders?status=PENDING"
         />
         <NeedsActionCard
           label={dict.dashboard.needsActionFailedMails}

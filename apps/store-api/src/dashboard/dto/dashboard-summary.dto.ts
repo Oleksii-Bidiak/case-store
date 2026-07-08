@@ -151,6 +151,17 @@ export class InventoryMetricsDto {
   lowStockProducts!: LowStockProductDto[];
 }
 
+export class OperationsMetricsDto {
+  @ApiProperty({
+    type: Number,
+    description:
+      'Average hours from order creation to first SHIPPED transition, for orders created in the ' +
+      'last 30 days that have shipped at least once; 0 when none have shipped',
+    example: 36.5,
+  })
+  averageProcessingHoursLast30Days!: number;
+}
+
 export class DashboardSummaryResponse {
   @ApiProperty({ type: RevenueMetricsDto })
   revenue!: RevenueMetricsDto;
@@ -169,4 +180,7 @@ export class DashboardSummaryResponse {
 
   @ApiProperty({ type: InventoryMetricsDto })
   inventory!: InventoryMetricsDto;
+
+  @ApiProperty({ type: OperationsMetricsDto })
+  operations!: OperationsMetricsDto;
 }

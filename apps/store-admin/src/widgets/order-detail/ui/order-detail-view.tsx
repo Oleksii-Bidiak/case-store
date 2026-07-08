@@ -26,6 +26,7 @@ import {
 import { dict } from "@/shared/config";
 import { formatCurrency } from "@/shared/lib";
 import { OrderDetailSkeleton } from "./order-detail-skeleton";
+import { OrderTimeline } from "./order-timeline";
 
 interface OrderDetailViewProps {
   orderId: string;
@@ -282,6 +283,15 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
           ) : null}
         </div>
       </div>
+
+      {/* TASK-251: full status/payment change timeline, spanning the full width
+          below the two-column layout. */}
+      <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+        <h3 className="text-sm font-semibold text-foreground">
+          {dict.orders.timelineHeading}
+        </h3>
+        <OrderTimeline orderId={order.id} customerUserId={order.userId} />
+      </section>
     </div>
   );
 }

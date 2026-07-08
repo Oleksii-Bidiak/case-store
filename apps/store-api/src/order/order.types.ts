@@ -1,6 +1,25 @@
-import { Prisma, OrderStatus, PaymentStatus } from '@prisma/client';
+import { Prisma, OrderStatus, PaymentStatus, OrderHistoryChangeType } from '@prisma/client';
 import type { CartWithItems } from '../cart/cart.repository';
 import type { AddressDto } from './dto';
+
+/**
+ * A single order-status-history audit row as returned by the repository
+ * (TASK-251). Mirrors the `OrderStatusHistory` Prisma model. STATUS rows
+ * populate `fromStatus`/`toStatus` (payment pair null); PAYMENT_STATUS rows
+ * populate `fromPaymentStatus`/`toPaymentStatus` (status pair null). `changedBy`
+ * is null for system-authored rows (order creation, future payment webhook).
+ */
+export interface OrderStatusHistoryRow {
+  id: string;
+  orderId: string;
+  changeType: OrderHistoryChangeType;
+  fromStatus: OrderStatus | null;
+  toStatus: OrderStatus | null;
+  fromPaymentStatus: PaymentStatus | null;
+  toPaymentStatus: PaymentStatus | null;
+  changedBy: string | null;
+  changedAt: Date;
+}
 
 /**
  * Typed shape of the address JSON snapshot embedded in an order.

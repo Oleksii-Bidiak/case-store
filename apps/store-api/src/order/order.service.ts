@@ -13,7 +13,7 @@ import { UserRepository } from '../user/user.repository';
 import { MailOutboxService } from '../mail-outbox';
 import { DeliveryService } from '../delivery';
 import { DiscountService } from '../discount';
-import { OrderEntity } from './entities';
+import { OrderEntity, OrderStatusHistoryEntity } from './entities';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
 import type { CreateOrderDto, OrderListQueryDto, AdminOrderListQueryDto } from './dto';
 import type { CreateOrderParams } from './order.types';
@@ -272,7 +272,9 @@ export class OrderService {
 
     // cancelAndRestock flips the order to CANCELLED and returns the reserved
     // stock to inventory atomically (stock was decremented at creation).
-    const cancelled = await this.orderRepository.cancelAndRestock(orderId);
+    // TASK-251: the customer is the actor for their own self-cancel, so their
+    // userId is recorded as the history row's changedBy.
+    const cancelled = await this.orderRepository.cancelAndRestock(orderId, userId);
 
     this.logger.info(
       { event: 'order.cancelled', orderId, userId },
@@ -289,8 +291,17 @@ export class OrderService {
    *
    * @throws NotFoundException when the order does not exist (so admin callers
    *   get a clean 404 rather than a Prisma "record not found" 500).
+   *
+   * TASK-251: `changedBy` is the acting user's id (the admin, supplied by the
+   * controller via `@CurrentUser('id')`) or `null` for system-authored changes
+   * (e.g. a future payment webhook). It is threaded, unchanged, into whichever
+   * repository branch fires so the audit row records who made the change.
    */
-  async updateStatus(orderId: string, status: OrderStatus): Promise<OrderEntity> {
+  async updateStatus(
+    orderId: string,
+    status: OrderStatus,
+    changedBy: string | null,
+  ): Promise<OrderEntity> {
     const existing = await this.orderRepository.findById(orderId);
 
     if (!existing) {
@@ -316,6 +327,7 @@ export class OrderService {
         orderId,
         status,
         existing.paymentStatus,
+        changedBy,
       );
       this.logger.info(
         { event: 'order.revived_reserved', orderId, from: existing.status, to: status },
@@ -332,7 +344,7 @@ export class OrderService {
     // has it set (revive clears it), so it only blocks double credits if a
     // status was edited outside the service.
     if (shouldAutoRestock(existing.status, status) && existing.restockedAt === null) {
-      const restocked = await this.orderRepository.cancelAndRestock(orderId);
+      const restocked = await this.orderRepository.cancelAndRestock(orderId, changedBy);
       this.logger.info(
         { event: 'order.cancelled_restocked', orderId, from: existing.status },
         'Order cancelled before shipment; reserved stock returned to inventory',
@@ -354,9 +366,14 @@ export class OrderService {
     // reserved membership unchanged and needs no eviction.
     const crossesPreShipmentBoundary =
       PRE_SHIPMENT_STATUSES.has(existing.status) !== PRE_SHIPMENT_STATUSES.has(status);
-    const order = await this.orderRepository.updateStatus(orderId, status, existing.paymentStatus, {
-      evictProductStockCaches: crossesPreShipmentBoundary,
-    });
+    const order = await this.orderRepository.updateStatus(
+      orderId,
+      existing.status,
+      status,
+      existing.paymentStatus,
+      changedBy,
+      { evictProductStockCaches: crossesPreShipmentBoundary },
+    );
     return OrderEntity.fromPrisma(order);
   }
 
@@ -371,6 +388,7 @@ export class OrderService {
   async adminUpdatePaymentStatus(
     orderId: string,
     paymentStatus: PaymentStatus,
+    changedBy: string | null,
   ): Promise<OrderEntity> {
     const existing = await this.orderRepository.findById(orderId);
 
@@ -378,7 +396,7 @@ export class OrderService {
       throw new NotFoundException('Order not found');
     }
 
-    const order = await this.orderRepository.updatePaymentStatus(orderId, paymentStatus);
+    const order = await this.orderRepository.updatePaymentStatus(orderId, paymentStatus, changedBy);
 
     this.logger.info(
       { event: 'order.payment_status_updated', orderId, paymentStatus },
@@ -386,6 +404,24 @@ export class OrderService {
     );
 
     return OrderEntity.fromPrisma(order);
+  }
+
+  /**
+   * Admin — read an order's full status/payment-status timeline (TASK-251),
+   * oldest-first. Mirrors {@link adminGetOrder}'s existence check so a missing
+   * or soft-deleted order 404s cleanly rather than returning an empty list.
+   *
+   * @throws NotFoundException when the order does not exist or is soft-deleted.
+   */
+  async getOrderHistory(orderId: string): Promise<OrderStatusHistoryEntity[]> {
+    const existing = await this.orderRepository.findById(orderId);
+
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const rows = await this.orderRepository.findHistoryByOrderId(orderId);
+    return rows.map((row) => OrderStatusHistoryEntity.fromPrisma(row));
   }
 }
 

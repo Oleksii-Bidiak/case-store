@@ -5,6 +5,7 @@ import {
   DASHBOARD_WINDOW_DAYS,
   LOW_STOCK_LIMIT,
   LOW_STOCK_THRESHOLD,
+  PENDING_STALE_HOURS,
   REPEAT_BUYER_WINDOW_DAYS,
   TOP_PRODUCTS_LIMIT,
   type DailyDataPoint,
@@ -91,6 +92,7 @@ export class DashboardRepository {
       activeProducts,
       topProducts,
       lowStockProducts,
+      averageProcessingHoursLast30Days,
     ] = await Promise.all([
       this.getTotalRevenue(),
       this.getRevenueSince(windowStart),
@@ -109,6 +111,7 @@ export class DashboardRepository {
       this.prisma.product.count({ where: { isActive: true } }),
       this.getTopProducts(TOP_PRODUCTS_LIMIT),
       this.getLowStockProducts(LOW_STOCK_THRESHOLD, LOW_STOCK_LIMIT),
+      this.getAverageProcessingHours(windowStart),
     ]);
 
     return {
@@ -128,6 +131,7 @@ export class DashboardRepository {
       customers: { repeatBuyerRate, repeatBuyerRateLast90Days },
       products: { totalProducts, activeProducts, topProducts },
       inventory: { lowStockProducts },
+      operations: { averageProcessingHoursLast30Days },
     };
   }
 
@@ -255,13 +259,54 @@ export class DashboardRepository {
    *   - `failedMails`     — outbox rows permanently failed (`status = FAILED`)
    */
   async getNeedsAction(): Promise<NeedsAction> {
-    const [newOrders, pendingReviews, unpaidInTransit, failedMails] = await Promise.all([
-      this.prisma.order.count({ where: { status: OrderStatus.PENDING, deletedAt: null } }),
-      this.prisma.review.count({ where: { isActive: false } }),
-      this.prisma.order.count({ where: this.unrealizedOrderWhere() }),
-      this.prisma.mailOutbox.count({ where: { status: MailOutboxStatus.FAILED } }),
-    ]);
-    return { newOrders, pendingReviews, unpaidInTransit, failedMails };
+    const [newOrders, pendingReviews, unpaidInTransit, failedMails, pendingOver48h] =
+      await Promise.all([
+        this.prisma.order.count({ where: { status: OrderStatus.PENDING, deletedAt: null } }),
+        this.prisma.review.count({ where: { isActive: false } }),
+        this.prisma.order.count({ where: this.unrealizedOrderWhere() }),
+        this.prisma.mailOutbox.count({ where: { status: MailOutboxStatus.FAILED } }),
+        this.prisma.order.count({ where: this.pendingOver48hWhere() }),
+      ]);
+    return { newOrders, pendingReviews, unpaidInTransit, failedMails, pendingOver48h };
+  }
+
+  /**
+   * PENDING orders created more than {@link PENDING_STALE_HOURS} hours ago
+   * (TASK-251). A deliberate subset of `newOrders` — the ones that have been
+   * waiting too long. Mirrors {@link unrealizedOrderWhere}'s helper shape.
+   */
+  private pendingOver48hWhere(): Prisma.OrderWhereInput {
+    return {
+      status: OrderStatus.PENDING,
+      deletedAt: null,
+      createdAt: { lt: new Date(Date.now() - PENDING_STALE_HOURS * 60 * 60 * 1000) },
+    };
+  }
+
+  /**
+   * Average hours from order creation to the order's FIRST SHIPPED transition
+   * (TASK-251), for orders created since `since` that have shipped at least
+   * once. A LATERAL join takes `MIN(changed_at)` of the STATUS→SHIPPED history
+   * rows per order (the first ship, so a later revive-and-reship never distorts
+   * the metric); orders that never shipped are excluded from both numerator and
+   * denominator. Returns 0 (not null/NaN) when none have shipped yet.
+   *
+   * Prisma's `groupBy` cannot express the per-order correlated subquery, so raw
+   * SQL is used — pinned by a fixture-based int-spec against real Postgres.
+   */
+  private async getAverageProcessingHours(since: Date): Promise<number> {
+    const rows = await this.prisma.$queryRaw<{ avgHours: number | null }[]>`
+      SELECT AVG(EXTRACT(EPOCH FROM (h.first_shipped_at - o.created_at)) / 3600.0)::float8 AS "avgHours"
+      FROM orders o
+      JOIN LATERAL (
+        SELECT MIN(changed_at) AS first_shipped_at
+        FROM order_status_history
+        WHERE order_id = o.id AND change_type = 'STATUS' AND to_status = 'SHIPPED'
+      ) h ON true
+      WHERE h.first_shipped_at IS NOT NULL
+        AND o.created_at >= ${since}
+    `;
+    return Number(rows[0]?.avgHours ?? 0);
   }
 
   /** Order counts grouped by status. */

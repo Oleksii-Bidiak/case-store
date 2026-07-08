@@ -2,7 +2,12 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
-import { MailOutboxStatus, OrderStatus, PaymentStatus } from '@prisma/client';
+import {
+  MailOutboxStatus,
+  OrderStatus,
+  PaymentStatus,
+  OrderHistoryChangeType,
+} from '@prisma/client';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
 import { LOW_STOCK_THRESHOLD } from '../src/dashboard/dashboard.types';
 import { PrismaService } from '../src/prisma';
@@ -505,6 +510,134 @@ describe('DashboardRepository (integration)', () => {
       expect(needsAction.unpaidInTransit).toBe(2);
       // Only the FAILED outbox row; the SENT row is excluded.
       expect(needsAction.failedMails).toBe(1);
+    });
+  });
+
+  /**
+   * TASK-251 — the ">48h in PENDING" counter. Pins the exact 48-hour boundary:
+   * a 49h-old PENDING order counts, a 47h-old one does not. Uses its own
+   * order baseline (getNeedsAction's afterAll leaves its orders in place).
+   */
+  describe('getNeedsAction — pendingOver48h boundary (TASK-251)', () => {
+    beforeAll(async () => {
+      await prisma.orderStatusHistory.deleteMany({});
+      await prisma.orderItem.deleteMany({});
+      await prisma.order.deleteMany({});
+
+      const now = Date.now();
+      // 49h old → past the 48h threshold, counts.
+      await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.PENDING,
+          paymentStatus: PaymentStatus.PENDING,
+          subtotal: '10.00',
+          total: '10.00',
+          createdAt: new Date(now - 49 * 60 * 60 * 1000),
+        },
+      });
+      // 47h old → still within the threshold, does NOT count.
+      await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.PENDING,
+          paymentStatus: PaymentStatus.PENDING,
+          subtotal: '10.00',
+          total: '10.00',
+          createdAt: new Date(now - 47 * 60 * 60 * 1000),
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.order.deleteMany({});
+    });
+
+    it('counts only PENDING orders older than 48 hours (49h yes, 47h no)', async () => {
+      const needsAction = await repo.getNeedsAction();
+
+      // Both are PENDING (subset semantics), only the 49h-old one is stale.
+      expect(needsAction.newOrders).toBe(2);
+      expect(needsAction.pendingOver48h).toBe(1);
+    });
+  });
+
+  /**
+   * TASK-251 — the processing-speed stat. Pins the raw-SQL LATERAL join against
+   * real Postgres: the average is taken from order creation to the FIRST SHIPPED
+   * history row, and orders that never shipped are excluded entirely (not counted
+   * as 0). A second case asserts 0 when nothing has shipped.
+   */
+  describe('getSummary — average processing hours (TASK-251)', () => {
+    beforeAll(async () => {
+      await prisma.orderStatusHistory.deleteMany({});
+      await prisma.orderItem.deleteMany({});
+      await prisma.order.deleteMany({});
+
+      // (a) Order created 10 days ago, first shipped exactly 48h later.
+      const created = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+      const shipped = await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.SHIPPED,
+          paymentStatus: PaymentStatus.PAID,
+          subtotal: '10.00',
+          total: '10.00',
+          createdAt: created,
+        },
+      });
+      await prisma.orderStatusHistory.create({
+        data: {
+          orderId: shipped.id,
+          changeType: OrderHistoryChangeType.STATUS,
+          fromStatus: OrderStatus.PROCESSING,
+          toStatus: OrderStatus.SHIPPED,
+          changedAt: new Date(created.getTime() + 48 * 60 * 60 * 1000),
+        },
+      });
+
+      // (b) Order created 5 days ago with NO SHIPPED history row → excluded from
+      // both numerator and denominator (must not count as 0 hours).
+      await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.PENDING,
+          paymentStatus: PaymentStatus.PENDING,
+          subtotal: '10.00',
+          total: '10.00',
+          createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.orderStatusHistory.deleteMany({});
+      await prisma.order.deleteMany({});
+    });
+
+    it('averages creation→first-SHIPPED only for shipped orders (48h)', async () => {
+      const summary = await repo.getSummary();
+
+      expect(summary.operations.averageProcessingHoursLast30Days).toBeCloseTo(48, 1);
+    });
+
+    it('returns 0 when no order has shipped yet', async () => {
+      await prisma.orderStatusHistory.deleteMany({});
+      await prisma.order.deleteMany({});
+      await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.PENDING,
+          paymentStatus: PaymentStatus.PENDING,
+          subtotal: '10.00',
+          total: '10.00',
+          createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      const summary = await repo.getSummary();
+
+      expect(summary.operations.averageProcessingHoursLast30Days).toBe(0);
     });
   });
 });

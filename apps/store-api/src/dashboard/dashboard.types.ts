@@ -79,6 +79,19 @@ export interface InventoryMetrics {
   lowStockProducts: LowStockProduct[];
 }
 
+/**
+ * Operational-efficiency metrics (TASK-251). A distinct slice from `orders`
+ * (which counts orders) — this measures fulfilment speed.
+ */
+export interface OperationsMetrics {
+  /**
+   * Average hours from order creation to its first SHIPPED transition, for
+   * orders created in the last 30 days that have shipped at least once. `0` when
+   * none have shipped yet.
+   */
+  averageProcessingHoursLast30Days: number;
+}
+
 export interface DashboardSummary {
   revenue: RevenueMetrics;
   orders: OrderMetrics;
@@ -86,6 +99,7 @@ export interface DashboardSummary {
   customers: CustomerMetrics;
   products: ProductMetrics;
   inventory: InventoryMetrics;
+  operations: OperationsMetrics;
 }
 
 /**
@@ -103,10 +117,22 @@ export interface NeedsAction {
   unpaidInTransit: number;
   /** Outbound emails permanently failed (`MailOutbox.status = FAILED`). */
   failedMails: number;
+  /**
+   * Orders sitting in PENDING for more than {@link PENDING_STALE_HOURS} hours
+   * (TASK-251). A subset of `newOrders` (not mutually exclusive) — of the new
+   * orders, how many have been waiting too long.
+   */
+  pendingOver48h: number;
 }
 
 /** Rolling window (in days) used for all time-series metrics. */
 export const DASHBOARD_WINDOW_DAYS = 30;
+
+/**
+ * How many hours a PENDING order may sit before the dashboard flags it as stale
+ * in the "needs action" widget (TASK-251).
+ */
+export const PENDING_STALE_HOURS = 48;
 
 /**
  * Fixed window (in days) for the recent repeat-buyer rate (TASK-249). This is a

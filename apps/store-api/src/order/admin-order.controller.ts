@@ -1,4 +1,5 @@
 import { Controller, Get, Patch, Param, Query, Body, UseGuards } from '@nestjs/common';
+import { CurrentUser } from '../auth';
 import {
   ApiTags,
   ApiOperation,
@@ -11,7 +12,12 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { OrderService } from './order.service';
-import { OrderEntity, OrderItemEntity, OrderCustomerData } from './entities';
+import {
+  OrderEntity,
+  OrderItemEntity,
+  OrderCustomerData,
+  OrderStatusHistoryEntity,
+} from './entities';
 import { AdminOrderListQueryDto, UpdateOrderStatusDto, UpdateOrderPaymentStatusDto } from './dto';
 import { AdminGuard } from '../auth/guards';
 
@@ -58,6 +64,18 @@ class AdminOrderResponseEnvelope {
 }
 
 /**
+ * Response envelope for an order's status/payment-status history timeline
+ * (TASK-251). Oldest-first list of {@link OrderStatusHistoryEntity} rows.
+ */
+class AdminOrderHistoryResponse {
+  @ApiProperty({
+    type: [OrderStatusHistoryEntity],
+    description: 'Status/payment-status history for the order, oldest-first',
+  })
+  data!: OrderStatusHistoryEntity[];
+}
+
+/**
  * Controller for admin order management endpoints.
  *
  * Admin endpoints (ADMIN role required):
@@ -75,9 +93,11 @@ class AdminOrderResponseEnvelope {
   OrderEntity,
   OrderItemEntity,
   OrderCustomerData,
+  OrderStatusHistoryEntity,
   AdminOrderListResponse,
   AdminOrderPaginationMeta,
   AdminOrderResponseEnvelope,
+  AdminOrderHistoryResponse,
 )
 @Controller('admin/orders')
 @UseGuards(AdminGuard)
@@ -128,6 +148,32 @@ export class AdminOrderController {
   }
 
   /**
+   * GET /api/admin/orders/:orderId/history
+   *
+   * Returns the order's full status/payment-status change timeline, oldest-first
+   * (TASK-251). Admin-only. 404 when the order does not exist / is soft-deleted.
+   */
+  @Get(':orderId/history')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Get order status history (admin)',
+    operationId: 'adminOrderControllerGetHistory',
+  })
+  @ApiParam({ name: 'orderId', description: 'Order UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Order status/payment-status history (oldest-first)',
+    type: AdminOrderHistoryResponse,
+  })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async getHistory(@Param('orderId') orderId: string): Promise<AdminOrderHistoryResponse> {
+    const data = await this.orderService.getOrderHistory(orderId);
+
+    return { data };
+  }
+
+  /**
    * PATCH /api/admin/orders/:orderId/status
    *
    * Update an order's status (any transition). Admin-only. Transition
@@ -151,8 +197,10 @@ export class AdminOrderController {
   async updateStatus(
     @Param('orderId') orderId: string,
     @Body() dto: UpdateOrderStatusDto,
+    // TASK-251: the acting admin is recorded as the history row's changedBy.
+    @CurrentUser('id') adminUserId: string,
   ): Promise<AdminOrderResponseEnvelope> {
-    const order = await this.orderService.updateStatus(orderId, dto.status);
+    const order = await this.orderService.updateStatus(orderId, dto.status, adminUserId);
 
     return { data: order };
   }
@@ -184,8 +232,14 @@ export class AdminOrderController {
   async updatePaymentStatus(
     @Param('orderId') orderId: string,
     @Body() dto: UpdateOrderPaymentStatusDto,
+    // TASK-251: the acting admin is recorded as the history row's changedBy.
+    @CurrentUser('id') adminUserId: string,
   ): Promise<AdminOrderResponseEnvelope> {
-    const order = await this.orderService.adminUpdatePaymentStatus(orderId, dto.paymentStatus);
+    const order = await this.orderService.adminUpdatePaymentStatus(
+      orderId,
+      dto.paymentStatus,
+      adminUserId,
+    );
 
     return { data: order };
   }
