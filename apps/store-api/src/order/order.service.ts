@@ -14,22 +14,12 @@ import { MailOutboxService } from '../mail-outbox';
 import { DeliveryService } from '../delivery';
 import { DiscountService } from '../discount';
 import { OrderEntity } from './entities';
+import { PRE_SHIPMENT_STATUSES } from './order.constants';
 import type { CreateOrderDto, OrderListQueryDto, AdminOrderListQueryDto } from './dto';
 import type { CreateOrderParams } from './order.types';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
-
-/**
- * Order statuses whose stock is still in the warehouse (reserved at creation,
- * not yet shipped to the customer). Cancelling an order from one of these
- * states can safely return the reserved stock to inventory automatically.
- */
-const PRE_SHIPMENT_STATUSES: ReadonlySet<OrderStatus> = new Set([
-  OrderStatus.PENDING,
-  OrderStatus.CONFIRMED,
-  OrderStatus.PROCESSING,
-]);
 
 /**
  * Whether a status transition should automatically return reserved stock to
