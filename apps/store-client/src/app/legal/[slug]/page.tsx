@@ -7,7 +7,9 @@ import {
 import { LegalDocView, type LegalOtherDoc } from "@/widgets/legal-doc";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
-import { SITE_URL, dict } from "@/shared/config";
+import { resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
 
 /**
  * Fetch a published page by slug through the ISR-tagged server fetcher; returns
@@ -32,23 +34,43 @@ export async function generateMetadata({
 }: LegalDocPageProps): Promise<Metadata> {
   const { slug } = await params;
 
-  const page = await getPage(slug);
+  // Fetch the page and the global SEO settings in parallel; both degrade to null
+  // on error (getPage → 404 fallback, fetchSeoSettings → resolveSeo tolerates null).
+  const [page, seo] = await Promise.all([getPage(slug), fetchSeoSettings()]);
   if (!page) {
     return { title: dict.meta.pageFallbackTitle };
   }
 
+  // Precedence via the shared helper — identical tiering to the product route
+  // (TASK-268 review): the page's own metaTitle/metaDescription (tier 1) →
+  // SeoSettings defaults (tier 2) → the page title/excerpt-or-body (tier 3),
+  // with the `%s` brand template + 60/155 truncation applied. This makes the
+  // live `/legal/<slug>` metadata match the admin SERP preview exactly, and
+  // properly brands/optimizes the TASK-184 canonical legal pages.
+  const resolved = resolveSeo({
+    entityTitle: page.metaTitle,
+    entityDescription: page.metaDescription,
+    settings: seo,
+    content: { name: page.title, description: page.excerpt || page.content },
+  });
+  const title = toMetadataTitle(resolved, {
+    settings: seo,
+    siteName: SITE_NAME,
+    fallback: page.title,
+  });
+  const description = resolved.description;
   const canonical = `${SITE_URL}/legal/${page.slug}`;
-  const description = page.metaDescription ?? page.excerpt ?? undefined;
 
   return {
-    title: page.metaTitle ?? page.title,
+    title,
     description,
     alternates: { canonical },
     openGraph: {
-      title: page.metaTitle ?? page.title,
+      title: title.absolute,
       description,
       url: canonical,
       type: "article",
+      images: resolved.ogImage ? [{ url: resolved.ogImage }] : undefined,
     },
   };
 }
