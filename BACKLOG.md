@@ -236,10 +236,10 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-169 | [C/H] Password reset (activated from parked) — request endpoint + emailed token via mail-outbox + reset form (auth slide-out stub exists); TDD (critical auth module) | ⬜ | — |
-| TASK-179 | [C/M] Promo page logic — public active-discounts feed + server `onSale` filter on `GET /products` (pairs with bestsellers TASK-164; newsletter part in TASK-188) | ⬜ | — |
-| TASK-251 | [A/M] `OrderStatusHistory` (orderId, fromStatus, toStatus, changedAt, changedBy) written transactionally on every status/paymentStatus change; order timeline on `/orders/[id]`; «>48h in PENDING» indicator + «Потребує дії» row; processing-speed stat; TDD incl. revive/`restockedAt` | ⬜ | — |
-| TASK-252 | [A/M] Customer card v1 on `/users/[id]` — LTV (`SUM(Order.total) WHERE paymentStatus=PAID`), order count + linked orders, user reviews, redeemed coupons (`DiscountRedemption.userId`), contact-inbox by email; single enriched admin endpoint (no waterfall); notes/tags deferred (note in plan) | ⬜ | — |
+| TASK-169 | [C/H] Password reset (activated from parked) — request endpoint + emailed token via mail-outbox + reset form (auth slide-out stub exists); TDD (critical auth module) | 🔄 | 132 |
+| TASK-179 | [C/M] Promo page logic — public active-discounts feed + server `onSale` filter on `GET /products` (pairs with bestsellers TASK-164; newsletter part in TASK-188) | 🔄 | 133 |
+| TASK-251 | [A/M] `OrderStatusHistory` (orderId, fromStatus, toStatus, changedAt, changedBy) written transactionally on every status/paymentStatus change; order timeline on `/orders/[id]`; «>48h in PENDING» indicator + «Потребує дії» row; processing-speed stat; TDD incl. revive/`restockedAt` | 🔄 | 134 |
+| TASK-252 | [A/M] Customer card v1 on `/users/[id]` — LTV (`SUM(Order.total) WHERE paymentStatus=PAID`), order count + linked orders, user reviews, redeemed coupons (`DiscountRedemption.userId`), contact-inbox by email; single enriched admin endpoint (no waterfall); notes/tags deferred (note in plan) | 🔄 | 135 |
 
 #### Хвиля 5 — Адаптив/дизайн + прев'ю контенту + хвости
 
