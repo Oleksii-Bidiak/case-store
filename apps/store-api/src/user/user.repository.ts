@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma';
-import { User, UserRole, Prisma } from '@prisma/client';
+import { User, UserRole, Prisma, PaymentStatus, ContactMessage } from '@prisma/client';
+import {
+  type AdminCardOrderRow,
+  type AdminCardReviewRow,
+  type AdminCardCouponRow,
+} from './user-admin-card.types';
 
 /**
  * Parameters for paginated user queries.
@@ -164,6 +169,122 @@ export class UserRepository {
         email: mangledEmail,
         originalEmail,
       },
+    });
+  }
+
+  // ─── Admin customer card (TASK-252) ────────────────────────────────────────
+  //
+  // These six reads power the enriched `GET /users/:id/admin-card` endpoint.
+  // Every order-shaped read goes through `prisma.order` DIRECTLY here (never
+  // through the order module) to keep this file disjoint from the concurrent
+  // TASK-251 order-module work — the exact same direct-Prisma pattern
+  // `DashboardRepository` already uses for its own metrics. Reviews, redeemed
+  // coupons, and contact messages are likewise queried directly (none of those
+  // modules exports a repository), so `user.module.ts` needs no new imports.
+
+  /**
+   * Lifetime value: sum of `Order.total` for PAID orders only. Deliberately has
+   * NO `deletedAt` filter — an exact mirror of
+   * `DashboardRepository.getTotalRevenue` — so per-customer LTV stays consistent
+   * with the store-wide lifetime revenue figure (a soft-deleted order still
+   * represents money the customer actually paid). This asymmetry with
+   * `getOrderCount`/`getRecentOrders` (which DO filter `deletedAt: null`) is
+   * intentional — see plan 135 "LTV" Design Decision.
+   */
+  async getLtv(userId: string): Promise<number> {
+    const result = await this.prisma.order.aggregate({
+      _sum: { total: true },
+      where: { userId, paymentStatus: PaymentStatus.PAID },
+    });
+    return Number(result._sum.total ?? 0);
+  }
+
+  /**
+   * Count of the customer's live (non-soft-deleted) orders. Filters
+   * `deletedAt: null` so the count matches the visible order list the admin sees
+   * when clicking through to `/orders` (mirrors `OrderRepository.findByUserId`'s
+   * own filter without importing that file).
+   */
+  getOrderCount(userId: string): Promise<number> {
+    return this.prisma.order.count({ where: { userId, deletedAt: null } });
+  }
+
+  /**
+   * The customer's most recent live orders, newest first, capped at `limit`.
+   * Same `deletedAt: null` filter as `getOrderCount`.
+   */
+  getRecentOrders(userId: string, limit: number): Promise<AdminCardOrderRow[]> {
+    return this.prisma.order.findMany({
+      where: { userId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        status: true,
+        paymentStatus: true,
+        total: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  /**
+   * The customer's product reviews, newest first, capped at `limit`. The product
+   * display name is joined in the same query (no second lookup / N+1), then
+   * flattened to `AdminCardReviewRow`.
+   */
+  async getReviewsByUserId(userId: string, limit: number): Promise<AdminCardReviewRow[]> {
+    const reviews = await this.prisma.review.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: { product: { select: { name: true } } },
+    });
+    return reviews.map((review) => ({
+      id: review.id,
+      productId: review.productId,
+      productName: review.product.name,
+      rating: review.rating,
+      comment: review.comment,
+      isActive: review.isActive,
+      createdAt: review.createdAt,
+    }));
+  }
+
+  /**
+   * The customer's redeemed coupons, newest first, capped at `limit`. The parent
+   * discount's `code`/`type`/`value` are joined in the same query, then
+   * flattened to `AdminCardCouponRow` (`redeemedAt` = `DiscountRedemption.createdAt`).
+   */
+  async getRedeemedCoupons(userId: string, limit: number): Promise<AdminCardCouponRow[]> {
+    const redemptions = await this.prisma.discountRedemption.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: { discount: { select: { code: true, type: true, value: true } } },
+    });
+    return redemptions.map((redemption) => ({
+      id: redemption.id,
+      code: redemption.discount.code,
+      type: redemption.discount.type,
+      value: redemption.discount.value,
+      orderId: redemption.orderId,
+      redeemedAt: redemption.createdAt,
+    }));
+  }
+
+  /**
+   * Contact-inbox messages matched by exact email string, newest first, capped
+   * at `limit`. `ContactMessage` has no `userId` FK yet (TASK-256 will add one) —
+   * this is a deliberate best-effort email-string match, forward-compatible with
+   * a real `userId` join later without changing the response shape. See plan 135
+   * "Contact-message matching caveat".
+   */
+  getContactMessagesByEmail(email: string, limit: number): Promise<ContactMessage[]> {
+    return this.prisma.contactMessage.findMany({
+      where: { email },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
     });
   }
 }

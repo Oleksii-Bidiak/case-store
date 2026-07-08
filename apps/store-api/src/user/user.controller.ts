@@ -25,7 +25,14 @@ import { UserService } from './user.service';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
 import { JwtAuthGuard, AdminGuard } from '../auth/guards';
 import { CurrentUser } from '../auth/decorators';
-import { UserEntity } from './entities';
+import {
+  UserEntity,
+  UserAdminCardEntity,
+  CustomerCardOrderEntity,
+  CustomerCardReviewEntity,
+  CustomerCardCouponEntity,
+  CustomerCardContactMessageEntity,
+} from './entities';
 
 /**
  * Response envelope for a single user.
@@ -33,6 +40,14 @@ import { UserEntity } from './entities';
 class UserResponseEnvelope {
   @ApiProperty({ type: UserEntity })
   data!: UserEntity;
+}
+
+/**
+ * Response envelope for the enriched admin customer card (TASK-252).
+ */
+class UserAdminCardResponseEnvelope {
+  @ApiProperty({ type: UserAdminCardEntity })
+  data!: UserAdminCardEntity;
 }
 
 /**
@@ -68,6 +83,7 @@ class UserListResponseEnvelope {
  */
 type UserResponse = { data: UserEntity };
 type UserListResponse = { data: UserEntity[]; meta: PaginationMeta };
+type UserAdminCardResponse = { data: UserAdminCardEntity };
 
 /**
  * Controller for user profile and admin user management endpoints.
@@ -83,7 +99,17 @@ type UserListResponse = { data: UserEntity[]; meta: PaginationMeta };
  *   PATCH  /users/:id/activate   — Activate a user
  */
 @ApiTags('Users')
-@ApiExtraModels(UserEntity, UserResponseEnvelope, UserListResponseEnvelope)
+@ApiExtraModels(
+  UserEntity,
+  UserResponseEnvelope,
+  UserListResponseEnvelope,
+  UserAdminCardEntity,
+  UserAdminCardResponseEnvelope,
+  CustomerCardOrderEntity,
+  CustomerCardReviewEntity,
+  CustomerCardCouponEntity,
+  CustomerCardContactMessageEntity,
+)
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
@@ -183,6 +209,34 @@ export class UserController {
     const user = await this.userService.findById(id);
 
     return { data: user };
+  }
+
+  /**
+   * GET /api/users/:id/admin-card
+   *
+   * Returns the enriched admin "customer card" (TASK-252): the user's profile
+   * plus lifetime value, order count, recent orders, product reviews, redeemed
+   * coupons, and contact-inbox messages matched by email. Admin-only.
+   */
+  @Get(':id/admin-card')
+  @UseGuards(AdminGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Get enriched customer card (LTV, orders, reviews, coupons, contact messages)',
+    operationId: 'getUserAdminCard',
+  })
+  @ApiParam({ name: 'id', description: 'User UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Customer card retrieved',
+    type: UserAdminCardResponseEnvelope,
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async getAdminCard(@Param('id') id: string): Promise<UserAdminCardResponse> {
+    const card = await this.userService.getAdminCard(id);
+
+    return { data: card };
   }
 
   /**

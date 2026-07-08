@@ -10,6 +10,20 @@ const prismaMock = {
     count: jest.fn(),
     update: jest.fn(),
   },
+  order: {
+    aggregate: jest.fn(),
+    count: jest.fn(),
+    findMany: jest.fn(),
+  },
+  review: {
+    findMany: jest.fn(),
+  },
+  discountRedemption: {
+    findMany: jest.fn(),
+  },
+  contactMessage: {
+    findMany: jest.fn(),
+  },
 };
 
 describe('UserRepository (soft-delete behaviour)', () => {
@@ -148,6 +162,149 @@ describe('UserRepository (soft-delete behaviour)', () => {
       expect(updateArgs.data.email).toBe('deleted:user-1:user@example.com');
       expect(updateArgs.data.originalEmail).toBe('user@example.com');
       expect(updateArgs.data.deletedAt).toBeInstanceOf(Date);
+    });
+  });
+
+  // ─── Admin customer card reads (TASK-252) ──────────────────────────────────
+
+  describe('getLtv', () => {
+    it('sums PAID order totals with NO deletedAt filter (mirrors dashboard revenue)', async () => {
+      prismaMock.order.aggregate.mockResolvedValue({ _sum: { total: 1299.5 } });
+
+      const ltv = await repository.getLtv('user-1');
+
+      expect(ltv).toBe(1299.5);
+      expect(prismaMock.order.aggregate).toHaveBeenCalledWith({
+        _sum: { total: true },
+        where: { userId: 'user-1', paymentStatus: 'PAID' },
+      });
+      // The asymmetry guard: LTV must NOT constrain on deletedAt.
+      const whereArg = prismaMock.order.aggregate.mock.calls[0][0].where;
+      expect(whereArg).not.toHaveProperty('deletedAt');
+    });
+
+    it('falls back to Number(0) when _sum.total is null (no PAID orders)', async () => {
+      prismaMock.order.aggregate.mockResolvedValue({ _sum: { total: null } });
+
+      const ltv = await repository.getLtv('user-1');
+
+      expect(ltv).toBe(0);
+    });
+  });
+
+  describe('getOrderCount', () => {
+    it('counts only live (deletedAt: null) orders for the user', async () => {
+      prismaMock.order.count.mockResolvedValue(12);
+
+      const count = await repository.getOrderCount('user-1');
+
+      expect(count).toBe(12);
+      expect(prismaMock.order.count).toHaveBeenCalledWith({
+        where: { userId: 'user-1', deletedAt: null },
+      });
+    });
+  });
+
+  describe('getRecentOrders', () => {
+    it('selects live orders newest-first, capped, with the card column set', async () => {
+      prismaMock.order.findMany.mockResolvedValue([]);
+
+      await repository.getRecentOrders('user-1', 10);
+
+      expect(prismaMock.order.findMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1', deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          status: true,
+          paymentStatus: true,
+          total: true,
+          createdAt: true,
+        },
+      });
+    });
+  });
+
+  describe('getReviewsByUserId', () => {
+    it('joins the product name and flattens to AdminCardReviewRow', async () => {
+      prismaMock.review.findMany.mockResolvedValue([
+        {
+          id: 'review-1',
+          productId: 'prod-1',
+          rating: 5,
+          comment: 'Great!',
+          isActive: true,
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          product: { name: 'iPhone 15 Pro Case' },
+        },
+      ]);
+
+      const rows = await repository.getReviewsByUserId('user-1', 20);
+
+      expect(prismaMock.review.findMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: { product: { select: { name: true } } },
+      });
+      expect(rows).toEqual([
+        {
+          id: 'review-1',
+          productId: 'prod-1',
+          productName: 'iPhone 15 Pro Case',
+          rating: 5,
+          comment: 'Great!',
+          isActive: true,
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ]);
+    });
+  });
+
+  describe('getRedeemedCoupons', () => {
+    it('joins discount code/type/value and flattens to AdminCardCouponRow', async () => {
+      prismaMock.discountRedemption.findMany.mockResolvedValue([
+        {
+          id: 'redemption-1',
+          orderId: 'order-1',
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          discount: { code: 'SUMMER20', type: 'PERCENT', value: 20 },
+        },
+      ]);
+
+      const rows = await repository.getRedeemedCoupons('user-1', 20);
+
+      expect(prismaMock.discountRedemption.findMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: { discount: { select: { code: true, type: true, value: true } } },
+      });
+      expect(rows).toEqual([
+        {
+          id: 'redemption-1',
+          code: 'SUMMER20',
+          type: 'PERCENT',
+          value: 20,
+          orderId: 'order-1',
+          redeemedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ]);
+    });
+  });
+
+  describe('getContactMessagesByEmail', () => {
+    it('matches by exact email string, newest-first, capped', async () => {
+      prismaMock.contactMessage.findMany.mockResolvedValue([]);
+
+      await repository.getContactMessagesByEmail('user@example.com', 20);
+
+      expect(prismaMock.contactMessage.findMany).toHaveBeenCalledWith({
+        where: { email: 'user@example.com' },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      });
     });
   });
 });

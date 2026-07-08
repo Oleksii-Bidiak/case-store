@@ -52,6 +52,13 @@ describe('UserController (e2e)', () => {
     update: jest.fn(),
     deactivate: jest.fn(),
     activate: jest.fn(),
+    // Admin customer card enrichment reads (TASK-252).
+    getLtv: jest.fn(),
+    getOrderCount: jest.fn(),
+    getRecentOrders: jest.fn(),
+    getReviewsByUserId: jest.fn(),
+    getRedeemedCoupons: jest.fn(),
+    getContactMessagesByEmail: jest.fn(),
   };
 
   // Mock PrismaService — prevents database connection errors
@@ -384,6 +391,121 @@ describe('UserController (e2e)', () => {
 
       await request(app.getHttpServer())
         .get('/api/users/nonexistent-id')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+  });
+
+  // ─── GET /api/users/:id/admin-card (admin, TASK-252) ────────────────────────
+
+  describe('GET /api/users/:id/admin-card', () => {
+    function stubCardReads() {
+      userRepositoryMock.getLtv.mockResolvedValue(1299.5);
+      userRepositoryMock.getOrderCount.mockResolvedValue(12);
+      userRepositoryMock.getRecentOrders.mockResolvedValue([
+        {
+          id: 'order-1',
+          status: 'DELIVERED',
+          paymentStatus: 'PAID',
+          total: 129.99,
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ]);
+      userRepositoryMock.getReviewsByUserId.mockResolvedValue([
+        {
+          id: 'review-1',
+          productId: 'prod-1',
+          productName: 'iPhone 15 Pro Case',
+          rating: 5,
+          comment: 'Great!',
+          isActive: true,
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ]);
+      userRepositoryMock.getRedeemedCoupons.mockResolvedValue([
+        {
+          id: 'redemption-1',
+          code: 'SUMMER20',
+          type: 'PERCENT',
+          value: 20,
+          orderId: 'order-1',
+          redeemedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ]);
+      userRepositoryMock.getContactMessagesByEmail.mockResolvedValue([
+        {
+          id: 'message-1',
+          name: 'John',
+          phone: '+380991234567',
+          email: 'detail@example.com',
+          topic: 'Order question',
+          orderRef: null,
+          message: 'When will my order ship?',
+          status: 'NEW',
+          adminNote: null,
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ]);
+    }
+
+    it('should return 401 without auth token', async () => {
+      await request(app.getHttpServer()).get('/api/users/some-id/admin-card').expect(401);
+    });
+
+    it('should return 403 for non-admin user', async () => {
+      const token = generateAccessToken(testUser.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .get('/api/users/some-id/admin-card')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('should return 200 with a fully-shaped customer card for admin', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      userRepositoryMock.findById.mockResolvedValue({
+        ...testUser,
+        id: 'user-detail-id',
+        email: 'detail@example.com',
+      });
+      stubCardReads();
+
+      const response = await request(app.getHttpServer())
+        .get('/api/users/user-detail-id/admin-card')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const card = response.body.data;
+      expect(card).toHaveProperty('user');
+      expect(card.user).toHaveProperty('id', 'user-detail-id');
+      expect(card.user).not.toHaveProperty('passwordHash');
+      expect(typeof card.ltv).toBe('number');
+      expect(card.ltv).toBe(1299.5);
+      expect(typeof card.orderCount).toBe('number');
+      expect(Array.isArray(card.recentOrders)).toBe(true);
+      expect(Array.isArray(card.reviews)).toBe(true);
+      expect(Array.isArray(card.redeemedCoupons)).toBe(true);
+      expect(Array.isArray(card.contactMessages)).toBe(true);
+      expect(card.recentOrders[0].total).toBe(129.99);
+      expect(card.contactMessages[0]).toEqual(
+        expect.objectContaining({ id: 'message-1', status: 'NEW' }),
+      );
+      // The email-matched read uses the resolved user's email.
+      expect(userRepositoryMock.getContactMessagesByEmail).toHaveBeenCalledWith(
+        'detail@example.com',
+        20,
+      );
+    });
+
+    it('should return 404 when the user is not found', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      userRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .get('/api/users/nonexistent-id/admin-card')
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
     });

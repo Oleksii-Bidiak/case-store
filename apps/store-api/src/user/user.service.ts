@@ -6,8 +6,14 @@ import {
 } from '@nestjs/common';
 import { UserRepository, UpdateUserInput, FindAllParams } from './user.repository';
 import { AuthRepository } from '../auth/auth.repository';
-import { UserEntity } from './entities';
+import { UserEntity, UserAdminCardEntity } from './entities';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
+import {
+  CUSTOMER_CARD_RECENT_ORDERS_LIMIT,
+  CUSTOMER_CARD_REVIEWS_LIMIT,
+  CUSTOMER_CARD_COUPONS_LIMIT,
+  CUSTOMER_CARD_MESSAGES_LIMIT,
+} from './user-admin-card.types';
 
 /**
  * Pagination metadata returned alongside paginated results.
@@ -138,6 +144,46 @@ export class UserService {
     }
 
     return UserEntity.fromPrisma(user);
+  }
+
+  /**
+   * Assemble the enriched admin "customer card" for a user (admin-only, TASK-252):
+   * profile + lifetime value + order count + recent orders + reviews + redeemed
+   * coupons + email-matched contact messages.
+   *
+   * One `findById` lookup runs first — it is unavoidable (a 404 must be raised
+   * before any enrichment work, and the contact-message read needs the user's
+   * email). Everything after it is a single parallel `Promise.all` batch of six
+   * independent reads, with no waterfall of dependent queries — mirroring
+   * `DashboardRepository.getSummary()`'s assembly style.
+   *
+   * @throws NotFoundException when the user does not exist (or is soft-deleted).
+   */
+  async getAdminCard(id: string): Promise<UserAdminCardEntity> {
+    const user = await this.userRepository.findById(id);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const [ltv, orderCount, recentOrders, reviews, redeemedCoupons, contactMessages] =
+      await Promise.all([
+        this.userRepository.getLtv(id),
+        this.userRepository.getOrderCount(id),
+        this.userRepository.getRecentOrders(id, CUSTOMER_CARD_RECENT_ORDERS_LIMIT),
+        this.userRepository.getReviewsByUserId(id, CUSTOMER_CARD_REVIEWS_LIMIT),
+        this.userRepository.getRedeemedCoupons(id, CUSTOMER_CARD_COUPONS_LIMIT),
+        this.userRepository.getContactMessagesByEmail(user.email, CUSTOMER_CARD_MESSAGES_LIMIT),
+      ]);
+
+    return UserAdminCardEntity.fromParts(UserEntity.fromPrisma(user), {
+      ltv,
+      orderCount,
+      recentOrders,
+      reviews,
+      redeemedCoupons,
+      contactMessages,
+    });
   }
 
   /**
