@@ -81,3 +81,7 @@ export { AdminFormSkeleton } from "./admin-form-skeleton";
 export { Textarea } from "./textarea";
 export { Toaster } from "./sonner";
 export { RichTextEditor, type RichTextEditorProps } from "./rich-text-editor";
+export {
+  SeoSnippetPreview,
+  type SeoSnippetPreviewProps,
+} from "./seo-snippet-preview";

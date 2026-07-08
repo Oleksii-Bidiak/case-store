@@ -4,6 +4,7 @@ import { AdminFormSkeleton } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { SeoSettingsForm } from "@/features/seo-settings-form";
 import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
+import { SeoHealthSection } from "./seo-health-section";
 
 /**
  * Settings view for the admin-managed global SEO block. Fetches the singleton
@@ -31,7 +32,10 @@ export function SeoSettingsView() {
           {dict.seoSettings.loadError}
         </p>
       ) : (
-        <SeoSettingsForm settings={data.data} />
+        <>
+          <SeoHealthSection settings={data.data} />
+          <SeoSettingsForm settings={data.data} />
+        </>
       )}
     </div>
   );

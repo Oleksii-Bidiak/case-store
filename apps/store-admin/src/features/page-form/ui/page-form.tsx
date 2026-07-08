@@ -3,8 +3,21 @@
 import { useEffect } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Input, Label, RichTextEditor, Textarea } from "@/shared/ui";
+import {
+  Button,
+  Input,
+  Label,
+  RichTextEditor,
+  SeoSnippetPreview,
+  Textarea,
+} from "@/shared/ui";
 import { slugify } from "@/shared/lib/slug";
+import {
+  resolveSeoPreviewTitle,
+  resolveSeoPreviewDescription,
+  resolveEffectiveTitleTemplate,
+} from "@/shared/lib/seo";
+import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
 import { dict } from "@/shared/config";
 import {
   pageSchema,
@@ -77,6 +90,34 @@ export function PageForm({
   const titleValue = useWatch({ control, name: "title" }) ?? "";
   const slugValue = useWatch({ control, name: "slug" });
   const statusValue = useWatch({ control, name: "status" });
+
+  // Live SERP preview (TASK-268): resolve the exact title/description the
+  // storefront would render for this /legal/[slug] page through the same
+  // three-tier precedence. Title tier-3 derives from the page title; the
+  // description derives from the excerpt (its short-summary field), then the
+  // body content. `SeoSettings` feeds tier-2 defaults + the title template.
+  const excerptValue = useWatch({ control, name: "excerpt" }) ?? "";
+  const contentValue = useWatch({ control, name: "content" }) ?? "";
+  const metaTitleValue = useWatch({ control, name: "metaTitle" }) ?? "";
+  const metaDescriptionValue =
+    useWatch({ control, name: "metaDescription" }) ?? "";
+  const seoSettings = useSeoSettingsControllerGetSettings().data?.data;
+  const previewTitle = resolveSeoPreviewTitle({
+    entityTitle: metaTitleValue,
+    defaultTitle: seoSettings?.defaultMetaTitle,
+    contentName: titleValue,
+    titleTemplate: resolveEffectiveTitleTemplate(
+      seoSettings?.titleTemplate,
+      dict.brand,
+    ),
+  });
+  const previewDescription = resolveSeoPreviewDescription({
+    entityDescription: metaDescriptionValue,
+    defaultDescription: seoSettings?.defaultMetaDescription,
+    contentDescription: excerptValue || contentValue,
+  });
+  const previewSlug =
+    slugValue || (titleValue.trim() ? slugify(titleValue) : "");
 
   return (
     <form
@@ -177,6 +218,16 @@ export function PageForm({
           </p>
         )}
       </div>
+
+      <SeoSnippetPreview
+        title={previewTitle.text}
+        titleTier={previewTitle.tier}
+        description={previewDescription.text || undefined}
+        descriptionTier={previewDescription.tier}
+        url={`${dict.seoSnippetPreview.urlHost} › legal › ${previewSlug}`}
+        rawTitleLength={metaTitleValue.trim().length}
+        rawDescriptionLength={metaDescriptionValue.trim().length}
+      />
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="page-sort">{dict.pageForm.sortOrder}</Label>

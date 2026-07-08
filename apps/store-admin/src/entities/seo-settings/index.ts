@@ -6,7 +6,12 @@
 export {
   useSeoSettingsControllerGetSettings,
   useAdminSeoSettingsControllerUpdate,
+  useAdminSeoSettingsControllerGetHealth,
   getSeoSettingsControllerGetSettingsQueryKey,
 } from "@/shared/api";
 
-export type { SeoSettingsEntity, UpdateSeoSettingsDto } from "@/shared/api";
+export type {
+  SeoSettingsEntity,
+  UpdateSeoSettingsDto,
+  SeoHealthEntity,
+} from "@/shared/api";

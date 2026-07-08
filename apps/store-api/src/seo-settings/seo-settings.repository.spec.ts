@@ -20,6 +20,9 @@ const prismaMock = {
     findUnique: jest.fn(),
     upsert: jest.fn(),
   },
+  product: { count: jest.fn() },
+  category: { count: jest.fn() },
+  page: { count: jest.fn() },
 };
 
 describe('SeoSettingsRepository', () => {
@@ -73,6 +76,62 @@ describe('SeoSettingsRepository', () => {
         where: { id: SINGLETON_ID },
         create: { id: SINGLETON_ID, ...dto },
         update: { ...dto },
+      });
+    });
+  });
+
+  describe('getContentSeoCounts (TASK-269)', () => {
+    it('runs the six counts in parallel and maps them to the counts shape', async () => {
+      // Distinct return values per call so a mis-wired mapping is caught.
+      prismaMock.product.count
+        .mockResolvedValueOnce(12) // productsMissingMetaTitle
+        .mockResolvedValueOnce(40); // productsTotal
+      prismaMock.category.count
+        .mockResolvedValueOnce(3) // categoriesMissingMetaTitle
+        .mockResolvedValueOnce(8); // categoriesTotal
+      prismaMock.page.count
+        .mockResolvedValueOnce(1) // pagesMissingMetaTitle
+        .mockResolvedValueOnce(5); // pagesTotal
+
+      const result = await repository.getContentSeoCounts();
+
+      expect(result).toEqual({
+        productsMissingMetaTitle: 12,
+        productsTotal: 40,
+        categoriesMissingMetaTitle: 3,
+        categoriesTotal: 8,
+        pagesMissingMetaTitle: 1,
+        pagesTotal: 5,
+      });
+    });
+
+    it('uses the canonical live-visibility where clauses (Design Decision 2)', async () => {
+      prismaMock.product.count.mockResolvedValue(0);
+      prismaMock.category.count.mockResolvedValue(0);
+      prismaMock.page.count.mockResolvedValue(0);
+
+      await repository.getContentSeoCounts();
+
+      // Products: isActive + not soft-deleted; numerator adds metaTitle: null.
+      expect(prismaMock.product.count).toHaveBeenNthCalledWith(1, {
+        where: { metaTitle: null, isActive: true, deletedAt: null },
+      });
+      expect(prismaMock.product.count).toHaveBeenNthCalledWith(2, {
+        where: { isActive: true, deletedAt: null },
+      });
+      // Categories: isActive only (no soft-delete column).
+      expect(prismaMock.category.count).toHaveBeenNthCalledWith(1, {
+        where: { metaTitle: null, isActive: true },
+      });
+      expect(prismaMock.category.count).toHaveBeenNthCalledWith(2, {
+        where: { isActive: true },
+      });
+      // Pages: status = PUBLISHED, NEVER the isActive mirror (plan 104).
+      expect(prismaMock.page.count).toHaveBeenNthCalledWith(1, {
+        where: { metaTitle: null, status: 'PUBLISHED' },
+      });
+      expect(prismaMock.page.count).toHaveBeenNthCalledWith(2, {
+        where: { status: 'PUBLISHED' },
       });
     });
   });

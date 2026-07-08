@@ -469,6 +469,78 @@ describe("ProductForm — stock hint & breakdown (TASK-253 / TASK-254)", () => {
   });
 });
 
+describe("ProductForm — SERP snippet preview (TASK-268)", () => {
+  const validDefaults: Partial<ProductFormInput> = {
+    name: "Clear Case",
+    slug: "clear-case",
+    price: "29.99",
+    stock: "5",
+    categoryId: CATEGORY_UUID,
+    isActive: true,
+  };
+
+  const previewTitle = () => screen.getByTestId("seo-snippet-title");
+  const previewHint = () => screen.getByTestId("seo-snippet-hint");
+  const titleCounter = () => screen.getByTestId("seo-snippet-title-counter");
+  const metaTitleField = () =>
+    screen.getByLabelText(dict.productForm.metaTitle);
+
+  it("renders the preview and derives the branded title from the name when meta is blank", async () => {
+    renderWithProviders(
+      <ProductForm
+        defaultValues={validDefaults}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(previewTitle()).toHaveTextContent("Clear Case | MobileStore"),
+    );
+    expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintDerived);
+  });
+
+  it("live-updates the preview to the typed meta title and its counter", async () => {
+    renderWithProviders(
+      <ProductForm
+        defaultValues={validDefaults}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+
+    await userEvent.type(metaTitleField(), "Best Clear Case");
+
+    await waitFor(() =>
+      expect(previewTitle()).toHaveTextContent("Best Clear Case"),
+    );
+    // Own title used verbatim (no brand suffix) → tier "own".
+    expect(previewTitle()).not.toHaveTextContent("| MobileStore");
+    expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintOwn);
+    expect(titleCounter()).toHaveTextContent("15/60");
+  });
+
+  it("falls back through the tier chain when the typed meta title is cleared", async () => {
+    renderWithProviders(
+      <ProductForm
+        defaultValues={{ ...validDefaults, metaTitle: "Typed Title" }}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(previewTitle()).toHaveTextContent("Typed Title"),
+    );
+
+    await userEvent.clear(metaTitleField());
+
+    await waitFor(() =>
+      expect(previewTitle()).toHaveTextContent("Clear Case | MobileStore"),
+    );
+  });
+});
+
 describe("ProductForm — leaf-only category picker (TASK-236)", () => {
   const ROOT_UUID = "55555555-5555-4555-8555-555555555555";
   const CHILD_UUID = "66666666-6666-4666-8666-666666666666";

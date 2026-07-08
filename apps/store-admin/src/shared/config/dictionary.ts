@@ -1417,6 +1417,75 @@ export const dict = {
       },
     },
   },
+
+  // SERP-snippet preview under the meta fields (план 130, TASK-268). A live
+  // Google-result mock (title / green URL / description) + char counters + a
+  // "blank field = auto-generated" hint, shown under the metaTitle/
+  // metaDescription fields on product/category/page forms and the /settings/seo
+  // defaults form. `urlHost` is an illustrative storefront host for the
+  // breadcrumb line only — advisory UX, not the real canonical origin.
+  seoSnippetPreview: {
+    heading: "Перегляд у результатах пошуку Google",
+    urlHost: "mobilestore.ua",
+    emptyTitle: "(без заголовка)",
+    // `{typed}/{max}` counter shown next to each field's live length.
+    counter: (n: number, max: number) => `${n}/${max}`,
+    titleCounterAria: (n: number, max: number) =>
+      `Довжина SEO-заголовка: ${n} із рекомендованих ${max} символів`,
+    descriptionCounterAria: (n: number, max: number) =>
+      `Довжина SEO-опису: ${n} із рекомендованих ${max} символів`,
+    // Hint line under the mock — copy chosen by which tier resolved the title.
+    hintOwn: "Заголовок узято з вашого поля «SEO-заголовок» вище.",
+    hintDefault:
+      "Поле порожнє — показано заголовок сайту за замовчуванням (розділ «SEO»).",
+    hintDerived:
+      "Поле порожнє — заголовок згенеровано автоматично з назви за шаблоном сайту.",
+    hintEmpty:
+      "Заповніть назву або SEO-заголовок, щоб побачити, як сторінка виглядатиме в пошуку Google.",
+    // Self-referential preview on /settings/seo (Design Decision 4) — a sample
+    // page standing in for "a real page with no title/description of its own".
+    sampleNote:
+      "Це приклад: так виглядатиме сторінка, у якої немає власного заголовка чи опису.",
+    samplePageName: "Чохол для iPhone 15",
+    samplePageDescription:
+      "Надійний силіконовий чохол для iPhone 15 із захистом кутів та підтримкою MagSafe. Доставка по Україні.",
+    // Create-mode category breadcrumb placeholder (no real slug yet).
+    newCategorySlug: "нова-категорія",
+  },
+
+  // «SEO-здоров'я» checklist on /settings/seo (план 131, TASK-269). An at-a-glance
+  // health view: how many products/categories/pages rely on auto-generated meta
+  // titles (informational, never an error), whether the site-wide defaults are
+  // filled (soft amber nudge when empty), and — most importantly — a prominent
+  // RED warning when the whole site is hidden from search (noindexSite).
+  seoHealth: {
+    heading: "SEO-здоров'я",
+    subheading:
+      "Швидкий огляд стану SEO вашого магазину. Це не помилки — просто підказки, що можна покращити.",
+    loadError: "Не вдалося завантажити стан SEO. Спробуйте ще раз.",
+    // Auto-title rows — neutral/informational tone. `N із M`.
+    autoHint: (missing: number, total: number) =>
+      `${missing} із ${total} використовують автоматичний заголовок`,
+    productsAutoLabel: "Товари без власного SEO-заголовка",
+    categoriesAutoLabel: "Категорії без власного SEO-заголовка",
+    pagesAutoLabel: "Сторінки без власного SEO-заголовка",
+    // Defaults-filled row — soft amber nudge when empty, neutral when filled.
+    defaultsFilledLabel: "SEO-налаштування за замовчуванням",
+    defaultsFilledYes: "Заголовок і опис за замовчуванням заповнені.",
+    defaultsFilledNo:
+      "Рекомендуємо заповнити заголовок і опис сайту за замовчуванням нижче.",
+    // noindex — the one genuinely urgent, RED state.
+    noindexWarningTitle: "Сайт прихований від пошукових систем!",
+    noindexWarningBody:
+      "Зараз увесь магазин не показується в Google та інших пошукових системах. Якщо це робочий сайт — вимкніть «Приховати сайт від пошукових систем» нижче, інакше клієнти не знайдуть вас у пошуку.",
+    noindexOkLabel: "Сайт видимий для пошукових систем.",
+    // Outbound eyeball links to what the storefront actually serves.
+    linksHeading: "Перевірити службові файли сайту",
+    robotsLink: "robots.txt",
+    sitemapLink: "sitemap.xml",
+    llmsLink: "llms.txt",
+    openLinkAria: (name: string) => `Відкрити ${name} у новій вкладці`,
+  },
 } as const;
 
 export type AdminDictionary = typeof dict;

@@ -1,11 +1,16 @@
 "use client";
 
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Button, Input, Label, Textarea } from "@/shared/ui";
+import { Button, Input, Label, SeoSnippetPreview, Textarea } from "@/shared/ui";
+import {
+  resolveSeoPreviewTitle,
+  resolveSeoPreviewDescription,
+  resolveEffectiveTitleTemplate,
+} from "@/shared/lib/seo";
 import { dict } from "@/shared/config";
 import {
   getSeoSettingsControllerGetSettingsQueryKey,
@@ -39,6 +44,7 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
     formState: { errors },
@@ -52,6 +58,31 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
     reset(mapSettingsToFormValues(settings));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.id]);
+
+  // Self-referential SERP preview (TASK-268, Design Decision 4). This form edits
+  // the site-wide defaults, so there is no separate entity — a filled default is
+  // shown verbatim (tier "own"), and a blank one demonstrates the template
+  // applied to an illustrative sample page (tier "derived"), i.e. exactly what
+  // an untitled real page would render. The `control` is not otherwise
+  // destructured here, so it is added solely for these live watches.
+  const defaultMetaTitleValue = useWatch({ control, name: "defaultMetaTitle" });
+  const defaultMetaDescriptionValue = useWatch({
+    control,
+    name: "defaultMetaDescription",
+  });
+  const titleTemplateValue = useWatch({ control, name: "titleTemplate" });
+  const previewTitle = resolveSeoPreviewTitle({
+    entityTitle: defaultMetaTitleValue,
+    contentName: dict.seoSnippetPreview.samplePageName,
+    titleTemplate: resolveEffectiveTitleTemplate(
+      titleTemplateValue,
+      dict.brand,
+    ),
+  });
+  const previewDescription = resolveSeoPreviewDescription({
+    entityDescription: defaultMetaDescriptionValue,
+    contentDescription: dict.seoSnippetPreview.samplePageDescription,
+  });
 
   const onSubmit = (values: SeoSettingsFormValues) => {
     update.mutate(
@@ -115,6 +146,24 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
             {errors.defaultMetaDescription.message}
           </p>
         )}
+      </div>
+
+      {/* Self-referential SERP preview of the defaults on a sample page. */}
+      <div className="flex flex-col gap-1.5">
+        <SeoSnippetPreview
+          title={previewTitle.text}
+          titleTier={previewTitle.tier}
+          description={previewDescription.text || undefined}
+          descriptionTier={previewDescription.tier}
+          url={`${dict.seoSnippetPreview.urlHost} › …`}
+          rawTitleLength={(defaultMetaTitleValue ?? "").trim().length}
+          rawDescriptionLength={
+            (defaultMetaDescriptionValue ?? "").trim().length
+          }
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.seoSnippetPreview.sampleNote}
+        </p>
       </div>
 
       {/* Title template */}

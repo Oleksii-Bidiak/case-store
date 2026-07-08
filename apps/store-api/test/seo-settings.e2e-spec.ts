@@ -52,6 +52,7 @@ describe('SeoSettings (e2e)', () => {
   const seoSettingsRepositoryMock = {
     findSettings: jest.fn(),
     upsertSettings: jest.fn(),
+    getContentSeoCounts: jest.fn(),
   };
 
   const prismaServiceMock = {
@@ -246,6 +247,44 @@ describe('SeoSettings (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .send({ additionalSameAsLinks: ['https://ok.com', 'not-a-url'] })
         .expect(400);
+    });
+  });
+
+  // ─── SEO-health checklist endpoint (TASK-269) ──────────────────────────────────
+
+  describe('GET /api/admin/seo-settings/health', () => {
+    const counts = {
+      productsMissingMetaTitle: 12,
+      productsTotal: 40,
+      categoriesMissingMetaTitle: 3,
+      categoriesTotal: 8,
+      pagesMissingMetaTitle: 1,
+      pagesTotal: 5,
+    };
+
+    it('returns 401 without a token', async () => {
+      await request(app.getHttpServer()).get('/api/admin/seo-settings/health').expect(401);
+    });
+
+    it('returns 403 for a customer token', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .get('/api/admin/seo-settings/health')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('returns the six catalog counts for an admin', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      seoSettingsRepositoryMock.getContentSeoCounts.mockResolvedValue(counts);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/seo-settings/health')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data).toEqual(counts);
     });
   });
 });

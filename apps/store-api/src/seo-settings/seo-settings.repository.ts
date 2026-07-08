@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma';
-import { SeoSettings } from '@prisma/client';
+import { PublishStatus, SeoSettings } from '@prisma/client';
 
 /**
  * Well-known fixed ID for the singleton SEO-settings row.
@@ -24,6 +24,21 @@ export interface UpsertSeoSettingsInput {
   noindexSite?: boolean;
   llmsTxtSummary?: string | null;
   additionalSameAsLinks?: string[];
+}
+
+/**
+ * Six catalog COUNTs for the SEO-health checklist (TASK-269): for each of
+ * products / categories / pages, how many LIVE rows lack their own `metaTitle`
+ * (the numerator — relying on auto-generated titles, which is fine, not an
+ * error) and how many are live at all (the denominator).
+ */
+export interface ContentSeoCounts {
+  productsMissingMetaTitle: number;
+  productsTotal: number;
+  categoriesMissingMetaTitle: number;
+  categoriesTotal: number;
+  pagesMissingMetaTitle: number;
+  pagesTotal: number;
 }
 
 @Injectable()
@@ -51,5 +66,48 @@ export class SeoSettingsRepository {
       create: { id: SINGLETON_ID, ...data },
       update: { ...data },
     });
+  }
+
+  /**
+   * Six cheap COUNTs for the SEO-health checklist (TASK-269), run in one
+   * `Promise.all` — no joins, no N+1 — mirroring `DashboardRepository.getNeedsAction()`.
+   *
+   * "Live" scoping follows each entity's canonical visibility gate (plan 131
+   * Design Decision 2), so draft/inactive/soft-deleted rows are excluded from
+   * BOTH the missing-metaTitle numerator and the total denominator:
+   *   - Products:   `isActive: true, deletedAt: null` (visibility toggle + tombstone)
+   *   - Categories: `isActive: true` (no soft-delete column on Category)
+   *   - Pages:      `status: PUBLISHED` (the Етап-2 publishing gate — NOT the
+   *                 derived `isActive` mirror, per plan 104)
+   */
+  async getContentSeoCounts(): Promise<ContentSeoCounts> {
+    const [
+      productsMissingMetaTitle,
+      productsTotal,
+      categoriesMissingMetaTitle,
+      categoriesTotal,
+      pagesMissingMetaTitle,
+      pagesTotal,
+    ] = await Promise.all([
+      this.prisma.product.count({
+        where: { metaTitle: null, isActive: true, deletedAt: null },
+      }),
+      this.prisma.product.count({ where: { isActive: true, deletedAt: null } }),
+      this.prisma.category.count({ where: { metaTitle: null, isActive: true } }),
+      this.prisma.category.count({ where: { isActive: true } }),
+      this.prisma.page.count({
+        where: { metaTitle: null, status: PublishStatus.PUBLISHED },
+      }),
+      this.prisma.page.count({ where: { status: PublishStatus.PUBLISHED } }),
+    ]);
+
+    return {
+      productsMissingMetaTitle,
+      productsTotal,
+      categoriesMissingMetaTitle,
+      categoriesTotal,
+      pagesMissingMetaTitle,
+      pagesTotal,
+    };
   }
 }

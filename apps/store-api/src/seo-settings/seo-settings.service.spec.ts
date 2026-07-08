@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SeoSettingsRepository, SINGLETON_ID } from './seo-settings.repository';
 import { SeoSettingsService } from './seo-settings.service';
-import { SeoSettingsEntity } from './entities';
+import { SeoSettingsEntity, SeoHealthEntity } from './entities';
 import { RevalidationNotifier } from '../publishing';
 
 const mockRow = {
@@ -20,6 +20,7 @@ const mockRow = {
 const repositoryMock = {
   findSettings: jest.fn(),
   upsertSettings: jest.fn(),
+  getContentSeoCounts: jest.fn(),
 };
 
 const revalidationMock = {
@@ -80,6 +81,26 @@ describe('SeoSettingsService', () => {
       expect(result).toBeInstanceOf(SeoSettingsEntity);
       expect(result.defaultMetaTitle).toBe('Новий заголовок');
       expect(result.noindexSite).toBe(true);
+    });
+  });
+
+  describe('getHealth (TASK-269)', () => {
+    it('maps the repository counts through SeoHealthEntity.fromCounts', async () => {
+      const counts = {
+        productsMissingMetaTitle: 12,
+        productsTotal: 40,
+        categoriesMissingMetaTitle: 3,
+        categoriesTotal: 8,
+        pagesMissingMetaTitle: 1,
+        pagesTotal: 5,
+      };
+      repositoryMock.getContentSeoCounts.mockResolvedValue(counts);
+
+      const result = await service.getHealth();
+
+      expect(repositoryMock.getContentSeoCounts).toHaveBeenCalledTimes(1);
+      expect(result).toBeInstanceOf(SeoHealthEntity);
+      expect(result).toEqual(counts);
     });
   });
 });
