@@ -1236,6 +1236,21 @@ export const dict = {
     fieldCreated: "Створено",
     fieldUpdated: "Останнє оновлення",
     loadOneError: "Не вдалося завантажити користувача. Спробуйте ще раз.",
+    // --- Customer card (TASK-252) ---------------------------------------------
+    cardLtv: "Сума покупок (LTV)",
+    cardOrderCount: "Кількість замовлень",
+    cardRecentOrders: "Останні замовлення",
+    cardViewAllOrders: "Переглянути всі",
+    cardNoOrders: "Замовлень ще немає.",
+    cardReviews: "Відгуки",
+    cardNoReviews: "Відгуків ще немає.",
+    cardReviewPending: "На модерації",
+    cardReviewApproved: "Опубліковано",
+    cardCoupons: "Використані купони",
+    cardNoCoupons: "Купони ще не використовувались.",
+    cardMessages: "Звернення (за email)",
+    cardNoMessages: "Звернень ще немає.",
+    cardMessageNoTopic: "Без теми",
   },
 
   // --- Newsletter subscribers (TASK-188) --------------------------------------
