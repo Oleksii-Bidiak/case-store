@@ -328,6 +328,9 @@ export function ProductForm({
             min="0"
             {...register("stock")}
           />
+          <p className="text-sm text-muted-foreground">
+            {dict.productForm.stockHint}
+          </p>
           {errors.stock && (
             <p role="alert" className="text-sm text-destructive">
               {errors.stock.message}
