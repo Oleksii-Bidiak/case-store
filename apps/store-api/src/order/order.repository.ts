@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
-import { Prisma, OrderStatus, PaymentStatus } from '@prisma/client';
+import { Prisma, OrderStatus, PaymentStatus, OrderHistoryChangeType } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import {
   CacheService,
@@ -7,7 +7,12 @@ import {
   productDetailSlugKey,
   PRODUCT_LIST_PREFIX,
 } from '../cache';
-import type { CreateOrderParams, OrderWithItems, OrderItemRow } from './order.types';
+import type {
+  CreateOrderParams,
+  OrderWithItems,
+  OrderItemRow,
+  OrderStatusHistoryRow,
+} from './order.types';
 import type { OrderListQueryDto, AdminOrderListQueryDto } from './dto';
 
 /**
@@ -150,6 +155,20 @@ export class OrderRepository {
           items: { create: itemData },
         },
         include: ORDERS_INCLUDE,
+      });
+
+      // TASK-251: the order's birth record — an initial null→PENDING history row
+      // written in the same transaction so the timeline always starts at
+      // creation. System-authored (changedBy null): the customer places the
+      // order, no admin "changes" its status.
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId: created.id,
+          changeType: OrderHistoryChangeType.STATUS,
+          fromStatus: null,
+          toStatus: OrderStatus.PENDING,
+          changedBy: null,
+        },
       });
 
       // TASK-079: redeem the promo code inside this same transaction — the
@@ -331,14 +350,32 @@ export class OrderRepository {
    */
   async updateStatus(
     orderId: string,
-    status: OrderStatus,
+    fromStatus: OrderStatus,
+    toStatus: OrderStatus,
     paymentStatus: PaymentStatus,
+    changedBy: string | null,
     options: { evictProductStockCaches?: boolean } = {},
   ): Promise<OrderWithItems> {
-    const updated = (await this.prisma.order.update({
-      where: { id: orderId },
-      data: { status, paymentStatus },
-      include: ORDERS_INCLUDE,
+    // TASK-251: converted from a bare update to a $transaction so the status
+    // change and its audit-log row commit (or roll back) together. `fromStatus`
+    // is supplied by the service (which already loaded it to decide this is a
+    // plain transition), not re-read here — see plan 134 Design Decision 4.
+    const updated = (await this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.update({
+        where: { id: orderId },
+        data: { status: toStatus, paymentStatus },
+        include: ORDERS_INCLUDE,
+      });
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          changeType: OrderHistoryChangeType.STATUS,
+          fromStatus,
+          toStatus,
+          changedBy,
+        },
+      });
+      return order;
     })) as OrderWithItems;
 
     if (options.evictProductStockCaches) {
@@ -359,7 +396,7 @@ export class OrderRepository {
    * Until Stripe (TASK-034) lands this is the manual counterpart to the admin
    * payment-status action: marking paid keeps the stock, cancel releases it.
    */
-  async cancelAndRestock(orderId: string): Promise<OrderWithItems> {
+  async cancelAndRestock(orderId: string, changedBy: string | null): Promise<OrderWithItems> {
     const updated = (await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
@@ -372,6 +409,18 @@ export class OrderRepository {
           data: { stock: { increment: item.quantity } },
         });
       }
+
+      // TASK-251: audit row — the pre-cancel status (read via the existing
+      // findUniqueOrThrow above) is the fromStatus, so no extra read is needed.
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          changeType: OrderHistoryChangeType.STATUS,
+          fromStatus: order.status,
+          toStatus: OrderStatus.CANCELLED,
+          changedBy,
+        },
+      });
 
       // TASK-228: stamp restockedAt so a later revive knows this order's stock
       // was credited back and must be re-reserved (reviveAndReserve).
@@ -402,6 +451,7 @@ export class OrderRepository {
     orderId: string,
     status: OrderStatus,
     paymentStatus: PaymentStatus,
+    changedBy: string | null,
   ): Promise<OrderWithItems> {
     const updated = (await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUniqueOrThrow({
@@ -421,6 +471,18 @@ export class OrderRepository {
         }
       }
 
+      // TASK-251: audit row — the pre-revive status (e.g. CANCELLED, from the
+      // findUniqueOrThrow above) is the fromStatus; the revived status is the to.
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          changeType: OrderHistoryChangeType.STATUS,
+          fromStatus: order.status,
+          toStatus: status,
+          changedBy,
+        },
+      });
+
       return tx.order.update({
         where: { id: orderId },
         data: { status, paymentStatus, restockedAt: null },
@@ -435,15 +497,50 @@ export class OrderRepository {
   }
 
   /**
-   * Update an order's payment status. Called by the payment webhook handler
-   * (TASK-034).
+   * Update an order's payment status. Called by the admin payment action and,
+   * in future, the payment webhook handler (TASK-034).
+   *
+   * TASK-251: converted from a bare update to a $transaction so the change and
+   * its audit-log row commit atomically. A lightweight `select: { paymentStatus }`
+   * read inside the tx captures the fromPaymentStatus for the history row.
    */
-  updatePaymentStatus(orderId: string, paymentStatus: PaymentStatus): Promise<OrderWithItems> {
-    return this.prisma.order.update({
-      where: { id: orderId },
-      data: { paymentStatus },
-      include: ORDERS_INCLUDE,
-    }) as Promise<OrderWithItems>;
+  async updatePaymentStatus(
+    orderId: string,
+    paymentStatus: PaymentStatus,
+    changedBy: string | null,
+  ): Promise<OrderWithItems> {
+    return (await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        select: { paymentStatus: true },
+      });
+      const updated = await tx.order.update({
+        where: { id: orderId },
+        data: { paymentStatus },
+        include: ORDERS_INCLUDE,
+      });
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+          fromPaymentStatus: existing.paymentStatus,
+          toPaymentStatus: paymentStatus,
+          changedBy,
+        },
+      });
+      return updated;
+    })) as OrderWithItems;
+  }
+
+  /**
+   * Read an order's full status/payment-status history, oldest-first — the
+   * chronological timeline for the admin order-detail view (TASK-251).
+   */
+  findHistoryByOrderId(orderId: string): Promise<OrderStatusHistoryRow[]> {
+    return this.prisma.orderStatusHistory.findMany({
+      where: { orderId },
+      orderBy: { changedAt: 'asc' },
+    });
   }
 
   /**

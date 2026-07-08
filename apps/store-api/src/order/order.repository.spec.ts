@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus, OrderHistoryChangeType } from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { PrismaService } from '../prisma';
 import {
@@ -35,6 +35,10 @@ const makeTx = () => ({
     updateMany: jest.fn(),
     update: jest.fn(),
   },
+  // TASK-251: history rows are written inside every mutation transaction.
+  orderStatusHistory: {
+    create: jest.fn(),
+  },
 });
 
 const prismaMock = {
@@ -44,6 +48,10 @@ const prismaMock = {
     findMany: jest.fn(),
     count: jest.fn(),
     update: jest.fn(),
+  },
+  // TASK-251: history read path.
+  orderStatusHistory: {
+    findMany: jest.fn(),
   },
 };
 
@@ -168,6 +176,27 @@ describe('OrderRepository', () => {
         'outbox write failed',
       );
     });
+
+    // ── TASK-251: initial status-history row inside the order transaction ──
+    it('writes an initial null→PENDING system-authored history row in the same transaction', async () => {
+      const tx = makeTx();
+      tx.order.create.mockResolvedValue({ id: 'order-1', items: [] });
+      tx.product.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+
+      await repository.createFromCart(baseParams);
+
+      // The order's birth record: fromStatus null, toStatus PENDING, no actor.
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: {
+          orderId: 'order-1',
+          changeType: OrderHistoryChangeType.STATUS,
+          fromStatus: null,
+          toStatus: OrderStatus.PENDING,
+          changedBy: null,
+        },
+      });
+    });
   });
 
   // ─── createFromCart — price snapshot & subtotal (TASK-057 / TASK-058) ──────
@@ -231,10 +260,11 @@ describe('OrderRepository', () => {
   // ─── cancelAndRestock — release reserved stock (WARNING / TASK-054) ────────
 
   describe('cancelAndRestock', () => {
-    it('increments stock for each position and sets the order to CANCELLED', async () => {
+    const seedCancelTx = () => {
       const tx = makeTx();
       tx.order.findUniqueOrThrow.mockResolvedValue({
         id: 'order-1',
+        status: OrderStatus.PROCESSING,
         items: [
           { productId: 'product-uuid-1', quantity: 2 },
           { productId: 'product-uuid-2', quantity: 1 },
@@ -246,8 +276,13 @@ describe('OrderRepository', () => {
         items: [],
       });
       prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      return tx;
+    };
 
-      await repository.cancelAndRestock('order-1');
+    it('increments stock for each position and sets the order to CANCELLED', async () => {
+      const tx = seedCancelTx();
+
+      await repository.cancelAndRestock('order-1', 'admin-uuid-1');
 
       // Every position on the order is restocked.
       expect(tx.product.update).toHaveBeenCalledTimes(2);
@@ -262,6 +297,33 @@ describe('OrderRepository', () => {
         include: expect.any(Object),
       });
     });
+
+    // ── TASK-251: history row uses the pre-cancel status as fromStatus ──
+    it('writes a STATUS history row (order.status → CANCELLED) in the same transaction', async () => {
+      const tx = seedCancelTx();
+
+      await repository.cancelAndRestock('order-1', 'admin-uuid-1');
+
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: {
+          orderId: 'order-1',
+          changeType: OrderHistoryChangeType.STATUS,
+          fromStatus: OrderStatus.PROCESSING,
+          toStatus: OrderStatus.CANCELLED,
+          changedBy: 'admin-uuid-1',
+        },
+      });
+    });
+
+    it('threads a null changedBy through for system-authored cancels', async () => {
+      const tx = seedCancelTx();
+
+      await repository.cancelAndRestock('order-1', null);
+
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ changedBy: null }) }),
+      );
+    });
   });
 
   // ─── reviveAndReserve — re-reserve stock on revive (CRITICAL / TASK-228) ────
@@ -271,6 +333,7 @@ describe('OrderRepository', () => {
       const tx = makeTx();
       tx.order.findUniqueOrThrow.mockResolvedValue({
         id: 'order-1',
+        status: OrderStatus.CANCELLED,
         items: [
           { productId: 'product-uuid-1', quantity: 2, product: { name: 'iPhone 15 Pro Case' } },
           { productId: 'product-uuid-2', quantity: 1, product: { name: 'Screen Protector' } },
@@ -289,7 +352,7 @@ describe('OrderRepository', () => {
       const tx = seedTx();
       tx.product.updateMany.mockResolvedValue({ count: 1 });
 
-      await repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID);
+      await repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID, null);
 
       // Same oversell guard as order creation: WHERE stock >= quantity.
       expect(tx.product.updateMany).toHaveBeenCalledTimes(2);
@@ -308,13 +371,36 @@ describe('OrderRepository', () => {
       });
     });
 
+    // ── TASK-251: history row uses the pre-revive status (CANCELLED) as fromStatus ──
+    it('writes a STATUS history row (order.status → revived status) in the same transaction', async () => {
+      const tx = seedTx();
+      tx.product.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.reviveAndReserve(
+        'order-1',
+        OrderStatus.PENDING,
+        PaymentStatus.PAID,
+        'admin-uuid-1',
+      );
+
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: {
+          orderId: 'order-1',
+          changeType: OrderHistoryChangeType.STATUS,
+          fromStatus: OrderStatus.CANCELLED,
+          toStatus: OrderStatus.PENDING,
+          changedBy: 'admin-uuid-1',
+        },
+      });
+    });
+
     it('throws ConflictException and does not update the order when a position lacks stock', async () => {
       const tx = seedTx();
       // First line reserves fine, second line's stock is gone → whole tx throws.
       tx.product.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
 
       await expect(
-        repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID),
+        repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID, null),
       ).rejects.toThrow(ConflictException);
       expect(tx.order.update).not.toHaveBeenCalled();
       // Nothing committed → nothing to evict.
@@ -325,7 +411,7 @@ describe('OrderRepository', () => {
       const tx = seedTx();
       tx.product.updateMany.mockResolvedValue({ count: 1 });
 
-      await repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID);
+      await repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID, null);
 
       expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
       expect(cacheMock.del).toHaveBeenCalledWith(productDetailSlugKey('iphone-15-pro-case'));
@@ -342,12 +428,28 @@ describe('OrderRepository', () => {
       items: [{ productId: 'product-uuid-1', product: { slug: 'iphone-15-pro-case' } }],
     };
 
-    it('persists status/paymentStatus and does NOT evict when the flag is unset', async () => {
-      prismaMock.order.update.mockResolvedValue(updatedOrder);
+    // TASK-251: updateStatus is now a $transaction that persists the status AND
+    // writes a history row atomically. Seed a tx whose order.update resolves the
+    // updated order and drive the callback through $transaction.
+    const seedTx = () => {
+      const tx = makeTx();
+      tx.order.update.mockResolvedValue(updatedOrder);
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      return tx;
+    };
 
-      await repository.updateStatus('order-1', OrderStatus.SHIPPED, PaymentStatus.PAID);
+    it('persists status/paymentStatus inside the transaction and does NOT evict when the flag is unset', async () => {
+      const tx = seedTx();
 
-      expect(prismaMock.order.update).toHaveBeenCalledWith({
+      await repository.updateStatus(
+        'order-1',
+        OrderStatus.PROCESSING,
+        OrderStatus.SHIPPED,
+        PaymentStatus.PAID,
+        'admin-uuid-1',
+      );
+
+      expect(tx.order.update).toHaveBeenCalledWith({
         where: { id: 'order-1' },
         data: { status: OrderStatus.SHIPPED, paymentStatus: PaymentStatus.PAID },
         include: expect.any(Object),
@@ -357,16 +459,125 @@ describe('OrderRepository', () => {
       expect(cacheMock.del).not.toHaveBeenCalled();
     });
 
-    it('evicts list pages and each line-item product detail cache when the flag is set', async () => {
-      prismaMock.order.update.mockResolvedValue(updatedOrder);
+    // ── TASK-251: the status transition and the history row commit together ──
+    it('writes a STATUS history row (fromStatus → toStatus) in the same transaction', async () => {
+      const tx = seedTx();
 
-      await repository.updateStatus('order-1', OrderStatus.SHIPPED, PaymentStatus.PAID, {
-        evictProductStockCaches: true,
+      await repository.updateStatus(
+        'order-1',
+        OrderStatus.PROCESSING,
+        OrderStatus.SHIPPED,
+        PaymentStatus.PAID,
+        'admin-uuid-1',
+      );
+
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: {
+          orderId: 'order-1',
+          changeType: OrderHistoryChangeType.STATUS,
+          fromStatus: OrderStatus.PROCESSING,
+          toStatus: OrderStatus.SHIPPED,
+          changedBy: 'admin-uuid-1',
+        },
       });
+    });
+
+    it('does not return the updated order (transaction rolls back) when the history insert rejects', async () => {
+      const tx = makeTx();
+      tx.order.update.mockResolvedValue(updatedOrder);
+      tx.orderStatusHistory.create.mockRejectedValue(new Error('history insert failed'));
+      // Real interactive $transaction: the callback rejection propagates and no
+      // value is committed/returned.
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+
+      await expect(
+        repository.updateStatus(
+          'order-1',
+          OrderStatus.PROCESSING,
+          OrderStatus.SHIPPED,
+          PaymentStatus.PAID,
+          'admin-uuid-1',
+        ),
+      ).rejects.toThrow('history insert failed');
+      // Rolled back → no post-commit cache eviction.
+      expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+    });
+
+    it('evicts list pages and each line-item product detail cache when the flag is set', async () => {
+      seedTx();
+
+      await repository.updateStatus(
+        'order-1',
+        OrderStatus.PROCESSING,
+        OrderStatus.SHIPPED,
+        PaymentStatus.PAID,
+        'admin-uuid-1',
+        { evictProductStockCaches: true },
+      );
 
       expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
       expect(cacheMock.del).toHaveBeenCalledWith(productDetailSlugKey('iphone-15-pro-case'));
       expect(cacheMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
+    });
+  });
+
+  // ─── updatePaymentStatus — transactional history write (TASK-251) ───────────
+
+  describe('updatePaymentStatus', () => {
+    const seedTx = () => {
+      const tx = makeTx();
+      tx.order.findUniqueOrThrow.mockResolvedValue({ paymentStatus: PaymentStatus.PENDING });
+      tx.order.update.mockResolvedValue({ id: 'order-1', items: [] });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      return tx;
+    };
+
+    it('updates the payment status inside a transaction', async () => {
+      const tx = seedTx();
+
+      await repository.updatePaymentStatus('order-1', PaymentStatus.PAID, 'admin-uuid-1');
+
+      expect(tx.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { paymentStatus: PaymentStatus.PAID },
+        include: expect.any(Object),
+      });
+    });
+
+    it('writes a PAYMENT_STATUS history row (from pre-update → new) in the same transaction', async () => {
+      const tx = seedTx();
+
+      await repository.updatePaymentStatus('order-1', PaymentStatus.PAID, 'admin-uuid-1');
+
+      // fromPaymentStatus is read from the pre-update row inside the tx.
+      expect(tx.order.findUniqueOrThrow).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        select: { paymentStatus: true },
+      });
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: {
+          orderId: 'order-1',
+          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+          fromPaymentStatus: PaymentStatus.PENDING,
+          toPaymentStatus: PaymentStatus.PAID,
+          changedBy: 'admin-uuid-1',
+        },
+      });
+    });
+  });
+
+  // ─── findHistoryByOrderId — chronological timeline read (TASK-251) ───────────
+
+  describe('findHistoryByOrderId', () => {
+    it('queries history rows for the order oldest-first', async () => {
+      prismaMock.orderStatusHistory.findMany.mockResolvedValue([]);
+
+      await repository.findHistoryByOrderId('order-1');
+
+      expect(prismaMock.orderStatusHistory.findMany).toHaveBeenCalledWith({
+        where: { orderId: 'order-1' },
+        orderBy: { changedAt: 'asc' },
+      });
     });
   });
 
@@ -449,6 +660,7 @@ describe('OrderRepository', () => {
       const tx = makeTx();
       tx.order.findUniqueOrThrow.mockResolvedValue({
         id: 'order-1',
+        status: OrderStatus.PROCESSING,
         items: [{ productId: 'product-uuid-1', quantity: 2 }],
       });
       tx.order.update.mockResolvedValue({
@@ -458,7 +670,7 @@ describe('OrderRepository', () => {
       });
       prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
 
-      await repository.cancelAndRestock('order-1');
+      await repository.cancelAndRestock('order-1', null);
 
       expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
       expect(cacheMock.del).toHaveBeenCalledWith(productDetailSlugKey('iphone-15-pro-case'));

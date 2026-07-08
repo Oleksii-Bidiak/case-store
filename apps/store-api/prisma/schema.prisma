@@ -49,6 +49,16 @@ enum MailOutboxStatus {
   FAILED
 }
 
+/// Discriminator for an OrderStatusHistory row (TASK-251): whether the row
+/// records an order-status change (STATUS — the fromStatus/toStatus pair is
+/// populated) or a payment-status change (PAYMENT_STATUS — the
+/// fromPaymentStatus/toPaymentStatus pair is populated). The unused pair is
+/// left null by convention at the write sites.
+enum OrderHistoryChangeType {
+  STATUS
+  PAYMENT_STATUS
+}
+
 /// Data type of a structured product characteristic (TASK-191, plan 112).
 /// Drives both the admin editor's input widget (text field / number field /
 /// checkbox / select) and the server-side value validation on assignment.
@@ -328,13 +338,44 @@ model Order {
   // manual stock adjustments after a physical return are invisible to it.
   restockedAt     DateTime?     @map("restocked_at")
 
-  items OrderItem[]
+  items         OrderItem[]
+  statusHistory OrderStatusHistory[]
 
   @@index([userId])
   @@index([status])
   @@index([createdAt(sort: Desc)])
   @@index([deletedAt])
   @@map("orders")
+}
+
+/// Append-only audit log of every order-status and payment-status change
+/// (TASK-251). Written transactionally alongside each mutation in
+/// OrderRepository (order creation's initial null→PENDING row, plain status
+/// transitions, cancel/revive, and payment-status updates) so the timeline can
+/// never drift from the order's real transitions. One table, two change kinds
+/// disambiguated by `changeType`: STATUS rows populate from/toStatus (the
+/// payment pair stays null) and PAYMENT_STATUS rows populate
+/// from/toPaymentStatus (the status pair stays null).
+model OrderStatusHistory {
+  id                String                 @id @default(uuid())
+  orderId           String                 @map("order_id")
+  order             Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  changeType        OrderHistoryChangeType @map("change_type")
+  // Populated only for changeType = STATUS rows; both null for PAYMENT_STATUS rows.
+  fromStatus        OrderStatus?           @map("from_status")
+  toStatus          OrderStatus?           @map("to_status")
+  // Populated only for changeType = PAYMENT_STATUS rows; both null for STATUS rows.
+  fromPaymentStatus PaymentStatus?         @map("from_payment_status")
+  toPaymentStatus   PaymentStatus?         @map("to_payment_status")
+  // Nullable: system/webhook-driven changes (order creation's initial PENDING
+  // row today; a future Stripe/payment webhook tomorrow) have no acting
+  // admin/customer user. Populated with the acting user's id when the change
+  // came from an authenticated request.
+  changedBy         String?                @map("changed_by")
+  changedAt         DateTime               @default(now()) @map("changed_at")
+
+  @@index([orderId, changedAt])
+  @@map("order_status_history")
 }
 
 model OrderItem {
