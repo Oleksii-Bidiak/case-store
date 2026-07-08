@@ -9,6 +9,7 @@ export {
   ProductMetricsDto,
   LowStockProductDto,
   InventoryMetricsDto,
+  OperationsMetricsDto,
   DashboardSummaryResponse,
 } from './dashboard-summary.dto';
 

@@ -80,6 +80,9 @@ describe('Admin Dashboard (e2e)', () => {
         },
       ],
     },
+    operations: {
+      averageProcessingHoursLast30Days: 36.5,
+    },
   };
 
   const needsActionFixture: NeedsAction = {
@@ -87,6 +90,7 @@ describe('Admin Dashboard (e2e)', () => {
     pendingReviews: 2,
     unpaidInTransit: 7,
     failedMails: 1,
+    pendingOver48h: 1,
   };
 
   const dashboardRepositoryMock = {
@@ -240,6 +244,9 @@ describe('Admin Dashboard (e2e)', () => {
           stock: expect.any(Number),
         }),
       );
+
+      // operations (TASK-251)
+      expect(typeof body.operations.averageProcessingHoursLast30Days).toBe('number');
     });
 
     it('should return non-negative numeric metrics and array fields when the store is empty', async () => {
@@ -257,6 +264,7 @@ describe('Admin Dashboard (e2e)', () => {
         customers: { repeatBuyerRate: 0, repeatBuyerRateLast90Days: 0 },
         products: { totalProducts: 0, activeProducts: 0, topProducts: [] },
         inventory: { lowStockProducts: [] },
+        operations: { averageProcessingHoursLast30Days: 0 },
       });
 
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
@@ -303,12 +311,14 @@ describe('Admin Dashboard (e2e)', () => {
           pendingReviews: 2,
           unpaidInTransit: 7,
           failedMails: 1,
+          pendingOver48h: 1,
         },
       });
       expect(typeof response.body.data.newOrders).toBe('number');
       expect(typeof response.body.data.pendingReviews).toBe('number');
       expect(typeof response.body.data.unpaidInTransit).toBe('number');
       expect(typeof response.body.data.failedMails).toBe('number');
+      expect(typeof response.body.data.pendingOver48h).toBe('number');
     });
 
     it('should return zeroed counters when nothing needs action', async () => {
@@ -317,6 +327,7 @@ describe('Admin Dashboard (e2e)', () => {
         pendingReviews: 0,
         unpaidInTransit: 0,
         failedMails: 0,
+        pendingOver48h: 0,
       });
 
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
@@ -331,6 +342,7 @@ describe('Admin Dashboard (e2e)', () => {
         pendingReviews: 0,
         unpaidInTransit: 0,
         failedMails: 0,
+        pendingOver48h: 0,
       });
     });
   });

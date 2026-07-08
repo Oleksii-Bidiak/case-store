@@ -36,6 +36,13 @@ export class NeedsActionDto {
     example: 1,
   })
   failedMails!: number;
+
+  @ApiProperty({
+    type: Number,
+    description: 'Orders sitting in PENDING for more than 48 hours (subset of newOrders)',
+    example: 1,
+  })
+  pendingOver48h!: number;
 }
 
 export class NeedsActionResponse {
