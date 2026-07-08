@@ -82,6 +82,22 @@ export const handlers = [
     }),
   ),
 
+  // SEO-health checklist counts (TASK-269) — all-zero by default so any test
+  // that mounts SeoSettingsView stays off onUnhandledRequest; the health-section
+  // test overrides this per-case with real counts.
+  http.get("*/api/admin/seo-settings/health", () =>
+    HttpResponse.json({
+      data: {
+        productsMissingMetaTitle: 0,
+        productsTotal: 0,
+        categoriesMissingMetaTitle: 0,
+        categoriesTotal: 0,
+        pagesMissingMetaTitle: 0,
+        pagesTotal: 0,
+      },
+    }),
+  ),
+
   // Auth — admin session bootstrap.
   http.post("*/api/auth/login", () =>
     HttpResponse.json({ data: { accessToken: "test.access.token" } }),

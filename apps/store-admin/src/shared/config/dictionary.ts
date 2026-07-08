@@ -1430,6 +1430,40 @@ export const dict = {
     // Create-mode category breadcrumb placeholder (no real slug yet).
     newCategorySlug: "нова-категорія",
   },
+
+  // «SEO-здоров'я» checklist on /settings/seo (план 131, TASK-269). An at-a-glance
+  // health view: how many products/categories/pages rely on auto-generated meta
+  // titles (informational, never an error), whether the site-wide defaults are
+  // filled (soft amber nudge when empty), and — most importantly — a prominent
+  // RED warning when the whole site is hidden from search (noindexSite).
+  seoHealth: {
+    heading: "SEO-здоров'я",
+    subheading:
+      "Швидкий огляд стану SEO вашого магазину. Це не помилки — просто підказки, що можна покращити.",
+    loadError: "Не вдалося завантажити стан SEO. Спробуйте ще раз.",
+    // Auto-title rows — neutral/informational tone. `N із M`.
+    autoHint: (missing: number, total: number) =>
+      `${missing} із ${total} використовують автоматичний заголовок`,
+    productsAutoLabel: "Товари без власного SEO-заголовка",
+    categoriesAutoLabel: "Категорії без власного SEO-заголовка",
+    pagesAutoLabel: "Сторінки без власного SEO-заголовка",
+    // Defaults-filled row — soft amber nudge when empty, neutral when filled.
+    defaultsFilledLabel: "SEO-налаштування за замовчуванням",
+    defaultsFilledYes: "Заголовок і опис за замовчуванням заповнені.",
+    defaultsFilledNo:
+      "Рекомендуємо заповнити заголовок і опис сайту за замовчуванням нижче.",
+    // noindex — the one genuinely urgent, RED state.
+    noindexWarningTitle: "Сайт прихований від пошукових систем!",
+    noindexWarningBody:
+      "Зараз увесь магазин не показується в Google та інших пошукових системах. Якщо це робочий сайт — вимкніть «Приховати сайт від пошукових систем» нижче, інакше клієнти не знайдуть вас у пошуку.",
+    noindexOkLabel: "Сайт видимий для пошукових систем.",
+    // Outbound eyeball links to what the storefront actually serves.
+    linksHeading: "Перевірити службові файли сайту",
+    robotsLink: "robots.txt",
+    sitemapLink: "sitemap.xml",
+    llmsLink: "llms.txt",
+    openLinkAria: (name: string) => `Відкрити ${name} у новій вкладці`,
+  },
 } as const;
 
 export type AdminDictionary = typeof dict;
