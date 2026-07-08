@@ -2,10 +2,19 @@ import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/co
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PinoLogger } from 'nestjs-pino';
+import { randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
 import { AuthRepository, CreateUserInput } from './auth.repository';
 import { AuthTokens } from './entities';
 import { RegisterDto } from './dto';
+import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
+
+/** Bytes of entropy for an opaque password-reset token (→ 64 hex chars). */
+const PASSWORD_RESET_TOKEN_BYTES = 32;
+
+/** Generic error message for every confirm-reset failure — never leaks which
+ * specific check failed (not-found / used / expired / deactivated owner). */
+const INVALID_RESET_TOKEN_MESSAGE = 'Invalid or expired reset token';
 
 @Injectable()
 export class AuthService {
@@ -13,11 +22,14 @@ export class AuthService {
   private readonly jwtRefreshSecret: string;
   private readonly jwtExpiration: string;
   private readonly jwtRefreshExpiration: string;
+  private readonly passwordResetExpiration: string;
+  private readonly storeClientUrl: string;
 
   constructor(
     private readonly authRepository: AuthRepository,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly mailOutboxService: MailOutboxService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(AuthService.name);
@@ -27,6 +39,14 @@ export class AuthService {
     this.jwtRefreshSecret = this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
     this.jwtExpiration = this.configService.get<string>('JWT_EXPIRATION', '15m');
     this.jwtRefreshExpiration = this.configService.get<string>('JWT_REFRESH_EXPIRATION', '7d');
+    this.passwordResetExpiration = this.configService.get<string>(
+      'PASSWORD_RESET_TOKEN_EXPIRATION',
+      '1h',
+    );
+    this.storeClientUrl = this.configService.get<string>(
+      'STORE_CLIENT_URL',
+      'http://localhost:3000',
+    );
   }
 
   /**
@@ -137,6 +157,87 @@ export class AuthService {
   }
 
   /**
+   * Request a password reset (TASK-169).
+   *
+   * Existence-hiding: for a missing, deactivated, or soft-deleted account this
+   * resolves silently — no token, no email, no thrown error — so neither the
+   * response shape nor a thrown exception can be used to enumerate accounts. The
+   * controller always responds 200 regardless.
+   *
+   * For a valid active user: any still-active prior tokens are invalidated (one
+   * honorable link at a time), a fresh opaque token is generated + persisted
+   * (hashed at rest), and the reset email is enqueued via the outbox. The raw
+   * token only ever lives in the email link — it is never logged.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    const user = await this.authRepository.findByEmail(email);
+
+    // Silent no-op for a non-existent / banned / soft-deleted account.
+    if (!user || !user.isActive || user.deletedAt) {
+      return;
+    }
+
+    // Only the most recent request stays valid.
+    await this.authRepository.invalidateActivePasswordResetTokens(user.id);
+
+    // Opaque (non-JWT) token: used once, synchronously, against the DB anyway.
+    const rawToken = randomBytes(PASSWORD_RESET_TOKEN_BYTES).toString('hex');
+    const expiresAt = new Date(Date.now() + this.parseExpirationToMs(this.passwordResetExpiration));
+
+    await this.authRepository.savePasswordResetToken(user.id, rawToken, expiresAt);
+
+    const resetUrl = `${this.storeClientUrl}/reset-password?token=${rawToken}`;
+    await this.mailOutboxService.enqueuePasswordReset({
+      to: user.email,
+      resetUrl,
+      expiresInHuman: this.formatExpirationHuman(this.passwordResetExpiration),
+    });
+
+    // Critical business event — never log the raw token or the reset URL.
+    this.logger.info(
+      { event: 'user.passwordResetRequested', userId: user.id },
+      'Password reset requested',
+    );
+  }
+
+  /**
+   * Confirm a password reset (TASK-169).
+   *
+   * Validates the single-use token, sets the new password hash, marks the token
+   * used, and revokes every refresh token for the user (forces re-login on all
+   * devices). Every failure — token not found, already used, expired, or owned
+   * by a deactivated/soft-deleted account — throws the SAME generic
+   * `UnauthorizedException` so the response never reveals token/account state.
+   */
+  async confirmPasswordReset(rawToken: string, newPassword: string): Promise<void> {
+    const stored = await this.authRepository.findPasswordResetToken(rawToken);
+
+    const isInvalid =
+      !stored ||
+      Boolean(stored.usedAt) ||
+      stored.expiresAt < new Date() ||
+      !stored.user.isActive ||
+      Boolean(stored.user.deletedAt);
+
+    if (isInvalid || !stored) {
+      // Server-side log still captures the specific reason for internal diagnosis.
+      this.logger.warn({ event: 'user.passwordResetRejected' }, 'Password reset token rejected');
+      throw new UnauthorizedException(INVALID_RESET_TOKEN_MESSAGE);
+    }
+
+    const passwordHash = await argon2.hash(newPassword);
+    await this.authRepository.updatePasswordHash(stored.user.id, passwordHash);
+    await this.authRepository.markPasswordResetTokenUsed(stored.id);
+    // Terminate every existing session — the reset must log the user out everywhere.
+    await this.authRepository.revokeAllUserTokens(stored.user.id);
+
+    this.logger.info(
+      { event: 'user.passwordResetCompleted', userId: stored.user.id },
+      'Password reset completed',
+    );
+  }
+
+  /**
    * Generate an access/refresh token pair.
    * Access token uses JWT_SECRET, refresh token uses JWT_REFRESH_SECRET.
    * The refresh token is persisted in the database for tracking and rotation.
@@ -197,5 +298,38 @@ export class AuthService {
       default:
         return 7 * 24 * 60 * 60 * 1000;
     }
+  }
+
+  /**
+   * Render a duration string like "1h"/"30m" into Ukrainian email copy
+   * ("1 годину", "30 хвилин"), applying Ukrainian plural rules. Falls back to
+   * the raw string if the format is unexpected.
+   */
+  private formatExpirationHuman(expiration: string): string {
+    const match = expiration.match(/^(\d+)([smhd])$/);
+    if (!match) {
+      return expiration;
+    }
+
+    const value = parseInt(match[1], 10);
+    // [one, few, many] forms per Ukrainian pluralization.
+    const forms: Record<string, [string, string, string]> = {
+      s: ['секунду', 'секунди', 'секунд'],
+      m: ['хвилину', 'хвилини', 'хвилин'],
+      h: ['годину', 'години', 'годин'],
+      d: ['день', 'дні', 'днів'],
+    };
+    const [one, few, many] = forms[match[2]];
+
+    const mod10 = value % 10;
+    const mod100 = value % 100;
+    let word = many;
+    if (mod10 === 1 && mod100 !== 11) {
+      word = one;
+    } else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+      word = few;
+    }
+
+    return `${value} ${word}`;
   }
 }

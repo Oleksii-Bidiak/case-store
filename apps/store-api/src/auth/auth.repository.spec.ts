@@ -8,6 +8,7 @@ const prismaMock = {
   user: {
     findUnique: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
   },
   refreshToken: {
     findUnique: jest.fn(),
@@ -15,6 +16,12 @@ const prismaMock = {
     update: jest.fn(),
     updateMany: jest.fn(),
     deleteMany: jest.fn(),
+  },
+  passwordResetToken: {
+    findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
   },
 };
 
@@ -266,6 +273,94 @@ describe('AuthRepository', () => {
       expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
         where: { userId: 'user-uuid-1', isRevoked: false },
         data: { isRevoked: true },
+      });
+    });
+  });
+
+  // ─── savePasswordResetToken (with SHA-256 hashing) ──────────────────────────
+
+  describe('savePasswordResetToken', () => {
+    it('should hash the raw token with SHA-256 before storage — never the raw token', async () => {
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+      const created = { id: 'prt-1', token: hashedToken, userId: 'user-uuid-1', expiresAt };
+      prismaMock.passwordResetToken.create.mockResolvedValue(created);
+
+      await repository.savePasswordResetToken('user-uuid-1', rawToken, expiresAt);
+
+      const callArgs = prismaMock.passwordResetToken.create.mock.calls[0][0];
+      expect(callArgs.data.token).toBe(hashedToken);
+      expect(callArgs.data.token).not.toBe(rawToken);
+      expect(callArgs.data.userId).toBe('user-uuid-1');
+      expect(callArgs.data.expiresAt).toBe(expiresAt);
+    });
+  });
+
+  // ─── findPasswordResetToken (with SHA-256 hashing) ──────────────────────────
+
+  describe('findPasswordResetToken', () => {
+    it('should hash the raw token before lookup and include the user relation', async () => {
+      const found = { id: 'prt-1', token: hashedToken, userId: 'user-uuid-1', user: mockUser };
+      prismaMock.passwordResetToken.findUnique.mockResolvedValue(found);
+
+      const result = await repository.findPasswordResetToken(rawToken);
+
+      expect(prismaMock.passwordResetToken.findUnique).toHaveBeenCalledWith({
+        where: { token: hashedToken },
+        include: { user: true },
+      });
+      expect(result).toEqual(found);
+    });
+
+    it('should return null when the token is not found', async () => {
+      prismaMock.passwordResetToken.findUnique.mockResolvedValue(null);
+
+      const result = await repository.findPasswordResetToken('nonexistent-token');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  // ─── markPasswordResetTokenUsed ─────────────────────────────────────────────
+
+  describe('markPasswordResetTokenUsed', () => {
+    it('should set usedAt to a Date on the row identified by id', async () => {
+      prismaMock.passwordResetToken.update.mockResolvedValue(undefined);
+
+      await repository.markPasswordResetTokenUsed('prt-1');
+
+      const callArgs = prismaMock.passwordResetToken.update.mock.calls[0][0];
+      expect(callArgs.where).toEqual({ id: 'prt-1' });
+      expect(callArgs.data.usedAt).toBeInstanceOf(Date);
+    });
+  });
+
+  // ─── invalidateActivePasswordResetTokens ────────────────────────────────────
+
+  describe('invalidateActivePasswordResetTokens', () => {
+    it('should mark only unused, unexpired tokens for the user as used', async () => {
+      prismaMock.passwordResetToken.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.invalidateActivePasswordResetTokens('user-uuid-1');
+
+      const callArgs = prismaMock.passwordResetToken.updateMany.mock.calls[0][0];
+      expect(callArgs.where.userId).toBe('user-uuid-1');
+      expect(callArgs.where.usedAt).toBeNull();
+      expect(callArgs.where.expiresAt.gt).toBeInstanceOf(Date);
+      expect(callArgs.data.usedAt).toBeInstanceOf(Date);
+    });
+  });
+
+  // ─── updatePasswordHash ─────────────────────────────────────────────────────
+
+  describe('updatePasswordHash', () => {
+    it('should update the correct user by id with the new password hash', async () => {
+      prismaMock.user.update.mockResolvedValue({ ...mockUser, passwordHash: 'new-hash' });
+
+      await repository.updatePasswordHash('user-uuid-1', 'new-hash');
+
+      expect(prismaMock.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-uuid-1' },
+        data: { passwordHash: 'new-hash' },
       });
     });
   });

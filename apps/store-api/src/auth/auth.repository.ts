@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma';
-import { User, RefreshToken } from '@prisma/client';
+import { User, RefreshToken, PasswordResetToken } from '@prisma/client';
 
 export interface CreateUserInput {
   email: string;
@@ -11,6 +11,10 @@ export interface CreateUserInput {
 }
 
 export interface RefreshTokenWithUser extends RefreshToken {
+  user: User;
+}
+
+export interface PasswordResetTokenWithUser extends PasswordResetToken {
   user: User;
 }
 
@@ -96,6 +100,71 @@ export class AuthRepository {
     await this.prisma.refreshToken.updateMany({
       where: { userId, isRevoked: false },
       data: { isRevoked: true },
+    });
+  }
+
+  /**
+   * Persist a new password-reset token for a user.
+   * The token is hashed (SHA-256) before storage — the raw token is never saved,
+   * reusing the same {@link hashToken} at-rest protection as refresh tokens.
+   * Returns the created row (with the hashed token).
+   */
+  savePasswordResetToken(
+    userId: string,
+    rawToken: string,
+    expiresAt: Date,
+  ): Promise<PasswordResetToken> {
+    return this.prisma.passwordResetToken.create({
+      data: {
+        token: this.hashToken(rawToken),
+        userId,
+        expiresAt,
+      },
+    });
+  }
+
+  /**
+   * Find a password-reset token by its raw value, including the associated user.
+   * The token is hashed before lookup — only the hash is stored in the database.
+   * Returns the row with user relation or null if not found.
+   */
+  findPasswordResetToken(rawToken: string): Promise<PasswordResetTokenWithUser | null> {
+    return this.prisma.passwordResetToken.findUnique({
+      where: { token: this.hashToken(rawToken) },
+      include: { user: true },
+    });
+  }
+
+  /**
+   * Mark a single password-reset token as used (single-use enforcement).
+   * Sets `usedAt = now` on the row identified by id.
+   */
+  async markPasswordResetTokenUsed(id: string): Promise<void> {
+    await this.prisma.passwordResetToken.update({
+      where: { id },
+      data: { usedAt: new Date() },
+    });
+  }
+
+  /**
+   * Invalidate every still-active (unused, unexpired) password-reset token for a
+   * user by marking them used. Called before issuing a fresh token so only the
+   * most recent reset link is honorable (one active token per user at a time).
+   */
+  async invalidateActivePasswordResetTokens(userId: string): Promise<void> {
+    await this.prisma.passwordResetToken.updateMany({
+      where: { userId, usedAt: null, expiresAt: { gt: new Date() } },
+      data: { usedAt: new Date() },
+    });
+  }
+
+  /**
+   * Update a user's password hash by user id.
+   */
+  async updatePasswordHash(userId: string, passwordHash: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
     });
   }
 

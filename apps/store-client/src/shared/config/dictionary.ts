@@ -1225,14 +1225,39 @@ export const dict = {
         "Обліковий запис деактивовано. Зверніться до підтримки.",
       validationEmail: "Введіть дійсну email-адресу",
       validationPassword: "Пароль є обов'язковим",
-      // Slide-out extras (login "as in the mockup"). Social sign-in + password
-      // reset have no backend yet — stubbed with a toast (TASK-168/169).
+      // Slide-out extras (login "as in the mockup"). Social sign-in has no
+      // backend yet — stubbed with a toast (TASK-168). Password reset is live
+      // (TASK-169): `forgot` links to the reset flow.
       forgot: "Забули пароль?",
       orDivider: "або",
       google: "Google",
       apple: "Apple",
       socialSoon: "Соціальний вхід буде доступний згодом.",
-      forgotSoon: "Відновлення пароля буде доступне згодом.",
+    },
+    forgotPassword: {
+      heading: "Відновлення пароля",
+      description:
+        "Введіть email вашого акаунту — ми надішлемо посилання для скидання пароля.",
+      email: "Email",
+      submit: "Надіслати посилання",
+      submitting: "Надсилаємо…",
+      success:
+        "Якщо такий email зареєстровано, ми надіслали посилання для скидання пароля. Перевірте вашу пошту.",
+      backToLogin: "Повернутися до входу",
+      validationEmail: "Введіть дійсну email-адресу",
+    },
+    resetPassword: {
+      heading: "Новий пароль",
+      description: "Придумайте новий пароль для вашого акаунту.",
+      newPassword: "Новий пароль",
+      confirmPassword: "Підтвердіть пароль",
+      submit: "Зберегти пароль",
+      submitting: "Зберігаємо…",
+      success: "Пароль оновлено. Тепер увійдіть з новим паролем.",
+      errorInvalidToken: "Посилання недійсне або застаріло. Спробуйте ще раз.",
+      errorMissingToken:
+        "Посилання неповне або пошкоджене. Скористайтеся посиланням з листа ще раз.",
+      backToLogin: "Повернутися до входу",
     },
     register: {
       heading: "Створити акаунт",
@@ -1293,6 +1318,10 @@ export const dict = {
     loginDescription: "Увійдіть до свого акаунту.",
     registerTitle: "Реєстрація | MobileStore",
     registerDescription: "Створіть новий акаунт.",
+    forgotPasswordTitle: "Відновлення пароля | MobileStore",
+    forgotPasswordDescription: "Отримайте посилання для скидання пароля.",
+    resetPasswordTitle: "Новий пароль | MobileStore",
+    resetPasswordDescription: "Установіть новий пароль для вашого акаунту.",
     accountTitle: "Мій акаунт | MobileStore",
     accountDescription: "Керуйте профілем та переглядайте свої замовлення.",
     ordersTitle: "Мої замовлення | MobileStore",

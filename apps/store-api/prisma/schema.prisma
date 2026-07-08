@@ -97,6 +97,7 @@ model User {
   addresses           Address[]
   reviews             Review[]
   refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
   discountRedemptions DiscountRedemption[]
 
   @@index([deletedAt])
@@ -404,6 +405,24 @@ model RefreshToken {
   @@index([userId])
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  /// SHA-256 hash of the raw token (same at-rest pattern as RefreshToken —
+  /// see auth.repository.ts hashToken()). The raw token only ever exists in
+  /// the outgoing email link and the client's one-time confirm request.
+  token     String    @unique
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime  @map("expires_at")
+  /// Null = unused. Set once, on successful confirm — makes the token single-use.
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 /// Admin-managed static / service pages (Privacy Policy, FAQ, Returns, …).

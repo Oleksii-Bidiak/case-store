@@ -8,6 +8,13 @@ export {
   useAuthControllerRegister,
   useAuthControllerLogout,
   useAuthControllerRefresh,
+  useAuthControllerRequestPasswordReset,
+  useAuthControllerConfirmPasswordReset,
 } from "@/shared/api/generated/auth/auth";
 
-export type { LoginDto, RegisterDto } from "@/shared/api/generated/models";
+export type {
+  LoginDto,
+  RegisterDto,
+  RequestPasswordResetDto,
+  ConfirmPasswordResetDto,
+} from "@/shared/api/generated/models";
