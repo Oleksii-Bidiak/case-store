@@ -236,10 +236,10 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-169 | [C/H] Password reset (activated from parked) — request endpoint + emailed token via mail-outbox + reset form (auth slide-out stub exists); TDD (critical auth module) | 🔄 | 132 |
-| TASK-179 | [C/M] Promo page logic — public active-discounts feed + server `onSale` filter on `GET /products` (pairs with bestsellers TASK-164; newsletter part in TASK-188) | 🔄 | 133 |
-| TASK-251 | [A/M] `OrderStatusHistory` (orderId, fromStatus, toStatus, changedAt, changedBy) written transactionally on every status/paymentStatus change; order timeline on `/orders/[id]`; «>48h in PENDING» indicator + «Потребує дії» row; processing-speed stat; TDD incl. revive/`restockedAt` | 🔄 | 134 |
-| TASK-252 | [A/M] Customer card v1 on `/users/[id]` — LTV (`SUM(Order.total) WHERE paymentStatus=PAID`), order count + linked orders, user reviews, redeemed coupons (`DiscountRedemption.userId`), contact-inbox by email; single enriched admin endpoint (no waterfall); notes/tags deferred (note in plan) | 🔄 | 135 |
+| TASK-169 | [C/H] Password reset (activated from parked) — request endpoint + emailed token via mail-outbox + reset form (auth slide-out stub exists); TDD (critical auth module) | ✅ | 132 |
+| TASK-179 | [C/M] Promo page logic — public active-discounts feed + server `onSale` filter on `GET /products` (pairs with bestsellers TASK-164; newsletter part in TASK-188) | ✅ | 133 |
+| TASK-251 | [A/M] `OrderStatusHistory` (orderId, fromStatus, toStatus, changedAt, changedBy) written transactionally on every status/paymentStatus change; order timeline on `/orders/[id]`; «>48h in PENDING» indicator + «Потребує дії» row; processing-speed stat; TDD incl. revive/`restockedAt` | ✅ | 134 |
+| TASK-252 | [A/M] Customer card v1 on `/users/[id]` — LTV (`SUM(Order.total) WHERE paymentStatus=PAID`), order count + linked orders, user reviews, redeemed coupons (`DiscountRedemption.userId`), contact-inbox by email; single enriched admin endpoint (no waterfall); notes/tags deferred (note in plan) | ✅ | 135 |
 
 #### Хвиля 5 — Адаптив/дизайн + прев'ю контенту + хвости
 
@@ -256,6 +256,7 @@
 | TASK-262 | [E/M] Traffic mirror in admin dashboard (after 261) — min: «Відвідуваність → open Umami» card; max (only if owner asks): 2–3 numbers via Umami API; do NOT rebuild Umami's charts | ⬜ | — |
 | TASK-263 | [E/L] «Аналітика» section in `docs/admin-guide.md` — plain-UA: visits/unique/conversion/funnel, reading the Umami funnel, which events we send, why Umami numbers ≠ order numbers | ⬜ | — |
 | TASK-272 | [H/H] Production deploy (after 271 rehearsal) — same pipeline on push `main` + manual approval via `production` Environment (owner reviewer); dated `pg_dump` pre-migrate + nightly cron (14d retention); post-deploy revalidate + Meili reindex (closes manual-qa §6/TASK-200); full cycle + one rehearsed rollback | ⬜ | — |
+| TASK-273 | [C/L] Password-reset timing hardening (code-review follow-up to TASK-169) — equalize `requestPasswordReset` latency across existing vs unknown/inactive email so response time isn't an account-enumeration oracle (content is already identical; the 5/min throttle blunts it). Add fixed-cost work on the no-user branch | ⬜ | — |
 
 ### Пізніша хвиля
 
@@ -291,6 +292,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-273**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-274**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
