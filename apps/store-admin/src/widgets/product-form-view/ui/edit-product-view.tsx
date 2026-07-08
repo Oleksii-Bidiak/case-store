@@ -120,6 +120,10 @@ export function EditProductView({ productId }: EditProductViewProps) {
             onSubmit={handleSubmit}
             isPending={update.isPending}
             submitLabel={dict.common.saveChanges}
+            stockInfo={{
+              reservedQty: product.reservedQty,
+              physicalQty: product.physicalQty,
+            }}
             renderSpecsSection={(categoryId) => (
               <>
                 <Separator />

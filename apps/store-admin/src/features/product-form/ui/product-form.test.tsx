@@ -430,6 +430,45 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
   });
 });
 
+describe("ProductForm — stock hint & breakdown (TASK-253 / TASK-254)", () => {
+  const validDefaults: Partial<ProductFormInput> = {
+    name: "Clear Case",
+    slug: "clear-case",
+    price: "29.99",
+    stock: "5",
+    categoryId: CATEGORY_UUID,
+    isActive: true,
+  };
+
+  it("always renders the static «Вільний залишок» hint", () => {
+    renderWithProviders(<ProductForm onSubmit={noop} isPending={false} />);
+
+    expect(screen.getByText(dict.productForm.stockHint)).toBeInTheDocument();
+  });
+
+  it("renders the dynamic breakdown line when stockInfo is passed (edit mode)", () => {
+    renderWithProviders(
+      <ProductForm
+        defaultValues={validDefaults}
+        onSubmit={noop}
+        isPending={false}
+        stockInfo={{ reservedQty: 4, physicalQty: 9 }}
+      />,
+    );
+
+    expect(
+      screen.getByText(dict.productForm.stockBreakdownHint(9, 4)),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the breakdown line when stockInfo is absent (create mode)", () => {
+    renderWithProviders(<ProductForm onSubmit={noop} isPending={false} />);
+
+    // The breakdown text (with any numbers) must not appear without stockInfo.
+    expect(screen.queryByText(/Фізично на складі:/)).not.toBeInTheDocument();
+  });
+});
+
 describe("ProductForm — leaf-only category picker (TASK-236)", () => {
   const ROOT_UUID = "55555555-5555-4555-8555-555555555555";
   const CHILD_UUID = "66666666-6666-4666-8666-666666666666";

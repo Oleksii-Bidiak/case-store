@@ -19,7 +19,10 @@ function makeProductRow() {
     price: "499.00",
     categoryId: "cat-1",
     isActive: true,
+    // TASK-254: admin list items are ProductEntity with the derived stock split.
     stock: 10,
+    reservedQty: 3,
+    physicalQty: 13,
     createdAt: "2026-06-01T10:00:00.000Z",
     updatedAt: "2026-06-01T10:00:00.000Z",
   };
@@ -75,6 +78,38 @@ describe("AdminProductTable — column sorting (TASK-147)", () => {
 
     expect(mockReplace).toHaveBeenCalledWith(
       expect.stringContaining("sortBy=price"),
+    );
+  });
+});
+
+describe("AdminProductTable — stock column (TASK-254)", () => {
+  beforeEach(() => mockReplace.mockClear());
+
+  it("renders the available / reserved / physical composite cell", async () => {
+    stubEndpoints();
+    renderWithProviders(<AdminProductTable />);
+    const nameCell = await screen.findByText("iPhone 15 Pro Case");
+
+    const row = nameCell.closest("tr") as HTMLElement;
+    // available 10 / reserved 3 / physical 13 — all rendered in one cell.
+    expect(row.textContent).toContain("10");
+    expect(row.textContent).toContain("3");
+    expect(row.textContent).toContain("13");
+  });
+
+  it("sorts by stock (Вільно) when the column header is clicked", async () => {
+    stubEndpoints();
+    renderWithProviders(<AdminProductTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: dict.common.sortByAria(dict.products.colStock),
+      }),
+    );
+
+    expect(mockReplace).toHaveBeenCalledWith(
+      expect.stringContaining("sortBy=stock"),
     );
   });
 });

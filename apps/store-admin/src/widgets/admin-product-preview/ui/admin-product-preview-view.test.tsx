@@ -15,6 +15,8 @@ function makePreviewEnvelope(overrides: { isActive: boolean }) {
       compareAtPrice: null,
       sku: "DSC-001",
       stock: 0,
+      reservedQty: 2,
+      physicalQty: 2,
       categoryId: "cat-1",
       groupId: null,
       attributes: {},
@@ -62,6 +64,26 @@ describe("AdminProductPreviewView (TASK-155)", () => {
       screen.queryByText(dict.products.previewDeactivatedBanner),
     ).not.toBeInTheDocument();
     expect(screen.getByText(dict.products.previewActive)).toBeInTheDocument();
+  });
+
+  it("renders the reserved / physical stock rows (TASK-254)", async () => {
+    server.use(
+      http.get("*/api/products/admin/preview/:slug", () =>
+        HttpResponse.json(makePreviewEnvelope({ isActive: true })),
+      ),
+    );
+
+    renderWithProviders(<AdminProductPreviewView slug="discontinued-case" />);
+
+    await screen.findByText("Discontinued Case");
+    const reservedRow = screen
+      .getByText(dict.products.previewReserved)
+      .closest("div") as HTMLElement;
+    expect(reservedRow).toHaveTextContent("2");
+    const physicalRow = screen
+      .getByText(dict.products.previewPhysical)
+      .closest("div") as HTMLElement;
+    expect(physicalRow).toHaveTextContent("2");
   });
 
   it("renders an error state with a back link when the fetch fails", async () => {

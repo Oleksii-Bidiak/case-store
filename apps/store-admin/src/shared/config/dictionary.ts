@@ -183,6 +183,10 @@ export const dict = {
     colPrice: "Ціна",
     colStatus: "Статус",
     colCreated: "Створено",
+    // TASK-254: composite stock column — available (free-to-sell) / reserved
+    // (tied up in unshipped orders) / physical (on the shelf = available + reserved).
+    colStock: "Вільно / Резерв / Фізично",
+    colStockAria: "Сортувати за вільним залишком",
     back: "← Назад до товарів",
     createHeading: "Створення товару",
     editHeading: "Редагування товару",
@@ -204,6 +208,9 @@ export const dict = {
     previewNoImages: "Зображень немає",
     previewCategory: "Категорія",
     previewStock: "Вільний залишок",
+    // TASK-254: reserved / physical breakdown next to the free-to-sell залишок.
+    previewReserved: "Резерв (у замовленнях)",
+    previewPhysical: "Фізично на складі",
     previewSku: "Артикул",
     previewAttributes: "Атрибути",
     previewSiblings: "Інші позиції групи",
@@ -229,6 +236,10 @@ export const dict = {
       "Скільки одиниць товару можна продати прямо зараз. Це число вже враховує " +
       "товари з непідтверджених/необроблених замовлень — вони віднімаються одразу " +
       "при оформленні замовлення, а не при відправці.",
+    // TASK-254: dynamic breakdown shown under the static hint in edit mode only.
+    stockBreakdownHint: (physicalQty: number, reservedQty: number) =>
+      `Фізично на складі: ${physicalQty} шт (з них у ${reservedQty} шт зарезервовано ` +
+      `замовленнями на обробці).`,
     positionOrder: "Порядок позиції",
     group: "Група",
     groupNone: "Без групи",
@@ -1110,6 +1121,9 @@ export const dict = {
     billingAddress: "Платіжна адреса",
     notes: "Примітки",
     loadOneError: "Не вдалося завантажити замовлення. Спробуйте ще раз.",
+    // TASK-254: stock-hold badges on the order detail page.
+    holdsStock: (n: number) => `Тримає залишок: ${n} шт`,
+    restockedAt: (time: string) => `Залишок повернуто ${time}`,
   },
 
   reviews: {
