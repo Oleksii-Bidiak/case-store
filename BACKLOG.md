@@ -237,7 +237,6 @@
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
 | TASK-169 | [C/H] Password reset (activated from parked) — request endpoint + emailed token via mail-outbox + reset form (auth slide-out stub exists); TDD (critical auth module) | ⬜ | — |
-| TASK-178 | [C/M] «Купити в 1 клік» express order — remaining backend slice (name+phone), rate-limited public endpoint per `POST /api/contact` (specs/compat moved to TASK-190/191) | ⬜ | — |
 | TASK-179 | [C/M] Promo page logic — public active-discounts feed + server `onSale` filter on `GET /products` (pairs with bestsellers TASK-164; newsletter part in TASK-188) | ⬜ | — |
 | TASK-251 | [A/M] `OrderStatusHistory` (orderId, fromStatus, toStatus, changedAt, changedBy) written transactionally on every status/paymentStatus change; order timeline on `/orders/[id]`; «>48h in PENDING» indicator + «Потребує дії» row; processing-speed stat; TDD incl. revive/`restockedAt` | ⬜ | — |
 | TASK-252 | [A/M] Customer card v1 on `/users/[id]` — LTV (`SUM(Order.total) WHERE paymentStatus=PAID`), order count + linked orders, user reviews, redeemed coupons (`DiscountRedemption.userId`), contact-inbox by email; single enriched admin endpoint (no waterfall); notes/tags deferred (note in plan) | ⬜ | — |
@@ -271,6 +270,7 @@
 
 | Task ID | Description | Reason |
 | --- | --- | --- |
+| TASK-178 | «Купити в 1 клік» express order (backend slice name+phone, rate-limited public endpoint) | Owner decision 2026-07-08 — not needed pre-launch |
 | TASK-034 / 081 | Real payments (LiqPay/Fondy/Mono) | After first real purchase validates demand; draft in plan 021 |
 | TASK-049 | Abandoned-cart emails | Marketing later; reuses mail outbox |
 | TASK-050 | GA4 + Facebook Pixel | Needs TASK-090 consent first |
