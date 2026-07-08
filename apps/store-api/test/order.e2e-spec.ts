@@ -4,7 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
-import { OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
+import { OrderStatus, PaymentStatus, OrderHistoryChangeType, Prisma } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
@@ -49,6 +49,7 @@ describe('OrderController (e2e)', () => {
     cancelAndRestock: jest.fn(),
     reviveAndReserve: jest.fn(),
     updatePaymentStatus: jest.fn(),
+    findHistoryByOrderId: jest.fn(),
   };
 
   // TASK-079: DiscountRepository is mocked so the order-with-discount path can
@@ -752,6 +753,80 @@ describe('OrderController (e2e)', () => {
     });
   });
 
+  // ─── GET /api/admin/orders/:orderId/history (admin) (TASK-251) ───────────────────
+
+  describe('GET /api/admin/orders/:orderId/history', () => {
+    const historyRows = [
+      {
+        id: 'hist-1',
+        orderId: 'order-e2e-1',
+        changeType: OrderHistoryChangeType.STATUS,
+        fromStatus: null,
+        toStatus: OrderStatus.PENDING,
+        fromPaymentStatus: null,
+        toPaymentStatus: null,
+        changedBy: null,
+        changedAt: new Date('2026-07-08T10:00:00.000Z'),
+      },
+      {
+        id: 'hist-2',
+        orderId: 'order-e2e-1',
+        changeType: OrderHistoryChangeType.STATUS,
+        fromStatus: OrderStatus.PENDING,
+        toStatus: OrderStatus.CONFIRMED,
+        fromPaymentStatus: null,
+        toPaymentStatus: null,
+        changedBy: admin.id,
+        changedAt: new Date('2026-07-08T11:00:00.000Z'),
+      },
+    ];
+
+    it('should return 200 with the timeline oldest-first for an existing order (admin)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      orderRepositoryMock.findHistoryByOrderId.mockResolvedValue(historyRows);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/history')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data).toHaveLength(2);
+      expect(response.body.data[0].toStatus).toBe(OrderStatus.PENDING);
+      expect(response.body.data[0].changedBy).toBeNull();
+      expect(response.body.data[1].fromStatus).toBe(OrderStatus.PENDING);
+      expect(response.body.data[1].changedBy).toBe(admin.id);
+      expect(orderRepositoryMock.findHistoryByOrderId).toHaveBeenCalledWith('order-e2e-1');
+    });
+
+    it('should return 404 when the order does not exist', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/nonexistent-uuid/history')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+
+      expect(orderRepositoryMock.findHistoryByOrderId).not.toHaveBeenCalled();
+    });
+
+    it('should return 403 for a non-admin user', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/history')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      expect(orderRepositoryMock.findHistoryByOrderId).not.toHaveBeenCalled();
+    });
+
+    it('should return 401 without a JWT', async () => {
+      await request(app.getHttpServer()).get('/api/admin/orders/order-e2e-1/history').expect(401);
+    });
+  });
+
   // ─── PATCH /api/admin/orders/:orderId/status (admin) ────────────────────────────
 
   describe('PATCH /api/admin/orders/:orderId/status', () => {
@@ -775,10 +850,15 @@ describe('OrderController (e2e)', () => {
       // TASK-254: the 4th arg flags whether the transition crosses the
       // pre-shipment boundary (evict product stock caches); PENDING→PROCESSING
       // stays inside PRE_SHIPMENT, so no eviction is requested.
+      // TASK-251: the 2nd arg is the fromStatus (CONFIRMED, from the findById
+      // mock), the 3rd the target, the 5th the acting admin's id (changedBy),
+      // the 6th the eviction options.
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-e2e-1',
+        OrderStatus.CONFIRMED,
         OrderStatus.PROCESSING,
         PaymentStatus.PENDING,
+        admin.id,
         { evictProductStockCaches: false },
       );
     });
@@ -808,6 +888,7 @@ describe('OrderController (e2e)', () => {
         'order-e2e-1',
         OrderStatus.PENDING,
         PaymentStatus.PENDING,
+        admin.id,
       );
       expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
@@ -901,6 +982,7 @@ describe('OrderController (e2e)', () => {
       expect(orderRepositoryMock.updatePaymentStatus).toHaveBeenCalledWith(
         'order-e2e-1',
         PaymentStatus.PAID,
+        admin.id,
       );
     });
 

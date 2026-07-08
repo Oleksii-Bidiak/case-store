@@ -23,6 +23,9 @@ import type { CreateOrderDto } from './dto';
 
 const USER_ID = 'user-uuid-1';
 const OTHER_USER_ID = 'user-uuid-2';
+// TASK-251: the acting admin id threaded as `changedBy` into every admin-driven
+// status/payment mutation.
+const ADMIN_ID = 'admin-uuid-1';
 const now = new Date('2026-06-11T12:00:00.000Z');
 
 const address: CreateOrderDto['shippingAddress'] = {
@@ -550,7 +553,8 @@ describe('OrderService', () => {
 
       const result = await service.cancelOrder(USER_ID, 'order-uuid-1');
 
-      expect(orderRepositoryMock.cancelAndRestock).toHaveBeenCalledWith('order-uuid-1');
+      // TASK-251: the customer is the actor for their own self-cancel.
+      expect(orderRepositoryMock.cancelAndRestock).toHaveBeenCalledWith('order-uuid-1', USER_ID);
       expect(result.status).toBe(OrderStatus.CANCELLED);
     });
 
@@ -590,14 +594,18 @@ describe('OrderService', () => {
         makeOrder({ status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PENDING }),
       );
 
-      const result = await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED);
+      const result = await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED, ADMIN_ID);
 
       // TASK-151: paymentStatus is forwarded unchanged (PENDING), not auto-derived.
-      // (4th arg = TASK-254 cache-eviction options; asserted in its own block below.)
+      // TASK-251: the 2nd arg is now the fromStatus (current status), the 3rd the
+      // target, the 5th the acting admin's changedBy, the 6th the TASK-254
+      // eviction options (asserted in its own block below).
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
+        OrderStatus.PENDING,
         OrderStatus.CONFIRMED,
         PaymentStatus.PENDING,
+        ADMIN_ID,
         expect.anything(),
       );
       expect(result.status).toBe(OrderStatus.CONFIRMED);
@@ -606,9 +614,9 @@ describe('OrderService', () => {
     it('should throw NotFoundException when the order does not exist', async () => {
       orderRepositoryMock.findById.mockResolvedValue(null);
 
-      await expect(service.updateStatus('missing', OrderStatus.CONFIRMED)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.updateStatus('missing', OrderStatus.CONFIRMED, ADMIN_ID),
+      ).rejects.toThrow(NotFoundException);
       expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
   });
@@ -626,7 +634,7 @@ describe('OrderService', () => {
     const seedAndEcho = (current: Partial<OrderWithItems>) => {
       orderRepositoryMock.findById.mockResolvedValue(makeOrder(current));
       orderRepositoryMock.updateStatus.mockImplementation(
-        (_id: string, status: OrderStatus, paymentStatus: PaymentStatus) =>
+        (_id: string, _from: OrderStatus, status: OrderStatus, paymentStatus: PaymentStatus) =>
           Promise.resolve(makeOrder({ status, paymentStatus })),
       );
     };
@@ -639,12 +647,14 @@ describe('OrderService', () => {
     ])('preserves paymentStatus PENDING when advancing PENDING → %s', async (status) => {
       seedAndEcho({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING });
 
-      const result = await service.updateStatus('order-uuid-1', status);
+      const result = await service.updateStatus('order-uuid-1', status, ADMIN_ID);
 
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
+        OrderStatus.PENDING,
         status,
         PaymentStatus.PENDING,
+        ADMIN_ID,
         expect.anything(),
       );
       expect(result.paymentStatus).toBe(PaymentStatus.PENDING);
@@ -653,12 +663,14 @@ describe('OrderService', () => {
     it('does NOT auto-set REFUNDED when an order is moved to REFUNDED (payment preserved)', async () => {
       seedAndEcho({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.REFUNDED);
+      await service.updateStatus('order-uuid-1', OrderStatus.REFUNDED, ADMIN_ID);
 
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
+        OrderStatus.DELIVERED,
         OrderStatus.REFUNDED,
         PaymentStatus.PAID,
+        ADMIN_ID,
         expect.anything(),
       );
     });
@@ -666,12 +678,14 @@ describe('OrderService', () => {
     it('leaves an already-PAID order PAID when advanced further', async () => {
       seedAndEcho({ status: OrderStatus.PROCESSING, paymentStatus: PaymentStatus.PAID });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.DELIVERED);
+      await service.updateStatus('order-uuid-1', OrderStatus.DELIVERED, ADMIN_ID);
 
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
+        OrderStatus.PROCESSING,
         OrderStatus.DELIVERED,
         PaymentStatus.PAID,
+        ADMIN_ID,
         expect.anything(),
       );
     });
@@ -687,7 +701,7 @@ describe('OrderService', () => {
     const seedAndEcho = (current: Partial<OrderWithItems>) => {
       orderRepositoryMock.findById.mockResolvedValue(makeOrder(current));
       orderRepositoryMock.updateStatus.mockImplementation(
-        (_id: string, status: OrderStatus, paymentStatus: PaymentStatus) =>
+        (_id: string, _from: OrderStatus, status: OrderStatus, paymentStatus: PaymentStatus) =>
           Promise.resolve(makeOrder({ status, paymentStatus })),
       );
     };
@@ -695,12 +709,14 @@ describe('OrderService', () => {
     it('evicts product caches when leaving pre-shipment (PROCESSING → SHIPPED)', async () => {
       seedAndEcho({ status: OrderStatus.PROCESSING, paymentStatus: PaymentStatus.PAID });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED);
+      await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID);
 
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
+        OrderStatus.PROCESSING,
         OrderStatus.SHIPPED,
         PaymentStatus.PAID,
+        ADMIN_ID,
         { evictProductStockCaches: true },
       );
     });
@@ -708,12 +724,14 @@ describe('OrderService', () => {
     it('evicts product caches when leaving pre-shipment (CONFIRMED → DELIVERED)', async () => {
       seedAndEcho({ status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.DELIVERED);
+      await service.updateStatus('order-uuid-1', OrderStatus.DELIVERED, ADMIN_ID);
 
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
+        OrderStatus.CONFIRMED,
         OrderStatus.DELIVERED,
         PaymentStatus.PAID,
+        ADMIN_ID,
         { evictProductStockCaches: true },
       );
     });
@@ -727,12 +745,14 @@ describe('OrderService', () => {
         restockedAt: null,
       });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.PROCESSING);
+      await service.updateStatus('order-uuid-1', OrderStatus.PROCESSING, ADMIN_ID);
 
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
+        OrderStatus.CANCELLED,
         OrderStatus.PROCESSING,
         PaymentStatus.PENDING,
+        ADMIN_ID,
         { evictProductStockCaches: true },
       );
     });
@@ -740,12 +760,14 @@ describe('OrderService', () => {
     it('does NOT evict when staying within pre-shipment (PENDING → CONFIRMED)', async () => {
       seedAndEcho({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED);
+      await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED, ADMIN_ID);
 
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
+        OrderStatus.PENDING,
         OrderStatus.CONFIRMED,
         PaymentStatus.PENDING,
+        ADMIN_ID,
         { evictProductStockCaches: false },
       );
     });
@@ -753,12 +775,14 @@ describe('OrderService', () => {
     it('does NOT evict when staying post-shipment (SHIPPED → DELIVERED)', async () => {
       seedAndEcho({ status: OrderStatus.SHIPPED, paymentStatus: PaymentStatus.PAID });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.DELIVERED);
+      await service.updateStatus('order-uuid-1', OrderStatus.DELIVERED, ADMIN_ID);
 
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
+        OrderStatus.SHIPPED,
         OrderStatus.DELIVERED,
         PaymentStatus.PAID,
+        ADMIN_ID,
         { evictProductStockCaches: false },
       );
     });
@@ -776,11 +800,16 @@ describe('OrderService', () => {
         makeOrder({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PAID }),
       );
 
-      const result = await service.adminUpdatePaymentStatus('order-uuid-1', PaymentStatus.PAID);
+      const result = await service.adminUpdatePaymentStatus(
+        'order-uuid-1',
+        PaymentStatus.PAID,
+        ADMIN_ID,
+      );
 
       expect(orderRepositoryMock.updatePaymentStatus).toHaveBeenCalledWith(
         'order-uuid-1',
         PaymentStatus.PAID,
+        ADMIN_ID,
       );
       expect(result).toBeInstanceOf(OrderEntity);
       expect(result.paymentStatus).toBe(PaymentStatus.PAID);
@@ -794,11 +823,16 @@ describe('OrderService', () => {
         makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.REFUNDED }),
       );
 
-      const result = await service.adminUpdatePaymentStatus('order-uuid-1', PaymentStatus.REFUNDED);
+      const result = await service.adminUpdatePaymentStatus(
+        'order-uuid-1',
+        PaymentStatus.REFUNDED,
+        ADMIN_ID,
+      );
 
       expect(orderRepositoryMock.updatePaymentStatus).toHaveBeenCalledWith(
         'order-uuid-1',
         PaymentStatus.REFUNDED,
+        ADMIN_ID,
       );
       expect(result.status).toBe(OrderStatus.DELIVERED);
       expect(result.paymentStatus).toBe(PaymentStatus.REFUNDED);
@@ -807,9 +841,9 @@ describe('OrderService', () => {
     it('throws NotFoundException when the order does not exist', async () => {
       orderRepositoryMock.findById.mockResolvedValue(null);
 
-      await expect(service.adminUpdatePaymentStatus('missing', PaymentStatus.PAID)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.adminUpdatePaymentStatus('missing', PaymentStatus.PAID, ADMIN_ID),
+      ).rejects.toThrow(NotFoundException);
       expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
     });
   });
@@ -828,7 +862,7 @@ describe('OrderService', () => {
         Promise.resolve(makeOrder({ ...current, status: OrderStatus.CANCELLED })),
       );
       orderRepositoryMock.updateStatus.mockImplementation(
-        (_id: string, status: OrderStatus, paymentStatus: PaymentStatus) =>
+        (_id: string, _from: OrderStatus, status: OrderStatus, paymentStatus: PaymentStatus) =>
           Promise.resolve(makeOrder({ status, paymentStatus })),
       );
     };
@@ -842,9 +876,10 @@ describe('OrderService', () => {
           paymentStatus: from === OrderStatus.PENDING ? PaymentStatus.PENDING : PaymentStatus.PAID,
         });
 
-        const result = await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED);
+        const result = await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED, ADMIN_ID);
 
-        expect(orderRepositoryMock.cancelAndRestock).toHaveBeenCalledWith('order-uuid-1');
+        // TASK-251: the acting admin is threaded as changedBy into the restock path.
+        expect(orderRepositoryMock.cancelAndRestock).toHaveBeenCalledWith('order-uuid-1', ADMIN_ID);
         expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
         expect(result.status).toBe(OrderStatus.CANCELLED);
       },
@@ -856,7 +891,7 @@ describe('OrderService', () => {
         makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID }),
       );
 
-      const result = await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED);
+      const result = await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED, ADMIN_ID);
 
       expect(result.paymentStatus).toBe(PaymentStatus.PAID);
     });
@@ -867,13 +902,15 @@ describe('OrderService', () => {
       async (from) => {
         seed({ status: from, paymentStatus: PaymentStatus.PAID });
 
-        await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED);
+        await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED, ADMIN_ID);
 
         expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
         expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
           'order-uuid-1',
+          from,
           OrderStatus.CANCELLED,
           PaymentStatus.PAID,
+          ADMIN_ID,
           expect.anything(),
         );
       },
@@ -882,15 +919,17 @@ describe('OrderService', () => {
     it('does NOT auto-restock when refunding a delivered order (manual return required)', async () => {
       seed({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.REFUNDED);
+      await service.updateStatus('order-uuid-1', OrderStatus.REFUNDED, ADMIN_ID);
 
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
       // TASK-151: paymentStatus is preserved (PAID), not auto-set to REFUNDED.
       // The admin sets payment status separately via adminUpdatePaymentStatus.
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
+        OrderStatus.DELIVERED,
         OrderStatus.REFUNDED,
         PaymentStatus.PAID,
+        ADMIN_ID,
         expect.anything(),
       );
     });
@@ -898,13 +937,15 @@ describe('OrderService', () => {
     it('does NOT restock again when an already-CANCELLED order is set to CANCELLED (no double credit)', async () => {
       seed({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED);
+      await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED, ADMIN_ID);
 
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
         OrderStatus.CANCELLED,
+        OrderStatus.CANCELLED,
         PaymentStatus.PAID,
+        ADMIN_ID,
         expect.anything(),
       );
     });
@@ -912,7 +953,7 @@ describe('OrderService', () => {
     it('does NOT restock on a forward transition (PENDING → CONFIRMED)', async () => {
       seed({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED);
+      await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED, ADMIN_ID);
 
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
     });
@@ -920,9 +961,9 @@ describe('OrderService', () => {
     it('throws NotFoundException and restocks nothing when the order does not exist', async () => {
       orderRepositoryMock.findById.mockResolvedValue(null);
 
-      await expect(service.updateStatus('missing', OrderStatus.CANCELLED)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.updateStatus('missing', OrderStatus.CANCELLED, ADMIN_ID),
+      ).rejects.toThrow(NotFoundException);
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
       expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
@@ -945,7 +986,7 @@ describe('OrderService', () => {
           Promise.resolve(makeOrder({ status, paymentStatus, restockedAt: null })),
       );
       orderRepositoryMock.updateStatus.mockImplementation(
-        (_id: string, status: OrderStatus, paymentStatus: PaymentStatus) =>
+        (_id: string, _from: OrderStatus, status: OrderStatus, paymentStatus: PaymentStatus) =>
           Promise.resolve(makeOrder({ ...current, status, paymentStatus })),
       );
       orderRepositoryMock.cancelAndRestock.mockImplementation((_id: string) =>
@@ -964,12 +1005,14 @@ describe('OrderService', () => {
       async (to) => {
         seed({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID, restockedAt });
 
-        const result = await service.updateStatus('order-uuid-1', to);
+        const result = await service.updateStatus('order-uuid-1', to, ADMIN_ID);
 
+        // TASK-251: changedBy is threaded into the revive path as the 4th arg.
         expect(orderRepositoryMock.reviveAndReserve).toHaveBeenCalledWith(
           'order-uuid-1',
           to,
           PaymentStatus.PAID,
+          ADMIN_ID,
         );
         expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
         expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
@@ -980,14 +1023,16 @@ describe('OrderService', () => {
     it('keeps the flag and touches no stock when moving a restocked CANCELLED order to REFUNDED', async () => {
       seed({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID, restockedAt });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.REFUNDED);
+      await service.updateStatus('order-uuid-1', OrderStatus.REFUNDED, ADMIN_ID);
 
       expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
+        OrderStatus.CANCELLED,
         OrderStatus.REFUNDED,
         PaymentStatus.PAID,
+        ADMIN_ID,
         expect.anything(),
       );
     });
@@ -995,12 +1040,13 @@ describe('OrderService', () => {
     it('re-reserves stock when reviving a restocked REFUNDED order (flag survived CANCELLED → REFUNDED)', async () => {
       seed({ status: OrderStatus.REFUNDED, paymentStatus: PaymentStatus.REFUNDED, restockedAt });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.PENDING);
+      await service.updateStatus('order-uuid-1', OrderStatus.PENDING, ADMIN_ID);
 
       expect(orderRepositoryMock.reviveAndReserve).toHaveBeenCalledWith(
         'order-uuid-1',
         OrderStatus.PENDING,
         PaymentStatus.REFUNDED,
+        ADMIN_ID,
       );
       expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
@@ -1008,13 +1054,15 @@ describe('OrderService', () => {
     it('does NOT reserve when reviving a post-shipment-cancelled order (its stock was never credited back)', async () => {
       seed({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID, restockedAt: null });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.PENDING);
+      await service.updateStatus('order-uuid-1', OrderStatus.PENDING, ADMIN_ID);
 
       expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
+        OrderStatus.CANCELLED,
         OrderStatus.PENDING,
         PaymentStatus.PAID,
+        ADMIN_ID,
         expect.anything(),
       );
     });
@@ -1027,9 +1075,9 @@ describe('OrderService', () => {
         ),
       );
 
-      await expect(service.updateStatus('order-uuid-1', OrderStatus.PENDING)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.PENDING, ADMIN_ID),
+      ).rejects.toThrow(ConflictException);
       expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
     });
@@ -1039,13 +1087,15 @@ describe('OrderService', () => {
       // PENDING order with restockedAt set. Cancelling it must NOT credit stock.
       seed({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING, restockedAt });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED);
+      await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED, ADMIN_ID);
 
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
+        OrderStatus.PENDING,
         OrderStatus.CANCELLED,
         PaymentStatus.PENDING,
+        ADMIN_ID,
         expect.anything(),
       );
     });
