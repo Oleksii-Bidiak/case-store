@@ -130,8 +130,6 @@ export const dict = {
     catalogNew: "Новинки",
     catalogWishlist: "Обране",
     infoTitle: "Інформація",
-    infoDelivery: "Доставка й оплата",
-    infoWarranty: "Гарантія та сервіс",
     infoAbout: "Про нас",
     infoFaq: "Часті питання",
     infoBlog: "Блог",

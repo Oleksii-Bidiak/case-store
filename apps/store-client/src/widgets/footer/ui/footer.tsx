@@ -10,7 +10,13 @@ import {
   Camera,
 } from "lucide-react";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
+import { fetchPublishedPages } from "@/shared/api/pages-server";
 import { dict } from "@/shared/config";
+
+// Defensive cap on how many published legal pages render as footer links, so the
+// «Інформація» column can't grow unboundedly if the admin publishes many pages.
+// The /legal hub still lists all of them — only this footer rendering is capped.
+const FOOTER_LEGAL_LINKS_LIMIT = 6;
 
 const TRUST_ITEMS = [
   { icon: ShieldCheck, label: dict.trust.secure },
@@ -33,7 +39,12 @@ const SOCIAL_LINKS = [
  */
 export async function Footer() {
   const year = new Date().getFullYear();
-  const contact = await fetchSiteContactSettings();
+  // Fetch contact settings and published legal pages in parallel — avoids
+  // turning two independent reads into a sequential await waterfall.
+  const [contact, legalPages] = await Promise.all([
+    fetchSiteContactSettings(),
+    fetchPublishedPages(),
+  ]);
 
   const email = contact?.email ?? dict.footer.contactEmail;
   const phone = contact?.phone ?? dict.footer.contactPhone;
@@ -117,16 +128,22 @@ export async function Footer() {
           <FooterLink href="/cart">{dict.footer.shopCart}</FooterLink>
         </div>
 
-        {/* Інформація — link targets are storefront-safe placeholders until the
-            admin `/legal/[slug]` pages are wired (TASK-153/TASK-166). */}
+        {/* Інформація — TASK-184: a dynamic list of admin-published legal pages
+            (/legal/<slug>), then two fixed /info anchors (About, FAQ — the FAQPage
+            JSON-LD lives on /info per TASK-242, so FAQ is not a duplicate route),
+            then the existing /blog link. Zero published legal pages still leaves a
+            populated About/FAQ/Blog column. */}
         <div className="flex flex-col gap-3">
           <h2 className="font-display text-sm font-bold">
             {dict.footer.infoTitle}
           </h2>
-          <FooterLink href="/products">{dict.footer.infoDelivery}</FooterLink>
-          <FooterLink href="/products">{dict.footer.infoWarranty}</FooterLink>
-          <FooterLink href="/products">{dict.footer.infoAbout}</FooterLink>
-          <FooterLink href="/products">{dict.footer.infoFaq}</FooterLink>
+          {legalPages.slice(0, FOOTER_LEGAL_LINKS_LIMIT).map((page) => (
+            <FooterLink key={page.slug} href={`/legal/${page.slug}`}>
+              {page.title}
+            </FooterLink>
+          ))}
+          <FooterLink href="/info#about">{dict.footer.infoAbout}</FooterLink>
+          <FooterLink href="/info#faq">{dict.footer.infoFaq}</FooterLink>
           <FooterLink href="/blog">{dict.footer.infoBlog}</FooterLink>
         </div>
 
