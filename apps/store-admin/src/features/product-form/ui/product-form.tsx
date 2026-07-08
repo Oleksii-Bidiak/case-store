@@ -9,7 +9,13 @@ import {
 } from "@/shared/api";
 import { useProductGroupControllerFindAll } from "@/entities/product-group";
 import { useBrandControllerAdminFindAll } from "@/entities/brand";
+import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
 import { slugify } from "@/shared/lib";
+import {
+  resolveSeoPreviewTitle,
+  resolveSeoPreviewDescription,
+  resolveEffectiveTitleTemplate,
+} from "@/shared/lib/seo";
 import {
   Button,
   Input,
@@ -19,6 +25,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SeoSnippetPreview,
   Textarea,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -144,6 +151,31 @@ export function ProductForm({
   // Live selected category — drives the embedded structured-spec editor's
   // effective-definition set (TASK-191).
   const categoryIdValue = useWatch({ control, name: "categoryId" });
+
+  // Live SERP preview (TASK-268): watch the meta fields and resolve the exact
+  // title/description the storefront would render through the same three-tier
+  // precedence. `SeoSettings` (tier-2 defaults + title template) is served from
+  // the one shared TanStack Query cache entry `/settings/seo` already populates.
+  const metaTitleValue = useWatch({ control, name: "metaTitle" }) ?? "";
+  const metaDescriptionValue =
+    useWatch({ control, name: "metaDescription" }) ?? "";
+  const descriptionValue = useWatch({ control, name: "description" }) ?? "";
+  const seoSettings = useSeoSettingsControllerGetSettings().data?.data;
+  const previewSlug = slugValue || (nameValue.trim() ? slugify(nameValue) : "");
+  const previewTitle = resolveSeoPreviewTitle({
+    entityTitle: metaTitleValue,
+    defaultTitle: seoSettings?.defaultMetaTitle,
+    contentName: nameValue,
+    titleTemplate: resolveEffectiveTitleTemplate(
+      seoSettings?.titleTemplate,
+      dict.brand,
+    ),
+  });
+  const previewDescription = resolveSeoPreviewDescription({
+    entityDescription: metaDescriptionValue,
+    defaultDescription: seoSettings?.defaultMetaDescription,
+    contentDescription: descriptionValue,
+  });
 
   // TASK-236: the picker offers LEAF categories from the FULL admin tree
   // (including inactive ones) so a product is assigned to its specific
@@ -529,6 +561,16 @@ export function ProductForm({
           </p>
         )}
       </div>
+
+      <SeoSnippetPreview
+        title={previewTitle.text}
+        titleTier={previewTitle.tier}
+        description={previewDescription.text || undefined}
+        descriptionTier={previewDescription.tier}
+        url={`${dict.seoSnippetPreview.urlHost} › products › ${previewSlug}`}
+        rawTitleLength={metaTitleValue.trim().length}
+        rawDescriptionLength={metaDescriptionValue.trim().length}
+      />
 
       <div className="flex items-center gap-2">
         <input

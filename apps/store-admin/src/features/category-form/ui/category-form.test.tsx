@@ -291,6 +291,50 @@ describe("CategoryForm — parent survives late-loading options (TASK-201)", () 
   });
 });
 
+describe("CategoryForm — SERP snippet preview (TASK-268)", () => {
+  const previewTitle = () => screen.getByTestId("seo-snippet-title");
+  const previewHint = () => screen.getByTestId("seo-snippet-hint");
+  const titleCounter = () => screen.getByTestId("seo-snippet-title-counter");
+
+  it("derives the branded title from the category name when meta is blank", async () => {
+    stubCategories();
+    renderWithProviders(
+      <CategoryForm
+        id="cat-1"
+        defaultValues={{ name: "iPhone Cases" }}
+        onSubmit={jest.fn()}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(previewTitle()).toHaveTextContent("iPhone Cases | MobileStore"),
+    );
+    expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintDerived);
+  });
+
+  it("live-updates the preview to the typed meta title and counter", async () => {
+    stubCategories();
+    renderWithProviders(
+      <CategoryForm
+        id="cat-1"
+        defaultValues={{ name: "iPhone Cases" }}
+        onSubmit={jest.fn()}
+        isPending={false}
+      />,
+    );
+
+    await userEvent.type(
+      screen.getByLabelText(dict.categoryForm.metaTitle),
+      "Best Cases",
+    );
+
+    await waitFor(() => expect(previewTitle()).toHaveTextContent("Best Cases"));
+    expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintOwn);
+    expect(titleCounter()).toHaveTextContent("10/60");
+  });
+});
+
 describe("categoryFormValuesToDto — parent mapping (TASK-149)", () => {
   const baseValues: CategoryFormValues = {
     name: "Cat",

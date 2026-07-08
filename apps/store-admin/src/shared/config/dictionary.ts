@@ -1395,6 +1395,41 @@ export const dict = {
       },
     },
   },
+
+  // SERP-snippet preview under the meta fields (план 130, TASK-268). A live
+  // Google-result mock (title / green URL / description) + char counters + a
+  // "blank field = auto-generated" hint, shown under the metaTitle/
+  // metaDescription fields on product/category/page forms and the /settings/seo
+  // defaults form. `urlHost` is an illustrative storefront host for the
+  // breadcrumb line only — advisory UX, not the real canonical origin.
+  seoSnippetPreview: {
+    heading: "Перегляд у результатах пошуку Google",
+    urlHost: "mobilestore.ua",
+    emptyTitle: "(без заголовка)",
+    // `{typed}/{max}` counter shown next to each field's live length.
+    counter: (n: number, max: number) => `${n}/${max}`,
+    titleCounterAria: (n: number, max: number) =>
+      `Довжина SEO-заголовка: ${n} із рекомендованих ${max} символів`,
+    descriptionCounterAria: (n: number, max: number) =>
+      `Довжина SEO-опису: ${n} із рекомендованих ${max} символів`,
+    // Hint line under the mock — copy chosen by which tier resolved the title.
+    hintOwn: "Заголовок узято з вашого поля «SEO-заголовок» вище.",
+    hintDefault:
+      "Поле порожнє — показано заголовок сайту за замовчуванням (розділ «SEO»).",
+    hintDerived:
+      "Поле порожнє — заголовок згенеровано автоматично з назви за шаблоном сайту.",
+    hintEmpty:
+      "Заповніть назву або SEO-заголовок, щоб побачити, як сторінка виглядатиме в пошуку Google.",
+    // Self-referential preview on /settings/seo (Design Decision 4) — a sample
+    // page standing in for "a real page with no title/description of its own".
+    sampleNote:
+      "Це приклад: так виглядатиме сторінка, у якої немає власного заголовка чи опису.",
+    samplePageName: "Чохол для iPhone 15",
+    samplePageDescription:
+      "Надійний силіконовий чохол для iPhone 15 із захистом кутів та підтримкою MagSafe. Доставка по Україні.",
+    // Create-mode category breadcrumb placeholder (no real slug yet).
+    newCategorySlug: "нова-категорія",
+  },
 } as const;
 
 export type AdminDictionary = typeof dict;

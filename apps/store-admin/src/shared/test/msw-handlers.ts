@@ -62,6 +62,26 @@ export const handlers = [
     }),
   ),
 
+  // Global SEO settings singleton (plan 116) — the SERP-preview under the
+  // product/category/page meta fields (TASK-268) fetches it for tier-2 defaults
+  // + the title template. Zero-config defaults by default; override per-test.
+  http.get("*/api/seo-settings", () =>
+    HttpResponse.json({
+      data: {
+        id: "00000000-0000-0000-0000-000000000002",
+        defaultMetaTitle: null,
+        defaultMetaDescription: null,
+        titleTemplate: null,
+        defaultOgImage: null,
+        noindexSite: false,
+        llmsTxtSummary: null,
+        additionalSameAsLinks: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    }),
+  ),
+
   // Auth — admin session bootstrap.
   http.post("*/api/auth/login", () =>
     HttpResponse.json({ data: { accessToken: "test.access.token" } }),

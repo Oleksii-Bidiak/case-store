@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAdminCategoryControllerFindAllWithProductCount } from "@/entities/category";
+import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
+import { slugify } from "@/shared/lib";
+import {
+  resolveSeoPreviewTitle,
+  resolveSeoPreviewDescription,
+  resolveEffectiveTitleTemplate,
+} from "@/shared/lib/seo";
 import {
   Button,
   Input,
@@ -13,6 +20,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SeoSnippetPreview,
   Textarea,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -94,6 +102,36 @@ export function CategoryForm({
   const parentOptions = (categoriesQuery.data?.data ?? []).filter(
     (category) => category.id !== excludeParentId,
   );
+
+  // Live SERP preview (TASK-268): resolve the exact title/description the
+  // storefront would render for this category page through the same three-tier
+  // precedence. `name` is not otherwise watched, so add it here alongside the
+  // meta fields; `SeoSettings` feeds tier-2 defaults + the title template.
+  const nameValue = useWatch({ control, name: "name" }) ?? "";
+  const descriptionValue = useWatch({ control, name: "description" }) ?? "";
+  const metaTitleValue = useWatch({ control, name: "metaTitle" }) ?? "";
+  const metaDescriptionValue =
+    useWatch({ control, name: "metaDescription" }) ?? "";
+  const seoSettings = useSeoSettingsControllerGetSettings().data?.data;
+  const previewTitle = resolveSeoPreviewTitle({
+    entityTitle: metaTitleValue,
+    defaultTitle: seoSettings?.defaultMetaTitle,
+    contentName: nameValue,
+    titleTemplate: resolveEffectiveTitleTemplate(
+      seoSettings?.titleTemplate,
+      dict.brand,
+    ),
+  });
+  const previewDescription = resolveSeoPreviewDescription({
+    entityDescription: metaDescriptionValue,
+    defaultDescription: seoSettings?.defaultMetaDescription,
+    contentDescription: descriptionValue,
+  });
+  // A category's public listing is /products?categoryId=…; the breadcrumb shows
+  // a readable slug (create mode has no real slug yet → placeholder).
+  const previewSlug = nameValue.trim()
+    ? slugify(nameValue)
+    : dict.seoSnippetPreview.newCategorySlug;
 
   return (
     <form
@@ -258,6 +296,16 @@ export function CategoryForm({
           </p>
         )}
       </div>
+
+      <SeoSnippetPreview
+        title={previewTitle.text}
+        titleTier={previewTitle.tier}
+        description={previewDescription.text || undefined}
+        descriptionTier={previewDescription.tier}
+        url={`${dict.seoSnippetPreview.urlHost} › products › ${previewSlug}`}
+        rawTitleLength={metaTitleValue.trim().length}
+        rawDescriptionLength={metaDescriptionValue.trim().length}
+      />
 
       <div className="flex items-center gap-2">
         <input
