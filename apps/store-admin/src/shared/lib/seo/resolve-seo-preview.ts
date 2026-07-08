@@ -75,6 +75,14 @@ export function truncateAtWord(text: string, max: number): string {
  * it is set and contains exactly one `%s` token, else the zero-config default
  * `%s | ${brand}`. Mirrors the storefront's `resolveTitleTemplate` (`brand` is
  * store-admin's `dict.brand`, the mirror of store-client's `SITE_NAME`).
+ *
+ * NOTE — the exactly-one-`%s` check is DELIBERATELY stricter than the
+ * storefront's `resolveTitleTemplate` (which uses `.includes("%s")`). It is
+ * inert and safe: `UpdateSeoSettingsDto.titleTemplate` is guarded by
+ * `@Matches(/^[^%]*%s[^%]*$/)`, so a persisted template can only ever be
+ * single-token and well-formed — the two implementations agree on every value
+ * that can actually reach here. Do NOT loosen this to `.includes()` to "match"
+ * the storefront; the strictness documents the DTO invariant, it doesn't fight it.
  */
 export function resolveEffectiveTitleTemplate(
   titleTemplate: string | null | undefined,
