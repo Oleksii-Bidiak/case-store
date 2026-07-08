@@ -46,6 +46,7 @@ describe('Discount (e2e)', () => {
     findByCode: jest.fn(),
     findById: jest.fn(),
     findMany: jest.fn(),
+    findActiveWindowCandidates: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     softDeactivate: jest.fn(),
@@ -234,6 +235,33 @@ describe('Discount (e2e)', () => {
         .expect(409);
 
       expect(res.body.error).toBe('DISCOUNT_MAX_REDEMPTIONS_REACHED');
+    });
+  });
+
+  // ─── GET /api/discounts/active (public feed, TASK-179) ──────────────────────
+
+  describe('GET /api/discounts/active', () => {
+    it('200 with no Authorization header (public)', async () => {
+      discountRepositoryMock.findActiveWindowCandidates.mockResolvedValue([makeDiscount()]);
+
+      const res = await request(app.getHttpServer()).get('/api/discounts/active').expect(200);
+
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0]).toMatchObject({ code: 'SUMMER10', type: DiscountType.PERCENT });
+    });
+
+    it('omits an exhausted-cap discount and never leaks caps/counts', async () => {
+      discountRepositoryMock.findActiveWindowCandidates.mockResolvedValue([
+        makeDiscount({ code: 'LIVE', maxRedemptions: 10, redeemedCount: 1 }),
+        makeDiscount({ code: 'EXHAUSTED', maxRedemptions: 5, redeemedCount: 5 }),
+      ]);
+
+      const res = await request(app.getHttpServer()).get('/api/discounts/active').expect(200);
+
+      expect(res.body.data.map((d: { code: string }) => d.code)).toEqual(['LIVE']);
+      expect(res.body.data[0]).not.toHaveProperty('redeemedCount');
+      expect(res.body.data[0]).not.toHaveProperty('maxRedemptions');
+      expect(res.body.data[0]).not.toHaveProperty('id');
     });
   });
 

@@ -1,1 +1,1 @@
-export { DiscountEntity, DiscountPreviewEntity } from './discount.entity';
+export { DiscountEntity, DiscountPreviewEntity, PublicDiscountEntity } from './discount.entity';

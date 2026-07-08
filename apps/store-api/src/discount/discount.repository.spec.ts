@@ -83,6 +83,25 @@ describe('DiscountRepository', () => {
     });
   });
 
+  describe('findActiveWindowCandidates', () => {
+    it('queries active codes within the start/expiry window, ordered by expiry', async () => {
+      const now = new Date('2026-07-08T00:00:00.000Z');
+      prismaMock.discount.findMany.mockResolvedValue([{ id: 'd1' }]);
+
+      const result = await repository.findActiveWindowCandidates(now);
+
+      expect(prismaMock.discount.findMany).toHaveBeenCalledWith({
+        where: {
+          isActive: true,
+          OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+          AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }],
+        },
+        orderBy: { expiresAt: 'asc' },
+      });
+      expect(result).toEqual([{ id: 'd1' }]);
+    });
+  });
+
   describe('create', () => {
     it('persists a discount with normalized null defaults', async () => {
       const created = { id: 'd1' };

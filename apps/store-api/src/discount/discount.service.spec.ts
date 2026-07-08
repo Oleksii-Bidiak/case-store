@@ -9,6 +9,7 @@ const repositoryMock = {
   findByCode: jest.fn(),
   findById: jest.fn(),
   findMany: jest.fn(),
+  findActiveWindowCandidates: jest.fn(),
   create: jest.fn(),
   update: jest.fn(),
   softDeactivate: jest.fn(),
@@ -225,6 +226,77 @@ describe('DiscountService.computeDiscount', () => {
     await service.computeDiscount('SUMMER10', '200.00', 'u1');
 
     expect(repositoryMock.countUserRedemptions).not.toHaveBeenCalled();
+  });
+});
+
+describe('DiscountService.findActivePublic (TASK-179)', () => {
+  let service: DiscountService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DiscountService(repositoryMock as never, cartServiceMock as never);
+  });
+
+  it('includes a null-cap discount and maps to the public-safe shape only', async () => {
+    repositoryMock.findActiveWindowCandidates.mockResolvedValue([
+      makeDiscount({
+        code: 'SUMMER10',
+        minSpend: new Prisma.Decimal('500'),
+        maxRedemptions: null,
+      }),
+    ]);
+
+    const result = await service.findActivePublic();
+
+    expect(result.data).toHaveLength(1);
+    const entity = result.data[0];
+    expect(entity).toEqual({
+      code: 'SUMMER10',
+      type: DiscountType.PERCENT,
+      value: '10',
+      minSpend: '500',
+      expiresAt: null,
+    });
+    // Public-safe: none of the sensitive/internal fields leak through.
+    for (const hidden of [
+      'id',
+      'maxRedemptions',
+      'redeemedCount',
+      'perUserLimit',
+      'startsAt',
+      'isActive',
+      'createdAt',
+      'updatedAt',
+    ]) {
+      expect(entity).not.toHaveProperty(hidden);
+    }
+  });
+
+  it('includes an unbounded/no-window discount', async () => {
+    repositoryMock.findActiveWindowCandidates.mockResolvedValue([makeDiscount({ code: 'ALWAYS' })]);
+
+    const result = await service.findActivePublic();
+
+    expect(result.data.map((d) => d.code)).toEqual(['ALWAYS']);
+  });
+
+  it('excludes a discount whose global cap is exhausted', async () => {
+    repositoryMock.findActiveWindowCandidates.mockResolvedValue([
+      makeDiscount({ code: 'LIVE', maxRedemptions: 10, redeemedCount: 3 }),
+      makeDiscount({ code: 'EXHAUSTED', maxRedemptions: 5, redeemedCount: 5 }),
+    ]);
+
+    const result = await service.findActivePublic();
+
+    expect(result.data.map((d) => d.code)).toEqual(['LIVE']);
+  });
+
+  it('queries the repository with the current time', async () => {
+    repositoryMock.findActiveWindowCandidates.mockResolvedValue([]);
+
+    await service.findActivePublic();
+
+    expect(repositoryMock.findActiveWindowCandidates).toHaveBeenCalledWith(expect.any(Date));
   });
 });
 

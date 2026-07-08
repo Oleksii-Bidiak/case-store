@@ -3,6 +3,7 @@ export { DiscountModule } from './discount.module';
 export { DiscountService } from './discount.service';
 export { DiscountController } from './discount.controller';
 export { AdminDiscountController } from './admin-discount.controller';
+export { PublicDiscountController } from './public-discount.controller';
 export { DiscountRepository } from './discount.repository';
 export type {
   CreateDiscountInput,
@@ -10,7 +11,7 @@ export type {
   FindManyParams as DiscountFindManyParams,
   PaginatedDiscountsResult,
 } from './discount.repository';
-export { DiscountEntity, DiscountPreviewEntity } from './entities';
+export { DiscountEntity, DiscountPreviewEntity, PublicDiscountEntity } from './entities';
 export {
   CreateDiscountDto,
   UpdateDiscountDto,
