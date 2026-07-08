@@ -25,6 +25,8 @@ import {
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
+import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { JwtRefreshGuard } from './guards';
 import { JwtAuthGuard } from './guards';
 import { CurrentUser } from './decorators';
@@ -143,6 +145,64 @@ export class AuthController {
 
     return {
       data: { accessToken: tokens.accessToken },
+    };
+  }
+
+  /**
+   * POST /api/auth/password-reset/request
+   *
+   * Begin a password reset. Always responds 200 with a generic message —
+   * whether or not the email belongs to an account — so the endpoint cannot be
+   * used to enumerate registered accounts (existence-hiding). Public.
+   */
+  @Post('password-reset/request')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @ApiOperation({ summary: 'Request a password-reset link (existence-hiding, always 200)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Generic acknowledgement (identical for existing and unknown emails)',
+    type: MessageResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid email' })
+  async requestPasswordReset(
+    @Body() dto: RequestPasswordResetDto,
+  ): Promise<{ data: MessageResponse }> {
+    await this.authService.requestPasswordReset(dto.email);
+
+    return {
+      data: {
+        message: 'If an account with that email exists, a password reset link has been sent.',
+      },
+    };
+  }
+
+  /**
+   * POST /api/auth/password-reset/confirm
+   *
+   * Complete a password reset with a single-use token + new password. Any
+   * invalid/used/expired/deactivated-owner token yields the same generic 401 so
+   * token/account state is never revealed. On success every refresh token for
+   * the user is revoked (forced re-login everywhere). Public.
+   */
+  @Post('password-reset/confirm')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @ApiOperation({ summary: 'Confirm a password reset with a single-use token' })
+  @ApiResponse({
+    status: 200,
+    description: 'Password updated; all sessions revoked',
+    type: MessageResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid input (weak password / missing fields)' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired reset token' })
+  async confirmPasswordReset(
+    @Body() dto: ConfirmPasswordResetDto,
+  ): Promise<{ data: MessageResponse }> {
+    await this.authService.confirmPasswordReset(dto.token, dto.newPassword);
+
+    return {
+      data: { message: 'Password has been reset successfully.' },
     };
   }
 

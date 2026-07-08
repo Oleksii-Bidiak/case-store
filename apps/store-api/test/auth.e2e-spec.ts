@@ -42,6 +42,11 @@ describe('AuthController (e2e)', () => {
     saveRefreshToken: jest.fn(),
     revokeToken: jest.fn(),
     revokeAllUserTokens: jest.fn(),
+    savePasswordResetToken: jest.fn(),
+    findPasswordResetToken: jest.fn(),
+    markPasswordResetTokenUsed: jest.fn(),
+    invalidateActivePasswordResetTokens: jest.fn(),
+    updatePasswordHash: jest.fn(),
   };
 
   // Mock PrismaService — prevents database connection errors
@@ -57,6 +62,10 @@ describe('AuthController (e2e)', () => {
       create: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
+    },
+    // The real MailOutboxService (enqueuePasswordReset) writes through this.
+    mailOutbox: {
+      create: jest.fn().mockResolvedValue({ id: 'outbox-e2e-1' }),
     },
   };
 
@@ -391,6 +400,120 @@ describe('AuthController (e2e)', () => {
           : setCookieHeader;
         expect(cookieStr).toContain('Max-Age=0');
       }
+    });
+  });
+
+  // ─── Password reset — request (existence-hiding) ─────────────────────────────
+
+  describe('POST /api/auth/password-reset/request', () => {
+    const activeUser = {
+      id: 'user-e2e-1',
+      email: testUser.email,
+      passwordHash: 'hash',
+      firstName: null,
+      lastName: null,
+      phone: null,
+      role: 'CUSTOMER',
+      isActive: true,
+      deletedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    it('returns 200 with a generic message for an existing active user', async () => {
+      authRepositoryMock.findByEmail.mockResolvedValue(activeUser);
+      authRepositoryMock.savePasswordResetToken.mockResolvedValue({ id: 'prt-1' });
+      authRepositoryMock.invalidateActivePasswordResetTokens.mockResolvedValue(undefined);
+
+      const response = await request(app.getHttpServer())
+        .post('/api/auth/password-reset/request')
+        .send({ email: testUser.email })
+        .expect(200);
+
+      expect(response.body).toHaveProperty('data');
+      expect(response.body.data).toHaveProperty('message');
+      expect(typeof response.body.data.message).toBe('string');
+    });
+
+    it('returns a byte-identical body for a non-existent email (existence-hiding)', async () => {
+      // First: existing active user.
+      authRepositoryMock.findByEmail.mockResolvedValue(activeUser);
+      authRepositoryMock.savePasswordResetToken.mockResolvedValue({ id: 'prt-1' });
+      authRepositoryMock.invalidateActivePasswordResetTokens.mockResolvedValue(undefined);
+      const existing = await request(app.getHttpServer())
+        .post('/api/auth/password-reset/request')
+        .send({ email: testUser.email })
+        .expect(200);
+
+      // Then: unknown email — no user found. Clear the token-save call history so
+      // the assertion below observes only the no-account request.
+      authRepositoryMock.findByEmail.mockResolvedValue(null);
+      authRepositoryMock.savePasswordResetToken.mockClear();
+      const missing = await request(app.getHttpServer())
+        .post('/api/auth/password-reset/request')
+        .send({ email: 'nobody@example.com' })
+        .expect(200);
+
+      // The response body must be identical so it cannot be used to enumerate accounts.
+      expect(missing.body).toEqual(existing.body);
+      // And the no-account path must never issue a token.
+      expect(authRepositoryMock.savePasswordResetToken).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 for an invalid email format', async () => {
+      await request(app.getHttpServer())
+        .post('/api/auth/password-reset/request')
+        .send({ email: 'not-an-email' })
+        .expect(400);
+    });
+  });
+
+  // ─── Password reset — confirm (single-use, generic errors) ───────────────────
+
+  describe('POST /api/auth/password-reset/confirm', () => {
+    it('returns 401 for an unknown token', async () => {
+      authRepositoryMock.findPasswordResetToken.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .post('/api/auth/password-reset/confirm')
+        .send({ token: 'unknown-token', newPassword: 'NewStrongP@ss123' })
+        .expect(401);
+    });
+
+    it('returns 400 for a weak new password (policy enforced)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/auth/password-reset/confirm')
+        .send({ token: 'some-token', newPassword: 'weak' })
+        .expect(400);
+    });
+
+    it('returns 200 and revokes all sessions on a valid confirm', async () => {
+      authRepositoryMock.findPasswordResetToken.mockResolvedValue({
+        id: 'prt-1',
+        token: 'hashed',
+        userId: 'user-e2e-1',
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        usedAt: null,
+        createdAt: new Date(),
+        user: {
+          id: 'user-e2e-1',
+          email: testUser.email,
+          passwordHash: 'old-hash',
+          isActive: true,
+          deletedAt: null,
+        },
+      });
+      authRepositoryMock.updatePasswordHash.mockResolvedValue(undefined);
+      authRepositoryMock.markPasswordResetTokenUsed.mockResolvedValue(undefined);
+      authRepositoryMock.revokeAllUserTokens.mockResolvedValue(undefined);
+
+      const response = await request(app.getHttpServer())
+        .post('/api/auth/password-reset/confirm')
+        .send({ token: 'valid-token', newPassword: 'NewStrongP@ss123' })
+        .expect(200);
+
+      expect(response.body.data).toHaveProperty('message');
+      expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith('user-e2e-1');
     });
   });
 
