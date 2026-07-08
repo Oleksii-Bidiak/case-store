@@ -2,7 +2,11 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { DashboardSummaryResponse } from "@/entities/dashboard";
 import { dict } from "@/shared/config";
-import { formatCurrency, formatPercent } from "@/shared/lib";
+import {
+  formatCurrency,
+  formatPercent,
+  formatDurationHours,
+} from "@/shared/lib";
 import { AdminDashboardStats } from "./AdminDashboardStats";
 
 const summary: DashboardSummaryResponse = {
@@ -23,6 +27,7 @@ const summary: DashboardSummaryResponse = {
   customers: { repeatBuyerRate: 0.24, repeatBuyerRateLast90Days: 0.31 },
   products: { totalProducts: 128, activeProducts: 119, topProducts: [] },
   inventory: { lowStockProducts: [] },
+  operations: { averageProcessingHoursLast30Days: 36 },
 };
 
 /** Strip all whitespace (incl. NBSP/narrow-NBSP from uk-UA grouping). */
@@ -79,6 +84,21 @@ describe("AdminDashboardStats — metrics v2 (TASK-249)", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(percent(summary.customers.repeatBuyerRateLast90Days)),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the processing-speed card with its formatted duration (TASK-251)", () => {
+    render(<AdminDashboardStats summary={summary} />);
+
+    expect(
+      screen.getByText(dict.dashboard.averageProcessingTime),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        formatDurationHours(
+          summary.operations.averageProcessingHoursLast30Days,
+        ),
+      ),
     ).toBeInTheDocument();
   });
 

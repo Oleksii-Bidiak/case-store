@@ -15,7 +15,8 @@ export const handlers = [
     }),
   ),
 
-  // Needs-action counters (TASK-248) — all-clear by default; override per-test.
+  // Needs-action counters (TASK-248, +pendingOver48h TASK-251) — all-clear by
+  // default; override per-test.
   http.get("*/api/admin/dashboard/needs-action", () =>
     HttpResponse.json({
       data: {
@@ -23,8 +24,16 @@ export const handlers = [
         pendingReviews: 0,
         unpaidInTransit: 0,
         failedMails: 0,
+        pendingOver48h: 0,
       },
     }),
+  ),
+
+  // Order status-history timeline (TASK-251) — empty by default so any test that
+  // mounts OrderDetailView (which self-fetches the timeline) stays off
+  // onUnhandledRequest. The order-timeline test overrides this per-case.
+  http.get("*/api/admin/orders/:orderId/history", () =>
+    HttpResponse.json({ data: [] }),
   ),
 
   // Unread (NEW) contact-message count for the nav «Повідомлення» badge — none

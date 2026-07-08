@@ -9,6 +9,7 @@ function mockNeedsAction(counts: {
   pendingReviews: number;
   unpaidInTransit: number;
   failedMails: number;
+  pendingOver48h: number;
 }) {
   server.use(
     http.get("*/api/admin/dashboard/needs-action", () =>
@@ -18,12 +19,13 @@ function mockNeedsAction(counts: {
 }
 
 describe("NeedsActionWidget (TASK-248)", () => {
-  it("renders the four counters as cards", async () => {
+  it("renders the five counters as cards", async () => {
     mockNeedsAction({
       newOrders: 3,
       pendingReviews: 0,
       unpaidInTransit: 5,
       failedMails: 0,
+      pendingOver48h: 0,
     });
 
     renderWithProviders(<NeedsActionWidget />);
@@ -37,17 +39,22 @@ describe("NeedsActionWidget (TASK-248)", () => {
     expect(
       screen.getByText(dict.dashboard.needsActionUnpaidInTransit),
     ).toBeInTheDocument();
+    // TASK-251: the 5th ">48h in PENDING" card.
+    expect(
+      screen.getByText(dict.dashboard.needsActionPendingOver48h),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(dict.dashboard.needsActionFailedMails),
     ).toBeInTheDocument();
   });
 
-  it("deep-links the first three cards and leaves the failed-mail card non-interactive", async () => {
+  it("deep-links the first four cards and leaves the failed-mail card non-interactive", async () => {
     mockNeedsAction({
       newOrders: 3,
       pendingReviews: 2,
       unpaidInTransit: 5,
       failedMails: 1,
+      pendingOver48h: 2,
     });
 
     renderWithProviders(<NeedsActionWidget />);
@@ -70,6 +77,21 @@ describe("NeedsActionWidget (TASK-248)", () => {
       "/orders?unpaidInTransit=true",
     );
 
+    // TASK-251: the ">48h in PENDING" card deep-links to the PENDING list. Its
+    // label contains regex-special chars, so match the text node and walk to the
+    // enclosing anchor rather than building a RegExp from the label.
+    const pendingOver48hLink = screen
+      .getByText(dict.dashboard.needsActionPendingOver48h)
+      .closest("a") as HTMLElement;
+    expect(pendingOver48hLink).toHaveAttribute(
+      "href",
+      "/orders?status=PENDING",
+    );
+    // Its count is toned as a warning (non-zero).
+    expect(within(pendingOver48hLink).getByText("2")).toHaveClass(
+      "text-warning",
+    );
+
     // The failed-mail card has no admin destination → it is not a link.
     expect(
       screen.queryByRole("link", {
@@ -84,6 +106,7 @@ describe("NeedsActionWidget (TASK-248)", () => {
       pendingReviews: 0,
       unpaidInTransit: 5,
       failedMails: 0,
+      pendingOver48h: 0,
     });
 
     renderWithProviders(<NeedsActionWidget />);
@@ -109,6 +132,7 @@ describe("NeedsActionWidget (TASK-248)", () => {
       pendingReviews: 0,
       unpaidInTransit: 0,
       failedMails: 0,
+      pendingOver48h: 0,
     });
 
     renderWithProviders(<NeedsActionWidget />);

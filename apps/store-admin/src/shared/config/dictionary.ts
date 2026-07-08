@@ -104,6 +104,8 @@ export const dict = {
     needsActionPendingReviews: "Відгуки на модерації",
     needsActionUnpaidInTransit: "Очікують оплати",
     needsActionFailedMails: "Помилки надсилання пошти",
+    // TASK-251: 5th needs-action card — orders sitting too long in PENDING.
+    needsActionPendingOver48h: "Довго в очікуванні (>48 год)",
     // Sidebar count-badge aria labels (mirror messages.unreadBadgeAria).
     newOrdersBadgeAria: (n: number) => `${n} нових замовлень`,
     pendingReviewsBadgeAria: (n: number) => `${n} відгуків на модерації`,
@@ -128,6 +130,12 @@ export const dict = {
       "платіж Нової Пошти, який ще не інкасовано).",
     unrealizedRevenue30Tooltip:
       "Те саме, але лише замовлення за останні 30 днів.",
+    // TASK-251: processing-speed stat card.
+    averageProcessingTime: "Середній час обробки",
+    averageProcessingTimeSub: "Від оформлення до відправлення (30 днів)",
+    averageProcessingTimeTooltip:
+      "Скільки в середньому минає від моменту оформлення замовлення до його першої " +
+      "відправки, за останні 30 днів. Показує, чи пришвидшується обробка замовлень.",
     metricInfoAria: (label: string) => `Що означає «${label}»`,
     lastOrders: "Останні замовлення",
     noLastOrders: "Замовлень ще немає.",
@@ -1123,6 +1131,10 @@ export const dict = {
     // TASK-254: stock-hold badges on the order detail page.
     holdsStock: (n: number) => `Тримає залишок: ${n} шт`,
     restockedAt: (time: string) => `Залишок повернуто ${time}`,
+    // TASK-251: order status/payment history timeline.
+    timelineHeading: "Історія змін",
+    timelineLoadError: "Не вдалося завантажити історію змін.",
+    timelineEmpty: "Історія змін порожня.",
   },
 
   reviews: {

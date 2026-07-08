@@ -1,7 +1,11 @@
 import { Info } from "lucide-react";
 import type { DashboardSummaryResponse } from "@/entities/dashboard";
 import { dict } from "@/shared/config";
-import { formatCurrency, formatPercent } from "@/shared/lib";
+import {
+  formatCurrency,
+  formatPercent,
+  formatDurationHours,
+} from "@/shared/lib";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui";
 
 interface AdminDashboardStatsProps {
@@ -135,6 +139,16 @@ export function AdminDashboardStats({ summary }: AdminDashboardStatsProps) {
         value={formatPercent(summary.customers.repeatBuyerRateLast90Days)}
         subText={dict.dashboard.repeatBuyerRate90Sub}
         tooltip={dict.dashboard.repeatBuyerRate90Tooltip}
+      />
+      {/* TASK-251: processing-speed — an operational-efficiency signal, grouped
+          with the other recent-behaviour cards. */}
+      <StatCard
+        label={dict.dashboard.averageProcessingTime}
+        value={formatDurationHours(
+          summary.operations.averageProcessingHoursLast30Days,
+        )}
+        subText={dict.dashboard.averageProcessingTimeSub}
+        tooltip={dict.dashboard.averageProcessingTimeTooltip}
       />
     </div>
   );
