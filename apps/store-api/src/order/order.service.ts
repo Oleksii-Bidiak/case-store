@@ -344,7 +344,19 @@ export class OrderService {
     // order status leaves the existing payment status untouched (forwarded
     // unchanged); the admin manages payment independently via
     // adminUpdatePaymentStatus. (Previously TASK-123 auto-derived PAID here.)
-    const order = await this.orderRepository.updateStatus(orderId, status, existing.paymentStatus);
+    //
+    // TASK-254: a plain transition that crosses the pre-shipment boundary
+    // (e.g. PROCESSING→SHIPPED, CONFIRMED→DELIVERED, or CANCELLED→PROCESSING)
+    // changes each line-item product's DERIVED reservedQty/physicalQty without
+    // touching `stock` — so the cached admin `ProductEntity` (findById) must be
+    // evicted, exactly as the restock/revive paths already do. A transition that
+    // stays on the same side (PENDING→CONFIRMED, SHIPPED→DELIVERED) leaves
+    // reserved membership unchanged and needs no eviction.
+    const crossesPreShipmentBoundary =
+      PRE_SHIPMENT_STATUSES.has(existing.status) !== PRE_SHIPMENT_STATUSES.has(status);
+    const order = await this.orderRepository.updateStatus(orderId, status, existing.paymentStatus, {
+      evictProductStockCaches: crossesPreShipmentBoundary,
+    });
     return OrderEntity.fromPrisma(order);
   }
 
