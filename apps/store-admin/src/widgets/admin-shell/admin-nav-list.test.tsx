@@ -74,6 +74,32 @@ describe("AdminNavList — needs-action badges (TASK-248)", () => {
   });
 });
 
+describe("AdminNavList — no dead links (TASK-184)", () => {
+  it('renders no nav link pointing at a dead href="#"', async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    renderWithProviders(<AdminNavList />);
+
+    // Wait for the nav to mount, then assert every link has a real destination.
+    await screen.findByRole("link", { name: dict.nav.dashboard });
+    const deadLinks = screen
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("href") === "#");
+    expect(deadLinks).toHaveLength(0);
+  });
+
+  it("does not render a «Налаштування» bottom-nav item", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    renderWithProviders(<AdminNavList />);
+
+    await screen.findByRole("link", { name: dict.nav.faq });
+    expect(
+      screen.queryByRole("link", { name: "Налаштування" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("AdminNavList — content map entry (TASK-264)", () => {
   it("renders the «Де що на сайті» bottom-nav entry linking to /content-map", async () => {
     mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
