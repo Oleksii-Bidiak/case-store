@@ -772,10 +772,14 @@ describe('OrderController (e2e)', () => {
       // TASK-151: status and payment are decoupled — the service forwards the
       // order's current paymentStatus (PENDING here) unchanged as the 3rd arg,
       // never auto-deriving PAID.
+      // TASK-254: the 4th arg flags whether the transition crosses the
+      // pre-shipment boundary (evict product stock caches); PENDING→PROCESSING
+      // stays inside PRE_SHIPMENT, so no eviction is requested.
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-e2e-1',
         OrderStatus.PROCESSING,
         PaymentStatus.PENDING,
+        { evictProductStockCaches: false },
       );
     });
 
