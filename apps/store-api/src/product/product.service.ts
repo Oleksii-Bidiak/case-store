@@ -139,6 +139,9 @@ export class ProductService {
       specs: parseSpecFilter(query.specs)
         ? `${parseSpecFilter(query.specs)!.key}:${parseSpecFilter(query.specs)!.value}`
         : undefined,
+      // Any filter absent from the key silently cache-collides (TASK-236/230) —
+      // `onSale=true` and `onSale` absent MUST map to distinct keys (TASK-179).
+      onSale: listParams.onSale,
       isActive: true,
     });
     const cached = await this.cache.get<PaginatedProductsResponse>(cacheKey);
@@ -212,6 +215,7 @@ export class ProductService {
       maxPrice: query.maxPrice,
       search: query.search,
       specFilter: parseSpecFilter(query.specs),
+      onSale: query.onSale,
       sortBy: query.sortBy ?? 'createdAt',
       sortOrder: query.sortOrder ?? 'desc',
     };

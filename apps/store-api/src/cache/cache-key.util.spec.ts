@@ -44,12 +44,13 @@ describe('cache-key.util', () => {
         minPrice: 10,
         maxPrice: 100,
         search: 'case',
+        onSale: true,
         sortBy: 'price',
         sortOrder: 'asc',
       });
 
       expect(key).toBe(
-        'product:list:page=2|limit=10|categoryId=cat-1|isActive=true|minPrice=10|maxPrice=100|search=case|sortBy=price|sortOrder=asc',
+        'product:list:page=2|limit=10|categoryId=cat-1|isActive=true|minPrice=10|maxPrice=100|search=case|onSale=true|sortBy=price|sortOrder=asc',
       );
     });
 
@@ -72,6 +73,19 @@ describe('cache-key.util', () => {
     it('includes isActive=false (a meaningful filter, not omitted)', () => {
       const key = buildProductListKey({ page: 1, limit: 20, isActive: false });
       expect(key).toContain('isActive=false');
+    });
+
+    it('keys onSale=true distinctly from onSale absent (no silent collision)', () => {
+      const withFilter = buildProductListKey({ page: 1, limit: 20, onSale: true });
+      const without = buildProductListKey({ page: 1, limit: 20 });
+
+      expect(withFilter).toContain('onSale=true');
+      expect(withFilter).not.toBe(without);
+    });
+
+    it('includes onSale=false (a meaningful filter, not omitted)', () => {
+      const key = buildProductListKey({ page: 1, limit: 20, onSale: false });
+      expect(key).toContain('onSale=false');
     });
   });
 

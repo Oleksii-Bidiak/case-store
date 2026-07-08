@@ -95,6 +95,28 @@ export class ProductListQueryDto {
   isActive?: boolean;
 
   @ApiProperty({
+    description:
+      'Filter to products currently on sale (compareAtPrice set and greater than price). ' +
+      'Composes with every other filter and with sortBy=bestselling (TASK-179).',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  // Read the ORIGINAL query value from `obj`, not the coerced `value`: under
+  // the global ValidationPipe's `enableImplicitConversion: true`, the raw
+  // string is Boolean-coerced BEFORE this transform runs — and
+  // `Boolean('false')` is `true`, so `?onSale=false` would wrongly filter to
+  // on-sale. Same fix as the `isActive` transform above (TASK-179).
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
+    return undefined;
+  })
+  @IsBoolean({ message: 'onSale must be true or false' })
+  onSale?: boolean;
+
+  @ApiProperty({
     description: 'Minimum price filter',
     example: '10.00',
     required: false,
