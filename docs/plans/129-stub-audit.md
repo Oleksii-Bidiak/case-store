@@ -1,6 +1,6 @@
 # Plan 129 — Storefront Stub Audit
 
-> **Status:** ⬜ Not started
+> **Status:** ✅ Done (2026-07-08)
 > **Phase:** Roadmap Етап 6 — Доробки після Етапу 5 (CRM, аналітика, контент/SEO-зручність,
 > адаптив, CI/CD) — **Хвиля 3** (Функціональні прогалини + SEO-зручність), **Block B**
 > **Created:** 2026-07-08
@@ -230,9 +230,9 @@ diff does not literally require the table to exist first)
 
 - [ ] `widgets/newsletter/ui/newsletter.tsx` converted to `"use client"`; each social item with a
       falsy or `"#"` `href` renders as a `<button type="button" onClick={() =>
-  toast(dict.home.newsletter.socialSoon)}>` instead of an `<a href="#">`; a social item with a
+toast(dict.home.newsletter.socialSoon)}>` instead of an `<a href="#">`; a social item with a
       real `href` (future-proofing) still renders as a real `<a target="_blank" rel="noopener
-  noreferrer">`
+noreferrer">`
 - [ ] `widgets/blog/ui/blog-newsletter.tsx` gets the identical treatment with
       `dict.blog.newsletter.socialSoon`
 - [ ] Both buttons are visually identical to today's anchors (same `className`, only + a

@@ -1,6 +1,6 @@
 # Plan 131 — "SEO-здоров'я" Health Section on `/settings/seo`
 
-> **Status:** ⬜ Not started
+> **Status:** ✅ Done (2026-07-08)
 > **Phase:** Roadmap Етап 6 — Доробки після Етапу 5 (CRM, аналітика, контент/SEO-зручність,
 > адаптив, CI/CD) — **Хвиля 3** (Функціональні прогалини + SEO-зручність), Block G
 > **Created:** 2026-07-08
@@ -254,7 +254,7 @@ unit + e2e tests per the acceptance criteria below.
 - [ ] `SeoHealthEntity` (`entities/seo-health.entity.ts`) — six `@ApiProperty({ type: Number })`
       fields (`productsMissingMetaTitle`, `productsTotal`, `categoriesMissingMetaTitle`,
       `categoriesTotal`, `pagesMissingMetaTitle`, `pagesTotal`) + `static fromCounts(counts:
-  ContentSeoCounts): SeoHealthEntity`
+ContentSeoCounts): SeoHealthEntity`
 - [ ] `SeoHealthResponseEnvelope` (`dto/seo-health-response.dto.ts`) — `{ data: SeoHealthEntity }`,
       `@ApiProperty({ type: SeoHealthEntity })`
 - [ ] `entities/index.ts` and `dto/index.ts` barrels updated
@@ -263,8 +263,8 @@ unit + e2e tests per the acceptance criteria below.
 - [ ] `AdminSeoSettingsController` gains `GET /health` (full route `GET /api/admin/seo-settings/health`)
       — `@UseGuards(AdminGuard)` (inherited from the class-level guard already on this controller),
       `@ApiBearerAuth('access-token')`, `@ApiOperation({ summary: 'Get SEO health checklist (admin)',
-  operationId: 'adminSeoSettingsControllerGetHealth' })`, `@ApiResponse({ status: 200, type:
-  SeoHealthResponseEnvelope })` + 401/403 responses matching the sibling `update()` method's style
+operationId: 'adminSeoSettingsControllerGetHealth' })`, `@ApiResponse({ status: 200, type:
+SeoHealthResponseEnvelope })` + 401/403 responses matching the sibling `update()` method's style
 - [ ] Draft/scheduled pages and inactive/soft-deleted products/categories are excluded from BOTH the
       numerator and the denominator of every count (per Design Decision 2) — pinned by a repository
       test seeding one draft page + one inactive product + one inactive category alongside published/
@@ -275,7 +275,7 @@ unit + e2e tests per the acceptance criteria below.
 - [ ] `seo-settings.service.spec.ts`: `getHealth()` maps repository output through
       `SeoHealthEntity.fromCounts` correctly
 - [ ] A new or extended e2e spec (`seo-settings.e2e-spec.ts` or similar): `GET
-  /api/admin/seo-settings/health` returns 401 unauthenticated, 403 as a non-admin user, and 200 with
+/api/admin/seo-settings/health` returns 401 unauthenticated, 403 as a non-admin user, and 200 with
       the expected shape as an admin, against seeded fixture data with a known mix of
       published/draft and active/inactive rows
 - [ ] `npm run typecheck`/`lint`/`build` clean for store-api

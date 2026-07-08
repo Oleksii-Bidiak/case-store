@@ -1,6 +1,6 @@
 # Plan 126 — Stock Phase S: «Вільний залишок» terminology + low-stock sold-out visibility
 
-> **Status:** ⬜ Not started
+> **Status:** ✅ Done (2026-07-08)
 > **Phase:** Roadmap Етап 6 — Доробки після Етапу 5 (CRM, аналітика, контент/SEO-зручність,
 > адаптив, CI/CD) — **Хвиля 3** (Функціональні прогалини + SEO-зручність), **Block B**
 > **Created:** 2026-07-08

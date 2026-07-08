@@ -1,6 +1,6 @@
 # Plan 130 — SERP Preview for Meta Fields
 
-> **Status:** ⬜ Not started
+> **Status:** ✅ Done (2026-07-08)
 > **Phase:** Roadmap Етап 6 — Доробки після Етапу 5 (CRM, аналітика, контент/SEO-зручність,
 > адаптив, CI/CD) — **Хвиля 3** (Функціональні прогалини + SEO-зручність), Block G
 > **Created:** 2026-07-08
@@ -372,12 +372,12 @@ resolver functions — only the two numeric constants, re-exported or duplicated
 **Acceptance Criteria:**
 
 - [ ] `product-form.tsx` calls `useSeoSettingsControllerGetSettings()` and `useWatch({ control, name:
-  "metaTitle" })` / `"metaDescription"` (the existing `nameValue`/`slugValue` watches are reused
+"metaTitle" })` / `"metaDescription"` (the existing `nameValue`/`slugValue` watches are reused
       for tier-3 content + the URL breadcrumb)
 - [ ] `SeoSnippetPreview` renders directly under the existing metaTitle/metaDescription fields, fed
       `resolveSeoPreviewTitle({ entityTitle: metaTitleValue, defaultTitle: settings?.defaultMetaTitle,
-  contentName: nameValue, titleTemplate: resolveEffectiveTitleTemplate(settings?.titleTemplate,
-  dict.brand) })` (and the description equivalent); `url` built from `slugValue` (fallback to the
+contentName: nameValue, titleTemplate: resolveEffectiveTitleTemplate(settings?.titleTemplate,
+dict.brand) })` (and the description equivalent); `url` built from `slugValue` (fallback to the
       live `slugify(nameValue)` preview already computed for the slug field) as
       `` `mobilestore.ua › products › ${slug}` `` (or the implementer's equivalent breadcrumb format —
       structural requirement is that it reflects the product's real PDP path, `/products/[slug]`)

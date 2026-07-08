@@ -1,6 +1,6 @@
 # Plan 127 — Stock Phase M: derived reserved/physical stock (admin contract only)
 
-> **Status:** ⬜ Not started
+> **Status:** ✅ Done (2026-07-08)
 > **Phase:** Roadmap Етап 6 — Доробки після Етапу 5 (CRM, аналітика, контент/SEO-зручність,
 > адаптив, CI/CD) — **Хвиля 3** (Функціональні прогалини + SEO-зручність), **Block B**
 > **Created:** 2026-07-08
@@ -281,7 +281,7 @@ the widget.
       declaring its own local copy; `shouldAutoRestock` unchanged otherwise
 - [ ] `ProductRepository.getReservedQtyByProductId(productIds: string[]): Promise<Map<string, number>>`
       added, mirroring `getUnitsSoldByProductId`'s shape (empty-input short-circuit returns `new
-    Map()` without touching Prisma)
+  Map()` without touching Prisma)
 - [ ] Unit test: empty `productIds` array returns an empty `Map` without calling
       `prismaMock.orderItem.groupBy`
 - [ ] Unit test: asserts the exact `groupBy` call shape —
@@ -292,7 +292,7 @@ the widget.
       edge case from discovery §5 (a revived order counts identically to any other live
       pre-shipment order; there is nothing revive-specific to filter on)
 - [ ] Unit test: given mocked `groupBy` rows `[{ productId: 'a', _sum: { quantity: 3 } }, { productId:
-    'b', _sum: { quantity: null } }]`, the returned `Map` has `a → 3` and `b → 0` (defensive
+  'b', _sum: { quantity: null } }]`, the returned `Map` has `a → 3` and `b → 0` (defensive
       `_sum.quantity ?? 0`, mirroring `getUnitsSoldByProductId`) and a requested `productId` absent
       from the rows is simply absent from the map (not `0`)
 - [ ] `apps/store-api/src/product/product.repository.spec.ts`: `prismaMock` gains
@@ -330,7 +330,7 @@ unit specs per the acceptance criteria below.
 - [ ] New `apps/store-api/src/product/entities/product.entity.spec.ts` (none exists today): asserts
       `fromPrisma({ ...base, reservedQty: 3, stock: 5 })` → `reservedQty: 3, physicalQty: 8`, and
       `fromPrisma({ ...base, stock: 5 })` (no `reservedQty` in the input) → `reservedQty: 0,
-    physicalQty: 5`
+  physicalQty: 5`
 - [ ] `product.service.ts` `findById`: after `productRepository.findById(id)`, calls
       `getReservedQtyByProductId([product.id])` and passes the resolved value into
       `ProductEntity.fromPrisma`
@@ -338,7 +338,7 @@ unit specs per the acceptance criteria below.
 - [ ] `product.service.ts`: new private `listFromDbForAdmin(params)` per Design Decision 3;
       `adminFindAll` calls it instead of the shared `listFromDb`; return type changes from
       `PaginatedProductsResponse` (alias) to a new `AdminPaginatedProductsResponse { data:
-    ProductEntity[]; meta: PaginationMeta }`
+  ProductEntity[]; meta: PaginationMeta }`
 - [ ] `product.controller.ts`: new `AdminProductListResponseEnvelope` (`data: [ProductEntity]`);
       `adminFindAll`'s `@ApiResponse({ type: ... })` and return type
       (`Promise<AdminProductListResponse>`) updated; `operationId` (`productControllerAdminFindAll`)
@@ -427,7 +427,7 @@ in Dependencies & Sequencing), TASK-253-A (shares `product-form.tsx`'s stock-fie
 - [ ] `product-form.tsx`: in edit mode only (`stockInfo` prop present), a second, dynamic hint line
       rendered under the existing static `stockHint` (TASK-253) reading e.g. "Фізично на складі: {N}
       шт (з них у {M} замовленнях на обробці)" — new `ProductFormProps.stockInfo?: { reservedQty:
-    number; physicalQty: number }` prop, passed from `edit-product-view.tsx` off the fetched
+  number; physicalQty: number }` prop, passed from `edit-product-view.tsx` off the fetched
       `product`; **omitted** in create mode (`create-product-view.tsx` passes no `stockInfo` — a
       brand-new product always has `reservedQty: 0`, so the line would be a no-op / clutter)
 - [ ] `admin-product-preview-view.tsx`: two new `dl` rows next to the existing "Запас"→"Вільний
@@ -480,7 +480,7 @@ Dependencies & Sequencing)
       `entities/order/index.ts`
 - [ ] `order-detail-view.tsx`: renders a "Тримає залишок: N шт" badge
       (`dict.orders.holdsStock(n)`) when `isPreShipmentStatus(order.status) && order.restockedAt ==
-    null`, where `N = order.items.reduce((sum, i) => sum + i.quantity, 0)` (computed inline or via
+  null`, where `N = order.items.reduce((sum, i) => sum + i.quantity, 0)` (computed inline or via
       a tiny local helper — no new backend field for the count)
 - [ ] `order-detail-view.tsx`: renders a "Залишок повернуто HH:MM" badge (`dict.orders.restockedAt(time)`)
       when `order.restockedAt != null`, formatted with the same `dateFormatter`/time-only variant
