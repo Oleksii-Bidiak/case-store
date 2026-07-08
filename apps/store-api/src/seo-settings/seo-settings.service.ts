@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { SeoSettingsRepository, UpsertSeoSettingsInput } from './seo-settings.repository';
-import { SeoSettingsEntity } from './entities';
+import { SeoSettingsEntity, SeoHealthEntity } from './entities';
 import { RevalidationNotifier } from '../publishing';
 
 /**
@@ -41,5 +41,18 @@ export class SeoSettingsService {
     await this.revalidation.revalidate({ tags: [SEO_SETTINGS_TAG] });
 
     return SeoSettingsEntity.fromPrisma(row);
+  }
+
+  /**
+   * SEO-health checklist counts (TASK-269) for the admin `/settings/seo` page.
+   * Six cheap COUNTs run in one `Promise.all` on the repository — no caching
+   * beyond the client's TanStack Query layer. The "defaults filled" and
+   * "noindex" checks are derived client-side from the settings entity the page
+   * already fetches, so they are intentionally not part of this payload.
+   */
+  async getHealth(): Promise<SeoHealthEntity> {
+    const counts = await this.repository.getContentSeoCounts();
+
+    return SeoHealthEntity.fromCounts(counts);
   }
 }

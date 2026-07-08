@@ -7,6 +7,7 @@ export {
   SeoSettingsRepository,
   SINGLETON_ID,
   UpsertSeoSettingsInput,
+  ContentSeoCounts,
 } from './seo-settings.repository';
-export { SeoSettingsEntity } from './entities';
-export { UpdateSeoSettingsDto } from './dto';
+export { SeoSettingsEntity, SeoHealthEntity } from './entities';
+export { UpdateSeoSettingsDto, SeoHealthResponseEnvelope } from './dto';
