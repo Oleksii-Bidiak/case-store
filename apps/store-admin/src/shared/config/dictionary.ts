@@ -185,8 +185,8 @@ export const dict = {
     colCreated: "Створено",
     // TASK-254: composite stock column — available (free-to-sell) / reserved
     // (tied up in unshipped orders) / physical (on the shelf = available + reserved).
+    // The sortable header uses the generic dict.common.sortByAria(label) helper.
     colStock: "Вільно / Резерв / Фізично",
-    colStockAria: "Сортувати за вільним залишком",
     back: "← Назад до товарів",
     createHeading: "Створення товару",
     editHeading: "Редагування товару",
