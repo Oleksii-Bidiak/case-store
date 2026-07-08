@@ -1,3 +1,4 @@
+import { OrderStatus } from '@prisma/client';
 import { ProductRepository } from './product.repository';
 import { PrismaService } from '../prisma';
 
@@ -15,6 +16,9 @@ const prismaMock = {
     findMany: jest.fn(),
   },
   review: {
+    groupBy: jest.fn(),
+  },
+  orderItem: {
     groupBy: jest.fn(),
   },
 };
@@ -225,6 +229,62 @@ describe('ProductRepository (soft-delete behaviour)', () => {
 
       const updateArgs = prismaMock.product.update.mock.calls[0][0];
       expect(updateArgs.data.sku).toBeNull();
+    });
+  });
+
+  // ─── Reserved-qty derivation (TASK-254) ─────────────────────────────────────
+  // Reserved = Σ OrderItem.quantity across orders in PRE_SHIPMENT_STATUSES
+  // (PENDING/CONFIRMED/PROCESSING), non-deleted. Critical inventory module — TDD.
+
+  describe('getReservedQtyByProductId', () => {
+    it('short-circuits an empty id list without touching Prisma', async () => {
+      const result = await repository.getReservedQtyByProductId([]);
+
+      expect(result).toEqual(new Map());
+      expect(prismaMock.orderItem.groupBy).not.toHaveBeenCalled();
+    });
+
+    it('groups by product over PRE_SHIPMENT statuses and non-deleted orders only', async () => {
+      prismaMock.orderItem.groupBy.mockResolvedValue([]);
+
+      await repository.getReservedQtyByProductId(['a', 'b']);
+
+      const args = prismaMock.orderItem.groupBy.mock.calls[0][0];
+      expect(args.by).toEqual(['productId']);
+      expect(args._sum).toEqual({ quantity: true });
+      expect(args.where.productId).toEqual({ in: ['a', 'b'] });
+      // SHIPPED/DELIVERED/CANCELLED/REFUNDED are excluded (discovery §5).
+      expect(args.where.order.status).toEqual({
+        in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING],
+      });
+      expect(args.where.order.status.in).not.toContain(OrderStatus.SHIPPED);
+      // Soft-deleted orders are excluded (discovery §5).
+      expect(args.where.order.deletedAt).toBeNull();
+    });
+
+    it('has no restockedAt key in the where clause (revive edge case, discovery §5)', async () => {
+      prismaMock.orderItem.groupBy.mockResolvedValue([]);
+
+      await repository.getReservedQtyByProductId(['a']);
+
+      const args = prismaMock.orderItem.groupBy.mock.calls[0][0];
+      // A revived order is indistinguishable from any other live pre-shipment
+      // order — there is nothing revive-specific to filter on.
+      expect(args.where.order).not.toHaveProperty('restockedAt');
+      expect(args.where).not.toHaveProperty('restockedAt');
+    });
+
+    it('maps summed quantities, defaulting a null _sum to 0 and omitting absent ids', async () => {
+      prismaMock.orderItem.groupBy.mockResolvedValue([
+        { productId: 'a', _sum: { quantity: 3 } },
+        { productId: 'b', _sum: { quantity: null } },
+      ]);
+
+      const result = await repository.getReservedQtyByProductId(['a', 'b', 'c']);
+
+      expect(result.get('a')).toBe(3);
+      expect(result.get('b')).toBe(0); // defensive `?? 0`
+      expect(result.has('c')).toBe(false); // absent from rows → absent from map
     });
   });
 

@@ -32,6 +32,7 @@ describe('DashboardRepository (integration)', () => {
   let paidProductId: string; // low stock + appears in a PAID order
   let unpaidProductId: string; // healthy stock + appears only in a PENDING (unpaid) order
   let cancelledProductId: string; // healthy stock + appears only in a CANCELLED order
+  let soldOutProductId: string; // stock 0, active — must appear at the top of low-stock (TASK-253)
 
   // Only the PAID order counts toward revenue: qty 3 @ $10 = $30.
   const EXPECTED_TOP_REVENUE = 30;
@@ -106,6 +107,20 @@ describe('DashboardRepository (integration)', () => {
     });
     cancelledProductId = cancelledProduct.id;
 
+    // Sold-out product (stock 0, active, non-deleted) — the most urgent restock
+    // signal. Must appear in low-stock and, via ascending order, sort first
+    // (TASK-253: dropped the old `stock > 0` filter).
+    const soldOutProduct = await prisma.product.create({
+      data: {
+        name: 'Dash Sold Out Product',
+        slug: `dash-soldout-${suffix}`,
+        price: '15.00',
+        categoryId,
+        stock: 0,
+      },
+    });
+    soldOutProductId = soldOutProduct.id;
+
     // PAID order for the paid product (DELIVERED + PAID): qty 3 @ $10 = $30.
     await prisma.order.create({
       data: {
@@ -151,7 +166,9 @@ describe('DashboardRepository (integration)', () => {
     await prisma.orderItem.deleteMany({});
     await prisma.order.deleteMany({});
     await prisma.product.deleteMany({
-      where: { id: { in: [paidProductId, unpaidProductId, cancelledProductId] } },
+      where: {
+        id: { in: [paidProductId, unpaidProductId, cancelledProductId, soldOutProductId] },
+      },
     });
     await prisma.category.deleteMany({ where: { id: categoryId } });
     await prisma.user.deleteMany({ where: { id: userId } });
@@ -209,17 +226,31 @@ describe('DashboardRepository (integration)', () => {
   });
 
   describe('getSummary — low stock', () => {
-    it('includes products at/below the threshold, excludes healthy stock, ordered ascending', async () => {
+    it('includes products at/below the threshold (incl. sold-out), excludes healthy stock, ordered ascending', async () => {
       const summary = await repo.getSummary();
       const products = summary.inventory.lowStockProducts;
 
       expect(products.find((p) => p.productId === paidProductId)).toBeDefined();
+      // Sold-out (stock 0) products now appear (TASK-253 dropped the `gt: 0` filter).
+      const soldOut = products.find((p) => p.productId === soldOutProductId);
+      expect(soldOut).toBeDefined();
+      expect(soldOut?.stock).toBe(0);
       expect(products.find((p) => p.productId === unpaidProductId)).toBeUndefined();
       expect(products.find((p) => p.productId === cancelledProductId)).toBeUndefined();
 
       const stocks = products.map((p) => p.stock);
       const sorted = [...stocks].sort((a, b) => a - b);
       expect(stocks).toEqual(sorted);
+
+      // The sold-out row sorts before every stock > 0 row (ascending on stock).
+      const soldOutIndex = products.findIndex((p) => p.productId === soldOutProductId);
+      const positiveStockIndexes = products
+        .map((p, i) => ({ stock: p.stock, i }))
+        .filter((r) => r.stock > 0)
+        .map((r) => r.i);
+      for (const idx of positiveStockIndexes) {
+        expect(soldOutIndex).toBeLessThan(idx);
+      }
     });
   });
 

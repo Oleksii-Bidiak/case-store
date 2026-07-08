@@ -86,7 +86,12 @@ export const dict = {
     product: "Товар",
     variant: "Варіант",
     sku: "Артикул",
-    stock: "Запас",
+    stock: "Вільний залишок",
+    soldOut: "Розпродано",
+    stockHint:
+      "Скільки одиниць товару можна продати прямо зараз. Це число вже враховує " +
+      "товари з непідтверджених/необроблених замовлень — вони віднімаються одразу " +
+      "при оформленні замовлення, а не при відправці.",
     noLowStock: "Немає товарів із низьким запасом.",
     topProducts: "Топ товари за виручкою",
     rank: "#",
@@ -177,6 +182,10 @@ export const dict = {
     colPrice: "Ціна",
     colStatus: "Статус",
     colCreated: "Створено",
+    // TASK-254: composite stock column — available (free-to-sell) / reserved
+    // (tied up in unshipped orders) / physical (on the shelf = available + reserved).
+    // The sortable header uses the generic dict.common.sortByAria(label) helper.
+    colStock: "Вільно / Резерв / Фізично",
     back: "← Назад до товарів",
     createHeading: "Створення товару",
     editHeading: "Редагування товару",
@@ -197,7 +206,10 @@ export const dict = {
       "Цей товар деактивований і не відображається для покупців. Це службовий перегляд.",
     previewNoImages: "Зображень немає",
     previewCategory: "Категорія",
-    previewStock: "Запас",
+    previewStock: "Вільний залишок",
+    // TASK-254: reserved / physical breakdown next to the free-to-sell залишок.
+    previewReserved: "Резерв (у замовленнях)",
+    previewPhysical: "Фізично на складі",
     previewSku: "Артикул",
     previewAttributes: "Атрибути",
     previewSiblings: "Інші позиції групи",
@@ -218,7 +230,15 @@ export const dict = {
     category: "Категорія",
     categoryPlaceholder: "Оберіть категорію",
     loading: "Завантаження…",
-    stock: "Запас",
+    stock: "Вільний залишок",
+    stockHint:
+      "Скільки одиниць товару можна продати прямо зараз. Це число вже враховує " +
+      "товари з непідтверджених/необроблених замовлень — вони віднімаються одразу " +
+      "при оформленні замовлення, а не при відправці.",
+    // TASK-254: dynamic breakdown shown under the static hint in edit mode only.
+    stockBreakdownHint: (physicalQty: number, reservedQty: number) =>
+      `Фізично на складі: ${physicalQty} шт (з них у ${reservedQty} шт зарезервовано ` +
+      `замовленнями на обробці).`,
     positionOrder: "Порядок позиції",
     group: "Група",
     groupNone: "Без групи",
@@ -255,7 +275,7 @@ export const dict = {
       compareNumber: "Стара ціна має бути числом",
       comparePositive: "Стара ціна має бути більшою за 0",
       skuMax: "Артикул має містити не більше 50 символів",
-      stockInt: "Запас має бути цілим числом ≥ 0",
+      stockInt: "Вільний залишок має бути цілим числом ≥ 0",
       categoryRequired: "Оберіть категорію",
       groupInvalid: "Оберіть коректну групу",
       brandInvalid: "Оберіть коректний бренд",
@@ -1100,6 +1120,9 @@ export const dict = {
     billingAddress: "Платіжна адреса",
     notes: "Примітки",
     loadOneError: "Не вдалося завантажити замовлення. Спробуйте ще раз.",
+    // TASK-254: stock-hold badges on the order detail page.
+    holdsStock: (n: number) => `Тримає залишок: ${n} шт`,
+    restockedAt: (time: string) => `Залишок повернуто ${time}`,
   },
 
   reviews: {

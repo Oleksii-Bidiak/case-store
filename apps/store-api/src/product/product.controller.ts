@@ -78,6 +78,23 @@ class ProductListResponseEnvelope {
 }
 
 /**
+ * Response envelope for the ADMIN paginated product list (TASK-254). Items are
+ * full {@link ProductEntity} objects carrying raw `stock`, `isActive`, and the
+ * derived `reservedQty`/`physicalQty` — the public list envelope deliberately
+ * exposes none of these.
+ */
+class AdminProductListResponseEnvelope {
+  @ApiProperty({
+    type: [ProductEntity],
+    description: 'Products for the current page (admin, all statuses)',
+  })
+  data!: ProductEntity[];
+
+  @ApiProperty({ type: PaginationMeta })
+  meta!: PaginationMeta;
+}
+
+/**
  * Response envelope for the by-ids card hydration (TASK-211). No pagination
  * meta — the request is bounded by {@link ProductCardsQueryDto}'s max-ids cap.
  */
@@ -147,6 +164,7 @@ class GroupDeviceCompatResponseEnvelope {
 type ProductResponse = { data: ProductEntity };
 type GroupDeviceCompatResponse = { data: { updatedCount: number } };
 type ProductListResponse = { data: PublicProductEntity[]; meta: PaginationMeta };
+type AdminProductListResponse = { data: ProductEntity[]; meta: PaginationMeta };
 type ProductCardsResponse = { data: PublicProductEntity[] };
 type ProductDetailResponse = {
   data: PublicProductEntity;
@@ -186,6 +204,7 @@ type AdminProductPreviewResponse = {
   ProductVariantColorEntity,
   ProductResponseEnvelope,
   ProductListResponseEnvelope,
+  AdminProductListResponseEnvelope,
   ProductCardsResponseEnvelope,
   ProductDetailResponseEnvelope,
   AdminProductPreviewResponseEnvelope,
@@ -237,10 +256,10 @@ export class ProductController {
   @ApiResponse({
     status: 200,
     description: 'Paginated list of products (all statuses)',
-    type: ProductListResponseEnvelope,
+    type: AdminProductListResponseEnvelope,
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  async adminFindAll(@Query() query: ProductListQueryDto): Promise<ProductListResponse> {
+  async adminFindAll(@Query() query: ProductListQueryDto): Promise<AdminProductListResponse> {
     return this.productService.adminFindAll(query);
   }
 

@@ -58,6 +58,17 @@ interface PaginatedProductsResponse {
 }
 
 /**
+ * Admin paginated list envelope (TASK-254). Unlike the public
+ * {@link PaginatedProductsResponse}, items are full {@link ProductEntity}
+ * objects carrying raw `stock`, `isActive`, and the derived
+ * `reservedQty`/`physicalQty` — the public list deliberately never exposes these.
+ */
+interface AdminPaginatedProductsResponse {
+  data: ProductEntity[];
+  meta: PaginationMeta;
+}
+
+/**
  * Product detail response with category, group (siblings + axes), and images.
  */
 interface ProductDetailResponse {
@@ -156,12 +167,12 @@ export class ProductService {
    * cache layer: the admin table must reflect activate/deactivate toggles
    * immediately, and admin traffic is too low to be worth caching (TASK-230).
    */
-  async adminFindAll(query: ProductListQueryDto): Promise<PaginatedProductsResponse> {
+  async adminFindAll(query: ProductListQueryDto): Promise<AdminPaginatedProductsResponse> {
     const params: FindAllParams = {
       ...this.toListParams(query),
       categoryIds: await this.resolveSubtreeIds(query.categoryId),
     };
-    return this.listFromDb(params);
+    return this.listFromDbForAdmin(params);
   }
 
   /**
@@ -237,6 +248,37 @@ export class ProductService {
   }
 
   /**
+   * Admin variant of {@link listFromDb} (TASK-254). Reuses the exact same
+   * paginated repository query (`findAll`) but builds {@link ProductEntity}
+   * items — carrying raw `stock`, `isActive`, and the derived
+   * `reservedQty`/`physicalQty` — instead of the public-safe `PublicProductEntity`.
+   * The reserved aggregate is fetched once for the whole page (one `groupBy`),
+   * never per-row.
+   */
+  private async listFromDbForAdmin(params: FindAllParams): Promise<AdminPaginatedProductsResponse> {
+    const { products, total } = await this.productRepository.findAll(params);
+    const reservedByProductId = await this.productRepository.getReservedQtyByProductId(
+      products.map((product) => product.id),
+    );
+    const totalPages = Math.ceil(total / params.limit);
+
+    return {
+      data: products.map((product) =>
+        ProductEntity.fromPrisma({
+          ...product,
+          reservedQty: reservedByProductId.get(product.id) ?? 0,
+        }),
+      ),
+      meta: {
+        total,
+        page: params.page,
+        limit: params.limit,
+        totalPages,
+      },
+    };
+  }
+
+  /**
    * Get a product by slug with its category, variants, and images.
    * Public endpoint — used for product detail pages.
    * Cache-aside; throws NotFoundException if the product is not found.
@@ -291,7 +333,14 @@ export class ProductService {
     // spec editor. This detail cache is evicted whenever specs change
     // (updateSpecs → evictProductDetail), so it stays consistent.
     const specValues = await this.specRepository.getSpecs(id);
-    const entity = ProductEntity.fromPrisma({ ...product, compatibleDeviceModels, specValues });
+    // Derived reserved/physical for the admin edit form's stock breakdown (TASK-254).
+    const reservedByProductId = await this.productRepository.getReservedQtyByProductId([id]);
+    const entity = ProductEntity.fromPrisma({
+      ...product,
+      compatibleDeviceModels,
+      specValues,
+      reservedQty: reservedByProductId.get(id) ?? 0,
+    });
     await this.cache.set(cacheKey, entity, this.cacheTtlSeconds);
     return entity;
   }
@@ -324,8 +373,15 @@ export class ProductService {
     }
 
     const { category, group, images, ...productFields } = product;
+    // Derived reserved/physical for the admin preview's stock rows (TASK-254).
+    const reservedByProductId = await this.productRepository.getReservedQtyByProductId([
+      product.id,
+    ]);
     return {
-      data: ProductEntity.fromPrisma(productFields),
+      data: ProductEntity.fromPrisma({
+        ...productFields,
+        reservedQty: reservedByProductId.get(product.id) ?? 0,
+      }),
       category: ProductCategoryEntity.fromPrisma(category),
       group: group ? ProductGroupEntity.fromPrisma(group) : null,
       images: images.map((img) => ProductImageEntity.fromPrisma(img)),

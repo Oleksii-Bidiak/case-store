@@ -149,6 +149,13 @@ export function AdminProductTable() {
                 />
                 <TableHead>{dict.products.colStatus}</TableHead>
                 <SortableColumnHeader
+                  field="stock"
+                  label={dict.products.colStock}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
+                <SortableColumnHeader
                   field="createdAt"
                   label={dict.products.colCreated}
                   sortBy={sortBy}
@@ -173,6 +180,17 @@ export function AdminProductTable() {
                       productId={product.id}
                       isActive={product.isActive}
                     />
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    <span className="font-medium text-foreground">
+                      {product.stock}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {" / "}
+                      {product.reservedQty}
+                      {" / "}
+                      {product.physicalQty}
+                    </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {new Date(product.createdAt).toLocaleDateString()}

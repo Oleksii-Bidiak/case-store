@@ -14,22 +14,12 @@ import { MailOutboxService } from '../mail-outbox';
 import { DeliveryService } from '../delivery';
 import { DiscountService } from '../discount';
 import { OrderEntity } from './entities';
+import { PRE_SHIPMENT_STATUSES } from './order.constants';
 import type { CreateOrderDto, OrderListQueryDto, AdminOrderListQueryDto } from './dto';
 import type { CreateOrderParams } from './order.types';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
-
-/**
- * Order statuses whose stock is still in the warehouse (reserved at creation,
- * not yet shipped to the customer). Cancelling an order from one of these
- * states can safely return the reserved stock to inventory automatically.
- */
-const PRE_SHIPMENT_STATUSES: ReadonlySet<OrderStatus> = new Set([
-  OrderStatus.PENDING,
-  OrderStatus.CONFIRMED,
-  OrderStatus.PROCESSING,
-]);
 
 /**
  * Whether a status transition should automatically return reserved stock to
@@ -354,7 +344,19 @@ export class OrderService {
     // order status leaves the existing payment status untouched (forwarded
     // unchanged); the admin manages payment independently via
     // adminUpdatePaymentStatus. (Previously TASK-123 auto-derived PAID here.)
-    const order = await this.orderRepository.updateStatus(orderId, status, existing.paymentStatus);
+    //
+    // TASK-254: a plain transition that crosses the pre-shipment boundary
+    // (e.g. PROCESSING→SHIPPED, CONFIRMED→DELIVERED, or CANCELLED→PROCESSING)
+    // changes each line-item product's DERIVED reservedQty/physicalQty without
+    // touching `stock` — so the cached admin `ProductEntity` (findById) must be
+    // evicted, exactly as the restock/revive paths already do. A transition that
+    // stays on the same side (PENDING→CONFIRMED, SHIPPED→DELIVERED) leaves
+    // reserved membership unchanged and needs no eviction.
+    const crossesPreShipmentBoundary =
+      PRE_SHIPMENT_STATUSES.has(existing.status) !== PRE_SHIPMENT_STATUSES.has(status);
+    const order = await this.orderRepository.updateStatus(orderId, status, existing.paymentStatus, {
+      evictProductStockCaches: crossesPreShipmentBoundary,
+    });
     return OrderEntity.fromPrisma(order);
   }
 

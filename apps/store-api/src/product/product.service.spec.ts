@@ -62,6 +62,9 @@ const productRepositoryMock = {
   deactivate: jest.fn(),
   activate: jest.fn(),
   softDelete: jest.fn(),
+  // TASK-254: derived reserved-qty aggregate. Defaults to an empty map (no
+  // reservations); individual tests override to assert the enrichment.
+  getReservedQtyByProductId: jest.fn().mockResolvedValue(new Map<string, number>()),
 };
 
 // ─── CategoryRepository mock (TASK-236 subtree rollup) ────────────────────────
@@ -161,6 +164,7 @@ describe('ProductService', () => {
     specRepositoryMock.getSpecs.mockResolvedValue([]);
     specRepositoryMock.setSpecs.mockResolvedValue(undefined);
     attributeDefinitionRepositoryMock.findEffectiveForCategory.mockResolvedValue([]);
+    productRepositoryMock.getReservedQtyByProductId.mockResolvedValue(new Map<string, number>());
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -339,6 +343,37 @@ describe('ProductService', () => {
         expect.objectContaining({ isActive: false }),
       );
     });
+
+    // TASK-254: the admin list now returns full ProductEntity items (raw stock,
+    // reservedQty/physicalQty) — not the PublicProductEntity the public list uses.
+    it('returns ProductEntity items enriched with derived reserved/physical stock', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [mockProduct], total: 1 });
+      productRepositoryMock.getReservedQtyByProductId.mockResolvedValue(
+        new Map([['product-uuid-1', 4]]),
+      );
+
+      const result = await service.adminFindAll({ page: 1, limit: 20 });
+
+      expect(result.data[0]).toBeInstanceOf(ProductEntity);
+      expect(result.data[0]).not.toBeInstanceOf(PublicProductEntity);
+      expect(result.data[0].stock).toBe(150);
+      expect(result.data[0].reservedQty).toBe(4);
+      expect(result.data[0].physicalQty).toBe(154); // stock + reserved
+      // The aggregate is fetched once for the whole page of ids.
+      expect(productRepositoryMock.getReservedQtyByProductId).toHaveBeenCalledWith([
+        'product-uuid-1',
+      ]);
+    });
+
+    it('defaults reservedQty to 0 (physicalQty = stock) for a product with no reservations', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [mockProduct], total: 1 });
+      // Default mock returns an empty map → no reservation for this product.
+
+      const result = await service.adminFindAll({ page: 1, limit: 20 });
+
+      expect(result.data[0].reservedQty).toBe(0);
+      expect(result.data[0].physicalQty).toBe(150);
+    });
   });
 
   // ─── getCardsByIds (public, TASK-211) ────────────────────────────────────────
@@ -447,6 +482,22 @@ describe('ProductService', () => {
       expect(productRepositoryMock.findById).toHaveBeenCalledWith('product-uuid-1');
     });
 
+    // TASK-254: the edit form's stock breakdown needs the derived reserved/physical.
+    it('enriches the entity with the derived reserved/physical stock', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.getReservedQtyByProductId.mockResolvedValue(
+        new Map([['product-uuid-1', 2]]),
+      );
+
+      const result = await service.findById('product-uuid-1');
+
+      expect(result.reservedQty).toBe(2);
+      expect(result.physicalQty).toBe(152); // 150 + 2
+      expect(productRepositoryMock.getReservedQtyByProductId).toHaveBeenCalledWith([
+        'product-uuid-1',
+      ]);
+    });
+
     it('should throw NotFoundException when product is not found', async () => {
       productRepositoryMock.findById.mockResolvedValue(null);
 
@@ -490,6 +541,22 @@ describe('ProductService', () => {
       expect(result).toHaveProperty('category');
       expect(result).toHaveProperty('group');
       expect(result).toHaveProperty('images');
+    });
+
+    // TASK-254: the preview's stock rows need the derived reserved/physical.
+    it('enriches the preview entity with the derived reserved/physical stock', async () => {
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(inactiveWithRelations);
+      productRepositoryMock.getReservedQtyByProductId.mockResolvedValue(
+        new Map([['product-uuid-2', 7]]),
+      );
+
+      const result = await service.findBySlugForAdminPreview('discontinued-case');
+
+      expect(result.data.reservedQty).toBe(7);
+      expect(result.data.physicalQty).toBe(157); // 150 + 7
+      expect(productRepositoryMock.getReservedQtyByProductId).toHaveBeenCalledWith([
+        'product-uuid-2',
+      ]);
     });
 
     it('should NOT read or write the public detail cache', async () => {

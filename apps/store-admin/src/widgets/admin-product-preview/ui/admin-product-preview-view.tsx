@@ -146,6 +146,18 @@ export function AdminProductPreviewView({
           </dt>
           <dd className="font-medium text-foreground">{product.stock}</dd>
         </div>
+        <div className="flex justify-between gap-4 border-b border-border py-1.5">
+          <dt className="text-muted-foreground">
+            {dict.products.previewReserved}
+          </dt>
+          <dd className="font-medium text-foreground">{product.reservedQty}</dd>
+        </div>
+        <div className="flex justify-between gap-4 border-b border-border py-1.5">
+          <dt className="text-muted-foreground">
+            {dict.products.previewPhysical}
+          </dt>
+          <dd className="font-medium text-foreground">{product.physicalQty}</dd>
+        </div>
         {product.sku && (
           <div className="flex justify-between gap-4 border-b border-border py-1.5">
             <dt className="text-muted-foreground">

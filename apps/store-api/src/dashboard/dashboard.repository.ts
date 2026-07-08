@@ -365,10 +365,16 @@ export class DashboardRepository {
     }));
   }
 
-  /** Active positions with stock in `(0, threshold]`, lowest first. */
+  /**
+   * Active positions with stock in `[0, threshold]`, lowest first — sold-out
+   * (`stock = 0`) positions are the single most urgent restock signal, so they
+   * are included and, via `orderBy: { stock: 'asc' }`, float to the very top
+   * (TASK-253). The `CHECK (stock >= 0)` constraint means dropping the old
+   * `gt: 0` filter can never admit negative rows.
+   */
   private async getLowStockProducts(threshold: number, limit: number): Promise<LowStockProduct[]> {
     const products = await this.prisma.product.findMany({
-      where: { stock: { gt: 0, lte: threshold }, isActive: true, deletedAt: null },
+      where: { stock: { lte: threshold }, isActive: true, deletedAt: null },
       orderBy: { stock: 'asc' },
       take: limit,
       select: { id: true, name: true, stock: true },

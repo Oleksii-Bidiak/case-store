@@ -108,6 +108,8 @@ export function makeOrder(overrides: Partial<OrderEntity> = {}): {
       billingAddress: null,
       notes: null,
       items: [makeOrderItem()],
+      // TASK-254: OrderEntity now carries restockedAt (null unless auto-restocked).
+      restockedAt: null,
       createdAt: "2026-06-01T00:00:00.000Z",
       updatedAt: "2026-06-01T00:00:00.000Z",
       ...overrides,

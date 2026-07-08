@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma';
 import { Product, Prisma, AttributeType, PaymentStatus } from '@prisma/client';
 import { rankProductIdsBySales } from './bestseller-rank.util';
+import { PRE_SHIPMENT_STATUSES } from '../order/order.constants';
 
 /**
  * Parameters for paginated product queries with filtering.
@@ -498,6 +499,8 @@ export class ProductRepository {
       createdAt: 'createdAt',
       price: 'price',
       name: 'name',
+      // Admin "Вільно" sort by available stock (TASK-254).
+      stock: 'stock',
     };
     const sortField = allowedSortFields[sortBy ?? 'createdAt'];
     if (!sortField) {
@@ -564,6 +567,39 @@ export class ProductRepository {
       where: {
         productId: { in: productIds },
         order: { paymentStatus: PaymentStatus.PAID, deletedAt: null },
+      },
+      _sum: { quantity: true },
+    });
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      map.set(row.productId, row._sum.quantity ?? 0);
+    }
+    return map;
+  }
+
+  /**
+   * Reserved (still-held) quantity per product — Σ `OrderItem.quantity` across
+   * orders whose status is in {@link PRE_SHIPMENT_STATUSES} (PENDING / CONFIRMED
+   * / PROCESSING) and that are not soft-deleted (TASK-254). This is the derived
+   * "units tied up in unshipped orders" figure the admin panel surfaces as
+   * «Резерв»; `stock` already had these units subtracted at order creation, so
+   * physical = stock + reserved.
+   *
+   * Sibling of {@link getUnitsSoldByProductId} — same empty-input short-circuit,
+   * same "absent from the map ⇒ zero" contract. No `restockedAt` filter is
+   * needed: a live pre-shipment order never carries `restockedAt` (only a
+   * CANCELLED order can, and `revive` clears it back to null), so a revived
+   * order counts identically to any other live one — exactly correct.
+   */
+  async getReservedQtyByProductId(productIds: string[]): Promise<Map<string, number>> {
+    if (productIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.prisma.orderItem.groupBy({
+      by: ['productId'],
+      where: {
+        productId: { in: productIds },
+        order: { status: { in: [...PRE_SHIPMENT_STATUSES] }, deletedAt: null },
       },
       _sum: { quantity: true },
     });

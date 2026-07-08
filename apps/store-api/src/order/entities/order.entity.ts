@@ -116,6 +116,18 @@ export class OrderEntity {
   })
   customer?: OrderCustomerData;
 
+  @ApiProperty({
+    description:
+      'When reserved stock was auto-returned to inventory on cancellation (TASK-228), ' +
+      'or null while the order still holds stock / was never restocked. Set once when a ' +
+      'pre-shipment order is cancelled and cleared back to null if the order is revived.',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    example: '2024-01-01T00:00:00.000Z',
+  })
+  restockedAt!: Date | null;
+
   @ApiProperty({ description: 'Creation timestamp', example: '2024-01-01T00:00:00.000Z' })
   createdAt!: Date;
 
@@ -152,6 +164,7 @@ export class OrderEntity {
         lastName: order.user.lastName,
       };
     }
+    entity.restockedAt = order.restockedAt;
     entity.createdAt = order.createdAt;
     entity.updatedAt = order.updatedAt;
     return entity;

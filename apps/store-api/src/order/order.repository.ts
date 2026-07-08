@@ -318,17 +318,34 @@ export class OrderRepository {
    * Ownership, transition validity, and the status→paymentStatus coupling are
    * computed by the service (TASK-123) before this is called; the repository
    * only persists the two columns the service hands it.
+   *
+   * When `evictProductStockCaches` is set the affected products' detail caches
+   * are evicted afterwards (TASK-254): a plain status transition that crosses
+   * the pre-shipment boundary (e.g. PROCESSING→SHIPPED, or CANCELLED→PROCESSING)
+   * changes each line-item product's DERIVED reserved/physical figures without
+   * touching `stock`, so the cached `ProductEntity` on `GET /products/admin/:id`
+   * would otherwise serve stale reserved/physical for up to the TTL. The service
+   * owns the boundary-crossing decision (it knows PRE_SHIPMENT_STATUSES); the
+   * repository just reuses the same {@link evictProductCaches} helper the
+   * restock/revive paths use.
    */
-  updateStatus(
+  async updateStatus(
     orderId: string,
     status: OrderStatus,
     paymentStatus: PaymentStatus,
+    options: { evictProductStockCaches?: boolean } = {},
   ): Promise<OrderWithItems> {
-    return this.prisma.order.update({
+    const updated = (await this.prisma.order.update({
       where: { id: orderId },
       data: { status, paymentStatus },
       include: ORDERS_INCLUDE,
-    }) as Promise<OrderWithItems>;
+    })) as OrderWithItems;
+
+    if (options.evictProductStockCaches) {
+      await this.evictProductCaches(updated.items);
+    }
+
+    return updated;
   }
 
   /**

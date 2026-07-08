@@ -593,10 +593,12 @@ describe('OrderService', () => {
       const result = await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED);
 
       // TASK-151: paymentStatus is forwarded unchanged (PENDING), not auto-derived.
+      // (4th arg = TASK-254 cache-eviction options; asserted in its own block below.)
       expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
         'order-uuid-1',
         OrderStatus.CONFIRMED,
         PaymentStatus.PENDING,
+        expect.anything(),
       );
       expect(result.status).toBe(OrderStatus.CONFIRMED);
     });
@@ -643,6 +645,7 @@ describe('OrderService', () => {
         'order-uuid-1',
         status,
         PaymentStatus.PENDING,
+        expect.anything(),
       );
       expect(result.paymentStatus).toBe(PaymentStatus.PENDING);
     });
@@ -656,6 +659,7 @@ describe('OrderService', () => {
         'order-uuid-1',
         OrderStatus.REFUNDED,
         PaymentStatus.PAID,
+        expect.anything(),
       );
     });
 
@@ -668,6 +672,94 @@ describe('OrderService', () => {
         'order-uuid-1',
         OrderStatus.DELIVERED,
         PaymentStatus.PAID,
+        expect.anything(),
+      );
+    });
+  });
+
+  // ─── updateStatus — product cache eviction on pre-shipment boundary (TASK-254) ─
+  // A plain status transition that crosses the pre-shipment boundary changes the
+  // affected products' DERIVED reservedQty/physicalQty (via getReservedQtyByProductId)
+  // without touching `stock`, so the cached admin ProductEntity (findById) must be
+  // evicted. The service tells the repository whether to evict via the 4th arg.
+
+  describe('updateStatus — product cache eviction on pre-shipment boundary (TASK-254)', () => {
+    const seedAndEcho = (current: Partial<OrderWithItems>) => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder(current));
+      orderRepositoryMock.updateStatus.mockImplementation(
+        (_id: string, status: OrderStatus, paymentStatus: PaymentStatus) =>
+          Promise.resolve(makeOrder({ status, paymentStatus })),
+      );
+    };
+
+    it('evicts product caches when leaving pre-shipment (PROCESSING → SHIPPED)', async () => {
+      seedAndEcho({ status: OrderStatus.PROCESSING, paymentStatus: PaymentStatus.PAID });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED);
+
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.SHIPPED,
+        PaymentStatus.PAID,
+        { evictProductStockCaches: true },
+      );
+    });
+
+    it('evicts product caches when leaving pre-shipment (CONFIRMED → DELIVERED)', async () => {
+      seedAndEcho({ status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.DELIVERED);
+
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.DELIVERED,
+        PaymentStatus.PAID,
+        { evictProductStockCaches: true },
+      );
+    });
+
+    it('evicts product caches when re-entering pre-shipment (CANCELLED → PROCESSING)', async () => {
+      // A never-restocked cancelled order (restockedAt null) moved back into a
+      // live pre-shipment status takes the plain updateStatus path (not revive).
+      seedAndEcho({
+        status: OrderStatus.CANCELLED,
+        paymentStatus: PaymentStatus.PENDING,
+        restockedAt: null,
+      });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.PROCESSING);
+
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.PROCESSING,
+        PaymentStatus.PENDING,
+        { evictProductStockCaches: true },
+      );
+    });
+
+    it('does NOT evict when staying within pre-shipment (PENDING → CONFIRMED)', async () => {
+      seedAndEcho({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED);
+
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.CONFIRMED,
+        PaymentStatus.PENDING,
+        { evictProductStockCaches: false },
+      );
+    });
+
+    it('does NOT evict when staying post-shipment (SHIPPED → DELIVERED)', async () => {
+      seedAndEcho({ status: OrderStatus.SHIPPED, paymentStatus: PaymentStatus.PAID });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.DELIVERED);
+
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.DELIVERED,
+        PaymentStatus.PAID,
+        { evictProductStockCaches: false },
       );
     });
   });
@@ -782,6 +874,7 @@ describe('OrderService', () => {
           'order-uuid-1',
           OrderStatus.CANCELLED,
           PaymentStatus.PAID,
+          expect.anything(),
         );
       },
     );
@@ -798,6 +891,7 @@ describe('OrderService', () => {
         'order-uuid-1',
         OrderStatus.REFUNDED,
         PaymentStatus.PAID,
+        expect.anything(),
       );
     });
 
@@ -811,6 +905,7 @@ describe('OrderService', () => {
         'order-uuid-1',
         OrderStatus.CANCELLED,
         PaymentStatus.PAID,
+        expect.anything(),
       );
     });
 
@@ -893,6 +988,7 @@ describe('OrderService', () => {
         'order-uuid-1',
         OrderStatus.REFUNDED,
         PaymentStatus.PAID,
+        expect.anything(),
       );
     });
 
@@ -919,6 +1015,7 @@ describe('OrderService', () => {
         'order-uuid-1',
         OrderStatus.PENDING,
         PaymentStatus.PAID,
+        expect.anything(),
       );
     });
 
@@ -949,6 +1046,7 @@ describe('OrderService', () => {
         'order-uuid-1',
         OrderStatus.CANCELLED,
         PaymentStatus.PENDING,
+        expect.anything(),
       );
     });
   });
@@ -1104,6 +1202,23 @@ describe('OrderService', () => {
         firstName: null,
         lastName: null,
       });
+    });
+  });
+
+  // ─── OrderEntity.fromPrisma — restockedAt pass-through (TASK-254) ─────────────
+
+  describe('OrderEntity.fromPrisma — restockedAt', () => {
+    it('round-trips restockedAt when null (order still holds stock / never restocked)', () => {
+      const entity = OrderEntity.fromPrisma(makeOrder({ restockedAt: null }));
+
+      expect(entity.restockedAt).toBeNull();
+    });
+
+    it('round-trips restockedAt when a Date (stock returned on cancellation, TASK-228)', () => {
+      const restockedAt = new Date('2026-07-08T10:30:00.000Z');
+      const entity = OrderEntity.fromPrisma(makeOrder({ restockedAt }));
+
+      expect(entity.restockedAt).toEqual(restockedAt);
     });
   });
 });

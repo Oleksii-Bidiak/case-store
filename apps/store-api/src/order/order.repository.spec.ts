@@ -333,6 +333,43 @@ describe('OrderRepository', () => {
     });
   });
 
+  // ─── updateStatus — conditional product-cache eviction (TASK-254) ───────────
+
+  describe('updateStatus', () => {
+    const updatedOrder = {
+      id: 'order-1',
+      status: OrderStatus.SHIPPED,
+      items: [{ productId: 'product-uuid-1', product: { slug: 'iphone-15-pro-case' } }],
+    };
+
+    it('persists status/paymentStatus and does NOT evict when the flag is unset', async () => {
+      prismaMock.order.update.mockResolvedValue(updatedOrder);
+
+      await repository.updateStatus('order-1', OrderStatus.SHIPPED, PaymentStatus.PAID);
+
+      expect(prismaMock.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { status: OrderStatus.SHIPPED, paymentStatus: PaymentStatus.PAID },
+        include: expect.any(Object),
+      });
+      // Default (no options) leaves derived-stock caches untouched.
+      expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+      expect(cacheMock.del).not.toHaveBeenCalled();
+    });
+
+    it('evicts list pages and each line-item product detail cache when the flag is set', async () => {
+      prismaMock.order.update.mockResolvedValue(updatedOrder);
+
+      await repository.updateStatus('order-1', OrderStatus.SHIPPED, PaymentStatus.PAID, {
+        evictProductStockCaches: true,
+      });
+
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.del).toHaveBeenCalledWith(productDetailSlugKey('iphone-15-pro-case'));
+      expect(cacheMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
+    });
+  });
+
   // ─── soft-delete read filters & tombstone (TASK-104) ───────────────────────
 
   describe('soft-delete behaviour', () => {

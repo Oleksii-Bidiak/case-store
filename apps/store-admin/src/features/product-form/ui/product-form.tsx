@@ -77,6 +77,13 @@ interface ProductFormProps {
    * can be assigned).
    */
   renderSpecsSection?: (categoryId: string) => React.ReactNode;
+  /**
+   * Derived stock breakdown (TASK-254) — passed in EDIT mode only. When present,
+   * a dynamic line under the static stock hint shows the physical / reserved
+   * split. Omitted in create mode (a brand-new product always has reservedQty 0,
+   * so the line would be a no-op).
+   */
+  stockInfo?: { reservedQty: number; physicalQty: number };
 }
 
 /** Empty form baseline used for create mode and as the merge base in edit mode. */
@@ -112,6 +119,7 @@ export function ProductForm({
   isPending,
   submitLabel = dict.productForm.submit,
   renderSpecsSection,
+  stockInfo,
 }: ProductFormProps) {
   const {
     register,
@@ -328,6 +336,17 @@ export function ProductForm({
             min="0"
             {...register("stock")}
           />
+          <p className="text-sm text-muted-foreground">
+            {dict.productForm.stockHint}
+          </p>
+          {stockInfo && (
+            <p className="text-sm text-muted-foreground">
+              {dict.productForm.stockBreakdownHint(
+                stockInfo.physicalQty,
+                stockInfo.reservedQty,
+              )}
+            </p>
+          )}
           {errors.stock && (
             <p role="alert" className="text-sm text-destructive">
               {errors.stock.message}
