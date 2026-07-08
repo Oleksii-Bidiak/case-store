@@ -6,8 +6,9 @@ import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { LoginForm } from "./login-form";
 import { RegisterForm } from "./register-form";
+import { ForgotPasswordForm } from "./forgot-password-form";
 
-type Tab = "login" | "register";
+type Tab = "login" | "register" | "forgot";
 
 interface AuthSheetProps {
   open: boolean;
@@ -77,12 +78,15 @@ export function AuthSheet({ open, onOpenChange }: AuthSheetProps) {
                 <LoginForm
                   onAuthenticated={close}
                   onSwitchToRegister={() => setTab("register")}
+                  onForgotPassword={() => setTab("forgot")}
                 />
-              ) : (
+              ) : tab === "register" ? (
                 <RegisterForm
                   onAuthenticated={close}
                   onSwitchToLogin={() => setTab("login")}
                 />
+              ) : (
+                <ForgotPasswordForm onSwitchToLogin={() => setTab("login")} />
               )}
             </div>
           </Suspense>

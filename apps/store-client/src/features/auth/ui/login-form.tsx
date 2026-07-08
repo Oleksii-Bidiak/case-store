@@ -46,12 +46,19 @@ interface LoginFormProps {
   onAuthenticated?: () => void;
   /** Slide-out mode: switch to the register tab instead of linking to /register. */
   onSwitchToRegister?: () => void;
+  /**
+   * Slide-out mode: switch to the forgot-password view instead of linking to
+   * /forgot-password. When omitted (page mode) the "Забули пароль?" control
+   * renders as a link.
+   */
+  onForgotPassword?: () => void;
 }
 
 /** LoginForm — email/password sign-in with zod validation. */
 export function LoginForm({
   onAuthenticated,
   onSwitchToRegister,
+  onForgotPassword,
 }: LoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -173,14 +180,24 @@ export function LoginForm({
         )}
       </div>
 
-      {/* Password reset has no backend yet — stubbed (TASK-169). */}
-      <button
-        type="button"
-        onClick={() => toast(dict.auth.login.forgotSoon)}
-        className="-mt-1 cursor-pointer self-end text-sm font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {dict.auth.login.forgot}
-      </button>
+      {/* Password reset (TASK-169). Sheet mode flips to the in-sheet forgot view;
+          page mode links to the standalone /forgot-password page. */}
+      {onForgotPassword ? (
+        <button
+          type="button"
+          onClick={onForgotPassword}
+          className="-mt-1 cursor-pointer self-end text-sm font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {dict.auth.login.forgot}
+        </button>
+      ) : (
+        <Link
+          href="/forgot-password"
+          className="-mt-1 self-end text-sm font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {dict.auth.login.forgot}
+        </Link>
+      )}
 
       {errorMessage && (
         <p role="alert" className="text-sm text-destructive">

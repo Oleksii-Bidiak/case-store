@@ -220,6 +220,15 @@ export const handlers = [
     HttpResponse.json({ data: {} }, { status: 401 }),
   ),
 
+  // Password reset — request always succeeds with a generic message
+  // (existence-hiding); confirm succeeds by default. Override per-test.
+  http.post("*/api/auth/password-reset/request", () =>
+    HttpResponse.json({ data: { message: "ok" } }),
+  ),
+  http.post("*/api/auth/password-reset/confirm", () =>
+    HttpResponse.json({ data: { message: "ok" } }),
+  ),
+
   // CSRF token fetched lazily by the axios instance before guest mutations.
   http.get("*/api/csrf-token", () =>
     HttpResponse.json({ data: { csrfToken: "test-csrf" } }),
