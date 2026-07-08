@@ -9,11 +9,18 @@ jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: jest.fn() }),
 }));
 
-function makeOrder(customer: unknown) {
+function makeOrder(
+  customer: unknown,
+  overrides: {
+    status?: string;
+    restockedAt?: string | null;
+    items?: Array<{ id: string; quantity: number }>;
+  } = {},
+) {
   return {
     id: "order-uuid-12345678",
     userId: "user-uuid-87654321",
-    status: "PENDING",
+    status: overrides.status ?? "PENDING",
     paymentStatus: "PENDING",
     subtotal: "29.99",
     discount: "0",
@@ -28,17 +35,27 @@ function makeOrder(customer: unknown) {
     },
     billingAddress: null,
     notes: null,
-    items: [
-      {
-        id: "item-1",
-        productId: "prod-uuid-1",
-        productName: "iPhone 15 Pro Case",
-        price: "29.99",
-        quantity: 1,
-        lineTotal: "29.99",
-      },
-    ],
+    items: overrides.items
+      ? overrides.items.map((item) => ({
+          id: item.id,
+          productId: "prod-uuid-1",
+          productName: "iPhone 15 Pro Case",
+          price: "29.99",
+          quantity: item.quantity,
+          lineTotal: "29.99",
+        }))
+      : [
+          {
+            id: "item-1",
+            productId: "prod-uuid-1",
+            productName: "iPhone 15 Pro Case",
+            price: "29.99",
+            quantity: 1,
+            lineTotal: "29.99",
+          },
+        ],
     customer,
+    restockedAt: overrides.restockedAt ?? null,
     createdAt: "2026-06-01T10:00:00.000Z",
     updatedAt: "2026-06-01T10:00:00.000Z",
   };
@@ -123,5 +140,68 @@ describe("OrderDetailView — customer section (TASK-125)", () => {
     });
     expect(link).toHaveAttribute("href", "/products/prod-uuid-1/edit");
     expect(link).toHaveTextContent("iPhone 15 Pro Case");
+  });
+});
+
+describe("OrderDetailView — stock-hold badges (TASK-254)", () => {
+  it("shows a holds-stock badge with the summed quantity for a pre-shipment order", async () => {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: makeOrder(null, {
+            status: "PENDING",
+            restockedAt: null,
+            items: [
+              { id: "item-1", quantity: 2 },
+              { id: "item-2", quantity: 3 },
+            ],
+          }),
+        }),
+      ),
+    );
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    // 2 + 3 = 5 units held.
+    expect(
+      await screen.findByText(dict.orders.holdsStock(5)),
+    ).toBeInTheDocument();
+    // The restocked badge prefix must be absent.
+    expect(screen.queryByText(/Залишок повернуто/)).not.toBeInTheDocument();
+  });
+
+  it("shows a restocked-at badge (not holds-stock) once a cancelled order was restocked", async () => {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: makeOrder(null, {
+            status: "CANCELLED",
+            restockedAt: "2026-06-01T14:30:00.000Z",
+          }),
+        }),
+      ),
+    );
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    await screen.findByText(dict.orders.summary);
+    expect(screen.getByText(/Залишок повернуто/)).toBeInTheDocument();
+    expect(screen.queryByText(/Тримає залишок/)).not.toBeInTheDocument();
+  });
+
+  it("shows neither badge for a delivered order", async () => {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: makeOrder(null, { status: "DELIVERED", restockedAt: null }),
+        }),
+      ),
+    );
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    await screen.findByText(dict.orders.summary);
+    expect(screen.queryByText(/Тримає залишок/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Залишок повернуто/)).not.toBeInTheDocument();
   });
 });

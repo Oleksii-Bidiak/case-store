@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  isPreShipmentStatus,
   orderStatusBadgeVariant,
   orderStatusLabel,
   paymentStatusBadgeVariant,
@@ -45,6 +46,11 @@ interface AddressFields {
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
+  timeStyle: "short",
+});
+
+/** Time-only variant for the restocked-at badge (TASK-254). */
+const timeFormatter = new Intl.DateTimeFormat("en-US", {
   timeStyle: "short",
 });
 
@@ -90,6 +96,14 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
   const billingDiffers =
     billing && JSON.stringify(billing) !== JSON.stringify(shipping);
 
+  // Stock-hold badges (TASK-254). An order either currently holds reserved stock
+  // (pre-shipment, not yet auto-restocked) or has had it returned — never both.
+  const holdsStock =
+    isPreShipmentStatus(order.status) && order.restockedAt == null;
+  const heldQuantity = holdsStock
+    ? order.items.reduce((sum, item) => sum + item.quantity, 0)
+    : 0;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
@@ -115,6 +129,17 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
               <Badge variant={paymentStatusBadgeVariant(order.paymentStatus)}>
                 {paymentStatusLabel(order.paymentStatus)}
               </Badge>
+              {holdsStock ? (
+                <Badge variant="warning">
+                  {dict.orders.holdsStock(heldQuantity)}
+                </Badge>
+              ) : order.restockedAt != null ? (
+                <Badge variant="secondary">
+                  {dict.orders.restockedAt(
+                    timeFormatter.format(new Date(order.restockedAt)),
+                  )}
+                </Badge>
+              ) : null}
             </div>
             <p className="text-sm text-muted-foreground">
               {dict.orders.timeline(

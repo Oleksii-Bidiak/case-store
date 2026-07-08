@@ -31,3 +31,5 @@ export {
 } from "./status-badge";
 
 export { orderStatusLabel, paymentStatusLabel } from "./status-label";
+
+export { isPreShipmentStatus } from "./is-pre-shipment-status";
