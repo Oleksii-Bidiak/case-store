@@ -8,6 +8,10 @@ import {
   type OrderConfirmationParams,
   type OrderConfirmationMailPayload,
 } from './templates/order-confirmation.template';
+import {
+  buildPasswordResetEmail,
+  type PasswordResetMailPayload,
+} from './templates/password-reset.template';
 
 /** Parameters accepted by {@link MailService.sendOrderConfirmation}. */
 export interface SendOrderConfirmationParams {
@@ -78,6 +82,31 @@ export class MailService {
       // template builder expects a `Date`, so rehydrate it here.
       order: { ...payload.order, createdAt: new Date(payload.order.createdAt) },
     });
+
+    await this.getTransporter().sendMail({
+      from: this.from,
+      to: payload.to,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    });
+  }
+
+  /**
+   * Render and send a password-reset email from the JSON-safe payload stored in
+   * a `MailOutbox` row (TASK-169). Resolves without throwing when mail is
+   * disabled (logged no-op) — same contract as {@link sendOrderConfirmationPayload}.
+   * When enabled, builds the message and dispatches it through the SMTP
+   * transport, throwing on transport failure so the outbox worker can apply its
+   * retry/backoff policy.
+   */
+  async sendPasswordResetPayload(payload: PasswordResetMailPayload): Promise<void> {
+    if (!this.enabled) {
+      this.logger.info(`Mail disabled — skipping password reset to ${payload.to}`);
+      return;
+    }
+
+    const template = buildPasswordResetEmail(payload);
 
     await this.getTransporter().sendMail({
       from: this.from,

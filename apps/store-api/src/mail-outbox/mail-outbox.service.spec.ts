@@ -5,8 +5,9 @@ import { MailOutboxService } from './mail-outbox.service';
 import { MailOutboxRepository } from './mail-outbox.repository';
 import { MailService } from '../mail/mail.service';
 import type { Clock } from './mail-outbox.clock';
-import { ORDER_CONFIRMATION_MAIL_TYPE } from './mail-outbox.types';
+import { ORDER_CONFIRMATION_MAIL_TYPE, PASSWORD_RESET_MAIL_TYPE } from './mail-outbox.types';
 import type { OrderConfirmationMailPayload } from '../mail/templates/order-confirmation.template';
+import type { PasswordResetMailPayload } from '../mail/templates/password-reset.template';
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ const repositoryMock = {
 const mailServiceMock = {
   isEnabled: jest.fn(),
   sendOrderConfirmationPayload: jest.fn(),
+  sendPasswordResetPayload: jest.fn(),
 };
 
 const loggerMock = {
@@ -137,6 +139,53 @@ describe('MailOutboxService', () => {
       // createdAt is serialized to an ISO string in the stored payload.
       expect(params.payload.order.createdAt).toBe('2026-06-30T11:00:00.000Z');
       expect(passedTx).toBe(tx);
+    });
+  });
+
+  // ─── enqueuePasswordReset ─────────────────────────────────────────────────────
+
+  describe('enqueuePasswordReset', () => {
+    it('writes a password-reset row with the type and recipient from the payload', async () => {
+      const payload: PasswordResetMailPayload = {
+        to: 'user@example.com',
+        resetUrl: 'http://localhost:3000/reset-password?token=abc',
+        expiresInHuman: '1 годину',
+      };
+
+      await service.enqueuePasswordReset(payload);
+
+      expect(repositoryMock.enqueue).toHaveBeenCalledTimes(1);
+      const [params] = repositoryMock.enqueue.mock.calls[0];
+      expect(params.type).toBe(PASSWORD_RESET_MAIL_TYPE);
+      expect(params.recipient).toBe('user@example.com');
+      expect(params.payload).toMatchObject(payload);
+    });
+  });
+
+  // ─── dispatchDue — password-reset delivery ────────────────────────────────────
+
+  describe('dispatchDue — password-reset delivery', () => {
+    it('routes a password-reset row to sendPasswordResetPayload', async () => {
+      const payload: PasswordResetMailPayload = {
+        to: 'user@example.com',
+        resetUrl: 'http://localhost:3000/reset-password?token=abc',
+        expiresInHuman: '1 годину',
+      };
+      repositoryMock.claimDue.mockResolvedValue([
+        makeRow({
+          id: 'pr-1',
+          type: PASSWORD_RESET_MAIL_TYPE,
+          payload: payload as unknown as MailOutbox['payload'],
+        }),
+      ]);
+      mailServiceMock.sendPasswordResetPayload.mockResolvedValue(undefined);
+
+      const result = await service.dispatchDue();
+
+      expect(mailServiceMock.sendPasswordResetPayload).toHaveBeenCalledWith(payload);
+      expect(mailServiceMock.sendOrderConfirmationPayload).not.toHaveBeenCalled();
+      expect(repositoryMock.markSent).toHaveBeenCalledWith('pr-1', NOW);
+      expect(result).toEqual({ sent: 1, retried: 0, failed: 0 });
     });
   });
 
