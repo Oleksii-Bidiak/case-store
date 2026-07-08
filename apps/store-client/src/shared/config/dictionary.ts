@@ -640,11 +640,35 @@ export const dict = {
     couponsHeading: "Промокоди тижня",
     couponCopyAria: (code: string) => `Скопіювати промокод ${code}`,
     couponCopied: (code: string) => `Промокод ${code} скопійовано`,
+    couponsError: "Не вдалося завантажити промокоди. Спробуйте пізніше.",
+    // Live active-discounts feed → ticket-card view model (TASK-179).
+    couponUnitPercent: "на все",
+    couponUnitFixed: "гривень",
+    couponTitle: "Знижка за промокодом",
+    couponMinSpend: (sum: string) => `Мінімальна сума ${sum} ₴`,
+    couponExpires: (date: string) => `Діє до ${date}`,
+    couponGeneric: "Діє обмежений час",
     dealsHeading: "Товари зі знижкою",
     dealsAll: "Усі",
     dealsEmpty: "Наразі немає товарів зі знижкою в цьому розділі.",
     dealsError: "Не вдалося завантажити товари. Спробуйте пізніше.",
     dealsFilterAria: "Фільтр за категорією",
+    // «Показати ще» load-more for the on-sale grid (TASK-179). Ukrainian
+    // pluralization: 1 товар, 2–4 товари, 5+ товарів.
+    dealsLoadMore: (n: number) => {
+      const mod10 = n % 10;
+      const mod100 = n % 100;
+      let word = "товарів";
+      if (mod10 === 1 && mod100 !== 11) word = "товар";
+      else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20))
+        word = "товари";
+      return `Показати ще ${n} ${word}`;
+    },
+    dealsLoadMoreLoading: "Завантаження…",
+    dealsLoadMoreError:
+      "Не вдалося завантажити більше товарів. Спробуйте ще раз.",
+    dealsShownOfTotal: (shown: number, total: number) =>
+      `Показано ${shown} з ${total}`,
     newsletter: {
       heading: "Першими дізнавайтесь про знижки",
       subtitle:
