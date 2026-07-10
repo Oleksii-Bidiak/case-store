@@ -95,7 +95,11 @@ export class AdminContactController {
   @Get()
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'List contact messages (admin)', operationId: 'adminContactList' })
-  @ApiQuery({ name: 'status', required: false, description: 'Filter: NEW | READ | ARCHIVED' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    description: 'Filter: NEW | IN_PROGRESS | READ | ARCHIVED',
+  })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (1-based)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Items per page (max 100)' })
   @ApiResponse({ status: 200, description: 'Paginated inbox', type: ContactInboxResponse })

@@ -28,6 +28,8 @@ const contactRepositoryMock = {
   findById: jest.fn(),
   update: jest.fn(),
   countByStatus: jest.fn(),
+  findMatchingUserId: jest.fn(),
+  findMatchingUserIds: jest.fn(),
 };
 
 const pinoLoggerMock = {
@@ -42,6 +44,10 @@ describe('ContactService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    // TASK-256 defaults: no registered user matches unless a test arms these.
+    contactRepositoryMock.findMatchingUserId.mockResolvedValue(null);
+    contactRepositoryMock.findMatchingUserIds.mockResolvedValue(new Map());
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -94,6 +100,21 @@ describe('ContactService', () => {
         expect.objectContaining({ topic: null, orderRef: null }),
       );
     });
+
+    it('returns matchedUserId: null with zero user-lookup calls (TASK-256: write path stays lean)', async () => {
+      contactRepositoryMock.create.mockResolvedValue(makeMessage());
+
+      const result = await service.create({
+        name: 'Ivan Petrenko',
+        phone: '+380671234567',
+        email: 'ivan@example.com',
+        message: 'Доброго дня! Питання по замовленню.',
+      });
+
+      expect(result.matchedUserId).toBeNull();
+      expect(contactRepositoryMock.findMatchingUserId).not.toHaveBeenCalled();
+      expect(contactRepositoryMock.findMatchingUserIds).not.toHaveBeenCalled();
+    });
   });
 
   describe('findAllAdmin', () => {
@@ -120,6 +141,30 @@ describe('ContactService', () => {
         status: ContactMessageStatus.READ,
       });
     });
+
+    it('attaches matchedUserId per row via ONE batched lookup over distinct emails (TASK-256)', async () => {
+      const rows = [
+        makeMessage({ id: 'msg-1', email: 'ivan@example.com' }),
+        makeMessage({ id: 'msg-2', email: 'guest@example.com' }),
+        makeMessage({ id: 'msg-3', email: 'ivan@example.com' }),
+      ];
+      contactRepositoryMock.findAll.mockResolvedValue({ messages: rows, total: 3 });
+      contactRepositoryMock.countByStatus.mockResolvedValue(0);
+      contactRepositoryMock.findMatchingUserIds.mockResolvedValue(
+        new Map([['ivan@example.com', 'user-uuid-1']]),
+      );
+
+      const result = await service.findAllAdmin({ page: 1, limit: 20 });
+
+      expect(result.data.map((m) => m.matchedUserId)).toEqual(['user-uuid-1', null, 'user-uuid-1']);
+      // One batched call per page — never N+1, and only distinct emails.
+      expect(contactRepositoryMock.findMatchingUserIds).toHaveBeenCalledTimes(1);
+      expect(contactRepositoryMock.findMatchingUserIds).toHaveBeenCalledWith([
+        'ivan@example.com',
+        'guest@example.com',
+      ]);
+      expect(contactRepositoryMock.findMatchingUserId).not.toHaveBeenCalled();
+    });
   });
 
   describe('findByIdAdmin', () => {
@@ -135,6 +180,25 @@ describe('ContactService', () => {
       contactRepositoryMock.findById.mockResolvedValue(null);
 
       await expect(service.findByIdAdmin('missing')).rejects.toThrow(NotFoundException);
+    });
+
+    it('attaches matchedUserId via the single-email lookup (TASK-256)', async () => {
+      contactRepositoryMock.findById.mockResolvedValue(makeMessage());
+      contactRepositoryMock.findMatchingUserId.mockResolvedValue('user-uuid-1');
+
+      const result = await service.findByIdAdmin('msg-uuid-1');
+
+      expect(result.matchedUserId).toBe('user-uuid-1');
+      expect(contactRepositoryMock.findMatchingUserId).toHaveBeenCalledWith('ivan@example.com');
+    });
+
+    it('returns matchedUserId: null when the sender is not a registered user', async () => {
+      contactRepositoryMock.findById.mockResolvedValue(makeMessage());
+      contactRepositoryMock.findMatchingUserId.mockResolvedValue(null);
+
+      const result = await service.findByIdAdmin('msg-uuid-1');
+
+      expect(result.matchedUserId).toBeNull();
     });
   });
 
@@ -167,6 +231,22 @@ describe('ContactService', () => {
 
       expect(result.adminNote).toBe('done');
       expect(result.status).toBe(ContactMessageStatus.ARCHIVED);
+    });
+
+    it('transitions status to IN_PROGRESS and attaches matchedUserId (TASK-256)', async () => {
+      contactRepositoryMock.findById.mockResolvedValue(makeMessage());
+      contactRepositoryMock.update.mockResolvedValue(
+        makeMessage({ status: ContactMessageStatus.IN_PROGRESS }),
+      );
+      contactRepositoryMock.findMatchingUserId.mockResolvedValue('user-uuid-1');
+
+      const result = await service.update('msg-uuid-1', {
+        status: ContactMessageStatus.IN_PROGRESS,
+      });
+
+      expect(result.status).toBe(ContactMessageStatus.IN_PROGRESS);
+      expect(result.matchedUserId).toBe('user-uuid-1');
+      expect(contactRepositoryMock.findMatchingUserId).toHaveBeenCalledWith('ivan@example.com');
     });
 
     it('throws NotFoundException when the message is missing', async () => {

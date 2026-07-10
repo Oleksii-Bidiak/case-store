@@ -115,4 +115,35 @@ export class ContactRepository {
   countByStatus(status: ContactMessageStatus): Promise<number> {
     return this.prisma.contactMessage.count({ where: { status } });
   }
+
+  /**
+   * Resolve the id of the registered (non-soft-deleted) user whose email matches
+   * a message sender, or null (TASK-256). Live read-time lookup — deliberately
+   * not a persisted FK, so it "catches up" when a sender registers later.
+   * Cross-domain read of `prisma.user` from the contact module — mirror image of
+   * UserRepository.getContactMessagesByEmail (TASK-252), same rationale.
+   */
+  async findMatchingUserId(email: string): Promise<string | null> {
+    const user = await this.prisma.user.findFirst({
+      where: { email, deletedAt: null },
+      select: { id: true },
+    });
+    return user?.id ?? null;
+  }
+
+  /**
+   * Batched variant for list pages (TASK-256): one `email IN (...)` query for
+   * the whole page, reduced to a Map of email → user id. Skips the query
+   * entirely for an empty input.
+   */
+  async findMatchingUserIds(emails: string[]): Promise<Map<string, string>> {
+    if (emails.length === 0) {
+      return new Map();
+    }
+    const users = await this.prisma.user.findMany({
+      where: { email: { in: emails }, deletedAt: null },
+      select: { id: true, email: true },
+    });
+    return new Map(users.map((user) => [user.email, user.id]));
+  }
 }

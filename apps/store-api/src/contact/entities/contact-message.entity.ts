@@ -64,6 +64,18 @@ export class ContactMessageEntity {
   })
   adminNote!: string | null;
 
+  @ApiProperty({
+    description:
+      'Id of the registered user whose email matches the sender (TASK-256). ' +
+      'Resolved live at read time (admin endpoints only) — null when the sender ' +
+      'is not a registered user or on the public create response.',
+    example: '550e8400-e29b-41d4-a716-446655440001',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  matchedUserId!: string | null;
+
   @ApiProperty({ description: 'Creation timestamp', example: '2026-07-05T10:00:00.000Z' })
   createdAt!: Date;
 
@@ -72,20 +84,26 @@ export class ContactMessageEntity {
 
   /**
    * Build a ContactMessageEntity from a Prisma ContactMessage row.
+   *
+   * `matchedUserId` (TASK-256) defaults to null so the public create path keeps
+   * calling `fromPrisma(row)` unchanged — only admin reads resolve a match.
    */
-  static fromPrisma(row: {
-    id: string;
-    name: string;
-    phone: string;
-    email: string;
-    topic: string | null;
-    orderRef: string | null;
-    message: string;
-    status: ContactMessageStatus;
-    adminNote: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-  }): ContactMessageEntity {
+  static fromPrisma(
+    row: {
+      id: string;
+      name: string;
+      phone: string;
+      email: string;
+      topic: string | null;
+      orderRef: string | null;
+      message: string;
+      status: ContactMessageStatus;
+      adminNote: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+    },
+    matchedUserId: string | null = null,
+  ): ContactMessageEntity {
     const entity = new ContactMessageEntity();
     entity.id = row.id;
     entity.name = row.name;
@@ -96,6 +114,7 @@ export class ContactMessageEntity {
     entity.message = row.message;
     entity.status = row.status;
     entity.adminNote = row.adminNote;
+    entity.matchedUserId = matchedUserId;
     entity.createdAt = row.createdAt;
     entity.updatedAt = row.updatedAt;
     return entity;
