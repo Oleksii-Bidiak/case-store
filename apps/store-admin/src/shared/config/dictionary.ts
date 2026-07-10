@@ -142,8 +142,10 @@ export const dict = {
     // TASK-262: traffic card (links out to Umami — no numbers rendered here).
     trafficHeading: "Відвідуваність",
     trafficSubtext: "Трафік, конверсії та воронка продажів — в Umami.",
-    trafficOpenLink: "Відкрити Umami →",
+    // Decorative "→" is rendered separately in an aria-hidden span (a11y).
+    trafficOpenLink: "Відкрити Umami",
     trafficNotConfigured: "Ще не підключено. Зверніться до розробника.",
+    trafficOpenLinkAria: "Відкрити Umami у новій вкладці",
   },
 
   common: {

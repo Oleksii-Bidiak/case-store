@@ -13,10 +13,13 @@ describe("DashboardTrafficCard — configured (TASK-262)", () => {
     expect(screen.getByText(d.trafficHeading)).toBeInTheDocument();
     expect(screen.getByText(d.trafficSubtext)).toBeInTheDocument();
 
-    const link = screen.getByRole("link", { name: d.trafficOpenLink });
+    // Accessible name comes from the aria-label announcing the new tab; the
+    // decorative "→" is aria-hidden and must not leak into the name.
+    const link = screen.getByRole("link", { name: d.trafficOpenLinkAria });
     expect(link).toHaveAttribute("href", UMAMI_URL);
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(link).toHaveTextContent(d.trafficOpenLink);
 
     expect(screen.queryByText(d.trafficNotConfigured)).not.toBeInTheDocument();
   });

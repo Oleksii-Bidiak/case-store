@@ -31,12 +31,14 @@ export function DashboardTrafficCard({
           href={dashboardUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-3 inline-flex text-sm font-medium text-primary underline underline-offset-4"
+          aria-label={dict.dashboard.trafficOpenLinkAria}
+          className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary underline underline-offset-4"
         >
           {dict.dashboard.trafficOpenLink}
+          <span aria-hidden="true">→</span>
         </a>
       ) : (
-        <p className="mt-3 text-sm text-muted-foreground/70">
+        <p className="mt-3 text-sm text-muted-foreground">
           {dict.dashboard.trafficNotConfigured}
         </p>
       )}
