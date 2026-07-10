@@ -81,6 +81,9 @@ describe("Table (default scroll layout — regression guard)", () => {
 
     expect(cells[0]).not.toHaveAttribute("data-label");
     expect(cells[0].className).not.toContain("before:");
+    // No sr-only prefix either — cell text is exactly its children.
+    expect(cells[0].querySelector(".sr-only")).toBeNull();
+    expect(cells[0].textContent).toBe("OK");
   });
 });
 
@@ -139,14 +142,29 @@ describe("Table (layout='card')", () => {
     expect(labeled).toHaveClass("max-md:flex", "max-md:justify-between");
   });
 
+  it("announces the label to screen readers via an sr-only prefix", () => {
+    const { cells } = renderCardTable();
+    const srLabel = cells[0].querySelector(".sr-only");
+    expect(srLabel).not.toBeNull();
+    expect(srLabel?.textContent).toBe("Name: ");
+    // Prefix comes before the value in reading order.
+    expect(cells[0].textContent).toBe("Name: Alice");
+  });
+
   it("renders an unlabeled cell with no caption artifact", () => {
     const { cells } = renderCardTable();
     const unlabeled = cells[2];
     expect(unlabeled).not.toHaveAttribute("data-label");
     expect(unlabeled.className).not.toContain("before:");
+    expect(unlabeled.querySelector(".sr-only")).toBeNull();
     expect(unlabeled.textContent).toBe("unlabeled");
     // Still stacks as a card row.
     expect(unlabeled).toHaveClass("max-md:flex");
+  });
+
+  it("adds no sr-only prefix to a hideOnMobile cell (hidden below md, visible header at md+)", () => {
+    const { cells } = renderCardTable();
+    expect(cells[1].querySelector(".sr-only")).toBeNull();
   });
 
   it("never renders a literal 'undefined' caption", () => {

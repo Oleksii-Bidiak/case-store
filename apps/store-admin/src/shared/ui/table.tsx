@@ -138,10 +138,16 @@ function TableCell({
   className,
   label,
   hideOnMobile,
+  children,
   ...props
 }: TableCellProps) {
   const layout = React.useContext(TableLayoutContext);
   const isCard = layout === "card";
+  // Screen readers do not announce the CSS `before:content-[attr(data-label)]`
+  // caption, so the card-mode label is duplicated as an sr-only text prefix.
+  // Skipped for hideOnMobile cells (display:none below md; at md+ the visible
+  // column header already provides the association).
+  const announceLabel = isCard && !hideOnMobile && label !== undefined;
   return (
     <td
       data-slot="table-cell"
@@ -162,7 +168,10 @@ function TableCell({
         className,
       )}
       {...props}
-    />
+    >
+      {announceLabel && <span className="sr-only">{label}: </span>}
+      {children}
+    </td>
   );
 }
 
