@@ -129,7 +129,7 @@ export function AdminProductTable() {
               <Loader2 className="size-6 animate-spin text-primary" />
             </div>
           )}
-          <Table>
+          <Table layout="card">
             <TableHeader>
               <TableRow>
                 <SortableColumnHeader
@@ -170,32 +170,56 @@ export function AdminProductTable() {
             <TableBody>
               {products.map((product) => (
                 <TableRow key={product.id}>
-                  <TableCell className="font-medium">{product.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell
+                    label={dict.products.colName}
+                    className="font-medium"
+                  >
+                    {product.name}
+                  </TableCell>
+                  <TableCell
+                    label={dict.products.colCategory}
+                    className="text-muted-foreground"
+                  >
                     {categoryNames.get(product.categoryId) ?? "—"}
                   </TableCell>
-                  <TableCell>{formatCurrency(product.price)}</TableCell>
-                  <TableCell>
+                  <TableCell label={dict.products.colPrice}>
+                    {formatCurrency(product.price)}
+                  </TableCell>
+                  <TableCell label={dict.products.colStatus}>
                     <ProductStatusToggle
                       productId={product.id}
                       isActive={product.isActive}
                     />
                   </TableCell>
-                  <TableCell className="tabular-nums">
-                    <span className="font-medium text-foreground">
-                      {product.stock}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {" / "}
-                      {product.reservedQty}
-                      {" / "}
-                      {product.physicalQty}
+                  <TableCell
+                    label={dict.products.colStock}
+                    className="tabular-nums"
+                  >
+                    {/* Single wrapper keeps the compound "free / reserved /
+                        physical" display (TASK-254) as one flex item in the
+                        card cell's justify-between row. */}
+                    <span>
+                      <span className="font-medium text-foreground">
+                        {product.stock}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {" / "}
+                        {product.reservedQty}
+                        {" / "}
+                        {product.physicalQty}
+                      </span>
                     </span>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell
+                    label={dict.products.colCreated}
+                    className="text-muted-foreground"
+                  >
                     {new Date(product.createdAt).toLocaleDateString()}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell
+                    label={dict.common.actions}
+                    className="text-right max-md:text-left"
+                  >
                     <Button asChild variant="outline" size="sm">
                       <Link href={`/products/${product.id}/edit`}>
                         {dict.common.edit}

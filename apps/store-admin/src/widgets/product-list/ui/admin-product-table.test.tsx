@@ -113,3 +113,21 @@ describe("AdminProductTable — stock column (TASK-254)", () => {
     );
   });
 });
+
+describe("AdminProductTable — mobile card layout (TASK-258)", () => {
+  it("renders in card mode with per-cell labels", async () => {
+    stubEndpoints();
+    const { container } = renderWithProviders(<AdminProductTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(container.querySelector('[data-slot="table"]')).toHaveClass(
+      "max-md:block",
+    );
+    expect(
+      container.querySelector(`[data-label="${dict.products.colName}"]`),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(`[data-label="${dict.common.actions}"]`),
+    ).toBeInTheDocument();
+  });
+});

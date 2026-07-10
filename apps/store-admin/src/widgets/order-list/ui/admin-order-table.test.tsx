@@ -224,3 +224,29 @@ describe("AdminOrderTable — column sorting (TASK-147)", () => {
     );
   });
 });
+
+describe("AdminOrderTable — mobile card layout (TASK-258)", () => {
+  it("renders in card mode with per-cell labels", async () => {
+    server.use(
+      http.get("*/api/admin/orders", () =>
+        HttpResponse.json({
+          data: [makeOrderRow(null)],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        }),
+      ),
+    );
+
+    const { container } = renderWithProviders(<AdminOrderTable />);
+    await screen.findByText("user-uui…");
+
+    expect(container.querySelector('[data-slot="table"]')).toHaveClass(
+      "max-md:block",
+    );
+    expect(
+      container.querySelector(`[data-label="${dict.orders.colStatus}"]`),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(`[data-label="${dict.common.actions}"]`),
+    ).toBeInTheDocument();
+  });
+});
