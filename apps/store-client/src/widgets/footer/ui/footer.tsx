@@ -70,6 +70,7 @@ export async function Footer() {
       </div>
 
       {/* Link columns */}
+      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-4 py-12 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
         {/* Brand + socials */}
         <div className="flex flex-col gap-4">

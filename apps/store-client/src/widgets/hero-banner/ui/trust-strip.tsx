@@ -21,7 +21,7 @@ export function TrustStrip() {
       aria-label={dict.trust.secure}
       className="mx-auto w-full max-w-7xl px-4"
     >
-      <ul className="grid gap-4 rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-card)] sm:grid-cols-2 lg:grid-cols-4">
+      <ul className="grid gap-4 rounded-2xl border border-border bg-card p-6 shadow-card sm:grid-cols-2 lg:grid-cols-4">
         {dict.home.trust.map((item, i) => {
           const { icon: Icon, color } = ICONS[i];
           return (

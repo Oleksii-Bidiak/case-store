@@ -62,7 +62,7 @@ function Slider({
           data-slot="slider-thumb"
           key={index}
           aria-label={thumbLabels?.[index]}
-          className="block size-4 shrink-0 cursor-grab rounded-full border-2 border-primary bg-background shadow-[var(--shadow-card)] transition-[box-shadow,transform] outline-none hover:ring-4 hover:ring-primary/20 focus-visible:ring-4 focus-visible:ring-ring/40 active:cursor-grabbing data-[disabled]:pointer-events-none"
+          className="block size-4 shrink-0 cursor-grab rounded-full border-2 border-primary bg-background shadow-card transition-[box-shadow,transform] outline-none hover:ring-4 hover:ring-primary/20 focus-visible:ring-4 focus-visible:ring-ring/40 active:cursor-grabbing data-[disabled]:pointer-events-none"
         />
       ))}
     </SliderPrimitive.Root>

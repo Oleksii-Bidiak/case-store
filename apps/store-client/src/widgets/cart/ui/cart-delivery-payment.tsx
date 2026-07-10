@@ -9,7 +9,7 @@ const SELECT_CLASS =
 
 export function CartDeliveryStub() {
   return (
-    <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-[var(--shadow-card)]">
+    <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-card">
       <h3 className="mb-3.5 font-display text-[15px] font-bold text-foreground">
         {dict.cart.deliveryTitle}
       </h3>
@@ -39,11 +39,11 @@ export function CartDeliveryStub() {
 }
 
 const RADIO_ROW =
-  "flex cursor-pointer items-center gap-2.5 rounded-[10px] border-[1.5px] px-3 py-[11px]";
+  "flex cursor-pointer items-center gap-2.5 rounded-md border-[1.5px] px-3 py-[11px]";
 
 export function CartPaymentStub() {
   return (
-    <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-[var(--shadow-card)]">
+    <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-card">
       <h3 className="mb-3 font-display text-[15px] font-bold text-foreground">
         {dict.cart.paymentTitle}
       </h3>

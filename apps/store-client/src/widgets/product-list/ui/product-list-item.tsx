@@ -26,7 +26,7 @@ export function ProductListItem({ product }: { product: PublicProductEntity }) {
   const gradient = pickProductGradient(product.slug || product.name);
 
   return (
-    <article className="group flex flex-col gap-5 rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-card)] transition-colors hover:border-primary/30 sm:flex-row">
+    <article className="group flex flex-col gap-5 rounded-2xl border border-border bg-card p-4 shadow-card transition-colors hover:border-primary/30 sm:flex-row">
       <div
         className={`relative flex size-[150px] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br [&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105 ${gradient}`}
       >

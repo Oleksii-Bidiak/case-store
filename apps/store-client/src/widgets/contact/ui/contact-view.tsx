@@ -36,7 +36,7 @@ const DEPARTMENT_ICONS: Record<string, LucideIcon> = {
 };
 
 const CARD =
-  "block rounded-2xl border border-border bg-card p-[22px] no-underline shadow-[var(--shadow-card)] transition-[border-color,box-shadow] hover:border-primary hover:shadow-[var(--shadow-lift)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "block rounded-2xl border border-border bg-card p-[22px] no-underline shadow-card transition-[border-color,box-shadow] hover:border-primary hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const CHANNEL_ICON =
   "mb-3.5 inline-flex size-[46px] items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-card))] text-primary";
 
@@ -145,7 +145,7 @@ export function ContactView({
         </a>
 
         <div
-          className={`${CARD} cursor-default hover:border-border hover:shadow-[var(--shadow-card)]`}
+          className={`${CARD} cursor-default hover:border-border hover:shadow-card`}
         >
           <span className={CHANNEL_ICON}>
             <Clock className="size-[21px]" aria-hidden="true" />
@@ -161,12 +161,13 @@ export function ContactView({
       </div>
 
       {/* Form + side column */}
+      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1.15fr_1fr]">
         <ContactForm />
 
         <div className="flex flex-col gap-6">
           {/* Departments */}
-          <div className="rounded-[18px] border border-border bg-card p-[30px] shadow-[var(--shadow-card)]">
+          <div className="rounded-[18px] border border-border bg-card p-[30px] shadow-card">
             <h2 className="mb-[18px] font-display text-[19px] font-bold text-foreground">
               {d.departmentsHeading}
             </h2>
@@ -204,7 +205,7 @@ export function ContactView({
           {/* Messengers */}
           <div
             id="messengers"
-            className="scroll-mt-24 rounded-[18px] border border-border bg-card p-[30px] shadow-[var(--shadow-card)]"
+            className="scroll-mt-24 rounded-[18px] border border-border bg-card p-[30px] shadow-card"
           >
             <h2 className="mb-1.5 font-display text-[19px] font-bold text-foreground">
               {d.messengersHeading}
@@ -238,7 +239,7 @@ export function ContactView({
           </div>
 
           {/* Office / showroom */}
-          <div className="overflow-hidden rounded-[18px] border border-border bg-card shadow-[var(--shadow-card)]">
+          <div className="overflow-hidden rounded-[18px] border border-border bg-card shadow-card">
             <div
               role="img"
               aria-label={d.officeMapAria}
@@ -248,7 +249,7 @@ export function ContactView({
                   "linear-gradient(120deg, color-mix(in oklab, var(--color-primary) 18%, var(--color-card)), color-mix(in oklab, var(--color-primary) 4%, var(--color-card)))",
               }}
             >
-              <span className="inline-flex size-[52px] items-center justify-center rounded-full bg-primary text-white shadow-[var(--shadow-elevated)]">
+              <span className="inline-flex size-[52px] items-center justify-center rounded-full bg-primary text-white shadow-elevated">
                 <MapPin className="size-6" aria-hidden="true" />
               </span>
             </div>
@@ -295,7 +296,7 @@ export function ContactView({
       </div>
 
       {/* FAQ help strip */}
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-6 rounded-[18px] border border-border bg-card p-[26px] shadow-[var(--shadow-card)]">
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-6 rounded-[18px] border border-border bg-card p-[26px] shadow-card">
         <div className="flex items-center gap-4">
           <span className="inline-flex size-12 items-center justify-center rounded-[13px] bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-card))] text-primary">
             <HelpCircle className="size-[22px]" aria-hidden="true" />

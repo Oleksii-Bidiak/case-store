@@ -88,7 +88,7 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
               <Link
                 key={doc.slug}
                 href={`/legal/${doc.slug}`}
-                className="flex flex-col rounded-2xl border border-border bg-card p-[22px] no-underline shadow-[var(--shadow-card)] transition-[border-color,transform,box-shadow] hover:-translate-y-[3px] hover:border-primary hover:shadow-[var(--shadow-lift)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex flex-col rounded-2xl border border-border bg-card p-[22px] no-underline shadow-card transition-[border-color,transform,box-shadow] hover:-translate-y-[3px] hover:border-primary hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <div className="mb-3.5 flex items-center justify-between">
                   <span
@@ -126,7 +126,7 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
       )}
 
       {/* Support CTA */}
-      <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card px-[26px] py-[22px] shadow-[var(--shadow-card)]">
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card px-[26px] py-[22px] shadow-card">
         <div className="flex items-center gap-3.5">
           <span
             className="inline-flex size-[46px] items-center justify-center rounded-xl text-primary"

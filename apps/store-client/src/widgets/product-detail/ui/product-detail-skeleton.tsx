@@ -18,6 +18,7 @@ export function ProductDetailSkeleton() {
       <Skeleton className="h-5 w-72 max-w-full" />
 
       {/* Hero: gallery + info + buy box — same grid as the view. */}
+      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid grid-cols-1 gap-7 lg:grid-cols-[1fr_1fr_360px] lg:items-start">
         {/* Gallery: square main frame + 64px thumbnail strip. */}
         <div className="flex flex-col gap-4">

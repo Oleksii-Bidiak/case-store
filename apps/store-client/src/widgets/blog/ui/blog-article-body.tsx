@@ -33,7 +33,7 @@ export function BlogArticleBody({
       <div className={PROSE} dangerouslySetInnerHTML={{ __html: html }} />
 
       {/* Author bio */}
-      <div className="mt-7 flex items-start gap-4 rounded-2xl border border-border bg-card p-[22px] shadow-[var(--shadow-card)]">
+      <div className="mt-7 flex items-start gap-4 rounded-2xl border border-border bg-card p-[22px] shadow-card">
         <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-full bg-primary font-display text-xl font-bold text-primary-foreground">
           {authorInitial(post.author)}
         </span>

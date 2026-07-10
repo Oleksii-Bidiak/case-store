@@ -26,6 +26,7 @@ export function HeroBanner({ heroSlides, promoTiles }: HeroBannerProps = {}) {
       aria-label="Головний банер"
       className="mx-auto w-full max-w-7xl px-4 pt-6"
     >
+      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
         <HeroCategorySidebar />
         <HeroSlider banners={heroSlides} />

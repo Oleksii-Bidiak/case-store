@@ -10,7 +10,8 @@ export function BlogFeaturedCard({ post }: { post: BlogPostView }) {
   return (
     <Link
       href={`/blog/${post.slug}`}
-      className="mb-[34px] grid overflow-hidden rounded-[20px] border border-border bg-card no-underline shadow-[var(--shadow-card)] transition-shadow hover:shadow-[var(--shadow-lift)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring md:grid-cols-[1.1fr_1fr]"
+      // eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent
+      className="mb-[34px] grid overflow-hidden rounded-[20px] border border-border bg-card no-underline shadow-card transition-shadow hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring md:grid-cols-[1.1fr_1fr]"
     >
       <div
         className="relative min-h-[320px]"

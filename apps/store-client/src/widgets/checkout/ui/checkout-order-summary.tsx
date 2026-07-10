@@ -64,7 +64,7 @@ export function CheckoutOrderSummary({ npCityRef }: CheckoutOrderSummaryProps) {
   const totalText = formatMoney((totalCents / 100).toFixed(2));
 
   return (
-    <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-[var(--shadow-card)]">
+    <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-card">
       <h2 className="mb-4 font-display text-lg font-bold text-foreground">
         {dict.checkout.summaryHeading}
       </h2>
@@ -75,7 +75,7 @@ export function CheckoutOrderSummary({ npCityRef }: CheckoutOrderSummaryProps) {
             <span className="relative shrink-0">
               <ProductThumb
                 name={item.productName}
-                className="size-12 rounded-[10px]"
+                className="size-12 rounded-md"
                 initialClassName="text-base"
               />
               <span className="absolute -top-[7px] -right-[7px] inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[11px] font-bold text-primary-foreground">

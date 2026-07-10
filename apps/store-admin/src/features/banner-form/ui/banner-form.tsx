@@ -121,6 +121,7 @@ export function BannerForm({
         </TabsList>
       </Tabs>
 
+      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="md:grid md:grid-cols-[minmax(0,1fr)_360px] md:items-start md:gap-6">
         <div
           data-testid="banner-form-fields"

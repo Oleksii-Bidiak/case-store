@@ -268,7 +268,7 @@ export function CartItemRow({
         </div>
 
         <div className="mt-auto flex flex-wrap items-end justify-between gap-3.5 pt-3">
-          <div className="flex items-center overflow-hidden rounded-[10px] border border-border">
+          <div className="flex items-center overflow-hidden rounded-md border border-border">
             <button
               type="button"
               aria-label={dict.cart.decreaseAria}

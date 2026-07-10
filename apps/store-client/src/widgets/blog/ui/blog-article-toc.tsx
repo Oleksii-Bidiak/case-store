@@ -28,7 +28,7 @@ export function BlogArticleToc({
     <aside
       className={`hidden self-start lg:sticky ${STICKY_ASIDE_TOP} lg:block`}
     >
-      <div className="rounded-2xl border border-border bg-card p-[18px] shadow-[var(--shadow-card)]">
+      <div className="rounded-2xl border border-border bg-card p-[18px] shadow-card">
         <p className="mb-3 text-xs font-bold tracking-[0.06em] text-muted-foreground uppercase">
           {dict.blog.article.tocHeading}
         </p>

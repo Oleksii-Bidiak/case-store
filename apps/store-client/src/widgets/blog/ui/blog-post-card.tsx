@@ -10,7 +10,7 @@ export function BlogPostCard({ post }: { post: BlogPostView }) {
   return (
     <Link
       href={`/blog/${post.slug}`}
-      className="flex flex-col overflow-hidden rounded-[18px] border border-border bg-card no-underline shadow-[var(--shadow-card)] transition-[transform,box-shadow] duration-150 hover:-translate-y-1 hover:shadow-[var(--shadow-lift)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex flex-col overflow-hidden rounded-[18px] border border-border bg-card no-underline shadow-card transition-[transform,box-shadow] duration-150 hover:-translate-y-1 hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div
         className="relative h-[184px]"

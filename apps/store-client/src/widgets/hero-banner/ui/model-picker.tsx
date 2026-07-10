@@ -62,7 +62,7 @@ export function ModelPicker() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-wrap items-center gap-4 rounded-2xl border border-border bg-card p-5 shadow-[var(--shadow-card)] sm:p-6"
+      className="flex flex-wrap items-center gap-4 rounded-2xl border border-border bg-card p-5 shadow-card sm:p-6"
     >
       <div className="min-w-[12rem]">
         <p className="font-display text-base font-semibold text-foreground">

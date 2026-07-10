@@ -58,7 +58,7 @@ export function BrandFilter({
       >
         <SelectTrigger
           aria-label={dict.filters.brandTitle}
-          className="h-[42px] w-full gap-2.5 rounded-[10px] border-[1.5px] border-border bg-card px-3 font-semibold text-foreground shadow-none hover:border-primary/40"
+          className="h-[42px] w-full gap-2.5 rounded-md border-[1.5px] border-border bg-card px-3 font-semibold text-foreground shadow-none hover:border-primary/40"
         >
           <Factory
             className="size-4 text-muted-foreground"

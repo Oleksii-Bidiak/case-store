@@ -19,7 +19,7 @@ import {
 } from "../model/deals-pagination";
 
 const TAB_BASE =
-  "h-[38px] rounded-[10px] border px-4 text-[13.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "h-[38px] rounded-md border px-4 text-[13.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /** Page size for the on-sale grid. */
 const DEALS_LIMIT = 12;
@@ -137,6 +137,7 @@ export function PromoDeals() {
       </div>
 
       {isPending ? (
+        // eslint-disable-next-line tailwindcss/no-arbitrary-value -- auto-fill fluid card grid has no named grid-cols-N equivalent
         <div className="grid grid-cols-[repeat(auto-fill,minmax(232px,1fr))] gap-[18px]">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-[430px] w-full rounded-2xl" />
@@ -150,6 +151,7 @@ export function PromoDeals() {
         <p className="text-sm text-muted-foreground">{dict.promo.dealsEmpty}</p>
       ) : (
         <>
+          {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- auto-fill fluid card grid has no named grid-cols-N equivalent */}
           <div className="grid grid-cols-[repeat(auto-fill,minmax(232px,1fr))] gap-[18px]">
             {deals.map((product, index) => (
               <ProductCard

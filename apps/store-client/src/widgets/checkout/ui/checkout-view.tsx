@@ -139,6 +139,7 @@ export function CheckoutView() {
 
       <CheckoutStepIndicator current={step} />
 
+      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
         <form
           onSubmit={handleSubmit(submitOrder, focusFirstError)}
@@ -147,7 +148,7 @@ export function CheckoutView() {
         >
           {step === 1 && (
             <>
-              <section className="rounded-[18px] border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+              <section className="rounded-[18px] border border-border bg-card p-6 shadow-card">
                 <CheckoutAddressForm
                   legend={dict.checkout.shippingAddress}
                   register={register}
@@ -207,7 +208,7 @@ export function CheckoutView() {
 
           {step === 2 && (
             <>
-              <section className="rounded-[18px] border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+              <section className="rounded-[18px] border border-border bg-card p-6 shadow-card">
                 <CheckoutReviewStep ref={reviewHeadingRef} control={control} />
               </section>
 

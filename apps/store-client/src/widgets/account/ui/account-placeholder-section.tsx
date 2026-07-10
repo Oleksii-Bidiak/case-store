@@ -22,7 +22,7 @@ export function AccountPlaceholderSection({
       <h1 className="mb-6 font-display text-[28px] font-bold tracking-[-0.02em] text-foreground">
         {title}
       </h1>
-      <div className="flex flex-col items-start gap-4 rounded-[18px] border border-border bg-card p-[26px] shadow-[var(--shadow-card)]">
+      <div className="flex flex-col items-start gap-4 rounded-[18px] border border-border bg-card p-[26px] shadow-card">
         <p className="text-sm text-muted-foreground">
           {dict.account.dashboard.comingSoonTitle}
         </p>

@@ -231,7 +231,7 @@ export function HeaderSearch() {
         <div
           role="menu"
           aria-label={dict.header.catalogAria}
-          className="absolute top-[calc(100%+8px)] left-0 z-50 w-72 rounded-2xl border border-border bg-popover p-2 shadow-[var(--shadow-lift)]"
+          className="absolute top-[calc(100%+8px)] left-0 z-50 w-72 rounded-2xl border border-border bg-popover p-2 shadow-lift"
         >
           {catPending && (
             <div className="flex flex-col gap-1 p-1" aria-hidden="true">
@@ -281,7 +281,7 @@ export function HeaderSearch() {
 
       {/* Suggestions dropdown (anchored to the full pill). */}
       {showSuggestions && (
-        <div className="absolute top-[calc(100%+8px)] right-0 left-0 z-50 rounded-2xl border border-border bg-popover p-2 shadow-[var(--shadow-lift)]">
+        <div className="absolute top-[calc(100%+8px)] right-0 left-0 z-50 rounded-2xl border border-border bg-popover p-2 shadow-lift">
           <ul
             id={LISTBOX_ID}
             role="listbox"

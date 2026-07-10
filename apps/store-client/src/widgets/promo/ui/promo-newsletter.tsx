@@ -10,7 +10,7 @@ export function PromoNewsletter() {
   const d = dict.promo.newsletter;
 
   return (
-    <section className="mt-11 flex flex-wrap items-center justify-between gap-7 rounded-[18px] border border-border bg-card p-9 shadow-[var(--shadow-card)] sm:p-11">
+    <section className="mt-11 flex flex-wrap items-center justify-between gap-7 rounded-[18px] border border-border bg-card p-9 shadow-card sm:p-11">
       <div className="max-w-[480px]">
         <h2 className="mb-2 font-display text-[23px] font-bold tracking-tight text-foreground">
           {d.heading}

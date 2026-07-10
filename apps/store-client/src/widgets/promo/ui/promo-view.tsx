@@ -32,7 +32,7 @@ export function PromoView() {
 
       {/* Hero. */}
       <div
-        className="relative overflow-hidden rounded-[22px] px-8 py-12 text-white shadow-[var(--shadow-elevated)] sm:px-14"
+        className="relative overflow-hidden rounded-[22px] px-8 py-12 text-white shadow-elevated sm:px-14"
         style={{
           background:
             "linear-gradient(120deg, oklch(0.42 0.15 350) 0%, var(--color-sale) 55%, oklch(0.58 0.16 45) 100%)",

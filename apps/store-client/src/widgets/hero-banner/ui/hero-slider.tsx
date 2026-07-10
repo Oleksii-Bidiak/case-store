@@ -141,7 +141,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
 
   return (
     <div
-      className="relative h-[420px] overflow-hidden rounded-2xl shadow-[var(--shadow-elevated)] sm:h-[440px]"
+      className="relative h-[420px] overflow-hidden rounded-2xl shadow-elevated sm:h-[440px]"
       style={{ backgroundImage: theme.gradient }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -172,7 +172,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
           {slide.cta && (
             <Button
               asChild
-              className={`mt-6 h-[52px] rounded-xl px-6 text-base font-bold shadow-[var(--shadow-lift)] ${theme.cta}`}
+              className={`mt-6 h-[52px] rounded-xl px-6 text-base font-bold shadow-lift ${theme.cta}`}
             >
               <Link href={slide.href}>
                 {slide.cta}
@@ -201,7 +201,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
         type="button"
         onClick={() => go(activeIndex - 1)}
         aria-label={dict.home.hero.prevSlide}
-        className="absolute top-1/2 left-3 z-10 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[var(--shadow-lift)] transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:left-4 sm:size-11"
+        className="absolute top-1/2 left-3 z-10 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-lift transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:left-4 sm:size-11"
       >
         <ChevronLeft className="size-5" />
       </button>
@@ -209,7 +209,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
         type="button"
         onClick={() => go(activeIndex + 1)}
         aria-label={dict.home.hero.nextSlide}
-        className="absolute top-1/2 right-3 z-10 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[var(--shadow-lift)] transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-4 sm:size-11"
+        className="absolute top-1/2 right-3 z-10 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-lift transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-4 sm:size-11"
       >
         <ChevronRight className="size-5" />
       </button>
@@ -225,6 +225,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
             onClick={() => go(i)}
             aria-label={dict.home.hero.goToSlide(i + 1)}
             aria-current={i === activeIndex}
+            // eslint-disable-next-line tailwindcss/no-arbitrary-value -- pseudo-element requires an explicit content value; empty string is the only correct one
             className={`relative h-1.5 rounded-full transition-all before:absolute before:top-1/2 before:left-1/2 before:size-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] ${
               i === activeIndex
                 ? "w-6 bg-white"
@@ -245,7 +246,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
               ? dict.home.hero.resumeAutoplay
               : dict.home.hero.pauseAutoplay
           }
-          className="absolute right-4 bottom-6 z-10 flex size-10 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[var(--shadow-lift)] transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:size-11"
+          className="absolute right-4 bottom-6 z-10 flex size-10 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-lift transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:size-11"
         >
           {paused ? <Play className="size-4" /> : <Pause className="size-4" />}
         </button>

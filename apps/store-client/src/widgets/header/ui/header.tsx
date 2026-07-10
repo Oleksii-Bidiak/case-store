@@ -229,7 +229,7 @@ export function Header({ announcement }: HeaderProps = {}) {
             >
               <span
                 aria-hidden="true"
-                className="inline-flex size-9 items-center justify-center rounded-xl bg-primary font-display text-lg font-bold text-primary-foreground shadow-[var(--shadow-elevated)]"
+                className="inline-flex size-9 items-center justify-center rounded-xl bg-primary font-display text-lg font-bold text-primary-foreground shadow-elevated"
               >
                 M
               </span>

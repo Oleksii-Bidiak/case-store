@@ -78,12 +78,13 @@ export function LegalDocView({
       {/* TOC + document body */}
       <div
         className={
+          // eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent
           hasToc ? "grid items-start gap-9 lg:grid-cols-[264px_1fr]" : ""
         }
       >
         {hasToc && <LegalDocToc sections={sections} />}
 
-        <article className="min-w-0 rounded-[18px] border border-border bg-card px-11 py-9 shadow-[var(--shadow-card)]">
+        <article className="min-w-0 rounded-[18px] border border-border bg-card px-11 py-9 shadow-card">
           <div
             className="legal-doc-body"
             dangerouslySetInnerHTML={{ __html: html }}
@@ -125,10 +126,10 @@ export function LegalDocView({
               <Link
                 key={doc.slug}
                 href={`/legal/${doc.slug}`}
-                className="flex items-center gap-3 rounded-[14px] border border-border bg-card px-[18px] py-4 no-underline shadow-[var(--shadow-card)] transition-[border-color,transform] hover:-translate-y-0.5 hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex items-center gap-3 rounded-[14px] border border-border bg-card px-[18px] py-4 no-underline shadow-card transition-[border-color,transform] hover:-translate-y-0.5 hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <span
-                  className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-[10px] text-primary"
+                  className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-primary"
                   style={{
                     background:
                       "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
