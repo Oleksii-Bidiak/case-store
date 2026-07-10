@@ -252,10 +252,10 @@
 | TASK-255 | [B/L] Admin identity in header — `AdminHeader` shows generic «Admin» (JWT carries only `{sub, role}`); light profile-fetch (email) on session bootstrap, fallback «Admin» on error | ✅ | 136 |
 | TASK-256 | [B/L] Contact inbox — add `ContactMessage.status = IN_PROGRESS` between NEW/CLOSED; match messages to `User` by email → show in customer card (TASK-252) + profile link from `/messages` | ✅ | 136 |
 | TASK-218 | [C/L] Header search mixed suggestions — products + up to 5 blog articles with separator, independently scrollable (unblocked by TASK-170 ✅) | ✅ | 139 |
-| TASK-260 | [D/L] Lint rule against arbitrary Tailwind values (F-21) — 242 `text-[Npx]`-style entries in 61 files; ESLint/tailwind rule blocking new arbitrary values, existing reduced to the scale opportunistically | ⬜ | — |
+| TASK-260 | [D/L] Lint rule against arbitrary Tailwind values (F-21) — 242 `text-[Npx]`-style entries in 61 files; ESLint/tailwind rule blocking new arbitrary values, existing reduced to the scale opportunistically | ✅ | 141 |
 | TASK-262 | [E/M] Traffic mirror in admin dashboard (after 261) — min: «Відвідуваність → open Umami» card; max (only if owner asks): 2–3 numbers via Umami API; do NOT rebuild Umami's charts | ✅ | 138 |
 | TASK-263 | [E/L] «Аналітика» section in `docs/admin-guide.md` — plain-UA: visits/unique/conversion/funnel, reading the Umami funnel, which events we send, why Umami numbers ≠ order numbers | ✅ | 138 |
-| TASK-272 | [H/H] Production deploy (after 271 rehearsal) — same pipeline on push `main` + manual approval via `production` Environment (owner reviewer); dated `pg_dump` pre-migrate + nightly cron (14d retention); post-deploy revalidate + Meili reindex (closes manual-qa §6/TASK-200); full cycle + one rehearsed rollback | ⬜ | — |
+| TASK-272 | [H/H] Production deploy (after 271 rehearsal) — same pipeline on push `main` + manual approval via `production` Environment (owner reviewer); dated `pg_dump` pre-migrate + nightly cron (14d retention); post-deploy revalidate + Meili reindex (closes manual-qa §6/TASK-200); full cycle + one rehearsed rollback (deferred — потребує реального сервера/секретів, окрема інтерактивна сесія з власником) | ⬜ | — |
 | TASK-273 | [C/L] Password-reset timing hardening (code-review follow-up to TASK-169) — equalize `requestPasswordReset` latency across existing vs unknown/inactive email so response time isn't an account-enumeration oracle (content is already identical; the 5/min throttle blunts it). Add fixed-cost work on the no-user branch | ✅ | 136 |
 
 ### Пізніша хвиля
