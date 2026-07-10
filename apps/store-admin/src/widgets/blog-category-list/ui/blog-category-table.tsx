@@ -78,8 +78,8 @@ export function BlogCategoryTable() {
         <TableHeader>
           <TableRow>
             <TableHead>{dict.blogCategories.colName}</TableHead>
-            <TableHead>{dict.blogCategories.colSlug}</TableHead>
-            <TableHead>{dict.blogCategories.colSort}</TableHead>
+            <TableHead hideOnMobile>{dict.blogCategories.colSlug}</TableHead>
+            <TableHead hideOnMobile>{dict.blogCategories.colSort}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
         </TableHeader>
@@ -94,10 +94,10 @@ export function BlogCategoryTable() {
                   {category.name}
                 </Link>
               </TableCell>
-              <TableCell className="text-muted-foreground">
+              <TableCell hideOnMobile className="text-muted-foreground">
                 {category.slug}
               </TableCell>
-              <TableCell>{category.sortOrder}</TableCell>
+              <TableCell hideOnMobile>{category.sortOrder}</TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end gap-2">
                   <Button asChild variant="outline" size="sm">

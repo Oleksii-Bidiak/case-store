@@ -195,7 +195,7 @@ export function AdminReviewTable() {
               <Loader2 className="size-6 animate-spin text-primary" />
             </div>
           )}
-          <Table>
+          <Table layout="card">
             <TableHeader>
               <TableRow>
                 <TableHead>{dict.reviews.colProduct}</TableHead>
@@ -219,23 +219,38 @@ export function AdminReviewTable() {
                 const busy = approving || rejecting;
                 return (
                   <TableRow key={review.id}>
-                    <TableCell className="font-medium">
+                    <TableCell
+                      label={dict.reviews.colProduct}
+                      className="font-medium"
+                    >
                       {review.productName}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell
+                      label={dict.reviews.colAuthor}
+                      className="text-sm text-muted-foreground"
+                    >
                       {review.userEmail.split("@")[0]}
                     </TableCell>
-                    <TableCell>
+                    <TableCell label={dict.reviews.colRating}>
                       <ReviewStars rating={review.rating} />
                     </TableCell>
-                    <TableCell className="max-w-xs text-sm text-muted-foreground">
+                    <TableCell
+                      label={dict.reviews.colComment}
+                      className="max-w-xs text-sm text-muted-foreground max-md:max-w-none"
+                    >
                       {truncate(review.comment)}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell
+                      label={dict.reviews.colDate}
+                      className="text-sm text-muted-foreground"
+                    >
                       {dateFormatter.format(new Date(review.createdAt))}
                     </TableCell>
                     {isPending && (
-                      <TableCell className="text-right">
+                      <TableCell
+                        label={dict.common.actions}
+                        className="text-right max-md:text-left"
+                      >
                         <div className="flex justify-end gap-2">
                           <Button
                             variant="outline"

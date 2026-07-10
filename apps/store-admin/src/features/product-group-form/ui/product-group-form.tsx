@@ -3,7 +3,7 @@
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2 } from "lucide-react";
-import { Button, Input, Label } from "@/shared/ui";
+import { Button, FormActionsBar, Input, Label } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
   productGroupSchema,
@@ -116,11 +116,11 @@ export function ProductGroupForm({
         <Label htmlFor="group-active">{dict.productGroupForm.active}</Label>
       </div>
 
-      <div>
+      <FormActionsBar>
         <Button type="submit" disabled={isPending}>
           {isPending ? dict.common.saving : submitLabel}
         </Button>
-      </div>
+      </FormActionsBar>
     </form>
   );
 }

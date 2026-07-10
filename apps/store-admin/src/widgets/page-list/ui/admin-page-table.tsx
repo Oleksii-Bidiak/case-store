@@ -108,9 +108,9 @@ export function AdminPageTable() {
         <TableHeader>
           <TableRow>
             <TableHead>{dict.pages.colTitle}</TableHead>
-            <TableHead>{dict.pages.colSlug}</TableHead>
+            <TableHead hideOnMobile>{dict.pages.colSlug}</TableHead>
             <TableHead>{dict.pages.colStatus}</TableHead>
-            <TableHead>{dict.pages.colSort}</TableHead>
+            <TableHead hideOnMobile>{dict.pages.colSort}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
         </TableHeader>
@@ -125,7 +125,7 @@ export function AdminPageTable() {
                   {page.title}
                 </Link>
               </TableCell>
-              <TableCell className="text-muted-foreground">
+              <TableCell hideOnMobile className="text-muted-foreground">
                 {page.slug}
               </TableCell>
               <TableCell>
@@ -135,7 +135,7 @@ export function AdminPageTable() {
                     : dict.pages.statusDraft}
                 </Badge>
               </TableCell>
-              <TableCell>{page.sortOrder}</TableCell>
+              <TableCell hideOnMobile>{page.sortOrder}</TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end gap-2">
                   <Button asChild variant="outline" size="sm">

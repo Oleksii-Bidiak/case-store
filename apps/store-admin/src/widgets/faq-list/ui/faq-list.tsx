@@ -107,7 +107,9 @@ export function AdminFaqTable() {
         <TableHeader>
           <TableRow>
             <TableHead>{dict.faq.colQuestion}</TableHead>
-            <TableHead className="w-24">{dict.faq.colOrder}</TableHead>
+            <TableHead hideOnMobile className="w-24">
+              {dict.faq.colOrder}
+            </TableHead>
             <TableHead className="w-32">{dict.faq.colStatus}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
@@ -120,7 +122,7 @@ export function AdminFaqTable() {
                   {item.question}
                 </Link>
               </TableCell>
-              <TableCell className="text-muted-foreground">
+              <TableCell hideOnMobile className="text-muted-foreground">
                 {item.sortOrder}
               </TableCell>
               <TableCell>

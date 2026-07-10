@@ -203,7 +203,7 @@ export function AdminSubscriberTable() {
               <TableRow>
                 <TableHead>{dict.subscribers.colEmail}</TableHead>
                 <TableHead>{dict.subscribers.colStatus}</TableHead>
-                <TableHead>{dict.subscribers.colSource}</TableHead>
+                <TableHead hideOnMobile>{dict.subscribers.colSource}</TableHead>
                 <TableHead>{dict.subscribers.colDate}</TableHead>
               </TableRow>
             </TableHeader>
@@ -225,7 +225,7 @@ export function AdminSubscriberTable() {
                       {statusLabel(subscriber.status)}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell hideOnMobile className="text-muted-foreground">
                     {subscriber.source || dict.subscribers.sourceEmpty}
                   </TableCell>
                   <TableCell className="text-muted-foreground">

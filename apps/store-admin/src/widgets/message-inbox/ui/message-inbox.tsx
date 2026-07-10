@@ -148,7 +148,7 @@ export function MessageInbox() {
               <Loader2 className="size-6 animate-spin text-primary" />
             </div>
           )}
-          <Table>
+          <Table layout="card">
             <TableHeader>
               <TableRow>
                 <TableHead>{dict.messages.colName}</TableHead>
@@ -171,7 +171,7 @@ export function MessageInbox() {
                       : undefined
                   }
                 >
-                  <TableCell>
+                  <TableCell label={dict.messages.colName}>
                     {message.matchedUserId ? (
                       <Link
                         href={`/users/${message.matchedUserId}`}
@@ -183,21 +183,33 @@ export function MessageInbox() {
                       message.name
                     )}
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
+                  <TableCell
+                    label={dict.messages.colTopic}
+                    className="text-sm text-muted-foreground"
+                  >
                     {message.topic || dict.messages.noTopic}
                   </TableCell>
-                  <TableCell className="max-w-xs text-sm text-muted-foreground">
+                  <TableCell
+                    label={dict.messages.colMessage}
+                    className="max-w-xs text-sm text-muted-foreground max-md:max-w-none"
+                  >
                     {truncate(message.message)}
                   </TableCell>
-                  <TableCell>
+                  <TableCell label={dict.messages.colStatus}>
                     <Badge variant={statusBadgeVariant(message.status)}>
                       {statusLabel(message.status)}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
+                  <TableCell
+                    label={dict.messages.colDate}
+                    className="text-sm text-muted-foreground"
+                  >
                     {dateFormatter.format(new Date(message.createdAt))}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell
+                    label={dict.common.actions}
+                    className="text-right max-md:text-left"
+                  >
                     <Button
                       variant="outline"
                       size="sm"

@@ -171,6 +171,25 @@ describe("MessageInbox", () => {
     expect(await screen.findByText(dict.messages.empty)).toBeInTheDocument();
   });
 
+  it("renders in card mode with per-cell labels (TASK-258)", async () => {
+    server.use(
+      http.get("*/api/contact/admin", () => listResponse([makeMessageRow()])),
+    );
+
+    const { container } = renderWithProviders(<MessageInbox />);
+    await screen.findByText("Ivan Petrenko");
+
+    expect(container.querySelector('[data-slot="table"]')).toHaveClass(
+      "max-md:block",
+    );
+    expect(
+      container.querySelector(`[data-label="${dict.messages.colStatus}"]`),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(`[data-label="${dict.common.actions}"]`),
+    ).toBeInTheDocument();
+  });
+
   it("offers the IN_PROGRESS filter option and round-trips it through the URL (TASK-256)", async () => {
     const user = userEvent.setup();
     server.use(

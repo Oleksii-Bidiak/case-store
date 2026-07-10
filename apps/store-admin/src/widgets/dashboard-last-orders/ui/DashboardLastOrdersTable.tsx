@@ -72,11 +72,11 @@ export function DashboardLastOrdersTable() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>{dict.orders.colOrder}</TableHead>
+            <TableHead hideOnMobile>{dict.orders.colOrder}</TableHead>
             <TableHead>{dict.orders.colCustomer}</TableHead>
             <TableHead>{dict.orders.colStatus}</TableHead>
             <TableHead>{dict.orders.colTotal}</TableHead>
-            <TableHead>{dict.orders.colCreated}</TableHead>
+            <TableHead hideOnMobile>{dict.orders.colCreated}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
         </TableHeader>
@@ -93,7 +93,7 @@ export function DashboardLastOrdersTable() {
           ) : (
             orders.map((order) => (
               <TableRow key={order.id}>
-                <TableCell className="font-mono text-xs">
+                <TableCell hideOnMobile className="font-mono text-xs">
                   {order.id.slice(0, 8)}…
                 </TableCell>
                 <TableCell>
@@ -121,7 +121,7 @@ export function DashboardLastOrdersTable() {
                   </Badge>
                 </TableCell>
                 <TableCell>{formatCurrency(order.total)}</TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell hideOnMobile className="text-muted-foreground">
                   {dateFormatter.format(new Date(order.createdAt))}
                 </TableCell>
                 <TableCell className="text-right">

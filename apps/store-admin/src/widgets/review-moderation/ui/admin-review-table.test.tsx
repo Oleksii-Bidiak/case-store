@@ -132,4 +132,23 @@ describe("AdminReviewTable", () => {
       ),
     );
   });
+
+  it("renders in card mode with per-cell labels (TASK-258)", async () => {
+    server.use(
+      http.get("*/api/admin/reviews", () => listResponse([makeReviewRow()])),
+    );
+
+    const { container } = renderWithProviders(<AdminReviewTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(container.querySelector('[data-slot="table"]')).toHaveClass(
+      "max-md:block",
+    );
+    expect(
+      container.querySelector(`[data-label="${dict.reviews.colProduct}"]`),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(`[data-label="${dict.common.actions}"]`),
+    ).toBeInTheDocument();
+  });
 });

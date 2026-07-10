@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Button, Input, Label } from "@/shared/ui";
+import { Button, FormActionsBar, Input, Label } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
   getSiteContactControllerGetSettingsQueryKey,
@@ -227,11 +227,11 @@ export function SiteContactForm({ settings }: SiteContactFormProps) {
 
       {LINK_FIELDS.map(renderTextField)}
 
-      <div>
+      <FormActionsBar>
         <Button type="submit" disabled={update.isPending}>
           {update.isPending ? dict.common.saving : dict.siteContactForm.submit}
         </Button>
-      </div>
+      </FormActionsBar>
     </form>
   );
 }

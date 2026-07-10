@@ -109,7 +109,10 @@ export function MessageDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      {/* No max-w override: the base DialogContent already caps at sm:max-w-lg,
+          and an unprefixed max-w-* here would shadow the TASK-258 mobile
+          full-height sizing. */}
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {dict.messages.detailTitle}

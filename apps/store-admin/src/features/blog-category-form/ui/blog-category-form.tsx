@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Input, Label } from "@/shared/ui";
+import { Button, FormActionsBar, Input, Label } from "@/shared/ui";
 import { slugify } from "@/shared/lib/slug";
 import { dict } from "@/shared/config";
 import {
@@ -110,11 +110,11 @@ export function BlogCategoryForm({
         )}
       </div>
 
-      <div>
+      <FormActionsBar>
         <Button type="submit" disabled={isPending}>
           {isPending ? dict.common.saving : submitLabel}
         </Button>
-      </div>
+      </FormActionsBar>
     </form>
   );
 }

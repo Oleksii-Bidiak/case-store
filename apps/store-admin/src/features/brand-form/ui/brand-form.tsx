@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { slugify } from "@/shared/lib";
-import { Button, Input, Label } from "@/shared/ui";
+import { Button, FormActionsBar, Input, Label } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
   brandSchema,
@@ -130,11 +130,11 @@ export function BrandForm({
         <Label htmlFor="brand-active">{dict.brandForm.active}</Label>
       </div>
 
-      <div>
+      <FormActionsBar>
         <Button type="submit" disabled={isPending}>
           {isPending ? dict.common.saving : submitLabel}
         </Button>
-      </div>
+      </FormActionsBar>
     </form>
   );
 }

@@ -5,6 +5,7 @@ import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Button,
+  FormActionsBar,
   Input,
   Label,
   Select,
@@ -247,11 +248,11 @@ export function DiscountForm({
         <Label htmlFor="discount-active">{dict.discountForm.active}</Label>
       </div>
 
-      <div>
+      <FormActionsBar>
         <Button type="submit" disabled={isPending}>
           {isPending ? dict.common.saving : submitLabel}
         </Button>
-      </div>
+      </FormActionsBar>
     </form>
   );
 }

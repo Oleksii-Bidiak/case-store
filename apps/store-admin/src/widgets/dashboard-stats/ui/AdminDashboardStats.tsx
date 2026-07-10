@@ -85,7 +85,11 @@ export function AdminDashboardStats({ summary }: AdminDashboardStatsProps) {
       ?.count ?? 0;
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+    // TASK-258-H: single column below `sm` — two-up at phone width the
+    // text-3xl currency values are unbreakable tokens that force the grid
+    // track wider than the viewport (grid min-width:auto) → page-level
+    // horizontal scroll.
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <StatCard
         label={dict.dashboard.totalRevenue}
         value={formatCurrency(summary.revenue.totalRevenue)}

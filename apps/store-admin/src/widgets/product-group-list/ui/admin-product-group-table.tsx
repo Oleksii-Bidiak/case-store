@@ -56,8 +56,10 @@ export function AdminProductGroupTable() {
         <TableHeader>
           <TableRow>
             <TableHead>{dict.productGroups.colName}</TableHead>
-            <TableHead>{dict.productGroups.colAxes}</TableHead>
-            <TableHead>{dict.productGroups.colPositions}</TableHead>
+            <TableHead hideOnMobile>{dict.productGroups.colAxes}</TableHead>
+            <TableHead hideOnMobile>
+              {dict.productGroups.colPositions}
+            </TableHead>
             <TableHead>{dict.productGroups.colStatus}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
@@ -66,12 +68,12 @@ export function AdminProductGroupTable() {
           {groups.map((group) => (
             <TableRow key={group.id}>
               <TableCell className="font-medium">{group.name}</TableCell>
-              <TableCell className="text-muted-foreground">
+              <TableCell hideOnMobile className="text-muted-foreground">
                 {group.axes.length > 0
                   ? group.axes.map((axis) => axis.name).join(", ")
                   : "—"}
               </TableCell>
-              <TableCell>{group.positionCount}</TableCell>
+              <TableCell hideOnMobile>{group.positionCount}</TableCell>
               <TableCell className="text-muted-foreground">
                 {group.isActive ? dict.common.active : dict.common.inactive}
               </TableCell>

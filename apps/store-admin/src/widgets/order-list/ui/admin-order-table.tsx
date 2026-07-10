@@ -205,7 +205,7 @@ export function AdminOrderTable() {
               <Loader2 className="size-6 animate-spin text-primary" />
             </div>
           )}
-          <Table>
+          <Table layout="card">
             <TableHeader>
               <TableRow>
                 <TableHead>{dict.orders.colOrder}</TableHead>
@@ -241,10 +241,13 @@ export function AdminOrderTable() {
             <TableBody>
               {orders.map((order) => (
                 <TableRow key={order.id}>
-                  <TableCell className="font-mono text-xs">
+                  <TableCell
+                    label={dict.orders.colOrder}
+                    className="font-mono text-xs"
+                  >
                     {order.id.slice(0, 8)}…
                   </TableCell>
-                  <TableCell>
+                  <TableCell label={dict.orders.colCustomer}>
                     {order.customer ? (
                       <div className="flex flex-col gap-0.5">
                         <span className="text-sm">{order.customer.email}</span>
@@ -263,24 +266,34 @@ export function AdminOrderTable() {
                       </span>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell label={dict.orders.colStatus}>
                     <Badge variant={orderStatusBadgeVariant(order.status)}>
                       {orderStatusLabel(order.status)}
                     </Badge>
                   </TableCell>
-                  <TableCell>
+                  <TableCell label={dict.orders.colPayment}>
                     <Badge
                       variant={paymentStatusBadgeVariant(order.paymentStatus)}
                     >
                       {paymentStatusLabel(order.paymentStatus)}
                     </Badge>
                   </TableCell>
-                  <TableCell>{formatCurrency(order.total)}</TableCell>
-                  <TableCell>{order.items.length}</TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell label={dict.orders.colTotal}>
+                    {formatCurrency(order.total)}
+                  </TableCell>
+                  <TableCell label={dict.orders.colItems}>
+                    {order.items.length}
+                  </TableCell>
+                  <TableCell
+                    label={dict.orders.colCreated}
+                    className="text-muted-foreground"
+                  >
                     {dateFormatter.format(new Date(order.createdAt))}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell
+                    label={dict.common.actions}
+                    className="text-right max-md:text-left"
+                  >
                     <Button asChild variant="outline" size="sm">
                       <Link href={`/orders/${order.id}`}>
                         {dict.common.view}

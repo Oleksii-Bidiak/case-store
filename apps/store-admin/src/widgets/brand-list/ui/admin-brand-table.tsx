@@ -187,7 +187,7 @@ export function AdminBrandTable() {
             <TableHeader>
               <TableRow>
                 <TableHead>{dict.brands.colName}</TableHead>
-                <TableHead>{dict.brands.colSlug}</TableHead>
+                <TableHead hideOnMobile>{dict.brands.colSlug}</TableHead>
                 <TableHead>{dict.brands.colStatus}</TableHead>
                 <TableHead className="text-right">
                   {dict.common.actions}
@@ -205,7 +205,7 @@ export function AdminBrandTable() {
                       {brand.name}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell hideOnMobile className="text-muted-foreground">
                     {brand.slug}
                   </TableCell>
                   <TableCell>

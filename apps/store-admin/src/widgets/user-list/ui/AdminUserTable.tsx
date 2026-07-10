@@ -200,7 +200,7 @@ export function AdminUserTable() {
                   sortOrder={sortOrder}
                   onSort={onSort}
                 />
-                <TableHead>{dict.users.colName}</TableHead>
+                <TableHead hideOnMobile>{dict.users.colName}</TableHead>
                 <TableHead>{dict.users.colRole}</TableHead>
                 <TableHead>{dict.users.colStatus}</TableHead>
                 <SortableColumnHeader
@@ -209,6 +209,7 @@ export function AdminUserTable() {
                   sortBy={sortBy}
                   sortOrder={sortOrder}
                   onSort={onSort}
+                  hideOnMobile
                 />
                 <TableHead className="text-right">
                   {dict.common.actions}
@@ -224,7 +225,7 @@ export function AdminUserTable() {
                     </div>
                   </TableCell>
                   <TableCell className="font-medium">{user.email}</TableCell>
-                  <TableCell>{fullName(user)}</TableCell>
+                  <TableCell hideOnMobile>{fullName(user)}</TableCell>
                   <TableCell>
                     <Badge
                       variant={
@@ -245,7 +246,7 @@ export function AdminUserTable() {
                         : dict.common.inactive}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell hideOnMobile className="text-muted-foreground">
                     {dateFormatter.format(new Date(user.createdAt))}
                   </TableCell>
                   <TableCell className="text-right">

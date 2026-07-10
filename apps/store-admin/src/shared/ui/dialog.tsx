@@ -74,6 +74,11 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
+          // TASK-258: below `md` the centered card becomes a near-full-screen
+          // sheet-like surface (real dialog content is cramped on a phone);
+          // md+ rendering is untouched. `content-start` keeps grid children
+          // stacked at the top instead of spreading over the taller surface.
+          "max-md:top-4 max-md:left-4 max-md:h-[calc(100%-2rem)] max-md:w-[calc(100%-2rem)] max-md:max-w-none max-md:translate-x-0 max-md:translate-y-0 max-md:content-start max-md:overflow-y-auto",
           className,
         )}
         {...props}
