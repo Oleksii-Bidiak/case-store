@@ -53,9 +53,9 @@ export async function Footer() {
     contact != null && SOCIAL_LINKS.some(({ key }) => contact[key]);
 
   return (
-    <footer className="mt-16 bg-foreground text-background">
+    <footer className="mt-16 bg-footer text-footer-foreground">
       {/* Trust strip */}
-      <div className="border-b border-background/10">
+      <div className="border-b border-footer-foreground/10">
         <ul className="mx-auto grid max-w-7xl grid-cols-1 gap-4 px-4 py-6 sm:grid-cols-3">
           {TRUST_ITEMS.map(({ icon: Icon, label }) => (
             <li
@@ -84,7 +84,7 @@ export async function Footer() {
               MobileStore
             </span>
           </Link>
-          <p className="max-w-xs text-sm leading-relaxed text-background/70">
+          <p className="max-w-xs text-sm leading-relaxed text-footer-foreground/70">
             {dict.footer.tagline}
           </p>
           {hasSocials && (
@@ -102,7 +102,7 @@ export async function Footer() {
                       target="_blank"
                       rel="noopener noreferrer"
                       aria-label={label}
-                      className="inline-flex size-9 items-center justify-center rounded-lg bg-background/10 transition-colors hover:bg-background/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-background"
+                      className="inline-flex size-9 items-center justify-center rounded-lg bg-footer-foreground/10 transition-colors hover:bg-footer-foreground/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-footer-foreground"
                     >
                       <Icon className="size-[19px]" aria-hidden="true" />
                     </a>
@@ -154,17 +154,17 @@ export async function Footer() {
           </h2>
           <a
             href={`tel:${phone.replace(/\s+/g, "")}`}
-            className="flex items-center gap-2 font-mono text-lg font-bold transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-background"
+            className="flex items-center gap-2 font-mono text-lg font-bold transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-footer-foreground"
           >
             <Phone className="size-4" aria-hidden="true" />
             {phone}
           </a>
-          <p className="text-sm text-background/70">
+          <p className="text-sm text-footer-foreground/70">
             {dict.footer.freeCallout} · {hours}
           </p>
           <a
             href={`mailto:${email}`}
-            className="flex items-center gap-2 text-sm text-background/70 transition-colors hover:text-background focus:outline-none focus-visible:ring-2 focus-visible:ring-background"
+            className="flex items-center gap-2 text-sm text-footer-foreground/70 transition-colors hover:text-footer-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-footer-foreground"
           >
             <Mail className="size-4" aria-hidden="true" />
             {email}
@@ -173,9 +173,9 @@ export async function Footer() {
       </div>
 
       {/* Bottom bar */}
-      <div className="border-t border-background/10">
+      <div className="border-t border-footer-foreground/10">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-5 sm:flex-row">
-          <p className="text-xs text-background/60">
+          <p className="text-xs text-footer-foreground/60">
             {dict.footer.rights(year)}
           </p>
           <ul
@@ -185,7 +185,7 @@ export async function Footer() {
             {dict.footer.payments.map((label) => (
               <li
                 key={label}
-                className="rounded-md border border-background/20 px-2.5 py-1 text-[11px] font-semibold text-background/80"
+                className="rounded-md border border-footer-foreground/20 px-2.5 py-1 text-[11px] font-semibold text-footer-foreground/80"
               >
                 {label}
               </li>
@@ -207,7 +207,7 @@ function FooterLink({
   return (
     <Link
       href={href}
-      className="text-sm text-background/70 transition-colors hover:text-background focus:outline-none focus-visible:ring-2 focus-visible:ring-background"
+      className="text-sm text-footer-foreground/70 transition-colors hover:text-footer-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-footer-foreground"
     >
       {children}
     </Link>
