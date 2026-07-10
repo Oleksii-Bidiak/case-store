@@ -410,7 +410,8 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
       }),
       expect.anything(),
     );
-  });
+    // Typing through the full RHF form + live SERP preview re-renders is slow in jsdom.
+  }, 15000);
 
   it("EDIT: seeds the meta fields from defaultValues", async () => {
     renderWithProviders(
@@ -518,7 +519,8 @@ describe("ProductForm — SERP snippet preview (TASK-268)", () => {
     expect(previewTitle()).not.toHaveTextContent("| MobileStore");
     expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintOwn);
     expect(titleCounter()).toHaveTextContent("15/60");
-  });
+    // Typing through the full RHF form + live SERP preview re-renders is slow in jsdom.
+  }, 15000);
 
   it("falls back through the tier chain when the typed meta title is cleared", async () => {
     renderWithProviders(
