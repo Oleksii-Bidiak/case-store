@@ -119,7 +119,7 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
               onClick={() =>
                 setValue("rating", value, { shouldValidate: true })
               }
-              className="rounded p-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded p-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Star
                 className={

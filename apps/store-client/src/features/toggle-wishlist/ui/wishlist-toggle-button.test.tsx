@@ -56,4 +56,20 @@ describe("WishlistToggleButton (TASK-076)", () => {
     });
     expect(button).toHaveAttribute("aria-pressed", "true");
   });
+
+  it("gives the overlay variant a 44px (size-11) hit-area (TASK-259-H)", () => {
+    renderWithProviders(
+      <WishlistToggleButton
+        productId="p1"
+        productName="iPhone Case"
+        variant="overlay"
+      />,
+      { queryClient: seededClient([]) },
+    );
+
+    const button = screen.getByRole("button", {
+      name: dict.productCard.wishlistAddAria("iPhone Case"),
+    });
+    expect(button).toHaveClass("size-11");
+  });
 });

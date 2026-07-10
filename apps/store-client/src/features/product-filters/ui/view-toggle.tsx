@@ -17,7 +17,7 @@ interface ViewToggleProps {
  */
 export function ViewToggle({ view, onChange, className }: ViewToggleProps) {
   const buttonClass = (active: boolean) =>
-    `inline-flex size-9 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
+    `inline-flex size-11 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
       active
         ? "bg-primary text-primary-foreground"
         : "text-muted-foreground hover:text-foreground"

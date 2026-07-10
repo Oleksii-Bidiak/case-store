@@ -261,7 +261,7 @@ export function CartItemRow({
             type="button"
             aria-label={dict.cart.removeNamedAria(item.productName)}
             onClick={() => removeItem.mutate({ itemId: item.id })}
-            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex size-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Trash2 className="size-[18px]" />
           </button>
