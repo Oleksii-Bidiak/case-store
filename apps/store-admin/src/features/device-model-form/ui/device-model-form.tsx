@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useAdminDeviceControllerFindBrands } from "@/entities/device";
 import {
   Button,
+  FormActionsBar,
   Input,
   Label,
   Select,
@@ -188,11 +189,11 @@ export function DeviceModelForm({
         </Label>
       </div>
 
-      <div>
+      <FormActionsBar>
         <Button type="submit" disabled={isPending}>
           {isPending ? dict.common.saving : submitLabel}
         </Button>
-      </div>
+      </FormActionsBar>
     </form>
   );
 }

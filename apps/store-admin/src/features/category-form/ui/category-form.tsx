@@ -13,6 +13,7 @@ import {
 } from "@/shared/lib/seo";
 import {
   Button,
+  FormActionsBar,
   Input,
   Label,
   Select,
@@ -317,11 +318,11 @@ export function CategoryForm({
         <Label htmlFor="category-active">{dict.categoryForm.active}</Label>
       </div>
 
-      <div>
+      <FormActionsBar>
         <Button type="submit" disabled={isPending}>
           {isPending ? dict.common.saving : submitLabel}
         </Button>
-      </div>
+      </FormActionsBar>
     </form>
   );
 }

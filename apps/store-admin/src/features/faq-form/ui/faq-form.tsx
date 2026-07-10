@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Input, Label, Textarea } from "@/shared/ui";
+import { Button, FormActionsBar, Input, Label, Textarea } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
   faqSchema,
@@ -135,11 +135,11 @@ export function FaqForm({
         <p className="text-sm text-muted-foreground">{f.isActiveHint}</p>
       </div>
 
-      <div>
+      <FormActionsBar>
         <Button type="submit" disabled={isPending}>
           {isPending ? dict.common.saving : submitLabel}
         </Button>
-      </div>
+      </FormActionsBar>
     </form>
   );
 }

@@ -5,7 +5,14 @@ import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Button, Input, Label, SeoSnippetPreview, Textarea } from "@/shared/ui";
+import {
+  Button,
+  FormActionsBar,
+  Input,
+  Label,
+  SeoSnippetPreview,
+  Textarea,
+} from "@/shared/ui";
 import {
   resolveSeoPreviewTitle,
   resolveSeoPreviewDescription,
@@ -249,11 +256,11 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
         <p className="text-sm text-muted-foreground">{f.noindexSiteHint}</p>
       </div>
 
-      <div>
+      <FormActionsBar>
         <Button type="submit" disabled={update.isPending}>
           {update.isPending ? dict.common.saving : f.submit}
         </Button>
-      </div>
+      </FormActionsBar>
     </form>
   );
 }

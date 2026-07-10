@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Button,
   Checkbox,
+  FormActionsBar,
   Input,
   Label,
   Select,
@@ -170,7 +171,7 @@ export function AttributeDefinitionForm({
         <Label htmlFor="attr-filterable">{d.isFilterable}</Label>
       </div>
 
-      <div className="flex justify-end gap-2">
+      <FormActionsBar className="flex justify-end gap-2">
         <Button
           type="button"
           variant="outline"
@@ -182,7 +183,7 @@ export function AttributeDefinitionForm({
         <Button type="submit" disabled={isPending}>
           {isPending ? d.saving : submitLabel}
         </Button>
-      </div>
+      </FormActionsBar>
     </form>
   );
 }

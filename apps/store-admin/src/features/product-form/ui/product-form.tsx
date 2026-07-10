@@ -18,6 +18,7 @@ import {
 } from "@/shared/lib/seo";
 import {
   Button,
+  FormActionsBar,
   Input,
   Label,
   Select,
@@ -606,11 +607,11 @@ export function ProductForm({
           track an in-form category change. */}
       {renderSpecsSection?.(categoryIdValue)}
 
-      <div>
+      <FormActionsBar>
         <Button type="submit" disabled={isPending}>
           {isPending ? dict.common.saving : submitLabel}
         </Button>
-      </div>
+      </FormActionsBar>
     </form>
   );
 }
