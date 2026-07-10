@@ -163,6 +163,7 @@ function TableCell({
         isCard &&
           !hideOnMobile &&
           label !== undefined &&
+          // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mobile card view injects the column header via attr(data-label); not expressible without an arbitrary value
           "max-md:before:shrink-0 max-md:before:text-xs max-md:before:font-medium max-md:before:tracking-wide max-md:before:uppercase max-md:before:text-muted-foreground max-md:before:content-[attr(data-label)]",
         hideOnMobile && "hidden md:table-cell",
         className,

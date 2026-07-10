@@ -195,6 +195,7 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
         onFilterChange={applyFilters}
       />
 
+      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
         {/* Desktop sidebar */}
         <aside

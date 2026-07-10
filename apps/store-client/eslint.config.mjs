@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from 'eslint/config';
 import nextVitals from 'eslint-config-next/core-web-vitals';
 import nextTs from 'eslint-config-next/typescript';
+import tailwindcss from 'eslint-plugin-tailwindcss';
 
 /**
  * FSD (Feature-Sliced Design) layer boundary rules.
@@ -108,11 +109,35 @@ const testOverrides = [
   },
 ];
 
+/**
+ * Design-token guard (TASK-260): forbid Tailwind arbitrary values like
+ * `text-[13.5px]` / `w-[137px]` — new code must use the design-token scale
+ * (or add a proper `@theme` token in globals.css). Pre-existing violations
+ * are grandfathered in `eslint-suppressions.json`; structurally necessary
+ * cases carry an inline eslint-disable comment with a reason.
+ * Only `no-arbitrary-value` is enabled — not the plugin's full preset.
+ */
+const tailwindTokenGuard = [
+  {
+    name: 'tailwind-no-arbitrary-value',
+    plugins: { tailwindcss },
+    settings: {
+      tailwindcss: {
+        cssConfigPath: './src/app/globals.css',
+      },
+    },
+    rules: {
+      'tailwindcss/no-arbitrary-value': 'error',
+    },
+  },
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   ...fsdBoundaryRules,
   ...testOverrides,
+  ...tailwindTokenGuard,
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

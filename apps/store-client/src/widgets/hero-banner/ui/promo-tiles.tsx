@@ -86,7 +86,7 @@ export function PromoTiles({ banners }: PromoTilesProps = {}) {
           <Link
             key={`${tile.title}-${i}`}
             href={tile.href}
-            className={`group flex flex-col rounded-2xl border p-6 transition-shadow hover:shadow-[var(--shadow-lift)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${accent.surface}`}
+            className={`group flex flex-col rounded-2xl border p-6 transition-shadow hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${accent.surface}`}
           >
             {tile.badge && (
               <Badge variant={accent.badge} className="w-fit">

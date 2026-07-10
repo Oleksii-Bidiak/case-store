@@ -86,7 +86,8 @@ export function PopularRail() {
                   onClick={() => setTab(key)}
                   className={`px-0.5 py-3.5 font-display text-base font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     active
-                      ? "text-foreground shadow-[inset_0_-2px_0_0_var(--color-primary)]"
+                      ? // eslint-disable-next-line tailwindcss/no-arbitrary-value -- one-off inset active-tab underline, not a reusable elevation token
+                        "text-foreground shadow-[inset_0_-2px_0_0_var(--color-primary)]"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >

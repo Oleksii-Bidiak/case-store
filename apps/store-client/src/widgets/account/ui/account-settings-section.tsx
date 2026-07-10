@@ -26,7 +26,7 @@ export function AccountSettingsSection() {
         {d.settingsHeading}
       </h1>
 
-      <div className="rounded-[18px] border border-border bg-card p-[26px] shadow-[var(--shadow-card)]">
+      <div className="rounded-[18px] border border-border bg-card p-[26px] shadow-card">
         <h2 className="mb-1.5 text-[17px] font-semibold text-foreground">
           {d.appearanceHeading}
         </h2>
@@ -35,7 +35,7 @@ export function AccountSettingsSection() {
         </p>
       </div>
 
-      <div className="mt-[18px] rounded-[18px] border border-border bg-card p-[26px] shadow-[var(--shadow-card)]">
+      <div className="mt-[18px] rounded-[18px] border border-border bg-card p-[26px] shadow-card">
         <h2 className="mb-2 text-[17px] font-semibold text-foreground">
           {d.notificationsHeading}
         </h2>

@@ -27,7 +27,7 @@ export function Newsletter() {
 
   return (
     <section className="mx-auto w-full max-w-7xl px-4">
-      <div className="flex flex-wrap items-center justify-between gap-8 rounded-2xl border border-border bg-card p-8 shadow-[var(--shadow-card)] sm:p-10">
+      <div className="flex flex-wrap items-center justify-between gap-8 rounded-2xl border border-border bg-card p-8 shadow-card sm:p-10">
         <div className="max-w-xl">
           <h2 className="font-display text-xl font-bold tracking-tight text-foreground sm:text-2xl">
             {heading}

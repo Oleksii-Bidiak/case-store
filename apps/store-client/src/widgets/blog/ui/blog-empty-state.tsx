@@ -6,7 +6,7 @@ import { BlogSearchIcon } from "./blog-icons";
  */
 export function BlogEmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center rounded-[18px] border border-border bg-card px-5 py-16 text-center shadow-[var(--shadow-card)]">
+    <div className="flex flex-col items-center justify-center rounded-[18px] border border-border bg-card px-5 py-16 text-center shadow-card">
       <span className="mb-4 inline-flex size-16 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <BlogSearchIcon width={30} height={30} strokeWidth={1.6} />
       </span>

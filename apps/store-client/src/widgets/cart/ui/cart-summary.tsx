@@ -31,7 +31,7 @@ export function CartSummary({ totals, servicesTotal = 0 }: CartSummaryProps) {
   const payableText = formatMoney((payableCents / 100).toFixed(2));
 
   return (
-    <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-[var(--shadow-card)]">
+    <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-card">
       <h2 className="mb-4 font-display text-[18px] font-bold text-foreground">
         {dict.cart.summaryHeading}
       </h2>

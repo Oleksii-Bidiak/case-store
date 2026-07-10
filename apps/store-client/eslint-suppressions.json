@@ -1,0 +1,512 @@
+{
+  "src/app/blog/[slug]/page.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/app/blog/page.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 4
+    }
+  },
+  "src/app/cart/page.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/app/categories/page.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/app/checkout/page.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/app/contact/page.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/app/info/page.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/app/layout.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/app/legal/[slug]/page.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/app/legal/page.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/app/products/page.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 4
+    }
+  },
+  "src/app/promo/page.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/app/wishlist/page.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/features/add-to-cart/ui/add-to-cart-button.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/features/auth/ui/auth-sheet.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/features/auth/ui/forgot-password-form.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/features/auth/ui/login-form.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/features/auth/ui/register-form.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/features/auth/ui/reset-password-form.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/features/newsletter-subscribe/ui/newsletter-subscribe-form.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/features/product-filters/ui/active-filter-chips.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 7
+    }
+  },
+  "src/features/product-filters/ui/brand-filter.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/features/product-filters/ui/device-model-filter.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/features/product-filters/ui/product-filters.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 4
+    }
+  },
+  "src/features/product-filters/ui/sort-select.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/features/product-filters/ui/spec-facets.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/features/product-filters/ui/view-toggle.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 3
+    }
+  },
+  "src/shared/ui/badge.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/shared/ui/button.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/shared/ui/dialog.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 5
+    }
+  },
+  "src/shared/ui/input.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/shared/ui/select.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 5
+    }
+  },
+  "src/shared/ui/slider.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/shared/ui/tabs.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/shared/ui/textarea.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/widgets/account/ui/account-bonuses-section.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 7
+    }
+  },
+  "src/widgets/account/ui/account-placeholder-section.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 7
+    }
+  },
+  "src/widgets/account/ui/account-profile-section.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 12
+    }
+  },
+  "src/widgets/account/ui/account-settings-section.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 18
+    }
+  },
+  "src/widgets/account/ui/account-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 14
+    }
+  },
+  "src/widgets/blog/ui/blog-article-body.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 4
+    }
+  },
+  "src/widgets/blog/ui/blog-article-share.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/widgets/blog/ui/blog-article-toc.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 3
+    }
+  },
+  "src/widgets/blog/ui/blog-article-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 28
+    }
+  },
+  "src/widgets/blog/ui/blog-empty-state.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 3
+    }
+  },
+  "src/widgets/blog/ui/blog-featured-card.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 21
+    }
+  },
+  "src/widgets/blog/ui/blog-newsletter.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 6
+    }
+  },
+  "src/widgets/blog/ui/blog-post-card.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 15
+    }
+  },
+  "src/widgets/blog/ui/blog-related-card.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 9
+    }
+  },
+  "src/widgets/blog/ui/blog-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 19
+    }
+  },
+  "src/widgets/cart/ui/cart-delivery-payment.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 10
+    }
+  },
+  "src/widgets/cart/ui/cart-item-row.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 18
+    }
+  },
+  "src/widgets/cart/ui/cart-sheet.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 3
+    }
+  },
+  "src/widgets/cart/ui/cart-summary.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 8
+    }
+  },
+  "src/widgets/cart/ui/cart-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 5
+    }
+  },
+  "src/widgets/categories/ui/categories-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 27
+    }
+  },
+  "src/widgets/checkout/ui/checkout-order-summary.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 14
+    }
+  },
+  "src/widgets/checkout/ui/checkout-payment-stub.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 8
+    }
+  },
+  "src/widgets/checkout/ui/checkout-step-indicator.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/widgets/checkout/ui/checkout-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 3
+    }
+  },
+  "src/widgets/contact/ui/contact-form.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 21
+    }
+  },
+  "src/widgets/contact/ui/contact-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 56
+    }
+  },
+  "src/widgets/footer/ui/footer.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/widgets/header/ui/announcement-bar.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/widgets/header/ui/header-auth.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/widgets/header/ui/header-cart-badge.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/widgets/header/ui/header-search.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 6
+    }
+  },
+  "src/widgets/header/ui/header-wishlist-badge.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 3
+    }
+  },
+  "src/widgets/header/ui/header.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 3
+    }
+  },
+  "src/widgets/hero-banner/ui/hero-slider.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 7
+    }
+  },
+  "src/widgets/hero-banner/ui/model-picker.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 1
+    }
+  },
+  "src/widgets/info-support/ui/info-contact-form.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 8
+    }
+  },
+  "src/widgets/info-support/ui/info-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 77
+    }
+  },
+  "src/widgets/legal-doc/ui/legal-doc-actions.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 5
+    }
+  },
+  "src/widgets/legal-doc/ui/legal-doc-toc.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 3
+    }
+  },
+  "src/widgets/legal-doc/ui/legal-doc-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 27
+    }
+  },
+  "src/widgets/legal-doc/ui/legal-hub-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 29
+    }
+  },
+  "src/widgets/not-found/ui/not-found-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 21
+    }
+  },
+  "src/widgets/product-card-actions/ui/product-card-actions.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 3
+    }
+  },
+  "src/widgets/product-detail/ui/product-compatible.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 10
+    }
+  },
+  "src/widgets/product-detail/ui/product-detail-skeleton.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 6
+    }
+  },
+  "src/widgets/product-detail/ui/product-detail-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 9
+    }
+  },
+  "src/widgets/product-detail/ui/product-highlights.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 3
+    }
+  },
+  "src/widgets/product-detail/ui/product-related.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 10
+    }
+  },
+  "src/widgets/product-detail/ui/product-specs-tabs.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 8
+    }
+  },
+  "src/widgets/product-detail/ui/product-trust-badges.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 5
+    }
+  },
+  "src/widgets/product-grid/ui/product-grid-skeleton.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/widgets/product-grid/ui/product-grid.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 3
+    }
+  },
+  "src/widgets/product-list/ui/pagination.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 4
+    }
+  },
+  "src/widgets/product-list/ui/product-list-item.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/widgets/product-list/ui/product-list-skeleton.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 2
+    }
+  },
+  "src/widgets/product-list/ui/product-list-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 6
+    }
+  },
+  "src/widgets/product-list/ui/product-list.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 8
+    }
+  },
+  "src/widgets/promo/ui/promo-countdown.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 4
+    }
+  },
+  "src/widgets/promo/ui/promo-coupons.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 15
+    }
+  },
+  "src/widgets/promo/ui/promo-deals.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 3
+    }
+  },
+  "src/widgets/promo/ui/promo-newsletter.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 6
+    }
+  },
+  "src/widgets/promo/ui/promo-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 18
+    }
+  },
+  "src/widgets/recently-viewed/ui/recently-viewed.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 4
+    }
+  },
+  "src/widgets/wishlist/ui/wishlist-filters.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 9
+    }
+  },
+  "src/widgets/wishlist/ui/wishlist-list-item.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 4
+    }
+  },
+  "src/widgets/wishlist/ui/wishlist-view.tsx": {
+    "tailwindcss/no-arbitrary-value": {
+      "count": 25
+    }
+  }
+}

@@ -299,6 +299,7 @@ export function WishlistView() {
         </div>
       )}
 
+      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
         {/* Desktop sidebar */}
         <aside
@@ -313,7 +314,7 @@ export function WishlistView() {
 
         <section className="min-w-0">
           {visible.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-[18px] border border-border bg-card px-5 py-14 text-center shadow-[var(--shadow-card)]">
+            <div className="flex flex-col items-center justify-center rounded-[18px] border border-border bg-card px-5 py-14 text-center shadow-card">
               <b className="font-display text-xl font-bold text-foreground">
                 {dict.wishlist.noMatchHeading}
               </b>

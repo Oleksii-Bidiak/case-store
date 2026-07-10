@@ -19,7 +19,7 @@ const ANY = "__any__";
 const MAX_FACETS = 2;
 
 const cardClass =
-  "rounded-2xl border border-border bg-card p-[18px] shadow-[var(--shadow-card)]";
+  "rounded-2xl border border-border bg-card p-[18px] shadow-card";
 const cardTitleClass =
   "font-display text-[15px] font-bold tracking-tight text-card-foreground";
 

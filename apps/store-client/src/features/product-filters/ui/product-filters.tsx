@@ -37,7 +37,7 @@ interface ProductFiltersProps {
 }
 
 const cardClass =
-  "rounded-2xl border border-border bg-card p-[18px] shadow-[var(--shadow-card)]";
+  "rounded-2xl border border-border bg-card p-[18px] shadow-card";
 const cardTitleClass =
   "font-display text-[15px] font-bold tracking-tight text-card-foreground";
 
@@ -172,7 +172,7 @@ export function ProductFilters({
             value={minText}
             onChange={(event) => setMinText(event.target.value)}
             onBlur={() => handleInputCommit("min")}
-            className="h-[42px] rounded-[10px] border-[1.5px] font-mono shadow-none"
+            className="h-[42px] rounded-md border-[1.5px] font-mono shadow-none"
           />
           <span aria-hidden="true" className="text-muted-foreground">
             —
@@ -190,7 +190,7 @@ export function ProductFilters({
             value={maxText}
             onChange={(event) => setMaxText(event.target.value)}
             onBlur={() => handleInputCommit("max")}
-            className="h-[42px] rounded-[10px] border-[1.5px] font-mono shadow-none"
+            className="h-[42px] rounded-md border-[1.5px] font-mono shadow-none"
           />
         </div>
         {/* Draggable range slider (two thumbs). Mirrors the number inputs live

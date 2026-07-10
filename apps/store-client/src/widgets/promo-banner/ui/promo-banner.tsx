@@ -41,11 +41,7 @@ export function PromoBanner({ banner }: PromoBannerProps = {}) {
           )}
         </div>
         {ctaLabel && ctaHref && (
-          <Button
-            size="lg"
-            asChild
-            className="shadow-[var(--shadow-lift)] hover:bg-primary/90"
-          >
+          <Button size="lg" asChild className="shadow-lift hover:bg-primary/90">
             <Link href={ctaHref}>
               {ctaLabel}
               <ArrowRight className="size-4" />

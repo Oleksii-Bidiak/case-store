@@ -38,7 +38,7 @@ export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
   const gradient = pickProductGradient(item.productSlug || item.productName);
 
   return (
-    <article className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-[var(--shadow-lift)]">
+    <article className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lift">
       <div
         className={`relative aspect-square w-full overflow-hidden bg-gradient-to-br ${gradient}`}
       >
@@ -62,6 +62,7 @@ export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
         <h3 className="line-clamp-2 text-sm font-medium text-card-foreground transition-colors group-hover:text-primary">
           <Link
             href={`/products/${item.productSlug}`}
+            // eslint-disable-next-line tailwindcss/no-arbitrary-value -- pseudo-element requires an explicit content value; empty string is the only correct one
             className="after:absolute after:inset-0 after:z-10 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {item.productName}

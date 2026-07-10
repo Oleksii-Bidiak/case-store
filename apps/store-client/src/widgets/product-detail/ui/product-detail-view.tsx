@@ -122,6 +122,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
       </nav>
 
       {/* Hero: gallery + info + sticky buy box. */}
+      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid grid-cols-1 gap-7 lg:grid-cols-[1fr_1fr_360px] lg:items-start">
         {/* Gallery with sale badge + wishlist overlay. */}
         <div className="relative">
@@ -189,7 +190,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
 
         {/* Sticky buy box. */}
         <div className="lg:sticky lg:top-20">
-          <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-[var(--shadow-card)]">
+          <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-card">
             <div className="mb-1 flex flex-wrap items-end gap-3">
               <span
                 className={`font-display text-[32px] font-bold tracking-tight ${

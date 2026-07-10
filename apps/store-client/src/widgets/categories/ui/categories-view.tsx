@@ -30,6 +30,7 @@ export function CategoriesView() {
 
   if (isPending) {
     return (
+      // eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent
       <div className="grid gap-7 lg:grid-cols-[264px_1fr] lg:items-start">
         <Skeleton className="hidden h-80 rounded-[18px] lg:block" />
         <div>
@@ -64,10 +65,11 @@ export function CategoriesView() {
   const children = activeOnly(activeRoot.children);
 
   return (
+    // eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent
     <div className="grid gap-7 lg:grid-cols-[264px_1fr] lg:items-start">
       {/* Rail — root categories */}
       <aside
-        className={`rounded-[18px] border border-border bg-card p-2 shadow-[var(--shadow-card)] lg:sticky ${STICKY_ASIDE_TOP}`}
+        className={`rounded-[18px] border border-border bg-card p-2 shadow-card lg:sticky ${STICKY_ASIDE_TOP}`}
       >
         <nav aria-label={dict.categories.navAria} className="flex flex-col">
           {roots.map((root) => {
@@ -146,7 +148,7 @@ export function CategoriesView() {
                 <Link
                   key={child.id}
                   href={`/products?categoryId=${child.id}`}
-                  className="flex flex-col rounded-2xl border border-border bg-card p-[18px] no-underline shadow-[var(--shadow-card)] transition-[transform,box-shadow] hover:-translate-y-[3px] hover:shadow-[var(--shadow-lift)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex flex-col rounded-2xl border border-border bg-card p-[18px] no-underline shadow-card transition-[transform,box-shadow] hover:-translate-y-[3px] hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <div
                     className="mb-3.5 flex aspect-square items-center justify-center rounded-[13px]"
@@ -183,7 +185,7 @@ export function CategoriesView() {
                 <Link
                   key={brand.id}
                   href={`/products?brandId=${brand.id}`}
-                  className="inline-flex h-14 min-w-[118px] items-center justify-center rounded-xl border border-border bg-card px-[22px] font-display text-base font-bold text-foreground no-underline shadow-[var(--shadow-card)] transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex h-14 min-w-[118px] items-center justify-center rounded-xl border border-border bg-card px-[22px] font-display text-base font-bold text-foreground no-underline shadow-card transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {brand.name}
                 </Link>

@@ -111,7 +111,7 @@ export function ProductList({
 
   if (products.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-[18px] border border-border bg-card px-5 py-14 text-center shadow-[var(--shadow-card)]">
+      <div className="flex flex-col items-center justify-center rounded-[18px] border border-border bg-card px-5 py-14 text-center shadow-card">
         <span
           aria-hidden="true"
           className="mb-[18px] inline-flex size-[72px] items-center justify-center rounded-full bg-muted text-muted-foreground"

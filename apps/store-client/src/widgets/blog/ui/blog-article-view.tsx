@@ -90,7 +90,7 @@ export function BlogArticleView({
 
       {/* Cover */}
       <div
-        className="relative mx-auto mt-[26px] h-[380px] max-w-[960px] overflow-hidden rounded-[20px] shadow-[var(--shadow-elevated)]"
+        className="relative mx-auto mt-[26px] h-[380px] max-w-[960px] overflow-hidden rounded-[20px] shadow-elevated"
         style={{ background: blogGradient(post.hue) }}
       >
         {post.coverImageUrl && (
@@ -107,6 +107,7 @@ export function BlogArticleView({
       </div>
 
       {/* Body + TOC */}
+      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="mt-[38px] grid justify-center gap-11 lg:grid-cols-[minmax(0,760px)_240px]">
         <BlogArticleBody post={post} html={html} />
         <BlogArticleToc sections={sections} />

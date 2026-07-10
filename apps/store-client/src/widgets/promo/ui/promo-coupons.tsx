@@ -56,7 +56,7 @@ export function PromoCoupons() {
           {coupons.map((coupon) => (
             <div
               key={coupon.code}
-              className="relative flex items-center gap-[18px] overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-[var(--shadow-card)]"
+              className="relative flex items-center gap-[18px] overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-card"
             >
               {/* Ticket notches. */}
               <span className="absolute top-1/2 -left-[9px] size-[18px] -translate-y-1/2 rounded-full bg-background" />

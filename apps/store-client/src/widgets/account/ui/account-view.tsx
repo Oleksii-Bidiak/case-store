@@ -112,10 +112,11 @@ export function AccountView() {
         {d.backHome}
       </Link>
 
+      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid items-start gap-7 lg:grid-cols-[264px_1fr]">
         {/* Sidebar */}
         <aside
-          className={`rounded-[18px] border border-border bg-card p-2 shadow-[var(--shadow-card)] lg:sticky ${STICKY_ASIDE_TOP}`}
+          className={`rounded-[18px] border border-border bg-card p-2 shadow-card lg:sticky ${STICKY_ASIDE_TOP}`}
         >
           <div className="flex items-center gap-3 px-3 pt-3.5 pb-4">
             <span

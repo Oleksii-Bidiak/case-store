@@ -35,7 +35,7 @@ export function HeroCategorySidebar() {
   return (
     <aside
       aria-label={dict.home.hero.sidebarAria}
-      className="hidden rounded-2xl border border-border bg-card p-2 shadow-[var(--shadow-card)] lg:block"
+      className="hidden rounded-2xl border border-border bg-card p-2 shadow-card lg:block"
     >
       {isPending && (
         <div className="flex flex-col gap-1 p-1" aria-hidden="true">

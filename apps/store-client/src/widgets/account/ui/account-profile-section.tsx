@@ -21,14 +21,14 @@ export function AccountProfileSection({ user }: { user: UserEntity }) {
         {d.profileHeading}
       </h1>
 
-      <div className="rounded-[18px] border border-border bg-card p-[26px] shadow-[var(--shadow-card)]">
+      <div className="rounded-[18px] border border-border bg-card p-[26px] shadow-card">
         <h2 className="mb-[18px] text-[17px] font-semibold text-foreground">
           {d.contactHeading}
         </h2>
         <ProfileForm user={user} />
       </div>
 
-      <div className="mt-[18px] rounded-[18px] border border-border bg-card p-[26px] shadow-[var(--shadow-card)]">
+      <div className="mt-[18px] rounded-[18px] border border-border bg-card p-[26px] shadow-card">
         <h2 className="mb-1.5 text-[17px] font-semibold text-foreground">
           {d.securityHeading}
         </h2>

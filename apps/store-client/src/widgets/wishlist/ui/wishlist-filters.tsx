@@ -42,7 +42,7 @@ interface WishlistFiltersProps {
 }
 
 const cardClass =
-  "rounded-2xl border border-border bg-card p-[18px] shadow-[var(--shadow-card)]";
+  "rounded-2xl border border-border bg-card p-[18px] shadow-card";
 const cardTitle =
   "mb-3.5 font-display text-[15px] font-bold text-card-foreground";
 
@@ -144,7 +144,7 @@ export function WishlistFilters({
             placeholder={dict.filters.minPlaceholder}
             value={value.minPrice}
             onChange={(e) => onChange({ ...value, minPrice: e.target.value })}
-            className="h-[42px] rounded-[10px] border-[1.5px] font-mono shadow-none"
+            className="h-[42px] rounded-md border-[1.5px] font-mono shadow-none"
           />
           <span aria-hidden="true" className="text-muted-foreground">
             —
@@ -160,7 +160,7 @@ export function WishlistFilters({
             placeholder={dict.filters.maxPlaceholder}
             value={value.maxPrice}
             onChange={(e) => onChange({ ...value, maxPrice: e.target.value })}
-            className="h-[42px] rounded-[10px] border-[1.5px] font-mono shadow-none"
+            className="h-[42px] rounded-md border-[1.5px] font-mono shadow-none"
           />
         </div>
         {/* Display-only track reflecting the entered bounds (mirrors the design). */}

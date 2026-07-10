@@ -15,7 +15,7 @@ export function CheckoutPaymentStub() {
   const [bonus, setBonus] = useState(false);
 
   return (
-    <section className="rounded-[18px] border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+    <section className="rounded-[18px] border border-border bg-card p-6 shadow-card">
       <h2 className="mb-1.5 font-display text-lg font-bold text-foreground">
         {dict.checkout.paymentHeading}
       </h2>
@@ -55,7 +55,7 @@ export function CheckoutPaymentStub() {
                 {on && <span className="size-2.5 rounded-full bg-primary" />}
               </span>
               <span
-                className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-[10px] text-primary"
+                className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-primary"
                 style={{
                   background:
                     "color-mix(in oklab, var(--color-primary) 10%, var(--color-card))",

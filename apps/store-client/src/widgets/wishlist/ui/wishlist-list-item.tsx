@@ -27,7 +27,7 @@ export function WishlistListItem({ item }: { item: WishlistItemEntity }) {
   const gradient = pickProductGradient(item.productSlug || item.productName);
 
   return (
-    <article className="flex gap-5 rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
+    <article className="flex gap-5 rounded-2xl border border-border bg-card p-4 shadow-card">
       <div
         className={`relative size-[130px] shrink-0 overflow-hidden rounded-xl bg-gradient-to-br sm:size-[150px] ${gradient}`}
       >

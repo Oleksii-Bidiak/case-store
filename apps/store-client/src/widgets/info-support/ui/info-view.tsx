@@ -70,8 +70,7 @@ const SUCCESS_TINT = {
     "color-mix(in oklab, var(--color-success) 12%, var(--color-card))",
 };
 
-const CARD =
-  "rounded-[18px] border border-border bg-card p-[30px] shadow-[var(--shadow-card)]";
+const CARD = "rounded-[18px] border border-border bg-card p-[30px] shadow-card";
 
 const MESSENGERS: {
   key: keyof SiteContactSettingsEntity;
@@ -145,10 +144,11 @@ export function InfoView({
         {d.heading}
       </h1>
 
+      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid items-start gap-8 lg:grid-cols-[248px_1fr]">
         {/* Side nav */}
         <aside
-          className={`rounded-2xl border border-border bg-card p-2 shadow-[var(--shadow-card)] lg:sticky ${STICKY_ASIDE_TOP}`}
+          className={`rounded-2xl border border-border bg-card p-2 shadow-card lg:sticky ${STICKY_ASIDE_TOP}`}
         >
           <nav aria-label={d.navAria} className="flex flex-col">
             {INFO_SECTIONS.map((key) => {
@@ -230,7 +230,7 @@ export function InfoView({
                         className="flex items-start gap-3.5 rounded-[13px] border border-border bg-background p-4"
                       >
                         <span
-                          className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-[10px] text-success"
+                          className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-success"
                           style={SUCCESS_TINT}
                         >
                           <Icon className="size-5" aria-hidden="true" />
@@ -318,7 +318,7 @@ export function InfoView({
           )}
 
           {section === "faq" && (
-            <div className="rounded-[18px] border border-border bg-card px-[30px] py-3.5 shadow-[var(--shadow-card)]">
+            <div className="rounded-[18px] border border-border bg-card px-[30px] py-3.5 shadow-card">
               {faqs.map((faq, i) => {
                 const open = !!openFaq[i];
                 return (
@@ -373,7 +373,7 @@ export function InfoView({
                 {ABOUT_STATS.map((stat) => (
                   <div
                     key={stat.label}
-                    className="rounded-[14px] border border-border bg-card p-[22px] text-center shadow-[var(--shadow-card)]"
+                    className="rounded-[14px] border border-border bg-card p-[22px] text-center shadow-card"
                   >
                     <span className="block font-display text-[30px] font-bold text-primary">
                       {stat.num}
@@ -392,7 +392,7 @@ export function InfoView({
                   {ABOUT_VALUES.map((value) => (
                     <div key={value.title} className="flex items-start gap-3.5">
                       <span
-                        className="inline-flex size-9 shrink-0 items-center justify-center rounded-[10px] text-success"
+                        className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-success"
                         style={SUCCESS_TINT}
                       >
                         <Check className="size-[19px]" aria-hidden="true" />
