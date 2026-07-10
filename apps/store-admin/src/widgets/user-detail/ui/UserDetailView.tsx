@@ -37,6 +37,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 /** Ukrainian labels for the contact-message inbox status (reused from messages). */
 const CONTACT_STATUS_LABELS: Record<string, string> = {
   NEW: dict.messages.statusNew,
+  IN_PROGRESS: dict.messages.statusInProgress,
   READ: dict.messages.statusRead,
   ARCHIVED: dict.messages.statusArchived,
 };

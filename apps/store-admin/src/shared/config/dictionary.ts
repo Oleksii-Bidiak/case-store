@@ -1200,6 +1200,11 @@ export const dict = {
     updateSuccess: "Повідомлення оновлено.",
     updateError: "Не вдалося оновити повідомлення. Спробуйте ще раз.",
     close: "Закрити",
+    // IN_PROGRESS status + inbox→profile link (TASK-256)
+    filterInProgress: "В роботі",
+    statusInProgress: "В роботі",
+    markInProgress: "Взяти в роботу",
+    viewProfile: "Профіль клієнта",
   },
 
   orderStatus: {

@@ -6,6 +6,8 @@ export function statusLabel(status: string): string {
   switch (status) {
     case ContactMessageEntityStatus.NEW:
       return dict.messages.statusNew;
+    case ContactMessageEntityStatus.IN_PROGRESS:
+      return dict.messages.statusInProgress;
     case ContactMessageEntityStatus.READ:
       return dict.messages.statusRead;
     case ContactMessageEntityStatus.ARCHIVED:
@@ -15,13 +17,18 @@ export function statusLabel(status: string): string {
   }
 }
 
-/** Badge visual variant per status — NEW stands out, the rest are muted. */
+/**
+ * Badge visual variant per status — NEW stands out, IN_PROGRESS warns that
+ * someone is actively on it (TASK-256), the rest are muted.
+ */
 export function statusBadgeVariant(
   status: string,
-): "default" | "secondary" | "outline" {
+): "default" | "secondary" | "outline" | "warning" {
   switch (status) {
     case ContactMessageEntityStatus.NEW:
       return "default";
+    case ContactMessageEntityStatus.IN_PROGRESS:
+      return "warning";
     case ContactMessageEntityStatus.READ:
       return "secondary";
     default:
