@@ -103,9 +103,15 @@ export function WishlistFilters({
             key={q.key}
             className="flex cursor-pointer items-center gap-3 py-2 text-sm text-foreground"
           >
+            <input
+              type="checkbox"
+              className="peer sr-only"
+              checked={q.on}
+              onChange={() => onChange({ ...value, [q.key]: !q.on })}
+            />
             <span
               aria-hidden="true"
-              className={`flex size-5 shrink-0 items-center justify-center rounded-md border-[1.5px] transition-colors ${
+              className={`flex size-5 shrink-0 items-center justify-center rounded-md border-[1.5px] transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 ${
                 q.on
                   ? "border-primary bg-primary text-primary-foreground"
                   : "border-border bg-transparent"
@@ -113,12 +119,6 @@ export function WishlistFilters({
             >
               {q.on && <Check className="size-3.5" strokeWidth={3} />}
             </span>
-            <input
-              type="checkbox"
-              className="sr-only"
-              checked={q.on}
-              onChange={() => onChange({ ...value, [q.key]: !q.on })}
-            />
             <span className={`flex-1 ${q.on ? "font-semibold" : ""}`}>
               {q.label}
             </span>

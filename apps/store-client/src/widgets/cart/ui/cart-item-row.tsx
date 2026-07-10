@@ -330,10 +330,10 @@ export function CartItemRow({
                     type="checkbox"
                     checked={on}
                     onChange={() => onToggleService?.(item.id, service.id)}
-                    className="sr-only"
+                    className="peer sr-only"
                   />
                   <span
-                    className={`flex size-5 shrink-0 items-center justify-center rounded-[6px] border-[1.5px] transition-colors ${
+                    className={`flex size-5 shrink-0 items-center justify-center rounded-[6px] border-[1.5px] transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 ${
                       on ? "border-primary bg-primary" : "border-border"
                     }`}
                   >
