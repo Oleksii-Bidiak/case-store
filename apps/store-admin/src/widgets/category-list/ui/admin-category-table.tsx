@@ -105,10 +105,10 @@ export function AdminCategoryTable() {
             <TableHeader>
               <TableRow>
                 <TableHead>{dict.categories.colName}</TableHead>
-                <TableHead>{dict.categories.colSlug}</TableHead>
+                <TableHead hideOnMobile>{dict.categories.colSlug}</TableHead>
                 <TableHead>{dict.categories.colParent}</TableHead>
                 <TableHead>{dict.categories.colProducts}</TableHead>
-                <TableHead>{dict.categories.colSort}</TableHead>
+                <TableHead hideOnMobile>{dict.categories.colSort}</TableHead>
                 <TableHead>{dict.categories.colStatus}</TableHead>
                 <TableHead className="text-right">
                   {dict.common.actions}
@@ -119,7 +119,7 @@ export function AdminCategoryTable() {
               {categories.map((category) => (
                 <TableRow key={category.id}>
                   <TableCell className="font-medium">{category.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell hideOnMobile className="text-muted-foreground">
                     {category.slug}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
@@ -128,7 +128,7 @@ export function AdminCategoryTable() {
                       : dict.categories.root}
                   </TableCell>
                   <TableCell>{category.productCount}</TableCell>
-                  <TableCell>{category.sortOrder}</TableCell>
+                  <TableCell hideOnMobile>{category.sortOrder}</TableCell>
                   <TableCell>
                     <CategoryStatusToggle
                       categoryId={category.id}

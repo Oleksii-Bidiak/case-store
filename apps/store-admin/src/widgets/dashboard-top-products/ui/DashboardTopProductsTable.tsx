@@ -31,7 +31,9 @@ export function DashboardTopProductsTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-12">{dict.dashboard.rank}</TableHead>
+            <TableHead hideOnMobile className="w-12">
+              {dict.dashboard.rank}
+            </TableHead>
             <TableHead>{dict.dashboard.product}</TableHead>
             <TableHead className="text-right">
               {dict.dashboard.totalRevenue}
@@ -51,7 +53,7 @@ export function DashboardTopProductsTable({
           ) : (
             products.map((product, index) => (
               <TableRow key={product.productId}>
-                <TableCell className="text-muted-foreground">
+                <TableCell hideOnMobile className="text-muted-foreground">
                   {index + 1}
                 </TableCell>
                 <TableCell className="font-medium">{product.name}</TableCell>

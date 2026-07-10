@@ -75,9 +75,9 @@ export function DeviceBrandTable() {
         <TableHeader>
           <TableRow>
             <TableHead>{dict.devices.colName}</TableHead>
-            <TableHead>{dict.devices.colSlug}</TableHead>
+            <TableHead hideOnMobile>{dict.devices.colSlug}</TableHead>
             <TableHead>{dict.devices.colModels}</TableHead>
-            <TableHead>{dict.devices.colSort}</TableHead>
+            <TableHead hideOnMobile>{dict.devices.colSort}</TableHead>
             <TableHead>{dict.devices.colStatus}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
@@ -86,11 +86,11 @@ export function DeviceBrandTable() {
           {brands.map((brand) => (
             <TableRow key={brand.id}>
               <TableCell className="font-medium">{brand.name}</TableCell>
-              <TableCell className="text-muted-foreground">
+              <TableCell hideOnMobile className="text-muted-foreground">
                 {brand.slug}
               </TableCell>
               <TableCell>{brand.modelCount ?? 0}</TableCell>
-              <TableCell>{brand.sortOrder}</TableCell>
+              <TableCell hideOnMobile>{brand.sortOrder}</TableCell>
               <TableCell>
                 <Badge variant={brand.isActive ? "default" : "secondary"}>
                   {brand.isActive

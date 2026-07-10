@@ -152,7 +152,7 @@ export function AdminBannerTable() {
                   <TableRow>
                     <TableHead>{dict.banners.colTitle}</TableHead>
                     <TableHead>{dict.banners.colStatus}</TableHead>
-                    <TableHead>{dict.banners.colSort}</TableHead>
+                    <TableHead hideOnMobile>{dict.banners.colSort}</TableHead>
                     <TableHead className="text-right">
                       {dict.common.actions}
                     </TableHead>
@@ -200,7 +200,7 @@ function BannerRow({ banner, isMutating, onToggle, onDelete }: BannerRowProps) {
           {dict.banners.statusLabels[banner.status]}
         </Badge>
       </TableCell>
-      <TableCell>{banner.sortOrder}</TableCell>
+      <TableCell hideOnMobile>{banner.sortOrder}</TableCell>
       <TableCell className="text-right">
         <div className="flex justify-end gap-2">
           <Button asChild variant="outline" size="sm">

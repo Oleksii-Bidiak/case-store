@@ -115,9 +115,9 @@ export function AdminDiscountTable() {
             <TableHeader>
               <TableRow>
                 <TableHead>{dict.discounts.colCode}</TableHead>
-                <TableHead>{dict.discounts.colType}</TableHead>
+                <TableHead hideOnMobile>{dict.discounts.colType}</TableHead>
                 <TableHead>{dict.discounts.colValue}</TableHead>
-                <TableHead>{dict.discounts.colRedeemed}</TableHead>
+                <TableHead hideOnMobile>{dict.discounts.colRedeemed}</TableHead>
                 <TableHead>{dict.discounts.colExpires}</TableHead>
                 <TableHead>{dict.discounts.colStatus}</TableHead>
                 <TableHead className="text-right">
@@ -129,13 +129,13 @@ export function AdminDiscountTable() {
               {discounts.map((discount) => (
                 <TableRow key={discount.id}>
                   <TableCell className="font-medium">{discount.code}</TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell hideOnMobile className="text-muted-foreground">
                     {discount.type === "PERCENT"
                       ? dict.discounts.typePercent
                       : dict.discounts.typeFixed}
                   </TableCell>
                   <TableCell>{formatValue(discount)}</TableCell>
-                  <TableCell>
+                  <TableCell hideOnMobile>
                     {dict.discounts.redeemedOf(
                       discount.redeemedCount,
                       discount.maxRedemptions,

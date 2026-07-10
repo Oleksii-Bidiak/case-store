@@ -114,9 +114,9 @@ export function BlogPostTable() {
         <TableHeader>
           <TableRow>
             <TableHead>{dict.blogPosts.colTitle}</TableHead>
-            <TableHead>{dict.blogPosts.colCategory}</TableHead>
+            <TableHead hideOnMobile>{dict.blogPosts.colCategory}</TableHead>
             <TableHead>{dict.blogPosts.colStatus}</TableHead>
-            <TableHead>{dict.blogPosts.colFeatured}</TableHead>
+            <TableHead hideOnMobile>{dict.blogPosts.colFeatured}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
         </TableHeader>
@@ -133,7 +133,7 @@ export function BlogPostTable() {
                     {post.title}
                   </Link>
                 </TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell hideOnMobile className="text-muted-foreground">
                   {post.category.name}
                 </TableCell>
                 <TableCell>
@@ -141,7 +141,7 @@ export function BlogPostTable() {
                     {STATUS_LABEL[post.status] ?? post.status}
                   </Badge>
                 </TableCell>
-                <TableCell>
+                <TableCell hideOnMobile>
                   {post.featured ? dict.blogPosts.featuredYes : "—"}
                 </TableCell>
                 <TableCell className="text-right">

@@ -119,8 +119,8 @@ export function DeviceModelTable() {
               <TableRow>
                 <TableHead>{dict.devices.colName}</TableHead>
                 <TableHead>{dict.devices.colBrand}</TableHead>
-                <TableHead>{dict.devices.colSeries}</TableHead>
-                <TableHead>{dict.devices.colYear}</TableHead>
+                <TableHead hideOnMobile>{dict.devices.colSeries}</TableHead>
+                <TableHead hideOnMobile>{dict.devices.colYear}</TableHead>
                 <TableHead>{dict.devices.colStatus}</TableHead>
                 <TableHead className="text-right">
                   {dict.common.actions}
@@ -134,10 +134,10 @@ export function DeviceModelTable() {
                   <TableCell className="text-muted-foreground">
                     {model.brandName ?? "—"}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell hideOnMobile className="text-muted-foreground">
                     {model.series ?? "—"}
                   </TableCell>
-                  <TableCell>{model.releaseYear ?? "—"}</TableCell>
+                  <TableCell hideOnMobile>{model.releaseYear ?? "—"}</TableCell>
                   <TableCell>
                     <Badge variant={model.isActive ? "default" : "secondary"}>
                       {model.isActive
