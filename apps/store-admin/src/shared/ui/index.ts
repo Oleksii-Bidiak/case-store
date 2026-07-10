@@ -90,3 +90,7 @@ export {
   type BannerPlacementPreviewProps,
   type BannerPreviewPlacement,
 } from "./banner-placement-preview";
+export {
+  RichTextPreview,
+  type RichTextPreviewProps,
+} from "./rich-text-preview";
