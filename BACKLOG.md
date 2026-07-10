@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-273**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-277**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -262,6 +262,9 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
+| TASK-274 | [C/L] Login timing hardening (code-review follow-up to TASK-273) — `login()` still throws on `!user` without argon2 work → same timing-oracle class on `/api/auth/login`; burn fixed argon2 cost on the no-user branch, mirroring TASK-273 | ⬜ | — |
+| TASK-275 | [D/L] Header-search combobox `aria-activedescendant` (code-review follow-up to TASK-218; pre-existing gap) — options need `id`s + `aria-activedescendant` on the input per APG combobox pattern, else arrow-key navigation is silent for screen readers | ⬜ | — |
+| TASK-276 | [D/L] Admin card-mode table group semantics (code-review follow-up to TASK-258) — card rows lose table roles on `<md`; add `role="group"` + `aria-label` from the row's key field (sr-only cell labels already shipped in 140) | ⬜ | — |
 | TASK-174 | Add-on services / protection plans: catalog + per-product applicability + cart/order persistence + admin (cart UI stub exists) | ⬜ | — |
 | TASK-175 | Loyalty & account extras: points/cashback model + accrual/redeem API + purchases feed + persisted notification prefs (account UI stubs exist) | ⬜ | — |
 | TASK-168 | Social sign-in (Google/Apple OAuth): backend OAuth module + account linking (auth slide-out stubs) | 🅿️ | — |
@@ -292,6 +295,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-274**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-277**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
