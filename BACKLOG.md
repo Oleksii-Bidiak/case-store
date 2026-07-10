@@ -245,7 +245,7 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-258 | [D/M] Mobile admin tables & forms — card/column-priority layout on `<md` (orders→products→messages→reviews); single-column forms + sticky submit; full-height dialogs/sheets; dashboard 1-col + recharts responsive; build one shared primitive first (per TASK-140) | ⬜ | — |
+| TASK-258 | [D/M] Mobile admin tables & forms — card/column-priority layout on `<md` (orders→products→messages→reviews); single-column forms + sticky submit; full-height dialogs/sheets; dashboard 1-col + recharts responsive; build one shared primitive first (per TASK-140) | ✅ | 140 |
 | TASK-259 | [D/M] Storefront UX audit top-10 (plan 103 §6) — F-01 focus rings, F-02 carousel pause+reduced-motion, F-03 button-cursor policy, F-04/05/06 dark-theme pack (F-06 owner decision), F-16 promo in mobile Sheet, F-17/18 placeholder links (w/ TASK-184), F-11…14 a11y strings→UA, F-19 2-col mobile catalog, F-20/F-09 44px targets, F-15 `aria-describedby` | ✅ | 139 |
 | TASK-265 | [F/M] Live banner preview in `banner-form` — renders banner in its placement (HERO_SLIDE/PROMO_TILE/PROMO_BANNER/ANNOUNCEMENT_BAR), live from form fields; no store-client imports (rebuild simplified presentation OR iframe draft-preview — decide in `/planer`, default rebuild); mobile/desktop size toggle | ✅ | 137 |
 | TASK-266 | [F/M] Page/blog preview beside editor — `page-form`/`blog-post-form` preview tab/split of sanitized HTML in storefront typography; product preview already exists (`/products/preview/[slug]`) → add prominent «Переглянути як на сайті» button if missing | ✅ | 137 |
