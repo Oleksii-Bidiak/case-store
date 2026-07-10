@@ -135,7 +135,7 @@ export function ProductImageGallery({
                 <button
                   type="button"
                   aria-pressed={isActive}
-                  aria-label={`Show image ${index + 1}`}
+                  aria-label={dict.product.showImageAria(index + 1)}
                   onClick={() => setActiveIndex(index)}
                   className={`size-16 shrink-0 overflow-hidden rounded-lg border-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     isActive ? "border-primary" : "border-border"
@@ -154,7 +154,7 @@ export function ProductImageGallery({
                       src={image.url}
                       alt={altText(
                         image,
-                        `${altFallback} thumbnail ${index + 1}`,
+                        dict.product.imageThumbnailAlt(index + 1),
                       )}
                       width={64}
                       height={64}
