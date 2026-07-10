@@ -150,10 +150,16 @@ export function LoginForm({
           type="email"
           autoComplete="email"
           className={fieldClass}
+          aria-invalid={errors.email ? true : undefined}
+          aria-describedby={errors.email ? "login-email-error" : undefined}
           {...register("email")}
         />
         {errors.email && (
-          <p role="alert" className="text-sm text-destructive">
+          <p
+            id="login-email-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.email.message}
           </p>
         )}
@@ -171,10 +177,18 @@ export function LoginForm({
           type="password"
           autoComplete="current-password"
           className={fieldClass}
+          aria-invalid={errors.password ? true : undefined}
+          aria-describedby={
+            errors.password ? "login-password-error" : undefined
+          }
           {...register("password")}
         />
         {errors.password && (
-          <p role="alert" className="text-sm text-destructive">
+          <p
+            id="login-password-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.password.message}
           </p>
         )}

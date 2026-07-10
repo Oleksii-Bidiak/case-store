@@ -101,10 +101,16 @@ export function ForgotPasswordForm({
           type="email"
           autoComplete="email"
           className={fieldClass}
+          aria-invalid={errors.email ? true : undefined}
+          aria-describedby={errors.email ? "forgot-email-error" : undefined}
           {...register("email")}
         />
         {errors.email && (
-          <p role="alert" className="text-sm text-destructive">
+          <p
+            id="forgot-email-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.email.message}
           </p>
         )}

@@ -58,59 +58,87 @@ export function InfoContactForm() {
         >
           <div className="flex flex-col gap-1">
             <input
+              id="info-contact-name"
               aria-label={d.formName}
               placeholder={d.formName}
               aria-invalid={Boolean(errors.name)}
+              aria-describedby={
+                errors.name ? "info-contact-name-error" : undefined
+              }
               className={FIELD}
               {...register("name")}
             />
             {errors.name && (
-              <span role="alert" className={ERROR}>
+              <span id="info-contact-name-error" role="alert" className={ERROR}>
                 {errors.name.message}
               </span>
             )}
           </div>
           <div className="flex flex-col gap-1">
             <input
+              id="info-contact-phone"
               type="tel"
               aria-label={d.formPhone}
               placeholder={d.formPhone}
               aria-invalid={Boolean(errors.phone)}
+              aria-describedby={
+                errors.phone ? "info-contact-phone-error" : undefined
+              }
               className={FIELD}
               {...register("phone")}
             />
             {errors.phone && (
-              <span role="alert" className={ERROR}>
+              <span
+                id="info-contact-phone-error"
+                role="alert"
+                className={ERROR}
+              >
                 {errors.phone.message}
               </span>
             )}
           </div>
           <div className="flex flex-col gap-1">
             <input
+              id="info-contact-email"
               type="email"
               aria-label={d.formEmail}
               placeholder={d.formEmail}
               aria-invalid={Boolean(errors.email)}
+              aria-describedby={
+                errors.email ? "info-contact-email-error" : undefined
+              }
               className={FIELD}
               {...register("email")}
             />
             {errors.email && (
-              <span role="alert" className={ERROR}>
+              <span
+                id="info-contact-email-error"
+                role="alert"
+                className={ERROR}
+              >
                 {errors.email.message}
               </span>
             )}
           </div>
           <div className="flex flex-col gap-1">
             <textarea
+              id="info-contact-message"
               rows={4}
               aria-label={d.formMessage}
               placeholder={d.formMessage}
               aria-invalid={Boolean(errors.message)}
+              aria-describedby={
+                errors.message ? "info-contact-message-error" : undefined
+              }
               className="resize-y rounded-xl border-[1.5px] border-border bg-background px-[15px] py-3 text-[14.5px] text-foreground outline-none focus-visible:border-primary"
               {...register("message")}
             />
             {errors.message && (
-              <span role="alert" className={ERROR}>
+              <span
+                id="info-contact-message-error"
+                role="alert"
+                className={ERROR}
+              >
                 {errors.message.message}
               </span>
             )}

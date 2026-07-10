@@ -70,6 +70,7 @@ export function NpWarehouseField({
         emptyText={dict.checkout.searchEmpty}
         autoComplete="street-address"
         aria-invalid={fieldState.error ? true : undefined}
+        aria-describedby={fieldState.error ? `${id}-error` : undefined}
         onInputChange={(text) => {
           field.onChange(text);
           setValue("npWarehouseRef", "");
@@ -87,7 +88,7 @@ export function NpWarehouseField({
         </span>
       )}
       {fieldState.error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p id={`${id}-error`} role="alert" className="text-sm text-destructive">
           {fieldState.error.message}
         </p>
       )}

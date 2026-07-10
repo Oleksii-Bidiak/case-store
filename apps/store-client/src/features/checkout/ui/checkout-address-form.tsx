@@ -73,10 +73,15 @@ export function CheckoutAddressForm({
           type={field.type}
           autoComplete={field.autoComplete}
           aria-invalid={message ? true : undefined}
+          aria-describedby={message ? `${id}-error` : undefined}
           {...register(field.name)}
         />
         {message && (
-          <p role="alert" className="text-sm text-destructive">
+          <p
+            id={`${id}-error`}
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {message}
           </p>
         )}
@@ -105,10 +110,17 @@ export function CheckoutAddressForm({
                 autoComplete="tel"
                 placeholder={dict.checkout.phonePlaceholder}
                 aria-invalid={fieldState.error ? true : undefined}
+                aria-describedby={
+                  fieldState.error ? "checkout-phone-error" : undefined
+                }
                 {...field}
               />
               {fieldState.error && (
-                <p role="alert" className="text-sm text-destructive">
+                <p
+                  id="checkout-phone-error"
+                  role="alert"
+                  className="text-sm text-destructive"
+                >
                   {fieldState.error.message}
                 </p>
               )}
