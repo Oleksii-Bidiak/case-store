@@ -172,6 +172,10 @@ function TitleText({ title, className }: { title: string; className: string }) {
 }
 
 // THEMES[0] gradient from the storefront hero slider (see header comment).
+// The oklch()/color-mix() values here — like PROMO_BANNER's from-slate-900/
+// to-primary classes below — are intentional 1:1 ports of the storefront's
+// token-derived gradients (hero-slider.tsx / promo-banner.tsx), not new raw
+// colors introduced by the admin.
 const HERO_GRADIENT =
   "linear-gradient(120deg, color-mix(in oklab, var(--color-primary) 90%, black) 0%, var(--color-primary) 52%, color-mix(in oklab, var(--color-primary) 55%, oklch(0.55 0.2 300)) 100%)";
 

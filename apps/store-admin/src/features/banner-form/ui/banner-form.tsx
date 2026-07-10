@@ -277,12 +277,6 @@ export function BannerForm({
               )}
             </div>
           )}
-
-          <div>
-            <Button type="submit" disabled={isPending}>
-              {isPending ? dict.common.saving : submitLabel}
-            </Button>
-          </div>
         </div>
 
         <aside
@@ -302,6 +296,15 @@ export function BannerForm({
             theme={themeValue}
           />
         </aside>
+      </div>
+
+      {/* Submit lives OUTSIDE both toggleable panels (below the md:grid, still
+          inside the single <form>) so it stays reachable on <md from the
+          preview tab too — the admin can submit without tabbing back. */}
+      <div>
+        <Button type="submit" disabled={isPending}>
+          {isPending ? dict.common.saving : submitLabel}
+        </Button>
       </div>
     </form>
   );

@@ -68,6 +68,13 @@ describe("BannerForm — live placement preview (TASK-265)", () => {
     expect(fieldsPanel().className).toContain("hidden");
     // Both panels stay mounted — the form fields are never unmounted.
     expect(screen.getByLabelText(dict.bannerForm.title)).toBeInTheDocument();
+    // Submit sits outside both panels, so it stays reachable from the
+    // preview tab on <md (never inside the hidden fields panel).
+    const submitButton = screen.getByRole("button", {
+      name: dict.bannerForm.submit,
+    });
+    expect(fieldsPanel()).not.toContainElement(submitButton);
+    expect(previewPanel()).not.toContainElement(submitButton);
 
     await userEvent.click(
       screen.getByRole("tab", { name: dict.bannerPreview.tabForm }),
