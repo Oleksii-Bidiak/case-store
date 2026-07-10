@@ -198,6 +198,8 @@ export const dict = {
       prevSlide: "Попередній слайд",
       nextSlide: "Наступний слайд",
       goToSlide: (n: number) => `Перейти до слайда ${n}`,
+      pauseAutoplay: "Призупинити автоперегортання слайдів",
+      resumeAutoplay: "Відновити автоперегортання слайдів",
     },
 
     // Device model picker — UI-only stub (API has no model→accessory filter).
