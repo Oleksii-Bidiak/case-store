@@ -763,10 +763,12 @@ model Banner {
 }
 
 /// Status of a customer contact message (TASK-177). NEW = unread submission,
-/// READ = an admin has opened it, ARCHIVED = handled/closed. Drives the admin
-/// inbox filter and the sidebar unread badge (count of NEW).
+/// IN_PROGRESS = an admin is actively handling it (TASK-256), READ = an admin
+/// has opened it, ARCHIVED = handled/closed. Drives the admin inbox filter and
+/// the sidebar unread badge (count of NEW).
 enum ContactMessageStatus {
   NEW
+  IN_PROGRESS
   READ
   ARCHIVED
 }

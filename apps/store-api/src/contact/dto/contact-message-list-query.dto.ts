@@ -5,7 +5,7 @@ import { ContactMessageStatus } from '@prisma/client';
 
 /**
  * Query DTO for the admin contact-message inbox: pagination plus an optional
- * status filter (NEW / READ / ARCHIVED). Newest-first ordering is fixed in the
+ * status filter (NEW / IN_PROGRESS / READ / ARCHIVED). Newest-first ordering is fixed in the
  * repository.
  */
 export class ContactMessageListQueryDto {
@@ -30,7 +30,7 @@ export class ContactMessageListQueryDto {
   limit?: number = 20;
 
   @ApiProperty({
-    description: 'Filter by message status (NEW, READ, ARCHIVED)',
+    description: 'Filter by message status (NEW, IN_PROGRESS, READ, ARCHIVED)',
     enum: ContactMessageStatus,
     example: ContactMessageStatus.NEW,
     required: false,

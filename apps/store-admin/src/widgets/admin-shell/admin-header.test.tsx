@@ -8,11 +8,15 @@ jest.mock("next/navigation", () => ({
 }));
 
 // Decouple the header from the real auth context/logout mutation — this suite
-// only asserts the burger's contract, not sign-in state.
+// asserts the burger's contract and the identity label, not sign-in state.
+// `mockEmail` is swapped per-test to cover both identity states (TASK-255).
+let mockEmail: string | null = null;
+
 jest.mock("@/entities/session", () => ({
   useAuth: () => ({
     userId: "admin-1",
     role: "ADMIN",
+    email: mockEmail,
     accessToken: null,
     isAuthenticated: true,
     isAdmin: true,
@@ -22,6 +26,10 @@ jest.mock("@/entities/session", () => ({
   }),
   useAuthControllerLogout: () => ({ mutate: jest.fn(), isPending: false }),
 }));
+
+beforeEach(() => {
+  mockEmail = null;
+});
 
 describe("AdminHeader — mobile burger", () => {
   it("renders the burger with its aria-label and aria-expanded=false when closed", () => {
@@ -52,5 +60,28 @@ describe("AdminHeader — mobile burger", () => {
     fireEvent.click(screen.getByRole("button", { name: dict.header.openMenu }));
 
     expect(onOpenMobileNav).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("AdminHeader — identity label (TASK-255)", () => {
+  it("renders the admin's email when the profile fetch resolved", () => {
+    mockEmail = "owner@store.ua";
+
+    renderWithProviders(
+      <AdminHeader mobileNavOpen={false} onOpenMobileNav={jest.fn()} />,
+    );
+
+    expect(screen.getByText("owner@store.ua")).toBeInTheDocument();
+    expect(screen.queryByText(dict.header.adminLabel)).not.toBeInTheDocument();
+  });
+
+  it("falls back to the generic admin label when email is null", () => {
+    mockEmail = null;
+
+    renderWithProviders(
+      <AdminHeader mobileNavOpen={false} onOpenMobileNav={jest.fn()} />,
+    );
+
+    expect(screen.getByText(dict.header.adminLabel)).toBeInTheDocument();
   });
 });

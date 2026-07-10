@@ -174,6 +174,30 @@ describe("UserDetailView (customer card, TASK-252)", () => {
     expect(screen.getByText(dict.messages.statusNew)).toBeInTheDocument();
   });
 
+  it("renders the IN_PROGRESS contact-message status label, not the raw enum (TASK-256)", async () => {
+    mockCard({
+      contactMessages: [
+        {
+          id: "message-2",
+          topic: "Питання про повернення",
+          message: "Як оформити повернення?",
+          status: "IN_PROGRESS",
+          createdAt: "2026-03-04T10:00:00.000Z",
+        },
+      ],
+    });
+
+    renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+    expect(
+      await screen.findByText("Питання про повернення"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.messages.statusInProgress),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("IN_PROGRESS")).not.toBeInTheDocument();
+  });
+
   it("shows every empty-state copy when the sub-lists are empty", async () => {
     mockCard({
       recentOrders: [],

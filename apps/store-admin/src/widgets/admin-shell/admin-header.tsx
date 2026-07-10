@@ -17,9 +17,10 @@ interface AdminHeaderProps {
  * Admin header bar — a `<lg` burger that opens the mobile nav drawer, the panel
  * title, and the signed-in admin's identity + sign-out.
  *
- * The JWT carries only `{ sub, role }`, so the identity falls back to a generic
- * "Admin" label (with the user id as a tooltip). Showing the admin's email
- * would require a profile fetch — deferred per plan 025 §11.
+ * The JWT carries only `{ sub, role }`, so the identity comes from the
+ * AuthProvider's light `/api/users/me` profile fetch (TASK-255): the admin's
+ * email when available, falling back to the generic "Admin" label before the
+ * fetch resolves or after it fails.
  *
  * Global admin search is deferred to TASK-075 (Meilisearch, Tier-4);
  * the placeholder input from plan 025 has been removed.
@@ -28,7 +29,7 @@ export function AdminHeader({
   mobileNavOpen,
   onOpenMobileNav,
 }: AdminHeaderProps) {
-  const { userId } = useAuth();
+  const { userId, email } = useAuth();
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-border bg-card px-4 shadow-card lg:px-6">
@@ -53,10 +54,12 @@ export function AdminHeader({
         <div className="flex items-center gap-2">
           <span
             className="flex items-center gap-2 text-sm font-medium text-foreground"
-            title={userId ?? undefined}
+            title={email ?? userId ?? undefined}
           >
             <UserCircle className="size-5 text-muted-foreground" />
-            <span className="hidden sm:inline">{dict.header.adminLabel}</span>
+            <span className="hidden sm:inline">
+              {email ?? dict.header.adminLabel}
+            </span>
           </span>
           <LogoutButton />
         </div>

@@ -14,11 +14,14 @@ function makeToken(role: string): string {
 
 /** Surfaces the session state so tests can await the bootstrap settling. */
 function Probe() {
-  const { isInitializing, isAdmin } = useAuth();
+  const { isInitializing, isAdmin, email } = useAuth();
   return (
-    <span data-testid="probe">
-      {isInitializing ? "init" : isAdmin ? "admin" : "guest"}
-    </span>
+    <>
+      <span data-testid="probe">
+        {isInitializing ? "init" : isAdmin ? "admin" : "guest"}
+      </span>
+      <span data-testid="email">{email ?? "no-email"}</span>
+    </>
   );
 }
 
@@ -76,5 +79,87 @@ describe("AuthProvider — bootstrap refresh resilience (fix/196)", () => {
       expect(screen.getByTestId("probe")).toHaveTextContent("guest"),
     );
     expect(calls).toBe(1);
+  });
+});
+
+/**
+ * TASK-255: whenever an access token appears (bootstrap restore, login,
+ * refresh rotation), the provider fetches /api/users/me and exposes the
+ * admin's email for the header. The fetch is purely informational — a failure
+ * leaves email null and never affects the session state.
+ */
+describe("AuthProvider — header identity profile fetch (TASK-255)", () => {
+  it("populates email from /api/users/me after a successful bootstrap restore", async () => {
+    server.use(
+      http.post("*/api/auth/refresh", () =>
+        HttpResponse.json({ data: { accessToken: makeToken("ADMIN") } }),
+      ),
+      // The shared default handler already answers /api/users/me with
+      // admin@example.com — assert against that.
+    );
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("probe")).toHaveTextContent("admin"),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("email")).toHaveTextContent(
+        "admin@example.com",
+      ),
+    );
+  });
+
+  it("leaves email null on a failing profile fetch without touching session state", async () => {
+    server.use(
+      http.post("*/api/auth/refresh", () =>
+        HttpResponse.json({ data: { accessToken: makeToken("ADMIN") } }),
+      ),
+      http.get("*/api/users/me", () =>
+        HttpResponse.json({ message: "boom" }, { status: 500 }),
+      ),
+    );
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    // Session restores fine despite the profile fetch failing…
+    await waitFor(() =>
+      expect(screen.getByTestId("probe")).toHaveTextContent("admin"),
+    );
+    // …and email simply stays null.
+    await waitFor(() =>
+      expect(screen.getByTestId("email")).toHaveTextContent("no-email"),
+    );
+  });
+
+  it("keeps email null while signed out (no profile fetch without a token)", async () => {
+    let profileCalls = 0;
+    server.use(
+      http.get("*/api/users/me", () => {
+        profileCalls += 1;
+        return HttpResponse.json({ message: "unauthorized" }, { status: 401 });
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    // Default refresh handler 401s → signed out.
+    await waitFor(() =>
+      expect(screen.getByTestId("probe")).toHaveTextContent("guest"),
+    );
+    expect(screen.getByTestId("email")).toHaveTextContent("no-email");
+    expect(profileCalls).toBe(0);
   });
 });

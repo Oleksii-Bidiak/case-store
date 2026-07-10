@@ -21,6 +21,7 @@ const guestAuth: AuthContextValue = {
   accessToken: null,
   userId: null,
   role: null,
+  email: null,
   isAuthenticated: false,
   isAdmin: false,
   isInitializing: false,

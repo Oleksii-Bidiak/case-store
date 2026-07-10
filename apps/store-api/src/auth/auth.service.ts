@@ -16,6 +16,10 @@ const PASSWORD_RESET_TOKEN_BYTES = 32;
  * specific check failed (not-found / used / expired / deactivated owner). */
 const INVALID_RESET_TOKEN_MESSAGE = 'Invalid or expired reset token';
 
+/** Not a secret — a fixed input whose only purpose is to drive argon2's cost
+ * function on `requestPasswordReset`'s no-op branch (TASK-273 timing hardening). */
+const DUMMY_TIMING_PASSWORD = 'dummy-timing-equalizer-password';
+
 @Injectable()
 export class AuthService {
   private readonly jwtSecret: string;
@@ -174,6 +178,10 @@ export class AuthService {
 
     // Silent no-op for a non-existent / banned / soft-deleted account.
     if (!user || !user.isActive || user.deletedAt) {
+      // TASK-273: burn a fixed argon2 cost so this branch's latency is in the
+      // same ballpark as the found+active branch — a near-instant return would
+      // be a timing oracle for account enumeration. Result is discarded.
+      await argon2.hash(DUMMY_TIMING_PASSWORD);
       return;
     }
 

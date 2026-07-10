@@ -28,6 +28,10 @@ const prismaMock = {
     update: jest.fn(),
     count: jest.fn(),
   },
+  user: {
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+  },
 };
 
 describe('ContactRepository', () => {
@@ -159,6 +163,64 @@ describe('ContactRepository', () => {
         where: { id: 'msg-uuid-1' },
         data: {},
       });
+    });
+  });
+
+  describe('findMatchingUserId (TASK-256)', () => {
+    it('returns the user id when a non-deleted user matches the email', async () => {
+      prismaMock.user.findFirst.mockResolvedValue({ id: 'user-uuid-1' });
+
+      const result = await repository.findMatchingUserId('ivan@example.com');
+
+      expect(result).toBe('user-uuid-1');
+      expect(prismaMock.user.findFirst).toHaveBeenCalledWith({
+        where: { email: 'ivan@example.com', deletedAt: null },
+        select: { id: true },
+      });
+    });
+
+    it('returns null when no user matches (or the match is soft-deleted)', async () => {
+      // The `deletedAt: null` filter in the where clause is what excludes
+      // soft-deleted users — asserted on the call above; Prisma then returns null.
+      prismaMock.user.findFirst.mockResolvedValue(null);
+
+      const result = await repository.findMatchingUserId('ghost@example.com');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('findMatchingUserIds (TASK-256)', () => {
+    it('resolves a batched email→id map with a single query', async () => {
+      prismaMock.user.findMany.mockResolvedValue([
+        { id: 'user-uuid-1', email: 'ivan@example.com' },
+        { id: 'user-uuid-2', email: 'olena@example.com' },
+      ]);
+
+      const result = await repository.findMatchingUserIds([
+        'ivan@example.com',
+        'olena@example.com',
+        'stranger@example.com',
+      ]);
+
+      expect(result.get('ivan@example.com')).toBe('user-uuid-1');
+      expect(result.get('olena@example.com')).toBe('user-uuid-2');
+      expect(result.has('stranger@example.com')).toBe(false);
+      expect(prismaMock.user.findMany).toHaveBeenCalledTimes(1);
+      expect(prismaMock.user.findMany).toHaveBeenCalledWith({
+        where: {
+          email: { in: ['ivan@example.com', 'olena@example.com', 'stranger@example.com'] },
+          deletedAt: null,
+        },
+        select: { id: true, email: true },
+      });
+    });
+
+    it('short-circuits to an empty Map without querying for an empty email list', async () => {
+      const result = await repository.findMatchingUserIds([]);
+
+      expect(result.size).toBe(0);
+      expect(prismaMock.user.findMany).not.toHaveBeenCalled();
     });
   });
 

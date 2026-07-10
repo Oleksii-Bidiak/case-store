@@ -338,6 +338,9 @@ describe('AuthService', () => {
 
       expect(authRepository.savePasswordResetToken).not.toHaveBeenCalled();
       expect(mailOutboxService.enqueuePasswordReset).not.toHaveBeenCalled();
+      // TASK-273: the no-op branch burns a fixed argon2 cost so its latency is
+      // not a near-instant account-enumeration oracle.
+      expect(argon2.hash).toHaveBeenCalledTimes(1);
     });
 
     it('silently no-ops for a deactivated user', async () => {
@@ -347,6 +350,8 @@ describe('AuthService', () => {
 
       expect(authRepository.savePasswordResetToken).not.toHaveBeenCalled();
       expect(mailOutboxService.enqueuePasswordReset).not.toHaveBeenCalled();
+      // TASK-273: fixed-cost dummy hash on the no-op branch (timing hardening).
+      expect(argon2.hash).toHaveBeenCalledTimes(1);
     });
 
     it('silently no-ops for a soft-deleted user', async () => {
@@ -356,6 +361,8 @@ describe('AuthService', () => {
 
       expect(authRepository.savePasswordResetToken).not.toHaveBeenCalled();
       expect(mailOutboxService.enqueuePasswordReset).not.toHaveBeenCalled();
+      // TASK-273: fixed-cost dummy hash on the no-op branch (timing hardening).
+      expect(argon2.hash).toHaveBeenCalledTimes(1);
     });
 
     it('invalidates prior tokens, saves a fresh token and enqueues the email for an active user', async () => {
@@ -381,6 +388,10 @@ describe('AuthService', () => {
       expect(payload.to).toBe(mockUser.email);
       expect(payload.resetUrl).toContain('http://localhost:3000');
       expect(payload.resetUrl).toContain(savedRawToken as string);
+
+      // TASK-273 regression guard: the found+active branch is intentionally
+      // argon2-free — only the no-op branch burns the dummy hash cost.
+      expect(argon2.hash).not.toHaveBeenCalled();
     });
 
     it('never logs the raw reset token', async () => {
