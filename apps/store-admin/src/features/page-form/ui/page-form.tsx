@@ -8,7 +8,12 @@ import {
   Input,
   Label,
   RichTextEditor,
+  RichTextPreview,
   SeoSnippetPreview,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   Textarea,
 } from "@/shared/ui";
 import { slugify } from "@/shared/lib/slug";
@@ -159,18 +164,42 @@ export function PageForm({
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="page-content">{dict.pageForm.content}</Label>
-        <Controller
-          control={control}
-          name="content"
-          render={({ field }) => (
-            <RichTextEditor
-              value={field.value ?? ""}
-              onChange={field.onChange}
-              placeholder={dict.pageForm.contentPlaceholder}
-              disabled={isPending}
+        {/* Edit/preview tab pair (TASK-266). Radix TabsContent unmounts the
+            inactive panel, which is safe here: the editor is fully controlled
+            by the RHF field, so tabbing back re-seeds it from the up-to-date
+            value with no data loss. Accepted trade-off (same as GitHub's
+            markdown Preview tab): cursor/scroll position inside the editor is
+            lost across a tab round-trip. */}
+        <Tabs defaultValue="edit">
+          <TabsList>
+            <TabsTrigger value="edit">
+              {dict.contentPreview.tabEdit}
+            </TabsTrigger>
+            <TabsTrigger value="preview">
+              {dict.contentPreview.tabPreview}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="edit">
+            <Controller
+              control={control}
+              name="content"
+              render={({ field }) => (
+                <RichTextEditor
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  placeholder={dict.pageForm.contentPlaceholder}
+                  disabled={isPending}
+                />
+              )}
             />
-          )}
-        />
+          </TabsContent>
+          <TabsContent value="preview">
+            <RichTextPreview
+              html={contentValue}
+              emptyLabel={dict.contentPreview.emptyContent}
+            />
+          </TabsContent>
+        </Tabs>
         {errors.content && (
           <p role="alert" className="text-sm text-destructive">
             {errors.content.message}
