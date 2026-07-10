@@ -10,6 +10,7 @@ import {
   DashboardLowStockTable,
   DashboardSectionSkeleton,
   DashboardTopProductsTable,
+  DashboardTrafficCard,
   NeedsActionWidget,
 } from "@/widgets";
 import { Button, Separator } from "@/shared/ui";
@@ -96,6 +97,13 @@ export function DashboardView() {
           fetch (same pattern as NeedsActionWidget); manages its own loading /
           error / empty state, so it renders even if the summary above fails. */}
       <DashboardLastOrdersTable />
+
+      <Separator className="my-6" />
+
+      {/* Traffic card (TASK-262) — pure outbound navigation to Umami's own UI,
+          not a summary-fetch metric, so it renders unconditionally (same
+          precedent as NeedsActionWidget / DashboardLastOrdersTable above). */}
+      <DashboardTrafficCard />
 
       <Separator className="my-6" />
 

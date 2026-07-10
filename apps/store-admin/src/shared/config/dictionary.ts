@@ -139,6 +139,13 @@ export const dict = {
     metricInfoAria: (label: string) => `Що означає «${label}»`,
     lastOrders: "Останні замовлення",
     noLastOrders: "Замовлень ще немає.",
+    // TASK-262: traffic card (links out to Umami — no numbers rendered here).
+    trafficHeading: "Відвідуваність",
+    trafficSubtext: "Трафік, конверсії та воронка продажів — в Umami.",
+    // Decorative "→" is rendered separately in an aria-hidden span (a11y).
+    trafficOpenLink: "Відкрити Umami",
+    trafficNotConfigured: "Ще не підключено. Зверніться до розробника.",
+    trafficOpenLinkAria: "Відкрити Umami у новій вкладці",
   },
 
   common: {
