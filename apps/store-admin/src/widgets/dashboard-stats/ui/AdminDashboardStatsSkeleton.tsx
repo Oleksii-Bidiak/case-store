@@ -5,7 +5,8 @@ const SKELETON_CARDS = 4;
  */
 export function AdminDashboardStatsSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    // Mirrors AdminDashboardStats' mobile collapse (TASK-258-H): 1 col < sm.
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {Array.from({ length: SKELETON_CARDS }).map((_, index) => (
         <div
           key={index}
