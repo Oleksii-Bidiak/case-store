@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Menu, Search } from "lucide-react";
+import { Menu, Newspaper, Search } from "lucide-react";
 import { useSearchSuggest } from "@/entities/search";
+import { useBlogControllerFindAll } from "@/entities/blog";
 import { useCategoryControllerGetRootCategories } from "@/entities/category";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { Skeleton } from "@/shared/ui";
@@ -13,7 +14,18 @@ import { cn } from "@/shared/lib/utils";
 
 /** Minimum characters before we ask the API for suggestions. */
 const MIN_QUERY_LENGTH = 1;
+/** Maximum blog articles mixed into the suggestions dropdown (TASK-218). */
+const BLOG_SUGGEST_LIMIT = 5;
 const LISTBOX_ID = "header-search-listbox";
+const BLOG_LISTBOX_ID = "header-search-blog-listbox";
+
+/**
+ * One entry of the combined keyboard-navigation list: products first, then
+ * blog posts, addressed by a single `activeIndex` across both listboxes.
+ */
+type CombinedSuggestion =
+  | { kind: "product"; slug: string }
+  | { kind: "blog"; slug: string };
 
 /**
  * HeaderSearch — the desktop search pill from the design import: one bordered
@@ -21,6 +33,8 @@ const LISTBOX_ID = "header-search-listbox";
  * input (middle), and a primary submit button (right). The catalog panel is
  * filled with the real root categories; the input shows typo-tolerant
  * suggestions. Both dropdowns anchor to the full pill and are mutually exclusive.
+ * The suggestions dropdown mixes products with up to 5 matching blog articles
+ * (TASK-218) — two labelled listboxes navigated as one combined list.
  *
  * Reuses the storefront search hooks; keyboard nav (↑/↓/Enter/Esc) mirrors the
  * shared Combobox. Hidden below `md` — mobile navigates via the header Sheet.
@@ -45,6 +59,24 @@ export function HeaderSearch() {
     { query: { enabled: query.trim().length >= MIN_QUERY_LENGTH } },
   );
   const suggestions = suggestData?.data ?? [];
+
+  // Blog-article suggestions (TASK-218) — reuses the same debounced `query`
+  // state as the product suggest call (no second debounce timer).
+  const { data: blogData } = useBlogControllerFindAll(
+    { q: query, limit: BLOG_SUGGEST_LIMIT },
+    { query: { enabled: query.trim().length >= MIN_QUERY_LENGTH } },
+  );
+  const blogPosts = (blogData?.data ?? []).slice(0, BLOG_SUGGEST_LIMIT);
+
+  // Single logical list for ↑/↓/Enter: products first, then blog posts.
+  const combined: CombinedSuggestion[] = [
+    ...suggestions.map(
+      (s): CombinedSuggestion => ({ kind: "product", slug: s.slug }),
+    ),
+    ...blogPosts.map(
+      (p): CombinedSuggestion => ({ kind: "blog", slug: p.slug }),
+    ),
+  ];
 
   const {
     data: catData,
@@ -95,23 +127,31 @@ export function HeaderSearch() {
     router.push(`/products/${slug}`);
   }
 
+  function pickBlogPost(slug: string) {
+    setSearchOpen(false);
+    router.push(`/blog/${slug}`);
+  }
+
   function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (!showSuggestions) return;
     switch (event.key) {
       case "ArrowDown":
         event.preventDefault();
-        setActiveIndex((i) => Math.min(i + 1, suggestions.length - 1));
+        setActiveIndex((i) => Math.min(i + 1, combined.length - 1));
         break;
       case "ArrowUp":
         event.preventDefault();
         setActiveIndex((i) => Math.max(i - 1, 0));
         break;
-      case "Enter":
-        if (activeIndex >= 0 && suggestions[activeIndex]) {
+      case "Enter": {
+        const item = activeIndex >= 0 ? combined[activeIndex] : undefined;
+        if (item) {
           event.preventDefault();
-          pick(suggestions[activeIndex].slug);
+          if (item.kind === "blog") pickBlogPost(item.slug);
+          else pick(item.slug);
         }
         break;
+      }
       case "Escape":
         setSearchOpen(false);
         setActiveIndex(-1);
@@ -153,7 +193,11 @@ export function HeaderSearch() {
             type="text"
             role="combobox"
             aria-expanded={showSuggestions}
-            aria-controls={LISTBOX_ID}
+            aria-controls={
+              blogPosts.length > 0
+                ? `${LISTBOX_ID} ${BLOG_LISTBOX_ID}`
+                : LISTBOX_ID
+            }
             aria-autocomplete="list"
             aria-label={dict.search.inputAria}
             autoComplete="off"
@@ -238,7 +282,12 @@ export function HeaderSearch() {
       {/* Suggestions dropdown (anchored to the full pill). */}
       {showSuggestions && (
         <div className="absolute top-[calc(100%+8px)] right-0 left-0 z-50 rounded-2xl border border-border bg-popover p-2 shadow-[var(--shadow-lift)]">
-          <ul id={LISTBOX_ID} role="listbox" aria-label={dict.search.inputAria}>
+          <ul
+            id={LISTBOX_ID}
+            role="listbox"
+            aria-label={dict.search.inputAria}
+            className="max-h-72 overflow-y-auto"
+          >
             {isFetching && !hasSuggestions && (
               <li
                 role="presentation"
@@ -278,6 +327,61 @@ export function HeaderSearch() {
               </li>
             ))}
           </ul>
+
+          {/* Blog-article suggestions (TASK-218) — rendered only when there is
+              at least one match; scrolls independently of the product list. */}
+          {blogPosts.length > 0 && (
+            <>
+              <hr
+                aria-hidden="true"
+                className="mx-3 my-2 border-t border-border"
+              />
+              <p className="px-3 pb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                {dict.search.blogSectionLabel}
+              </p>
+              <ul
+                id={BLOG_LISTBOX_ID}
+                role="listbox"
+                aria-label={dict.search.blogSectionLabel}
+                className="max-h-72 overflow-y-auto"
+              >
+                {blogPosts.map((post, i) => {
+                  const index = suggestions.length + i;
+                  return (
+                    <li
+                      key={post.slug}
+                      role="option"
+                      aria-selected={index === activeIndex}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setActiveIndex(index)}
+                      onClick={() => pickBlogPost(post.slug)}
+                      className={cn(
+                        "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-popover-foreground",
+                        index === activeIndex && "bg-muted",
+                      )}
+                    >
+                      {post.coverImageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={post.coverImageUrl}
+                          alt=""
+                          className="size-8 shrink-0 rounded-md object-cover"
+                        />
+                      ) : (
+                        <Newspaper
+                          className="size-4 shrink-0 text-muted-foreground"
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span className="min-w-0 flex-1 truncate">
+                        {post.title}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
         </div>
       )}
     </div>

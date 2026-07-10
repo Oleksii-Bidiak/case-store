@@ -104,6 +104,11 @@ export const dict = {
     prevPage: "‹ Попередня",
     nextPage: "Наступна ›",
     pageOf: (page: number, total: number) => `${page} / ${total}`,
+    /**
+     * Blog-article section in the header-search dropdown (TASK-218) — doubles
+     * as the visible section heading and the second listbox's aria-label.
+     */
+    blogSectionLabel: "Статті блогу",
   },
 
   footer: {
