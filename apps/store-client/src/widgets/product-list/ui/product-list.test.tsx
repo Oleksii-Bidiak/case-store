@@ -216,6 +216,23 @@ describe("ProductList load-more append (TASK-216)", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders the grid two-up on mobile (grid-cols-2) with the auto-fill layout from sm up (TASK-259-G)", async () => {
+    installProducts({ "": CAT_1_PAGES }, { limit: 2 });
+
+    renderWithProviders(
+      <ProductList {...baseProps} params={{ page: 1, limit: 2 }} />,
+    );
+
+    const card = await screen.findByText("Alpha Case");
+    const grid = card.closest(".grid");
+    expect(grid).not.toBeNull();
+    // 2 columns below sm; the responsive auto-fill kicks in at the sm breakpoint.
+    expect(grid).toHaveClass("grid-cols-2");
+    expect(grid?.className).toContain(
+      "sm:[grid-template-columns:repeat(auto-fill,minmax(232px,1fr))]",
+    );
+  });
+
   it("resets the accumulated pages when the base ?page= changes (back/forward, pagination links)", async () => {
     const user = userEvent.setup();
     installProducts({ "": CAT_1_PAGES }, { limit: 2 });

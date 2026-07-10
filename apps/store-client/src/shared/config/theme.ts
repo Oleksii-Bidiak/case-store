@@ -6,5 +6,12 @@
 // require a concrete color value and cannot consume a CSS variable or class
 // — e.g. Next.js `viewport.themeColor`.
 
-/** Primary brand color — keep in sync with `--color-primary` in globals.css. */
-export const PRIMARY_COLOR = "#2563eb";
+/** Primary brand color (light) — mirrors `--color-primary` in globals.css. */
+export const PRIMARY_COLOR = "#4f46e5";
+
+/**
+ * Primary brand color (dark) — mirrors the dark-mode `--color-primary` in
+ * globals.css. Used for the theme-reactive `viewport.themeColor` pair so the
+ * browser chrome matches the brand indigo under both OS themes.
+ */
+export const PRIMARY_COLOR_DARK = "#6366f1";

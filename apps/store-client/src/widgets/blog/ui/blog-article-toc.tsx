@@ -37,7 +37,7 @@ export function BlogArticleToc({
             key={section.id}
             type="button"
             onClick={() => go(section.id)}
-            className="block w-full cursor-pointer rounded-lg bg-transparent px-2.5 py-2 text-left text-[13.5px] leading-snug text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="block w-full rounded-lg bg-transparent px-2.5 py-2 text-left text-[13.5px] leading-snug text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {section.label}
           </button>

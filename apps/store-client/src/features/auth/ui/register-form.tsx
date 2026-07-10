@@ -142,10 +142,16 @@ export function RegisterForm({
           type="email"
           autoComplete="email"
           className={fieldClass}
+          aria-invalid={errors.email ? true : undefined}
+          aria-describedby={errors.email ? "reg-email-error" : undefined}
           {...register("email")}
         />
         {errors.email && (
-          <p role="alert" className="text-sm text-destructive">
+          <p
+            id="reg-email-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.email.message}
           </p>
         )}
@@ -164,10 +170,16 @@ export function RegisterForm({
             type="text"
             autoComplete="given-name"
             className={fieldClass}
+            aria-invalid={errors.firstName ? true : undefined}
+            aria-describedby={errors.firstName ? "reg-first-error" : undefined}
             {...register("firstName")}
           />
           {errors.firstName && (
-            <p role="alert" className="text-sm text-destructive">
+            <p
+              id="reg-first-error"
+              role="alert"
+              className="text-sm text-destructive"
+            >
               {errors.firstName.message}
             </p>
           )}
@@ -184,10 +196,16 @@ export function RegisterForm({
             type="text"
             autoComplete="family-name"
             className={fieldClass}
+            aria-invalid={errors.lastName ? true : undefined}
+            aria-describedby={errors.lastName ? "reg-last-error" : undefined}
             {...register("lastName")}
           />
           {errors.lastName && (
-            <p role="alert" className="text-sm text-destructive">
+            <p
+              id="reg-last-error"
+              role="alert"
+              className="text-sm text-destructive"
+            >
               {errors.lastName.message}
             </p>
           )}
@@ -206,10 +224,16 @@ export function RegisterForm({
           type="password"
           autoComplete="new-password"
           className={fieldClass}
+          aria-invalid={errors.password ? true : undefined}
+          aria-describedby={errors.password ? "reg-password-error" : undefined}
           {...register("password")}
         />
         {errors.password && (
-          <p role="alert" className="text-sm text-destructive">
+          <p
+            id="reg-password-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.password.message}
           </p>
         )}
@@ -227,10 +251,18 @@ export function RegisterForm({
           type="password"
           autoComplete="new-password"
           className={fieldClass}
+          aria-invalid={errors.passwordConfirm ? true : undefined}
+          aria-describedby={
+            errors.passwordConfirm ? "reg-password-confirm-error" : undefined
+          }
           {...register("passwordConfirm")}
         />
         {errors.passwordConfirm && (
-          <p role="alert" className="text-sm text-destructive">
+          <p
+            id="reg-password-confirm-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.passwordConfirm.message}
           </p>
         )}
@@ -239,14 +271,21 @@ export function RegisterForm({
       <div className="flex flex-col gap-1">
         <label className="flex cursor-pointer items-start gap-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
           <input
+            id="reg-terms"
             type="checkbox"
             className="mt-0.5 size-4 shrink-0 cursor-pointer accent-primary"
+            aria-invalid={errors.terms ? true : undefined}
+            aria-describedby={errors.terms ? "reg-terms-error" : undefined}
             {...register("terms")}
           />
           <span>{dict.auth.register.terms}</span>
         </label>
         {errors.terms && (
-          <p role="alert" className="text-sm text-destructive">
+          <p
+            id="reg-terms-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.terms.message}
           </p>
         )}
@@ -261,7 +300,7 @@ export function RegisterForm({
       <button
         type="submit"
         disabled={registerUser.isPending}
-        className="cursor-pointer rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
       >
         {registerUser.isPending
           ? dict.auth.register.submitting
@@ -274,7 +313,7 @@ export function RegisterForm({
           <button
             type="button"
             onClick={onSwitchToLogin}
-            className="cursor-pointer font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {dict.auth.register.signInLink}
           </button>

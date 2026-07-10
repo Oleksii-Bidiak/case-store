@@ -56,7 +56,7 @@ export function NotFoundView() {
           <button
             type="submit"
             aria-label={d.searchSubmitAria}
-            className="flex h-full w-14 shrink-0 cursor-pointer items-center justify-center bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            className="flex h-full w-14 shrink-0 items-center justify-center bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
           >
             <Search className="size-5" aria-hidden="true" />
           </button>

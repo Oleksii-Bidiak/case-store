@@ -25,7 +25,7 @@ export function ProductListSkeleton({ view = "grid" }: { view?: CatalogView }) {
 
   return (
     <div
-      className="grid gap-[18px] [grid-template-columns:repeat(auto-fill,minmax(232px,1fr))]"
+      className="grid grid-cols-2 gap-[18px] sm:[grid-template-columns:repeat(auto-fill,minmax(232px,1fr))]"
       aria-hidden="true"
     >
       {Array.from({ length: 12 }).map((_, i) => (

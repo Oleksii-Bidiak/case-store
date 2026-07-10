@@ -127,6 +127,14 @@ export function Header({ announcement }: HeaderProps = {}) {
                     </Link>
                   ))}
                   <Link
+                    href="/promo"
+                    onClick={() => setMenuOpen(false)}
+                    className={`${MOBILE_LINK_CLASS} inline-flex items-center gap-2 text-sale`}
+                  >
+                    <Tag className="size-[18px]" aria-hidden="true" />
+                    {dict.header.promoLabel}
+                  </Link>
+                  <Link
                     href="/cart"
                     onClick={() => setMenuOpen(false)}
                     className={MOBILE_LINK_CLASS}

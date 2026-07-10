@@ -2,9 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  Pause,
+  Play,
+} from "lucide-react";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { useReducedMotion } from "@/shared/lib/use-reduced-motion";
 import type { BannerEntity } from "@/shared/api/generated/models";
 
 /** Normalised slide shape rendered by the slider (banner- or dictionary-driven). */
@@ -100,6 +107,13 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
   const [index, setIndex] = useState(0);
   const count = slides.length;
 
+  // Autoplay gates: an explicit pause toggle, pointer/keyboard presence within
+  // the slider (hover / focus-within), and the OS reduced-motion preference —
+  // any one of them stops the carousel from auto-advancing (design-system §7).
+  const [paused, setPaused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const reducedMotion = useReducedMotion();
+
   const go = useCallback(
     (next: number) => {
       setIndex((next + slides.length) % slides.length);
@@ -112,12 +126,15 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
   // setState-in-effect needed. `count` is always ≥ 1 (fallback is non-empty).
   const activeIndex = index % count;
 
-  // Autoplay — resets its timer whenever `activeIndex` changes (incl. manual nav).
+  const autoplayActive = count > 1 && !paused && !hovered && !reducedMotion;
+
+  // Autoplay — resets its timer whenever `activeIndex` changes (incl. manual
+  // nav). Never arms while paused, hovered/focused, reduced-motion, or single.
   useEffect(() => {
-    if (count <= 1) return;
+    if (!autoplayActive) return;
     const id = window.setInterval(() => go(activeIndex + 1), AUTOPLAY_MS);
     return () => window.clearInterval(id);
-  }, [activeIndex, count, go]);
+  }, [autoplayActive, activeIndex, go]);
 
   const slide = slides[activeIndex];
   const theme = THEMES[activeIndex % THEMES.length];
@@ -126,6 +143,10 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
     <div
       className="relative h-[420px] overflow-hidden rounded-2xl shadow-[var(--shadow-elevated)] sm:h-[440px]"
       style={{ backgroundImage: theme.gradient }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setHovered(true)}
+      onBlur={() => setHovered(false)}
     >
       {/* Active slide — re-keyed so the copy fades in on change. */}
       <div
@@ -180,7 +201,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
         type="button"
         onClick={() => go(activeIndex - 1)}
         aria-label={dict.home.hero.prevSlide}
-        className="absolute top-1/2 left-3 z-10 flex size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[var(--shadow-lift)] transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:left-4 sm:size-11"
+        className="absolute top-1/2 left-3 z-10 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[var(--shadow-lift)] transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:left-4 sm:size-11"
       >
         <ChevronLeft className="size-5" />
       </button>
@@ -188,13 +209,15 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
         type="button"
         onClick={() => go(activeIndex + 1)}
         aria-label={dict.home.hero.nextSlide}
-        className="absolute top-1/2 right-3 z-10 flex size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[var(--shadow-lift)] transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-4 sm:size-11"
+        className="absolute top-1/2 right-3 z-10 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[var(--shadow-lift)] transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-4 sm:size-11"
       >
         <ChevronRight className="size-5" />
       </button>
 
-      {/* Dot indicators — aligned to the content, below it (pb reserves space). */}
-      <div className="absolute bottom-6 left-16 z-10 flex gap-2 sm:left-24">
+      {/* Dot indicators — aligned to the content, below it (pb reserves space).
+          Each dot keeps its slim visual footprint but carries a centred 44px
+          invisible hit-area (`before:` pseudo) for a comfortable tap target. */}
+      <div className="absolute bottom-6 left-16 z-10 flex items-center gap-2 sm:left-24">
         {slides.map((_, i) => (
           <button
             key={i}
@@ -202,7 +225,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
             onClick={() => go(i)}
             aria-label={dict.home.hero.goToSlide(i + 1)}
             aria-current={i === activeIndex}
-            className={`h-1.5 cursor-pointer rounded-full transition-all ${
+            className={`relative h-1.5 rounded-full transition-all before:absolute before:top-1/2 before:left-1/2 before:size-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] ${
               i === activeIndex
                 ? "w-6 bg-white"
                 : "w-1.5 bg-white/50 hover:bg-white/80"
@@ -210,6 +233,23 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
           />
         ))}
       </div>
+
+      {/* Autoplay pause / resume — bottom-right, clear of the dots and arrows. */}
+      {count > 1 && (
+        <button
+          type="button"
+          onClick={() => setPaused((v) => !v)}
+          aria-pressed={paused}
+          aria-label={
+            paused
+              ? dict.home.hero.resumeAutoplay
+              : dict.home.hero.pauseAutoplay
+          }
+          className="absolute right-4 bottom-6 z-10 flex size-10 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[var(--shadow-lift)] transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:size-11"
+        >
+          {paused ? <Play className="size-4" /> : <Pause className="size-4" />}
+        </button>
+      )}
     </div>
   );
 }

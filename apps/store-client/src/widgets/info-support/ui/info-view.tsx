@@ -332,7 +332,7 @@ export function InfoView({
                         setOpenFaq((prev) => ({ ...prev, [i]: !prev[i] }))
                       }
                       aria-expanded={open}
-                      className="flex w-full cursor-pointer items-center gap-3.5 py-5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex w-full items-center gap-3.5 py-5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className="flex-1 text-[15.5px] font-semibold text-foreground">
                         {faq.q}

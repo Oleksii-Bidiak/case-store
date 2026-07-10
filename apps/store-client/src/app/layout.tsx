@@ -6,6 +6,7 @@ import { Header } from "@/widgets/header";
 import { Footer } from "@/widgets";
 import {
   PRIMARY_COLOR,
+  PRIMARY_COLOR_DARK,
   SITE_URL,
   SITE_NAME,
   dict,
@@ -51,7 +52,10 @@ const sora = Sora({
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: PRIMARY_COLOR,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: PRIMARY_COLOR },
+    { media: "(prefers-color-scheme: dark)", color: PRIMARY_COLOR_DARK },
+  ],
 };
 
 /**

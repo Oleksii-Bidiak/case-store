@@ -115,7 +115,7 @@ export function WishlistToggleButton({
     "inline-flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60";
   const variantClass =
     variant === "overlay"
-      ? "size-9 rounded-full bg-background/80 text-foreground backdrop-blur-sm hover:bg-background shadow-sm"
+      ? "size-11 rounded-full bg-background/80 text-foreground backdrop-blur-sm hover:bg-background shadow-sm"
       : "size-11 rounded-lg border border-border bg-background text-foreground hover:bg-accent";
 
   return (

@@ -20,7 +20,7 @@ export function AnnouncementBar({ banner }: AnnouncementBarProps = {}) {
   const href = banner?.ctaHref ?? undefined;
 
   return (
-    <div className="bg-foreground text-background">
+    <div className="bg-footer text-footer-foreground">
       <div className="mx-auto flex h-10 max-w-7xl items-center justify-between gap-3 px-4 text-[13px]">
         <span className="inline-flex min-w-0 items-center gap-2">
           <span
@@ -30,7 +30,7 @@ export function AnnouncementBar({ banner }: AnnouncementBarProps = {}) {
           {href ? (
             <Link
               href={href}
-              className="truncate transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-background"
+              className="truncate transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-footer-foreground"
             >
               {message}
             </Link>
@@ -41,7 +41,7 @@ export function AnnouncementBar({ banner }: AnnouncementBarProps = {}) {
         <a
           href={dict.header.phoneHref}
           aria-label={dict.header.phoneAria}
-          className="shrink-0 font-mono font-semibold whitespace-nowrap opacity-90 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-background"
+          className="shrink-0 font-mono font-semibold whitespace-nowrap opacity-90 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-footer-foreground"
         >
           {dict.header.phone}
         </a>

@@ -110,10 +110,15 @@ export function ProfileForm({ user }: ProfileFormProps) {
           type="tel"
           autoComplete="tel"
           aria-invalid={errors.phone ? true : undefined}
+          aria-describedby={errors.phone ? "account-phone-error" : undefined}
           {...register("phone")}
         />
         {errors.phone && (
-          <p role="alert" className="text-sm text-destructive">
+          <p
+            id="account-phone-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.phone.message}
           </p>
         )}

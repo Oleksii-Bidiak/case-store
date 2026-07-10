@@ -75,7 +75,7 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
             <button
               type="button"
               onClick={() => refetch()}
-              className="cursor-pointer rounded-lg border border-border px-4 py-2 text-foreground transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded-lg border border-border px-4 py-2 text-foreground transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {dict.common.retry}
             </button>

@@ -12,7 +12,7 @@ export function LegalDocActions() {
     <button
       type="button"
       onClick={() => window.print()}
-      className="inline-flex h-[42px] cursor-pointer items-center gap-2 rounded-[11px] border-[1.5px] border-border bg-card px-[18px] text-[13.5px] font-semibold text-foreground transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring print:hidden"
+      className="inline-flex h-[42px] items-center gap-2 rounded-[11px] border-[1.5px] border-border bg-card px-[18px] text-[13.5px] font-semibold text-foreground transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring print:hidden"
     >
       <LegalPrinterIcon width={16} height={16} />
       {dict.legal.print}

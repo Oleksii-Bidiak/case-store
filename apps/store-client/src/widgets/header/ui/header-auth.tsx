@@ -45,7 +45,7 @@ export function HeaderAuth() {
           type="button"
           onClick={() => setAuthOpen(true)}
           aria-label={dict.header.accountOpenAria}
-          className="flex cursor-pointer flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-foreground transition-colors hover:bg-accent hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-foreground transition-colors hover:bg-accent hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <User className="size-[22px]" aria-hidden="true" />
           <span className="hidden sm:inline">{dict.header.accountLabel}</span>

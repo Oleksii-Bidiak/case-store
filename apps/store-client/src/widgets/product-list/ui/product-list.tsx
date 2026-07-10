@@ -178,7 +178,7 @@ export function ProductList({
             ))}
           </div>
         ) : (
-          <div className="grid gap-[18px] [grid-template-columns:repeat(auto-fill,minmax(232px,1fr))]">
+          <div className="grid grid-cols-2 gap-[18px] sm:[grid-template-columns:repeat(auto-fill,minmax(232px,1fr))]">
             {products.map((product, index) => (
               <ProductCard
                 key={product.id}

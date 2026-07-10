@@ -116,10 +116,13 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
               type="button"
               aria-label={dict.reviews.starAria(value)}
               aria-pressed={rating >= value}
+              aria-describedby={
+                errors.rating ? "review-rating-error" : undefined
+              }
               onClick={() =>
                 setValue("rating", value, { shouldValidate: true })
               }
-              className="rounded p-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded p-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Star
                 className={
@@ -134,7 +137,11 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
           ))}
         </div>
         {errors.rating && (
-          <p role="alert" className="text-sm text-destructive">
+          <p
+            id="review-rating-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.rating.message}
           </p>
         )}

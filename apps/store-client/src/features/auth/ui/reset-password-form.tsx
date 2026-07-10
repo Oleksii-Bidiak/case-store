@@ -102,10 +102,18 @@ export function ResetPasswordForm() {
           type="password"
           autoComplete="new-password"
           className={fieldClass}
+          aria-invalid={errors.newPassword ? true : undefined}
+          aria-describedby={
+            errors.newPassword ? "reset-password-error" : undefined
+          }
           {...register("newPassword")}
         />
         {errors.newPassword && (
-          <p role="alert" className="text-sm text-destructive">
+          <p
+            id="reset-password-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.newPassword.message}
           </p>
         )}
@@ -123,10 +131,18 @@ export function ResetPasswordForm() {
           type="password"
           autoComplete="new-password"
           className={fieldClass}
+          aria-invalid={errors.confirmPassword ? true : undefined}
+          aria-describedby={
+            errors.confirmPassword ? "reset-password-confirm-error" : undefined
+          }
           {...register("confirmPassword")}
         />
         {errors.confirmPassword && (
-          <p role="alert" className="text-sm text-destructive">
+          <p
+            id="reset-password-confirm-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.confirmPassword.message}
           </p>
         )}
@@ -141,7 +157,7 @@ export function ResetPasswordForm() {
       <button
         type="submit"
         disabled={confirmReset.isPending}
-        className="cursor-pointer rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
       >
         {confirmReset.isPending
           ? dict.auth.resetPassword.submitting

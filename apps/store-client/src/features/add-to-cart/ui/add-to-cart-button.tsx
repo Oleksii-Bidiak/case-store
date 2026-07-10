@@ -99,7 +99,7 @@ export function AddToCartButton({
         // Out of stock: drop the override so the visible "Немає в наявності"
         // label remains the accessible name (conveys WHY it is disabled).
         aria-label={outOfStock ? undefined : ariaLabel}
-        className={`w-full cursor-pointer font-semibold transition-all active:scale-[0.99] ${className}`}
+        className={`w-full font-semibold transition-all active:scale-[0.99] ${className}`}
       >
         {compactLabel}
       </Button>

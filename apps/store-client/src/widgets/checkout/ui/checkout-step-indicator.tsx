@@ -16,7 +16,7 @@ export function CheckoutStepIndicator({ current = 1 }: { current?: number }) {
   return (
     <ol
       className="mb-7 flex flex-wrap items-center gap-2"
-      aria-label="Checkout progress"
+      aria-label={dict.checkout.progressAria}
     >
       {STEPS.map((label, index) => {
         const step = index + 1;

@@ -19,7 +19,7 @@ import {
 } from "../model/deals-pagination";
 
 const TAB_BASE =
-  "h-[38px] rounded-[10px] border px-4 text-[13.5px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "h-[38px] rounded-[10px] border px-4 text-[13.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /** Page size for the on-sale grid. */
 const DEALS_LIMIT = 12;

@@ -109,12 +109,7 @@ export function ModelPicker() {
         </SelectContent>
       </Select>
 
-      <Button
-        type="submit"
-        size="lg"
-        disabled={!modelId}
-        className="h-11 cursor-pointer"
-      >
+      <Button type="submit" size="lg" disabled={!modelId} className="h-11">
         {t.submit}
       </Button>
     </form>
