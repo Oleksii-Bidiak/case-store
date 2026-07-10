@@ -5,7 +5,7 @@ import { dict } from "@/shared/config";
 import { BlogFacebookIcon, BlogLinkIcon, BlogTelegramIcon } from "./blog-icons";
 
 const BTN =
-  "inline-flex size-[38px] cursor-pointer items-center justify-center rounded-[10px] border-[1.5px] border-border bg-card text-foreground transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "inline-flex size-[38px] items-center justify-center rounded-[10px] border-[1.5px] border-border bg-card text-foreground transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * BlogArticleShare — the "Поділитись" cluster: copy-link (sonner toast) plus

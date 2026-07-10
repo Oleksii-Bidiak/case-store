@@ -82,7 +82,7 @@ export function ContactForm() {
           <button
             type="button"
             onClick={() => submit.reset()}
-            className="h-11 cursor-pointer rounded-xl border border-border bg-background px-6 text-sm font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-11 rounded-xl border border-border bg-background px-6 text-sm font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {d.sentAgain}
           </button>
@@ -125,7 +125,7 @@ export function ContactForm() {
                   onClick={() =>
                     setValue("topic", t.key, { shouldDirty: true })
                   }
-                  className={`h-[38px] cursor-pointer rounded-[10px] border px-4 text-[13.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  className={`h-[38px] rounded-[10px] border px-4 text-[13.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     active
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border bg-background text-foreground hover:border-primary"
@@ -247,7 +247,7 @@ export function ContactForm() {
         <button
           type="submit"
           disabled={submit.isPending}
-          className="h-[50px] cursor-pointer rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+          className="h-[50px] rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submit.isPending ? d.submitting : d.submit}
         </button>

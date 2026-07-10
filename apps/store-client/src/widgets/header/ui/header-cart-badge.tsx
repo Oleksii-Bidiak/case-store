@@ -34,7 +34,7 @@ export function HeaderCartBadge({ className }: { className?: string }) {
         onClick={() => setOpen(true)}
         aria-label={dict.cart.openAria}
         className={cn(
-          "relative inline-flex h-11 cursor-pointer items-center gap-2.5 rounded-xl bg-primary px-3 text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:pr-4",
+          "relative inline-flex h-11 items-center gap-2.5 rounded-xl bg-primary px-3 text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:pr-4",
           className,
         )}
       >

@@ -82,7 +82,7 @@ export function PromoCoupons() {
                   type="button"
                   onClick={() => copy(coupon.code)}
                   aria-label={dict.promo.couponCopyAria(coupon.code)}
-                  className="inline-flex h-[34px] cursor-pointer items-center gap-2 rounded-[9px] border-[1.5px] border-dashed border-primary bg-[color-mix(in_oklab,var(--color-primary)_7%,var(--color-card))] px-3 font-mono text-[13px] font-bold tracking-wide text-primary transition-colors hover:bg-[color-mix(in_oklab,var(--color-primary)_14%,var(--color-card))] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex h-[34px] items-center gap-2 rounded-[9px] border-[1.5px] border-dashed border-primary bg-[color-mix(in_oklab,var(--color-primary)_7%,var(--color-card))] px-3 font-mono text-[13px] font-bold tracking-wide text-primary transition-colors hover:bg-[color-mix(in_oklab,var(--color-primary)_14%,var(--color-card))] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {coupon.code}
                   <Copy className="size-3.5" aria-hidden="true" />

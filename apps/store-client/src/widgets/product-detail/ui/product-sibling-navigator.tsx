@@ -143,7 +143,7 @@ export function ProductSiblingNavigator({
                       disabled={unavailable}
                       onClick={navigate}
                       style={{ background: swatch.css }}
-                      className={`size-9 cursor-pointer rounded-full border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-40 ${
+                      className={`size-9 rounded-full border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-40 ${
                         swatch.isLight ? "border-border" : "border-black/10"
                       } ${
                         isSelected

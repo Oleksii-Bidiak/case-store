@@ -84,7 +84,7 @@ export function PopularRail() {
                   role="tab"
                   aria-selected={active}
                   onClick={() => setTab(key)}
-                  className={`cursor-pointer px-0.5 py-3.5 font-display text-base font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  className={`px-0.5 py-3.5 font-display text-base font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     active
                       ? "text-foreground shadow-[inset_0_-2px_0_0_var(--color-primary)]"
                       : "text-muted-foreground hover:text-foreground"
@@ -102,7 +102,7 @@ export function PopularRail() {
             type="button"
             onClick={() => scroll(-1)}
             aria-label={dict.home.popular.prev}
-            className="hidden size-9 cursor-pointer items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
+            className="hidden size-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
           >
             <ChevronLeft className="size-5" />
           </button>
@@ -110,7 +110,7 @@ export function PopularRail() {
             type="button"
             onClick={() => scroll(1)}
             aria-label={dict.home.popular.next}
-            className="hidden size-9 cursor-pointer items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
+            className="hidden size-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
           >
             <ChevronRight className="size-5" />
           </button>

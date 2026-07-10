@@ -128,7 +128,7 @@ export function InfoContactForm() {
           <button
             type="submit"
             disabled={submit.isPending}
-            className="h-12 cursor-pointer rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-12 rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submit.isPending ? d.formSubmitting : d.formSubmit}
           </button>

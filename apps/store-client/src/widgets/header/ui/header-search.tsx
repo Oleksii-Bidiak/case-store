@@ -142,7 +142,7 @@ export function HeaderSearch() {
             aria-expanded={catalogOpen}
             aria-haspopup="menu"
             aria-label={dict.header.catalogAria}
-            className="flex h-full shrink-0 cursor-pointer items-center gap-1.5 border-r border-border bg-muted px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            className="flex h-full shrink-0 items-center gap-1.5 border-r border-border bg-muted px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
           >
             <Menu className="size-[18px]" aria-hidden="true" />
             {dict.header.catalogButton}
@@ -175,7 +175,7 @@ export function HeaderSearch() {
           <button
             type="submit"
             aria-label={dict.search.submitAria}
-            className="flex h-full w-[54px] shrink-0 cursor-pointer items-center justify-center bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            className="flex h-full w-[54px] shrink-0 items-center justify-center bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
           >
             <Search className="size-5" aria-hidden="true" />
           </button>

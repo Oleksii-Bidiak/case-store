@@ -261,7 +261,7 @@ export function RegisterForm({
       <button
         type="submit"
         disabled={registerUser.isPending}
-        className="cursor-pointer rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
       >
         {registerUser.isPending
           ? dict.auth.register.submitting
@@ -274,7 +274,7 @@ export function RegisterForm({
           <button
             type="button"
             onClick={onSwitchToLogin}
-            className="cursor-pointer font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {dict.auth.register.signInLink}
           </button>

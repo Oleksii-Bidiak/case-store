@@ -30,7 +30,7 @@ export function AuthSheet({ open, onOpenChange }: AuthSheetProps) {
 
   const tabClass = (active: boolean) =>
     cn(
-      "h-11 flex-1 cursor-pointer rounded-lg text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]",
+      "h-11 flex-1 rounded-lg text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]",
       active
         ? "bg-primary text-primary-foreground shadow-[var(--shadow-card)]"
         : "bg-muted text-foreground hover:bg-accent",

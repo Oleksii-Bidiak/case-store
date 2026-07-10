@@ -201,7 +201,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
         type="button"
         onClick={() => go(activeIndex - 1)}
         aria-label={dict.home.hero.prevSlide}
-        className="absolute top-1/2 left-3 z-10 flex size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[var(--shadow-lift)] transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:left-4 sm:size-11"
+        className="absolute top-1/2 left-3 z-10 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[var(--shadow-lift)] transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:left-4 sm:size-11"
       >
         <ChevronLeft className="size-5" />
       </button>
@@ -209,7 +209,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
         type="button"
         onClick={() => go(activeIndex + 1)}
         aria-label={dict.home.hero.nextSlide}
-        className="absolute top-1/2 right-3 z-10 flex size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[var(--shadow-lift)] transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-4 sm:size-11"
+        className="absolute top-1/2 right-3 z-10 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-[var(--shadow-lift)] transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-4 sm:size-11"
       >
         <ChevronRight className="size-5" />
       </button>

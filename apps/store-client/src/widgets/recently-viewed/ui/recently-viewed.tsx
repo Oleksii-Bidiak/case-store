@@ -82,7 +82,7 @@ export function RecentlyViewed() {
           <button
             type="button"
             onClick={clearRecentlyViewed}
-            className="cursor-pointer text-sm font-semibold text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="text-sm font-semibold text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {dict.home.recentlyViewed.clear}
           </button>
@@ -90,7 +90,7 @@ export function RecentlyViewed() {
             type="button"
             onClick={() => scroll(-1)}
             aria-label={dict.home.recentlyViewed.prev}
-            className="hidden size-9 cursor-pointer items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
+            className="hidden size-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
           >
             <ChevronLeft className="size-5" />
           </button>
@@ -98,7 +98,7 @@ export function RecentlyViewed() {
             type="button"
             onClick={() => scroll(1)}
             aria-label={dict.home.recentlyViewed.next}
-            className="hidden size-9 cursor-pointer items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
+            className="hidden size-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
           >
             <ChevronRight className="size-5" />
           </button>

@@ -235,7 +235,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
               type="button"
               onClick={() => toast(dict.product.oneClickStub)}
               disabled={!product.inStock}
-              className="h-12 w-full cursor-pointer rounded-lg border border-border bg-background text-[15px] font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-12 w-full rounded-lg border border-border bg-background text-[15px] font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               {dict.product.buyOneClick}
             </button>
