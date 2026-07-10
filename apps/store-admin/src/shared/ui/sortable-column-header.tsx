@@ -20,6 +20,8 @@ interface SortableColumnHeaderProps {
   sortOrder?: "asc" | "desc";
   /** Called with this column's `field` on click (wire to `useTableSort.onSort`). */
   onSort: (field: string) => void;
+  /** Hide this column below `md` (forwarded to the underlying `TableHead`). */
+  hideOnMobile?: boolean;
   className?: string;
 }
 
@@ -36,6 +38,7 @@ export function SortableColumnHeader({
   sortBy,
   sortOrder,
   onSort,
+  hideOnMobile,
   className,
 }: SortableColumnHeaderProps) {
   const isActive = sortBy === field;
@@ -51,7 +54,11 @@ export function SortableColumnHeader({
       : ChevronDownIcon;
 
   return (
-    <TableHead aria-sort={ariaSort} className={cn("p-0", className)}>
+    <TableHead
+      aria-sort={ariaSort}
+      hideOnMobile={hideOnMobile}
+      className={cn("p-0", className)}
+    >
       <button
         type="button"
         onClick={() => onSort(field)}
