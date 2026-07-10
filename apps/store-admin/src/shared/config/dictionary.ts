@@ -741,6 +741,13 @@ export const dict = {
     },
   },
 
+  // --- Rich-text "edit / preview" tab pair (page + blog forms, TASK-266) ------
+  contentPreview: {
+    tabEdit: "Редагування",
+    tabPreview: "Перегляд",
+    emptyContent: "Почніть писати, щоб побачити попередній перегляд…",
+  },
+
   blogCategories: {
     metaTitle: "Категорії блогу — Адмін",
     metaTitleNew: "Створення категорії — Адмін",
@@ -866,6 +873,18 @@ export const dict = {
       sortInt: "Порядок сортування має бути невід'ємним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованого банера",
     },
+  },
+
+  // --- Live banner preview in the banner form (TASK-265) ----------------------
+  bannerPreview: {
+    heading: "Попередній перегляд",
+    tabForm: "Форма",
+    tabPreview: "Прев'ю",
+    viewportDesktop: "Десктоп",
+    viewportMobile: "Мобільний",
+    emptyTitle: "Заголовок банера…",
+    announcementBarNote:
+      "Для «Смуга оголошень» використовуються лише заголовок і посилання кнопки.",
   },
 
   // --- Brands (TASK-189) ------------------------------------------------------

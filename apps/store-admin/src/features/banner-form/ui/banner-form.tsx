@@ -1,9 +1,19 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Input, Label, Textarea } from "@/shared/ui";
+import {
+  BannerPlacementPreview,
+  Button,
+  Input,
+  Label,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  Textarea,
+} from "@/shared/ui";
+import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
 import {
   bannerSchema,
@@ -71,159 +81,227 @@ export function BannerForm({
 
   const statusValue = useWatch({ control, name: "status" });
 
+  // Live preview (TASK-265): read-only observers on the same `control` feed the
+  // presentational BannerPlacementPreview on every keystroke. Per-field
+  // useWatch calls match the existing style above (no array form).
+  const placementValue =
+    useWatch({ control, name: "placement" }) ?? "HERO_SLIDE";
+  const titleValue = useWatch({ control, name: "title" }) ?? "";
+  const subtitleValue = useWatch({ control, name: "subtitle" }) ?? "";
+  const imageUrlValue = useWatch({ control, name: "imageUrl" }) ?? "";
+  const ctaLabelValue = useWatch({ control, name: "ctaLabel" }) ?? "";
+  const ctaHrefValue = useWatch({ control, name: "ctaHref" }) ?? "";
+  const themeValue = useWatch({ control, name: "theme" }) ?? "";
+
+  // <md panel switch. Deliberate deviation from the app's usual Tabs usage:
+  // Radix TabsContent unmounts the inactive panel, which would churn the form's
+  // field DOM and reset the preview's local viewport-toggle state on every tab
+  // switch. Instead BOTH panels stay permanently mounted inside the one <form>
+  // and visibility is driven by this state + `hidden md:*` classes; the Tabs
+  // primitive below is purely visual chrome (value/onValueChange, no
+  // TabsContent). On md:+ the tab bar is hidden and the panels sit side by side.
+  const [activePanel, setActivePanel] = useState<"form" | "preview">("form");
+
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="flex max-w-2xl flex-col gap-5"
+      className="flex flex-col gap-4"
       noValidate
     >
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="banner-placement">{dict.bannerForm.placement}</Label>
-        <select
-          id="banner-placement"
-          className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-          {...register("placement")}
-        >
-          {BANNER_PLACEMENT.map((value) => (
-            <option key={value} value={value}>
-              {dict.bannerForm.placements[value]}
-            </option>
-          ))}
-        </select>
-      </div>
+      <Tabs
+        value={activePanel}
+        onValueChange={(value) => setActivePanel(value as "form" | "preview")}
+        className="md:hidden"
+      >
+        <TabsList className="w-full">
+          <TabsTrigger value="form">{dict.bannerPreview.tabForm}</TabsTrigger>
+          <TabsTrigger value="preview">
+            {dict.bannerPreview.tabPreview}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="banner-title">{dict.bannerForm.title}</Label>
-        <Input id="banner-title" {...register("title")} />
-        {errors.title && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.title.message}
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="banner-subtitle">{dict.bannerForm.subtitle}</Label>
-        <Textarea
-          id="banner-subtitle"
-          rows={2}
-          placeholder={dict.bannerForm.subtitlePlaceholder}
-          {...register("subtitle")}
-        />
-        {errors.subtitle && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.subtitle.message}
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="banner-image">{dict.bannerForm.imageUrl}</Label>
-        <Input
-          id="banner-image"
-          placeholder={dict.bannerForm.imageUrlPlaceholder}
-          {...register("imageUrl")}
-        />
-        {errors.imageUrl && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.imageUrl.message}
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="banner-cta-label">{dict.bannerForm.ctaLabel}</Label>
-        <Input id="banner-cta-label" {...register("ctaLabel")} />
-        {errors.ctaLabel && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.ctaLabel.message}
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="banner-cta-href">{dict.bannerForm.ctaHref}</Label>
-        <Input
-          id="banner-cta-href"
-          placeholder={dict.bannerForm.ctaHrefPlaceholder}
-          {...register("ctaHref")}
-        />
-        {errors.ctaHref && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.ctaHref.message}
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="banner-theme">{dict.bannerForm.theme}</Label>
-        <Input
-          id="banner-theme"
-          placeholder={dict.bannerForm.themePlaceholder}
-          {...register("theme")}
-        />
-        {errors.theme && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.theme.message}
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="banner-sort">{dict.bannerForm.sortOrder}</Label>
-        <Input
-          id="banner-sort"
-          type="number"
-          inputMode="numeric"
-          min="0"
-          step="1"
-          {...register("sortOrder")}
-        />
-        {errors.sortOrder && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.sortOrder.message}
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="banner-status">{dict.bannerForm.status}</Label>
-        <select
-          id="banner-status"
-          className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-          {...register("status")}
-        >
-          <option value="DRAFT">{dict.bannerForm.statusDraft}</option>
-          <option value="SCHEDULED">{dict.bannerForm.statusScheduled}</option>
-          <option value="PUBLISHED">{dict.bannerForm.statusPublished}</option>
-        </select>
-      </div>
-
-      {statusValue === "SCHEDULED" && (
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="banner-scheduled-at">
-            {dict.bannerForm.scheduledAt}
-          </Label>
-          <Input
-            id="banner-scheduled-at"
-            type="datetime-local"
-            {...register("scheduledAt")}
-          />
-          <p className="text-sm text-muted-foreground">
-            {dict.bannerForm.scheduledAtHint}
-          </p>
-          {errors.scheduledAt && (
-            <p role="alert" className="text-sm text-destructive">
-              {errors.scheduledAt.message}
-            </p>
+      <div className="md:grid md:grid-cols-[minmax(0,1fr)_360px] md:items-start md:gap-6">
+        <div
+          data-testid="banner-form-fields"
+          className={cn(
+            "flex max-w-2xl flex-col gap-5",
+            activePanel !== "form" && "hidden md:flex",
           )}
-        </div>
-      )}
+        >
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="banner-placement">
+              {dict.bannerForm.placement}
+            </Label>
+            <select
+              id="banner-placement"
+              className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+              {...register("placement")}
+            >
+              {BANNER_PLACEMENT.map((value) => (
+                <option key={value} value={value}>
+                  {dict.bannerForm.placements[value]}
+                </option>
+              ))}
+            </select>
+          </div>
 
-      <div>
-        <Button type="submit" disabled={isPending}>
-          {isPending ? dict.common.saving : submitLabel}
-        </Button>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="banner-title">{dict.bannerForm.title}</Label>
+            <Input id="banner-title" {...register("title")} />
+            {errors.title && (
+              <p role="alert" className="text-sm text-destructive">
+                {errors.title.message}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="banner-subtitle">{dict.bannerForm.subtitle}</Label>
+            <Textarea
+              id="banner-subtitle"
+              rows={2}
+              placeholder={dict.bannerForm.subtitlePlaceholder}
+              {...register("subtitle")}
+            />
+            {errors.subtitle && (
+              <p role="alert" className="text-sm text-destructive">
+                {errors.subtitle.message}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="banner-image">{dict.bannerForm.imageUrl}</Label>
+            <Input
+              id="banner-image"
+              placeholder={dict.bannerForm.imageUrlPlaceholder}
+              {...register("imageUrl")}
+            />
+            {errors.imageUrl && (
+              <p role="alert" className="text-sm text-destructive">
+                {errors.imageUrl.message}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="banner-cta-label">{dict.bannerForm.ctaLabel}</Label>
+            <Input id="banner-cta-label" {...register("ctaLabel")} />
+            {errors.ctaLabel && (
+              <p role="alert" className="text-sm text-destructive">
+                {errors.ctaLabel.message}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="banner-cta-href">{dict.bannerForm.ctaHref}</Label>
+            <Input
+              id="banner-cta-href"
+              placeholder={dict.bannerForm.ctaHrefPlaceholder}
+              {...register("ctaHref")}
+            />
+            {errors.ctaHref && (
+              <p role="alert" className="text-sm text-destructive">
+                {errors.ctaHref.message}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="banner-theme">{dict.bannerForm.theme}</Label>
+            <Input
+              id="banner-theme"
+              placeholder={dict.bannerForm.themePlaceholder}
+              {...register("theme")}
+            />
+            {errors.theme && (
+              <p role="alert" className="text-sm text-destructive">
+                {errors.theme.message}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="banner-sort">{dict.bannerForm.sortOrder}</Label>
+            <Input
+              id="banner-sort"
+              type="number"
+              inputMode="numeric"
+              min="0"
+              step="1"
+              {...register("sortOrder")}
+            />
+            {errors.sortOrder && (
+              <p role="alert" className="text-sm text-destructive">
+                {errors.sortOrder.message}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="banner-status">{dict.bannerForm.status}</Label>
+            <select
+              id="banner-status"
+              className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+              {...register("status")}
+            >
+              <option value="DRAFT">{dict.bannerForm.statusDraft}</option>
+              <option value="SCHEDULED">
+                {dict.bannerForm.statusScheduled}
+              </option>
+              <option value="PUBLISHED">
+                {dict.bannerForm.statusPublished}
+              </option>
+            </select>
+          </div>
+
+          {statusValue === "SCHEDULED" && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="banner-scheduled-at">
+                {dict.bannerForm.scheduledAt}
+              </Label>
+              <Input
+                id="banner-scheduled-at"
+                type="datetime-local"
+                {...register("scheduledAt")}
+              />
+              <p className="text-sm text-muted-foreground">
+                {dict.bannerForm.scheduledAtHint}
+              </p>
+              {errors.scheduledAt && (
+                <p role="alert" className="text-sm text-destructive">
+                  {errors.scheduledAt.message}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? dict.common.saving : submitLabel}
+            </Button>
+          </div>
+        </div>
+
+        <aside
+          data-testid="banner-form-preview-panel"
+          className={cn(
+            "mt-4 md:sticky md:top-20 md:mt-0",
+            activePanel !== "preview" && "hidden md:block",
+          )}
+        >
+          <BannerPlacementPreview
+            placement={placementValue}
+            title={titleValue}
+            subtitle={subtitleValue}
+            imageUrl={imageUrlValue}
+            ctaLabel={ctaLabelValue}
+            ctaHref={ctaHrefValue}
+            theme={themeValue}
+          />
+        </aside>
       </div>
     </form>
   );
