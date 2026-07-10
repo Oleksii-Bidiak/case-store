@@ -115,6 +115,25 @@ export const handlers = [
     HttpResponse.json({ data: {} }, { status: 401 }),
   ),
 
+  // Signed-in admin profile (TASK-255) — AuthProvider fetches it whenever an
+  // access token appears, so every suite that renders the real provider to an
+  // authenticated state stays off onUnhandledRequest. Override per-test.
+  http.get("*/api/users/me", () =>
+    HttpResponse.json({
+      data: {
+        id: "admin-1",
+        email: "admin@example.com",
+        firstName: "Admin",
+        lastName: "User",
+        phone: null,
+        role: "ADMIN",
+        isActive: true,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    }),
+  ),
+
   // CSRF token fetched lazily by the axios instance before mutations.
   http.get("*/api/csrf-token", () =>
     HttpResponse.json({ data: { csrfToken: "test-csrf" } }),

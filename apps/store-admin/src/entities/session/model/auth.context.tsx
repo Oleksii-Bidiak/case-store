@@ -9,12 +9,18 @@ import {
   type ReactNode,
 } from "react";
 import { isAxiosError } from "axios";
-import { api, setAccessToken } from "@/shared/api";
+import { api, setAccessToken, userControllerGetProfile } from "@/shared/api";
 
 export interface AuthContextValue {
   accessToken: string | null;
   userId: string | null;
   role: string | null;
+  /**
+   * Signed-in admin's email from a side-channel `/api/users/me` fetch
+   * (TASK-255). `null` before the fetch resolves, after a fetch failure, and
+   * when signed out — purely informational, never affects session state.
+   */
+  email: string | null;
   isAuthenticated: boolean;
   /** True only for an authenticated session whose role is ADMIN. */
   isAdmin: boolean;
@@ -76,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [accessToken, setToken] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
   const clearTokens = useCallback(() => {
@@ -83,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setUserId(null);
     setRole(null);
+    setEmail(null);
   }, []);
 
   const setTokens = useCallback(
@@ -124,18 +132,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [setTokens]);
 
+  // TASK-255: light profile fetch for the header identity. Keyed on
+  // `accessToken` so it re-runs on bootstrap restore, login, and every
+  // refresh-token rotation. A failure only leaves `email` null — it must never
+  // tear down the session (isAuthenticated/isAdmin are untouched). No fetch
+  // while signed out: the token only ever becomes null via clearTokens(),
+  // which already resets `email`.
+  useEffect(() => {
+    if (accessToken === null) {
+      return;
+    }
+
+    let active = true;
+
+    void (async () => {
+      try {
+        const res = await userControllerGetProfile();
+        if (active) {
+          setEmail(res.data.email ?? null);
+        }
+      } catch {
+        if (active) {
+          setEmail(null);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [accessToken]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       accessToken,
       userId,
       role,
+      email,
       isAuthenticated: accessToken !== null,
       isAdmin: accessToken !== null && role === "ADMIN",
       isInitializing,
       setTokens,
       clearTokens,
     }),
-    [accessToken, userId, role, isInitializing, setTokens, clearTokens],
+    [accessToken, userId, role, email, isInitializing, setTokens, clearTokens],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
