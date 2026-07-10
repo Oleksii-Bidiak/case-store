@@ -30,6 +30,8 @@ export interface ComboboxProps {
   emptyText?: string;
   autoComplete?: string;
   "aria-invalid"?: boolean;
+  /** Links the input to an external error message element (form a11y). */
+  "aria-describedby"?: string;
   /** Extra classes merged onto the underlying input (e.g. left padding for an icon). */
   className?: string;
 }
@@ -57,6 +59,7 @@ export function Combobox({
   emptyText,
   autoComplete = "off",
   "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
   className,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
@@ -121,6 +124,7 @@ export function Combobox({
         disabled={disabled}
         placeholder={placeholder}
         aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedBy}
         onChange={(e) => {
           onInputChange(e.target.value);
           setOpen(true);

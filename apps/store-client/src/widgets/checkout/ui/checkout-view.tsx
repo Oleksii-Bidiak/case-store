@@ -170,13 +170,21 @@ export function CheckoutView() {
                     id="checkout-notes"
                     rows={3}
                     maxLength={500}
+                    aria-invalid={errors.notes ? true : undefined}
+                    aria-describedby={
+                      errors.notes ? "checkout-notes-error" : undefined
+                    }
                     {...register("notes")}
                   />
                   <span className="self-end text-xs text-muted-foreground">
                     {notes.length}/500
                   </span>
                   {errors.notes && (
-                    <p role="alert" className="text-sm text-destructive">
+                    <p
+                      id="checkout-notes-error"
+                      role="alert"
+                      className="text-sm text-destructive"
+                    >
                       {errors.notes.message}
                     </p>
                   )}

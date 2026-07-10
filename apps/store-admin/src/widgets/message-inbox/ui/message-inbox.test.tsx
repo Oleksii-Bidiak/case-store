@@ -189,4 +189,70 @@ describe("MessageInbox", () => {
       container.querySelector(`[data-label="${dict.common.actions}"]`),
     ).toBeInTheDocument();
   });
+
+  it("offers the IN_PROGRESS filter option and round-trips it through the URL (TASK-256)", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("*/api/contact/admin", () => listResponse([makeMessageRow()])),
+    );
+
+    renderWithProviders(<MessageInbox />);
+    await screen.findByText("Ivan Petrenko");
+
+    await user.click(
+      screen.getByRole("combobox", { name: dict.messages.filterStatusAria }),
+    );
+    await user.click(
+      await screen.findByRole("option", {
+        name: dict.messages.filterInProgress,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("status=IN_PROGRESS"),
+      ),
+    );
+  });
+
+  it("renders the IN_PROGRESS status badge label (TASK-256)", async () => {
+    server.use(
+      http.get("*/api/contact/admin", () =>
+        listResponse([makeMessageRow({ status: "IN_PROGRESS" })]),
+      ),
+    );
+
+    renderWithProviders(<MessageInbox />);
+
+    expect(
+      await screen.findByText(dict.messages.statusInProgress),
+    ).toBeInTheDocument();
+  });
+
+  it("links the sender name to the customer profile when matchedUserId is present (TASK-256)", async () => {
+    server.use(
+      http.get("*/api/contact/admin", () =>
+        listResponse([
+          makeMessageRow({ matchedUserId: "user-uuid-1" }),
+          makeMessageRow({
+            id: "msg-uuid-2",
+            name: "Olena Koval",
+            matchedUserId: null,
+          }),
+        ]),
+      ),
+    );
+
+    renderWithProviders(<MessageInbox />);
+
+    // Matched sender → a link to the customer card.
+    const link = await screen.findByRole("link", { name: "Ivan Petrenko" });
+    expect(link).toHaveAttribute("href", "/users/user-uuid-1");
+
+    // Unmatched sender → plain text, no link.
+    expect(screen.getByText("Olena Koval")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Olena Koval" }),
+    ).not.toBeInTheDocument();
+  });
 });

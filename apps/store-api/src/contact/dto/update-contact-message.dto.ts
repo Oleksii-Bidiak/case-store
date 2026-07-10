@@ -16,7 +16,7 @@ const trimNullable = ({ value }: { value: unknown }): unknown =>
  */
 export class UpdateContactMessageDto {
   @ApiProperty({
-    description: 'New status (NEW, READ, ARCHIVED)',
+    description: 'New status (NEW, IN_PROGRESS, READ, ARCHIVED)',
     enum: ContactMessageStatus,
     example: ContactMessageStatus.READ,
     required: false,

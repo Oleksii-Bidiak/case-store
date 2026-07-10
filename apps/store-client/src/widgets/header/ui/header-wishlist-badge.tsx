@@ -23,7 +23,7 @@ export function HeaderWishlistBadge({ className }: { className?: string }) {
       href="/wishlist"
       aria-label={dict.wishlist.headerAria}
       className={cn(
-        "relative flex flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-foreground transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "relative flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-foreground transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
     >

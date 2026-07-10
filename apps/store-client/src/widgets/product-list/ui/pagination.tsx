@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { dict } from "@/shared/config";
 
 interface PaginationProps {
   currentPage: number;
@@ -44,7 +45,7 @@ export function Pagination({
 
   return (
     <nav
-      aria-label="Pagination"
+      aria-label={dict.catalog.paginationAria}
       className="flex items-center justify-center gap-2"
     >
       {isFirst ? (
@@ -53,12 +54,12 @@ export function Pagination({
           className={`${arrowBase} pointer-events-none text-muted-foreground/50`}
         >
           <ChevronLeft className="size-[18px]" />
-          <span className="sr-only">Previous</span>
+          <span className="sr-only">{dict.catalog.paginationPreviousAria}</span>
         </span>
       ) : (
         <Link
           href={buildHref(currentPage - 1)}
-          aria-label="Previous"
+          aria-label={dict.catalog.paginationPreviousAria}
           className={`${arrowBase} text-muted-foreground hover:border-primary hover:text-foreground`}
         >
           <ChevronLeft className="size-[18px]" />
@@ -99,12 +100,12 @@ export function Pagination({
           className={`${arrowBase} pointer-events-none text-muted-foreground/50`}
         >
           <ChevronRight className="size-[18px]" />
-          <span className="sr-only">Next</span>
+          <span className="sr-only">{dict.catalog.paginationNextAria}</span>
         </span>
       ) : (
         <Link
           href={buildHref(currentPage + 1)}
-          aria-label="Next"
+          aria-label={dict.catalog.paginationNextAria}
           className={`${arrowBase} text-foreground hover:border-primary`}
         >
           <ChevronRight className="size-[18px]" />

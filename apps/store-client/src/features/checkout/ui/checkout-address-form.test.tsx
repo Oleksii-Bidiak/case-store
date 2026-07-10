@@ -95,6 +95,25 @@ describe("CheckoutAddressForm", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Невірний телефон");
   });
 
+  it("links each errored field to its message via aria-describedby (TASK-259-I)", () => {
+    renderForm({ firstName: "Вкажіть імʼя", phone: "Невірний телефон" });
+
+    // register-driven field (renderField helper).
+    const firstName = screen.getByLabelText(dict.checkout.fields.firstName);
+    const describedBy = firstName.getAttribute("aria-describedby");
+    expect(describedBy).toBe("checkout-firstName-error");
+    expect(document.getElementById(describedBy!)).toHaveTextContent(
+      "Вкажіть імʼя",
+    );
+
+    // Controller-driven phone field.
+    const phone = screen.getByLabelText(dict.checkout.fields.phone);
+    expect(phone).toHaveAttribute("aria-describedby", "checkout-phone-error");
+    expect(document.getElementById("checkout-phone-error")).toHaveTextContent(
+      "Невірний телефон",
+    );
+  });
+
   it("replaces the warehouse hint with the error when deliveryAddress is invalid", () => {
     renderForm({ deliveryAddress: "Вкажіть адресу" });
 

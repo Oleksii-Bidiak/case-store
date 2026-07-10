@@ -3,7 +3,18 @@
 import { useEffect } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Input, Label, RichTextEditor, Textarea } from "@/shared/ui";
+import {
+  Button,
+  Input,
+  Label,
+  RichTextEditor,
+  RichTextPreview,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  Textarea,
+} from "@/shared/ui";
 import { useAdminBlogControllerFindCategories } from "@/entities/blog";
 import { slugify } from "@/shared/lib/slug";
 import { dict } from "@/shared/config";
@@ -75,6 +86,8 @@ export function BlogPostForm({
   const titleValue = useWatch({ control, name: "title" }) ?? "";
   const slugValue = useWatch({ control, name: "slug" });
   const statusValue = useWatch({ control, name: "status" });
+  // Live body HTML for the preview tab (TASK-266).
+  const contentValue = useWatch({ control, name: "content" }) ?? "";
 
   return (
     <form
@@ -152,18 +165,42 @@ export function BlogPostForm({
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="post-content">{dict.blogPostForm.content}</Label>
-        <Controller
-          control={control}
-          name="content"
-          render={({ field }) => (
-            <RichTextEditor
-              value={field.value ?? ""}
-              onChange={field.onChange}
-              placeholder={dict.blogPostForm.contentPlaceholder}
-              disabled={isPending}
+        {/* Edit/preview tab pair (TASK-266). Radix TabsContent unmounts the
+            inactive panel, which is safe here: the editor is fully controlled
+            by the RHF field, so tabbing back re-seeds it from the up-to-date
+            value with no data loss. Accepted trade-off (same as GitHub's
+            markdown Preview tab): cursor/scroll position inside the editor is
+            lost across a tab round-trip. */}
+        <Tabs defaultValue="edit">
+          <TabsList>
+            <TabsTrigger value="edit">
+              {dict.contentPreview.tabEdit}
+            </TabsTrigger>
+            <TabsTrigger value="preview">
+              {dict.contentPreview.tabPreview}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="edit">
+            <Controller
+              control={control}
+              name="content"
+              render={({ field }) => (
+                <RichTextEditor
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  placeholder={dict.blogPostForm.contentPlaceholder}
+                  disabled={isPending}
+                />
+              )}
             />
-          )}
-        />
+          </TabsContent>
+          <TabsContent value="preview">
+            <RichTextPreview
+              html={contentValue}
+              emptyLabel={dict.contentPreview.emptyContent}
+            />
+          </TabsContent>
+        </Tabs>
         {errors.content && (
           <p role="alert" className="text-sm text-destructive">
             {errors.content.message}

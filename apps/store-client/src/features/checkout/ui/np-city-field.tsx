@@ -70,6 +70,7 @@ export function NpCityField({
         emptyText={dict.checkout.searchEmpty}
         autoComplete="address-level2"
         aria-invalid={fieldState.error ? true : undefined}
+        aria-describedby={fieldState.error ? `${id}-error` : undefined}
         onInputChange={(text) => {
           field.onChange(text);
           setValue("npCityRef", "");
@@ -84,7 +85,7 @@ export function NpCityField({
         }}
       />
       {fieldState.error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p id={`${id}-error`} role="alert" className="text-sm text-destructive">
           {fieldState.error.message}
         </p>
       )}

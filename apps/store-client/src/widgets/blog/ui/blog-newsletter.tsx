@@ -51,7 +51,7 @@ export function BlogNewsletter() {
                 <button
                   type="button"
                   onClick={() => toast(socialSoon)}
-                  className={`${SOCIAL_ITEM_CLASS} cursor-pointer`}
+                  className={SOCIAL_ITEM_CLASS}
                 >
                   <Icon width={19} height={19} />
                   {social.label}

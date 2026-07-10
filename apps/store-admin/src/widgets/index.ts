@@ -88,3 +88,4 @@ export { DashboardLowStockTable } from "./dashboard-low-stock";
 export { ContentMapView } from "./content-map";
 export { DashboardTopProductsTable } from "./dashboard-top-products";
 export { DashboardLastOrdersTable } from "./dashboard-last-orders";
+export { DashboardTrafficCard } from "./dashboard-traffic";

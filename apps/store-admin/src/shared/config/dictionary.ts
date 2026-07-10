@@ -139,6 +139,13 @@ export const dict = {
     metricInfoAria: (label: string) => `Що означає «${label}»`,
     lastOrders: "Останні замовлення",
     noLastOrders: "Замовлень ще немає.",
+    // TASK-262: traffic card (links out to Umami — no numbers rendered here).
+    trafficHeading: "Відвідуваність",
+    trafficSubtext: "Трафік, конверсії та воронка продажів — в Umami.",
+    // Decorative "→" is rendered separately in an aria-hidden span (a11y).
+    trafficOpenLink: "Відкрити Umami",
+    trafficNotConfigured: "Ще не підключено. Зверніться до розробника.",
+    trafficOpenLinkAria: "Відкрити Umami у новій вкладці",
   },
 
   common: {
@@ -741,6 +748,13 @@ export const dict = {
     },
   },
 
+  // --- Rich-text "edit / preview" tab pair (page + blog forms, TASK-266) ------
+  contentPreview: {
+    tabEdit: "Редагування",
+    tabPreview: "Перегляд",
+    emptyContent: "Почніть писати, щоб побачити попередній перегляд…",
+  },
+
   blogCategories: {
     metaTitle: "Категорії блогу — Адмін",
     metaTitleNew: "Створення категорії — Адмін",
@@ -866,6 +880,18 @@ export const dict = {
       sortInt: "Порядок сортування має бути невід'ємним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованого банера",
     },
+  },
+
+  // --- Live banner preview in the banner form (TASK-265) ----------------------
+  bannerPreview: {
+    heading: "Попередній перегляд",
+    tabForm: "Форма",
+    tabPreview: "Прев'ю",
+    viewportDesktop: "Десктоп",
+    viewportMobile: "Мобільний",
+    emptyTitle: "Заголовок банера…",
+    announcementBarNote:
+      "Для «Смуга оголошень» використовуються лише заголовок і посилання кнопки.",
   },
 
   // --- Brands (TASK-189) ------------------------------------------------------
@@ -1200,6 +1226,11 @@ export const dict = {
     updateSuccess: "Повідомлення оновлено.",
     updateError: "Не вдалося оновити повідомлення. Спробуйте ще раз.",
     close: "Закрити",
+    // IN_PROGRESS status + inbox→profile link (TASK-256)
+    filterInProgress: "В роботі",
+    statusInProgress: "В роботі",
+    markInProgress: "Взяти в роботу",
+    viewProfile: "Профіль клієнта",
   },
 
   orderStatus: {

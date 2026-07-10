@@ -83,8 +83,14 @@ export class ContactService {
       this.contactRepository.countByStatus(ContactMessageStatus.NEW),
     ]);
 
+    // TASK-256: one batched sender→user match per page (distinct emails), never N+1.
+    const distinctEmails = [...new Set(messages.map((row) => row.email))];
+    const matchMap = await this.contactRepository.findMatchingUserIds(distinctEmails);
+
     return {
-      data: messages.map((row) => ContactMessageEntity.fromPrisma(row)),
+      data: messages.map((row) =>
+        ContactMessageEntity.fromPrisma(row, matchMap.get(row.email) ?? null),
+      ),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit), unread },
     };
   }
@@ -97,7 +103,9 @@ export class ContactService {
     if (!message) {
       throw new NotFoundException('Contact message not found');
     }
-    return ContactMessageEntity.fromPrisma(message);
+    // TASK-256: live sender→user match so the inbox can link to the profile.
+    const matchedUserId = await this.contactRepository.findMatchingUserId(message.email);
+    return ContactMessageEntity.fromPrisma(message, matchedUserId);
   }
 
   /**
@@ -108,8 +116,9 @@ export class ContactService {
   }
 
   /**
-   * Apply an admin update: change status (NEW/READ/ARCHIVED) and/or set the
-   * internal admin note. Throws NotFoundException when the message is missing.
+   * Apply an admin update: change status (NEW/IN_PROGRESS/READ/ARCHIVED) and/or
+   * set the internal admin note. Throws NotFoundException when the message is
+   * missing.
    */
   async update(id: string, dto: UpdateContactMessageDto): Promise<ContactMessageEntity> {
     const existing = await this.contactRepository.findById(id);
@@ -123,6 +132,8 @@ export class ContactService {
     });
 
     this.logger.info({ contactMessageId: id, status: updated.status }, 'Contact message updated');
-    return ContactMessageEntity.fromPrisma(updated);
+    // TASK-256: the email is immutable on update — resolve the match for the response.
+    const matchedUserId = await this.contactRepository.findMatchingUserId(updated.email);
+    return ContactMessageEntity.fromPrisma(updated, matchedUserId);
   }
 }

@@ -36,6 +36,8 @@ export const dict = {
     continueShopping: "Продовжити покупки",
     optional: "(необов'язково)",
     genericError: "Щось пішло не так. Спробуйте ще раз.",
+    // Accessible name for overlay close buttons (Dialog / Sheet) — TASK-259-F.
+    close: "Закрити",
   },
 
   nav: {
@@ -102,6 +104,11 @@ export const dict = {
     prevPage: "‹ Попередня",
     nextPage: "Наступна ›",
     pageOf: (page: number, total: number) => `${page} / ${total}`,
+    /**
+     * Blog-article section in the header-search dropdown (TASK-218) — doubles
+     * as the visible section heading and the second listbox's aria-label.
+     */
+    blogSectionLabel: "Статті блогу",
   },
 
   footer: {
@@ -198,6 +205,8 @@ export const dict = {
       prevSlide: "Попередній слайд",
       nextSlide: "Наступний слайд",
       goToSlide: (n: number) => `Перейти до слайда ${n}`,
+      pauseAutoplay: "Призупинити автоперегортання слайдів",
+      resumeAutoplay: "Відновити автоперегортання слайдів",
     },
 
     // Device model picker — UI-only stub (API has no model→accessory filter).
@@ -450,6 +459,10 @@ export const dict = {
     // In-catalog keyword search (`/products?search=…`, distinct from /search).
     searchTitle: (q: string) => `Пошук: «${q}»`,
     searchSubtitle: (q: string) => `Результати каталогу за запитом «${q}».`,
+    // Catalog pagination a11y labels (TASK-259-F).
+    paginationAria: "Навігація сторінками",
+    paginationPreviousAria: "Попередня сторінка",
+    paginationNextAria: "Наступна сторінка",
   },
 
   // Info & support hub (/info, Info.dc.html import). Content is static (stub)
@@ -781,6 +794,9 @@ export const dict = {
     codeLabel: "Код:",
     // Gallery image-switch loading overlay (TASK-214).
     imageLoading: "Завантаження зображення…",
+    // Gallery thumbnail a11y (TASK-259-F).
+    showImageAria: (n: number) => `Показати зображення ${n}`,
+    imageThumbnailAlt: (n: number) => `Мініатюра зображення ${n}`,
     // Buy-box secondary actions — no backend yet (express order TASK-178,
     // product compare TASK-085), so both only surface a toast.
     buyOneClick: "Купити в 1 клік",
@@ -988,6 +1004,8 @@ export const dict = {
     stepShipping: "Доставка",
     stepReview: "Перевірка",
     stepConfirm: "Підтвердження",
+    // Progress stepper landmark label (TASK-259-F).
+    progressAria: "Прогрес оформлення замовлення",
     deliveryEstimateLabel: "Орієнтовна доставка",
     deliveryEstimateValue: "3–5 робочих днів",
     // Nova Poshta shipping estimate in the order summary (TASK-080).

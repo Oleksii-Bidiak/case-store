@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -43,6 +44,7 @@ function truncate(value: string): string {
 function parseStatus(raw: string | null): AdminContactListStatus | undefined {
   if (
     raw === AdminContactListStatus.NEW ||
+    raw === AdminContactListStatus.IN_PROGRESS ||
     raw === AdminContactListStatus.READ ||
     raw === AdminContactListStatus.ARCHIVED
   ) {
@@ -53,9 +55,11 @@ function parseStatus(raw: string | null): AdminContactListStatus | undefined {
 
 /**
  * MessageInbox — admin inbox for customer contact messages. The status filter
- * (`?status=NEW|READ|ARCHIVED`, default all) and page (`?page=`) live in the
- * URL. Each row opens a detail dialog with the full message, contact info, and
- * status/admin-note controls.
+ * (`?status=NEW|IN_PROGRESS|READ|ARCHIVED`, default all) and page (`?page=`)
+ * live in the URL. Each row opens a detail dialog with the full message,
+ * contact info, and status/admin-note controls. When the sender's email matches
+ * a registered user (`matchedUserId`, TASK-256), the sender name links to that
+ * customer's profile.
  */
 export function MessageInbox() {
   const router = useRouter();
@@ -111,6 +115,9 @@ export function MessageInbox() {
             <SelectItem value={AdminContactListStatus.NEW}>
               {dict.messages.filterNew}
             </SelectItem>
+            <SelectItem value={AdminContactListStatus.IN_PROGRESS}>
+              {dict.messages.filterInProgress}
+            </SelectItem>
             <SelectItem value={AdminContactListStatus.READ}>
               {dict.messages.filterRead}
             </SelectItem>
@@ -165,7 +172,16 @@ export function MessageInbox() {
                   }
                 >
                   <TableCell label={dict.messages.colName}>
-                    {message.name}
+                    {message.matchedUserId ? (
+                      <Link
+                        href={`/users/${message.matchedUserId}`}
+                        className="text-primary hover:underline"
+                      >
+                        {message.name}
+                      </Link>
+                    ) : (
+                      message.name
+                    )}
                   </TableCell>
                   <TableCell
                     label={dict.messages.colTopic}

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
@@ -55,7 +56,9 @@ function DetailRow({ label, value }: { label: string; value: string }) {
  * note is an RHF form seeded via `values` (forms.md Rule 2a) so switching the
  * selected message re-syncs untouched fields without discarding in-progress
  * edits. Status buttons and note save go through the same update mutation, which
- * invalidates the inbox list + unread badge.
+ * invalidates the inbox list + unread badge. When the sender's email matches a
+ * registered user (`matchedUserId`, TASK-256), a "Профіль клієнта" link jumps
+ * to that customer's card.
  */
 export function MessageDetailDialog({
   message,
@@ -127,7 +130,25 @@ export function MessageDetailDialog({
           <div className="grid grid-cols-2 gap-3">
             <DetailRow label={dict.messages.fieldName} value={message.name} />
             <DetailRow label={dict.messages.fieldPhone} value={message.phone} />
-            <DetailRow label={dict.messages.fieldEmail} value={message.email} />
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                {dict.messages.fieldEmail}
+              </span>
+              <span className="text-sm text-foreground">
+                {message.email}
+                {message.matchedUserId && (
+                  <>
+                    {" · "}
+                    <Link
+                      href={`/users/${message.matchedUserId}`}
+                      className="text-primary hover:underline"
+                    >
+                      {dict.messages.viewProfile}
+                    </Link>
+                  </>
+                )}
+              </span>
+            </div>
             <DetailRow
               label={dict.messages.fieldTopic}
               value={message.topic || dict.messages.noTopic}
@@ -181,6 +202,18 @@ export function MessageDetailDialog({
         </div>
 
         <DialogFooter className="flex-wrap gap-2 sm:justify-start">
+          {message.status !== UpdateContactMessageDtoStatus.IN_PROGRESS && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={update.isPending}
+              onClick={() =>
+                setStatus(UpdateContactMessageDtoStatus.IN_PROGRESS)
+              }
+            >
+              {dict.messages.markInProgress}
+            </Button>
+          )}
           {message.status !== UpdateContactMessageDtoStatus.READ && (
             <Button
               variant="outline"

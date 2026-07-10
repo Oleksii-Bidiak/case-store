@@ -82,7 +82,7 @@ export function ContactForm() {
           <button
             type="button"
             onClick={() => submit.reset()}
-            className="h-11 cursor-pointer rounded-xl border border-border bg-background px-6 text-sm font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-11 rounded-xl border border-border bg-background px-6 text-sm font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {d.sentAgain}
           </button>
@@ -125,7 +125,7 @@ export function ContactForm() {
                   onClick={() =>
                     setValue("topic", t.key, { shouldDirty: true })
                   }
-                  className={`h-[38px] cursor-pointer rounded-[10px] border px-4 text-[13.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  className={`h-[38px] rounded-[10px] border px-4 text-[13.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     active
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border bg-background text-foreground hover:border-primary"
@@ -142,13 +142,15 @@ export function ContactForm() {
           <label className="flex flex-col gap-[7px]">
             <span className={LABEL}>{d.fieldName}</span>
             <input
+              id="contact-name"
               placeholder={d.fieldNamePlaceholder}
               aria-invalid={Boolean(errors.name)}
+              aria-describedby={errors.name ? "contact-name-error" : undefined}
               className={FIELD}
               {...register("name")}
             />
             {errors.name && (
-              <span role="alert" className={ERROR}>
+              <span id="contact-name-error" role="alert" className={ERROR}>
                 {errors.name.message}
               </span>
             )}
@@ -156,14 +158,18 @@ export function ContactForm() {
           <label className="flex flex-col gap-[7px]">
             <span className={LABEL}>{d.fieldPhone}</span>
             <input
+              id="contact-phone"
               type="tel"
               placeholder={d.fieldPhonePlaceholder}
               aria-invalid={Boolean(errors.phone)}
+              aria-describedby={
+                errors.phone ? "contact-phone-error" : undefined
+              }
               className={FIELD}
               {...register("phone")}
             />
             {errors.phone && (
-              <span role="alert" className={ERROR}>
+              <span id="contact-phone-error" role="alert" className={ERROR}>
                 {errors.phone.message}
               </span>
             )}
@@ -173,14 +179,16 @@ export function ContactForm() {
         <label className="flex flex-col gap-[7px]">
           <span className={LABEL}>{d.fieldEmail}</span>
           <input
+            id="contact-email"
             type="email"
             placeholder={d.fieldEmailPlaceholder}
             aria-invalid={Boolean(errors.email)}
+            aria-describedby={errors.email ? "contact-email-error" : undefined}
             className={FIELD}
             {...register("email")}
           />
           {errors.email && (
-            <span role="alert" className={ERROR}>
+            <span id="contact-email-error" role="alert" className={ERROR}>
               {errors.email.message}
             </span>
           )}
@@ -203,14 +211,18 @@ export function ContactForm() {
         <label className="flex flex-col gap-[7px]">
           <span className={LABEL}>{d.fieldMessage}</span>
           <textarea
+            id="contact-message"
             rows={5}
             placeholder={d.fieldMessagePlaceholder}
             aria-invalid={Boolean(errors.message)}
+            aria-describedby={
+              errors.message ? "contact-message-error" : undefined
+            }
             className="resize-y rounded-xl border-[1.5px] border-border bg-background px-[15px] py-3 text-[14.5px] text-foreground outline-none focus-visible:border-primary"
             {...register("message")}
           />
           {errors.message && (
-            <span role="alert" className={ERROR}>
+            <span id="contact-message-error" role="alert" className={ERROR}>
               {errors.message.message}
             </span>
           )}
@@ -218,8 +230,13 @@ export function ContactForm() {
 
         <label className="flex cursor-pointer items-start gap-2.5 text-[12.5px] leading-relaxed text-muted-foreground">
           <input
+            id="contact-consent"
             type="checkbox"
             className="mt-0.5 size-4 accent-[var(--color-primary)]"
+            aria-invalid={Boolean(errors.consent)}
+            aria-describedby={
+              errors.consent ? "contact-consent-error" : undefined
+            }
             {...register("consent")}
           />
           <span>
@@ -230,7 +247,7 @@ export function ContactForm() {
           </span>
         </label>
         {errors.consent && (
-          <span role="alert" className={ERROR}>
+          <span id="contact-consent-error" role="alert" className={ERROR}>
             {errors.consent.message}
           </span>
         )}
@@ -247,7 +264,7 @@ export function ContactForm() {
         <button
           type="submit"
           disabled={submit.isPending}
-          className="h-[50px] cursor-pointer rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+          className="h-[50px] rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submit.isPending ? d.submitting : d.submit}
         </button>

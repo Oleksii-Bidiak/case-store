@@ -45,7 +45,7 @@ export function Newsletter() {
                   <button
                     type="button"
                     onClick={() => toast(socialSoon)}
-                    className={`${SOCIAL_ITEM_CLASS} cursor-pointer`}
+                    className={SOCIAL_ITEM_CLASS}
                   >
                     <Icon className="size-5" aria-hidden="true" />
                     {social.label}

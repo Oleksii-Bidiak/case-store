@@ -44,11 +44,11 @@ export function CheckoutPaymentStub() {
                 name="checkout-payment"
                 checked={on}
                 onChange={() => setMethod(option.key)}
-                className="sr-only"
+                className="peer sr-only"
               />
               <span
                 aria-hidden="true"
-                className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 ${
                   on ? "border-primary" : "border-border"
                 }`}
               >
@@ -81,11 +81,11 @@ export function CheckoutPaymentStub() {
           type="checkbox"
           checked={bonus}
           onChange={() => setBonus((v) => !v)}
-          className="sr-only"
+          className="peer sr-only"
         />
         <span
           aria-hidden="true"
-          className={`flex size-5 shrink-0 items-center justify-center rounded-[6px] border-[1.5px] ${
+          className={`flex size-5 shrink-0 items-center justify-center rounded-[6px] border-[1.5px] peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 ${
             bonus ? "border-primary bg-primary" : "border-border"
           }`}
         >

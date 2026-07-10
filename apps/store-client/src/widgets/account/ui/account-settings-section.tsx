@@ -58,11 +58,11 @@ export function AccountSettingsSection() {
                 type="checkbox"
                 checked={on}
                 onChange={() => toggle(n.key)}
-                className="sr-only"
+                className="peer sr-only"
               />
               <span
                 aria-hidden="true"
-                className={`inline-flex h-[26px] w-[46px] shrink-0 items-center rounded-full p-[3px] transition-colors ${
+                className={`inline-flex h-[26px] w-[46px] shrink-0 items-center rounded-full p-[3px] transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 ${
                   on ? "bg-primary" : "bg-muted"
                 }`}
               >

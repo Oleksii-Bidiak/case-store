@@ -76,7 +76,7 @@ export function ProductCardActions({
             variant="outline"
             onClick={openCartSheet}
             aria-label={dict.productCard.inCartAria(product.name)}
-            className="h-10 flex-1 cursor-pointer border-success/40 font-semibold text-success transition-all hover:bg-success/10 hover:text-success active:scale-[0.99]"
+            className="h-10 flex-1 border-success/40 font-semibold text-success transition-all hover:bg-success/10 hover:text-success active:scale-[0.99]"
           >
             <Check aria-hidden="true" className="size-4" />
             {dict.productCard.inCart}

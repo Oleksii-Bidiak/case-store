@@ -130,16 +130,32 @@ export function ApplyDiscount() {
             placeholder={dict.discounts.placeholder}
             aria-label={dict.discounts.inputAria}
             aria-invalid={errors.code || apiErrorMessage ? true : undefined}
+            aria-describedby={
+              [
+                errors.code?.message ? "discount-code-error" : null,
+                apiErrorMessage ? "discount-code-api-error" : null,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
             autoCapitalize="characters"
             {...register("code")}
           />
           {errors.code?.message && (
-            <p role="alert" className="mt-1 text-sm text-destructive">
+            <p
+              id="discount-code-error"
+              role="alert"
+              className="mt-1 text-sm text-destructive"
+            >
               {errors.code.message}
             </p>
           )}
           {apiErrorMessage && (
-            <p role="alert" className="mt-1 text-sm text-destructive">
+            <p
+              id="discount-code-api-error"
+              role="alert"
+              className="mt-1 text-sm text-destructive"
+            >
               {apiErrorMessage}
             </p>
           )}
