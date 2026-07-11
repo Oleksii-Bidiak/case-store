@@ -35,6 +35,7 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
         "/account",
         "/login",
         "/register",
+        "/search",
       ],
     },
     sitemap: `${SITE_URL}/sitemap.xml`,

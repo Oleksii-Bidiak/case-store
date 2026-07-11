@@ -17,7 +17,12 @@ import {
   buildBreadcrumbSchema,
   buildItemListSchema,
 } from "@/shared/lib/schema";
-import { resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
+import {
+  buildListingMetadata,
+  resolveSeo,
+  toMetadataTitle,
+  type ListingFilterParams,
+} from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
 
@@ -51,14 +56,16 @@ async function resolveCategoryPath(
 /**
  * Category landing metadata (TASK-277): the shared precedence chain — the
  * category's own metaTitle/metaDescription (tier 1, admin override) →
- * SeoSettings defaults (tier 2) → category name/description (tier 3) — plus a
- * self-canonical without query params (the filter/page-param canonical policy
- * is TASK-278's remit).
+ * SeoSettings defaults (tier 2) → category name/description (tier 3) — plus
+ * the shared canonical/robots policy (TASK-278, plan 143): self-canonical
+ * (with `?page=N` beyond page 1) when unfiltered, `noindex,follow` when any
+ * filter param rides the query string.
  */
 export async function generateMetadata({
   params,
+  searchParams,
 }: CategoryLandingPageProps): Promise<Metadata> {
-  const { slug } = await params;
+  const [{ slug }, resolvedParams] = await Promise.all([params, searchParams]);
 
   const [path, seo] = await Promise.all([
     resolveCategoryPath(slug),
@@ -80,6 +87,24 @@ export async function generateMetadata({
     content: { name: node.name, description: node.description },
   });
 
+  // All seven filter params are read so the noindex decision is complete —
+  // sort params never participate; no categoryCanonicalPath here because the
+  // category is already the URL segment (plan 143, Decisions 1 & 3).
+  const filters: ListingFilterParams = {
+    search: first(resolvedParams.search)?.trim() || undefined,
+    minPrice: first(resolvedParams.minPrice),
+    maxPrice: first(resolvedParams.maxPrice),
+    specs: first(resolvedParams.specs),
+    brandId: first(resolvedParams.brandId),
+    deviceModelId: first(resolvedParams.deviceModelId),
+    onSale: first(resolvedParams.onSale),
+  };
+  const listingMeta = buildListingMetadata({
+    basePath: `/categories/${node.slug}`,
+    page: Number(first(resolvedParams.page)),
+    filters,
+  });
+
   return {
     title: toMetadataTitle(seoMeta, {
       settings: seo,
@@ -88,7 +113,10 @@ export async function generateMetadata({
     }),
     description:
       seoMeta.description ?? dict.catalog.categorySubtitle(node.name),
-    alternates: { canonical: `${SITE_URL}/categories/${node.slug}` },
+    ...(listingMeta.canonicalPath
+      ? { alternates: { canonical: `${SITE_URL}${listingMeta.canonicalPath}` } }
+      : {}),
+    ...(listingMeta.robots ? { robots: listingMeta.robots } : {}),
   };
 }
 

@@ -11,7 +11,12 @@ import type { CategoryTreeNodeEntity } from "@/shared/api/generated/models";
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
-import { resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
+import {
+  buildListingMetadata,
+  resolveSeo,
+  toMetadataTitle,
+  type ListingFilterParams,
+} from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
 
@@ -64,6 +69,34 @@ export async function generateMetadata({
     fetchSeoSettings(),
   ]);
 
+  // Canonical/robots policy (plan 143): ALL seven filter params are read here —
+  // brandId/deviceModelId/onSale included, even though the server-rendered query
+  // only uses a subset — so the noindex decision is complete, not partial. Sort
+  // params never participate (Decision 1). One helper call covers both branches:
+  // a clean ?categoryId= view canonicalizes onto its /categories/[slug] landing
+  // page (TASK-277 behaviour, now inside the helper); any filter → noindex.
+  const filters: ListingFilterParams = {
+    search: first(resolvedParams.search)?.trim() || undefined,
+    minPrice: first(resolvedParams.minPrice),
+    maxPrice: first(resolvedParams.maxPrice),
+    specs: first(resolvedParams.specs),
+    brandId: first(resolvedParams.brandId),
+    deviceModelId: first(resolvedParams.deviceModelId),
+    onSale: first(resolvedParams.onSale),
+  };
+  const listingMeta = buildListingMetadata({
+    basePath: "/products",
+    page: Number(first(resolvedParams.page)),
+    filters,
+    categoryCanonicalPath: node ? `/categories/${node.slug}` : undefined,
+  });
+  const canonicalAndRobots: Pick<Metadata, "alternates" | "robots"> = {
+    ...(listingMeta.canonicalPath
+      ? { alternates: { canonical: `${SITE_URL}${listingMeta.canonicalPath}` } }
+      : {}),
+    ...(listingMeta.robots ? { robots: listingMeta.robots } : {}),
+  };
+
   // Category view: category-specific, SeoSettings-aware title/description.
   if (node) {
     const seoMeta = resolveSeo({
@@ -79,11 +112,7 @@ export async function generateMetadata({
         fallback: dict.meta.productsTitle,
       }),
       description: seoMeta.description ?? dict.meta.productsDescription,
-      // The clean /categories/[slug] landing page is the indexable home of
-      // this view (TASK-277) — the ?categoryId= form stays fully functional
-      // but consolidates its search signal onto the canonical URL. The
-      // unfiltered/keyword-search branch below is TASK-278's remit.
-      alternates: { canonical: `${SITE_URL}/categories/${node.slug}` },
+      ...canonicalAndRobots,
     };
   }
 
@@ -95,6 +124,7 @@ export async function generateMetadata({
       { settings: seo, siteName: SITE_NAME, fallback: dict.meta.productsTitle },
     ),
     description: dict.meta.productsDescription,
+    ...canonicalAndRobots,
   };
 }
 
