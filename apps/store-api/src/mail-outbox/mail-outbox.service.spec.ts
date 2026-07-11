@@ -5,9 +5,14 @@ import { MailOutboxService } from './mail-outbox.service';
 import { MailOutboxRepository } from './mail-outbox.repository';
 import { MailService } from '../mail/mail.service';
 import type { Clock } from './mail-outbox.clock';
-import { ORDER_CONFIRMATION_MAIL_TYPE, PASSWORD_RESET_MAIL_TYPE } from './mail-outbox.types';
+import {
+  ACCOUNT_LOCKED_MAIL_TYPE,
+  ORDER_CONFIRMATION_MAIL_TYPE,
+  PASSWORD_RESET_MAIL_TYPE,
+} from './mail-outbox.types';
 import type { OrderConfirmationMailPayload } from '../mail/templates/order-confirmation.template';
 import type { PasswordResetMailPayload } from '../mail/templates/password-reset.template';
+import type { AccountLockedMailPayload } from '../mail/templates/account-locked.template';
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -55,12 +60,14 @@ const repositoryMock = {
   markSent: jest.fn(),
   markRetry: jest.fn(),
   markFailed: jest.fn(),
+  hasRecentByTypeAndRecipient: jest.fn(),
 };
 
 const mailServiceMock = {
   isEnabled: jest.fn(),
   sendOrderConfirmationPayload: jest.fn(),
   sendPasswordResetPayload: jest.fn(),
+  sendAccountLockedPayload: jest.fn(),
 };
 
 const loggerMock = {
@@ -159,6 +166,65 @@ describe('MailOutboxService', () => {
       expect(params.type).toBe(PASSWORD_RESET_MAIL_TYPE);
       expect(params.recipient).toBe('user@example.com');
       expect(params.payload).toMatchObject(payload);
+    });
+  });
+
+  // ─── account-locked notice (TASK-287) ────────────────────────────────────────
+
+  describe('enqueueAccountLockedNotice', () => {
+    it('writes an account-locked row with the type and recipient from the payload', async () => {
+      const payload: AccountLockedMailPayload = {
+        to: 'banned@example.com',
+        supportUrl: 'http://localhost:3000/contact',
+      };
+
+      await service.enqueueAccountLockedNotice(payload);
+
+      expect(repositoryMock.enqueue).toHaveBeenCalledTimes(1);
+      const [params] = repositoryMock.enqueue.mock.calls[0];
+      expect(params.type).toBe(ACCOUNT_LOCKED_MAIL_TYPE);
+      expect(params.recipient).toBe('banned@example.com');
+      expect(params.payload).toMatchObject(payload);
+    });
+  });
+
+  describe('hasRecentAccountLockedNotice', () => {
+    it('asks the repository for a row of this type for this recipient since the window start', async () => {
+      const since = new Date('2026-07-10T12:00:00.000Z');
+      repositoryMock.hasRecentByTypeAndRecipient.mockResolvedValue(true);
+
+      await expect(service.hasRecentAccountLockedNotice('banned@example.com', since)).resolves.toBe(
+        true,
+      );
+
+      expect(repositoryMock.hasRecentByTypeAndRecipient).toHaveBeenCalledWith(
+        ACCOUNT_LOCKED_MAIL_TYPE,
+        'banned@example.com',
+        since,
+      );
+    });
+  });
+
+  describe('dispatchDue — account-locked delivery', () => {
+    it('routes an account-locked row to sendAccountLockedPayload', async () => {
+      const payload: AccountLockedMailPayload = {
+        to: 'banned@example.com',
+        supportUrl: 'http://localhost:3000/contact',
+      };
+      repositoryMock.claimDue.mockResolvedValue([
+        makeRow({
+          id: 'al-1',
+          type: ACCOUNT_LOCKED_MAIL_TYPE,
+          payload: payload as unknown as MailOutbox['payload'],
+        }),
+      ]);
+      mailServiceMock.sendAccountLockedPayload.mockResolvedValue(undefined);
+
+      const result = await service.dispatchDue();
+
+      expect(mailServiceMock.sendAccountLockedPayload).toHaveBeenCalledWith(payload);
+      expect(repositoryMock.markSent).toHaveBeenCalledWith('al-1', NOW);
+      expect(result).toEqual({ sent: 1, retried: 0, failed: 0 });
     });
   });
 

@@ -64,6 +64,14 @@ export class EnvironmentVariables {
   @IsString()
   CORS_ORIGINS?: string;
 
+  // Rate limit for the locked-account owner notice (TASK-287): the minimum gap,
+  // in hours, between two such emails to the same address no matter how often the
+  // login is retried. Optional — defaults to 24h in AuthService.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  ACCOUNT_LOCKED_NOTICE_WINDOW_HOURS?: number;
+
   // ─── Mail (transactional email) ───────────────────────────────────────────
   // All optional: the app boots without SMTP credentials. When MAIL_ENABLED is
   // not "true", MailService is a no-op and never reads the SMTP_* vars.
