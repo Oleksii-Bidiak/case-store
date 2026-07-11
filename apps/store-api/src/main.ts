@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import type { Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { CsrfService } from './csrf';
 import { buildHelmetOptions } from './config/security.config';
@@ -85,8 +86,12 @@ async function bootstrap() {
     exclude: ['health'],
   });
 
-  // Swagger/OpenAPI documentation (development only)
-  if (nodeEnv === 'development') {
+  // Swagger/OpenAPI documentation.
+  // The interactive Swagger UI stays development-only, but the raw OpenAPI JSON
+  // is exposed in EVERY environment at /api/docs-json — the storefront/admin
+  // Vercel builds fetch it to generate their typed API client (Orval), so it
+  // must be reachable on the deployed API (see docs/deploy-vercel.md).
+  {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Mobile Accessories Store API')
       .setDescription('B2C e-commerce platform for mobile accessories')
@@ -135,14 +140,22 @@ async function bootstrap() {
       .build();
 
     const document = SwaggerModule.createDocument(app, swaggerConfig);
-    SwaggerModule.setup('api/docs', app, document, {
-      customSiteTitle: 'Mobile Accessories Store API',
-      swaggerOptions: {
-        persistAuthorization: true,
-        tagsSorter: 'alpha',
-        operationsSorter: 'alpha',
-      },
-    });
+    if (nodeEnv === 'development') {
+      SwaggerModule.setup('api/docs', app, document, {
+        customSiteTitle: 'Mobile Accessories Store API',
+        swaggerOptions: {
+          persistAuthorization: true,
+          tagsSorter: 'alpha',
+          operationsSorter: 'alpha',
+        },
+      });
+    } else {
+      // Production/staging: expose ONLY the JSON spec (no interactive UI) so the
+      // Vercel frontend builds can fetch it for Orval codegen.
+      app.getHttpAdapter().get('/api/docs-json', (_req: Request, res: Response) => {
+        res.json(document);
+      });
+    }
   }
 
   await app.listen(port);
