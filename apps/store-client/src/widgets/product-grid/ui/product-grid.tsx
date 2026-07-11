@@ -9,6 +9,7 @@ import {
 } from "@/entities/product";
 import { ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
+import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { dict } from "@/shared/config";
 import { PopularRailSkeleton } from "./product-grid-skeleton";
 
@@ -182,6 +183,7 @@ function RailContent({
             product={product}
             imageSizes={RAIL_IMAGE_SIZES}
             action={<ProductCardActions product={product} />}
+            hoverAction={<ProductQuickViewTrigger product={product} />}
           />
         </div>
       ))}

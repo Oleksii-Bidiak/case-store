@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { useSearch } from "@/entities/search";
 import { ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
+import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { dict } from "@/shared/config";
 import { trackEvent } from "@/shared/lib";
 import { SearchResultsSkeleton } from "./search-results-skeleton";
@@ -124,6 +125,7 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
               product={product}
               priority={index < 4}
               action={<ProductCardActions product={product} />}
+              hoverAction={<ProductQuickViewTrigger product={product} />}
             />
           ))}
         </div>
