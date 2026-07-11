@@ -26,6 +26,17 @@ const fieldClass =
 const socialClass =
   "flex h-11 flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-background text-sm font-medium text-foreground transition-all hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]";
 
+/**
+ * Backend Google OAuth entry point (TASK-168). A plain top-level browser
+ * navigation — deliberately NOT an Orval hook or fetch call: the route is a
+ * pure redirect (302 to Google's consent screen) excluded from the OpenAPI
+ * spec. The backend re-sanitizes `redirect` server-side.
+ */
+function buildGoogleOAuthUrl(redirect: string): string {
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+  return `${apiBase}/api/auth/google?redirect=${encodeURIComponent(redirect)}`;
+}
+
 interface LoginFormProps {
   /**
    * Slide-out mode: called after a successful sign-in (e.g. to close the auth
@@ -62,6 +73,11 @@ export function LoginForm({
   const redirectParam = searchParams.get("redirect");
   const redirectTarget =
     redirectParam && redirectParam.startsWith("/") ? redirectParam : "/";
+
+  // Failure-redirect path of the Google OAuth flow (TASK-168): the backend
+  // callback funnels every failure (denied consent, unverified email, locked
+  // account — deliberately indistinguishable) to /login?oauthError=1.
+  const hasOAuthError = Boolean(searchParams.get("oauthError"));
 
   const {
     register,
@@ -203,6 +219,14 @@ export function LoginForm({
         </p>
       )}
 
+      {/* Additive to errorMessage — they never fire from the same attempt
+          (one is a form submission, the other a redirect back from Google). */}
+      {hasOAuthError && (
+        <p role="alert" className="text-sm text-destructive">
+          {dict.auth.oauth.error}
+        </p>
+      )}
+
       <button
         type="submit"
         disabled={login.isPending}
@@ -211,7 +235,8 @@ export function LoginForm({
         {login.isPending ? dict.auth.login.submitting : dict.auth.login.submit}
       </button>
 
-      {/* Social sign-in has no backend yet — buttons are stubbed (TASK-168). */}
+      {/* Google is a real redirect-based OAuth flow (TASK-168); Apple remains
+          an honest coming-soon stub (owner decision 2026-07-11). */}
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <span className="h-px flex-1 bg-border" />
         {dict.auth.login.orDivider}
@@ -220,7 +245,12 @@ export function LoginForm({
       <div className="flex gap-2.5">
         <button
           type="button"
-          onClick={() => toast(dict.auth.login.socialSoon)}
+          onClick={() => {
+            // Full top-level navigation — the redirect target is the same
+            // value the password login navigates to after success, so both
+            // auth methods share one "where do we land" source of truth.
+            window.location.href = buildGoogleOAuthUrl(redirectTarget);
+          }}
           className={socialClass}
         >
           <GoogleIcon />
