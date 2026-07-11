@@ -163,6 +163,15 @@ export class PageService {
 
     const wasPublished = page.status === PublishStatus.PUBLISHED;
 
+    // Record a 301 redirect only when the page was publicly visible BEFORE
+    // this write and the slug is actually changing (plan 147 §Design
+    // Decision 3) — a draft's URL was never reachable, so no redirect.
+    const isSlugRename = dto.slug !== undefined && dto.slug !== page.slug;
+    const slugRename =
+      wasPublished && isSlugRename && dto.slug !== undefined
+        ? { oldSlug: page.slug, newSlug: dto.slug }
+        : undefined;
+
     const input: UpdatePageInput = {
       slug: dto.slug,
       title: dto.title,
@@ -192,12 +201,15 @@ export class PageService {
     }
 
     try {
-      const updated = await this.pageRepository.update(id, input);
+      const updated = await this.pageRepository.update(id, input, slugRename);
       const entity = PageEntity.fromPrisma(updated);
       // Revalidate whenever public visibility could have changed: the page is
-      // live now, or it was live before (e.g. just unpublished).
+      // live now, or it was live before (e.g. just unpublished). If the slug
+      // was renamed, purge the OLD slug too so its stale route is dropped and
+      // the fresh 301 is served immediately (mirrors BlogService, TASK-285-E).
       if (wasPublished || entity.status === PublishStatus.PUBLISHED) {
-        await this.notifyRevalidation(entity.slug);
+        const slugs = isSlugRename ? [page.slug, entity.slug] : [entity.slug];
+        await this.notifyRevalidationForSlugs(slugs);
       }
       return entity;
     } catch (error) {
@@ -270,6 +282,20 @@ export class PageService {
   /** Best-effort storefront revalidation after an admin write. Never throws. */
   private async notifyRevalidation(slug: string): Promise<void> {
     await this.revalidation.revalidate(this.revalidateTargetForSlug(slug));
+  }
+
+  /**
+   * Revalidate several slugs in one call (used on slug rename to purge both
+   * the old and the new route — mirrors BlogService's pattern).
+   */
+  private async notifyRevalidationForSlugs(slugs: string[]): Promise<void> {
+    const tags = new Set<string>(['pages']);
+    const paths = new Set<string>(['/legal']);
+    for (const slug of slugs) {
+      tags.add(`page:${slug}`);
+      paths.add(`/legal/${slug}`);
+    }
+    await this.revalidation.revalidate({ tags: [...tags], paths: [...paths] });
   }
 
   /**

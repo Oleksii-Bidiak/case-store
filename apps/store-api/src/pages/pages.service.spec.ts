@@ -314,6 +314,75 @@ describe('PageService', () => {
       expect(passed.status).toBe(PublishStatus.PUBLISHED);
       expect(passed.publishedAt).toEqual(mockPage.publishedAt);
     });
+
+    it('records a slug redirect when renaming a PUBLISHED page', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage); // PUBLISHED
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.update.mockResolvedValue({ ...mockPage, slug: 'new-slug' });
+
+      await service.update('page-uuid-1', { slug: 'new-slug' });
+
+      expect(pageRepositoryMock.update).toHaveBeenCalledWith(
+        'page-uuid-1',
+        expect.objectContaining({ slug: 'new-slug' }),
+        { oldSlug: 'privacy-policy', newSlug: 'new-slug' },
+      );
+    });
+
+    it('purges BOTH old and new slug cache targets when a published page is renamed', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage); // PUBLISHED
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.update.mockResolvedValue({ ...mockPage, slug: 'new-slug' });
+
+      await service.update('page-uuid-1', { slug: 'new-slug' });
+
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tags: expect.arrayContaining(['pages', 'page:privacy-policy', 'page:new-slug']),
+          paths: expect.arrayContaining(['/legal', '/legal/privacy-policy', '/legal/new-slug']),
+        }),
+      );
+    });
+
+    it('does NOT record a redirect when renaming a DRAFT page', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(draftPage); // DRAFT
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.update.mockResolvedValue({ ...draftPage, slug: 'new-slug' });
+
+      await service.update('page-uuid-2', { slug: 'new-slug' });
+
+      expect(pageRepositoryMock.update).toHaveBeenCalledWith(
+        'page-uuid-2',
+        expect.objectContaining({ slug: 'new-slug' }),
+        undefined,
+      );
+    });
+
+    it('does NOT record a redirect when updating a published page without changing the slug', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage); // PUBLISHED
+      pageRepositoryMock.update.mockResolvedValue({ ...mockPage, title: 'Renamed' });
+
+      await service.update('page-uuid-1', { title: 'Renamed' });
+
+      expect(pageRepositoryMock.update).toHaveBeenCalledWith(
+        'page-uuid-1',
+        expect.objectContaining({ title: 'Renamed' }),
+        undefined,
+      );
+    });
+
+    it('does NOT record a redirect when the submitted slug equals the current one', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage); // PUBLISHED
+      pageRepositoryMock.update.mockResolvedValue(mockPage);
+
+      await service.update('page-uuid-1', { slug: 'privacy-policy' });
+
+      expect(pageRepositoryMock.update).toHaveBeenCalledWith(
+        'page-uuid-1',
+        expect.objectContaining({ slug: 'privacy-policy' }),
+        undefined,
+      );
+    });
   });
 
   describe('publish / unpublish', () => {
