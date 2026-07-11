@@ -24,6 +24,7 @@ import { BannersModule } from './banners';
 import { SiteContactModule } from './site-contact';
 import { SeoSettingsModule } from './seo-settings';
 import { FaqModule } from './faq';
+import { SlugRedirectModule } from './slug-redirect';
 import { ContactModule } from './contact';
 import { CartModule } from './cart';
 import { WishlistModule } from './wishlist';
@@ -136,6 +137,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Admin-managed global FAQ list (public read + FAQPage JSON-LD, TASK-242)
     FaqModule,
+
+    // Slug-redirect ledger for renamed content slugs (public lookup, TASK-285)
+    SlugRedirectModule,
 
     // Customer contact / support messages (public form + admin inbox, TASK-177)
     ContactModule,
