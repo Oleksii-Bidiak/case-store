@@ -83,7 +83,12 @@ export default async function LegalDocPage({ params }: LegalDocPageProps) {
   const page = await getPage(slug);
   if (!page) {
     // TASK-285: an admin may have renamed the slug — serve a permanent (308)
-    // redirect to the current address instead of a dead 404.
+    // redirect to the current address instead of a dead 404. For the status
+    // codes to actually reach the wire, this route deliberately has NO
+    // route-level loading.tsx: a loading boundary streams a 200 shell before
+    // permanentRedirect()/notFound() can set the status (same rationale as
+    // /categories/[slug]). The page is light — content is server-fetched
+    // before render — so no inner <Suspense> skeleton is needed either.
     const newSlug = await resolveSlugRedirect("PAGE", slug);
     if (newSlug) {
       permanentRedirect(`/legal/${newSlug}`);

@@ -529,7 +529,7 @@ the same 9-case table).
 **Acceptance Criteria:**
 
 - [ ] `SlugRedirectRepository.findRedirect(entity, oldSlug)` and `.recordRename(tx, entity, from,
-    to)` implemented exactly per §Backend.
+  to)` implemented exactly per §Backend.
 - [ ] `slug-redirect.repository.spec.ts` (mocked `tx`) asserts `recordRename` issues exactly the
       3 calls (`upsert`, `updateMany`, `deleteMany`) with the documented `where`/`data` shapes,
       in order.
@@ -608,8 +608,8 @@ the same 9-case table).
       example; behavior/SQL unchanged when omitted (regression-tested by the existing spec suite
       still passing unmodified for the no-rename cases).
 - [ ] `PageService.update()` computes `wasPublished` (already exists) and passes `slugRename =
-    { oldSlug: page.slug, newSlug: dto.slug }` to the repository only when `wasPublished &&
-    dto.slug !== undefined && dto.slug !== page.slug`.
+  { oldSlug: page.slug, newSlug: dto.slug }` to the repository only when `wasPublished &&
+  dto.slug !== undefined && dto.slug !== page.slug`.
 - [ ] **Revalidation fix**: `PageService.update()`'s post-write revalidation call purges **both**
       the old and the new slug's cache tags/paths when the slug changed (mirrors
       `BlogService.update()`'s existing `notifyRevalidationForSlugs([post.slug, entity.slug])`
@@ -648,7 +648,7 @@ already correct)
 - [ ] `BlogRepository.update()` gains the optional `slugRename` param; unchanged behavior when
       omitted.
 - [ ] `BlogService.update()` passes `slugRename` only when `wasPublished && dto.slug !==
-    undefined && dto.slug !== post.slug`.
+  undefined && dto.slug !== post.slug`.
 - [ ] New unit tests mirroring TASK-285-E's three cases (published+renamed records a redirect;
       draft+renamed does not; published+unchanged-slug does not).
 - [ ] Tests pass: `npm run test -w apps/store-api`.
@@ -681,7 +681,7 @@ already correct)
 - [ ] `ProductService.update()` captures `wasActive = product.isActive` **before** building the
       update input (per §Design Decision 3 — the pre-write snapshot, independent of whether this
       same call also flips `isActive`), and passes `slugRename` only when `wasActive &&
-    input.slug !== undefined && input.slug !== product.slug`.
+  input.slug !== undefined && input.slug !== product.slug`.
 - [ ] Explicitly verified: `ProductService.delete()` (the audit-tombstone soft-delete, which
       mangles the slug via `deleted:<id>:<slug>` and never calls `repository.update()`) does
       **not** go through this path and never records a redirect to a mangled slug — confirmed by
@@ -718,7 +718,7 @@ already correct)
       when omitted.
 - [ ] `CategoryService.update()` captures `wasActive = category.isActive` before building the
       update input, passes `slugRename` only when `wasActive && input.slug !== undefined &&
-    input.slug !== category.slug`.
+  input.slug !== category.slug`.
 - [ ] New unit tests mirroring TASK-285-E's three cases, plus the same simultaneous
       rename+deactivate case as TASK-285-G.
 - [ ] Tests pass: `npm run test -w apps/store-api`.
@@ -760,7 +760,7 @@ in this plan for that reason, not a hard technical dependency.)
       §Frontend — Admin, calling `window.confirm(...)` and returning early (no mutation fired) on
       cancel.
 - [ ] `dict.pages.deleteConfirm` / `dict.blogPosts.deleteConfirm` gain a second `isPublished:
-    boolean` parameter; when `true`, append: " Сторінка опублікована і може бути в
+  boolean` parameter; when `true`, append: " Сторінка опублікована і може бути в
       пошуковому індексі Google — після видалення адреса поверне помилку 404 без переадресації."
       (analogous copy for `blogPosts`, "стаття"/"опублікована").
 - [ ] `admin-page-table.tsx`'s `handleDelete` passes `page.isActive` as the new arg;
@@ -803,17 +803,17 @@ among the backend tasks purely to keep the PR/review focused).
 **Acceptance Criteria:**
 
 - [ ] `ContentSeoCounts` gains `pagesMissingMetaDescription: number` and `pagesThinContent:
-    number`.
+  number`.
 - [ ] `SeoSettingsRepository.getContentSeoCounts()`: `pagesMissingMetaDescription` = `prisma.page
-    .count({ where: { status: PUBLISHED, metaDescription: null } })` (mirrors the existing
+  .count({ where: { status: PUBLISHED, metaDescription: null } })` (mirrors the existing
       `metaTitle: null` check's null-only convention — no `OR [null, '']` broadening, staying
       consistent with the sibling counts already in this method).
 - [ ] `pagesThinContent` computed via a raw query (Prisma has no string-length filter operator):
       `sql
-    SELECT COUNT(*)::bigint AS count FROM pages
-    WHERE status = 'PUBLISHED'
-      AND length(regexp_replace(content, '<[^>]*>', '', 'g')) < 300
-    `
+  SELECT COUNT(*)::bigint AS count FROM pages
+  WHERE status = 'PUBLISHED'
+    AND length(regexp_replace(content, '<[^>]*>', '', 'g')) < 300
+  `
       via `this.prisma.$queryRaw` tagged template (no interpolated values — constant query, no
       injection surface), cast `bigint` → `number`.
 - [ ] `SeoHealthEntity` gains the two new fields (`@ApiProperty`), mapped in `fromCounts()`.
@@ -1017,3 +1017,18 @@ in TASK-285-A/H/I — only the storefront-route half waits.
   type/doc surface, not assumed) matters for TASK-285-L's manual-check acceptance criterion —
   308 (not 301) is the modern equivalent that preserves the request method, which is what Next
   uses for both `redirect()` (307) and `permanentRedirect()` (308) by design.
+
+## Review follow-up (2026-07-11, pre-merge)
+
+- **True HTTP 308 on `/legal/[slug]` and `/products/[slug]`:** code review caught that both
+  routes had a route-level `loading.tsx`, whose implicit Suspense boundary makes Next stream a
+  200 shell **before** `permanentRedirect()`/`notFound()` runs — degrading the redirect to a
+  client-side RSC navigation (bots see 200). Fixed by deleting both `loading.tsx` files, same
+  as the `/categories/[slug]` precedent (доріжка A). Skeleton UX is preserved: the PDP keeps
+  its in-page `<Suspense fallback={<ProductDetailSkeleton />}>` (redirect decision runs before
+  any boundary); the legal page server-fetches its content before render, so it needs no inner
+  Suspense. The stale "/legal/[slug] has that flaw" comment in `categories/[slug]/page.tsx` was
+  updated. Live `curl -I` check for all 4 routes added to `docs/manual-qa-pending.md`.
+- **`@MaxLength(255)` on the public lookup DTO:** `SlugRedirectLookupQueryDto.slug` now caps at
+  255 chars (repo convention for slug fields), with `maxLength` on the Swagger property and a
+  DTO validation spec; API spec re-exported and Orval hooks regenerated.

@@ -143,9 +143,10 @@ export default async function CategoryLandingPage({
     // response is built (unlike the PDP's client-fetched soft-404). This is
     // also why the route deliberately has NO route-level loading.tsx: a
     // loading boundary starts streaming a 200 shell before notFound() can set
-    // the status (verified live; /legal/[slug] has that flaw, /blog/[slug]
-    // without loading.tsx returns a true 404). The in-page <Suspense>
-    // skeleton below covers the grid-loading UX instead.
+    // the status (verified live; /legal/[slug] and /products/[slug] had that
+    // flaw until their loading.tsx removal in the TASK-285 review follow-up;
+    // /blog/[slug] never had one and returns a true 404). The in-page
+    // <Suspense> skeleton below covers the grid-loading UX instead.
     notFound();
   }
   const node = path.at(-1)!;
