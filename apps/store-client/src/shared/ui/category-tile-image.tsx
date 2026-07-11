@@ -34,8 +34,10 @@ export function CategoryTileImage({
     return <>{fallback}</>;
   }
   return (
-    // free-text admin URL (no upload endpoint, no host allowlist) — see plan 155
-    // §Design decision; mirrors the existing BlogPost.coverImageUrl precedent.
+    // Plain <img>, not next/image: Category.image is a free-text admin URL (no
+    // upload endpoint, no host allowlist) — see plan 155 §Design decision;
+    // mirrors the existing BlogPost.coverImageUrl precedent.
+    // eslint-disable-next-line @next/next/no-img-element
     <img
       src={src}
       alt={alt}
