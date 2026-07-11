@@ -13,6 +13,7 @@ import { CategoryModule } from '../category';
 import { BrandModule } from '../brand';
 import { DeviceModule } from '../device';
 import { AttributeDefinitionModule } from '../attribute-definition';
+import { SlugRedirectModule } from '../slug-redirect';
 
 @Module({
   // DeviceModule supplies DeviceRepository for validating device-compat ids
@@ -24,6 +25,7 @@ import { AttributeDefinitionModule } from '../attribute-definition';
     BrandModule,
     DeviceModule,
     AttributeDefinitionModule,
+    SlugRedirectModule,
   ],
   controllers: [ProductController, ProductImageController],
   providers: [

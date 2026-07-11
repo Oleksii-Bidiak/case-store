@@ -4,6 +4,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import { CategoryRepository } from '../src/category/category.repository';
 import { PrismaService } from '../src/prisma';
+import { SlugRedirectRepository } from '../src/slug-redirect';
 
 /**
  * Integration tests for the recursive traversal helpers (`findSubtreeIds` /
@@ -49,7 +50,7 @@ describe('CategoryRepository traversal (integration)', () => {
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
-      providers: [PrismaService, CategoryRepository],
+      providers: [PrismaService, CategoryRepository, SlugRedirectRepository],
     }).compile();
 
     app = moduleRef.createNestApplication();

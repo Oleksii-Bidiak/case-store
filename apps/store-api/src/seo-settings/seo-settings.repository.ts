@@ -21,6 +21,8 @@ export interface UpsertSeoSettingsInput {
   defaultMetaDescription?: string | null;
   titleTemplate?: string | null;
   defaultOgImage?: string | null;
+  googleSiteVerification?: string | null;
+  bingSiteVerification?: string | null;
   noindexSite?: boolean;
   llmsTxtSummary?: string | null;
   additionalSameAsLinks?: string[];
@@ -39,6 +41,10 @@ export interface ContentSeoCounts {
   categoriesTotal: number;
   pagesMissingMetaTitle: number;
   pagesTotal: number;
+  /** Published pages with no own metaDescription (TASK-285-J). */
+  pagesMissingMetaDescription: number;
+  /** Published pages whose stripped-HTML content is < 300 chars (TASK-285-J). */
+  pagesThinContent: number;
 }
 
 @Injectable()
@@ -88,6 +94,8 @@ export class SeoSettingsRepository {
       categoriesTotal,
       pagesMissingMetaTitle,
       pagesTotal,
+      pagesMissingMetaDescription,
+      pagesThinContent,
     ] = await Promise.all([
       this.prisma.product.count({
         where: { metaTitle: null, isActive: true, deletedAt: null },
@@ -99,6 +107,10 @@ export class SeoSettingsRepository {
         where: { metaTitle: null, status: PublishStatus.PUBLISHED },
       }),
       this.prisma.page.count({ where: { status: PublishStatus.PUBLISHED } }),
+      this.prisma.page.count({
+        where: { metaDescription: null, status: PublishStatus.PUBLISHED },
+      }),
+      this.countThinContentPages(),
     ]);
 
     return {
@@ -108,6 +120,25 @@ export class SeoSettingsRepository {
       categoriesTotal,
       pagesMissingMetaTitle,
       pagesTotal,
+      pagesMissingMetaDescription,
+      pagesThinContent,
     };
+  }
+
+  /**
+   * Count published pages with "thin" content — stripped-HTML length < 300
+   * chars (TASK-285-J). Prisma has no string-length filter operator, so this
+   * is a constant raw query (tagged template, no interpolated values — zero
+   * injection surface). Proven against a live Postgres in
+   * `seo-settings.e2e-spec.ts` (the TASK-238 wrong-table-name failure class is
+   * only catchable there).
+   */
+  private async countThinContentPages(): Promise<number> {
+    const rows = await this.prisma.$queryRaw<[{ count: bigint }]>`
+      SELECT COUNT(*)::bigint AS count FROM pages
+      WHERE status = 'PUBLISHED'
+        AND length(regexp_replace(content, '<[^>]*>', '', 'g')) < 300
+    `;
+    return Number(rows[0]?.count ?? 0);
   }
 }

@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { SlugRedirectEntity } from '@prisma/client';
 import { CategoryRepository } from './category.repository';
 import { PrismaService } from '../prisma';
+import { SlugRedirectRepository } from '../slug-redirect';
 
 /**
  * Unit tests for the recursive traversal helpers added in TASK-236
@@ -10,10 +12,22 @@ import { PrismaService } from '../prisma';
  * must not leak, real recursion at depth) is proven end-to-end against a real
  * Postgres tree in `test/category.repository.int-spec.ts`.
  */
+const txMock = {
+  category: {
+    update: jest.fn(),
+  },
+};
+
+const slugRedirectRepositoryMock = {
+  recordRename: jest.fn(),
+};
+
 describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
   let repo: CategoryRepository;
   const queryRaw = jest.fn();
   const findMany = jest.fn();
+  const update = jest.fn();
+  const $transaction = jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock));
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -22,11 +36,51 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
         CategoryRepository,
         {
           provide: PrismaService,
-          useValue: { $queryRaw: queryRaw, category: { findMany } },
+          useValue: { $queryRaw: queryRaw, category: { findMany, update }, $transaction },
         },
+        { provide: SlugRedirectRepository, useValue: slugRedirectRepositoryMock },
       ],
     }).compile();
     repo = module.get(CategoryRepository);
+  });
+
+  describe('update (slug rename, TASK-285-H)', () => {
+    it('never opens a transaction nor records a redirect when slugRename is absent', async () => {
+      update.mockResolvedValue({ id: 'cat-1' });
+
+      await repo.update('cat-1', { name: 'Renamed' });
+
+      expect(update).toHaveBeenCalledTimes(1);
+      expect($transaction).not.toHaveBeenCalled();
+      expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+    });
+
+    it('runs the category update + recordRename inside one transaction when slugRename is given', async () => {
+      const renamed = { id: 'cat-1', slug: 'new-slug' };
+      txMock.category.update.mockResolvedValue(renamed);
+
+      const result = await repo.update(
+        'cat-1',
+        { slug: 'new-slug' },
+        { oldSlug: 'old-slug', newSlug: 'new-slug' },
+      );
+
+      expect(result).toBe(renamed);
+      expect($transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.category.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'cat-1' },
+          data: expect.objectContaining({ slug: 'new-slug' }),
+        }),
+      );
+      expect(slugRedirectRepositoryMock.recordRename).toHaveBeenCalledWith(
+        txMock,
+        SlugRedirectEntity.CATEGORY,
+        'old-slug',
+        'new-slug',
+      );
+      expect(update).not.toHaveBeenCalled();
+    });
   });
 
   describe('findSubtreeIds', () => {

@@ -4,8 +4,10 @@ import { PageService } from './pages.service';
 import { PageController } from './pages.controller';
 import { AdminPageController } from './admin-pages.controller';
 import { PUBLISHABLE_REPOSITORY } from '../publishing';
+import { SlugRedirectModule } from '../slug-redirect';
 
 @Module({
+  imports: [SlugRedirectModule],
   controllers: [PageController, AdminPageController],
   providers: [
     PageRepository,

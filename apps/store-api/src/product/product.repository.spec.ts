@@ -1,8 +1,15 @@
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, SlugRedirectEntity } from '@prisma/client';
 import { ProductRepository } from './product.repository';
 import { PrismaService } from '../prisma';
+import { SlugRedirectRepository } from '../slug-redirect';
 
 // ─── Mock PrismaService ──────────────────────────────────────────────────────
+
+const txMock = {
+  product: {
+    update: jest.fn(),
+  },
+};
 
 const prismaMock = {
   $queryRaw: jest.fn(),
@@ -22,6 +29,11 @@ const prismaMock = {
   orderItem: {
     groupBy: jest.fn(),
   },
+  $transaction: jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock)),
+};
+
+const slugRedirectRepositoryMock = {
+  recordRename: jest.fn(),
 };
 
 describe('ProductRepository (soft-delete behaviour)', () => {
@@ -29,7 +41,60 @@ describe('ProductRepository (soft-delete behaviour)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    repository = new ProductRepository(prismaMock as unknown as PrismaService);
+    repository = new ProductRepository(
+      prismaMock as unknown as PrismaService,
+      slugRedirectRepositoryMock as unknown as SlugRedirectRepository,
+    );
+  });
+
+  // ─── update + slug-redirect recording (TASK-285-G) ──────────────────────────
+
+  describe('update (slug rename)', () => {
+    it('never opens a transaction nor records a redirect when slugRename is absent', async () => {
+      prismaMock.product.update.mockResolvedValue({ id: 'product-1' });
+
+      await repository.update('product-1', { name: 'Renamed' });
+
+      expect(prismaMock.product.update).toHaveBeenCalledTimes(1);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+    });
+
+    it('runs the product update + recordRename inside one transaction when slugRename is given', async () => {
+      const renamed = { id: 'product-1', slug: 'new-slug' };
+      txMock.product.update.mockResolvedValue(renamed);
+
+      const result = await repository.update(
+        'product-1',
+        { slug: 'new-slug' },
+        { oldSlug: 'old-slug', newSlug: 'new-slug' },
+      );
+
+      expect(result).toBe(renamed);
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.product.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'product-1' },
+          data: expect.objectContaining({ slug: 'new-slug' }),
+        }),
+      );
+      expect(slugRedirectRepositoryMock.recordRename).toHaveBeenCalledWith(
+        txMock,
+        SlugRedirectEntity.PRODUCT,
+        'old-slug',
+        'new-slug',
+      );
+      expect(prismaMock.product.update).not.toHaveBeenCalled();
+    });
+
+    it('softDelete (audit tombstone with mangled slug) never records a redirect', async () => {
+      prismaMock.product.update.mockResolvedValue({ id: 'product-1' });
+
+      await repository.softDelete('product-1', 'deleted:product-1:old-slug', null);
+
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+    });
   });
 
   // ─── read paths exclude tombstoned rows ─────────────────────────────────────

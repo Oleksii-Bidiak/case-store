@@ -4,6 +4,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import { ProductRepository } from '../src/product/product.repository';
 import { PrismaService } from '../src/prisma';
+import { SlugRedirectRepository } from '../src/slug-redirect';
 
 /**
  * Integration coverage for the TASK-164 bestselling sort against a REAL Postgres.
@@ -40,7 +41,7 @@ describe('Bestselling product sort (integration, TASK-164)', () => {
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
-      providers: [PrismaService, ProductRepository],
+      providers: [PrismaService, ProductRepository, SlugRedirectRepository],
     }).compile();
 
     app = moduleRef.createNestApplication();

@@ -211,6 +211,11 @@ export const dict = {
     toastCreateFailed: "Не вдалося створити товар",
     toastUpdated: "Товар оновлено",
     toastUpdateFailed: "Не вдалося оновити товар",
+    // TASK-285: slug-rename guard on a publicly visible product.
+    slugChangeConfirm: (oldSlug: string, newSlug: string) =>
+      `Ви змінюєте адресу активного товару з «${oldSlug}» на «${newSlug}». ` +
+      `Стара адреса перестане працювати і випаде з результатів пошуку Google — ` +
+      `але ми автоматично налаштуємо переадресацію зі старої адреси на нову. Продовжити?`,
     // Staff preview of deactivated products (TASK-155)
     previewLink: "Переглянути",
     previewHeading: "Перегляд товару",
@@ -328,6 +333,11 @@ export const dict = {
     toastCreateFailed: "Не вдалося створити категорію",
     toastUpdated: "Категорію оновлено",
     toastUpdateFailed: "Не вдалося оновити категорію",
+    // TASK-285: slug-rename guard on a publicly visible category.
+    slugChangeConfirm: (oldSlug: string, newSlug: string) =>
+      `Ви змінюєте адресу активної категорії з «${oldSlug}» на «${newSlug}». ` +
+      `Стара адреса перестане працювати і випаде з результатів пошуку Google — ` +
+      `але ми автоматично налаштуємо переадресацію зі старої адреси на нову. Продовжити?`,
   },
 
   categoryForm: {
@@ -617,8 +627,18 @@ export const dict = {
     statusDraft: "Чернетка",
     publish: "Опублікувати",
     unpublish: "Зняти з публікації",
-    deleteConfirm: (title: string) =>
-      `Видалити сторінку «${title}»? Цю дію не можна скасувати.`,
+    // TASK-285: the published variant reminds the admin the URL may still be
+    // indexed by Google and deleting it leaves a 404 with NO redirect.
+    deleteConfirm: (title: string, isPublished: boolean) =>
+      `Видалити сторінку «${title}»? Цю дію не можна скасувати.` +
+      (isPublished
+        ? " Сторінка опублікована і може бути в пошуковому індексі Google — після видалення адреса поверне помилку 404 без переадресації."
+        : ""),
+    // TASK-285: slug-rename guard on a publicly visible page.
+    slugChangeConfirm: (oldSlug: string, newSlug: string) =>
+      `Ви змінюєте адресу опублікованої сторінки з «${oldSlug}» на «${newSlug}». ` +
+      `Стара адреса перестане працювати і випаде з результатів пошуку Google — ` +
+      `але ми автоматично налаштуємо переадресацію зі старої адреси на нову. Продовжити?`,
     back: "← Назад до сторінок",
     createHeading: "Створення сторінки",
     editHeading: "Редагування сторінки",
@@ -689,8 +709,18 @@ export const dict = {
     statusDraft: "Чернетка",
     publish: "Опублікувати",
     unpublish: "Зняти з публікації",
-    deleteConfirm: (title: string) =>
-      `Видалити статтю «${title}»? Цю дію не можна скасувати.`,
+    // TASK-285: the published variant reminds the admin the URL may still be
+    // indexed by Google and deleting it leaves a 404 with NO redirect.
+    deleteConfirm: (title: string, isPublished: boolean) =>
+      `Видалити статтю «${title}»? Цю дію не можна скасувати.` +
+      (isPublished
+        ? " Стаття опублікована і може бути в пошуковому індексі Google — після видалення адреса поверне помилку 404 без переадресації."
+        : ""),
+    // TASK-285: slug-rename guard on a publicly visible post.
+    slugChangeConfirm: (oldSlug: string, newSlug: string) =>
+      `Ви змінюєте адресу опублікованої статті з «${oldSlug}» на «${newSlug}». ` +
+      `Стара адреса перестане працювати і випаде з результатів пошуку Google — ` +
+      `але ми автоматично налаштуємо переадресацію зі старої адреси на нову. Продовжити?`,
     back: "← Назад до статей",
     createHeading: "Створення статті",
     editHeading: "Редагування статті",
@@ -1020,6 +1050,15 @@ export const dict = {
     defaultOgImagePlaceholder: "https://mobilestore.ua/og-image.jpg",
     defaultOgImageHint:
       "Картинка для попереднього перегляду, коли посилання на магазин поширюють у соцмережах чи месенджерах (Facebook, Telegram, Viber). Вкажіть повне посилання на зображення (https://…).",
+    siteVerificationGroup: "Верифікація власності сайта",
+    googleSiteVerification: "Код підтвердження Google Search Console",
+    googleSiteVerificationPlaceholder: "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890",
+    googleSiteVerificationHint:
+      "Вставте код підтвердження з Google Search Console — досить самого коду (значення content), але якщо вставите весь HTML-тег цілком, ми самі виріжемо з нього потрібну частину.",
+    bingSiteVerification: "Код підтвердження Bing Webmaster Tools",
+    bingSiteVerificationPlaceholder: "1234ABCD5678EFGH9012IJKL3456MNOP",
+    bingSiteVerificationHint:
+      "Необов'язково. Те саме для Bing Webmaster Tools — альтернативної до Google пошукової системи. Можна залишити порожнім.",
     llmsTxtSummary: "Опис для AI-асистентів (llms.txt)",
     llmsTxtSummaryPlaceholder:
       "Магазин аксесуарів для смартфонів та Apple-техніки в Україні…",
@@ -1042,6 +1081,8 @@ export const dict = {
       titleTemplateNoToken:
         "Шаблон має містити рівно один символ %s (без інших знаків %)",
       llmsTxtSummaryTooLong: "Опис задовгий (максимум 2000 символів)",
+      siteVerificationTooLong:
+        "Код підтвердження задовгий (максимум 255 символів)",
       sameAsInvalid:
         "Кожне посилання має бути коректним URL (https://…), по одному в рядку.",
     },
@@ -1527,6 +1568,10 @@ export const dict = {
     productsAutoLabel: "Товари без власного SEO-заголовка",
     categoriesAutoLabel: "Категорії без власного SEO-заголовка",
     pagesAutoLabel: "Сторінки без власного SEO-заголовка",
+    // TASK-285: page content-gap rows (description missing / thin body). `N із M`.
+    gapHint: (count: number, total: number) => `${count} із ${total}`,
+    pagesMissingDescriptionLabel: "Сторінки без SEO-опису",
+    pagesThinContentLabel: "Сторінки з неповним вмістом (< 300 символів)",
     // Defaults-filled row — soft amber nudge when empty, neutral when filled.
     defaultsFilledLabel: "SEO-налаштування за замовчуванням",
     defaultsFilledYes: "Заголовок і опис за замовчуванням заповнені.",

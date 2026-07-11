@@ -229,7 +229,18 @@ export class CategoryService {
       }
     }
 
-    const updatedCategory = await this.categoryRepository.update(id, input);
+    // Record a 301 redirect only when the category was publicly visible
+    // (active) immediately BEFORE this write and the slug is actually changing
+    // (plan 147 §Design Decision 3). The PRE-write snapshot matters: a single
+    // call may rename the slug AND deactivate the category — the old URL was
+    // reachable until now, so the redirect is still recorded.
+    const wasActive = category.isActive;
+    const slugRename =
+      wasActive && input.slug !== undefined && input.slug !== category.slug
+        ? { oldSlug: category.slug, newSlug: input.slug }
+        : undefined;
+
+    const updatedCategory = await this.categoryRepository.update(id, input, slugRename);
 
     return CategoryEntity.fromPrisma(updatedCategory);
   }

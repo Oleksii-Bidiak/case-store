@@ -293,6 +293,47 @@ describe('BlogService', () => {
       const target = revalidationMock.revalidate.mock.calls[0][0] as { tags: string[] };
       expect(target.tags).toEqual(expect.arrayContaining(['blog:iphone16-vs-15', 'blog:new-slug']));
     });
+
+    it('records a slug redirect when renaming a PUBLISHED post', async () => {
+      repositoryMock.findById.mockResolvedValue(mockPost); // PUBLISHED
+      repositoryMock.findBySlugAny.mockResolvedValue(null);
+      repositoryMock.update.mockResolvedValue({ ...mockPost, slug: 'new-slug' });
+
+      await service.update('post-1', { slug: 'new-slug' });
+
+      expect(repositoryMock.update).toHaveBeenCalledWith(
+        'post-1',
+        expect.objectContaining({ slug: 'new-slug' }),
+        { oldSlug: 'iphone16-vs-15', newSlug: 'new-slug' },
+      );
+    });
+
+    it('does NOT record a redirect when renaming a DRAFT post', async () => {
+      repositoryMock.findById.mockResolvedValue(draftPost); // DRAFT
+      repositoryMock.findBySlugAny.mockResolvedValue(null);
+      repositoryMock.update.mockResolvedValue({ ...draftPost, slug: 'new-slug' });
+
+      await service.update('post-2', { slug: 'new-slug' });
+
+      expect(repositoryMock.update).toHaveBeenCalledWith(
+        'post-2',
+        expect.objectContaining({ slug: 'new-slug' }),
+        undefined,
+      );
+    });
+
+    it('does NOT record a redirect when updating a published post without changing the slug', async () => {
+      repositoryMock.findById.mockResolvedValue(mockPost); // PUBLISHED
+      repositoryMock.update.mockResolvedValue({ ...mockPost, title: 'Renamed' });
+
+      await service.update('post-1', { title: 'Renamed' });
+
+      expect(repositoryMock.update).toHaveBeenCalledWith(
+        'post-1',
+        expect.objectContaining({ title: 'Renamed' }),
+        undefined,
+      );
+    });
   });
 
   describe('publish / unpublish', () => {

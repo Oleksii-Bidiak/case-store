@@ -33,6 +33,9 @@ const HEALTH = {
   categoriesTotal: 8,
   pagesMissingMetaTitle: 1,
   pagesTotal: 5,
+  // TASK-285: page content-gap counters.
+  pagesMissingMetaDescription: 2,
+  pagesThinContent: 4,
 };
 
 function stubHealth(body = HEALTH) {
@@ -67,6 +70,46 @@ describe("SeoHealthSection — auto-title counts (TASK-269)", () => {
     renderWithProviders(<SeoHealthSection settings={makeSettings()} />);
 
     expect(await screen.findByText(h.loadError)).toBeInTheDocument();
+  });
+});
+
+describe("SeoHealthSection — page content-gap rows (TASK-285)", () => {
+  it("renders the missing-description and thin-content rows with N із M numbers", async () => {
+    stubHealth();
+    renderWithProviders(<SeoHealthSection settings={makeSettings()} />);
+
+    expect(
+      await screen.findByText(h.pagesMissingDescriptionLabel),
+    ).toBeInTheDocument();
+    expect(screen.getByText(h.pagesThinContentLabel)).toBeInTheDocument();
+    // pagesMissingMetaDescription (2) / pagesThinContent (4) over pagesTotal (5).
+    expect(screen.getByText(h.gapHint(2, 5))).toBeInTheDocument();
+    expect(screen.getByText(h.gapHint(4, 5))).toBeInTheDocument();
+    // Same /pages link target, neutral tone (no destructive styling).
+    expect(
+      screen.getByRole("link", { name: h.pagesMissingDescriptionLabel }),
+    ).toHaveAttribute("href", "/pages");
+    expect(
+      screen.getByRole("link", { name: h.pagesThinContentLabel }),
+    ).toHaveAttribute("href", "/pages");
+    expect(screen.getByText(h.gapHint(2, 5))).not.toHaveClass(
+      "text-destructive",
+    );
+  });
+
+  it("hides the gap rows while the health query is failing (error copy instead)", async () => {
+    server.use(
+      http.get("*/api/admin/seo-settings/health", () =>
+        HttpResponse.json({ message: "boom" }, { status: 500 }),
+      ),
+    );
+    renderWithProviders(<SeoHealthSection settings={makeSettings()} />);
+
+    expect(await screen.findByText(h.loadError)).toBeInTheDocument();
+    expect(
+      screen.queryByText(h.pagesMissingDescriptionLabel),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(h.pagesThinContentLabel)).not.toBeInTheDocument();
   });
 });
 

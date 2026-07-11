@@ -260,6 +260,9 @@ describe('SeoSettings (e2e)', () => {
       categoriesTotal: 8,
       pagesMissingMetaTitle: 1,
       pagesTotal: 5,
+      // TASK-285-J: page description/thin-content gap counters.
+      pagesMissingMetaDescription: 2,
+      pagesThinContent: 4,
     };
 
     it('returns 401 without a token', async () => {
@@ -275,7 +278,7 @@ describe('SeoSettings (e2e)', () => {
         .expect(403);
     });
 
-    it('returns the six catalog counts for an admin', async () => {
+    it('returns the catalog counts (incl. the TASK-285 page-gap counters) for an admin', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
       seoSettingsRepositoryMock.getContentSeoCounts.mockResolvedValue(counts);
 

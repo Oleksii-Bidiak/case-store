@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
+import { permanentRedirect } from "next/navigation";
 import { ProductDetailView, ProductDetailSkeleton } from "@/widgets";
+import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { productControllerFindBySlug } from "@/shared/api/generated/products/products";
 import { JsonLd } from "@/shared/ui";
 import {
@@ -76,6 +78,23 @@ export default async function ProductDetailPage({
   // ProductDetailView still handles the 404/UI. Schema objects are built here
   // (plain data); the JSX is constructed outside the try/catch.
   const schemas = await buildProductPageSchemas(slug);
+
+  // TASK-285: a failed product fetch (schemas === null) is the 404 candidate
+  // path — check the slug-redirect ledger and serve a permanent (308) redirect
+  // when the admin renamed the slug. A genuinely dead slug (no redirect row)
+  // falls through unchanged: ProductDetailView still renders its own
+  // client-side not-found state. For the 308 to actually reach the wire, this
+  // route deliberately has NO route-level loading.tsx: a loading boundary
+  // streams a 200 shell before permanentRedirect() can set the status (same
+  // rationale as /categories/[slug]). The redirect decision above runs before
+  // any Suspense boundary; the in-page <Suspense> fallback below keeps the
+  // skeleton UX while ProductDetailView hydrates.
+  if (!schemas) {
+    const newSlug = await resolveSlugRedirect("PRODUCT", slug);
+    if (newSlug) {
+      permanentRedirect(`/products/${newSlug}`);
+    }
+  }
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-8">

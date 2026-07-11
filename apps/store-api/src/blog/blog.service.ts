@@ -178,6 +178,15 @@ export class BlogService {
 
     const wasPublished = post.status === PublishStatus.PUBLISHED;
 
+    // Record a 301 redirect only when the post was publicly visible BEFORE
+    // this write and the slug is actually changing (plan 147 §Design
+    // Decision 3) — a draft's URL was never reachable, so no redirect.
+    const isSlugRename = dto.slug !== undefined && dto.slug !== post.slug;
+    const slugRename =
+      wasPublished && isSlugRename && dto.slug !== undefined
+        ? { oldSlug: post.slug, newSlug: dto.slug }
+        : undefined;
+
     const input: UpdateBlogPostInput = {
       slug: dto.slug,
       title: dto.title,
@@ -209,15 +218,12 @@ export class BlogService {
     }
 
     try {
-      const updated = await this.blogRepository.update(id, input);
+      const updated = await this.blogRepository.update(id, input, slugRename);
       const entity = BlogPostEntity.fromPrisma(updated);
       // Revalidate whenever public visibility could have changed. If the slug was
       // renamed, purge the old slug too so its stale route is dropped.
       if (wasPublished || entity.status === PublishStatus.PUBLISHED) {
-        const slugs =
-          dto.slug !== undefined && dto.slug !== post.slug
-            ? [post.slug, entity.slug]
-            : [entity.slug];
+        const slugs = isSlugRename ? [post.slug, entity.slug] : [entity.slug];
         await this.notifyRevalidationForSlugs(slugs);
       }
       return entity;

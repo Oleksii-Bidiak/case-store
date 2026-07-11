@@ -1,7 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { Page, Prisma, PublishStatus } from '@prisma/client';
+import { Page, Prisma, PublishStatus, SlugRedirectEntity } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { SlugRedirectRepository } from '../slug-redirect';
 import type { PublishablePort, RevalidateTarget } from '../publishing';
+
+/**
+ * Slugs of a rename being persisted by this update — when present, the write
+ * additionally records a 301 redirect `oldSlug → newSlug` in the SlugRedirect
+ * ledger, atomically with the page update (TASK-285-E). The service passes it
+ * only when the page was publicly visible before the write (plan 147 §Design
+ * Decision 3).
+ */
+export interface SlugRenameInput {
+  oldSlug: string;
+  newSlug: string;
+}
 
 /**
  * Parameters for the public (published-only) page list.
@@ -75,7 +88,10 @@ export interface PaginatedPagesResult {
  */
 @Injectable()
 export class PageRepository implements PublishablePort {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly slugRedirectRepository: SlugRedirectRepository,
+  ) {}
 
   /** Cache target purged when scheduled pages go live (see PublishingScheduler). */
   readonly revalidateTarget: RevalidateTarget = {
@@ -181,18 +197,37 @@ export class PageRepository implements PublishablePort {
   /**
    * Update a page's fields. Only provided fields are written; when `status`
    * changes the derived `isActive` mirror is written to match.
+   *
+   * When `slugRename` is present (a publicly-visible page's slug is changing —
+   * gated by the service, plan 147 §Design Decision 3), the update and the
+   * slug-redirect chain-collapse write commit in ONE transaction so the ledger
+   * can never drift from the page's actual slug. When absent, the behavior is
+   * byte-for-byte the pre-TASK-285 single-statement update (no transaction on
+   * the hot, no-rename path).
    */
-  update(id: string, data: UpdatePageInput): Promise<Page> {
+  update(id: string, data: UpdatePageInput, slugRename?: SlugRenameInput): Promise<Page> {
     const { status, ...rest } = data;
-    return this.prisma.page.update({
-      where: { id },
-      data: {
-        ...rest,
-        ...(status !== undefined && {
-          status,
-          isActive: status === PublishStatus.PUBLISHED,
-        }),
-      },
+    const updateData: Prisma.PageUpdateInput = {
+      ...rest,
+      ...(status !== undefined && {
+        status,
+        isActive: status === PublishStatus.PUBLISHED,
+      }),
+    };
+
+    if (!slugRename) {
+      return this.prisma.page.update({ where: { id }, data: updateData });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.page.update({ where: { id }, data: updateData });
+      await this.slugRedirectRepository.recordRename(
+        tx,
+        SlugRedirectEntity.PAGE,
+        slugRename.oldSlug,
+        slugRename.newSlug,
+      );
+      return updated;
     });
   }
 

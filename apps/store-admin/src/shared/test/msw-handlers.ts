@@ -103,6 +103,8 @@ export const handlers = [
         categoriesTotal: 0,
         pagesMissingMetaTitle: 0,
         pagesTotal: 0,
+        pagesMissingMetaDescription: 0,
+        pagesThinContent: 0,
       },
     }),
   ),
