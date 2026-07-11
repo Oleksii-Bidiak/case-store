@@ -68,7 +68,8 @@ export class UserEntity {
   static fromPrisma(user: {
     id: string;
     email: string;
-    passwordHash: string;
+    // Nullable since TASK-168 — Google-only accounts have no password.
+    passwordHash: string | null;
     firstName: string | null;
     lastName: string | null;
     phone: string | null;
