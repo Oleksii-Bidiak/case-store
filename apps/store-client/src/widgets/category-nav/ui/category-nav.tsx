@@ -11,8 +11,12 @@ import {
   Package,
   ChevronRight,
 } from "lucide-react";
-import { useCategoryControllerGetRootCategories } from "@/entities/category";
+import {
+  useCategoryControllerGetRootCategories,
+  type CategoryEntity,
+} from "@/entities/category";
 import { dict } from "@/shared/config";
+import { CategoryTileImage } from "@/shared/ui";
 import { CategoryNavSkeleton } from "./category-nav-skeleton";
 
 // Map a category to an icon + accent by matching keywords in its slug/name, so
@@ -44,6 +48,47 @@ function styleFor(category: { slug: string; name: string }) {
       icon: Package,
       tile: "bg-muted text-muted-foreground",
     }
+  );
+}
+
+/**
+ * CategoryTile — one homepage category tile. Shows `Category.image` (admin-set
+ * URL, TASK-083) in the 48px slot when present/loadable; the keyword-matched
+ * icon + tinted background remains the fallback for missing/broken images.
+ */
+function CategoryTile({ category }: { category: CategoryEntity }) {
+  const { icon: Icon, tile } = styleFor(category);
+  return (
+    <Link
+      href={`/categories/${category.slug}`}
+      className="group flex h-full flex-col gap-3 rounded-2xl border border-border bg-card p-5 transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span
+        className="inline-flex size-12 items-center justify-center overflow-hidden rounded-xl"
+        aria-hidden="true"
+      >
+        <CategoryTileImage
+          src={category.image}
+          alt=""
+          className="size-full object-cover"
+          fallback={
+            <span
+              className={`flex size-full items-center justify-center ${tile}`}
+            >
+              <Icon className="size-6 transition-transform duration-200 group-hover:scale-110" />
+            </span>
+          }
+        />
+      </span>
+      <span className="font-semibold text-card-foreground">
+        {category.name}
+      </span>
+      {category.description && (
+        <span className="line-clamp-1 text-sm text-muted-foreground">
+          {category.description}
+        </span>
+      )}
+    </Link>
   );
 }
 
@@ -100,32 +145,11 @@ export function CategoryNav() {
       {!isPending && !isError && categories.length > 0 && (
         <nav aria-label={dict.catalog.categoriesAria}>
           <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {categories.map((category) => {
-              const { icon: Icon, tile } = styleFor(category);
-              return (
-                <li key={category.id}>
-                  <Link
-                    href={`/categories/${category.slug}`}
-                    className="group flex h-full flex-col gap-3 rounded-2xl border border-border bg-card p-5 transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <span
-                      className={`inline-flex size-12 items-center justify-center rounded-xl ${tile}`}
-                      aria-hidden="true"
-                    >
-                      <Icon className="size-6 transition-transform duration-200 group-hover:scale-110" />
-                    </span>
-                    <span className="font-semibold text-card-foreground">
-                      {category.name}
-                    </span>
-                    {category.description && (
-                      <span className="line-clamp-1 text-sm text-muted-foreground">
-                        {category.description}
-                      </span>
-                    )}
-                  </Link>
-                </li>
-              );
-            })}
+            {categories.map((category) => (
+              <li key={category.id}>
+                <CategoryTile category={category} />
+              </li>
+            ))}
           </ul>
         </nav>
       )}

@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Menu, Tag } from "lucide-react";
 import { useAuth, useAuthControllerLogout } from "@/entities/session";
-import { useCategoryControllerGetRootCategories } from "@/entities/category";
 import {
   Button,
   Sheet,
@@ -23,9 +22,10 @@ import { HeaderSearch } from "./header-search";
 import { HeaderAuth } from "./header-auth";
 import { HeaderCartBadge } from "./header-cart-badge";
 import { HeaderWishlistBadge } from "./header-wishlist-badge";
-
-const MOBILE_LINK_CLASS =
-  "rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+import {
+  HeaderMobileCategories,
+  MOBILE_LINK_CLASS,
+} from "./header-mobile-categories";
 
 const NAV_LINKS = [
   { href: "/products", label: dict.nav.products },
@@ -52,14 +52,6 @@ export function Header({ announcement }: HeaderProps = {}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { isInitializing, isAuthenticated, clearTokens } = useAuth();
-
-  // Root categories for the mobile Sheet (deduped with HeaderSearch's query).
-  const { data: categoriesData } = useCategoryControllerGetRootCategories({
-    isActive: true,
-    sortBy: "sortOrder",
-    sortOrder: "asc",
-  });
-  const categories = categoriesData?.data ?? [];
 
   // Mirrors LogoutButton / HeaderAuth: best-effort server logout, then clear the
   // local session and close the slide-out menu regardless of the outcome.
@@ -149,25 +141,10 @@ export function Header({ announcement }: HeaderProps = {}) {
                     {dict.wishlist.navLabel}
                   </Link>
 
-                  {/* Catalog categories */}
-                  {categories.length > 0 && (
-                    <>
-                      <hr className="my-1 border-border" />
-                      <p className="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                        {dict.header.catalogButton}
-                      </p>
-                      {categories.map((category) => (
-                        <Link
-                          key={category.id}
-                          href={`/categories/${category.slug}`}
-                          onClick={() => setMenuOpen(false)}
-                          className={MOBILE_LINK_CLASS}
-                        >
-                          {category.name}
-                        </Link>
-                      ))}
-                    </>
-                  )}
+                  {/* Catalog categories — tree accordion (TASK-082-B). */}
+                  <HeaderMobileCategories
+                    onNavigate={() => setMenuOpen(false)}
+                  />
 
                   {/* Auth area — hidden until the session bootstrap settles. */}
                   {!isInitializing &&

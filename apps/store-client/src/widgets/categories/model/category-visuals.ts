@@ -19,6 +19,11 @@ import {
 // Categories carry no icon of their own, so we pick a lucide icon by matching
 // keywords in the name/slug (same idea as the homepage CategoryNav) and derive a
 // token-driven oklch gradient per tile index — no invented data, no raw hex.
+//
+// Since TASK-083 this is explicitly the FALLBACK tier: tiles render the
+// admin-set `Category.image` (via `shared/ui` CategoryTileImage) when present
+// and loadable, and only fall back to the icon + gradient below when the image
+// is missing or fails to load.
 
 const ICON_RULES: { match: RegExp; icon: LucideIcon }[] = [
   { match: /tablet|планшет/i, icon: Tablet },

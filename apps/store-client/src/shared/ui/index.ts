@@ -59,3 +59,4 @@ export { ProductThumb } from "./product-thumb";
 export { BLUR_PLACEHOLDER } from "./image-placeholder";
 export { RatingStars } from "./rating-stars";
 export { JsonLd } from "./json-ld";
+export { CategoryTileImage } from "./category-tile-image";
