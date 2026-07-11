@@ -28,6 +28,25 @@ export function findCategoryNode(
   return null;
 }
 
+/**
+ * Depth-first search of the category tree for a node by slug, returning the
+ * full ancestor chain `[root, ...intermediate, matched]` in root-to-leaf
+ * order, or `null` when the slug is not found anywhere in the tree. The tree
+ * endpoint only returns active categories, so an inactive/unknown slug
+ * naturally resolves to `null` (TASK-277 — /categories/[slug] landing pages).
+ */
+export function findCategoryPathBySlug(
+  nodes: CategoryTreeNodeEntity[],
+  slug: string,
+): CategoryTreeNodeEntity[] | null {
+  for (const node of nodes) {
+    if (node.slug === slug) return [node];
+    const nested = findCategoryPathBySlug(node.children ?? [], slug);
+    if (nested) return [node, ...nested];
+  }
+  return null;
+}
+
 /** Depth-first search of the category tree for a node's display name by id. */
 export function findCategoryName(
   nodes: CategoryTreeNodeEntity[],
