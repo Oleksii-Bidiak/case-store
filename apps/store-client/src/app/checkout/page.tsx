@@ -7,6 +7,10 @@ import { dict } from "@/shared/config";
 export const metadata: Metadata = {
   title: dict.meta.checkoutTitle,
   description: dict.meta.checkoutDescription,
+  // Defense-in-depth alongside robots.txt's Disallow (plan 143): a directly
+  // shared/linked checkout URL bypasses the crawl block but still respects an
+  // in-page noindex once fetched. Not redundant — do not "clean up".
+  robots: { index: false, follow: false },
 };
 
 export default function CheckoutPage() {

@@ -13,6 +13,7 @@ export { Newsletter } from "./newsletter";
 export { RecentlyViewed } from "./recently-viewed";
 export { BlogView } from "./blog";
 export { ProductListView, ProductListSkeleton } from "./product-list";
+export { SubcategoryChips } from "./category-detail";
 export { SearchResultsView, SearchResultsSkeleton } from "./search-results";
 export { ProductDetailView, ProductDetailSkeleton } from "./product-detail";
 export { ProductReviewsWidget } from "./product-reviews";

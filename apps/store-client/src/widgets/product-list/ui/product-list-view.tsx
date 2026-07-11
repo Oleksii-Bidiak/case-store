@@ -27,6 +27,15 @@ import { ProductList } from "./product-list";
 interface ProductListViewProps {
   /** Server-resolved initial params (from `await searchParams`). */
   initialParams: ProductControllerFindAllParams;
+  /**
+   * Fix the category to a route-determined id (TASK-277 — `/categories/[slug]`
+   * landing pages). When set: the effective `categoryId` is always this value
+   * regardless of the URL query, the `CategoryChips` switcher row is not
+   * rendered (the landing page has its own `SubcategoryChips` navigation), and
+   * «скинути всі» clears every other filter but never un-locks the category.
+   * When unset (`/products`), behavior is unchanged.
+   */
+  lockedCategoryId?: string;
 }
 
 const PAGE_SIZE = 20;
@@ -49,7 +58,10 @@ const CLEARABLE_FILTERS = {
  * grid), the toolbar (sort + view toggle + mobile filters), active-filter chips,
  * the sidebar (desktop aside + mobile drawer) and the results grid/list.
  */
-export function ProductListView({ initialParams }: ProductListViewProps) {
+export function ProductListView({
+  initialParams,
+  lockedCategoryId,
+}: ProductListViewProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -63,7 +75,10 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
   const pageRaw = searchParams.get("page");
 
   const params: ProductControllerFindAllParams = {
-    categoryId: searchParams.get("categoryId") ?? initialParams.categoryId,
+    categoryId:
+      lockedCategoryId ??
+      searchParams.get("categoryId") ??
+      initialParams.categoryId,
     brandId: searchParams.get("brandId") ?? initialParams.brandId,
     deviceModelId:
       searchParams.get("deviceModelId") ?? initialParams.deviceModelId,
@@ -123,10 +138,17 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
     [searchParams, pathname, router],
   );
 
-  const clearFilters = useCallback(
-    () => applyFilters({ ...CLEARABLE_FILTERS }),
-    [applyFilters],
-  );
+  const clearFilters = useCallback(() => {
+    const updates: Record<string, string | undefined> = {
+      ...CLEARABLE_FILTERS,
+    };
+    if (lockedCategoryId) {
+      // The category is fixed by the route, not a clearable filter — «скинути
+      // всі» drops everything else but never un-locks it.
+      delete updates.categoryId;
+    }
+    applyFilters(updates);
+  }, [applyFilters, lockedCategoryId]);
 
   const buildPageHref = useCallback(
     (targetPage: number) => {
@@ -152,16 +174,20 @@ export function ProductListView({ initialParams }: ProductListViewProps) {
 
   return (
     <div>
-      {/* Category chips — horizontal, scrollable on mobile; drives ?categoryId= */}
-      <CategoryChips
-        categories={categories}
-        activeCategoryId={params.categoryId}
-        // Changing (or clearing) the category also drops any spec facet — facet
-        // options are category-scoped and meaningless without one (TASK-191).
-        onSelect={(categoryId) =>
-          applyFilters({ categoryId, specs: undefined })
-        }
-      />
+      {/* Category chips — horizontal, scrollable on mobile; drives ?categoryId=.
+          Hidden when the category is locked by the route (/categories/[slug]):
+          switching categories there is SubcategoryChips' navigation job. */}
+      {!lockedCategoryId && (
+        <CategoryChips
+          categories={categories}
+          activeCategoryId={params.categoryId}
+          // Changing (or clearing) the category also drops any spec facet — facet
+          // options are category-scoped and meaningless without one (TASK-191).
+          onSelect={(categoryId) =>
+            applyFilters({ categoryId, specs: undefined })
+          }
+        />
+      )}
 
       {/* Toolbar: mobile filters button (left) + view toggle + sort (right) */}
       <div className="mb-5 flex items-center gap-3">

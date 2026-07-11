@@ -1,6 +1,10 @@
 import type { CategoryTreeNodeEntity } from "@/shared/api/generated/models";
 import { dict } from "@/shared/config";
-import { buildCatalogHeader, findCategoryName } from "./catalog-header";
+import {
+  buildCatalogHeader,
+  findCategoryName,
+  findCategoryPathBySlug,
+} from "./catalog-header";
 
 function node(
   id: string,
@@ -13,6 +17,7 @@ function node(
     slug: name.toLowerCase(),
     isActive: true,
     sortOrder: 0,
+    updatedAt: "2026-07-01T00:00:00.000Z",
     children,
   };
 }
@@ -20,7 +25,7 @@ function node(
 const tree: CategoryTreeNodeEntity[] = [
   node("root-1", "Смартфони та гаджети", [
     node("cat-phones", "Смартфони"),
-    node("cat-audio", "Аудіо"),
+    node("cat-audio", "Аудіо", [node("cat-headphones", "Навушники")]),
   ]),
   node("root-2", "Аксесуари"),
 ];
@@ -36,6 +41,34 @@ describe("findCategoryName", () => {
 
   it("returns null for an unknown id", () => {
     expect(findCategoryName(tree, "missing")).toBeNull();
+  });
+});
+
+describe("findCategoryPathBySlug", () => {
+  it("returns a single-element path for a root-level match", () => {
+    const path = findCategoryPathBySlug(tree, "аксесуари");
+
+    expect(path?.map((n) => n.id)).toEqual(["root-2"]);
+  });
+
+  it("returns the full ancestor chain in root-to-leaf order for a 2-level match", () => {
+    const path = findCategoryPathBySlug(tree, "смартфони");
+
+    expect(path?.map((n) => n.id)).toEqual(["root-1", "cat-phones"]);
+  });
+
+  it("returns the full ancestor chain in root-to-leaf order for a 3-level match", () => {
+    const path = findCategoryPathBySlug(tree, "навушники");
+
+    expect(path?.map((n) => n.id)).toEqual([
+      "root-1",
+      "cat-audio",
+      "cat-headphones",
+    ]);
+  });
+
+  it("returns null for an unknown slug", () => {
+    expect(findCategoryPathBySlug(tree, "missing-slug")).toBeNull();
   });
 });
 

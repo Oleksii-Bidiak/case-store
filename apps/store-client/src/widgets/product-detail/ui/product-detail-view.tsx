@@ -108,7 +108,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
           <li aria-hidden="true">›</li>
           <li>
             <Link
-              href={`/products?categoryId=${category.id}`}
+              href={`/categories/${category.slug}`}
               className="hover:text-primary"
             >
               {category.name}

@@ -80,7 +80,7 @@ describe("CategoriesView", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Чохли" })).toHaveAttribute(
       "href",
-      "/products?categoryId=c1a",
+      "/categories/cases",
     );
 
     // Brands strip — real Brand data, linking to the brand-filtered catalog.
@@ -102,7 +102,7 @@ describe("CategoriesView", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Навушники" })).toHaveAttribute(
       "href",
-      "/products?categoryId=c2a",
+      "/categories/headphones",
     );
   });
 });

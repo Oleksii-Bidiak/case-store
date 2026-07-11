@@ -2,6 +2,7 @@ import { buildOrganizationSchema } from "./buildOrganizationSchema";
 import { buildWebSiteSchema } from "./buildWebSiteSchema";
 import { buildBreadcrumbSchema } from "./buildBreadcrumbSchema";
 import { buildFaqPageSchema } from "./buildFaqPageSchema";
+import { buildItemListSchema } from "./buildItemListSchema";
 import { buildProductSchema } from "./buildProductSchema";
 import type {
   PublicProductEntity,
@@ -72,6 +73,51 @@ describe("buildBreadcrumbSchema", () => {
       name: "iPhone 15 Case",
       item: `${SITE}/products/iphone-15-case`,
     });
+  });
+});
+
+describe("buildItemListSchema", () => {
+  it("emits an ItemList with 1-based positions in input order", () => {
+    const schema = buildItemListSchema([
+      {
+        name: "iPhone 15 Case",
+        url: `${SITE}/products/iphone-15-case`,
+        image: `${SITE}/images/case.jpg`,
+      },
+      { name: "USB-C Cable", url: `${SITE}/products/usb-c-cable` },
+    ]);
+    expect(schema["@type"]).toBe("ItemList");
+    expect(schema["@context"]).toBe("https://schema.org");
+
+    const items = schema.itemListElement as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({
+      "@type": "ListItem",
+      position: 1,
+      item: {
+        "@type": "Product",
+        name: "iPhone 15 Case",
+        url: `${SITE}/products/iphone-15-case`,
+        image: `${SITE}/images/case.jpg`,
+      },
+    });
+    expect(items[1]).toMatchObject({ position: 2 });
+  });
+
+  it("omits the image field entirely when absent (no undefined)", () => {
+    const schema = buildItemListSchema([
+      { name: "USB-C Cable", url: `${SITE}/products/usb-c-cable` },
+    ]);
+
+    const items = schema.itemListElement as Array<Record<string, unknown>>;
+    const item = items[0].item as Record<string, unknown>;
+    expect("image" in item).toBe(false);
+  });
+
+  it("yields an empty itemListElement for an empty input array", () => {
+    const schema = buildItemListSchema([]);
+
+    expect(schema.itemListElement).toEqual([]);
   });
 });
 

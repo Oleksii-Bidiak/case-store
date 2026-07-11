@@ -213,6 +213,29 @@ describe('CategoryService', () => {
       );
     });
 
+    // TASK-277: sitemap `lastModified` for /categories/[slug] landing pages
+    // reads `updatedAt` off the public tree — it must survive the entity
+    // mapping unchanged at every nesting level.
+    it('surfaces updatedAt unchanged at both root and nested-child level', async () => {
+      const treeData = [
+        {
+          ...mockCategory,
+          children: [
+            {
+              ...mockChildCategory,
+              children: [],
+            },
+          ],
+        },
+      ];
+      categoryRepositoryMock.findCategoryTree.mockResolvedValue(treeData as any);
+
+      const result = await service.getCategoryTree();
+
+      expect(result.data[0].updatedAt).toEqual(mockCategory.updatedAt);
+      expect(result.data[0].children[0].updatedAt).toEqual(mockChildCategory.updatedAt);
+    });
+
     it('maps a missing metaTitle/metaDescription to null (not undefined)', async () => {
       const treeData = [{ ...mockChildCategory, children: [] }]; // mockChildCategory omits both fields
       categoryRepositoryMock.findCategoryTree.mockResolvedValue(treeData as any);

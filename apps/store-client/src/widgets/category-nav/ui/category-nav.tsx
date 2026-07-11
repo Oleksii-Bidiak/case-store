@@ -105,7 +105,7 @@ export function CategoryNav() {
               return (
                 <li key={category.id}>
                   <Link
-                    href={`/products?categoryId=${category.id}`}
+                    href={`/categories/${category.slug}`}
                     className="group flex h-full flex-col gap-3 rounded-2xl border border-border bg-card p-5 transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span

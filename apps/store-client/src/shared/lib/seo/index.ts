@@ -16,3 +16,22 @@ export type {
   ResolvedSeo,
   ResolveSeoSettings,
 } from "./resolveSeo";
+
+// Listing canonical/noindex policy (plan 143) — pure, unit-tested; consumed by
+// the `/products` and `/categories/[slug]` `generateMetadata()` call sites.
+export { buildListingMetadata } from "./listing-metadata";
+export type {
+  ListingFilterParams,
+  ListingMetadataInput,
+  ListingMetadataResult,
+} from "./listing-metadata";
+
+// IndexNow submission (plan 144) — fire-and-forget instant-index ping for
+// Bing/Seznam, wired into `/api/revalidate`; no-op without INDEXNOW_KEY or
+// outside production.
+export {
+  getIndexNowKey,
+  buildIndexNowPayload,
+  submitToIndexNow,
+} from "./indexnow";
+export type { IndexNowPayload } from "./indexnow";

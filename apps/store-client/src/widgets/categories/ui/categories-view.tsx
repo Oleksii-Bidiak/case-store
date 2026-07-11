@@ -147,7 +147,7 @@ export function CategoriesView() {
               return (
                 <Link
                   key={child.id}
-                  href={`/products?categoryId=${child.id}`}
+                  href={`/categories/${child.slug}`}
                   className="flex flex-col rounded-2xl border border-border bg-card p-[18px] no-underline shadow-card transition-[transform,box-shadow] hover:-translate-y-[3px] hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <div
@@ -165,7 +165,7 @@ export function CategoriesView() {
           </div>
         ) : (
           <Link
-            href={`/products?categoryId=${activeRoot.id}`}
+            href={`/categories/${activeRoot.slug}`}
             className="inline-flex h-12 items-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {dict.categories.viewAllInCategory}

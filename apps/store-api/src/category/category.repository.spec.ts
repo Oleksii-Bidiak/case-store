@@ -130,6 +130,50 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
       expect(tree[0].children[0].metaDescription).toBe('Child override description.');
     });
 
+    // TASK-277: the sitemap's `lastModified` needs `updatedAt` on every tree
+    // node — pinned the same way as the SEO meta columns above so a future
+    // `select` narrowing that drops the column is caught.
+    it('returns updatedAt at both root and nested-child level', async () => {
+      const rootUpdatedAt = new Date('2026-07-01T10:00:00.000Z');
+      const childUpdatedAt = new Date('2026-07-02T11:00:00.000Z');
+      findMany.mockResolvedValue([
+        {
+          id: 'root',
+          name: 'Phone Cases',
+          slug: 'phone-cases',
+          description: null,
+          image: null,
+          parentId: null,
+          isActive: true,
+          sortOrder: 0,
+          metaTitle: null,
+          metaDescription: null,
+          updatedAt: rootUpdatedAt,
+          children: [
+            {
+              id: 'child',
+              name: 'iPhone Cases',
+              slug: 'iphone-cases',
+              description: null,
+              image: null,
+              parentId: 'root',
+              isActive: true,
+              sortOrder: 0,
+              metaTitle: null,
+              metaDescription: null,
+              updatedAt: childUpdatedAt,
+              children: [],
+            },
+          ],
+        },
+      ]);
+
+      const tree = await repo.findCategoryTree();
+
+      expect(tree[0].updatedAt).toEqual(rootUpdatedAt);
+      expect(tree[0].children[0].updatedAt).toEqual(childUpdatedAt);
+    });
+
     it('does not narrow the query with a `select` clause (relies on `include` full rows)', async () => {
       findMany.mockResolvedValue([]);
 
