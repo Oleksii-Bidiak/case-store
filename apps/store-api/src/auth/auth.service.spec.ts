@@ -202,6 +202,20 @@ describe('AuthService', () => {
       expect(authRepository.findByEmail).toHaveBeenCalledWith(loginEmail);
     });
 
+    it('burns a fixed argon2 cost when the email is unknown (TASK-274 timing hardening)', async () => {
+      authRepository.findByEmail.mockResolvedValue(null);
+
+      await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      // Without this the no-user branch would return near-instantly while the
+      // found-user branch pays for argon2.verify — a timing oracle for account
+      // enumeration. The dummy hash equalizes the two.
+      expect(argon2.hash).toHaveBeenCalledTimes(1);
+      expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
+    });
+
     it('should throw UnauthorizedException when password is wrong', async () => {
       authRepository.findByEmail.mockResolvedValue(mockUser);
       (argon2.verify as jest.Mock).mockResolvedValue(false);
@@ -233,11 +247,25 @@ describe('AuthService', () => {
       authRepository.findByEmail.mockResolvedValue({ ...mockUser, isActive: false });
       (argon2.verify as jest.Mock).mockResolvedValue(true);
 
+      // TASK-274: the SAME generic message as every other login failure — a
+      // distinct "Account is deactivated" reply confirms the account exists.
       await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(
-        new UnauthorizedException('Account is deactivated'),
+        new UnauthorizedException('Invalid credentials'),
       );
 
       // A deactivated user must never receive new tokens.
+      expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
+    });
+
+    it('should throw UnauthorizedException when the account is soft-deleted', async () => {
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, deletedAt: new Date() });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      // A soft-deleted (tombstoned) user must never receive new tokens.
       expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
     });
   });
