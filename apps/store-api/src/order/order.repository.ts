@@ -12,6 +12,7 @@ import type {
   OrderWithItems,
   OrderItemRow,
   OrderStatusHistoryRow,
+  OrderAddonSnapshot,
 } from './order.types';
 import type { OrderListQueryDto, AdminOrderListQueryDto } from './dto';
 
@@ -33,6 +34,13 @@ const ORDERS_INCLUDE = {
       quantity: true,
       price: true,
       createdAt: true,
+      // Frozen add-on snapshots (TASK-174) — a pure snapshot read: `name`/`price`
+      // live on the row itself, so no live join back to the catalog is needed
+      // (and a later reprice can never leak into order history).
+      addons: {
+        orderBy: { createdAt: 'asc' as const },
+        select: { id: true, addonServiceId: true, name: true, price: true },
+      },
       product: {
         select: {
           id: true,
@@ -107,13 +115,31 @@ export class OrderRepository {
     const discountParam = params.discount;
 
     // Snapshot each line's unit price (the position's price) into the order-item
-    // rows. These persisted rows — not the cart — are the order's source of
-    // truth from here on.
-    const itemData = cartItems.map((item) => ({
-      productId: item.productId,
-      quantity: item.quantity,
-      price: new Prisma.Decimal(item.product.price.toString()),
-    }));
+    // rows, along with the add-ons selected on that line (TASK-174 — name +
+    // EFFECTIVE price, both frozen here for the same reason the unit price is).
+    // These persisted rows — not the cart — are the order's source of truth from
+    // here on.
+    const addonsByCartItemId: Map<string, OrderAddonSnapshot[]> =
+      params.addonsByCartItemId ?? new Map();
+    const itemData = cartItems.map((item) => {
+      const addons = addonsByCartItemId.get(item.id) ?? [];
+      return {
+        productId: item.productId,
+        quantity: item.quantity,
+        price: new Prisma.Decimal(item.product.price.toString()),
+        ...(addons.length > 0
+          ? {
+              addons: {
+                create: addons.map((addon) => ({
+                  addonServiceId: addon.addonServiceId,
+                  name: addon.name,
+                  price: new Prisma.Decimal(addon.price),
+                })),
+              },
+            }
+          : {}),
+      };
+    });
 
     // Derive the subtotal from the persisted order-item rows themselves (single
     // source of truth) using integer-cents arithmetic to avoid float drift.
@@ -127,14 +153,32 @@ export class OrderRepository {
     // free-text/manual orders.
     const shipping = new Prisma.Decimal((shippingCost ?? 0).toString());
 
+    // ─── TASK-174 add-on block ─────────────────────────────────────────────────
+    // Derive addonsTotal from the rows about to be persisted (same
+    // single-source-of-truth + integer-cents discipline as the subtotal above).
+    // Flat: an add-on is charged once per line, never multiplied by quantity.
+    const addonsCents = [...addonsByCartItemId.values()]
+      .flat()
+      .reduce((cents, addon) => cents + Math.round(parseFloat(addon.price) * 100), 0);
+    const addonsTotal = new Prisma.Decimal(centsToDecimalString(addonsCents));
+    // ───────────────────────────────────────────────────────────────────────────
+
     // ─── TASK-079 discount block ───────────────────────────────────────────────
     // The service already recomputed the amount authoritatively (never trusting
-    // a client value) and clamped it to the subtotal. Persist it on the order
-    // and subtract from the total; total = subtotal + shipping - discount.
+    // a client value) and clamped it to the PRODUCT subtotal. Persist it on the
+    // order and subtract from the total.
+    //
+    // HARD INVARIANT (plan 150, owner decision 4):
+    //   total = subtotal + shipping + addonsTotal - discount
+    // with `discount` computed and clamped against `subtotal` ALONE. `addonsTotal`
+    // joins `shippingCost` on the "excluded from the discount base" side of the
+    // ledger: a coupon can never reduce what an add-on service contributes to the
+    // payable total. This is not configurable — discounts ON add-on services are
+    // parked separately (TASK-286).
     const discountAmount = discountParam
       ? new Prisma.Decimal(discountParam.amount)
       : new Prisma.Decimal(0);
-    const total = subtotal.plus(shipping).minus(discountAmount);
+    const total = subtotal.plus(shipping).plus(addonsTotal).minus(discountAmount);
     // ───────────────────────────────────────────────────────────────────────────
 
     const order = await this.prisma.$transaction(async (tx) => {
@@ -148,6 +192,7 @@ export class OrderRepository {
           discountCode: discountParam?.code ?? null,
           shippingCost: shipping,
           tax: new Prisma.Decimal(0),
+          addonsTotal,
           total,
           shippingAddress: shippingAddress as unknown as Prisma.InputJsonValue,
           billingAddress: (billingAddress ?? shippingAddress) as unknown as Prisma.InputJsonValue,

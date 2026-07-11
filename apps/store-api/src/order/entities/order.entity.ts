@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { OrderItemEntity } from './order-item.entity';
+import { toTwoDecimals } from '../../addon-service';
 import type { OrderWithItems, ShippingAddressData } from '../order.types';
 
 /**
@@ -78,6 +79,13 @@ export class OrderEntity {
   @ApiProperty({ description: 'Tax as string', example: '0.00' })
   tax!: string;
 
+  @ApiProperty({
+    description:
+      'Sum of the frozen add-on-service snapshots across all lines (TASK-174). Like `shippingCost`, it is NEVER part of the discount base: `total = subtotal + shippingCost + addonsTotal - discount`, with `discount` clamped against `subtotal` alone.',
+    example: '499.00',
+  })
+  addonsTotal!: string;
+
   @ApiProperty({ description: 'Grand total as string', example: '149.97' })
   total!: string;
 
@@ -149,6 +157,7 @@ export class OrderEntity {
     entity.discountCode = order.discountCode ?? null;
     entity.shippingCost = order.shippingCost.toString();
     entity.tax = order.tax.toString();
+    entity.addonsTotal = toTwoDecimals(order.addonsTotal ?? '0');
     entity.total = order.total.toString();
     entity.shippingAddress = (order.shippingAddress as ShippingAddressData | null) ?? null;
     entity.billingAddress = (order.billingAddress as ShippingAddressData | null) ?? null;

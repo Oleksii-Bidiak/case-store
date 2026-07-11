@@ -15,8 +15,9 @@ import { DeliveryService } from '../delivery';
 import { DiscountService } from '../discount';
 import { OrderEntity, OrderStatusHistoryEntity } from './entities';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
+import { AddonApplicabilityResolver } from '../addon-service';
 import type { CreateOrderDto, OrderListQueryDto, AdminOrderListQueryDto } from './dto';
-import type { CreateOrderParams } from './order.types';
+import type { CreateOrderParams, OrderAddonSnapshot } from './order.types';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
@@ -65,6 +66,7 @@ export class OrderService {
     private readonly mailOutbox: MailOutboxService,
     private readonly deliveryService: DeliveryService,
     private readonly discountService: DiscountService,
+    private readonly addonResolver: AddonApplicabilityResolver,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(OrderService.name);
@@ -125,6 +127,16 @@ export class OrderService {
       }
     }
 
+    // ─── TASK-174 add-on block ─────────────────────────────────────────────────
+    // Re-resolve every line's applicable add-ons FRESH (one batched call), in the
+    // same defensive spirit as the stock re-check above: a selection made at
+    // add-to-cart time may since have become inapplicable (the service was
+    // deactivated, the category template changed, a REMOVE delta was added, the
+    // product was recategorised). Such a selection is silently DROPPED with a
+    // warning — never a thrown error that would block an otherwise valid order.
+    const addonsByCartItemId = await this.snapshotAddons(cart, userId);
+    // ───────────────────────────────────────────────────────────────────────────
+
     // ─── TASK-079 discount block ───────────────────────────────────────────────
     // Re-validate the promo code authoritatively (never trust a client amount).
     // computeDiscount re-runs every eligibility gate against the cart subtotal
@@ -152,6 +164,7 @@ export class OrderService {
         userId,
         cartId: cart.id,
         cartItems: cart.items,
+        addonsByCartItemId,
         shippingAddress: dto.shippingAddress,
         billingAddress: dto.billingAddress,
         notes: dto.notes,
@@ -422,6 +435,67 @@ export class OrderService {
 
     const rows = await this.orderRepository.findHistoryByOrderId(orderId);
     return rows.map((row) => OrderStatusHistoryEntity.fromPrisma(row));
+  }
+
+  /**
+   * Freeze each cart line's SELECTED add-ons into order-ready snapshots
+   * (TASK-174), keyed by cart-item id.
+   *
+   * The applicable set is re-resolved fresh here rather than trusted from the
+   * customer's last `GET /cart` — the same reason stock and the discount are
+   * re-validated at order-creation time. A selection the resolver no longer
+   * returns (deactivated service, edited template, new REMOVE delta) is dropped
+   * with a warning and simply not charged; it never throws, because a stale
+   * add-on must not block an otherwise valid order.
+   *
+   * The effective price the resolver returns — catalog, ADD, or OVERRIDE — is
+   * what gets frozen, so a later reprice or template edit can never rewrite the
+   * order's history.
+   */
+  private async snapshotAddons(
+    cart: CartWithItems,
+    userId: string,
+  ): Promise<Map<string, OrderAddonSnapshot[]>> {
+    const resolved = await this.addonResolver.resolveForProducts(
+      cart.items.map((item) => ({ id: item.product.id, categoryId: item.product.categoryId })),
+    );
+
+    const snapshots = new Map<string, OrderAddonSnapshot[]>();
+
+    for (const item of cart.items) {
+      const available = resolved.get(item.product.id) ?? [];
+      const byId = new Map(available.map((addon) => [addon.addonServiceId, addon]));
+
+      const lineSnapshots: OrderAddonSnapshot[] = [];
+      for (const selection of item.addons ?? []) {
+        const addon = byId.get(selection.addonServiceId);
+
+        if (!addon) {
+          this.logger.warn(
+            {
+              userId,
+              cartItemId: item.id,
+              productId: item.productId,
+              addonServiceId: selection.addonServiceId,
+            },
+            'Selected add-on is no longer applicable at order creation; dropping it from the order',
+          );
+          continue;
+        }
+
+        lineSnapshots.push({
+          addonServiceId: addon.addonServiceId,
+          name: addon.name,
+          price: addon.price,
+        });
+      }
+
+      if (lineSnapshots.length > 0) {
+        snapshots.set(item.id, lineSnapshots);
+      }
+    }
+
+    return snapshots;
   }
 }
 

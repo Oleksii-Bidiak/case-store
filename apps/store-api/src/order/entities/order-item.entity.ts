@@ -1,5 +1,43 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { toTwoDecimals } from '../../addon-service';
 import type { OrderItemRow } from '../order.types';
+
+/**
+ * A frozen add-on-service snapshot on an order line (TASK-174). `name`/`price`
+ * were copied at order-creation time — this is a pure snapshot read, with no
+ * live join back to the catalog, so a later reprice, template edit, or delta
+ * edit can never rewrite what the customer was charged.
+ */
+export class OrderItemAddonEntity {
+  @ApiProperty({ description: 'Snapshot row id' })
+  id!: string;
+
+  @ApiProperty({
+    description:
+      'Catalog id of the add-on service, or null if the catalog row was hard-deleted (not a path the admin has today)',
+    type: String,
+    nullable: true,
+  })
+  addonServiceId!: string | null;
+
+  @ApiProperty({
+    description: 'Service name at the time of purchase',
+    example: 'Страхування від пошкоджень',
+  })
+  name!: string;
+
+  @ApiProperty({ description: 'Price paid, as string', example: '1299.00' })
+  price!: string;
+
+  static fromPrisma(row: OrderItemRow['addons'][number]): OrderItemAddonEntity {
+    const entity = new OrderItemAddonEntity();
+    entity.id = row.id;
+    entity.addonServiceId = row.addonServiceId;
+    entity.name = row.name;
+    entity.price = toTwoDecimals(row.price);
+    return entity;
+  }
+}
 
 /**
  * Domain entity representing a single line in an order.
@@ -59,6 +97,13 @@ export class OrderItemEntity {
   })
   lineTotal!: string;
 
+  @ApiProperty({
+    description:
+      'Add-on services bought with this line (TASK-174) — frozen name/price snapshots, NOT part of `lineTotal` (they are reported on the order as `addonsTotal`).',
+    type: [OrderItemAddonEntity],
+  })
+  addons!: OrderItemAddonEntity[];
+
   @ApiProperty({ description: 'Creation timestamp', example: '2024-01-01T00:00:00.000Z' })
   createdAt!: Date;
 
@@ -84,6 +129,8 @@ export class OrderItemEntity {
     const dollars = Math.floor(lineTotalCents / 100);
     const cents = lineTotalCents % 100;
     entity.lineTotal = `${dollars}.${cents.toString().padStart(2, '0')}`;
+
+    entity.addons = (row.addons ?? []).map((addon) => OrderItemAddonEntity.fromPrisma(addon));
 
     entity.createdAt = row.createdAt;
     return entity;
