@@ -168,8 +168,11 @@ describe('CartRepository (integration)', () => {
       userCartId: userCart.id,
       guestCartId: guest.id,
       lines: [
-        { productId, quantity: 4 },
-        { productId: product2Id, quantity: 1 },
+        // `addonServiceIds` is the line's FINAL add-on selection (TASK-174) — the
+        // service always resolves one before calling, so an empty set is the
+        // "no add-ons chosen" case, not an omission.
+        { productId, quantity: 4, addonServiceIds: [] },
+        { productId: product2Id, quantity: 1, addonServiceIds: [] },
       ],
     });
 

@@ -120,6 +120,14 @@ describe('OrderController (e2e)', () => {
   const prismaServiceMock = {
     $connect: jest.fn(),
     $disconnect: jest.fn(),
+    // The add-on applicability resolver (TASK-174) runs on every cart read via the
+    // real CategoryRepository / AddonServiceRepository. No add-on services exist in
+    // this suite's fixture, so every lookup answers empty — the resolver must yield
+    // an empty set, not blow up on a missing mock member.
+    $queryRaw: jest.fn().mockResolvedValue([]),
+    addonService: { findMany: jest.fn().mockResolvedValue([]) },
+    categoryAddonTemplate: { findMany: jest.fn().mockResolvedValue([]) },
+    addonServiceDelta: { findMany: jest.fn().mockResolvedValue([]) },
     user: { findUnique: jest.fn(), create: jest.fn() },
     refreshToken: {
       findUnique: jest.fn(),
@@ -292,6 +300,16 @@ describe('OrderController (e2e)', () => {
 
   afterEach(() => {
     jest.resetAllMocks();
+  });
+
+  // `resetAllMocks` above wipes implementations, so the add-on resolver's
+  // empty-catalog defaults must be re-armed before every test — otherwise its
+  // queries resolve to `undefined` and checkout 500s (TASK-174).
+  beforeEach(() => {
+    prismaServiceMock.$queryRaw.mockResolvedValue([]);
+    prismaServiceMock.addonService.findMany.mockResolvedValue([]);
+    prismaServiceMock.categoryAddonTemplate.findMany.mockResolvedValue([]);
+    prismaServiceMock.addonServiceDelta.findMany.mockResolvedValue([]);
   });
 
   // ─── POST /api/orders ────────────────────────────────────────────────────────
