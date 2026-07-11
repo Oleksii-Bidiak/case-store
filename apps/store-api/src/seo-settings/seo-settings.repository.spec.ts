@@ -8,6 +8,8 @@ const mockRow = {
   defaultMetaDescription: 'Магазин аксесуарів',
   titleTemplate: null,
   defaultOgImage: null,
+  googleSiteVerification: null,
+  bingSiteVerification: null,
   noindexSite: false,
   llmsTxtSummary: null,
   additionalSameAsLinks: [],

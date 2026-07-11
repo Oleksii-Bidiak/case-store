@@ -939,6 +939,8 @@ async function seedSiteContactSettings(prisma: PrismaClient) {
  *   - defaultMetaTitle: null — let the content-derived fallback build titles
  *   - defaultMetaDescription: a generic store one-liner
  *   - titleTemplate: null — use the code default (`%s | ${SITE_NAME}`)
+ *   - googleSiteVerification / bingSiteVerification: null — search-console
+ *     verification not configured out of the box (plan 146)
  *   - noindexSite: false — assume production once this ships
  *   - additionalSameAsLinks: [] — none configured out of the box
  *
@@ -957,6 +959,8 @@ async function seedSeoSettings(prisma: PrismaClient) {
         'Мультибрендовий інтернет-магазин аксесуарів для смартфонів та Apple-техніки в Україні. Доставка Новою Поштою, оплата у гривні.',
       titleTemplate: null,
       defaultOgImage: null,
+      googleSiteVerification: null,
+      bingSiteVerification: null,
       noindexSite: false,
       llmsTxtSummary: null,
       additionalSameAsLinks: [],

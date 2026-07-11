@@ -10,6 +10,8 @@ const mockRow = {
   defaultMetaDescription: 'Магазин аксесуарів',
   titleTemplate: null,
   defaultOgImage: null,
+  googleSiteVerification: null,
+  bingSiteVerification: null,
   noindexSite: false,
   llmsTxtSummary: null,
   additionalSameAsLinks: [] as string[],
@@ -53,8 +55,23 @@ describe('SeoSettingsService', () => {
       expect(result.defaultMetaTitle).toBeNull();
       expect(result.defaultMetaDescription).toBeNull();
       expect(result.titleTemplate).toBeNull();
+      expect(result.googleSiteVerification).toBeNull();
+      expect(result.bingSiteVerification).toBeNull();
       expect(result.noindexSite).toBe(false);
       expect(result.additionalSameAsLinks).toEqual([]);
+    });
+
+    it('maps the search-console verification tokens through fromPrisma (TASK-280)', async () => {
+      repositoryMock.findSettings.mockResolvedValue({
+        ...mockRow,
+        googleSiteVerification: 'google-token-123',
+        bingSiteVerification: 'bing-token-456',
+      });
+
+      const result = await service.getSettings();
+
+      expect(result.googleSiteVerification).toBe('google-token-123');
+      expect(result.bingSiteVerification).toBe('bing-token-456');
     });
 
     it('returns a mapped entity when the row exists', async () => {
@@ -81,6 +98,21 @@ describe('SeoSettingsService', () => {
       expect(result).toBeInstanceOf(SeoSettingsEntity);
       expect(result.defaultMetaTitle).toBe('Новий заголовок');
       expect(result.noindexSite).toBe(true);
+    });
+
+    it('passes the search-console verification fields through unchanged (TASK-280)', async () => {
+      const dto = {
+        googleSiteVerification: 'google-token-123',
+        bingSiteVerification: 'bing-token-456',
+      };
+      repositoryMock.upsertSettings.mockResolvedValue({ ...mockRow, ...dto });
+      revalidationMock.revalidate.mockResolvedValue(undefined);
+
+      const result = await service.updateSettings(dto);
+
+      expect(repositoryMock.upsertSettings).toHaveBeenCalledWith(dto);
+      expect(result.googleSiteVerification).toBe('google-token-123');
+      expect(result.bingSiteVerification).toBe('bing-token-456');
     });
   });
 

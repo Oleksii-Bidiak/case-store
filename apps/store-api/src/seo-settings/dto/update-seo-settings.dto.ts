@@ -8,7 +8,33 @@ import {
   MaxLength,
   Matches,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+
+/**
+ * Accepts either a bare verification token or a full `<meta ...>` tag copy-pasted
+ * from a search console's "HTML tag" instructions, and returns just the token (the
+ * `content` attribute value). Falls back to a plain trim when no `content=` attribute
+ * is found, so a bare token — the expected common case — passes through unchanged.
+ *
+ * Intentionally duplicated (not import-shared) with store-admin's
+ * `features/seo-settings-form/model/seo-settings-schema.ts` — the two apps share no
+ * logic package (same choice as `resolve-seo-preview.ts`, TASK-268). Keep both copies
+ * in sync. See plan 146 Design Decision 1.
+ */
+export function normalizeSiteVerificationValue(raw: string): string {
+  const trimmed = raw.trim();
+  const match = trimmed.match(/content=["']([^"']+)["']/i);
+  return match ? match[1] : trimmed;
+}
+
+/**
+ * `@Transform` wrapper: non-string values pass through untouched so the
+ * type-checking decorators produce the right error (same file-local-helper
+ * convention as `CreateContactMessageDto`'s `trim`).
+ */
+const normalizeVerification = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? normalizeSiteVerificationValue(value) : value;
 
 /**
  * DTO for updating the singleton SEO settings (admin-only).
@@ -55,6 +81,28 @@ export class UpdateSeoSettingsDto {
   @IsUrl({ protocols: ['http', 'https'] }, { message: 'defaultOgImage must be a valid URL' })
   @MaxLength(500)
   defaultOgImage?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Google Search Console ownership-verification token (HTML-tag method). Accepts either the bare token or the full pasted `<meta>` tag — normalized to the token on write.',
+    example: 'AbCdEfGhIjKlMnOpQrStUvWxYz1234567890',
+  })
+  @IsOptional()
+  @Transform(normalizeVerification)
+  @IsString()
+  @MaxLength(255)
+  googleSiteVerification?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Bing Webmaster Tools ownership-verification token (HTML-tag method, `msvalidate.01`). Accepts either the bare token or the full pasted `<meta>` tag — normalized to the token on write.',
+    example: '1234ABCD5678EFGH9012IJKL3456MNOP',
+  })
+  @IsOptional()
+  @Transform(normalizeVerification)
+  @IsString()
+  @MaxLength(255)
+  bingSiteVerification?: string;
 
   @ApiPropertyOptional({
     description: 'Site-wide noindex kill switch (hides the whole site from search engines)',

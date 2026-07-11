@@ -540,6 +540,15 @@ model SeoSettings {
   /// Null → falls back to the current hardcoded `%s | ${SITE_NAME}` template.
   titleTemplate          String?  @map("title_template")
   defaultOgImage         String?  @map("default_og_image")
+  /// Google Search Console ownership-verification token (HTML-tag method): the
+  /// `content` attribute value of `<meta name="google-site-verification" content="…">`.
+  /// Null → no `verification.google` key is emitted in the root layout's metadata
+  /// (Next omits the tag entirely rather than rendering an empty one). See plan 146.
+  googleSiteVerification String?  @map("google_site_verification")
+  /// Bing Webmaster Tools ownership-verification token (HTML-tag method): the
+  /// `content` attribute value of `<meta name="msvalidate.01" content="…">`.
+  /// Null → no `verification.other['msvalidate.01']` key is emitted. See plan 146.
+  bingSiteVerification   String?  @map("bing_site_verification")
   /// Site-wide noindex kill switch (staging vs prod). Default false (assume
   /// production once this ships).
   noindexSite            Boolean  @default(false) @map("noindex_site")

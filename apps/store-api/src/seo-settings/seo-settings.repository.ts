@@ -21,6 +21,8 @@ export interface UpsertSeoSettingsInput {
   defaultMetaDescription?: string | null;
   titleTemplate?: string | null;
   defaultOgImage?: string | null;
+  googleSiteVerification?: string | null;
+  bingSiteVerification?: string | null;
   noindexSite?: boolean;
   llmsTxtSummary?: string | null;
   additionalSameAsLinks?: string[];
