@@ -291,14 +291,14 @@
 | TASK-175 | Loyalty & account extras: points/cashback model + accrual/redeem API + purchases feed + persisted notification prefs (account UI stubs exist) — parked by owner 2026-07-11 (plan 151 written and kept as the future reference) | 🅿️ | 151 |
 | TASK-287 | Dead deactivated-login UI path after TASK-274 — `login()` now returns a generic `Invalid credentials` for every rejection (owner decision 2026-07-11), so the TASK-202 "account deactivated" branch in `store-client`/`store-admin` login forms (`dict.auth.login.errorDeactivated`) is unreachable; its MSW tests assert a reply the API can no longer send. Owner decision 2026-07-11: keep the login response generic, route the truth to the account owner instead — on a rejected login with a CORRECT password against a deactivated/tombstoned account, enqueue a rate-limited notice email via the mail outbox; add an always-visible support link on the login form; delete the unreachable `errorDeactivated` branch, its dict keys and MSW tests. Rationale: a pre-password check would be a free ban-status oracle; a post-password message would confirm stolen credentials and signal ban evasion. Shipped: the notice is gated on `isPasswordValid && isLocked` (so no anonymous prober can trigger it, neither to confirm a ban nor to spray mail); rate-limited to one notice per 24h (`ACCOUNT_LOCKED_NOTICE_WINDOW_HOURS`) using the existing `mail_outbox` rows as the ledger — no new table, and the lookup is status-agnostic so a broken SMTP cannot disable the limit | ✅ | — |
 | TASK-286 | Coupons/discounts applying to add-on service lines (today add-ons sit outside the discount base, like shipping) — owner: interesting only at a much later stage | 🅿️ | — |
-| TASK-168 | Social sign-in (Google/Apple OAuth): backend OAuth module + account linking (auth slide-out stubs) | ⬜ | — |
+| TASK-168 | Social sign-in (Google/Apple OAuth): backend OAuth module + account linking (auth slide-out stubs) — owner 2026-07-11: Google only, Apple stays a stub | 🔄 | 153 |
 | TASK-080-E | Admin-configurable NP dispatch origin (`DeliverySetting`) — deferred until real NP API key + running DB (owner decision 2026-06-27) | 🅿️ | 068 |
-| TASK-082 | Deep mega-menu subcategory tree — the root-category dropdown already shipped in 167-A; this is the nested level below it | ⬜ | — |
-| TASK-083 | Category tile images (`Category.image`) — pairs naturally with TASK-186/189 when those are picked up | ⬜ | — |
-| TASK-084 | Mobile filter drawer polish deferrals — was held behind the UI rewrite | ⬜ | — |
-| TASK-086 | Quick-view modal — was held behind the UI rewrite | ⬜ | — |
-| TASK-139 | Admin-managed recommendation carousels — needs discovery before it can be planned | ⬜ | — |
-| TASK-140 | Admin tables UX rethink — largely superseded by TASK-147/192; re-scope what actually remains before starting | ⬜ | — |
+| TASK-082 | Deep mega-menu subcategory tree — the root-category dropdown already shipped in 167-A; this is the nested level below it | 🔄 | 155 |
+| TASK-083 | Category tile images (`Category.image`) — pairs naturally with TASK-186/189 when those are picked up | 🔄 | 155 |
+| TASK-084 | Mobile filter drawer polish deferrals — was held behind the UI rewrite | 🔄 | 156 |
+| TASK-086 | Quick-view modal — was held behind the UI rewrite | 🔄 | 156 |
+| TASK-139 | Admin-managed recommendation carousels — owner 2026-07-11: rules + manual model (source enum + CarouselItem), mirrors Banner pattern | 🔄 | 154 |
+| TASK-140 | Admin tables UX rethink — largely superseded by TASK-147/192; re-scope what actually remains before starting — discovery in progress (plan 157) | ⬜ | — |
 
 ### Parked
 
