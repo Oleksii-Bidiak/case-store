@@ -257,6 +257,158 @@ describe('OrderRepository', () => {
     });
   });
 
+  // ─── createFromCart — add-on snapshots & the discount invariant (TASK-174) ──
+  //
+  // Plan 150 cases 22–24. The hard invariant under test:
+  //   total = subtotal + shipping + addonsTotal - discount
+  // with `discount` computed and clamped against `subtotal` ALONE — a coupon can
+  // never reduce what an add-on contributes to the payable total.
+
+  describe('createFromCart — add-on snapshots (TASK-174)', () => {
+    const arrangeTx = () => {
+      const tx = makeTx();
+      tx.order.create.mockResolvedValue({ id: 'order-1', items: [] });
+      tx.product.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      return tx;
+    };
+
+    const createdData = (tx: ReturnType<typeof makeTx>) =>
+      (
+        tx.order.create.mock.calls[0][0] as {
+          data: {
+            subtotal: { toString(): string };
+            discount: { toString(): string };
+            shippingCost: { toString(): string };
+            addonsTotal: { toString(): string };
+            total: { toString(): string };
+            items: {
+              create: Array<{
+                productId: string;
+                addons?: { create: Array<{ name: string; price: { toString(): string } }> };
+              }>;
+            };
+          };
+        }
+      ).data;
+
+    it('case 22 — freezes the selected add-on onto its line and folds it into addonsTotal/total', async () => {
+      const tx = arrangeTx();
+
+      await repository.createFromCart({
+        ...baseParams,
+        shippingCost: 10,
+        addonsByCartItemId: new Map([
+          ['cart-item-1', [{ addonServiceId: 'svc-warranty', name: 'Warranty', price: '499.00' }]],
+        ]),
+      });
+
+      const data = createdData(tx);
+
+      // The add-on is snapshotted on line 1 only — line 2 has none.
+      expect(data.items.create[0].addons?.create).toEqual([
+        { addonServiceId: 'svc-warranty', name: 'Warranty', price: expect.anything() },
+      ]);
+      expect(data.items.create[0].addons?.create[0].price.toString()).toBe('499');
+      expect(data.items.create[1].addons).toBeUndefined();
+
+      // subtotal 69.97 + shipping 10 + addons 499 - discount 0
+      expect(data.subtotal.toString()).toBe('69.97');
+      expect(data.addonsTotal.toString()).toBe('499');
+      expect(data.total.toString()).toBe('578.97');
+    });
+
+    it('charges an add-on FLAT — line quantity 2 does not double it', async () => {
+      const tx = arrangeTx();
+
+      await repository.createFromCart({
+        ...baseParams,
+        addonsByCartItemId: new Map([
+          [
+            'cart-item-1', // this line has quantity 2
+            [{ addonServiceId: 'svc-warranty', name: 'Warranty', price: '499.00' }],
+          ],
+        ]),
+      });
+
+      expect(createdData(tx).addonsTotal.toString()).toBe('499');
+    });
+
+    it('sums add-ons across several lines with integer-cents arithmetic (no float drift)', async () => {
+      const tx = arrangeTx();
+
+      await repository.createFromCart({
+        ...baseParams,
+        addonsByCartItemId: new Map([
+          [
+            'cart-item-1',
+            [
+              { addonServiceId: 'svc-a', name: 'A', price: '0.10' },
+              { addonServiceId: 'svc-b', name: 'B', price: '0.20' },
+            ],
+          ],
+          ['cart-item-2', [{ addonServiceId: 'svc-c', name: 'C', price: '0.05' }]],
+        ]),
+      });
+
+      expect(createdData(tx).addonsTotal.toString()).toBe('0.35');
+    });
+
+    it('writes addonsTotal 0 and no addon rows when nothing was selected', async () => {
+      const tx = arrangeTx();
+
+      await repository.createFromCart(baseParams);
+
+      const data = createdData(tx);
+      expect(data.addonsTotal.toString()).toBe('0');
+      expect(data.items.create[0].addons).toBeUndefined();
+      expect(data.total.toString()).toBe('69.97'); // unchanged from the pre-TASK-174 behaviour
+    });
+
+    it('case 24 — HARD INVARIANT: the discount is clamped to the SUBTOTAL, never reduced by add-ons', async () => {
+      const redeem = jest.fn();
+
+      // Run the SAME cart + SAME coupon twice: once with no add-on, once with a
+      // large one. The discount amount must be byte-identical in both — only the
+      // add-on's contribution to `total` may differ.
+      const withoutAddons = arrangeTx();
+      await repository.createFromCart({
+        ...baseParams,
+        discount: { amount: '20.00', code: 'SAVE20', redeem },
+      });
+      const plain = createdData(withoutAddons);
+
+      const withAddons = arrangeTx();
+      await repository.createFromCart({
+        ...baseParams,
+        discount: { amount: '20.00', code: 'SAVE20', redeem },
+        addonsByCartItemId: new Map([
+          [
+            'cart-item-1',
+            [{ addonServiceId: 'svc-insurance', name: 'Insurance', price: '899.00' }],
+          ],
+        ]),
+      });
+      const withAddon = createdData(withAddons);
+
+      // The discount did NOT grow because the cart got more expensive via add-ons.
+      expect(plain.discount.toString()).toBe('20');
+      expect(withAddon.discount.toString()).toBe('20');
+      expect(withAddon.subtotal.toString()).toBe(plain.subtotal.toString());
+
+      // total = subtotal + shipping + addonsTotal - discount
+      expect(plain.total.toString()).toBe('49.97'); // 69.97 + 0 + 0 - 20
+      expect(withAddon.total.toString()).toBe('948.97'); // 69.97 + 0 + 899 - 20
+
+      // The add-on's full price reached the total, undiscounted: the delta between
+      // the two totals is EXACTLY the add-on price.
+      expect(Number(withAddon.total.toString()) - Number(plain.total.toString())).toBeCloseTo(
+        899,
+        2,
+      );
+    });
+  });
+
   // ─── cancelAndRestock — release reserved stock (WARNING / TASK-054) ────────
 
   describe('cancelAndRestock', () => {

@@ -938,8 +938,15 @@ export const dict = {
     addonServicesLine: "Додаткові послуги",
     payable: "До сплати",
     termsNote: "Натискаючи, ви погоджуєтесь з умовами магазину",
-    // Per-item add-on offers — front-end stub (no backend yet, TASK-174).
+    // Per-item add-on offers — real, server-resolved (TASK-174).
     offersHeading: "Додаткові пропозиції для цього товару",
+    // Add-on services (TASK-174) — own namespace so the module's copy stays
+    // together as it grows.
+    addons: {
+      toggleError: "Не вдалося змінити послугу. Спробуйте ще раз.",
+      selectedAria: (name: string) => `Послугу «${name}» додано`,
+      deselectedAria: (name: string) => `Послугу «${name}» прибрано`,
+    },
     // Delivery + payment blocks — stubs; the real selection lives in checkout.
     deliveryTitle: "Доставка",
     deliveryCityLabel: "Місто",

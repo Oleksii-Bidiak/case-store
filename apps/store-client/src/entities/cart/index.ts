@@ -12,6 +12,8 @@ export type {
   RemoveCartItem200,
   ClearCart200,
   AddToCart201,
+  SelectCartItemAddon201,
+  DeselectCartItemAddon200,
 } from "@/shared/api/generated/models";
 
 export {
@@ -21,4 +23,7 @@ export {
   useRemoveCartItem,
   useClearCart,
   useAddToCart, // exported for the AddToCart feature (TASK-032); CartPage does not use it
+  // Add-on selection (TASK-174) — consumed by features/cart-addon-toggle.
+  useSelectCartItemAddon,
+  useDeselectCartItemAddon,
 } from "@/shared/api/generated/cart/cart";

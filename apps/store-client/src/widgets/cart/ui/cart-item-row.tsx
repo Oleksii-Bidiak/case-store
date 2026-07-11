@@ -16,7 +16,7 @@ import { formatMoney } from "@/shared/lib";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { dict } from "@/shared/config";
 import { ProductThumb } from "@/shared/ui";
-import { addonServicesForItem } from "../model/addon-services";
+import { useCartAddonToggle } from "@/features/cart-addon-toggle";
 import { resolveQuantityCommit } from "../model/quantity-commit";
 
 /** Coerce a loosely-typed generated string field to a usable string. */
@@ -38,10 +38,12 @@ function centsToString(cents: number): string {
 
 interface CartItemRowProps {
   item: CartItemEntity;
-  /** Whether an add-on service (stub) is selected for this line. */
-  isServiceSelected?: (itemId: string, serviceId: string) => boolean;
-  /** Toggle a stub add-on service; when omitted the offers block is hidden. */
-  onToggleService?: (itemId: string, serviceId: string) => void;
+  /**
+   * Render the add-on-services block for this line (TASK-174). The cart page
+   * passes `true`; the compact mini-cart sheet leaves it off — the offers need
+   * room to read as an upsell, not a cramped checkbox list.
+   */
+  showAddons?: boolean;
   /**
    * Called when the user clicks through to the product page. The mini-cart
    * sheet passes its `close` here — without it the sheet stays open over the
@@ -57,16 +59,18 @@ interface CartItemRowProps {
  * line total and cart summary recalculate instantly) and write to the server on
  * a debounce; the server remains authoritative and reconciles on refetch.
  *
- * The "додаткові пропозиції" offers block is a front-end stub (TASK-174) — it
- * renders only when the CartView passes `onToggleService`.
+ * The "додаткові пропозиції" offers block (TASK-174) renders the add-ons the
+ * server resolved for this line and persists each toggle through
+ * `features/cart-addon-toggle` — selections survive a reload and reach the order.
+ * It renders only when the host opts in via `showAddons`.
  */
 export function CartItemRow({
   item,
-  isServiceSelected,
-  onToggleService,
+  showAddons = false,
   onNavigate,
 }: CartItemRowProps) {
   const queryClient = useQueryClient();
+  const addonToggle = useCartAddonToggle();
   // `""` while the user has manually cleared the field — rendering it as-is
   // keeps the input visually empty instead of snapping to «0» (TASK-207).
   const [qty, setQty] = useState<number | "">(item.quantity);
@@ -195,7 +199,11 @@ export function CartItemRow({
   // fall back to the cart's authoritative quantity in that transient state.
   const stepperQty = qty === "" ? item.quantity : qty;
 
-  const offers = onToggleService ? addonServicesForItem(item) : [];
+  // Real, server-resolved add-ons for this line (TASK-174) — the category
+  // template plus this product's ADD/REMOVE/OVERRIDE deltas, already applied by
+  // the API. `showAddons` lets a host (the mini-cart sheet) suppress the block.
+  const offers = showAddons ? item.availableAddons : [];
+  const selectedAddonIds = new Set(item.selectedAddonIds);
 
   // Single source for the PDP link — the image and the product name must always
   // point at the same place (TASK-204).
@@ -320,16 +328,18 @@ export function CartItemRow({
               {dict.cart.offersHeading}
             </p>
             {offers.map((service) => {
-              const on = isServiceSelected?.(item.id, service.id) ?? false;
+              const on = selectedAddonIds.has(service.addonServiceId);
               return (
                 <label
-                  key={service.id}
+                  key={service.addonServiceId}
                   className="flex cursor-pointer items-center gap-2.5 border-t border-border py-[9px]"
                 >
                   <input
                     type="checkbox"
                     checked={on}
-                    onChange={() => onToggleService?.(item.id, service.id)}
+                    onChange={() =>
+                      addonToggle.toggle(item.id, service.addonServiceId, !on)
+                    }
                     className="peer sr-only"
                   />
                   <span
@@ -345,14 +355,19 @@ export function CartItemRow({
                     )}
                   </span>
                   <span className="min-w-0 flex-1 text-[13.5px] text-foreground">
-                    {service.label}
+                    {service.name}
                   </span>
                   <b className="font-mono text-[13.5px] font-bold whitespace-nowrap text-foreground">
-                    +{formatMoney(String(service.price))}
+                    +{formatMoney(service.price)}
                   </b>
                 </label>
               );
             })}
+            {addonToggle.error && (
+              <p role="alert" className="mt-1 text-sm text-destructive">
+                {dict.cart.addons.toggleError}
+              </p>
+            )}
           </div>
         )}
 

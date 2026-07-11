@@ -15,6 +15,10 @@ const prismaMock = {
     delete: jest.fn(),
     deleteMany: jest.fn(),
   },
+  cartItemAddon: {
+    upsert: jest.fn(),
+    deleteMany: jest.fn(),
+  },
   product: {
     findUnique: jest.fn(),
   },
@@ -342,6 +346,39 @@ describe('CartRepository', () => {
       const result = await repository.findProductForCartValidation('ghost-product');
 
       expect(result).toBeNull();
+    });
+  });
+
+  // ─── Add-on selection (TASK-174) ─────────────────────────────────────────────
+
+  describe('setItemAddon / unsetItemAddon', () => {
+    it('selects an add-on as an UPSERT on the (cartItemId, addonServiceId) unique pair', async () => {
+      prismaMock.cartItemAddon.upsert.mockResolvedValue({});
+
+      await repository.setItemAddon('item-uuid-1', 'svc-warranty');
+
+      expect(prismaMock.cartItemAddon.upsert).toHaveBeenCalledWith({
+        where: {
+          cartItemId_addonServiceId: {
+            cartItemId: 'item-uuid-1',
+            addonServiceId: 'svc-warranty',
+          },
+        },
+        update: {},
+        create: { cartItemId: 'item-uuid-1', addonServiceId: 'svc-warranty' },
+      });
+    });
+
+    it('deselects with deleteMany so an unselected add-on is a no-op, not a P2025 throw', async () => {
+      prismaMock.cartItemAddon.deleteMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        repository.unsetItemAddon('item-uuid-1', 'svc-warranty'),
+      ).resolves.toBeUndefined();
+
+      expect(prismaMock.cartItemAddon.deleteMany).toHaveBeenCalledWith({
+        where: { cartItemId: 'item-uuid-1', addonServiceId: 'svc-warranty' },
+      });
     });
   });
 });

@@ -2936,6 +2936,123 @@ async function seedPages(prisma: PrismaClient) {
   console.log(`  ✓ Pages: ${pagesData.length} published pages upserted`);
 }
 
+/**
+ * Add-on services / protection plans (TASK-174).
+ *
+ * Seeds the catalog plus a worked example of the whole applicability model, so
+ * inheritance can be exercised in dev/QA without any manual admin entry:
+ *   - a CategoryAddonTemplate on the PARENT `smartphones` category — every
+ *     product in its `iphone` subcategory (which has no template of its own)
+ *     inherits it via nearest-ancestor-wins;
+ *   - one delta of EACH type on three distinct iPhone products — an exclusive
+ *     ADD, a REMOVE opt-out, and a price OVERRIDE.
+ */
+async function seedAddonServices(prisma: PrismaClient, categories: Record<string, { id: string }>) {
+  const servicesData = [
+    {
+      name: 'Гарантійний сертифікат (24 міс.)',
+      description: 'Продовжена гарантія на 24 місяці з безкоштовним сервісним обслуговуванням.',
+      price: 499,
+    },
+    {
+      name: 'Страхування від пошкоджень',
+      description: 'Покриття випадкових пошкоджень екрана та корпусу протягом 12 місяців.',
+      price: 899,
+    },
+    {
+      name: 'Налаштування пристрою',
+      description: 'Перенесення даних, налаштування акаунтів та встановлення застосунків.',
+      price: 299,
+    },
+    {
+      name: 'Trade-in оцінка на місці',
+      description: 'Ексклюзивна послуга: оцінка старого пристрою в залік вартості нового.',
+      price: 0,
+    },
+  ];
+
+  // `AddonService.name` is not unique in the schema (an admin may legitimately
+  // reuse a name), so the seed is made idempotent by name lookup rather than by
+  // `upsert` — re-running it updates the existing row instead of duplicating it.
+  const services: Record<string, { id: string }> = {};
+  for (const s of servicesData) {
+    const existing = await prisma.addonService.findFirst({ where: { name: s.name } });
+    const record = existing
+      ? await prisma.addonService.update({ where: { id: existing.id }, data: s })
+      : await prisma.addonService.create({ data: s });
+    services[s.name] = record;
+  }
+
+  console.log(`  ✓ AddonServices: ${servicesData.length} services`);
+
+  // Template on the PARENT category — the `iphone` subcategory inherits it.
+  const templateServiceNames = [
+    'Гарантійний сертифікат (24 міс.)',
+    'Страхування від пошкоджень',
+    'Налаштування пристрою',
+  ];
+  for (const name of templateServiceNames) {
+    await prisma.categoryAddonTemplate.upsert({
+      where: {
+        categoryId_addonServiceId: {
+          categoryId: categories['smartphones'].id,
+          addonServiceId: services[name].id,
+        },
+      },
+      update: {},
+      create: {
+        categoryId: categories['smartphones'].id,
+        addonServiceId: services[name].id,
+      },
+    });
+  }
+
+  console.log(
+    `  ✓ CategoryAddonTemplate: ${templateServiceNames.length} services on «Смартфони» (inherited by «iPhone»)`,
+  );
+
+  // One delta of each type, on three distinct iPhone products.
+  const iphoneProducts = await prisma.product.findMany({
+    where: { category: { slug: 'iphone' } },
+    orderBy: { createdAt: 'asc' },
+    take: 3,
+    select: { id: true, name: true },
+  });
+
+  const deltas: Array<{
+    type: 'ADD' | 'REMOVE' | 'OVERRIDE';
+    serviceName: string;
+    price?: number;
+  }> = [
+    { type: 'ADD', serviceName: 'Trade-in оцінка на місці' },
+    { type: 'REMOVE', serviceName: 'Налаштування пристрою' },
+    { type: 'OVERRIDE', serviceName: 'Страхування від пошкоджень', price: 1299 },
+  ];
+
+  for (let i = 0; i < Math.min(deltas.length, iphoneProducts.length); i++) {
+    const d = deltas[i];
+    await prisma.addonServiceDelta.upsert({
+      where: {
+        productId_addonServiceId: {
+          productId: iphoneProducts[i].id,
+          addonServiceId: services[d.serviceName].id,
+        },
+      },
+      update: { type: d.type, price: d.price ?? null },
+      create: {
+        productId: iphoneProducts[i].id,
+        addonServiceId: services[d.serviceName].id,
+        type: d.type,
+        price: d.price ?? null,
+      },
+    });
+  }
+
+  console.log(
+    `  ✓ AddonServiceDelta: ${Math.min(deltas.length, iphoneProducts.length)} deltas (ADD / REMOVE / OVERRIDE)`,
+  );
+}
+
 async function main() {
   console.log('\n🌱 Seeding database...\n');
 
@@ -2955,6 +3072,7 @@ async function main() {
     await seedProducts(prisma, categories, brands);
     await seedDevices(prisma); // must precede seedDeviceCompat (creates DeviceModels)
     await seedAttributeDefinitions(prisma, categories);
+    await seedAddonServices(prisma, categories); // must follow seedProducts (deltas need products)
     await seedDeviceCompat(prisma);
     await seedDiscounts(prisma);
     await seedOrders(prisma, admins, customers);

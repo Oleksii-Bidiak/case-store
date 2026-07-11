@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { MAX_QUANTITY } from '../cart.constants';
+import { ResolvedAddonEntity } from '../../addon-service';
+import type { ResolvedAddon } from '../../addon-service';
 
 /**
  * Domain entity representing a single item in a shopping cart.
@@ -89,6 +91,21 @@ export class CartItemEntity {
   })
   lineTotal!: string;
 
+  @ApiProperty({
+    description:
+      'Add-on services offered for this line, already resolved through the category template + product deltas (TASK-174). Empty when the product has none.',
+    type: [ResolvedAddonEntity],
+  })
+  availableAddons!: ResolvedAddonEntity[];
+
+  @ApiProperty({
+    description:
+      'Ids of the add-ons the customer has selected on this line. Always a subset of `availableAddons` — a stale selection (the service was deactivated or removed from the product) is filtered out of every read.',
+    type: [String],
+    example: ['550e8400-e29b-41d4-a716-446655440000'],
+  })
+  selectedAddonIds!: string[];
+
   @ApiProperty({ description: 'Creation timestamp', example: '2024-01-01T00:00:00.000Z' })
   createdAt!: Date;
 
@@ -100,24 +117,34 @@ export class CartItemEntity {
    * Converts Decimal fields to strings and computes the line total.
    *
    * Price source: variant price if variant exists, otherwise product price.
+   *
+   * `availableAddons` is the resolver's output for this line's product — passed
+   * IN rather than fetched here (the entity stays pure; the service resolves the
+   * whole cart in one batched pass, TASK-174). The selection is intersected with
+   * it, so a stale `CartItemAddon` row (deactivated service, changed template)
+   * silently disappears from the read instead of being billed.
    */
-  static fromPrisma(item: {
-    id: string;
-    productId: string;
-    quantity: number;
-    createdAt: Date;
-    updatedAt: Date;
-    product: {
+  static fromPrisma(
+    item: {
       id: string;
-      name: string;
-      slug: string;
-      price: { toString(): string };
-      compareAtPrice: { toString(): string } | null;
-      stock: number;
-      isActive: boolean;
-      images: Array<{ url: string }>;
-    };
-  }): CartItemEntity {
+      productId: string;
+      quantity: number;
+      createdAt: Date;
+      updatedAt: Date;
+      addons?: Array<{ addonServiceId: string }>;
+      product: {
+        id: string;
+        name: string;
+        slug: string;
+        price: { toString(): string };
+        compareAtPrice: { toString(): string } | null;
+        stock: number;
+        isActive: boolean;
+        images: Array<{ url: string }>;
+      };
+    },
+    availableAddons: ResolvedAddon[] = [],
+  ): CartItemEntity {
     const entity = new CartItemEntity();
     entity.id = item.id;
     entity.productId = item.productId;
@@ -143,8 +170,28 @@ export class CartItemEntity {
     const cents = lineTotalCents % 100;
     entity.lineTotal = `${dollars}.${cents.toString().padStart(2, '0')}`;
 
+    entity.availableAddons = availableAddons.map((addon) =>
+      ResolvedAddonEntity.fromResolved(addon),
+    );
+    entity.selectedAddonIds = CartItemEntity.selectedAddonIds(item.addons ?? [], availableAddons);
+
     entity.createdAt = item.createdAt;
     entity.updatedAt = item.updatedAt;
     return entity;
+  }
+
+  /**
+   * The persisted selection, narrowed to what still resolves for the product.
+   * Shared with `CartEntity.calculateTotals` so the rendered checkboxes and the
+   * charged `addonsTotal` can never disagree.
+   */
+  static selectedAddonIds(
+    selected: Array<{ addonServiceId: string }>,
+    availableAddons: ResolvedAddon[],
+  ): string[] {
+    const available = new Set(availableAddons.map((addon) => addon.addonServiceId));
+    return selected
+      .map((row) => row.addonServiceId)
+      .filter((addonServiceId) => available.has(addonServiceId));
   }
 }

@@ -151,6 +151,74 @@ export class CartController {
   }
 
   /**
+   * POST /api/cart/items/:itemId/addons/:addonServiceId
+   *
+   * Select an add-on service (warranty / insurance / setup) on a cart line
+   * (TASK-174). Rejected with a 400 when the add-on does not apply to the line's
+   * product. Idempotent — selecting twice keeps a single selection.
+   */
+  @Post('items/:itemId/addons/:addonServiceId')
+  @ApiOperation({
+    summary: 'Select an add-on service on a cart line',
+    operationId: 'selectCartItemAddon',
+  })
+  @ApiParam({ name: 'itemId', description: 'Cart item UUID' })
+  @ApiParam({ name: 'addonServiceId', description: 'Add-on service UUID' })
+  @ApiResponse({
+    status: 201,
+    description: 'Add-on selected; the full updated cart is returned',
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(CartResponseEnvelope) },
+        { properties: { data: { $ref: getSchemaPath(CartEntity) } } },
+      ],
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Add-on is not available for this product' })
+  @ApiResponse({ status: 404, description: 'Cart item not found' })
+  async selectAddon(
+    @CartIdentity() identity: ResolvedCartIdentity,
+    @Param('itemId') itemId: string,
+    @Param('addonServiceId') addonServiceId: string,
+  ): Promise<{ data: CartEntity }> {
+    const cart = await this.cartService.toggleAddon(identity, itemId, addonServiceId, true);
+    return { data: cart };
+  }
+
+  /**
+   * DELETE /api/cart/items/:itemId/addons/:addonServiceId
+   *
+   * Deselect an add-on service on a cart line (TASK-174). Idempotent — a no-op
+   * when it was not selected.
+   */
+  @Delete('items/:itemId/addons/:addonServiceId')
+  @ApiOperation({
+    summary: 'Deselect an add-on service on a cart line',
+    operationId: 'deselectCartItemAddon',
+  })
+  @ApiParam({ name: 'itemId', description: 'Cart item UUID' })
+  @ApiParam({ name: 'addonServiceId', description: 'Add-on service UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Add-on deselected; the full updated cart is returned',
+    schema: {
+      allOf: [
+        { $ref: getSchemaPath(CartResponseEnvelope) },
+        { properties: { data: { $ref: getSchemaPath(CartEntity) } } },
+      ],
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Cart item not found' })
+  async deselectAddon(
+    @CartIdentity() identity: ResolvedCartIdentity,
+    @Param('itemId') itemId: string,
+    @Param('addonServiceId') addonServiceId: string,
+  ): Promise<{ data: CartEntity }> {
+    const cart = await this.cartService.toggleAddon(identity, itemId, addonServiceId, false);
+    return { data: cart };
+  }
+
+  /**
    * DELETE /api/cart
    *
    * Clear all items from the cart.

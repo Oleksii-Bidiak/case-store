@@ -8,26 +8,30 @@ import { dict } from "@/shared/config";
 
 interface CartSummaryProps {
   totals: CartTotals;
-  /** Selected add-on services total in UAH (stub, TASK-174). Default 0. */
-  servicesTotal?: number;
 }
 
 /**
  * CartSummary — the "Разом" order-totals panel: promo code (real coupons,
- * TASK-079), item subtotal, free-shipping + add-on-services (stub) lines, the
- * payable total, and the checkout CTA. The server re-validates and recomputes
- * the coupon authoritatively at order creation. Add-on services are a front-end
- * stub and are NOT yet persisted through checkout (TASK-174).
+ * TASK-079), item subtotal, free-shipping and add-on-services lines, the payable
+ * total, and the checkout CTA. The server re-validates and recomputes the coupon
+ * authoritatively at order creation.
+ *
+ * Add-on services (TASK-174) are real and server-computed: `totals.addonsTotal`
+ * is read straight off the cart. The coupon is applied to the product subtotal
+ * ONLY — add-ons are never discounted (the same rule the backend enforces at
+ * order creation), so the clamp below floors the DISCOUNTED SUBTOTAL at zero and
+ * then adds the add-ons on top, rather than letting a coupon eat into them.
  */
-export function CartSummary({ totals, servicesTotal = 0 }: CartSummaryProps) {
+export function CartSummary({ totals }: CartSummaryProps) {
   const applied = useAppliedDiscount();
 
   const subtotalCents = Math.round(parseFloat(totals.subtotal) * 100);
   const couponCents = applied
     ? Math.round(parseFloat(applied.amount) * 100)
     : 0;
-  const serviceCents = Math.round(servicesTotal * 100);
-  const payableCents = Math.max(0, subtotalCents - couponCents + serviceCents);
+  const addonsCents = Math.round(parseFloat(totals.addonsTotal) * 100);
+  const payableCents =
+    Math.max(0, subtotalCents - couponCents) + Math.max(0, addonsCents);
   const payableText = formatMoney((payableCents / 100).toFixed(2));
 
   return (
@@ -55,11 +59,11 @@ export function CartSummary({ totals, servicesTotal = 0 }: CartSummaryProps) {
         </span>
       </div>
 
-      {servicesTotal > 0 && (
+      {addonsCents > 0 && (
         <div className="flex justify-between py-2 text-sm text-muted-foreground">
           <span>{dict.cart.addonServicesLine}</span>
           <span className="font-mono text-foreground">
-            +{formatMoney(String(servicesTotal))}
+            +{formatMoney(totals.addonsTotal)}
           </span>
         </div>
       )}

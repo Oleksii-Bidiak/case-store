@@ -15,6 +15,7 @@ import { UserRepository } from '../user/user.repository';
 import { MailOutboxService } from '../mail-outbox';
 import { DeliveryService } from '../delivery';
 import { DiscountService } from '../discount';
+import { AddonApplicabilityResolver } from '../addon-service';
 import type { User } from '@prisma/client';
 import type { OrderWithItems } from './order.types';
 import type { CreateOrderDto } from './dto';
@@ -208,6 +209,13 @@ const recipient = {
 
 const bannedUser = { ...recipient, isActive: false } as User;
 
+// AddonApplicabilityResolver mock (TASK-174) — the order re-resolves each line's
+// add-ons fresh at creation time before freezing them into OrderItemAddon rows.
+const addonResolverMock = {
+  resolveForProduct: jest.fn(),
+  resolveForProducts: jest.fn().mockResolvedValue(new Map()),
+};
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('OrderService', () => {
@@ -215,6 +223,9 @@ describe('OrderService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Default: no add-on applies to anything (TASK-174). Individual add-on tests
+    // override this.
+    addonResolverMock.resolveForProducts.mockResolvedValue(new Map());
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -223,6 +234,7 @@ describe('OrderService', () => {
         { provide: CartRepository, useValue: cartRepositoryMock },
         { provide: UserRepository, useValue: userRepositoryMock },
         { provide: MailOutboxService, useValue: mailOutboxServiceMock },
+        { provide: AddonApplicabilityResolver, useValue: addonResolverMock },
         { provide: DeliveryService, useValue: deliveryServiceMock },
         { provide: DiscountService, useValue: discountServiceMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
@@ -263,6 +275,9 @@ describe('OrderService', () => {
           userId: USER_ID,
           cartId: 'cart-uuid-1',
           cartItems: cartWithItems.items,
+          // TASK-174: no line has a selected add-on in this fixture, so the
+          // snapshot map is empty — but it is always passed.
+          addonsByCartItemId: new Map(),
           shippingAddress: address,
           billingAddress: undefined,
           notes: undefined,
@@ -442,6 +457,67 @@ describe('OrderService', () => {
   // The confirmation email is no longer sent synchronously; it is enqueued into
   // the mail outbox INSIDE the order's transaction (the repository drives the
   // afterCreate hook). A background worker dispatches it later.
+
+  // ─── Add-on snapshotting at order creation (TASK-174, plan 150 case 25) ─────
+
+  describe('createOrder — add-on snapshots', () => {
+    const warranty = {
+      addonServiceId: 'svc-warranty',
+      name: 'Warranty',
+      description: null,
+      price: '499.00',
+      source: 'template' as const,
+    };
+
+    /** Cart whose FIRST line has one selected add-on. */
+    const cartWithSelectedAddon: CartWithItems = {
+      ...cartWithItems,
+      items: [
+        { ...cartWithItems.items[0], addons: [{ addonServiceId: 'svc-warranty' }] },
+        cartWithItems.items[1],
+      ],
+    };
+
+    it('re-resolves add-ons FRESH at order creation (one batched call) and freezes the effective price', async () => {
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithSelectedAddon);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+      // The resolver reports an OVERRIDDEN price — that, not the catalog price,
+      // is what must be frozen.
+      addonResolverMock.resolveForProducts.mockResolvedValue(
+        new Map([['product-uuid-1', [{ ...warranty, price: '399.00', source: 'override' }]]]),
+      );
+
+      await service.createOrder(USER_ID, createDto);
+
+      expect(addonResolverMock.resolveForProducts).toHaveBeenCalledTimes(1);
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          addonsByCartItemId: new Map([
+            [
+              'cart-item-1',
+              [{ addonServiceId: 'svc-warranty', name: 'Warranty', price: '399.00' }],
+            ],
+          ]),
+        }),
+        expect.any(Function),
+      );
+    });
+
+    it('case 25 — silently DROPS a selection the resolver no longer returns (never throws)', async () => {
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithSelectedAddon);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+      // The service was deactivated / the template changed since add-to-cart.
+      addonResolverMock.resolveForProducts.mockResolvedValue(new Map([['product-uuid-1', []]]));
+
+      await expect(service.createOrder(USER_ID, createDto)).resolves.toBeInstanceOf(OrderEntity);
+
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
+        expect.objectContaining({ addonsByCartItemId: new Map() }),
+        expect.any(Function),
+      );
+      expect(pinoLoggerMock.warn).toHaveBeenCalled();
+    });
+  });
 
   describe('createOrder — outbox enqueue', () => {
     beforeEach(() => {

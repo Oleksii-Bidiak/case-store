@@ -58,6 +58,34 @@ export interface OrderItemRow {
   price: { toString(): string }; // Prisma Decimal
   createdAt: Date;
   product: { id: string; name: string; slug: string; images: Array<{ url: string }> };
+  /**
+   * Frozen add-on snapshots bought with this line (TASK-174). `name`/`price` are
+   * copied at order-creation time, exactly like `OrderItem.price` snapshots
+   * `Product.price` — a later catalog reprice, template edit, or delta edit never
+   * rewrites them.
+   */
+  addons: OrderItemAddonRow[];
+}
+
+/**
+ * One frozen add-on snapshot on an order line (TASK-174).
+ */
+export interface OrderItemAddonRow {
+  id: string;
+  addonServiceId: string | null;
+  name: string;
+  price: { toString(): string }; // Prisma Decimal
+}
+
+/**
+ * The add-on snapshot the service resolved for a cart line at order-creation
+ * time, ready to be frozen into `OrderItemAddon` rows (TASK-174).
+ */
+export interface OrderAddonSnapshot {
+  addonServiceId: string;
+  name: string;
+  /** Effective price as a decimal string, as returned by the resolver. */
+  price: string;
 }
 
 /**
@@ -75,6 +103,12 @@ export interface OrderWithItems {
   discountCode: string | null;
   shippingCost: { toString(): string };
   tax: { toString(): string };
+  /**
+   * Sum of the frozen add-on snapshots across all lines (TASK-174). Excluded
+   * from the discount base, exactly like `shippingCost`:
+   * `total = subtotal + shippingCost + addonsTotal - discount`.
+   */
+  addonsTotal: { toString(): string };
   total: { toString(): string };
   shippingAddress: Prisma.JsonValue | null;
   billingAddress: Prisma.JsonValue | null;
@@ -110,6 +144,14 @@ export interface CreateOrderParams {
   userId: string;
   cartId: string;
   cartItems: CartWithItems['items'];
+  /**
+   * The add-ons to freeze onto each line, keyed by CART ITEM id (TASK-174). The
+   * service re-resolves them fresh at order-creation time — exactly like stock
+   * and the discount are re-validated fresh — so a selection that has since
+   * become inapplicable is already gone by the time the repository sees it. A
+   * line with no selected add-ons is simply absent from the map.
+   */
+  addonsByCartItemId?: Map<string, OrderAddonSnapshot[]>;
   shippingAddress: AddressDto;
   billingAddress?: AddressDto;
   notes?: string;

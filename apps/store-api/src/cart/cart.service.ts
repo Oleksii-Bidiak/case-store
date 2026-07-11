@@ -4,6 +4,8 @@ import { CartEntity } from './entities';
 import { AddToCartDto, UpdateCartItemDto } from './dto';
 import type { ResolvedCartIdentity } from './cart-identity.types';
 import { MAX_QUANTITY } from './cart.constants';
+import { AddonApplicabilityResolver } from '../addon-service';
+import type { ResolvedAddon } from '../addon-service';
 
 /**
  * CartService — business logic for the shopping cart.
@@ -17,14 +19,65 @@ import { MAX_QUANTITY } from './cart.constants';
 export class CartService {
   private readonly logger = new Logger(CartService.name);
 
-  constructor(private readonly cartRepository: CartRepository) {}
+  constructor(
+    private readonly cartRepository: CartRepository,
+    private readonly addonResolver: AddonApplicabilityResolver,
+  ) {}
 
   /**
    * Get the current cart for the identity. Creates an empty cart if none exists.
    */
   async getCart(identity: ResolvedCartIdentity): Promise<CartEntity> {
     const cart = await this.cartRepository.findOrCreate(identity);
-    return CartEntity.fromPrisma(cart);
+    return this.toEntity(cart);
+  }
+
+  /**
+   * Select or deselect an add-on service on a cart line (TASK-174).
+   *
+   * Validate-before-write, mirroring `validateAddition`: the add-on must be in
+   * the line's RESOLVED set (i.e. it comes from the product's category template
+   * or an ADD delta, is not REMOVEd, and its catalog row is active) — otherwise a
+   * 400, and nothing is persisted. Both directions are idempotent: selecting
+   * twice keeps one row, deselecting an unselected add-on is a no-op.
+   */
+  async toggleAddon(
+    identity: ResolvedCartIdentity,
+    itemId: string,
+    addonServiceId: string,
+    selected: boolean,
+  ): Promise<CartEntity> {
+    const cart = await this.resolveCart(identity);
+    if (!cart) {
+      throw new NotFoundException('Cart not found');
+    }
+
+    const cartItem = cart.items.find((item) => item.id === itemId);
+    if (!cartItem) {
+      throw new NotFoundException('Cart item not found');
+    }
+
+    if (selected) {
+      const available = await this.addonResolver.resolveForProduct({
+        id: cartItem.product.id,
+        categoryId: cartItem.product.categoryId,
+      });
+
+      const isApplicable = available.some((addon) => addon.addonServiceId === addonServiceId);
+      if (!isApplicable) {
+        throw new BadRequestException(
+          `Add-on service is not available for "${cartItem.product.name}"`,
+        );
+      }
+
+      await this.cartRepository.setItemAddon(itemId, addonServiceId);
+    } else {
+      // Deselecting is always allowed — a selection that is no longer applicable
+      // must still be removable (and is already filtered out of every read).
+      await this.cartRepository.unsetItemAddon(itemId, addonServiceId);
+    }
+
+    return this.getCart(identity);
   }
 
   /**
@@ -65,7 +118,26 @@ export class CartService {
 
     const updated = await this.cartRepository.addItem(input);
 
-    return CartEntity.fromPrisma(updated);
+    return this.toEntity(updated);
+  }
+
+  /**
+   * Build the response entity, resolving every line's applicable add-ons in ONE
+   * batched pass (TASK-174) — a cart with N lines costs a bounded number of
+   * queries, never N (see `AddonApplicabilityResolver.resolveForProducts`).
+   */
+  private async toEntity(cart: CartWithItems): Promise<CartEntity> {
+    const resolved = await this.resolveAddonsFor(cart);
+    return CartEntity.fromPrisma(cart, resolved);
+  }
+
+  private resolveAddonsFor(cart: CartWithItems): Promise<Map<string, ResolvedAddon[]>> {
+    return this.addonResolver.resolveForProducts(
+      cart.items.map((item) => ({
+        id: item.product.id,
+        categoryId: item.product.categoryId,
+      })),
+    );
   }
 
   /**
@@ -191,6 +263,15 @@ export class CartService {
       }
     }
 
+    // Resolve the applicable add-ons for every merged product ONCE, so the
+    // collision rule below can filter the union without an extra query per line.
+    const resolvedAddons = await this.addonResolver.resolveForProducts(
+      guestCart.items.map((item) => ({
+        id: item.product.id,
+        categoryId: item.product.categoryId,
+      })),
+    );
+
     // Compute the final (summed + clamped) quantity for each guest line before
     // touching the database, so the transactional write is a pure data apply.
     const lines: MergeCartLine[] = guestCart.items
@@ -201,7 +282,15 @@ export class CartService {
         // Clamp to MAX_QUANTITY and the position's available stock.
         const quantity = Math.min(MAX_QUANTITY, summed, guestItem.product.stock);
 
-        return { productId: guestItem.productId, quantity };
+        return {
+          productId: guestItem.productId,
+          quantity,
+          addonServiceIds: this.mergeAddonSelections(
+            guestItem.addons,
+            existing?.addons ?? [],
+            resolvedAddons.get(guestItem.product.id) ?? [],
+          ),
+        };
       })
       .filter((line) => line.quantity > 0);
 
@@ -211,6 +300,32 @@ export class CartService {
       guestCartId: guestCart.id,
       lines,
     });
+  }
+
+  /**
+   * Guest→user add-on collision rule (TASK-174, plan 150 §Risks).
+   *
+   * When the same product is in BOTH carts, the two lines collapse into one — and
+   * so must their add-on selections. The rule is **union, then filter**: an add-on
+   * selected in either cart survives the merge (the customer expressed intent for
+   * it exactly once; a merge must not silently discard that), and the union is
+   * then narrowed to what the resolver still allows for the merged line's
+   * product, so a selection that has since become inapplicable (service
+   * deactivated, template edited, REMOVE delta added) is dropped rather than
+   * carried over blindly.
+   */
+  private mergeAddonSelections(
+    guestSelections: Array<{ addonServiceId: string }>,
+    userSelections: Array<{ addonServiceId: string }>,
+    available: ResolvedAddon[],
+  ): string[] {
+    const applicable = new Set(available.map((addon) => addon.addonServiceId));
+    const union = new Set([
+      ...guestSelections.map((row) => row.addonServiceId),
+      ...userSelections.map((row) => row.addonServiceId),
+    ]);
+
+    return [...union].filter((addonServiceId) => applicable.has(addonServiceId));
   }
 
   /**

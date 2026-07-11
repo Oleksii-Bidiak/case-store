@@ -4,6 +4,14 @@ import { Category, Prisma, SlugRedirectEntity } from '@prisma/client';
 import { SlugRedirectRepository } from '../slug-redirect';
 
 /**
+ * Hard recursion bound for the ordered ancestor-chain CTE (TASK-174). The
+ * category tree is never anywhere near this deep in practice — the guard exists
+ * purely so a (schema-permitted, cycle-detection-prevented, but not
+ * DB-constrained) parent cycle can never spin the CTE forever.
+ */
+const MAX_CATEGORY_DEPTH = 50;
+
+/**
  * Slugs of a rename being persisted by this update — when present, the write
  * additionally records a 301 redirect `oldSlug → newSlug` in the SlugRedirect
  * ledger, atomically with the category update (TASK-285-H). The service passes
@@ -568,5 +576,72 @@ export class CategoryRepository {
     const ids = new Set(result.map((row) => row.id));
     ids.add(categoryId);
     return [...ids];
+  }
+
+  /**
+   * Resolve the ancestor chain of a category ORDERED nearest-first — the
+   * category itself at index 0, then its parent, then its grandparent, up to
+   * the root (TASK-174). Same recursive CTE shape as {@link findAncestorIds},
+   * extended with a `depth` column so callers that implement
+   * "nearest-ancestor-wins" (the add-on applicability resolver) get the chain in
+   * priority order without an extra per-row round trip.
+   *
+   * Cycle safety: unlike `findAncestorIds`' `UNION` (which de-duplicates and so
+   * terminates on its own), the `depth` column makes every revisit of a cycled
+   * row distinct, so `UNION ALL` alone would never terminate — a hard
+   * `depth < MAX_CATEGORY_DEPTH` guard bounds the recursion instead. A JS-side
+   * de-duplication keeps the first (nearest) occurrence of each id.
+   *
+   * Like {@link findAncestorIds}, the self id is ALWAYS present, even for a
+   * non-existent `categoryId` (which resolves to `[categoryId]`).
+   */
+  async findAncestorChainOrdered(categoryId: string): Promise<string[]> {
+    const chains = await this.findAncestorChainsOrdered([categoryId]);
+    return chains.get(categoryId) ?? [categoryId];
+  }
+
+  /**
+   * Batched form of {@link findAncestorChainOrdered} — resolves the ordered
+   * ancestor chain for MANY categories in a SINGLE recursive CTE, partitioned by
+   * the base row each branch started from (TASK-174). Backs
+   * `AddonApplicabilityResolver.resolveForProducts`' no-N+1 requirement: a cart
+   * with N lines spanning M distinct categories costs one query, not M.
+   *
+   * Every requested id is present in the returned map (a non-existent id maps to
+   * `[id]`, matching the single-id contract). Duplicate input ids are collapsed.
+   */
+  async findAncestorChainsOrdered(categoryIds: string[]): Promise<Map<string, string[]>> {
+    const distinctIds = [...new Set(categoryIds)];
+    const chains = new Map<string, string[]>(distinctIds.map((id) => [id, [id]]));
+    if (distinctIds.length === 0) return chains;
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{ start_id: string; id: string; depth: number }>
+    >`
+      WITH RECURSIVE chains AS (
+        -- Base case: each requested category itself, at depth 0
+        SELECT c.id AS start_id, c.id, c.parent_id, 0 AS depth
+        FROM categories c
+        WHERE c.id IN (${Prisma.join(distinctIds)})
+        UNION ALL
+        -- Recursive case: the parent of nodes already in the chain, one level up
+        SELECT ch.start_id, c.id, c.parent_id, ch.depth + 1
+        FROM categories c
+        INNER JOIN chains ch ON ch.parent_id = c.id
+        WHERE ch.depth < ${MAX_CATEGORY_DEPTH}
+      )
+      SELECT start_id, id, depth FROM chains
+      ORDER BY start_id, depth ASC
+    `;
+
+    for (const row of rows) {
+      const chain = chains.get(row.start_id);
+      if (!chain) continue;
+      // depth 0 is the self id, already seeded above.
+      if (row.depth === 0 || chain.includes(row.id)) continue;
+      chain.push(row.id);
+    }
+
+    return chains;
   }
 }

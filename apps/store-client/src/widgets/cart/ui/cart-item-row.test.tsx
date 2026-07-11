@@ -332,4 +332,137 @@ describe("CartItemRow", () => {
 
     expect(screen.queryByRole("img")).toBeNull();
   });
+
+  // ─── Add-on services (TASK-174) ───────────────────────────────────────────
+
+  describe("add-on services", () => {
+    const warranty = {
+      addonServiceId: "svc-warranty",
+      name: "Гарантійний сертифікат",
+      description: null,
+      price: "499.00",
+      source: "template" as const,
+    };
+    const insurance = {
+      addonServiceId: "svc-insurance",
+      name: "Страхування",
+      description: null,
+      price: "899.00",
+      source: "override" as const,
+    };
+
+    it("renders the SERVER-RESOLVED add-ons for the line, with their effective prices", () => {
+      const item = makeCartItem({ availableAddons: [warranty, insurance] });
+
+      renderWithProviders(<CartItemRow item={item} showAddons />);
+
+      expect(screen.getByText(dict.cart.offersHeading)).toBeInTheDocument();
+      expect(screen.getByText(warranty.name)).toBeInTheDocument();
+      // The overridden price, not any catalog default.
+      expect(screen.getByText(insurance.name)).toBeInTheDocument();
+      expect(screen.getAllByRole("checkbox")).toHaveLength(2);
+    });
+
+    it("hides the offers block entirely when the host does not opt in (mini-cart)", () => {
+      const item = makeCartItem({ availableAddons: [warranty] });
+
+      renderWithProviders(<CartItemRow item={item} />);
+
+      expect(
+        screen.queryByText(dict.cart.offersHeading),
+      ).not.toBeInTheDocument();
+    });
+
+    it("hides the block when the product has no applicable add-ons", () => {
+      renderWithProviders(<CartItemRow item={makeCartItem()} showAddons />);
+
+      expect(
+        screen.queryByText(dict.cart.offersHeading),
+      ).not.toBeInTheDocument();
+    });
+
+    it("reflects the persisted selection — a selected add-on renders checked", () => {
+      const item = makeCartItem({
+        availableAddons: [warranty, insurance],
+        selectedAddonIds: ["svc-insurance"],
+      });
+
+      renderWithProviders(<CartItemRow item={item} showAddons />);
+
+      const [warrantyBox, insuranceBox] = screen.getAllByRole("checkbox");
+      expect(warrantyBox).not.toBeChecked();
+      expect(insuranceBox).toBeChecked();
+    });
+
+    it("POSTs the selection when an unselected add-on is checked", async () => {
+      const user = userEvent.setup();
+      const item = makeCartItem({ id: "item-42", availableAddons: [warranty] });
+      let selected: { itemId?: string; addonServiceId?: string } | null = null;
+      server.use(
+        http.post(
+          "*/api/cart/items/:itemId/addons/:addonServiceId",
+          ({ params }) => {
+            selected = {
+              itemId: params.itemId as string,
+              addonServiceId: params.addonServiceId as string,
+            };
+            return HttpResponse.json({ data: {} });
+          },
+        ),
+      );
+
+      renderWithProviders(<CartItemRow item={item} showAddons />);
+      await user.click(screen.getByRole("checkbox"));
+
+      await waitFor(() =>
+        expect(selected).toEqual({
+          itemId: "item-42",
+          addonServiceId: "svc-warranty",
+        }),
+      );
+    });
+
+    it("DELETEs the selection when an already-selected add-on is unchecked", async () => {
+      const user = userEvent.setup();
+      const item = makeCartItem({
+        id: "item-42",
+        availableAddons: [warranty],
+        selectedAddonIds: ["svc-warranty"],
+      });
+      let deselected: { addonServiceId?: string } | null = null;
+      server.use(
+        http.delete(
+          "*/api/cart/items/:itemId/addons/:addonServiceId",
+          ({ params }) => {
+            deselected = { addonServiceId: params.addonServiceId as string };
+            return HttpResponse.json({ data: {} });
+          },
+        ),
+      );
+
+      renderWithProviders(<CartItemRow item={item} showAddons />);
+      await user.click(screen.getByRole("checkbox"));
+
+      await waitFor(() =>
+        expect(deselected).toEqual({ addonServiceId: "svc-warranty" }),
+      );
+    });
+
+    it("surfaces an error when the server rejects the selection", async () => {
+      const user = userEvent.setup();
+      const item = makeCartItem({ availableAddons: [warranty] });
+      server.use(
+        http.post("*/api/cart/items/:itemId/addons/:addonServiceId", () =>
+          HttpResponse.json({ message: "not available" }, { status: 400 }),
+        ),
+      );
+
+      renderWithProviders(<CartItemRow item={item} showAddons />);
+      await user.click(screen.getByRole("checkbox"));
+
+      expect(
+        await screen.findByText(dict.cart.addons.toggleError),
+      ).toBeInTheDocument();
+    });
+  });
 });
