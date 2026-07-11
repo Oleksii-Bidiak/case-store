@@ -43,8 +43,8 @@
 
 ## Roadmap (Open)
 
-> Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-277**.
+> Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-286**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -255,8 +255,30 @@
 | TASK-260 | [D/L] Lint rule against arbitrary Tailwind values (F-21) — 242 `text-[Npx]`-style entries in 61 files; ESLint/tailwind rule blocking new arbitrary values, existing reduced to the scale opportunistically | ✅ | 141 |
 | TASK-262 | [E/M] Traffic mirror in admin dashboard (after 261) — min: «Відвідуваність → open Umami» card; max (only if owner asks): 2–3 numbers via Umami API; do NOT rebuild Umami's charts | ✅ | 138 |
 | TASK-263 | [E/L] «Аналітика» section in `docs/admin-guide.md` — plain-UA: visits/unique/conversion/funnel, reading the Umami funnel, which events we send, why Umami numbers ≠ order numbers | ✅ | 138 |
-| TASK-272 | [H/H] Production deploy (after 271 rehearsal) — same pipeline on push `main` + manual approval via `production` Environment (owner reviewer); dated `pg_dump` pre-migrate + nightly cron (14d retention); post-deploy revalidate + Meili reindex (closes manual-qa §6/TASK-200); full cycle + one rehearsed rollback (deferred — потребує реального сервера/секретів, окрема інтерактивна сесія з власником) | ⬜ | — |
+| TASK-272 | [H/H] Production deploy (after 271 rehearsal) — same pipeline on push `main` + manual approval via `production` Environment (owner reviewer); dated `pg_dump` pre-migrate + nightly cron (14d retention); post-deploy revalidate + Meili reindex (closes manual-qa §6/TASK-200); full cycle + one rehearsed rollback (deferred — потребує реального сервера/секретів, окрема інтерактивна сесія з власником); + scope з handoff-seo §SEO-9: Caddy 301-редиректи (звірити з планом 123), SPF/DKIM/DMARC-runbook для SMTP-домену, uptime-моніторинг у docs/deploy.md | ⬜ | — |
 | TASK-273 | [C/L] Password-reset timing hardening (code-review follow-up to TASK-169) — equalize `requestPasswordReset` latency across existing vs unknown/inactive email so response time isn't an account-enumeration oracle (content is already identical; the 5/min throttle blunts it). Add fixed-cost work on the no-user branch | ✅ | 136 |
+
+### Етап 7 — SEO/GEO
+
+> Джерело: `docs/handoff-seo.md` (develop @ 847a1fb, 2026-07-07) — окремий етап (не під-хвиля
+> Етапу 6): header `docs/handoff-2026-07-07.md` явно скоупить Етап 6 на власні Block-теги A–H, а
+> сам `handoff-seo.md` вказує, що виконується ПІСЛЯ конвертації основного handoff-а — окремий
+> етап/під-хвиля; на момент конвертації Етап 6 фактично закритий (лишився тільки TASK-272 ⬜).
+> Порядок виконання (§«Рекомендований порядок» handoff-seo): TASK-277 → TASK-278 ∥ TASK-279 →
+> TASK-280; далі TASK-285, TASK-281, TASK-282; TASK-283/TASK-284 — паралельно силами власника (не
+> код). Кожна задача отримує `docs/plans/NNN-*.md` через `/planer` перед імплементацією.
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-277 | [SEO/H] Категорійні посадкові сторінки `/categories/[slug]` — SSR-роут (H1, опис, товари категорії, підкатегорії-чіпи) через `resolveSeo` (backend meta вже готовий, TASK-247), `BreadcrumbList`+`ItemList` JSON-LD, категорії в sitemap, перелінковка зі старого `/products?category=` (canonical на нову сторінку). Джерело: handoff-seo §SEO-1 | ⬜ | — |
+| TASK-278 | [SEO/H] Canonical-політика лістингів + noindex службових сторінок — після TASK-277 (одна доріжка, обидві правлять metadata лістингів): `/products`/`/categories/[slug]` self-canonical без filter/sort, `noindex,follow` при filter-параметрах; `/search` noindex + robots disallow; `/orders/[id]`/`/checkout/confirmation` noindex; unit-тести metadata-хелпера. Джерело: handoff-seo §SEO-2 | ⬜ | — |
+| TASK-279 | [SEO/M] Бренд у домашньому title + брендовий og:image fallback + favicon-пакет — ∥ 277/278; `dict.meta.rootTitle` з брендом (code-fallback), статичний `opengraph-image.png` fallback коли `SeoSettings.defaultOgImage` порожній, повний favicon/`icon`/`apple-icon`-пакет; theme-color НЕ дублювати (див. TASK-259/F-04/05). Джерело: handoff-seo §SEO-3 | ⬜ | — |
+| TASK-280 | [SEO/M] Верифікація пошукових консолей — після TASK-279: `googleSiteVerification`(+`bingSiteVerification`) у SeoSettings → `metadata.verification`; admin-форма `/settings/seo` (узгодити з TASK-268/269, не дублювати); розділ admin-guide про підтвердження сайту й надсилання sitemap у Search Console. Джерело: handoff-seo §SEO-4 | ⬜ | — |
+| TASK-281 | [SEO/M] Фід Google Merchant Center `merchant-feed.xml` — після хвилі 277/278/285: RSS 2.0 + g:-namespace по активних товарах (id/title/description/link/image/price/availability/condition/brand), ISR ~1год, runbook-крок в admin-guide (реєстрація + подача фіду в Merchant Center). Джерело: handoff-seo §SEO-5 | ⬜ | — |
+| TASK-282 | [SEO/L] Robots: явні AI-crawler stanza (GPTBot/Google-Extended/PerplexityBot/ClaudeBot allow) + опційно IndexNow-пінг з on-demand revalidate хука. Джерело: handoff-seo §SEO-6 | ⬜ | — |
+| TASK-283 | [SEO/H] Наповнення, що розблоковує вже готовий код — власник + асист (контент, не код): FAQ-чернетки (доставка/гарантія/оплата/сумісність) на базі legal/info-текстів, заповнення SeoSettings (defaultMetaTitle/Description, titleTemplate, og-image), alt-тексти активних банерів. Джерело: handoff-seo §SEO-7 | ⬜ | — |
+| TASK-284 | [SEO/M-L] Post-launch чек-лист Brand Authority — власник + асист (дока, не код; виконується після запуску): розділ admin-guide — Google Business Profile, підтвердження sameAs-профілів, 3–5 якісних зовнішніх згадок, повторний `/geo audit <public-url>` через 4–6 тижнів, моніторинг Search Console. Джерело: handoff-seo §SEO-8 | ⬜ | — |
+| TASK-285 | [SEO/M] Захист URL адмінно-керованих сторінок — slug-guard при зміні slug опублікованої Page/BlogPost (попередження в формі + запис у нову таблицю `SlugRedirect`), фронт 301 зі старого slug на новий, попередження при видаленні опублікованої сторінки, доповнення SEO-здоров'я (TASK-269) лічильником тонких сторінок, перевірка `llms.txt` на хардкод slug'ів, TDD redirect-ланцюг old→new→newest без циклів; доповнює футер-частину TASK-184 (✅: футер уже динамічний) — лишається лише slug-guard/redirect-ланцюг. Джерело: handoff-seo §SEO-10 | ⬜ | — |
 
 ### Пізніша хвиля
 
@@ -295,6 +317,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-277**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-286**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.

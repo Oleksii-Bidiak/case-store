@@ -356,8 +356,8 @@ convenient sequencing)
       checked here)
 - [ ] Non-root user; `HEALTHCHECK` on `/`; `CMD` points at the correct nested `server.js` path
 - [ ] Local-verifiable: `docker build -f apps/store-client/Dockerfile --build-arg
-  NEXT_PUBLIC_API_URL=http://localhost:3001 --build-arg NEXT_PUBLIC_APP_URL=http://localhost:3000
-  -t store-client-test .` succeeds
+NEXT_PUBLIC_API_URL=http://localhost:3001 --build-arg NEXT_PUBLIC_APP_URL=http://localhost:3000
+-t store-client-test .` succeeds
 - [ ] Local-verifiable: `docker run -p 3000:3000 store-client-test` serves the homepage (`curl
 http://localhost:3000/` returns 200 HTML) **and** at least one static asset under `/_next/static/`
       resolves (200, not 404) — the explicit regression check for the manual-copy step above
@@ -422,7 +422,7 @@ B's standalone-path verification carries over directly)
       fully-interpolated YAML with no errors (using a locally-filled copy of
       `.env.production.example`, not real secrets)
 - [ ] Local-verifiable: `docker compose -f docker-compose.prod.yml up -d postgres redis meilisearch
-    umami store-api` (the non-Next.js-build-arg-dependent subset, skipping Caddy's TLS
+  umami store-api` (the non-Next.js-build-arg-dependent subset, skipping Caddy's TLS
       requirement) boots cleanly on this machine; `curl http://localhost:$PORT/health` (mapped
       port) returns 200; `docker compose -f docker-compose.prod.yml down -v` cleans up fully
 - [ ] `docker compose -f docker-compose.prod.yml up -d --build` (full stack, all 8 services,
@@ -497,7 +497,7 @@ B's standalone-path verification carries over directly)
 append to `docs/manual-qa-pending.md`, not a blocker for marking this plan's code done):**
 
 - [ ] Clean-VM smoke exactly per the handoff's own bar: `docker compose -f docker-compose.prod.yml
-    up` on a fresh VPS brings up a working store; walk the homepage, log into the admin panel,
+  up` on a fresh VPS brings up a working store; walk the homepage, log into the admin panel,
       and create one order end-to-end
 - [ ] Caddy successfully obtains real Let's Encrypt certificates for all three real domains once
       DNS is pointed at the VPS
@@ -552,3 +552,16 @@ append to `docs/manual-qa-pending.md`, not a blocker for marking this plan's cod
 - A future, more disciplined dependency-pruning approach (migrating to pnpm workspaces, or a
   Turborepo `prune` step) would shrink `store-api`'s image meaningfully — not pursued here to keep
   this plan's blast radius to "package what already exists," not "change the package manager."
+
+## Follow-up із handoff-seo §SEO-9
+
+`docs/handoff-seo.md` (2026-07-07) flags a Caddy hygiene item that overlaps this plan's
+`Caddyfile` (Design Decision 6): **301 redirects for `www.<domain>` → apex, `http://` →
+`https://`, and no trailing-slash duplicates**. This plan's current `Caddyfile` (three
+`{$DOMAIN}` / `admin.{$DOMAIN}` / `api.{$DOMAIN}` reverse-proxy blocks) does not yet include an
+explicit `www` block or a trailing-slash `strip_prefix`/redirect rule — Caddy's automatic HTTPS
+already covers `http→https` for any site block it manages, but `www`→apex and trailing-slash
+normalization need their own explicit blocks. Action: verify/add these when the `Caddyfile` is
+next touched (e.g. alongside TASK-271/TASK-272 deploy work), not blocking this plan's own
+acceptance criteria. Tracked at the BACKLOG level under TASK-272's scope note (Етап 7, TASK-285's
+sibling item SEO-9 is folded into TASK-270/272 per the handoff, not a separate task).
