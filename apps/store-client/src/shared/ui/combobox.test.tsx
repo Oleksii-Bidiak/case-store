@@ -97,4 +97,71 @@ describe("Combobox", () => {
 
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
+
+  // APG combobox pattern (TASK-275): the input must always name the highlighted
+  // option via `aria-activedescendant`, and the attribute must be absent — not
+  // an empty string — whenever nothing is highlighted.
+  describe("aria-activedescendant contract", () => {
+    it("has no aria-activedescendant while closed or with nothing highlighted", async () => {
+      const user = userEvent.setup();
+      setup({ value: "Ки" });
+
+      const input = screen.getByRole("combobox");
+      expect(input).not.toHaveAttribute("aria-activedescendant");
+
+      // Open, but no option highlighted yet.
+      await user.click(input);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+      expect(input).not.toHaveAttribute("aria-activedescendant");
+    });
+
+    it("names the highlighted option's id on ArrowDown/ArrowUp and keeps focus on the input", async () => {
+      const user = userEvent.setup();
+      setup({ value: "Ки" });
+
+      const input = screen.getByRole("combobox");
+      await user.click(input);
+      const [first, second] = screen.getAllByRole("option");
+
+      await user.keyboard("{ArrowDown}");
+      expect(input).toHaveAttribute("aria-activedescendant", first.id);
+      expect(first).toHaveAttribute("aria-selected", "true");
+      expect(input).toHaveFocus();
+
+      await user.keyboard("{ArrowDown}");
+      expect(input).toHaveAttribute("aria-activedescendant", second.id);
+      expect(second).toHaveAttribute("aria-selected", "true");
+
+      await user.keyboard("{ArrowUp}");
+      expect(input).toHaveAttribute("aria-activedescendant", first.id);
+      expect(input).toHaveFocus();
+    });
+
+    it("drops aria-activedescendant when the list is closed with Escape", async () => {
+      const user = userEvent.setup();
+      setup({ value: "Ки" });
+
+      const input = screen.getByRole("combobox");
+      await user.click(input);
+      await user.keyboard("{ArrowDown}");
+      expect(input).toHaveAttribute("aria-activedescendant");
+
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(input).not.toHaveAttribute("aria-activedescendant");
+    });
+
+    it("gives options ids even when no id prop is passed", async () => {
+      const user = userEvent.setup();
+      setup({ value: "Ки", id: undefined });
+
+      const input = screen.getByRole("combobox");
+      await user.click(input);
+      await user.keyboard("{ArrowDown}");
+
+      const [first] = screen.getAllByRole("option");
+      expect(first.id).not.toBe("");
+      expect(input).toHaveAttribute("aria-activedescendant", first.id);
+    });
+  });
 });

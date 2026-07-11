@@ -233,3 +233,133 @@ describe("HeaderSearch — mixed product + blog suggestions (TASK-218)", () => {
     expect(mockPush).toHaveBeenCalledWith("/blog/how-to-pick-a-case");
   });
 });
+
+describe("HeaderSearch — APG combobox ARIA contract (TASK-275)", () => {
+  /** All options in combined order: products first, then blog posts. */
+  function combinedOptions() {
+    const products = within(
+      screen.getByRole("listbox", { name: dict.search.inputAria }),
+    ).queryAllByRole("option");
+    const blogList = screen.queryByRole("listbox", {
+      name: dict.search.blogSectionLabel,
+    });
+    const posts = blogList ? within(blogList).queryAllByRole("option") : [];
+    return [...products, ...posts];
+  }
+
+  it("has no aria-activedescendant while the listbox is closed", async () => {
+    setupHandlers({ products: [makeSuggestion()], posts: [] });
+
+    renderWithProviders(<HeaderSearch />);
+    const input = screen.getByRole("combobox", { name: dict.search.inputAria });
+
+    // Nothing typed yet → collapsed, so the attribute must be absent (not "").
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+  });
+
+  it("gives every option a unique id and points aria-controls at the listboxes", async () => {
+    setupHandlers({
+      products: [makeSuggestion()],
+      posts: [makeBlogPost()],
+    });
+
+    const { input } = await typeQuery("чохол");
+    await screen.findByRole("listbox", { name: dict.search.blogSectionLabel });
+
+    const ids = combinedOptions().map((option) => option.id);
+    expect(ids).toHaveLength(2);
+    expect(ids.every(Boolean)).toBe(true);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    const productList = screen.getByRole("listbox", {
+      name: dict.search.inputAria,
+    });
+    const blogList = screen.getByRole("listbox", {
+      name: dict.search.blogSectionLabel,
+    });
+    expect(input.getAttribute("aria-controls")).toBe(
+      `${productList.id} ${blogList.id}`,
+    );
+    expect(input).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("still has no aria-activedescendant when the list is open but nothing is highlighted", async () => {
+    setupHandlers({ products: [makeSuggestion()], posts: [] });
+
+    const { input } = await typeQuery("чохол");
+    await screen.findByText("Чохол iPhone 15 Pro");
+
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+  });
+
+  it("tracks the highlighted option's id through ArrowDown/ArrowUp across both listboxes", async () => {
+    setupHandlers({
+      products: [
+        makeSuggestion(),
+        makeSuggestion({ id: "product-2", name: "Скло", slug: "glass" }),
+      ],
+      posts: [makeBlogPost()],
+    });
+
+    const { user, input } = await typeQuery("чохол");
+    await screen.findByRole("listbox", { name: dict.search.blogSectionLabel });
+
+    const options = combinedOptions();
+    expect(options).toHaveLength(3);
+
+    // Each ArrowDown moves the ARIA pointer in lockstep with the visual
+    // highlight (aria-selected) — one source of truth, both listboxes.
+    for (const option of options) {
+      await user.keyboard("{ArrowDown}");
+      expect(input).toHaveAttribute("aria-activedescendant", option.id);
+      expect(option).toHaveAttribute("aria-selected", "true");
+      // Focus never leaves the input — that is the point of activedescendant.
+      expect(input).toHaveFocus();
+    }
+
+    // ArrowUp walks back up the same combined list.
+    await user.keyboard("{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", options[1].id);
+    expect(options[1]).toHaveAttribute("aria-selected", "true");
+    expect(options[2]).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("selects the option named by aria-activedescendant on Enter", async () => {
+    setupHandlers({
+      products: [
+        makeSuggestion(),
+        makeSuggestion({ id: "product-2", name: "Скло", slug: "glass" }),
+      ],
+      posts: [],
+    });
+
+    const { user, input } = await typeQuery("чохол");
+    await screen.findByText("Скло");
+
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    const activeId = input.getAttribute("aria-activedescendant");
+    const active = combinedOptions().find((option) => option.id === activeId);
+    expect(active).toHaveTextContent("Скло");
+
+    await user.keyboard("{Enter}");
+    expect(mockPush).toHaveBeenCalledWith("/products/glass");
+  });
+
+  it("drops aria-activedescendant when the listbox is closed with Escape", async () => {
+    setupHandlers({ products: [makeSuggestion()], posts: [] });
+
+    const { user, input } = await typeQuery("чохол");
+    await screen.findByText("Чохол iPhone 15 Pro");
+
+    await user.keyboard("{ArrowDown}");
+    expect(input).toHaveAttribute("aria-activedescendant");
+
+    await user.keyboard("{Escape}");
+    expect(
+      screen.queryByRole("listbox", { name: dict.search.inputAria }),
+    ).not.toBeInTheDocument();
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+  });
+});

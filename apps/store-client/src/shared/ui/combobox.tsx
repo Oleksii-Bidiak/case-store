@@ -65,13 +65,24 @@ export function Combobox({
   const [open, setOpen] = React.useState(false);
   const [activeIndex, setActiveIndex] = React.useState(-1);
 
-  const listId = id ? `${id}-listbox` : undefined;
-  const optionId = (i: number) => (id ? `${id}-opt-${i}` : undefined);
+  // SSR-stable fallback so options always carry an id even when the caller
+  // passes none (`useId`, never a random value — hydration must match).
+  const generatedId = React.useId();
+  const baseId = id ?? generatedId;
+  const listId = `${baseId}-listbox`;
+  const optionId = (i: number) => `${baseId}-opt-${i}`;
 
   const hasOptions = options.length > 0;
   const showEmpty =
     !isLoading && !hasOptions && value.trim().length > 0 && Boolean(emptyText);
   const showList = open && !disabled && (isLoading || hasOptions || showEmpty);
+
+  // Same `activeIndex` drives the visual highlight and the ARIA pointer; the
+  // attribute is absent whenever the list is closed or nothing is highlighted.
+  const activeDescendantId =
+    showList && activeIndex >= 0 && options[activeIndex]
+      ? optionId(activeIndex)
+      : undefined;
 
   function select(option: ComboboxOption) {
     onSelect(option);
@@ -116,9 +127,7 @@ export function Combobox({
         aria-expanded={showList}
         aria-controls={listId}
         aria-autocomplete="list"
-        aria-activedescendant={
-          activeIndex >= 0 ? optionId(activeIndex) : undefined
-        }
+        aria-activedescendant={activeDescendantId}
         autoComplete={autoComplete}
         value={value}
         disabled={disabled}
