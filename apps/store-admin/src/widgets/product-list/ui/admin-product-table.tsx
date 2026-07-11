@@ -169,7 +169,7 @@ export function AdminProductTable() {
             </TableHeader>
             <TableBody>
               {products.map((product) => (
-                <TableRow key={product.id}>
+                <TableRow key={product.id} rowLabel={product.name}>
                   <TableCell
                     label={dict.products.colName}
                     className="font-medium"

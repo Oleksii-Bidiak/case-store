@@ -218,7 +218,13 @@ export function AdminReviewTable() {
                   reject.isPending && reject.variables?.id === review.id;
                 const busy = approving || rejecting;
                 return (
-                  <TableRow key={review.id}>
+                  <TableRow
+                    key={review.id}
+                    rowLabel={dict.reviews.rowAria(
+                      review.productName,
+                      review.userEmail.split("@")[0],
+                    )}
+                  >
                     <TableCell
                       label={dict.reviews.colProduct}
                       className="font-medium"

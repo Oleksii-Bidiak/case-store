@@ -9,6 +9,23 @@ if (!Element.prototype.hasPointerCapture) {
 }
 Element.prototype.scrollIntoView =
   Element.prototype.scrollIntoView ?? (() => {});
+// jsdom ships no `matchMedia`; components that mirror a CSS breakpoint in the
+// a11y tree (shared/ui/table card mode) read it. Default: nothing matches
+// (desktop). Individual tests override `window.matchMedia` to simulate a
+// narrow viewport.
+if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
+  window.matchMedia = (query: string) =>
+    ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }) as unknown as MediaQueryList;
+}
 if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = class {
     observe() {}
