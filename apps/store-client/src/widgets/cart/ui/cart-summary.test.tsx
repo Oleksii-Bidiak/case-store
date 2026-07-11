@@ -4,7 +4,12 @@ import { formatMoney } from "@/shared/lib";
 import type { CartTotals } from "@/entities/cart";
 import { CartSummary } from "./cart-summary";
 
-const totals: CartTotals = { subtotal: "998.00", itemCount: 2, uniqueItems: 1 };
+const totals: CartTotals = {
+  subtotal: "998.00",
+  itemCount: 2,
+  uniqueItems: 1,
+  addonsTotal: "0.00",
+};
 
 describe("CartSummary", () => {
   it("renders the items subtotal, payable total, and a checkout link", () => {
@@ -29,16 +34,26 @@ describe("CartSummary", () => {
     expect(checkoutLink).toHaveAttribute("href", "/checkout");
   });
 
-  it("adds selected add-on services (stub) to the payable total", () => {
-    renderWithProviders(<CartSummary totals={totals} servicesTotal={500} />);
+  it("adds the server-computed add-on services total to the payable total (TASK-174)", () => {
+    renderWithProviders(
+      <CartSummary totals={{ ...totals, addonsTotal: "500.00" }} />,
+    );
 
     expect(screen.getByText(dict.cart.addonServicesLine)).toBeInTheDocument();
-    // subtotal 998 + services 500 = 1498.
+    // subtotal 998 + add-ons 500 = 1498.
     const expected = formatMoney("1498.00").replace(/\s/g, "");
     expect(
       screen.getAllByText(
         (_, el) => el?.textContent?.replace(/\s/g, "") === expected,
       ).length,
     ).toBeGreaterThanOrEqual(1);
+  });
+
+  it("omits the add-on line entirely when nothing is selected", () => {
+    renderWithProviders(<CartSummary totals={totals} />);
+
+    expect(
+      screen.queryByText(dict.cart.addonServicesLine),
+    ).not.toBeInTheDocument();
   });
 });

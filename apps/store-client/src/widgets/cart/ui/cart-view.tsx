@@ -4,12 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ShoppingBag } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  getGetCartQueryKey,
-  useClearCart,
-  useGetCart,
-  type CartItemEntity,
-} from "@/entities/cart";
+import { getGetCartQueryKey, useClearCart, useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
 import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import {
@@ -22,31 +17,22 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/shared/ui";
-import { addonKey, addonServicesForItem } from "../model/addon-services";
 import { CartItemRow } from "./cart-item-row";
 import { CartSummary } from "./cart-summary";
 import { CartSkeleton } from "./cart-skeleton";
 import { CartDeliveryStub, CartPaymentStub } from "./cart-delivery-payment";
 
-/** Sum the selected add-on services across all lines (stub, TASK-174). */
-function computeServicesTotal(
-  items: CartItemEntity[],
-  selected: Record<string, boolean>,
-): number {
-  let total = 0;
-  for (const item of items) {
-    for (const service of addonServicesForItem(item)) {
-      if (selected[addonKey(item.id, service.id)]) total += service.price;
-    }
-  }
-  return total;
-}
-
 /**
  * CartView — client orchestrator for the cart page (Cart.dc.html redesign).
  * Fetches the cart (guest or user), renders loading / error / empty / populated
- * states, and owns the add-on-services stub state (TASK-174). Works for
- * anonymous visitors via the cartToken cookie — no auth required.
+ * states. Works for anonymous visitors via the cartToken cookie — no auth
+ * required.
+ *
+ * Add-on services (TASK-174) are fully server-owned: each line carries its
+ * resolved `availableAddons` / `selectedAddonIds`, and `totals.addonsTotal` is
+ * computed by the API — there is no client-side selection state to keep in sync
+ * any more (the old `Record<string, boolean>` stub is gone), and a selection now
+ * survives a reload and reaches the placed order.
  */
 export function CartView() {
   const queryClient = useQueryClient();
@@ -57,9 +43,6 @@ export function CartView() {
     query: { enabled: !isInitializing },
   });
 
-  // Add-on service selections, keyed by `${itemId}:${serviceId}` — front-end
-  // stub, not persisted through checkout.
-  const [services, setServices] = useState<Record<string, boolean>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const clearCart = useClearCart({
@@ -67,7 +50,6 @@ export function CartView() {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
         setConfirmOpen(false);
-        setServices({});
       },
     },
   });
@@ -122,15 +104,6 @@ export function CartView() {
     );
   }
 
-  const servicesTotal = computeServicesTotal(items, services);
-  const isServiceSelected = (itemId: string, serviceId: string) =>
-    !!services[addonKey(itemId, serviceId)];
-  const toggleService = (itemId: string, serviceId: string) =>
-    setServices((prev) => {
-      const key = addonKey(itemId, serviceId);
-      return { ...prev, [key]: !prev[key] };
-    });
-
   return (
     <div className="flex flex-col gap-6">
       {/* Breadcrumbs */}
@@ -163,12 +136,7 @@ export function CartView() {
         <div className="overflow-hidden rounded-[18px] border border-border bg-card shadow-card">
           <ul>
             {items.map((item) => (
-              <CartItemRow
-                key={item.id}
-                item={item}
-                isServiceSelected={isServiceSelected}
-                onToggleService={toggleService}
-              />
+              <CartItemRow key={item.id} item={item} showAddons />
             ))}
           </ul>
           <div className="flex items-center justify-between px-[22px] py-4">
@@ -192,7 +160,7 @@ export function CartView() {
         {/* Summary + delivery/payment stubs */}
         {cart && (
           <div className={`flex flex-col gap-4 lg:sticky ${STICKY_ASIDE_TOP}`}>
-            <CartSummary totals={cart.totals} servicesTotal={servicesTotal} />
+            <CartSummary totals={cart.totals} />
             <CartDeliveryStub />
             <CartPaymentStub />
           </div>

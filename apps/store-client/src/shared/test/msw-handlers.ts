@@ -29,6 +29,10 @@ export function makeCartItem(
     maxQty: 50,
     isActive: true,
     lineTotal: "998.00",
+    // Add-on services (TASK-174) — resolved server-side per line. Default: none
+    // offered, none selected; add-on tests override both.
+    availableAddons: [],
+    selectedAddonIds: [],
     createdAt: "2026-06-01T00:00:00.000Z",
     updatedAt: "2026-06-01T00:00:00.000Z",
     ...overrides,
@@ -44,6 +48,17 @@ export function makeCart(items: CartItemEntity[] = [makeCartItem()]): {
     (cents, i) => cents + Math.round(Number(i.price) * 100) * i.quantity,
     0,
   );
+  // Add-ons (TASK-174): the EFFECTIVE price of each SELECTED add-on, once per
+  // line — flat, never multiplied by quantity. Mirrors the server's arithmetic.
+  const addonsCents = items.reduce((cents, i) => {
+    const selected = new Set(i.selectedAddonIds);
+    return (
+      cents +
+      i.availableAddons
+        .filter((addon) => selected.has(addon.addonServiceId))
+        .reduce((sum, addon) => sum + Math.round(Number(addon.price) * 100), 0)
+    );
+  }, 0);
   return {
     data: {
       id: "cart-1",
@@ -53,6 +68,7 @@ export function makeCart(items: CartItemEntity[] = [makeCartItem()]): {
         subtotal: (subtotalCents / 100).toFixed(2),
         itemCount,
         uniqueItems: items.length,
+        addonsTotal: (addonsCents / 100).toFixed(2),
       },
       createdAt: "2026-06-01T00:00:00.000Z",
       updatedAt: "2026-06-01T00:00:00.000Z",
@@ -73,6 +89,8 @@ export function makeOrderItem(
     quantity: 2,
     price: "499.00",
     lineTotal: "998.00",
+    // Frozen add-on snapshots (TASK-174) — none by default.
+    addons: [],
     createdAt: "2026-06-01T00:00:00.000Z",
     ...overrides,
   };
@@ -92,6 +110,7 @@ export function makeOrder(overrides: Partial<OrderEntity> = {}): {
       status: "PENDING",
       paymentStatus: "PENDING",
       subtotal: "998.00",
+      addonsTotal: "0.00",
       discount: "0.00",
       discountCode: null,
       shippingCost: "0.00",
@@ -184,6 +203,14 @@ export const handlers = [
 
   // Cart mutations — echo a minimal success envelope; tests assert the call,
   // and components refetch the cart afterwards.
+  // Add-on selection (TASK-174) — echo the cart; tests assert the call and the
+  // optimistic patch, and the component refetches afterwards.
+  http.post("*/api/cart/items/:itemId/addons/:addonServiceId", () =>
+    HttpResponse.json(makeCart()),
+  ),
+  http.delete("*/api/cart/items/:itemId/addons/:addonServiceId", () =>
+    HttpResponse.json(makeCart()),
+  ),
   http.patch("*/api/cart/items/:itemId", () => HttpResponse.json(makeCart())),
   http.delete("*/api/cart/items/:itemId", () =>
     HttpResponse.json(makeCart([])),
