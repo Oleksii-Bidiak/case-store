@@ -35,21 +35,26 @@ export function applySlugRename(
   from: string,
   to: string,
 ): SlugRedirectRow[] {
-  if (from === to) return rows.map((r) => ({ ...r }));
+  const next = rows.map((r) => ({ ...r }));
+  if (from === to) return next;
 
   const isTarget = (r: SlugRedirectRow) => r.entity === entity;
 
   // Step 1: upsert (entity, oldSlug: from) → newSlug: to.
-  const hasFromRow = rows.some((r) => isTarget(r) && r.oldSlug === from);
-  const upserted: SlugRedirectRow[] = hasFromRow
-    ? rows.map((r) => (isTarget(r) && r.oldSlug === from ? { ...r, newSlug: to } : { ...r }))
-    : [...rows.map((r) => ({ ...r })), { entity, oldSlug: from, newSlug: to }];
+  const existing = next.find((r) => isTarget(r) && r.oldSlug === from);
+  if (existing) {
+    existing.newSlug = to;
+  } else {
+    next.push({ entity, oldSlug: from, newSlug: to });
+  }
 
   // Step 2: repoint (collapse) every other row of this entity pointing at `from`.
-  const repointed = upserted.map((r) =>
-    isTarget(r) && r.oldSlug !== from && r.newSlug === from ? { ...r, newSlug: to } : r,
-  );
+  for (const r of next) {
+    if (isTarget(r) && r.oldSlug !== from && r.newSlug === from) {
+      r.newSlug = to;
+    }
+  }
 
   // Step 3: delete the self-loop step 2 may have created (rename-back case).
-  return repointed.filter((r) => !(isTarget(r) && r.oldSlug === to && r.newSlug === to));
+  return next.filter((r) => !(isTarget(r) && r.oldSlug === to && r.newSlug === to));
 }
