@@ -143,6 +143,11 @@ model Category {
   // itself only holds definitions declared DIRECTLY on this category.
   attributeDefinitions AttributeDefinition[]
 
+  // Add-on service template declared DIRECTLY on this category (TASK-174).
+  // Inherited down the subtree at read time by AddonApplicabilityResolver
+  // (nearest-ancestor-wins) — see CategoryAddonTemplate.
+  addonTemplates CategoryAddonTemplate[]
+
   @@index([slug])
   @@index([parentId])
   @@map("categories")
@@ -223,6 +228,9 @@ model Product {
   // Structured-spec VALUES filled in for this product (TASK-191). Separate
   // system from `attributes Json` above (variant axes) — see plan 112.
   specValues    ProductAttributeValue[]
+  // Point deltas against this product's resolved category add-on template
+  // (TASK-174): ADD / REMOVE / OVERRIDE. Zero rows = "pure inheritance".
+  addonDeltas   AddonServiceDelta[]
 
   @@index([slug])
   @@index([categoryId])
@@ -304,6 +312,10 @@ model CartItem {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  // Add-on services selected for this line (TASK-174). No price snapshot — a
+  // cart is a shopping list; prices are resolved live on read.
+  addons CartItemAddon[]
+
   @@unique([cartId, productId])
   @@index([cartId])
   @@map("cart_items")
@@ -321,6 +333,12 @@ model Order {
   discountCode    String?       @map("discount_code")
   shippingCost    Decimal       @default(0) @map("shipping_cost") @db.Decimal(10, 2)
   tax             Decimal       @default(0) @db.Decimal(10, 2)
+  // Sum of the frozen OrderItemAddon prices across every line (TASK-174).
+  // Like `shippingCost`, it is NEVER part of the discount base — the invariant
+  // is `total = subtotal + shippingCost + addonsTotal - discount`, with
+  // `discount` computed and clamped against `subtotal` alone (plan 150, owner
+  // decision 4).
+  addonsTotal     Decimal       @default(0) @map("addons_total") @db.Decimal(10, 2)
   total           Decimal       @db.Decimal(10, 2)
   shippingAddress Json?         @map("shipping_address") // {city, warehouse, address, ref}
   billingAddress  Json?         @map("billing_address") // Same structure
@@ -388,6 +406,9 @@ model OrderItem {
   quantity  Int
   price     Decimal  @db.Decimal(10, 2) // Price at time of purchase
   createdAt DateTime @default(now()) @map("created_at")
+
+  // Frozen snapshots of the add-on services bought with this line (TASK-174).
+  addons OrderItemAddon[]
 
   @@index([orderId])
   @@map("order_items")
@@ -969,4 +990,124 @@ model SlugRedirect {
   @@unique([entity, oldSlug])
   @@index([entity, newSlug])
   @@map("slug_redirects")
+}
+
+/// Admin-managed catalog of purchasable add-on services (warranty / insurance /
+/// setup, TASK-174). Replaces the store-client stub catalog
+/// (`widgets/cart/model/addon-services.ts`). `isActive` is the standard
+/// reversible visibility toggle — an inactive service disappears from the
+/// resolver's output immediately (both template membership AND any product
+/// delta involving it), but is NOT retroactively stripped from carts/orders
+/// that already reference it (a cart re-validates live on the next read; orders
+/// are frozen snapshots, unaffected either way).
+model AddonService {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  price       Decimal  @db.Decimal(10, 2)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  categoryTemplates CategoryAddonTemplate[]
+  productDeltas     AddonServiceDelta[]
+  cartItemAddons    CartItemAddon[]
+  orderItemAddons   OrderItemAddon[]
+
+  @@index([isActive])
+  @@map("addon_services")
+}
+
+/// One add-on service belonging to a category's OWN template (plan 150, owner
+/// decision 1). A category with zero rows here has no template of its own and
+/// inherits its nearest ancestor's template (nearest-ancestor-wins — see
+/// AddonApplicabilityResolver); a category with >= 1 row here fully replaces
+/// whatever its ancestors would have contributed (prototype own-property
+/// shadowing, not a merge). The relationship is intentionally a live join, not
+/// a value copy — editing these rows changes the resolved set everywhere the
+/// template applies, immediately.
+model CategoryAddonTemplate {
+  id             String       @id @default(uuid())
+  categoryId     String       @map("category_id")
+  category       Category     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  addonServiceId String       @map("addon_service_id")
+  addonService   AddonService @relation(fields: [addonServiceId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@unique([categoryId, addonServiceId])
+  @@index([categoryId])
+  @@index([addonServiceId])
+  @@map("category_addon_templates")
+}
+
+/// A product-level point delta against its resolved category template (plan
+/// 150, owner decision 2). At most one delta row per (product, add-on service)
+/// pair — `type` disambiguates ADD (exclusive to this product, independent of
+/// any template membership) / REMOVE (suppress an inherited add-on for this
+/// product) / OVERRIDE (this product's own price for an inherited add-on).
+/// `price` is only meaningful for ADD (optional — null means "use the catalog
+/// AddonService.price") and OVERRIDE (required); it is ignored for REMOVE.
+/// Validated at the service layer, not by a DB CHECK (Prisma has no CHECK
+/// support — same documented limitation as `Product.stock >= 0`).
+model AddonServiceDelta {
+  id             String         @id @default(uuid())
+  productId      String         @map("product_id")
+  product        Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  addonServiceId String         @map("addon_service_id")
+  addonService   AddonService   @relation(fields: [addonServiceId], references: [id], onDelete: Cascade)
+  type           AddonDeltaType
+  price          Decimal?       @db.Decimal(10, 2)
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  @@unique([productId, addonServiceId])
+  @@index([productId])
+  @@map("addon_service_deltas")
+}
+
+enum AddonDeltaType {
+  ADD
+  REMOVE
+  OVERRIDE
+}
+
+/// A customer's selection of a resolved add-on for one cart line (TASK-174).
+/// Mirrors `CartItem` itself: no price snapshot here — the live resolved price
+/// is read at cart-render/order-creation time (a cart is a "shopping list", not
+/// a receipt; snapshotting only happens at order creation, exactly like
+/// `Product.price` vs `OrderItem.price`).
+model CartItemAddon {
+  id             String       @id @default(uuid())
+  cartItemId     String       @map("cart_item_id")
+  cartItem       CartItem     @relation(fields: [cartItemId], references: [id], onDelete: Cascade)
+  addonServiceId String       @map("addon_service_id")
+  addonService   AddonService @relation(fields: [addonServiceId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@unique([cartItemId, addonServiceId])
+  @@index([cartItemId])
+  @@map("cart_item_addons")
+}
+
+/// Snapshot of a selected add-on at order-creation time (TASK-174). `name` and
+/// `price` are copied at the moment `OrderRepository.createFromCart` runs —
+/// exactly like `OrderItem.price` snapshots `Product.price` — so a later
+/// catalog-price change, template edit, or delta edit never rewrites history.
+/// `addonServiceId` is nullable + `onDelete: SetNull` for symmetry with how
+/// `OrderItem.product` is never hard-deleted (Product uses `deletedAt`
+/// tombstones) — `AddonService` has no hard-delete path either (an admin can
+/// only deactivate), so this column is not expected to go null in practice, but
+/// the schema does not assume that invariant holds forever.
+model OrderItemAddon {
+  id             String        @id @default(uuid())
+  orderItemId    String        @map("order_item_id")
+  orderItem      OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  addonServiceId String?       @map("addon_service_id")
+  addonService   AddonService? @relation(fields: [addonServiceId], references: [id], onDelete: SetNull)
+  name           String
+  price          Decimal       @db.Decimal(10, 2)
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  @@index([orderItemId])
+  @@map("order_item_addons")
 }

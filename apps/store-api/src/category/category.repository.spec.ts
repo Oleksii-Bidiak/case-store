@@ -138,6 +138,85 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
     });
   });
 
+  // ─── Ordered ancestor chains (TASK-174) ──────────────────────────────────────
+  //
+  // The add-on applicability resolver needs the chain NEAREST-FIRST to implement
+  // "nearest ancestor wins"; `findAncestorIds` deliberately guarantees no order.
+  describe('findAncestorChainOrdered', () => {
+    it('returns the chain nearest-first: self, parent, grandparent, root', async () => {
+      queryRaw.mockResolvedValue([
+        { start_id: 'grandchild', id: 'grandchild', depth: 0 },
+        { start_id: 'grandchild', id: 'child', depth: 1 },
+        { start_id: 'grandchild', id: 'root', depth: 2 },
+      ]);
+
+      expect(await repo.findAncestorChainOrdered('grandchild')).toEqual([
+        'grandchild',
+        'child',
+        'root',
+      ]);
+    });
+
+    it('returns [categoryId] for a root category (no parent)', async () => {
+      queryRaw.mockResolvedValue([{ start_id: 'root', id: 'root', depth: 0 }]);
+
+      expect(await repo.findAncestorChainOrdered('root')).toEqual(['root']);
+    });
+
+    it('returns [categoryId] (no throw) for a non-existent category', async () => {
+      queryRaw.mockResolvedValue([]);
+
+      expect(await repo.findAncestorChainOrdered('ghost')).toEqual(['ghost']);
+    });
+
+    it('keeps only the nearest occurrence of an id if the tree somehow cycles', async () => {
+      queryRaw.mockResolvedValue([
+        { start_id: 'a', id: 'a', depth: 0 },
+        { start_id: 'a', id: 'b', depth: 1 },
+        { start_id: 'a', id: 'a', depth: 2 },
+        { start_id: 'a', id: 'b', depth: 3 },
+      ]);
+
+      expect(await repo.findAncestorChainOrdered('a')).toEqual(['a', 'b']);
+    });
+  });
+
+  describe('findAncestorChainsOrdered (batched, no-N+1)', () => {
+    it('resolves many categories in ONE query, partitioned by the starting id', async () => {
+      queryRaw.mockResolvedValue([
+        { start_id: 'c1', id: 'c1', depth: 0 },
+        { start_id: 'c1', id: 'root', depth: 1 },
+        { start_id: 'c2', id: 'c2', depth: 0 },
+        { start_id: 'c2', id: 'mid', depth: 1 },
+        { start_id: 'c2', id: 'root', depth: 2 },
+      ]);
+
+      const chains = await repo.findAncestorChainsOrdered(['c1', 'c2']);
+
+      expect(queryRaw).toHaveBeenCalledTimes(1);
+      expect(chains.get('c1')).toEqual(['c1', 'root']);
+      expect(chains.get('c2')).toEqual(['c2', 'mid', 'root']);
+    });
+
+    it('collapses duplicate input ids and still maps every requested id', async () => {
+      queryRaw.mockResolvedValue([{ start_id: 'c1', id: 'c1', depth: 0 }]);
+
+      const chains = await repo.findAncestorChainsOrdered(['c1', 'c1', 'ghost']);
+
+      expect(queryRaw).toHaveBeenCalledTimes(1);
+      expect(chains.size).toBe(2);
+      expect(chains.get('c1')).toEqual(['c1']);
+      expect(chains.get('ghost')).toEqual(['ghost']);
+    });
+
+    it('issues no query at all for an empty id list', async () => {
+      const chains = await repo.findAncestorChainsOrdered([]);
+
+      expect(queryRaw).not.toHaveBeenCalled();
+      expect(chains.size).toBe(0);
+    });
+  });
+
   // ─── findCategoryTree — SEO meta pass-through (TASK-247) ─────────────────────
   //
   // The tree read uses Prisma `include` (no narrowing `select`), so every row —
