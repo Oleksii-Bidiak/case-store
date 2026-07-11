@@ -65,8 +65,9 @@ COPY . .
 # (offline — no running server needed; orval reads apps/store-api/swagger.json).
 RUN npm run generate:api -w apps/store-client
 
-# The runner copies public/ into the standalone bundle; guarantee the dir exists
-# (this app ships no static public assets today, so it is not committed).
+# The runner copies public/ into the standalone bundle; guarantee the dir exists.
+# public/ now ships committed brand assets (icons/, brand/og-fallback.png —
+# TASK-279); the mkdir stays as a guard in case the dir is ever emptied again.
 RUN mkdir -p apps/store-client/public
 
 # Build-time public config (baked into the client bundle). Every NEXT_PUBLIC_*

@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "generate:api": "orval --config orval.config.ts",
+    "generate:brand-assets": "node scripts/generate-brand-assets.mjs",
     "screenshots": "node scripts/screenshots.mjs"
   },
   "dependencies": {
@@ -59,6 +60,8 @@
     "msw": "^2.14.6",
     "orval": "^8.9.1",
     "playwright": "^1.61.0",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4",
     "typescript": "^5",
     "undici": "^6.27.0"
