@@ -23,11 +23,14 @@ function AutoRow({
   missing,
   total,
   href,
+  hint = h.autoHint,
 }: {
   label: string;
   missing: number;
   total: number;
   href: string;
+  /** Count phrasing — auto-title wording by default, `N із M` for gap rows. */
+  hint?: (missing: number, total: number) => string;
 }) {
   return (
     <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2">
@@ -38,7 +41,7 @@ function AutoRow({
         {label}
       </Link>
       <span className="text-sm text-muted-foreground tabular-nums">
-        {h.autoHint(missing, total)}
+        {hint(missing, total)}
       </span>
     </li>
   );
@@ -126,6 +129,21 @@ export function SeoHealthSection({ settings }: SeoHealthSectionProps) {
             missing={data.data.pagesMissingMetaTitle}
             total={data.data.pagesTotal}
             href="/pages"
+          />
+          {/* TASK-285: page content-gap counters — same neutral tone. */}
+          <AutoRow
+            label={h.pagesMissingDescriptionLabel}
+            missing={data.data.pagesMissingMetaDescription}
+            total={data.data.pagesTotal}
+            href="/pages"
+            hint={h.gapHint}
+          />
+          <AutoRow
+            label={h.pagesThinContentLabel}
+            missing={data.data.pagesThinContent}
+            total={data.data.pagesTotal}
+            href="/pages"
+            hint={h.gapHint}
           />
         </ul>
       )}

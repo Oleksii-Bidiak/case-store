@@ -116,7 +116,7 @@ describe('SeoSettingsService', () => {
     });
   });
 
-  describe('getHealth (TASK-269)', () => {
+  describe('getHealth (TASK-269 + TASK-285)', () => {
     it('maps the repository counts through SeoHealthEntity.fromCounts', async () => {
       const counts = {
         productsMissingMetaTitle: 12,
@@ -125,6 +125,8 @@ describe('SeoSettingsService', () => {
         categoriesTotal: 8,
         pagesMissingMetaTitle: 1,
         pagesTotal: 5,
+        pagesMissingMetaDescription: 2,
+        pagesThinContent: 4,
       };
       repositoryMock.getContentSeoCounts.mockResolvedValue(counts);
 
@@ -133,6 +135,9 @@ describe('SeoSettingsService', () => {
       expect(repositoryMock.getContentSeoCounts).toHaveBeenCalledTimes(1);
       expect(result).toBeInstanceOf(SeoHealthEntity);
       expect(result).toEqual(counts);
+      // TASK-285: the two new gap counters pass through fromCounts intact.
+      expect(result.pagesMissingMetaDescription).toBe(2);
+      expect(result.pagesThinContent).toBe(4);
     });
   });
 });

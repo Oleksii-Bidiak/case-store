@@ -1568,6 +1568,10 @@ export const dict = {
     productsAutoLabel: "Товари без власного SEO-заголовка",
     categoriesAutoLabel: "Категорії без власного SEO-заголовка",
     pagesAutoLabel: "Сторінки без власного SEO-заголовка",
+    // TASK-285: page content-gap rows (description missing / thin body). `N із M`.
+    gapHint: (count: number, total: number) => `${count} із ${total}`,
+    pagesMissingDescriptionLabel: "Сторінки без SEO-опису",
+    pagesThinContentLabel: "Сторінки з неповним вмістом (< 300 символів)",
     // Defaults-filled row — soft amber nudge when empty, neutral when filled.
     defaultsFilledLabel: "SEO-налаштування за замовчуванням",
     defaultsFilledYes: "Заголовок і опис за замовчуванням заповнені.",

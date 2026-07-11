@@ -25,6 +25,7 @@ const prismaMock = {
   product: { count: jest.fn() },
   category: { count: jest.fn() },
   page: { count: jest.fn() },
+  $queryRaw: jest.fn(),
 };
 
 describe('SeoSettingsRepository', () => {
@@ -82,8 +83,8 @@ describe('SeoSettingsRepository', () => {
     });
   });
 
-  describe('getContentSeoCounts (TASK-269)', () => {
-    it('runs the six counts in parallel and maps them to the counts shape', async () => {
+  describe('getContentSeoCounts (TASK-269 + TASK-285)', () => {
+    it('runs the counts in parallel and maps them to the counts shape', async () => {
       // Distinct return values per call so a mis-wired mapping is caught.
       prismaMock.product.count
         .mockResolvedValueOnce(12) // productsMissingMetaTitle
@@ -93,7 +94,9 @@ describe('SeoSettingsRepository', () => {
         .mockResolvedValueOnce(8); // categoriesTotal
       prismaMock.page.count
         .mockResolvedValueOnce(1) // pagesMissingMetaTitle
-        .mockResolvedValueOnce(5); // pagesTotal
+        .mockResolvedValueOnce(5) // pagesTotal
+        .mockResolvedValueOnce(2); // pagesMissingMetaDescription (TASK-285)
+      prismaMock.$queryRaw.mockResolvedValue([{ count: 4n }]); // pagesThinContent
 
       const result = await repository.getContentSeoCounts();
 
@@ -104,13 +107,28 @@ describe('SeoSettingsRepository', () => {
         categoriesTotal: 8,
         pagesMissingMetaTitle: 1,
         pagesTotal: 5,
+        pagesMissingMetaDescription: 2,
+        pagesThinContent: 4,
       });
+    });
+
+    it('casts the raw thin-content bigint to a number and tolerates an empty result', async () => {
+      prismaMock.product.count.mockResolvedValue(0);
+      prismaMock.category.count.mockResolvedValue(0);
+      prismaMock.page.count.mockResolvedValue(0);
+      prismaMock.$queryRaw.mockResolvedValue([]);
+
+      const result = await repository.getContentSeoCounts();
+
+      expect(result.pagesThinContent).toBe(0);
+      expect(typeof result.pagesThinContent).toBe('number');
     });
 
     it('uses the canonical live-visibility where clauses (Design Decision 2)', async () => {
       prismaMock.product.count.mockResolvedValue(0);
       prismaMock.category.count.mockResolvedValue(0);
       prismaMock.page.count.mockResolvedValue(0);
+      prismaMock.$queryRaw.mockResolvedValue([{ count: 0n }]);
 
       await repository.getContentSeoCounts();
 
@@ -134,6 +152,10 @@ describe('SeoSettingsRepository', () => {
       });
       expect(prismaMock.page.count).toHaveBeenNthCalledWith(2, {
         where: { status: 'PUBLISHED' },
+      });
+      // TASK-285: description gap mirrors the metaTitle null-only convention.
+      expect(prismaMock.page.count).toHaveBeenNthCalledWith(3, {
+        where: { metaDescription: null, status: 'PUBLISHED' },
       });
     });
   });

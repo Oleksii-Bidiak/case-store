@@ -46,6 +46,21 @@ export class SeoHealthEntity {
   @ApiProperty({ type: Number, description: 'Total published pages', example: 5 })
   pagesTotal!: number;
 
+  @ApiProperty({
+    type: Number,
+    description: 'Published pages with no own metaDescription (TASK-285)',
+    example: 2,
+  })
+  pagesMissingMetaDescription!: number;
+
+  @ApiProperty({
+    type: Number,
+    description:
+      'Published pages with thin content — stripped-HTML length under 300 characters (TASK-285)',
+    example: 1,
+  })
+  pagesThinContent!: number;
+
   /** Build the entity from the repository's raw counts. */
   static fromCounts(counts: ContentSeoCounts): SeoHealthEntity {
     const entity = new SeoHealthEntity();
@@ -55,6 +70,8 @@ export class SeoHealthEntity {
     entity.categoriesTotal = counts.categoriesTotal;
     entity.pagesMissingMetaTitle = counts.pagesMissingMetaTitle;
     entity.pagesTotal = counts.pagesTotal;
+    entity.pagesMissingMetaDescription = counts.pagesMissingMetaDescription;
+    entity.pagesThinContent = counts.pagesThinContent;
     return entity;
   }
 }
