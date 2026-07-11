@@ -12,6 +12,10 @@ import {
   buildPasswordResetEmail,
   type PasswordResetMailPayload,
 } from './templates/password-reset.template';
+import {
+  buildAccountLockedEmail,
+  type AccountLockedMailPayload,
+} from './templates/account-locked.template';
 
 /** Parameters accepted by {@link MailService.sendOrderConfirmation}. */
 export interface SendOrderConfirmationParams {
@@ -107,6 +111,29 @@ export class MailService {
     }
 
     const template = buildPasswordResetEmail(payload);
+
+    await this.getTransporter().sendMail({
+      from: this.from,
+      to: payload.to,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    });
+  }
+
+  /**
+   * Render and send an account-locked notice from the JSON-safe payload stored
+   * in a `MailOutbox` row (TASK-287). Same contract as the other payload senders:
+   * a logged no-op when mail is disabled, throwing on transport failure so the
+   * outbox worker applies its retry/backoff policy.
+   */
+  async sendAccountLockedPayload(payload: AccountLockedMailPayload): Promise<void> {
+    if (!this.enabled) {
+      this.logger.info(`Mail disabled — skipping account-locked notice to ${payload.to}`);
+      return;
+    }
+
+    const template = buildAccountLockedEmail(payload);
 
     await this.getTransporter().sendMail({
       from: this.from,

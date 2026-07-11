@@ -59,6 +59,25 @@ export class MailOutboxRepository {
     });
   }
 
+  /**
+   * Whether a row of `type` was enqueued for `recipient` at or after `since`
+   * (TASK-287). Status-agnostic on purpose: the question is "did we already
+   * decide to mail this address recently?", so a row still PENDING, already
+   * SENT, or terminally FAILED all count — otherwise a broken SMTP would turn
+   * the rate limit off.
+   */
+  async hasRecentByTypeAndRecipient(
+    type: string,
+    recipient: string,
+    since: Date,
+  ): Promise<boolean> {
+    const existing = await this.prisma.mailOutbox.findFirst({
+      where: { type, recipient, createdAt: { gte: since } },
+      select: { id: true },
+    });
+    return existing !== null;
+  }
+
   /** Mark a row delivered: SENT + `sentAt`, clearing any prior transient error. */
   markSent(id: string, sentAt: Date): Promise<MailOutbox> {
     return this.prisma.mailOutbox.update({

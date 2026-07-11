@@ -72,47 +72,19 @@ describe("LoginForm", () => {
     expect(
       await screen.findByText(dict.auth.login.errorInvalid),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText(dict.auth.login.errorDeactivated),
-    ).not.toBeInTheDocument();
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it("shows the deactivated-account message when the 401 says so (TASK-202)", async () => {
-    server.use(
-      http.post("*/api/auth/login", () =>
-        unauthorized("Account is deactivated"),
-      ),
-    );
-
-    const user = userEvent.setup();
+  // TASK-287: the API now answers EVERY login failure — including a deactivated
+  // account — with the same generic 401, so there is no deactivated-specific UI
+  // left to test. The permanent support link is what a locked-out user gets.
+  it("always offers a keyboard-reachable support link to the contact page", () => {
     renderWithProviders(<LoginForm />);
 
-    await submitCredentials(user);
+    const supportLink = screen.getByRole("link", {
+      name: dict.auth.support.contactLink,
+    });
 
-    expect(
-      await screen.findByText(dict.auth.login.errorDeactivated),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(dict.auth.login.errorInvalid),
-    ).not.toBeInTheDocument();
-    expect(mockPush).not.toHaveBeenCalled();
-  });
-
-  it("matches the deactivated message case-insensitively (defensive)", async () => {
-    server.use(
-      http.post("*/api/auth/login", () =>
-        unauthorized("ACCOUNT IS DEACTIVATED"),
-      ),
-    );
-
-    const user = userEvent.setup();
-    renderWithProviders(<LoginForm />);
-
-    await submitCredentials(user);
-
-    expect(
-      await screen.findByText(dict.auth.login.errorDeactivated),
-    ).toBeInTheDocument();
+    expect(supportLink).toHaveAttribute("href", "/contact");
   });
 });

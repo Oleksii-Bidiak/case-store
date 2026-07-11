@@ -6,8 +6,10 @@ import { MailOutboxRepository } from './mail-outbox.repository';
 import { MailService, type SendOrderConfirmationParams } from '../mail/mail.service';
 import type { OrderConfirmationMailPayload } from '../mail/templates/order-confirmation.template';
 import type { PasswordResetMailPayload } from '../mail/templates/password-reset.template';
+import type { AccountLockedMailPayload } from '../mail/templates/account-locked.template';
 import { Clock, MAIL_OUTBOX_CLOCK } from './mail-outbox.clock';
 import {
+  ACCOUNT_LOCKED_MAIL_TYPE,
   ORDER_CONFIRMATION_MAIL_TYPE,
   PASSWORD_RESET_MAIL_TYPE,
   type DispatchResult,
@@ -95,6 +97,36 @@ export class MailOutboxService {
       },
       tx,
     );
+  }
+
+  /**
+   * Enqueue an account-locked owner notice (TASK-287) — the out-of-band channel
+   * that tells the owner of a deactivated/soft-deleted account why their (valid)
+   * password did not get them in, while the API response stays generic.
+   */
+  async enqueueAccountLockedNotice(
+    payload: AccountLockedMailPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.repository.enqueue(
+      {
+        type: ACCOUNT_LOCKED_MAIL_TYPE,
+        recipient: payload.to,
+        payload: payload as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Whether an account-locked notice was already enqueued for `recipient` at or
+   * after `since` — the rate-limit probe callers use before
+   * {@link enqueueAccountLockedNotice}. Reuses the outbox rows themselves as the
+   * ledger, so repeated logins to a banned account cannot be turned into a mail
+   * bomb aimed at the owner.
+   */
+  hasRecentAccountLockedNotice(recipient: string, since: Date): Promise<boolean> {
+    return this.repository.hasRecentByTypeAndRecipient(ACCOUNT_LOCKED_MAIL_TYPE, recipient, since);
   }
 
   /**
@@ -186,6 +218,11 @@ export class MailOutboxService {
       case PASSWORD_RESET_MAIL_TYPE:
         await this.mailService.sendPasswordResetPayload(
           row.payload as unknown as PasswordResetMailPayload,
+        );
+        return;
+      case ACCOUNT_LOCKED_MAIL_TYPE:
+        await this.mailService.sendAccountLockedPayload(
+          row.payload as unknown as AccountLockedMailPayload,
         );
         return;
       default:

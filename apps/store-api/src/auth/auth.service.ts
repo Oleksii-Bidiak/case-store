@@ -25,6 +25,10 @@ const INVALID_CREDENTIALS_MESSAGE = 'Invalid credentials';
  * (TASK-273) and `login` (TASK-274). See {@link AuthService.burnTimingCost}. */
 const DUMMY_TIMING_PASSWORD = 'dummy-timing-equalizer-password';
 
+/** Default rate limit for the locked-account owner notice (TASK-287): at most
+ * one mail per address per 24h, however many times the login is retried. */
+const DEFAULT_ACCOUNT_LOCKED_NOTICE_WINDOW_HOURS = 24;
+
 @Injectable()
 export class AuthService {
   private readonly jwtSecret: string;
@@ -33,6 +37,7 @@ export class AuthService {
   private readonly jwtRefreshExpiration: string;
   private readonly passwordResetExpiration: string;
   private readonly storeClientUrl: string;
+  private readonly accountLockedNoticeWindowHours: number;
 
   constructor(
     private readonly authRepository: AuthRepository,
@@ -55,6 +60,12 @@ export class AuthService {
     this.storeClientUrl = this.configService.get<string>(
       'STORE_CLIENT_URL',
       'http://localhost:3000',
+    );
+    this.accountLockedNoticeWindowHours = Number(
+      this.configService.get<number>(
+        'ACCOUNT_LOCKED_NOTICE_WINDOW_HOURS',
+        DEFAULT_ACCOUNT_LOCKED_NOTICE_WINDOW_HOURS,
+      ),
     );
   }
 
@@ -111,12 +122,21 @@ export class AuthService {
     }
 
     const isPasswordValid = await argon2.verify(user.passwordHash, password);
+    const isLocked = !user.isActive || Boolean(user.deletedAt);
+
+    // TASK-287: the owner — and only the owner — gets the truth, by email. The
+    // notice is gated on a CORRECT password so it can be triggered by nobody but
+    // someone who already holds the credentials (an anonymous prober cannot use
+    // it to confirm a ban, nor to spray mail at the address).
+    if (isPasswordValid && isLocked) {
+      await this.notifyLockedAccountOwner(user.id, user.email);
+    }
 
     // Deactivated (banned) and soft-deleted (tombstoned) accounts must never
     // obtain tokens. Folded in with the password check so all three rejections
     // are indistinguishable to the client — and each has already paid the
     // argon2.verify cost, so no branch here is a timing outlier.
-    if (!isPasswordValid || !user.isActive || user.deletedAt) {
+    if (!isPasswordValid || isLocked) {
       throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
 
@@ -288,6 +308,49 @@ export class AuthService {
     tokens.accessToken = accessToken;
     tokens.refreshToken = refreshToken;
     return tokens;
+  }
+
+  /**
+   * Enqueue the "your account is not accessible — contact support" notice to the
+   * owner of a deactivated/soft-deleted account (TASK-287), rate-limited to one
+   * mail per {@link accountLockedNoticeWindowHours} per address.
+   *
+   * The rate limit is enforced against the mail-outbox rows themselves (a row of
+   * this type for this recipient inside the window ⇒ skip), so repeated logins —
+   * whether by the owner retrying or by an attacker holding the password — cannot
+   * be amplified into a mail bomb, and no extra table is needed to remember it.
+   *
+   * Failures are swallowed: a mail-outbox hiccup must not convert the caller's
+   * 401 into a 500, since that difference would itself signal account state.
+   * Nothing identifying is logged beyond the userId already used elsewhere — no
+   * email, no password, no lock reason.
+   */
+  private async notifyLockedAccountOwner(userId: string, email: string): Promise<void> {
+    try {
+      const since = new Date(Date.now() - this.accountLockedNoticeWindowHours * 60 * 60 * 1000);
+      const alreadyNotified = await this.mailOutboxService.hasRecentAccountLockedNotice(
+        email,
+        since,
+      );
+      if (alreadyNotified) {
+        return;
+      }
+
+      await this.mailOutboxService.enqueueAccountLockedNotice({
+        to: email,
+        supportUrl: `${this.storeClientUrl}/contact`,
+      });
+
+      this.logger.info(
+        { event: 'user.lockedAccountLoginNotified', userId },
+        'Locked-account login notice enqueued',
+      );
+    } catch (err) {
+      this.logger.error(
+        { event: 'user.lockedAccountLoginNotifyFailed', userId, err },
+        'Failed to enqueue locked-account login notice',
+      );
+    }
   }
 
   /**

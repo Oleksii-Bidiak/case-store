@@ -54,8 +54,16 @@ export const dict = {
     passwordRequired: "Вкажіть пароль",
     errorNotAdmin: "Цей акаунт не має прав адміністратора.",
     errorInvalid: "Невірний email або пароль.",
-    errorDeactivated: "Обліковий запис деактивовано. Зверніться до підтримки.",
     errorGeneric: "Щось пішло не так. Спробуйте ще раз.",
+  },
+
+  // Support escape hatch on the login form (TASK-287). The API answers every
+  // failed login with the same generic message — it never says "your account is
+  // deactivated" — so the form always offers a way to reach a human. Shown to
+  // everyone; it discloses nothing about any account.
+  authSupport: {
+    loginTrouble: "Проблеми зі входом?",
+    contactLink: "Напишіть у підтримку",
   },
 
   dashboard: {

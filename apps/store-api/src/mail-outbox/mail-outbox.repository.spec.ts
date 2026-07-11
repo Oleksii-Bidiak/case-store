@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma';
 const makeDelegate = () => ({
   create: jest.fn(),
   findMany: jest.fn(),
+  findFirst: jest.fn(),
   update: jest.fn(),
 });
 
@@ -142,6 +143,39 @@ describe('MailOutboxRepository', () => {
         where: { id: 'outbox-1' },
         data: { status: MailOutboxStatus.FAILED, attempts: 5, lastError: 'permanent bounce' },
       });
+    });
+  });
+
+  // ─── hasRecentByTypeAndRecipient (rate-limit ledger, TASK-287) ───────────────
+
+  describe('hasRecentByTypeAndRecipient', () => {
+    const since = new Date('2026-07-10T12:00:00.000Z');
+
+    it('matches on type + recipient + createdAt >= since, regardless of status', async () => {
+      prismaMock.mailOutbox.findFirst.mockResolvedValue({ id: 'outbox-9' });
+
+      await expect(
+        repository.hasRecentByTypeAndRecipient('account-locked', 'banned@example.com', since),
+      ).resolves.toBe(true);
+
+      // Status is deliberately NOT part of the filter: a still-PENDING or even
+      // FAILED row still means "we already decided to mail this address".
+      expect(prismaMock.mailOutbox.findFirst).toHaveBeenCalledWith({
+        where: {
+          type: 'account-locked',
+          recipient: 'banned@example.com',
+          createdAt: { gte: since },
+        },
+        select: { id: true },
+      });
+    });
+
+    it('returns false when no row exists inside the window', async () => {
+      prismaMock.mailOutbox.findFirst.mockResolvedValue(null);
+
+      await expect(
+        repository.hasRecentByTypeAndRecipient('account-locked', 'banned@example.com', since),
+      ).resolves.toBe(false);
     });
   });
 });
