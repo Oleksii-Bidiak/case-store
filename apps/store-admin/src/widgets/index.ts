@@ -97,3 +97,8 @@ export { ContentMapView } from "./content-map";
 export { DashboardTopProductsTable } from "./dashboard-top-products";
 export { DashboardLastOrdersTable } from "./dashboard-last-orders";
 export { DashboardTrafficCard } from "./dashboard-traffic";
+export {
+  AdminCarouselTable,
+  AdminCarouselTableSkeleton,
+} from "./carousel-list";
+export { CreateCarouselView, EditCarouselView } from "./carousel-form-view";

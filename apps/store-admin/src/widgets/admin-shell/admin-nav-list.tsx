@@ -12,6 +12,7 @@ import {
   FileText,
   Newspaper,
   ImageIcon,
+  GalleryHorizontal,
   ShoppingCart,
   Star,
   MessageSquare,
@@ -43,6 +44,13 @@ const navItems = [
   { label: dict.nav.pages, href: "/pages", icon: FileText },
   { label: dict.nav.blog, href: "/blog", icon: Newspaper },
   { label: dict.nav.banners, href: "/banners", icon: ImageIcon },
+  // TASK-139: label deliberately lives in this plan's own `carousels` namespace,
+  // not the shared `dict.nav` registry (this wave's stricter dictionary scoping).
+  {
+    label: dict.carousels.navLabel,
+    href: "/carousels",
+    icon: GalleryHorizontal,
+  },
   { label: dict.nav.orders, href: "/orders", icon: ShoppingCart },
   { label: dict.nav.reviews, href: "/reviews", icon: Star },
   { label: dict.nav.messages, href: "/messages", icon: MessageSquare },

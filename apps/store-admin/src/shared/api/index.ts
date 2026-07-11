@@ -31,6 +31,7 @@ export * from "./generated/reviews/reviews";
 export * from "./generated/contact/contact";
 export * from "./generated/discounts/discounts";
 export * from "./generated/newsletter/newsletter";
+export * from "./generated/carousels/carousels";
 
 // Generated DTO / entity types
 export * from "./generated/models";
