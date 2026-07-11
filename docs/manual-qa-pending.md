@@ -1227,3 +1227,18 @@ docker-compose.prod.yml config` валідний; Umami-фасад покрит�
       `/legal/<old>`, `/blog/<old>`. **Має бути:** відповідь `HTTP 308` з `Location:` на новий
       slug — саме на рівні HTTP (не 200-shell з клієнтською RSC-навігацією; route-level
       loading.tsx на legal/products видалено якраз тому, що він стрімив 200 до redirect).
+
+### TASK-281 — Фід Google Merchant Center (план 148)
+
+- [ ] **Живий фід на dev-стенді.** **Зроби:** на запущеному стеку з насіяною базою виконай
+      `curl -i http://localhost:3000/merchant-feed.xml` (або відкрий у браузері). **Має
+      бути:** статус `200`, заголовки `Content-Type: application/xml; charset=utf-8` і
+      `Cache-Control: public, max-age=3600, s-maxage=86400`; тіло — валідний XML (перевір
+      `curl -s localhost:3000/merchant-feed.xml | xmllint --noout -` — без помилок) з одним
+      `<item>` на кожен активний товар, у якого є фото і коректна ціна.
+- [ ] **Порожній фід при недоступному API.** **Зроби:** зупини store-api і повтори запит.
+      **Має бути:** все одно `200` і валідний XML з `<channel>` без жодного `<item>` (не 500).
+- [ ] **Реальний Merchant Center.** **Зроби:** після деплою подай
+      `https://<домен>/merchant-feed.xml` у тестовому акаунті Merchant Center (розділ 24
+      admin-guide). **Має бути:** фід оброблено, щонайменше один товар прийнято без помилок
+      формату (політикові відхилення — окрема історія, не баг фіду).
