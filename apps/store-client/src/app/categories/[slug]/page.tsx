@@ -101,7 +101,12 @@ export default async function CategoryLandingPage({
   const path = await resolveCategoryPath(slug);
   if (!path) {
     // Real HTTP 404 — the category is resolved server-side before the
-    // response is built (unlike the PDP's client-fetched soft-404).
+    // response is built (unlike the PDP's client-fetched soft-404). This is
+    // also why the route deliberately has NO route-level loading.tsx: a
+    // loading boundary starts streaming a 200 shell before notFound() can set
+    // the status (verified live; /legal/[slug] has that flaw, /blog/[slug]
+    // without loading.tsx returns a true 404). The in-page <Suspense>
+    // skeleton below covers the grid-loading UX instead.
     notFound();
   }
   const node = path.at(-1)!;
