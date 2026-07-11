@@ -11,6 +11,7 @@ import {
 import { useCategoryControllerGetRootCategories } from "@/entities/category";
 import { Button, ProductCard, Skeleton } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
+import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { dict } from "@/shared/config";
 import {
   canLoadMoreDeals,
@@ -159,6 +160,7 @@ export function PromoDeals() {
                 product={product}
                 priority={index < 4}
                 action={<ProductCardActions product={product} />}
+                hoverAction={<ProductQuickViewTrigger product={product} />}
               />
             ))}
           </div>

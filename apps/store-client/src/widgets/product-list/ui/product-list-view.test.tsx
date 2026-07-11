@@ -187,3 +187,42 @@ describe("ProductListView — lockedCategoryId (/categories/[slug], TASK-277)", 
     expect(params.has("categoryId")).toBe(false);
   });
 });
+
+describe("ProductListView — mobile filter drawer count (TASK-084)", () => {
+  it("shows the live, grammatically-correct result count on the apply button", async () => {
+    installCatalogHandlers(); // one matching product
+    const user = userEvent.setup();
+
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText("Alpha Case");
+
+    await user.click(
+      screen.getByRole("button", { name: dict.filters.filtersButton }),
+    );
+
+    // Count reads the same (already warm) query the grid used — no empty state.
+    const applyButton = await screen.findByRole("button", {
+      name: dict.filters.mobileApply(1),
+    });
+    expect(applyButton).toBeEnabled();
+    expect(applyButton).toHaveTextContent("Показати 1 товар");
+  });
+
+  it("disables the apply button with the empty-state label when nothing matches", async () => {
+    installCatalogHandlers({ empty: true });
+    const user = userEvent.setup();
+
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText(dict.catalog.emptyHeading);
+
+    await user.click(
+      screen.getByRole("button", { name: dict.filters.filtersButton }),
+    );
+
+    const applyButton = await screen.findByRole("button", {
+      name: dict.filters.mobileApply(0),
+    });
+    expect(applyButton).toBeDisabled();
+    expect(applyButton).toHaveTextContent("Немає товарів за цими фільтрами");
+  });
+});

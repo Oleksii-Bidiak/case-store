@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useProductControllerFindAll } from "@/entities/product";
 import { ProductCard, Skeleton } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
+import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { dict } from "@/shared/config";
 
 interface ProductCompatibleProps {
@@ -116,6 +117,7 @@ export function ProductCompatible({
             <ProductCard
               product={product}
               action={<ProductCardActions product={product} />}
+              hoverAction={<ProductQuickViewTrigger product={product} />}
             />
           </div>
         ))}

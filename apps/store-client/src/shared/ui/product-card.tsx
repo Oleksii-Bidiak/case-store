@@ -15,16 +15,16 @@ const NEW_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  *
  * Uses the "stretched link" pattern: only the product name is a real <Link>, but
  * its `::after` overlay stretches over the whole card so the entire card is
- * clickable. This lets the optional `quickAdd` overlay sit ABOVE the link
+ * clickable. This lets the optional `hoverAction` overlay sit ABOVE the link
  * (higher z-index) and stay independently clickable — without nesting an
  * interactive control inside an anchor (invalid + inaccessible). shared/ui stays
- * free of feature imports; widgets inject `quickAdd`/`action`.
+ * free of feature imports; widgets inject `hoverAction`/`action`.
  *
  * When the list API reports multiple variant colours, the card renders a
  * `ColorDots` row from `product.variantSummary`. The price is ALWAYS this
  * position's own `product.price` (each card is one first-class position); the
  * "від {price}" prefix only appears on the group's cheapest position — see
- * `getCardPricing` (TASK-199). `quickAdd` is revealed on hover and on keyboard
+ * `getCardPricing` (TASK-199). `hoverAction` is revealed on hover and on keyboard
  * focus (focus-within), so it is reachable without a pointer.
  *
  * The product image is optimized via `next/image` inside `ProductCardImage`,
@@ -35,7 +35,7 @@ const NEW_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 export function ProductCard({
   product,
   action,
-  quickAdd,
+  hoverAction,
   wishlist,
   priority = false,
   imageSizes,
@@ -43,8 +43,13 @@ export function ProductCard({
   product: PublicProductEntity;
   /** Optional control rendered below the price (always visible). */
   action?: ReactNode;
-  /** Optional quick-add control overlaid on the image, shown on hover/focus. */
-  quickAdd?: ReactNode;
+  /**
+   * Optional control overlaid on the bottom of the image, revealed on hover and
+   * keyboard focus (a generic hover-reveal slot — quick-view is its first real
+   * consumer). Sits above the stretched link (z-20) so it stays independently
+   * clickable without nesting an interactive control inside the card anchor.
+   */
+  hoverAction?: ReactNode;
   /**
    * Optional wishlist heart pinned to the image's top-right corner (always
    * visible, above the stretched link so it stays independently clickable).
@@ -112,12 +117,13 @@ export function ProductCard({
           <div className="absolute right-2.5 top-2.5 z-20">{wishlist}</div>
         )}
 
-        {/* Quick-add overlay — sits above the stretched link (z-20) so it stays
-            independently clickable. Hidden (and non-interactive to pointers)
-            until hover or keyboard focus enters the card, then slides up. */}
-        {quickAdd && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 translate-y-2 p-2.5 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100">
-            {quickAdd}
+        {/* Hover-reveal overlay — sits above the stretched link (z-20) so it
+            stays independently clickable. Hidden (and non-interactive to
+            pointers) until hover or keyboard focus enters the card, then slides
+            up. */}
+        {hoverAction && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 translate-y-2 p-2.5 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100 motion-reduce:transition-none">
+            {hoverAction}
           </div>
         )}
       </div>

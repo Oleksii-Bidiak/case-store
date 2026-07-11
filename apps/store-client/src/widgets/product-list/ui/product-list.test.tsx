@@ -257,3 +257,80 @@ describe("ProductList load-more append (TASK-216)", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("ProductList — quick-view trigger wiring (TASK-086)", () => {
+  /** Detail + wishlist handlers the opened quick-view dialog needs. */
+  function installQuickViewHandlers() {
+    server.use(
+      http.get("*/api/products/:slug", ({ params }) =>
+        HttpResponse.json({
+          data: makeProduct(params.slug as string, "Alpha Case"),
+          category: { id: "cat-1", name: "Чохли", slug: "cases" },
+          group: null,
+          images: [],
+        }),
+      ),
+      http.get("*/api/wishlist", () =>
+        HttpResponse.json({ data: { items: [], itemCount: 0 } }),
+      ),
+    );
+  }
+
+  it("renders a quick-view trigger on each grid card and opens the dialog without navigating", async () => {
+    installProducts(
+      { "": { 1: [makeProduct("p1", "Alpha Case")] } },
+      {
+        limit: 20,
+      },
+    );
+    installQuickViewHandlers();
+    const user = userEvent.setup();
+
+    renderWithProviders(
+      <ProductList {...baseProps} params={{ page: 1, limit: 20 }} />,
+    );
+
+    const trigger = await screen.findByRole("button", {
+      name: dict.quickView.trigger("Alpha Case"),
+    });
+    // The card's own name is a real <a> to the PDP; the trigger is a sibling
+    // button above the stretched link — clicking it opens the preview, and the
+    // anchor's href is untouched (no client-side navigation).
+    const cardLink = screen.getByRole("link", { name: "Alpha Case" });
+    expect(cardLink).toHaveAttribute("href", "/products/p1");
+
+    await user.click(trigger);
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Alpha Case" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders a quick-view trigger on the list-row layout and opens the dialog", async () => {
+    installProducts(
+      { "": { 1: [makeProduct("p1", "Alpha Case")] } },
+      {
+        limit: 20,
+      },
+    );
+    installQuickViewHandlers();
+    const user = userEvent.setup();
+
+    renderWithProviders(
+      <ProductList
+        {...baseProps}
+        view="list"
+        params={{ page: 1, limit: 20 }}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: dict.quickView.trigger("Alpha Case"),
+      }),
+    );
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+});
