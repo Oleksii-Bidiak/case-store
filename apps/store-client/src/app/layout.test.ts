@@ -48,6 +48,8 @@ function makeSettings(
     defaultMetaDescription: null,
     titleTemplate: null,
     defaultOgImage: null,
+    googleSiteVerification: null,
+    bingSiteVerification: null,
     noindexSite: false,
     llmsTxtSummary: null,
     additionalSameAsLinks: [],
@@ -116,5 +118,59 @@ describe("root layout generateMetadata (TASK-279)", () => {
 
     const title = meta.title as { default: string };
     expect(title.default).toBe("Кастомний заголовок з адмінки");
+  });
+
+  // --- Search-console verification (TASK-280, plan 146) --------------------
+
+  it("omits the verification key entirely when SeoSettings is unavailable", async () => {
+    fetchSeo.mockResolvedValue(null);
+
+    const meta = await generateMetadata();
+
+    expect(meta.verification).toBeUndefined();
+  });
+
+  it("omits the verification key entirely when both tokens are null", async () => {
+    fetchSeo.mockResolvedValue(makeSettings());
+
+    const meta = await generateMetadata();
+
+    expect(meta.verification).toBeUndefined();
+  });
+
+  it("emits only verification.google when just the Google token is set", async () => {
+    fetchSeo.mockResolvedValue(
+      makeSettings({ googleSiteVerification: "G-TOKEN" }),
+    );
+
+    const meta = await generateMetadata();
+
+    expect(meta.verification?.google).toBe("G-TOKEN");
+    expect(meta.verification?.other).toBeUndefined();
+  });
+
+  it("emits only verification.other['msvalidate.01'] when just the Bing token is set", async () => {
+    fetchSeo.mockResolvedValue(
+      makeSettings({ bingSiteVerification: "B-TOKEN" }),
+    );
+
+    const meta = await generateMetadata();
+
+    expect(meta.verification?.google).toBeUndefined();
+    expect(meta.verification?.other).toEqual({ "msvalidate.01": "B-TOKEN" });
+  });
+
+  it("emits both verification keys simultaneously when both tokens are set", async () => {
+    fetchSeo.mockResolvedValue(
+      makeSettings({
+        googleSiteVerification: "G-TOKEN",
+        bingSiteVerification: "B-TOKEN",
+      }),
+    );
+
+    const meta = await generateMetadata();
+
+    expect(meta.verification?.google).toBe("G-TOKEN");
+    expect(meta.verification?.other).toEqual({ "msvalidate.01": "B-TOKEN" });
   });
 });

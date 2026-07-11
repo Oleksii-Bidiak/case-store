@@ -118,6 +118,22 @@ export async function generateMetadata(): Promise<Metadata> {
             },
           ],
     },
+    // Search-console ownership verification (TASK-280, plan 146 Decision 2).
+    // Each key is emitted only when its admin-managed token is a non-empty
+    // string — Next renders no tag for an absent key, and an empty
+    // content="" tag would look broken to the crawler. Bing has no
+    // first-class key in Next's Verification type, so it goes through
+    // `other` under its documented meta name `msvalidate.01`. The whole
+    // object is omitted when neither console is configured.
+    verification:
+      seo?.googleSiteVerification || seo?.bingSiteVerification
+        ? {
+            google: seo?.googleSiteVerification || undefined,
+            other: seo?.bingSiteVerification
+              ? { "msvalidate.01": seo.bingSiteVerification }
+              : undefined,
+          }
+        : undefined,
   };
 }
 
