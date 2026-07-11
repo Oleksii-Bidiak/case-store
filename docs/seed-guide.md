@@ -65,6 +65,14 @@ Re-running `npm run db:seed` on a populated DB is **safe** — it will not creat
 - **Product group axes** and **product images** are deleted and recreated wholesale per entry on
   every run (`deleteMany` + `create`/`createMany`). This keeps them exactly in sync with the seed
   source even if you change axis names or image lists between runs.
+- **Brands, discounts, pages** upsert on their unique key (`slug` / `code` / `slug`);
+  **contact messages** on a deterministic id; **newsletter subscribers** on the normalized email.
+- **Attribute definitions** upsert on the `(categoryId, key)` unique, **attribute values** on
+  `(productId, definitionId)`, and **device-compat links** on the `(productId, deviceModelId)`
+  composite key — all safe to re-run.
+- **Orders** upsert on a deterministic id; each order's **items** and **status-history** trail are
+  deleted + recreated wholesale per run, and the **discount redemption** upserts on its unique
+  `orderId`. `Discount.redeemedCount` is recomputed from the seeded redemptions on every run.
 
 Because images are `deleteMany`-then-recreate per position, a crash mid-loop could leave a position
 with no images. Recovery is simply re-running `npm run db:seed`.
@@ -110,8 +118,9 @@ or shared database** — it is destructive and irreversible.
 
 ## 6. Admin credential override
 
-By default the seed creates an admin as `admin@store.com` / `Admin123!`. To use different
-credentials, set these env vars in `apps/store-api/.env` **before seeding**:
+By default the seed creates the primary admin as `admin@store.com` / `Admin123!`. To use
+different credentials for **that account**, set these env vars in `apps/store-api/.env`
+**before seeding**:
 
 ```env
 ADMIN_SEED_EMAIL=you@example.com
@@ -125,24 +134,53 @@ already-registered account instead of seeding a new admin, run SQL directly:
 UPDATE users SET role = 'ADMIN' WHERE email = '<email>';
 ```
 
-The seed customer (`customer@store.com` / `Customer123!`) and the 20 reviewer accounts
-(`reviewer1@store.com` … `reviewer20@store.com`, password `Reviewer123!`) are not configurable.
+### Seeded login credentials
+
+| Role     | Email                  | Password       | Notes                                 |
+| -------- | ---------------------- | -------------- | ------------------------------------- |
+| Admin 1  | `admin@store.com`      | `Admin123!`    | Олександр Коваленко (env-overridable) |
+| Admin 2  | `manager@store.com`    | `Manager123!`  | Ірина Мельник (fixed)                 |
+| Customer | `customer@store.com`   | `Customer123!` | Demo account (John Doe)               |
+| Customer | `oksana@example.com`   | `Customer123!` | Оксана Шевченко                       |
+| Customer | `taras@example.com`    | `Customer123!` | Тарас Бондаренко                      |
+| Customer | `mariia@example.com`   | `Customer123!` | Марія Коваль                          |
+| Customer | `dmytro@example.com`   | `Customer123!` | Дмитро Ткаченко                       |
+| Customer | `nataliia@example.com` | `Customer123!` | Наталія Кравченко                     |
+
+Only Admin 1's email/password are configurable (via the env vars above). Everything else is
+fixed. The 20 approved-review accounts (`reviewer1@store.com` … `reviewer20@store.com`) and 3
+pending-review accounts (`pending-reviewer1@store.com` … `pending-reviewer3@store.com`) all use
+password `Reviewer123!` and are not configurable.
 
 ---
 
 ## 7. What gets seeded
 
-A clean seed produces (counts as of TASK-128-B):
+A clean seed produces (counts as of the seed-enrichment pass — Users/Brands/Смартфони/Orders):
 
-| Entity            | Count | Notes                                                                                             |
-| ----------------- | ----- | ------------------------------------------------------------------------------------------------- |
-| Users             | 22    | 1 admin + 1 customer + 20 reviewers                                                               |
-| Categories        | 13    | 4 root (Cases, Chargers, Cables, Screen Protectors) + 9 subcategories                             |
-| Product groups    | 13    | Multi-variant entries become groups (variant-as-position model, TASK-142)                         |
-| Product positions | 32    | Group members + 2 standalone; one standalone (`Braided USB-C … 2m`) is out of stock (`stock = 0`) |
-| Product images    | 53    | Deterministic `picsum.photos` URLs per position; 17 positions have a 2–3 image gallery            |
-| Reviews           | 342   | Pre-approved (`isActive = true`), 5–16 per product, ratings skewed positive                       |
-| Addresses         | 1     | Default shipping address for the seed customer                                                    |
+| Entity                 | Count        | Notes                                                                                                      |
+| ---------------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
+| Users                  | 31           | 2 admins + 6 customers + 20 reviewers + 3 pending-review accounts                                          |
+| Brands                 | 6            | Apple, Samsung, Xiaomi, Baseus, Anker, Spigen (product manufacturers, TASK-189)                            |
+| Categories             | 15           | 5 root (Cases, Chargers, Cables, Screen Protectors, **Смартфони**) + 10 subcategories (incl. **iPhone**)   |
+| Product groups         | 14           | Multi-variant entries become groups (variant-as-position, TASK-142); incl. iPhone 15 Pro (storage × color) |
+| Product positions      | 40           | Group members + standalone; incl. 6 iPhone 15 Pro positions + iPhone 14 / iPhone 13 standalone             |
+| Product images         | 69           | Deterministic `picsum.photos` URLs per position                                                            |
+| Attribute definitions  | 4            | Екран / Пам'ять / Камера / Акумулятор on **Смартфони** (inherited by iPhone), TASK-191                     |
+| Attribute values       | 32           | 4 structured specs filled on each of the 8 iPhone positions                                                |
+| Device compat links    | 30           | Accessories ↔ Apple device models (`ProductDeviceCompat`, TASK-190)                                        |
+| Reviews (approved)     | 5–20/product | Pre-approved (`isActive = true`), deterministic, ratings skewed positive                                   |
+| Reviews (pending)      | 6            | `isActive = false` with UA comments — populate the admin moderation queue                                  |
+| Discounts              | 5            | WELCOME10, SUMMER500 (minSpend), VIP20, EXPIRED15 (past), OLDPROMO (inactive)                              |
+| Orders                 | 12           | Cover **every** OrderStatus + PaymentStatus; deterministic ids                                             |
+| Order items            | 17           | Price captured at purchase                                                                                 |
+| Discount redemptions   | 2            | WELCOME10 + SUMMER500 (unique per order)                                                                   |
+| Order status history   | 53           | Append-only STATUS + PAYMENT_STATUS trails (admin/system `changedBy`)                                      |
+| Contact messages       | 5            | NEW / READ / ARCHIVED (TASK-177)                                                                           |
+| Newsletter subscribers | 6            | Mix of SUBSCRIBED / UNSUBSCRIBED (TASK-188)                                                                |
+| Pages                  | 6            | UA PUBLISHED info pages (about, delivery, returns, warranty, privacy-policy, terms), TASK-187              |
+| Blog posts             | 12           | UA, PUBLISHED; ≥2 featured                                                                                 |
+| Addresses              | 8            | `seed-address-1` (John) + 1–2 UA addresses per new customer (deterministic ids)                            |
 
 Images use deterministic `https://picsum.photos/seed/{positionSlug}-{sortOrder}/800/800` URLs so the
 storefront looks populated without real uploads. The first image (`sortOrder === 0`) of each

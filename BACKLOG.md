@@ -291,6 +291,12 @@
 | TASK-175 | Loyalty & account extras: points/cashback model + accrual/redeem API + purchases feed + persisted notification prefs (account UI stubs exist) | ⬜ | — |
 | TASK-168 | Social sign-in (Google/Apple OAuth): backend OAuth module + account linking (auth slide-out stubs) | 🅿️ | — |
 | TASK-080-E | Admin-configurable NP dispatch origin (`DeliverySetting`) — deferred until real NP API key + running DB (owner decision 2026-06-27) | 🅿️ | 068 |
+| TASK-082 | Deep mega-menu subcategory tree | Root-category dropdown shipped (167-A) |
+| TASK-083 | Category tile images (`Category.image`) | Pairs with TASK-186/189 when picked up |
+| TASK-084 | Mobile filter drawer polish deferrals | Behind UI rewrite |
+| TASK-086 | Quick-view modal | Behind UI rewrite |
+| TASK-139 | Admin-managed recommendation carousels | Needs discovery |
+| TASK-140 | Admin tables UX rethink | Superseded largely by TASK-147/192 |
 
 ### Parked
 
@@ -301,13 +307,7 @@
 | TASK-049 | Abandoned-cart emails | Marketing later; reuses mail outbox |
 | TASK-050 | GA4 + Facebook Pixel | Needs TASK-090 consent first |
 | TASK-090 | Cookie consent + compliant marketing signup | Bundled with marketing push |
-| TASK-082 | Deep mega-menu subcategory tree | Root-category dropdown shipped (167-A) |
-| TASK-083 | Category tile images (`Category.image`) | Pairs with TASK-186/189 when picked up |
-| TASK-084 | Mobile filter drawer polish deferrals | Behind UI rewrite |
 | TASK-085 | Product comparison | PDP/account stubs reference it |
-| TASK-086 | Quick-view modal | Behind UI rewrite |
-| TASK-139 | Admin-managed recommendation carousels | Needs discovery |
-| TASK-140 | Admin tables UX rethink | Superseded largely by TASK-147/192 |
 
 ---
 
