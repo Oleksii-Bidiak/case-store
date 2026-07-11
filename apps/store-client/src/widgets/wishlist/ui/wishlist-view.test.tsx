@@ -139,4 +139,21 @@ describe("WishlistView (TASK-076)", () => {
       screen.getByRole("button", { name: new RegExp(dict.wishlist.quickSale) }),
     ).toBeInTheDocument();
   });
+
+  it("labels the mobile drawer's apply button with the saved-item count (TASK-084)", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([buildItem()]),
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: dict.filters.filtersButton }),
+    );
+
+    const applyButton = await screen.findByRole("button", {
+      name: dict.filters.mobileApply(1),
+    });
+    expect(applyButton).toBeEnabled();
+    expect(applyButton).toHaveTextContent("Показати 1 товар");
+  });
 });

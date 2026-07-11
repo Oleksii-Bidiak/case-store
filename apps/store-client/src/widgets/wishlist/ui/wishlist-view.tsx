@@ -364,9 +364,10 @@ export function WishlistView() {
             <button
               type="button"
               onClick={() => setFiltersOpen(false)}
-              className="h-12 w-full rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90"
+              disabled={visible.length === 0}
+              className="h-12 w-full rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {dict.filters.mobileApply}
+              {dict.filters.mobileApply(visible.length)}
             </button>
           </SheetFooter>
         </SheetContent>

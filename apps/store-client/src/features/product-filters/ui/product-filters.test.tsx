@@ -143,3 +143,52 @@ describe("ProductFilters price range sync (TASK-208)", () => {
     expect(onFilterChange).not.toHaveBeenCalled();
   });
 });
+
+describe("ProductFilters collapsible mobile drawer (TASK-084)", () => {
+  it("renders no <details> disclosures in the default (desktop) layout", () => {
+    const { container } = renderWithProviders(
+      <ProductFilters currentParams={{}} onFilterChange={() => {}} />,
+    );
+    expect(container.querySelectorAll("details")).toHaveLength(0);
+  });
+
+  it("wraps each section in a <details>, open only where a filter is active", async () => {
+    const { container } = renderWithProviders(
+      <ProductFilters
+        collapsible
+        currentParams={{ search: "case" }}
+        onFilterChange={() => {}}
+      />,
+    );
+
+    // The device summary appears only in the collapsible layout — awaiting it
+    // also flushes the (empty) brand presence query so the section count is stable.
+    await screen.findByText(dict.filters.deviceTitle);
+
+    // Brands are stubbed empty and no category is set, so brand + specs self-hide;
+    // the three rendered disclosures are search / device / price in DOM order.
+    const sections = container.querySelectorAll("details");
+    expect(sections).toHaveLength(3);
+    // Search carries the active value → open; device & price start collapsed.
+    expect(sections[0]).toHaveAttribute("open");
+    expect(sections[1]).not.toHaveAttribute("open");
+    expect(sections[2]).not.toHaveAttribute("open");
+  });
+
+  it("opens the price section (and not search) when only a price bound is active", async () => {
+    const { container } = renderWithProviders(
+      <ProductFilters
+        collapsible
+        currentParams={{ minPrice: 500 }}
+        onFilterChange={() => {}}
+      />,
+    );
+
+    await screen.findByText(dict.filters.deviceTitle);
+
+    const sections = container.querySelectorAll("details");
+    // Order: [0] search, [1] device, [2] price.
+    expect(sections[0]).not.toHaveAttribute("open");
+    expect(sections[2]).toHaveAttribute("open");
+  });
+});
