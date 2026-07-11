@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AddonServiceRepository } from './addon-service.repository';
+import { toTwoDecimals } from './money.util';
 import { CategoryRepository } from '../category';
 import type {
   AddonServiceRow,
@@ -9,19 +10,6 @@ import type {
   ResolvedAddon,
   ResolvedCategoryTemplate,
 } from './addon-service.types';
-
-/**
- * Format a Decimal-ish price as a two-decimal string ("499" → "499.00").
- * Prisma's Decimal normalises trailing zeros away on `toString()`; the resolved
- * price is a display/derivation value, so it is padded once, here, rather than
- * at every call site (see the TASK-281 merchant-feed padding bug).
- */
-function formatPrice(value: { toString(): string }): string {
-  const cents = Math.round(parseFloat(value.toString()) * 100);
-  const sign = cents < 0 ? '-' : '';
-  const abs = Math.abs(cents);
-  return `${sign}${Math.floor(abs / 100)}.${(abs % 100).toString().padStart(2, '0')}`;
-}
 
 /**
  * Resolves which add-on services apply to a product (TASK-174, plan 150) —
@@ -185,7 +173,7 @@ export class AddonApplicabilityResolver {
             break;
           }
           if (!delta.addonService.isActive) break;
-          existing.price = formatPrice(delta.price ?? delta.addonService.price);
+          existing.price = toTwoDecimals(delta.price ?? delta.addonService.price);
           existing.source = 'override';
           break;
 
@@ -212,7 +200,7 @@ export class AddonApplicabilityResolver {
       addonServiceId: service.id,
       name: service.name,
       description: service.description,
-      price: formatPrice(price ?? service.price),
+      price: toTwoDecimals(price ?? service.price),
       source,
     };
   }

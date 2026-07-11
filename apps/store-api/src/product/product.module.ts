@@ -36,6 +36,9 @@ import { SlugRedirectModule } from '../slug-redirect';
     ProductImageService,
     ProductSpecRepository,
   ],
-  exports: [ProductService],
+  // ProductRepository is exported (mirroring CategoryModule) so AddonServiceModule
+  // can look up a product's `categoryId` when resolving its applicable add-ons
+  // (TASK-174), without re-providing a second instance.
+  exports: [ProductService, ProductRepository],
 })
 export class ProductModule {}
