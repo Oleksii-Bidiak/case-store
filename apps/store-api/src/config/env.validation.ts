@@ -251,6 +251,31 @@ export class EnvironmentVariables {
   @Min(0)
   @Max(1)
   SENTRY_TRACES_SAMPLE_RATE?: number;
+
+  // ─── Google OAuth sign-in (TASK-168) ────────────────────────────────────────
+  // All optional: the app boots without Google credentials. When
+  // GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are absent, GET /api/auth/google
+  // (+ /callback) respond 503 (GoogleAuthGuard) — mirroring the NP_API_KEY
+  // graceful-degradation pattern above. No @MinLength: unlike JWT_SECRET these
+  // are not signing secrets whose weak length would be a security issue —
+  // Google itself enforces the client-secret format.
+  //
+  // GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET: OAuth client credentials from
+  //   Google Cloud Console (APIs & Services → Credentials).
+  // GOOGLE_CALLBACK_URL: must EXACTLY match the "Authorized redirect URI"
+  //   configured there. Defaults to the local dev callback when unset.
+
+  @IsOptional()
+  @IsString()
+  GOOGLE_CLIENT_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  GOOGLE_CLIENT_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  GOOGLE_CALLBACK_URL?: string;
 }
 
 /**
