@@ -57,6 +57,25 @@ export interface ListingMetadataResult {
 export function buildListingMetadata(
   input: ListingMetadataInput,
 ): ListingMetadataResult {
-  void input;
-  throw new Error("not implemented");
+  const filters = input.filters ?? {};
+  const hasFilter =
+    (filters.search !== undefined && filters.search !== "") ||
+    (filters.minPrice !== undefined && filters.minPrice !== "") ||
+    (filters.maxPrice !== undefined && filters.maxPrice !== "") ||
+    (filters.specs !== undefined && filters.specs !== "") ||
+    (filters.brandId !== undefined && filters.brandId !== "") ||
+    (filters.deviceModelId !== undefined && filters.deviceModelId !== "") ||
+    filters.onSale === "true";
+
+  if (hasFilter) {
+    return { robots: { index: false, follow: true } };
+  }
+
+  const target = input.categoryCanonicalPath ?? input.basePath;
+  const page =
+    input.page !== undefined && Number.isFinite(input.page) && input.page > 1
+      ? input.page
+      : undefined;
+
+  return { canonicalPath: page ? `${target}?page=${page}` : target };
 }

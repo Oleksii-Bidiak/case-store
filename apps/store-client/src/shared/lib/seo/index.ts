@@ -16,3 +16,12 @@ export type {
   ResolvedSeo,
   ResolveSeoSettings,
 } from "./resolveSeo";
+
+// Listing canonical/noindex policy (plan 143) — pure, unit-tested; consumed by
+// the `/products` and `/categories/[slug]` `generateMetadata()` call sites.
+export { buildListingMetadata } from "./listing-metadata";
+export type {
+  ListingFilterParams,
+  ListingMetadataInput,
+  ListingMetadataResult,
+} from "./listing-metadata";
