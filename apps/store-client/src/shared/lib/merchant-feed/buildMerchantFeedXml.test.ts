@@ -83,6 +83,15 @@ describe("buildMerchantFeedXml", () => {
     expect(xml).toContain("<g:identifier_exists>false</g:identifier_exists>");
   });
 
+  it("pads Decimal-truncated prices back to N.NN (review follow-up)", () => {
+    const xml = build([
+      makeProduct({ price: "30" }),
+      makeProduct({ id: "second", slug: "second", price: "29.9" }),
+    ]);
+    expect(xml).toContain("<g:price>30.00 UAH</g:price>");
+    expect(xml).toContain("<g:price>29.90 UAH</g:price>");
+  });
+
   it("maps inStock: false to out_of_stock", () => {
     const xml = build([makeProduct({ inStock: false })]);
     expect(xml).toContain("<g:availability>out_of_stock</g:availability>");

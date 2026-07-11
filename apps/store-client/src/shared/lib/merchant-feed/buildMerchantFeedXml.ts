@@ -108,7 +108,9 @@ function buildItem(
     `      <link>${escapeXml(`${ctx.siteUrl}/products/${product.slug}`)}</link>`,
     // isEligible guarantees primaryImage here.
     `      <g:image_link>${escapeXml(product.primaryImage!.url)}</g:image_link>`,
-    `      <g:price>${escapeXml(`${product.price} ${ctx.currency}`)}</g:price>`,
+    // Prisma Decimal.toString() drops trailing zeros ("30.00" -> "30");
+    // Merchant Center accepts both, but keep the feed uniform at N.NN.
+    `      <g:price>${escapeXml(`${Number(product.price).toFixed(2)} ${ctx.currency}`)}</g:price>`,
     `      <g:availability>${product.inStock ? "in_stock" : "out_of_stock"}</g:availability>`,
     `      <g:condition>new</g:condition>`,
     `      <g:brand>${escapeXml(product.brand?.name ?? ctx.siteName)}</g:brand>`,
