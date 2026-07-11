@@ -54,28 +54,46 @@ export interface ListingMetadataResult {
   robots?: { index: boolean; follow: boolean };
 }
 
+/** A string filter counts as present when defined and non-empty (Decision 4). */
+function isPresent(value: string | undefined): boolean {
+  return value !== undefined && value !== "";
+}
+
+/** Decision 2/4 — does any filter param narrow this view's result set? */
+function hasAnyFilter(filters: ListingFilterParams): boolean {
+  return (
+    isPresent(filters.search) ||
+    isPresent(filters.minPrice) ||
+    isPresent(filters.maxPrice) ||
+    isPresent(filters.specs) ||
+    isPresent(filters.brandId) ||
+    isPresent(filters.deviceModelId) ||
+    // Boolean-shaped on the wire: only the literal "true" is a filter —
+    // `?onSale=false` is a no-op, not "filtering by not-on-sale".
+    filters.onSale === "true"
+  );
+}
+
+/** Decision 3 — normalize to a page number worth a `?page=N` suffix, or undefined. */
+function normalizePage(page: number | undefined): number | undefined {
+  return page !== undefined && Number.isFinite(page) && page > 1
+    ? page
+    : undefined;
+}
+
 export function buildListingMetadata(
   input: ListingMetadataInput,
 ): ListingMetadataResult {
-  const filters = input.filters ?? {};
-  const hasFilter =
-    (filters.search !== undefined && filters.search !== "") ||
-    (filters.minPrice !== undefined && filters.minPrice !== "") ||
-    (filters.maxPrice !== undefined && filters.maxPrice !== "") ||
-    (filters.specs !== undefined && filters.specs !== "") ||
-    (filters.brandId !== undefined && filters.brandId !== "") ||
-    (filters.deviceModelId !== undefined && filters.deviceModelId !== "") ||
-    filters.onSale === "true";
-
-  if (hasFilter) {
+  // Decision 2 — a filtered view is noindex,follow and gets NO canonical: the
+  // two are mutually exclusive signals, never emitted together.
+  if (hasAnyFilter(input.filters ?? {})) {
     return { robots: { index: false, follow: true } };
   }
 
+  // Decision 3 — the category landing absorbs the `?categoryId=` view's
+  // canonical; otherwise the listing is its own home.
   const target = input.categoryCanonicalPath ?? input.basePath;
-  const page =
-    input.page !== undefined && Number.isFinite(input.page) && input.page > 1
-      ? input.page
-      : undefined;
+  const page = normalizePage(input.page);
 
   return { canonicalPath: page ? `${target}?page=${page}` : target };
 }
