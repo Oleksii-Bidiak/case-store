@@ -1,6 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma';
-import { Category, Prisma } from '@prisma/client';
+import { Category, Prisma, SlugRedirectEntity } from '@prisma/client';
+import { SlugRedirectRepository } from '../slug-redirect';
+
+/**
+ * Slugs of a rename being persisted by this update — when present, the write
+ * additionally records a 301 redirect `oldSlug → newSlug` in the SlugRedirect
+ * ledger, atomically with the category update (TASK-285-H). The service passes
+ * it only when the category was publicly visible (active) before the write
+ * (plan 147 §Design Decision 3).
+ */
+export interface SlugRenameInput {
+  oldSlug: string;
+  newSlug: string;
+}
 
 /**
  * Parameters for paginated category queries with filtering.
@@ -88,7 +101,10 @@ export interface PaginatedCategoriesWithCountResult {
 export class CategoryRepository {
   private readonly logger = new Logger(CategoryRepository.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly slugRedirectRepository: SlugRedirectRepository,
+  ) {}
 
   /**
    * Find a category by ID.
@@ -412,11 +428,31 @@ export class CategoryRepository {
    * Update a category's fields.
    * Only the fields provided in the data object will be updated.
    * Returns the updated category record.
+   *
+   * When `slugRename` is present (a publicly-visible category's slug is
+   * changing — gated by the service on the PRE-write `isActive`, plan 147
+   * §Design Decision 3), the update and the slug-redirect chain-collapse
+   * write commit in ONE transaction. When absent, the behavior is the
+   * pre-TASK-285 single-statement update (no transaction on the hot,
+   * no-rename path).
    */
-  update(id: string, data: UpdateCategoryInput): Promise<Category> {
-    return this.prisma.category.update({
-      where: { id },
-      data,
+  update(id: string, data: UpdateCategoryInput, slugRename?: SlugRenameInput): Promise<Category> {
+    if (!slugRename) {
+      return this.prisma.category.update({
+        where: { id },
+        data,
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.category.update({ where: { id }, data });
+      await this.slugRedirectRepository.recordRename(
+        tx,
+        SlugRedirectEntity.CATEGORY,
+        slugRename.oldSlug,
+        slugRename.newSlug,
+      );
+      return updated;
     });
   }
 
