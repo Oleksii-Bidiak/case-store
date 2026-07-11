@@ -5,6 +5,9 @@ import { Providers } from "./providers";
 import { Header } from "@/widgets/header";
 import { Footer } from "@/widgets";
 import {
+  BRAND_OG_IMAGE_HEIGHT,
+  BRAND_OG_IMAGE_PATH,
+  BRAND_OG_IMAGE_WIDTH,
   PRIMARY_COLOR,
   PRIMARY_COLOR_DARK,
   SITE_URL,
@@ -97,7 +100,23 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: SITE_NAME,
       url: SITE_URL,
       locale: "uk_UA",
-      ...(resolved.ogImage ? { images: [{ url: resolved.ogImage }] } : {}),
+      // Admin-uploaded default OG image (tier 2) wins verbatim; otherwise the
+      // committed brand card ships so link previews are never image-less
+      // (TASK-279, plan 145 Design Decision 1). The relative path resolves to
+      // an absolute URL via `metadataBase` above. Deliberately explicit code —
+      // NOT the app/opengraph-image.png file convention — so the fallback sits
+      // next to the tier logic instead of being merged in invisibly (segments
+      // that define their own `openGraph` would silently opt out either way).
+      images: resolved.ogImage
+        ? [{ url: resolved.ogImage }]
+        : [
+            {
+              url: BRAND_OG_IMAGE_PATH,
+              width: BRAND_OG_IMAGE_WIDTH,
+              height: BRAND_OG_IMAGE_HEIGHT,
+              alt: dict.meta.rootTitle,
+            },
+          ],
     },
   };
 }
