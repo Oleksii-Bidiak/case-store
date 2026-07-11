@@ -28,6 +28,7 @@ import {
   seoSettingsSchema,
   seoSettingsFormValuesToDto,
   mapSettingsToFormValues,
+  normalizeSiteVerificationValue,
   type SeoSettingsFormInput,
   type SeoSettingsFormValues,
 } from "../model/seo-settings-schema";
@@ -54,6 +55,7 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
     control,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<SeoSettingsFormInput, unknown, SeoSettingsFormValues>({
     resolver: zodResolver(seoSettingsSchema),
@@ -90,6 +92,20 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
     entityDescription: defaultMetaDescriptionValue,
     contentDescription: dict.seoSnippetPreview.samplePageDescription,
   });
+
+  // Visible half of plan 146 Design Decision 1: on blur a pasted full
+  // <meta> tag is replaced in the input by the extracted token, so the owner
+  // sees their paste was "understood". The DTO mapper re-normalizes on submit
+  // for the paste-then-immediately-save path that skips blur.
+  const normalizeVerificationField = (
+    field: "googleSiteVerification" | "bingSiteVerification",
+    raw: string,
+  ) => {
+    const normalized = normalizeSiteVerificationValue(raw);
+    if (normalized !== raw) {
+      setValue(field, normalized, { shouldValidate: true });
+    }
+  };
 
   const onSubmit = (values: SeoSettingsFormValues) => {
     update.mutate(
@@ -202,6 +218,57 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
         {errors.defaultOgImage && (
           <p role="alert" className="text-sm text-destructive">
             {errors.defaultOgImage.message}
+          </p>
+        )}
+      </div>
+
+      {/* Search-console ownership verification (TASK-280) */}
+      <h3 className="text-sm font-semibold">{f.siteVerificationGroup}</h3>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="seo-google-verification">
+          {f.googleSiteVerification}
+        </Label>
+        <p className="text-sm text-muted-foreground">
+          {f.googleSiteVerificationHint}
+        </p>
+        <Input
+          id="seo-google-verification"
+          placeholder={f.googleSiteVerificationPlaceholder}
+          {...register("googleSiteVerification", {
+            onBlur: (event: React.FocusEvent<HTMLInputElement>) =>
+              normalizeVerificationField(
+                "googleSiteVerification",
+                event.target.value,
+              ),
+          })}
+        />
+        {errors.googleSiteVerification && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.googleSiteVerification.message}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="seo-bing-verification">{f.bingSiteVerification}</Label>
+        <p className="text-sm text-muted-foreground">
+          {f.bingSiteVerificationHint}
+        </p>
+        <Input
+          id="seo-bing-verification"
+          placeholder={f.bingSiteVerificationPlaceholder}
+          {...register("bingSiteVerification", {
+            onBlur: (event: React.FocusEvent<HTMLInputElement>) =>
+              normalizeVerificationField(
+                "bingSiteVerification",
+                event.target.value,
+              ),
+          })}
+        />
+        {errors.bingSiteVerification && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.bingSiteVerification.message}
           </p>
         )}
       </div>

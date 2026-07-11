@@ -15,6 +15,23 @@ export function parseSameAsLinks(raw: string): string[] {
     .filter((line) => line.length > 0);
 }
 
+/**
+ * Accepts either a bare verification token or a full `<meta ...>` tag copy-pasted
+ * from a search console's "HTML tag" instructions, and returns just the token (the
+ * `content` attribute value). Falls back to a plain trim when no `content=` attribute
+ * is found, so a bare token — the expected common case — passes through unchanged.
+ *
+ * Intentionally duplicated (not import-shared) with store-api's
+ * `seo-settings/dto/update-seo-settings.dto.ts` — the two apps share no logic
+ * package (same choice as `resolve-seo-preview.ts`, TASK-268). Keep both copies
+ * in sync. See plan 146 Design Decision 1.
+ */
+export function normalizeSiteVerificationValue(raw: string): string {
+  const trimmed = raw.trim();
+  const match = trimmed.match(/content=["']([^"']+)["']/i);
+  return match ? match[1] : trimmed;
+}
+
 /** True when `value` is a syntactically valid http(s) URL. */
 function isHttpUrl(value: string): boolean {
   try {
@@ -64,6 +81,20 @@ export const seoSettingsSchema = z.object({
     .optional()
     .or(z.literal("")),
 
+  googleSiteVerification: z
+    .string()
+    .trim()
+    .max(255, e.siteVerificationTooLong)
+    .optional()
+    .or(z.literal("")),
+
+  bingSiteVerification: z
+    .string()
+    .trim()
+    .max(255, e.siteVerificationTooLong)
+    .optional()
+    .or(z.literal("")),
+
   noindexSite: z.boolean(),
 
   llmsTxtSummary: z
@@ -95,11 +126,19 @@ export function seoSettingsFormValuesToDto(
     return trimmed ? trimmed : undefined;
   };
 
+  // Defense-in-depth half of plan 146 Design Decision 1: the form already
+  // normalizes on blur, but a paste-then-immediate-submit skips the blur
+  // event, so the pasted full <meta> tag is normalized here again.
+  const cleanVerification = (v?: string) =>
+    clean(normalizeSiteVerificationValue(v ?? ""));
+
   return {
     defaultMetaTitle: clean(values.defaultMetaTitle),
     defaultMetaDescription: clean(values.defaultMetaDescription),
     titleTemplate: clean(values.titleTemplate),
     defaultOgImage: clean(values.defaultOgImage),
+    googleSiteVerification: cleanVerification(values.googleSiteVerification),
+    bingSiteVerification: cleanVerification(values.bingSiteVerification),
     noindexSite: values.noindexSite,
     llmsTxtSummary: clean(values.llmsTxtSummary),
     additionalSameAsLinks: parseSameAsLinks(values.additionalSameAsLinks),
@@ -119,6 +158,8 @@ export function mapSettingsToFormValues(
     defaultMetaDescription: settings.defaultMetaDescription ?? "",
     titleTemplate: settings.titleTemplate ?? "",
     defaultOgImage: settings.defaultOgImage ?? "",
+    googleSiteVerification: settings.googleSiteVerification ?? "",
+    bingSiteVerification: settings.bingSiteVerification ?? "",
     noindexSite: settings.noindexSite ?? false,
     llmsTxtSummary: settings.llmsTxtSummary ?? "",
     additionalSameAsLinks: (settings.additionalSameAsLinks ?? []).join("\n"),

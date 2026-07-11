@@ -1020,6 +1020,15 @@ export const dict = {
     defaultOgImagePlaceholder: "https://mobilestore.ua/og-image.jpg",
     defaultOgImageHint:
       "Картинка для попереднього перегляду, коли посилання на магазин поширюють у соцмережах чи месенджерах (Facebook, Telegram, Viber). Вкажіть повне посилання на зображення (https://…).",
+    siteVerificationGroup: "Верифікація власності сайта",
+    googleSiteVerification: "Код підтвердження Google Search Console",
+    googleSiteVerificationPlaceholder: "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890",
+    googleSiteVerificationHint:
+      "Вставте код підтвердження з Google Search Console — досить самого коду (значення content), але якщо вставите весь HTML-тег цілком, ми самі виріжемо з нього потрібну частину.",
+    bingSiteVerification: "Код підтвердження Bing Webmaster Tools",
+    bingSiteVerificationPlaceholder: "1234ABCD5678EFGH9012IJKL3456MNOP",
+    bingSiteVerificationHint:
+      "Необов'язково. Те саме для Bing Webmaster Tools — альтернативної до Google пошукової системи. Можна залишити порожнім.",
     llmsTxtSummary: "Опис для AI-асистентів (llms.txt)",
     llmsTxtSummaryPlaceholder:
       "Магазин аксесуарів для смартфонів та Apple-техніки в Україні…",
@@ -1042,6 +1051,8 @@ export const dict = {
       titleTemplateNoToken:
         "Шаблон має містити рівно один символ %s (без інших знаків %)",
       llmsTxtSummaryTooLong: "Опис задовгий (максимум 2000 символів)",
+      siteVerificationTooLong:
+        "Код підтвердження задовгий (максимум 255 символів)",
       sameAsInvalid:
         "Кожне посилання має бути коректним URL (https://…), по одному в рядку.",
     },
