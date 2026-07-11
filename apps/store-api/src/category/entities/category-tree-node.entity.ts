@@ -7,8 +7,10 @@ import { ApiProperty } from '@nestjs/swagger';
  * where categories are nested with their children for navigation menus.
  *
  * Unlike CategoryEntity, this includes a `children` array for
- * recursive nesting but excludes parentId and timestamps since
- * the hierarchy is expressed through nesting.
+ * recursive nesting but excludes parentId and createdAt since
+ * the hierarchy is expressed through nesting. `updatedAt` is
+ * carried for SEO consumers (sitemap `lastModified`, TASK-277),
+ * mirroring how TASK-247 surfaced metaTitle/metaDescription.
  */
 export class CategoryTreeNodeEntity {
   @ApiProperty({
@@ -65,6 +67,9 @@ export class CategoryTreeNodeEntity {
   })
   metaDescription!: string | null;
 
+  @ApiProperty({ description: 'Last update timestamp', example: '2024-01-01T00:00:00.000Z' })
+  updatedAt!: Date;
+
   @ApiProperty({ description: 'Child categories', type: [CategoryTreeNodeEntity] })
   children!: CategoryTreeNodeEntity[];
 
@@ -85,6 +90,7 @@ export class CategoryTreeNodeEntity {
     sortOrder: number;
     metaTitle?: string | null;
     metaDescription?: string | null;
+    updatedAt: Date;
     children: Array<{
       id: string;
       name: string;
@@ -95,6 +101,7 @@ export class CategoryTreeNodeEntity {
       sortOrder: number;
       metaTitle?: string | null;
       metaDescription?: string | null;
+      updatedAt: Date;
       children: unknown[];
     }>;
   }): CategoryTreeNodeEntity {
@@ -108,6 +115,7 @@ export class CategoryTreeNodeEntity {
     entity.sortOrder = category.sortOrder;
     entity.metaTitle = category.metaTitle ?? null;
     entity.metaDescription = category.metaDescription ?? null;
+    entity.updatedAt = category.updatedAt;
     entity.children = (category.children ?? []).map((child) =>
       CategoryTreeNodeEntity.fromPrisma(
         child as Parameters<typeof CategoryTreeNodeEntity.fromPrisma>[0],
