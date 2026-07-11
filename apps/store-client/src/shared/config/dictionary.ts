@@ -75,6 +75,10 @@ export const dict = {
     accountLabel: "Кабінет",
     accountOpenAria: "Відкрити особистий кабінет",
     cartTotalAria: "Сума кошика",
+    // TASK-082 — mega-menu second level (desktop flyout + mobile accordion).
+    catalogSubcategoriesAria: "Підкатегорії",
+    toggleSubcategoriesAria: (name: string) =>
+      `Підкатегорії категорії «${name}»`,
   },
 
   // TASK-075 — full-text search (header autocomplete + /search results page).
