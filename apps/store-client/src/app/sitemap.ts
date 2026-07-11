@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/shared/config";
 import {
+  fetchAllActiveCategories,
   fetchAllActiveProducts,
   fetchAllPublishedPages,
 } from "@/shared/lib/schema";
@@ -65,15 +66,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
-  // Products, published static pages, and blog posts are fetched independently
-  // so a failure of one source never drops the others.
-  const [productRoutes, pageRoutes, blogRoutes] = await Promise.all([
-    fetchProductRoutes(),
-    fetchPageRoutes(),
-    fetchBlogRoutes(now),
-  ]);
+  // Products, categories, published static pages, and blog posts are fetched
+  // independently so a failure of one source never drops the others.
+  const [productRoutes, categoryRoutes, pageRoutes, blogRoutes] =
+    await Promise.all([
+      fetchProductRoutes(),
+      fetchCategoryRoutes(),
+      fetchPageRoutes(),
+      fetchBlogRoutes(now),
+    ]);
 
-  return [...staticRoutes, ...productRoutes, ...pageRoutes, ...blogRoutes];
+  return [
+    ...staticRoutes,
+    ...productRoutes,
+    ...categoryRoutes,
+    ...pageRoutes,
+    ...blogRoutes,
+  ];
 }
 
 async function fetchProductRoutes(): Promise<MetadataRoute.Sitemap> {
@@ -87,6 +96,23 @@ async function fetchProductRoutes(): Promise<MetadataRoute.Sitemap> {
     }));
   } catch (err) {
     console.error("[sitemap] Failed to fetch products:", err);
+    return [];
+  }
+}
+
+async function fetchCategoryRoutes(): Promise<MetadataRoute.Sitemap> {
+  try {
+    // One tree request covers every active category — root and nested levels
+    // are all real /categories/[slug] landing pages (TASK-277).
+    const categories = await fetchAllActiveCategories();
+    return categories.map((category) => ({
+      url: `${SITE_URL}/categories/${category.slug}`,
+      lastModified: new Date(category.updatedAt),
+      changeFrequency: "weekly",
+      priority: 0.7,
+    }));
+  } catch (err) {
+    console.error("[sitemap] Failed to fetch categories:", err);
     return [];
   }
 }
