@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsString } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsString, MaxLength } from 'class-validator';
 import { SlugRedirectEntity } from '@prisma/client';
 
 /**
@@ -19,8 +19,10 @@ export class SlugRedirectLookupQueryDto {
   @ApiProperty({
     description: 'The old (dead) slug to resolve',
     example: 'stara-adresa',
+    maxLength: 255,
   })
   @IsString({ message: 'slug must be a string' })
   @IsNotEmpty({ message: 'slug must not be empty' })
+  @MaxLength(255, { message: 'slug must be at most 255 characters' })
   slug!: string;
 }
