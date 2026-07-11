@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Menu, Newspaper, Search } from "lucide-react";
@@ -16,8 +16,6 @@ import { cn } from "@/shared/lib/utils";
 const MIN_QUERY_LENGTH = 1;
 /** Maximum blog articles mixed into the suggestions dropdown (TASK-218). */
 const BLOG_SUGGEST_LIMIT = 5;
-const LISTBOX_ID = "header-search-listbox";
-const BLOG_LISTBOX_ID = "header-search-blog-listbox";
 
 /**
  * One entry of the combined keyboard-navigation list: products first, then
@@ -42,6 +40,14 @@ type CombinedSuggestion =
 export function HeaderSearch() {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // SSR-stable ids (never random) — the input's `aria-activedescendant` must
+  // resolve to a real option id on both server and client render.
+  const uid = useId();
+  const listboxId = `${uid}-listbox`;
+  const blogListboxId = `${uid}-blog-listbox`;
+  /** Option id addressed by the SINGLE combined index (products, then blog). */
+  const optionId = (index: number) => `${uid}-option-${index}`;
 
   const [value, setValue] = useState("");
   const [query, setQuery] = useState("");
@@ -114,6 +120,14 @@ export function HeaderSearch() {
 
   const showSuggestions = searchOpen && value.trim().length >= MIN_QUERY_LENGTH;
   const hasSuggestions = suggestions.length > 0;
+
+  // Single source of truth for BOTH the visual highlight and the ARIA pointer:
+  // the same `activeIndex`. Absent (undefined, not "") when the list is closed
+  // or nothing is highlighted — an empty value would point at no element.
+  const activeDescendantId =
+    showSuggestions && activeIndex >= 0 && combined[activeIndex]
+      ? optionId(activeIndex)
+      : undefined;
 
   function submitSearch(raw: string) {
     const q = raw.trim();
@@ -194,10 +208,9 @@ export function HeaderSearch() {
             role="combobox"
             aria-expanded={showSuggestions}
             aria-controls={
-              blogPosts.length > 0
-                ? `${LISTBOX_ID} ${BLOG_LISTBOX_ID}`
-                : LISTBOX_ID
+              blogPosts.length > 0 ? `${listboxId} ${blogListboxId}` : listboxId
             }
+            aria-activedescendant={activeDescendantId}
             aria-autocomplete="list"
             aria-label={dict.search.inputAria}
             autoComplete="off"
@@ -283,7 +296,7 @@ export function HeaderSearch() {
       {showSuggestions && (
         <div className="absolute top-[calc(100%+8px)] right-0 left-0 z-50 rounded-2xl border border-border bg-popover p-2 shadow-lift">
           <ul
-            id={LISTBOX_ID}
+            id={listboxId}
             role="listbox"
             aria-label={dict.search.inputAria}
             className="max-h-72 overflow-y-auto"
@@ -307,6 +320,7 @@ export function HeaderSearch() {
             {suggestions.map((suggestion, i) => (
               <li
                 key={suggestion.slug}
+                id={optionId(i)}
                 role="option"
                 aria-selected={i === activeIndex}
                 onMouseDown={(event) => event.preventDefault()}
@@ -340,7 +354,7 @@ export function HeaderSearch() {
                 {dict.search.blogSectionLabel}
               </p>
               <ul
-                id={BLOG_LISTBOX_ID}
+                id={blogListboxId}
                 role="listbox"
                 aria-label={dict.search.blogSectionLabel}
                 className="max-h-72 overflow-y-auto"
@@ -350,6 +364,7 @@ export function HeaderSearch() {
                   return (
                     <li
                       key={post.slug}
+                      id={optionId(index)}
                       role="option"
                       aria-selected={index === activeIndex}
                       onMouseDown={(event) => event.preventDefault()}
