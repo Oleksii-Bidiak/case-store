@@ -1,7 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { PublishStatus } from '@prisma/client';
+import { PublishStatus, SlugRedirectEntity } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { SlugRedirectRepository } from '../slug-redirect';
 import { BlogRepository } from './blog.repository';
+
+const txMock = {
+  blogPost: {
+    update: jest.fn(),
+  },
+};
 
 const prismaMock = {
   blogPost: {
@@ -21,6 +28,11 @@ const prismaMock = {
     update: jest.fn(),
     delete: jest.fn(),
   },
+  $transaction: jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock)),
+};
+
+const slugRedirectRepositoryMock = {
+  recordRename: jest.fn(),
 };
 
 describe('BlogRepository', () => {
@@ -30,10 +42,53 @@ describe('BlogRepository', () => {
     jest.clearAllMocks();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [BlogRepository, { provide: PrismaService, useValue: prismaMock }],
+      providers: [
+        BlogRepository,
+        { provide: PrismaService, useValue: prismaMock },
+        { provide: SlugRedirectRepository, useValue: slugRedirectRepositoryMock },
+      ],
     }).compile();
 
     repository = module.get<BlogRepository>(BlogRepository);
+  });
+
+  describe('update (slug rename)', () => {
+    it('never opens a transaction nor records a redirect when slugRename is absent', async () => {
+      prismaMock.blogPost.update.mockResolvedValue({ id: 'post-1' });
+
+      await repository.update('post-1', { title: 'Renamed' });
+
+      expect(prismaMock.blogPost.update).toHaveBeenCalledTimes(1);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+    });
+
+    it('runs the post update + recordRename inside one transaction when slugRename is given', async () => {
+      const renamed = { id: 'post-1', slug: 'new-slug' };
+      txMock.blogPost.update.mockResolvedValue(renamed);
+
+      const result = await repository.update(
+        'post-1',
+        { slug: 'new-slug' },
+        { oldSlug: 'old-slug', newSlug: 'new-slug' },
+      );
+
+      expect(result).toBe(renamed);
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.blogPost.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'post-1' },
+          data: { slug: 'new-slug' },
+        }),
+      );
+      expect(slugRedirectRepositoryMock.recordRename).toHaveBeenCalledWith(
+        txMock,
+        SlugRedirectEntity.BLOG_POST,
+        'old-slug',
+        'new-slug',
+      );
+      expect(prismaMock.blogPost.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('findAll (public)', () => {

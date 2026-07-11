@@ -4,8 +4,10 @@ import { BlogService } from './blog.service';
 import { BlogController } from './blog.controller';
 import { AdminBlogController } from './admin-blog.controller';
 import { PUBLISHABLE_REPOSITORY } from '../publishing';
+import { SlugRedirectModule } from '../slug-redirect';
 
 @Module({
+  imports: [SlugRedirectModule],
   controllers: [BlogController, AdminBlogController],
   providers: [
     BlogRepository,
