@@ -148,6 +148,9 @@ model Category {
   // (nearest-ancestor-wins) — see CategoryAddonTemplate.
   addonTemplates CategoryAddonTemplate[]
 
+  // Recommendation carousels pointing at this category (TASK-139).
+  carousels Carousel[]
+
   @@index([slug])
   @@index([parentId])
   @@map("categories")
@@ -231,6 +234,8 @@ model Product {
   // Point deltas against this product's resolved category add-on template
   // (TASK-174): ADD / REMOVE / OVERRIDE. Zero rows = "pure inheritance".
   addonDeltas   AddonServiceDelta[]
+  // Hand-picked membership rows on MANUAL recommendation carousels (TASK-139).
+  carouselItems CarouselItem[]
 
   @@index([slug])
   @@index([categoryId])
@@ -1110,4 +1115,78 @@ model OrderItemAddon {
 
   @@index([orderItemId])
   @@map("order_item_addons")
+}
+
+/// How a Carousel's product list is computed (TASK-139). Mirrors the "rules +
+/// manual pick" owner decision: four rule-based sources reuse the existing
+/// product-query capabilities (ProductService.findAll), MANUAL is backed by
+/// its own CarouselItem rows.
+enum CarouselSource {
+  BESTSELLING
+  NEWEST
+  ON_SALE
+  CATEGORY
+  MANUAL
+}
+
+/// Admin-managed homepage recommendation carousel (TASK-139). Structural copy
+/// of `Banner` (publish lifecycle + sortOrder) with one added dimension: `source`
+/// determines how the product list is computed at read time — this model never
+/// stores a resolved product list except via `CarouselItem` (MANUAL only).
+/// `categoryId` is meaningful only when `source = CATEGORY`; `itemLimit` is
+/// meaningful only for the four rule-based sources (ignored for MANUAL, whose
+/// count is simply the number of `CarouselItem` rows). Both constraints are
+/// enforced at the DTO/service layer, not by a DB CHECK (same documented
+/// limitation as `Product.stock >= 0` elsewhere in this schema).
+model Carousel {
+  id          String         @id @default(uuid())
+  title       String
+  /// How the product list is computed — see {@link CarouselSource}.
+  source      CarouselSource
+  /// Category to pull from — REQUIRED when source = CATEGORY, ignored
+  /// otherwise. SetNull (not Cascade) on category deletion: a carousel must
+  /// survive its category disappearing — it just resolves to zero products
+  /// until an admin repoints it.
+  categoryId  String?        @map("category_id")
+  category    Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  /// Max products to show for a rule-based source (1–24, default 12 — matches
+  /// PopularRail/RecentlyViewed's existing rail size). Ignored for MANUAL.
+  itemLimit   Int            @default(12) @map("item_limit")
+  /// Homepage display order across ALL carousels (lower = first) — same
+  /// semantics as `Banner.sortOrder` within a placement, but global here since
+  /// carousels have no placement grouping.
+  sortOrder   Int            @default(0) @map("sort_order")
+  /// Publish lifecycle — the single source of truth for public visibility.
+  status      PublishStatus  @default(DRAFT)
+  publishedAt DateTime?      @map("published_at")
+  scheduledAt DateTime?      @map("scheduled_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  items CarouselItem[]
+
+  @@index([status, sortOrder])
+  @@index([categoryId])
+  @@map("carousels")
+}
+
+/// One hand-picked product on a MANUAL carousel (TASK-139), with its own
+/// display order. Inert (never read by the resolver) on non-MANUAL carousels —
+/// switching a carousel's source away from and back to MANUAL does not lose
+/// its item rows, by design (no cleanup-on-switch).
+/// `onDelete: Cascade` on `product` mirrors `WishlistItem`'s live-membership
+/// join (not a snapshot — if a product row were ever hard-deleted, which this
+/// codebase does not do for Product, the membership row should go with it).
+model CarouselItem {
+  id         String   @id @default(uuid())
+  carouselId String   @map("carousel_id")
+  carousel   Carousel @relation(fields: [carouselId], references: [id], onDelete: Cascade)
+  productId  String   @map("product_id")
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([carouselId, productId])
+  @@index([carouselId, sortOrder])
+  @@map("carousel_items")
 }
