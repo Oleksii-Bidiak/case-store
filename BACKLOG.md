@@ -293,23 +293,23 @@
 | TASK-286 | Coupons/discounts applying to add-on service lines (today add-ons sit outside the discount base, like shipping) — owner: interesting only at a much later stage | 🅿️ | — |
 | TASK-168 | Social sign-in (Google/Apple OAuth): backend OAuth module + account linking (auth slide-out stubs) | 🅿️ | — |
 | TASK-080-E | Admin-configurable NP dispatch origin (`DeliverySetting`) — deferred until real NP API key + running DB (owner decision 2026-06-27) | 🅿️ | 068 |
-| TASK-082 | Deep mega-menu subcategory tree | Root-category dropdown shipped (167-A) |
-| TASK-083 | Category tile images (`Category.image`) | Pairs with TASK-186/189 when picked up |
-| TASK-084 | Mobile filter drawer polish deferrals | Behind UI rewrite |
-| TASK-086 | Quick-view modal | Behind UI rewrite |
-| TASK-139 | Admin-managed recommendation carousels | Needs discovery |
-| TASK-140 | Admin tables UX rethink | Superseded largely by TASK-147/192 |
+| TASK-082 | Deep mega-menu subcategory tree — the root-category dropdown already shipped in 167-A; this is the nested level below it | ⬜ | — |
+| TASK-083 | Category tile images (`Category.image`) — pairs naturally with TASK-186/189 when those are picked up | ⬜ | — |
+| TASK-084 | Mobile filter drawer polish deferrals — was held behind the UI rewrite | ⬜ | — |
+| TASK-086 | Quick-view modal — was held behind the UI rewrite | ⬜ | — |
+| TASK-139 | Admin-managed recommendation carousels — needs discovery before it can be planned | ⬜ | — |
+| TASK-140 | Admin tables UX rethink — largely superseded by TASK-147/192; re-scope what actually remains before starting | ⬜ | — |
 
 ### Parked
 
 | Task ID | Description | Reason |
 | --- | --- | --- |
-| TASK-178 | «Купити в 1 клік» express order (backend slice name+phone, rate-limited public endpoint) | Owner decision 2026-07-08 — not needed pre-launch |
-| TASK-034 / 081 | Real payments (LiqPay/Fondy/Mono) | After first real purchase validates demand; draft in plan 021 |
-| TASK-049 | Abandoned-cart emails | Marketing later; reuses mail outbox |
-| TASK-050 | GA4 + Facebook Pixel | Needs TASK-090 consent first |
-| TASK-090 | Cookie consent + compliant marketing signup | Bundled with marketing push |
-| TASK-085 | Product comparison | PDP/account stubs reference it |
+| TASK-178 | «Купити в 1 клік» express order (backend slice name+phone, rate-limited public endpoint) — owner decision 2026-07-08: not needed pre-launch | 🅿️ | — |
+| TASK-034 / 081 | Real payments (LiqPay/Fondy/Mono) — waits until a first real purchase validates demand; draft in plan 021 | 🅿️ | 021 |
+| TASK-049 | Abandoned-cart emails — marketing push, later; reuses the existing mail outbox | 🅿️ | — |
+| TASK-050 | GA4 + Facebook Pixel — blocked on TASK-090 (consent must land first) | 🅿️ | — |
+| TASK-085 | Product comparison — PDP/account stubs already reference it | 🅿️ | — |
+| TASK-090 | Cookie consent + compliant marketing signup — bundled with the marketing push | 🅿️ | — |
 
 ---
 
