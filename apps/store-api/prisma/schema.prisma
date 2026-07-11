@@ -86,7 +86,10 @@ enum PublishStatus {
 model User {
   id            String    @id @default(uuid())
   email         String    @unique
-  passwordHash  String    @map("password_hash")
+  // Nullable since TASK-168: a Google-only account has genuinely no password.
+  // login() treats `passwordHash: null` exactly like "no such user" (generic
+  // rejection + timing burn) — see AuthService.login.
+  passwordHash  String?   @map("password_hash")
   firstName     String?   @map("first_name")
   lastName      String?   @map("last_name")
   phone         String?
@@ -109,6 +112,7 @@ model User {
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
   discountRedemptions DiscountRedemption[]
+  oauthAccounts       OAuthAccount[]
 
   @@index([deletedAt])
   @@map("users")
@@ -1110,4 +1114,33 @@ model OrderItemAddon {
 
   @@index([orderItemId])
   @@map("order_item_addons")
+}
+
+/// External OAuth identity providers this store accepts (TASK-168). Google
+/// only — Apple stays a client-only stub (owner decision 2026-07-11).
+enum OAuthProvider {
+  GOOGLE
+}
+
+/// Links a `User` to an external OAuth identity (TASK-168). One row per
+/// (provider, providerId) pair, created either at first-time signup (brand-new
+/// email) or at first-time linking (an existing password-based account signs
+/// in with Google using the same verified email — see
+/// AuthService.loginWithGoogleProfile). `providerId` is the provider's stable
+/// subject id (Google's `profile.id` — the OIDC `sub` claim), NEVER the email:
+/// a Google account's email can change, its `sub` cannot. `email` is a
+/// link-time snapshot for admin/diagnostic reads only — `User.email` remains
+/// the single source of truth for the account's contact address.
+model OAuthAccount {
+  id         String        @id @default(uuid())
+  provider   OAuthProvider
+  providerId String        @map("provider_id")
+  userId     String        @map("user_id")
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email      String
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  @@unique([provider, providerId])
+  @@index([userId])
+  @@map("oauth_accounts")
 }
