@@ -678,7 +678,12 @@ describe('ProductService', () => {
 
       expect(result).toBeInstanceOf(ProductEntity);
       expect(result.name).toBe('Updated Product Name');
-      expect(productRepositoryMock.update).toHaveBeenCalledWith('product-uuid-1', updateInput);
+      // No slug change → no slugRename forwarded (third arg undefined).
+      expect(productRepositoryMock.update).toHaveBeenCalledWith(
+        'product-uuid-1',
+        updateInput,
+        undefined,
+      );
     });
 
     it('should throw NotFoundException when product is not found', async () => {
@@ -736,6 +741,52 @@ describe('ProductService', () => {
         ConflictException,
       );
       expect(productRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it('records a slug redirect when renaming an ACTIVE product', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct); // isActive: true
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.update.mockResolvedValue({ ...mockProduct, slug: 'new-slug' });
+
+      await service.update('product-uuid-1', { slug: 'new-slug' });
+
+      expect(productRepositoryMock.update).toHaveBeenCalledWith(
+        'product-uuid-1',
+        expect.objectContaining({ slug: 'new-slug' }),
+        { oldSlug: 'iphone-15-pro-case-clear-magsafe', newSlug: 'new-slug' },
+      );
+    });
+
+    it('does NOT record a redirect when renaming an INACTIVE product', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockInactiveProduct); // isActive: false
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.update.mockResolvedValue({ ...mockInactiveProduct, slug: 'new-slug' });
+
+      await service.update('product-uuid-2', { slug: 'new-slug' });
+
+      expect(productRepositoryMock.update).toHaveBeenCalledWith(
+        'product-uuid-2',
+        expect.objectContaining({ slug: 'new-slug' }),
+        undefined,
+      );
+    });
+
+    it('still records the redirect when renaming AND deactivating in the same call (pre-write snapshot)', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct); // isActive: true BEFORE the write
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.update.mockResolvedValue({
+        ...mockProduct,
+        slug: 'new-slug',
+        isActive: false,
+      });
+
+      await service.update('product-uuid-1', { slug: 'new-slug', isActive: false });
+
+      expect(productRepositoryMock.update).toHaveBeenCalledWith(
+        'product-uuid-1',
+        expect.objectContaining({ slug: 'new-slug', isActive: false }),
+        { oldSlug: 'iphone-15-pro-case-clear-magsafe', newSlug: 'new-slug' },
+      );
     });
   });
 
@@ -989,6 +1040,20 @@ describe('ProductService', () => {
       expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
       expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey(mockProduct.slug));
       expect(result).toBeInstanceOf(ProductEntity);
+    });
+
+    it('never goes through update() — the mangled tombstone slug must not record a redirect', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.softDelete.mockResolvedValue({
+        ...mockProduct,
+        isActive: false,
+      });
+
+      await service.delete('product-uuid-1');
+
+      // delete() uses the dedicated softDelete write — the slugRename-capable
+      // update() path (and thus SlugRedirectRepository.recordRename) is never hit.
+      expect(productRepositoryMock.update).not.toHaveBeenCalled();
     });
 
     it('should pass a null mangled sku when the product has no sku', async () => {

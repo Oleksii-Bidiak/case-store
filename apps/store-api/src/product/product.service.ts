@@ -466,7 +466,18 @@ export class ProductService {
       await this.ensureBrandExists(input.brandId);
     }
 
-    const updatedProduct = await this.productRepository.update(id, input);
+    // Record a 301 redirect only when the product was publicly visible (active)
+    // immediately BEFORE this write and the slug is actually changing (plan 147
+    // §Design Decision 3). The PRE-write snapshot matters: a single call may
+    // rename the slug AND deactivate the product — the old URL was reachable
+    // until now, so the redirect is still recorded.
+    const wasActive = product.isActive;
+    const slugRename =
+      wasActive && input.slug !== undefined && input.slug !== product.slug
+        ? { oldSlug: product.slug, newSlug: input.slug }
+        : undefined;
+
+    const updatedProduct = await this.productRepository.update(id, input, slugRename);
 
     // Evict list pages and both detail variants. The slug may have changed, so
     // evict the OLD slug captured above; if it changed, also evict the new one.
