@@ -1,5 +1,10 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { BlogPostTable } from "./blog-post-table";
@@ -85,5 +90,49 @@ describe("BlogPostTable", () => {
     await waitFor(() =>
       expect(screen.getByText(dict.blogPosts.loadError)).toBeInTheDocument(),
     );
+  });
+
+  // TASK-285: the delete-confirm copy warns about the Google index only for a
+  // currently-published row.
+  describe("delete confirm copy (TASK-285)", () => {
+    let confirmSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(false);
+    });
+
+    afterEach(() => {
+      confirmSpy.mockRestore();
+    });
+
+    it("appends the still-may-be-indexed warning for a published post", async () => {
+      stubPosts([makePostRow("p1", "iPhone 16", "PUBLISHED")]);
+      renderWithProviders(<BlogPostTable />);
+      const deleteButton = await screen.findByRole("button", {
+        name: dict.common.delete,
+      });
+
+      await userEvent.click(deleteButton);
+
+      expect(confirmSpy).toHaveBeenCalledWith(
+        dict.blogPosts.deleteConfirm("iPhone 16", true),
+      );
+      expect(confirmSpy.mock.calls[0][0]).toContain("пошуковому індексі");
+    });
+
+    it("omits the indexed warning for a draft post", async () => {
+      stubPosts([makePostRow("p2", "Draft One", "DRAFT")]);
+      renderWithProviders(<BlogPostTable />);
+      const deleteButton = await screen.findByRole("button", {
+        name: dict.common.delete,
+      });
+
+      await userEvent.click(deleteButton);
+
+      expect(confirmSpy).toHaveBeenCalledWith(
+        dict.blogPosts.deleteConfirm("Draft One", false),
+      );
+      expect(confirmSpy.mock.calls[0][0]).not.toContain("пошуковому індексі");
+    });
   });
 });

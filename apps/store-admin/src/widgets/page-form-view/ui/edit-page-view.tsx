@@ -48,6 +48,16 @@ export function EditPageView({ pageId }: EditPageViewProps) {
   const page = data?.data;
 
   const handleSubmit = (values: PageFormValues) => {
+    // TASK-285: renaming a PUBLISHED page's slug kills its indexed URL — warn
+    // first. A blank slug means "auto-generate" (treated as no rename here,
+    // matching pageFormValuesToUpdateDto's `undefined` mapping).
+    const nextSlug = values.slug?.trim();
+    const wasLive = page?.status === "PUBLISHED";
+    if (wasLive && page && nextSlug && nextSlug !== page.slug) {
+      if (!window.confirm(dict.pages.slugChangeConfirm(page.slug, nextSlug))) {
+        return;
+      }
+    }
     update.mutate(
       { id: pageId, data: pageFormValuesToUpdateDto(values) },
       {

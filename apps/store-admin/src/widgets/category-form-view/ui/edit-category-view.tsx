@@ -50,6 +50,19 @@ export function EditCategoryView({ categoryId }: EditCategoryViewProps) {
   const category = data?.data;
 
   const handleSubmit = (values: CategoryFormValues) => {
+    // TASK-285: renaming an ACTIVE category's slug kills its indexed URL — warn
+    // first. A blank slug means "auto-generate" (treated as no rename here).
+    const nextSlug = values.slug?.trim();
+    const wasLive = category?.isActive === true;
+    if (wasLive && category && nextSlug && nextSlug !== category.slug) {
+      if (
+        !window.confirm(
+          dict.categories.slugChangeConfirm(category.slug, nextSlug),
+        )
+      ) {
+        return;
+      }
+    }
     update.mutate(
       {
         id: categoryId,

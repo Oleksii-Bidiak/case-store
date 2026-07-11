@@ -211,6 +211,11 @@ export const dict = {
     toastCreateFailed: "Не вдалося створити товар",
     toastUpdated: "Товар оновлено",
     toastUpdateFailed: "Не вдалося оновити товар",
+    // TASK-285: slug-rename guard on a publicly visible product.
+    slugChangeConfirm: (oldSlug: string, newSlug: string) =>
+      `Ви змінюєте адресу активного товару з «${oldSlug}» на «${newSlug}». ` +
+      `Стара адреса перестане працювати і випаде з результатів пошуку Google — ` +
+      `але ми автоматично налаштуємо переадресацію зі старої адреси на нову. Продовжити?`,
     // Staff preview of deactivated products (TASK-155)
     previewLink: "Переглянути",
     previewHeading: "Перегляд товару",
@@ -328,6 +333,11 @@ export const dict = {
     toastCreateFailed: "Не вдалося створити категорію",
     toastUpdated: "Категорію оновлено",
     toastUpdateFailed: "Не вдалося оновити категорію",
+    // TASK-285: slug-rename guard on a publicly visible category.
+    slugChangeConfirm: (oldSlug: string, newSlug: string) =>
+      `Ви змінюєте адресу активної категорії з «${oldSlug}» на «${newSlug}». ` +
+      `Стара адреса перестане працювати і випаде з результатів пошуку Google — ` +
+      `але ми автоматично налаштуємо переадресацію зі старої адреси на нову. Продовжити?`,
   },
 
   categoryForm: {
@@ -617,8 +627,18 @@ export const dict = {
     statusDraft: "Чернетка",
     publish: "Опублікувати",
     unpublish: "Зняти з публікації",
-    deleteConfirm: (title: string) =>
-      `Видалити сторінку «${title}»? Цю дію не можна скасувати.`,
+    // TASK-285: the published variant reminds the admin the URL may still be
+    // indexed by Google and deleting it leaves a 404 with NO redirect.
+    deleteConfirm: (title: string, isPublished: boolean) =>
+      `Видалити сторінку «${title}»? Цю дію не можна скасувати.` +
+      (isPublished
+        ? " Сторінка опублікована і може бути в пошуковому індексі Google — після видалення адреса поверне помилку 404 без переадресації."
+        : ""),
+    // TASK-285: slug-rename guard on a publicly visible page.
+    slugChangeConfirm: (oldSlug: string, newSlug: string) =>
+      `Ви змінюєте адресу опублікованої сторінки з «${oldSlug}» на «${newSlug}». ` +
+      `Стара адреса перестане працювати і випаде з результатів пошуку Google — ` +
+      `але ми автоматично налаштуємо переадресацію зі старої адреси на нову. Продовжити?`,
     back: "← Назад до сторінок",
     createHeading: "Створення сторінки",
     editHeading: "Редагування сторінки",
@@ -689,8 +709,18 @@ export const dict = {
     statusDraft: "Чернетка",
     publish: "Опублікувати",
     unpublish: "Зняти з публікації",
-    deleteConfirm: (title: string) =>
-      `Видалити статтю «${title}»? Цю дію не можна скасувати.`,
+    // TASK-285: the published variant reminds the admin the URL may still be
+    // indexed by Google and deleting it leaves a 404 with NO redirect.
+    deleteConfirm: (title: string, isPublished: boolean) =>
+      `Видалити статтю «${title}»? Цю дію не можна скасувати.` +
+      (isPublished
+        ? " Стаття опублікована і може бути в пошуковому індексі Google — після видалення адреса поверне помилку 404 без переадресації."
+        : ""),
+    // TASK-285: slug-rename guard on a publicly visible post.
+    slugChangeConfirm: (oldSlug: string, newSlug: string) =>
+      `Ви змінюєте адресу опублікованої статті з «${oldSlug}» на «${newSlug}». ` +
+      `Стара адреса перестане працювати і випаде з результатів пошуку Google — ` +
+      `але ми автоматично налаштуємо переадресацію зі старої адреси на нову. Продовжити?`,
     back: "← Назад до статей",
     createHeading: "Створення статті",
     editHeading: "Редагування статті",

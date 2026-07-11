@@ -71,8 +71,9 @@ export function BlogPostTable() {
     );
   };
 
-  const handleDelete = (id: string, title: string) => {
-    if (!window.confirm(dict.blogPosts.deleteConfirm(title))) return;
+  const handleDelete = (id: string, title: string, isPublished: boolean) => {
+    if (!window.confirm(dict.blogPosts.deleteConfirm(title, isPublished)))
+      return;
     remove.mutate(
       { id },
       {
@@ -165,7 +166,9 @@ export function BlogPostTable() {
                       variant="destructive"
                       size="sm"
                       disabled={isMutating}
-                      onClick={() => handleDelete(post.id, post.title)}
+                      onClick={() =>
+                        handleDelete(post.id, post.title, isPublished)
+                      }
                     >
                       {dict.common.delete}
                     </Button>
