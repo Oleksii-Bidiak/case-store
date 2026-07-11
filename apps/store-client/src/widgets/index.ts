@@ -27,3 +27,4 @@ export {
 export { AccountView, AccountSkeleton } from "./account";
 export { OrderHistoryView, OrderHistorySkeleton } from "./order-history";
 export { ProductQuickViewTrigger } from "./product-quick-view";
+export { RecommendationCarousels } from "./recommendation-carousels";

@@ -4,6 +4,7 @@ import {
   TrustStrip,
   CategoryNav,
   PopularRail,
+  RecommendationCarousels,
   PromoBanner,
   RecentlyViewed,
   Newsletter,
@@ -15,6 +16,7 @@ import {
 } from "@/shared/lib/schema";
 import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
+import { fetchPublishedCarousels } from "@/shared/api/carousels-server";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
@@ -53,6 +55,11 @@ export default async function HomePage() {
   // always renders even if the API is unreachable.
   const banners = await fetchPublishedBanners();
 
+  // Admin-managed recommendation carousels (TASK-139; ISR, tag `carousels`).
+  // Resilient like the banners fetch — an unreachable API yields [] and the
+  // widget renders nothing, so the homepage always renders.
+  const carousels = await fetchPublishedCarousels();
+
   // Admin-managed social links feed the Organization `sameAs` (brand-entity
   // signal for AI/search). Deduped with the footer's fetch of the same tagged
   // endpoint; degrades to no `sameAs` when unset or the API is unreachable.
@@ -84,6 +91,9 @@ export default async function HomePage() {
       <TrustStrip />
       <CategoryNav />
       <PopularRail />
+      {/* Owner-approved default (plan 154): admin carousels COEXIST below the
+          hardcoded PopularRail, grouped with the other product-rail section. */}
+      <RecommendationCarousels carousels={carousels} />
       <PromoBanner banner={banners.PROMO_BANNER[0]} />
       <RecentlyViewed />
       <Newsletter />

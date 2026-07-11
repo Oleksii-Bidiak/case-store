@@ -49,6 +49,7 @@ async function exportSwagger(): Promise<void> {
     .addTag('Pages', 'Static / service page browsing and admin management')
     .addTag('Blog', 'Blog posts and categories — storefront reads and admin management')
     .addTag('Banners', 'Homepage banners — public listing and admin management')
+    .addTag('Carousels', 'Homepage recommendation carousels — public listing and admin management')
     .addTag('Cart', 'Shopping cart management')
     .addTag('Discounts', 'Promo codes — storefront preview and admin management')
     .addTag('Wishlist', 'Wishlist / favorites — guest via cookie, merges on login')

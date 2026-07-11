@@ -1502,6 +1502,18 @@ export const dict = {
     viewFullDetails: "Переглянути повну сторінку товару",
     variantsNote: "Кольори та інші варіанти доступні на сторінці товару.",
   },
+
+  // --- Admin-managed recommendation carousels (TASK-139) ---------------------
+  // Deliberately minimal: each carousel's heading is admin-authored data, an
+  // empty carousel renders nothing, and fetch errors resolve to the same
+  // "render nothing" via the resilient carousels-server helper — so only the
+  // two static scroll-arrow labels need dictionary strings.
+  carousels: {
+    /** aria-label for the scroll-left arrow. */
+    prevAria: "Попередні товари",
+    /** aria-label for the scroll-right arrow. */
+    nextAria: "Наступні товари",
+  },
 } as const;
 
 export type Dictionary = typeof dict;
