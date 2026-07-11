@@ -284,11 +284,12 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-274 | [C/L] Login timing hardening (code-review follow-up to TASK-273) — `login()` still throws on `!user` without argon2 work → same timing-oracle class on `/api/auth/login`; burn fixed argon2 cost on the no-user branch, mirroring TASK-273 | ⬜ | — |
-| TASK-275 | [D/L] Header-search combobox `aria-activedescendant` (code-review follow-up to TASK-218; pre-existing gap) — options need `id`s + `aria-activedescendant` on the input per APG combobox pattern, else arrow-key navigation is silent for screen readers | ⬜ | — |
-| TASK-276 | [D/L] Admin card-mode table group semantics (code-review follow-up to TASK-258) — card rows lose table roles on `<md`; add `role="group"` + `aria-label` from the row's key field (sr-only cell labels already shipped in 140) | ⬜ | — |
-| TASK-174 | Add-on services / protection plans: catalog + per-product applicability + cart/order persistence + admin (cart UI stub exists) | ⬜ | — |
-| TASK-175 | Loyalty & account extras: points/cashback model + accrual/redeem API + purchases feed + persisted notification prefs (account UI stubs exist) | ⬜ | — |
+| TASK-274 | [C/L] Login timing hardening (code-review follow-up to TASK-273) — `login()` still throws on `!user` without argon2 work → same timing-oracle class on `/api/auth/login`; burn fixed argon2 cost on the no-user branch, mirroring TASK-273 | 🔄 | 149 |
+| TASK-275 | [D/L] Header-search combobox `aria-activedescendant` (code-review follow-up to TASK-218; pre-existing gap) — options need `id`s + `aria-activedescendant` on the input per APG combobox pattern, else arrow-key navigation is silent for screen readers | 🔄 | 149 |
+| TASK-276 | [D/L] Admin card-mode table group semantics (code-review follow-up to TASK-258) — card rows lose table roles on `<md`; add `role="group"` + `aria-label` from the row's key field (sr-only cell labels already shipped in 140) | 🔄 | 149 |
+| TASK-174 | Add-on services / protection plans: catalog + applicability (category templates with live inheritance, nearest-ancestor-wins across the subcategory tree + per-product ADD/REMOVE/OVERRIDE deltas — JS-prototype semantics) + cart/order persistence + admin (cart UI stub exists). Owner decisions 2026-07-11: no standalone purchase; add-ons excluded from the discount base (like shipping) | 🔄 | 150 |
+| TASK-175 | Loyalty & account extras: points/cashback model + accrual/redeem API + purchases feed + persisted notification prefs (account UI stubs exist) — parked by owner 2026-07-11 (plan 151 written and kept as the future reference) | 🅿️ | 151 |
+| TASK-286 | Coupons/discounts applying to add-on service lines (today add-ons sit outside the discount base, like shipping) — owner: interesting only at a much later stage | 🅿️ | — |
 | TASK-168 | Social sign-in (Google/Apple OAuth): backend OAuth module + account linking (auth slide-out stubs) | 🅿️ | — |
 | TASK-080-E | Admin-configurable NP dispatch origin (`DeliverySetting`) — deferred until real NP API key + running DB (owner decision 2026-06-27) | 🅿️ | 068 |
 | TASK-082 | Deep mega-menu subcategory tree | Root-category dropdown shipped (167-A) |
