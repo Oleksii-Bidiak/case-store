@@ -1343,6 +1343,13 @@ export const dict = {
       tabLogin: "Вхід",
       tabRegister: "Реєстрація",
     },
+    // Google OAuth sign-in (TASK-168). Apple stays a stub (owner decision
+    // 2026-07-11) — no new keys for it; `socialSoon` (already defined above,
+    // under `login`) is untouched and still used verbatim for the Apple button.
+    oauth: {
+      error:
+        "Не вдалося увійти через Google. Спробуйте ще раз або скористайтеся email і паролем.",
+    },
   },
 
   meta: {

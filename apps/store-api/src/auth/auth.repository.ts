@@ -1,13 +1,31 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma';
-import { User, RefreshToken, PasswordResetToken } from '@prisma/client';
+import {
+  User,
+  RefreshToken,
+  PasswordResetToken,
+  OAuthAccount,
+  OAuthProvider,
+} from '@prisma/client';
 
 export interface CreateUserInput {
   email: string;
   passwordHash: string;
   firstName?: string;
   lastName?: string;
+}
+
+export interface CreateOAuthUserInput {
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  provider: OAuthProvider;
+  providerId: string;
+}
+
+export interface OAuthAccountWithUser extends OAuthAccount {
+  user: User;
 }
 
 export interface RefreshTokenWithUser extends RefreshToken {
@@ -191,5 +209,69 @@ export class AuthRepository {
     });
 
     return result.count;
+  }
+
+  /**
+   * Look up an existing OAuth link by (provider, providerId) — the fast path
+   * for a returning Google user, checked BEFORE any email-based lookup
+   * (TASK-168). `providerId` is the provider's stable subject id (OIDC `sub`),
+   * never the email.
+   */
+  findOAuthAccount(
+    provider: OAuthProvider,
+    providerId: string,
+  ): Promise<OAuthAccountWithUser | null> {
+    return this.prisma.oAuthAccount.findUnique({
+      where: { provider_providerId: { provider, providerId } },
+      include: { user: true },
+    });
+  }
+
+  /**
+   * Link an OAuth identity to an ALREADY-RESOLVED, already-lock-checked User.
+   * The caller (AuthService) is responsible for the lock check — linking must
+   * never happen before it, or a banned account could silently accumulate a
+   * working OAuth sign-in path (TASK-168, plan 153 §Locked-account resolution).
+   */
+  linkOAuthAccount(
+    userId: string,
+    provider: OAuthProvider,
+    providerId: string,
+    email: string,
+  ): Promise<OAuthAccount> {
+    return this.prisma.oAuthAccount.create({
+      data: { userId, provider, providerId, email },
+    });
+  }
+
+  /**
+   * Brand-new signup via OAuth: no matching User by providerId OR email exists
+   * yet. Creates the User (no passwordHash — a Google-only account genuinely
+   * has no password) and its OAuthAccount link atomically in one transaction:
+   * two tables must succeed together here.
+   */
+  createUserFromOAuth(
+    input: CreateOAuthUserInput,
+  ): Promise<{ user: User; oauthAccount: OAuthAccount }> {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: input.email,
+          firstName: input.firstName,
+          lastName: input.lastName,
+        },
+      });
+
+      const oauthAccount = await tx.oAuthAccount.create({
+        data: {
+          userId: user.id,
+          provider: input.provider,
+          providerId: input.providerId,
+          email: input.email,
+        },
+      });
+
+      return { user, oauthAccount };
+    });
   }
 }
