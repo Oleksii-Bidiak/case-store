@@ -1,5 +1,7 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { submitToIndexNow } from "@/shared/lib/seo/indexnow";
+import { SITE_URL } from "@/shared/config";
 
 /**
  * On-demand ISR revalidation endpoint (TASK-187).
@@ -16,6 +18,13 @@ import { revalidatePath, revalidateTag } from "next/cache";
  * - 503 when the secret is not configured in production (fail closed rather than
  *   accept unauthenticated purges).
  * - 401 on a missing / mismatched secret.
+ *
+ * IndexNow (TASK-282, plan 144): after a valid request with ≥1 non-empty path,
+ * the affected absolute URLs are pinged to IndexNow via `after()` — post-response
+ * and non-blocking, so the admin write never waits on api.indexnow.org.
+ * Tags-only requests don't ping (a global/settings purge isn't new content at
+ * one canonical URL). `submitToIndexNow` itself no-ops without INDEXNOW_KEY or
+ * outside production and never throws.
  */
 interface RevalidateBody {
   tags?: string[];
@@ -67,6 +76,18 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (typeof path === "string" && path.length > 0) {
       revalidatePath(path);
     }
+  }
+
+  const indexNowUrls = paths
+    .filter(
+      (path): path is string => typeof path === "string" && path.length > 0,
+    )
+    .map((path) => `${SITE_URL}${path}`);
+
+  if (indexNowUrls.length > 0) {
+    after(() => {
+      void submitToIndexNow(indexNowUrls);
+    });
   }
 
   return NextResponse.json({

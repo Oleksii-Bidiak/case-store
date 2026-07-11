@@ -25,3 +25,13 @@ export type {
   ListingMetadataInput,
   ListingMetadataResult,
 } from "./listing-metadata";
+
+// IndexNow submission (plan 144) — fire-and-forget instant-index ping for
+// Bing/Seznam, wired into `/api/revalidate`; no-op without INDEXNOW_KEY or
+// outside production.
+export {
+  getIndexNowKey,
+  buildIndexNowPayload,
+  submitToIndexNow,
+} from "./indexnow";
+export type { IndexNowPayload } from "./indexnow";
