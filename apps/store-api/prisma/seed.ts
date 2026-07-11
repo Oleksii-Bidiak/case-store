@@ -1825,6 +1825,105 @@ async function seedBanners(prisma: PrismaClient) {
   console.log(`  ✓ Banners: ${banners.length} published banners upserted`);
 }
 
+/**
+ * Seed a few published recommendation carousels — one per interesting source
+ * shape (TASK-139): a BESTSELLING rule, a CATEGORY rule pointed at a seeded
+ * parent category (exercises the subtree rollup), and a MANUAL carousel with a
+ * handful of hand-picked seeded products. Idempotent via deterministic ids;
+ * MANUAL items are replaced wholesale on re-run. The storefront renders
+ * correctly with ZERO carousels, so this is a convenience, not a requirement.
+ * Must run AFTER seedCategories/seedProducts.
+ */
+async function seedCarousels(prisma: PrismaClient) {
+  const casesCategory = await prisma.category.findUnique({ where: { slug: 'cases' } });
+
+  const now = new Date();
+
+  const carousels: {
+    slug: string;
+    title: string;
+    source: 'BESTSELLING' | 'NEWEST' | 'ON_SALE' | 'CATEGORY' | 'MANUAL';
+    categoryId?: string | null;
+    itemLimit?: number;
+    sortOrder: number;
+  }[] = [
+    {
+      slug: 'bestsellers',
+      title: 'Хіти продажів',
+      source: 'BESTSELLING',
+      itemLimit: 12,
+      sortOrder: 0,
+    },
+    ...(casesCategory
+      ? [
+          {
+            slug: 'cases',
+            title: 'Чохли для смартфонів',
+            source: 'CATEGORY' as const,
+            categoryId: casesCategory.id,
+            itemLimit: 12,
+            sortOrder: 1,
+          },
+        ]
+      : []),
+    {
+      slug: 'editors-pick',
+      title: 'Редакція обирає',
+      source: 'MANUAL',
+      sortOrder: 2,
+    },
+  ];
+
+  for (const c of carousels) {
+    const id = deterministicUuid(`carousel:${c.slug}`);
+    const data = {
+      title: c.title,
+      source: c.source,
+      categoryId: c.categoryId ?? null,
+      itemLimit: c.itemLimit ?? 12,
+      sortOrder: c.sortOrder,
+      status: 'PUBLISHED' as const,
+      publishedAt: now,
+      scheduledAt: null,
+    };
+
+    await prisma.carousel.upsert({
+      where: { id },
+      update: data,
+      create: { id, ...data },
+    });
+  }
+
+  // Hand-pick a few active seeded products for the MANUAL carousel. Full-replace
+  // keeps re-runs idempotent (mirrors the admin endpoint's write shape).
+  const manualId = deterministicUuid('carousel:editors-pick');
+  const picks = await prisma.product.findMany({
+    where: { isActive: true, deletedAt: null },
+    orderBy: { createdAt: 'asc' },
+    take: 4,
+    select: { id: true },
+  });
+
+  await prisma.$transaction([
+    prisma.carouselItem.deleteMany({ where: { carouselId: manualId } }),
+    ...(picks.length > 0
+      ? [
+          prisma.carouselItem.createMany({
+            data: picks.map((p, index) => ({
+              carouselId: manualId,
+              productId: p.id,
+              sortOrder: index,
+            })),
+          }),
+        ]
+      : []),
+  ]);
+
+  console.log(
+    `  ✓ Carousels: ${carousels.length} published carousels upserted (${picks.length} manual items)`,
+  );
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 /**
@@ -3070,6 +3169,7 @@ async function main() {
     const brands = await seedBrands(prisma);
     const categories = await seedCategories(prisma);
     await seedProducts(prisma, categories, brands);
+    await seedCarousels(prisma); // must follow seedCategories + seedProducts (rows referenced)
     await seedDevices(prisma); // must precede seedDeviceCompat (creates DeviceModels)
     await seedAttributeDefinitions(prisma, categories);
     await seedAddonServices(prisma, categories); // must follow seedProducts (deltas need products)

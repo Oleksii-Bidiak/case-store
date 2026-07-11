@@ -22,6 +22,7 @@ import { AttributeDefinitionModule } from './attribute-definition';
 import { PagesModule } from './pages';
 import { BlogModule } from './blog';
 import { BannersModule } from './banners';
+import { CarouselsModule } from './carousels';
 import { SiteContactModule } from './site-contact';
 import { SeoSettingsModule } from './seo-settings';
 import { FaqModule } from './faq';
@@ -132,6 +133,8 @@ import { buildPinoHttpOptions } from './config/pino.config';
     BlogModule,
     // Admin-managed homepage banners (TASK-186)
     BannersModule,
+    // Admin-managed recommendation carousels (TASK-139)
+    CarouselsModule,
 
     // Admin-managed site contact settings (TASK-154)
     SiteContactModule,

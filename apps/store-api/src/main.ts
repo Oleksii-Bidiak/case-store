@@ -130,6 +130,10 @@ async function bootstrap() {
       .addTag('Pages', 'Static / service page browsing and admin management')
       .addTag('Blog', 'Blog posts and categories — storefront reads and admin management')
       .addTag('Banners', 'Homepage banners — public listing and admin management')
+      .addTag(
+        'Carousels',
+        'Homepage recommendation carousels — public listing and admin management',
+      )
       .addTag('Cart', 'Shopping cart management')
       .addTag('Contact', 'Customer contact messages — public submission and admin inbox')
       .addTag('Search', 'Full-text product search + autocomplete (Meilisearch, Postgres fallback)')
