@@ -9,7 +9,7 @@ import {
 } from "@/entities/category";
 import { useBrandControllerFindAll } from "@/entities/brand";
 import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
-import { Skeleton } from "@/shared/ui";
+import { CategoryTileImage, Skeleton } from "@/shared/ui";
 import { categoryGradient, pickCategoryIcon } from "../model/category-visuals";
 
 const activeOnly = (nodes: CategoryTreeNodeEntity[]) =>
@@ -150,11 +150,23 @@ export function CategoriesView() {
                   href={`/categories/${child.slug}`}
                   className="flex flex-col rounded-2xl border border-border bg-card p-[18px] no-underline shadow-card transition-[transform,box-shadow] hover:-translate-y-[3px] hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <div
-                    className="mb-3.5 flex aspect-square items-center justify-center rounded-[13px]"
-                    style={{ background: categoryGradient(index) }}
-                  >
-                    <Icon className="size-10 text-white" aria-hidden="true" />
+                  <div className="relative mb-3.5 aspect-square overflow-hidden rounded-[13px]">
+                    <CategoryTileImage
+                      src={child.image}
+                      alt=""
+                      className="size-full object-cover"
+                      fallback={
+                        <div
+                          className="flex size-full items-center justify-center"
+                          style={{ background: categoryGradient(index) }}
+                        >
+                          <Icon
+                            className="size-10 text-white"
+                            aria-hidden="true"
+                          />
+                        </div>
+                      }
+                    />
                   </div>
                   <b className="text-[15px] leading-[1.3] font-semibold text-pretty text-foreground">
                     {child.name}

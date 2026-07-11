@@ -11,6 +11,7 @@ import {
 import type { CatalogView } from "@/features/product-filters";
 import { Button, ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
+import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { dict } from "@/shared/config";
 import {
   accumulationKey,
@@ -186,6 +187,7 @@ export function ProductList({
                 // First row is above the fold — load eagerly for LCP.
                 priority={index < 4}
                 action={<ProductCardActions product={product} />}
+                hoverAction={<ProductQuickViewTrigger product={product} />}
               />
             ))}
           </div>

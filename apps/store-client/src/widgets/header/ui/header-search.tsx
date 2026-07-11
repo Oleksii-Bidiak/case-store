@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Menu, Newspaper, Search } from "lucide-react";
 import { useSearchSuggest } from "@/entities/search";
 import { useBlogControllerFindAll } from "@/entities/blog";
-import { useCategoryControllerGetRootCategories } from "@/entities/category";
+import { useCategoryControllerGetCategoryTree } from "@/entities/category";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { Skeleton } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -84,16 +84,28 @@ export function HeaderSearch() {
     ),
   ];
 
+  // Category tree (TASK-082) — roots + one nested level for the flyout. The
+  // endpoint hardcodes isActive + sortOrder ascending server-side, matching the
+  // params the old flat root-categories call passed explicitly.
   const {
     data: catData,
     isPending: catPending,
     isError: catError,
-  } = useCategoryControllerGetRootCategories({
-    isActive: true,
-    sortBy: "sortOrder",
-    sortOrder: "asc",
-  });
+  } = useCategoryControllerGetCategoryTree();
   const categories = catData?.data ?? [];
+
+  // Which root's children the flyout's right pane shows. Defaults to the first
+  // root (same "first group" convention as CategoriesView) so the pane is never
+  // blank on open.
+  const [activeRootId, setActiveRootId] = useState<string | undefined>();
+  const activeRoot =
+    categories.find((c) => c.id === activeRootId) ?? categories[0];
+
+  // Focus plumbing for the two-pane keyboard traversal (ArrowRight/ArrowLeft)
+  // and for returning focus to the trigger when Escape closes the panel.
+  const catalogTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const rootLinkRefs = useRef<Record<string, HTMLAnchorElement | null>>({});
+  const childLinkRefs = useRef<Record<string, HTMLAnchorElement | null>>({});
 
   // Close both dropdowns on outside-click and Escape.
   useEffect(() => {
@@ -108,6 +120,9 @@ export function HeaderSearch() {
       if (event.key === "Escape") {
         setSearchOpen(false);
         setCatalogOpen(false);
+        // Keyboard users keep their place: Escape on the catalog panel returns
+        // focus to the "Каталог" trigger (TASK-082).
+        if (catalogOpen) catalogTriggerRef.current?.focus();
       }
     }
     document.addEventListener("mousedown", onPointerDown);
@@ -188,10 +203,13 @@ export function HeaderSearch() {
         <div className="flex h-12 items-center overflow-hidden rounded-xl border-[1.5px] border-border bg-background">
           {/* Каталог — mega-menu trigger (left segment). */}
           <button
+            ref={catalogTriggerRef}
             type="button"
             onClick={() => {
               setCatalogOpen((v) => !v);
               setSearchOpen(false);
+              // Fresh open always previews the first root's children.
+              setActiveRootId(undefined);
             }}
             aria-expanded={catalogOpen}
             aria-haspopup="menu"
@@ -239,55 +257,118 @@ export function HeaderSearch() {
         </div>
       </form>
 
-      {/* Catalog panel (real root categories). */}
+      {/* Catalog panel — root categories + the active root's children in a
+          two-pane flyout (TASK-082). Root links keep navigating on click; the
+          right pane is a purely additive hover/focus preview. */}
       {catalogOpen && (
         <div
           role="menu"
           aria-label={dict.header.catalogAria}
-          className="absolute top-[calc(100%+8px)] left-0 z-50 w-72 rounded-2xl border border-border bg-popover p-2 shadow-lift"
+          className="absolute top-[calc(100%+8px)] left-0 z-50 rounded-2xl border border-border bg-popover p-2 shadow-lift"
         >
           {catPending && (
-            <div className="flex flex-col gap-1 p-1" aria-hidden="true">
+            <div className="flex w-64 flex-col gap-1 p-1" aria-hidden="true">
               {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-9 w-full rounded-lg" />
               ))}
             </div>
           )}
           {catError && (
-            <p role="alert" className="px-3 py-2 text-sm text-destructive">
+            <p role="alert" className="w-64 px-3 py-2 text-sm text-destructive">
               {dict.catalog.categoriesError}
             </p>
           )}
           {!catPending && !catError && (
-            <ul>
-              {categories.map((category) => (
-                <li key={category.id}>
-                  <Link
-                    href={`/categories/${category.slug}`}
-                    role="menuitem"
-                    onClick={() => setCatalogOpen(false)}
-                    className="flex items-center rounded-xl px-3 py-2.5 text-sm font-medium text-popover-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            <>
+              <div className="flex">
+                <ul className="w-64 pr-2">
+                  {categories.map((category) => (
+                    <li key={category.id}>
+                      <Link
+                        ref={(el) => {
+                          rootLinkRefs.current[category.id] = el;
+                        }}
+                        href={`/categories/${category.slug}`}
+                        role="menuitem"
+                        aria-haspopup={
+                          category.children.length > 0 ? "true" : undefined
+                        }
+                        aria-expanded={
+                          category.children.length > 0
+                            ? category.id === activeRoot?.id
+                            : undefined
+                        }
+                        onMouseEnter={() => setActiveRootId(category.id)}
+                        onFocus={() => setActiveRootId(category.id)}
+                        onKeyDown={(event) => {
+                          if (
+                            event.key === "ArrowRight" &&
+                            category.children[0]
+                          ) {
+                            event.preventDefault();
+                            childLinkRefs.current[
+                              category.children[0].id
+                            ]?.focus();
+                          }
+                        }}
+                        onClick={() => setCatalogOpen(false)}
+                        className="flex items-center rounded-xl px-3 py-2.5 text-sm font-medium text-popover-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {category.name}
+                      </Link>
+                    </li>
+                  ))}
+                  {categories.length === 0 && (
+                    <li className="px-3 py-2 text-sm text-muted-foreground">
+                      {dict.catalog.noCategories}
+                    </li>
+                  )}
+                </ul>
+
+                {activeRoot && activeRoot.children.length > 0 && (
+                  <div
+                    role="group"
+                    aria-label={dict.header.catalogSubcategoriesAria}
+                    className="w-64 border-l border-border pl-2"
                   >
-                    {category.name}
-                  </Link>
-                </li>
-              ))}
-              {categories.length === 0 && (
-                <li className="px-3 py-2 text-sm text-muted-foreground">
-                  {dict.catalog.noCategories}
-                </li>
-              )}
-              <li>
+                    <ul>
+                      {activeRoot.children.map((child) => (
+                        <li key={child.id}>
+                          <Link
+                            ref={(el) => {
+                              childLinkRefs.current[child.id] = el;
+                            }}
+                            href={`/categories/${child.slug}`}
+                            role="menuitem"
+                            onKeyDown={(event) => {
+                              if (event.key === "ArrowLeft") {
+                                event.preventDefault();
+                                rootLinkRefs.current[activeRoot.id]?.focus();
+                              }
+                            }}
+                            onClick={() => setCatalogOpen(false)}
+                            className="flex items-center rounded-xl px-3 py-2.5 text-sm font-medium text-popover-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {child.name}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-0.5 border-t border-border pt-2">
                 <Link
                   href="/categories"
                   role="menuitem"
                   onClick={() => setCatalogOpen(false)}
-                  className="mt-0.5 flex items-center rounded-xl px-3 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex items-center rounded-xl px-3 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {dict.header.catalogAll}
                 </Link>
-              </li>
-            </ul>
+              </div>
+            </>
           )}
         </div>
       )}

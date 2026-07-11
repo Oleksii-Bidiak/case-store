@@ -75,6 +75,10 @@ export const dict = {
     accountLabel: "Кабінет",
     accountOpenAria: "Відкрити особистий кабінет",
     cartTotalAria: "Сума кошика",
+    // TASK-082 — mega-menu second level (desktop flyout + mobile accordion).
+    catalogSubcategoriesAria: "Підкатегорії",
+    toggleSubcategoriesAria: (name: string) =>
+      `Підкатегорії категорії «${name}»`,
   },
 
   // TASK-075 — full-text search (header autocomplete + /search results page).
@@ -743,7 +747,22 @@ export const dict = {
     // Price filter card + mobile drawer.
     priceTitle: "Ціна, ₴",
     priceSliderAria: "Діапазон цін",
-    mobileApply: "Показати результати",
+    // TASK-084 — mobile drawer polish: live result count on the sticky "Apply"
+    // footer. Ukrainian pluralization mirrors dict.catalog.loadMore's
+    // mod10/mod100 rule; n === 0 gets an explicit empty-state label instead.
+    mobileApply: (n: number) => {
+      if (n === 0) return "Немає товарів за цими фільтрами";
+      const mod10 = n % 10;
+      const mod100 = n % 100;
+      let word = "товарів";
+      if (mod10 === 1 && mod100 !== 11) word = "товар";
+      else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20))
+        word = "товари";
+      return `Показати ${n} ${word}`;
+    },
+    // Shown on the mobile "Apply" button while the very first count is still in
+    // flight (a warm grid cache normally resolves it before the drawer opens).
+    mobileApplyPending: "Рахуємо…",
     searchLabel: "Пошук",
     searchPlaceholder: "Пошук товарів…",
     searchAria: "Пошук товарів",
@@ -757,6 +776,8 @@ export const dict = {
     // Structured-spec facets (TASK-191) — shown only when a category is active.
     specsTitle: "Характеристики",
     specAnyOption: "Будь-яка",
+    // TASK-084 — per-section collapse inside the mobile drawer (native <details>).
+    sectionToggleAria: (section: string) => `Розгорнути/згорнути «${section}»`,
   },
 
   product: {
@@ -1322,6 +1343,13 @@ export const dict = {
       tabLogin: "Вхід",
       tabRegister: "Реєстрація",
     },
+    // Google OAuth sign-in (TASK-168). Apple stays a stub (owner decision
+    // 2026-07-11) — no new keys for it; `socialSoon` (already defined above,
+    // under `login`) is untouched and still used verbatim for the Apple button.
+    oauth: {
+      error:
+        "Не вдалося увійти через Google. Спробуйте ще раз або скористайтеся email і паролем.",
+    },
   },
 
   meta: {
@@ -1461,6 +1489,18 @@ export const dict = {
     error: "Не вдалося підписатися. Спробуйте ще раз.",
     /** 429 — too many attempts. */
     rateLimited: "Забагато спроб. Зачекайте хвилину та спробуйте знову.",
+  },
+
+  // TASK-086 — product quick-view modal (widgets/product-quick-view).
+  quickView: {
+    trigger: (name: string) => `Швидкий перегляд «${name}»`,
+    title: "Швидкий перегляд",
+    dialogDescription: (name: string) =>
+      `Швидкий перегляд товару «${name}»: ціна, наявність і швидке додавання в кошик.`,
+    loadError: "Не вдалося завантажити товар. Спробуйте ще раз.",
+    retry: "Спробувати ще раз",
+    viewFullDetails: "Переглянути повну сторінку товару",
+    variantsNote: "Кольори та інші варіанти доступні на сторінці товару.",
   },
 
   // --- Admin-managed recommendation carousels (TASK-139) ---------------------

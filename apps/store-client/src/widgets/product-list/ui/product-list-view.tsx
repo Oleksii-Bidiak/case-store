@@ -2,10 +2,14 @@
 
 import { useCallback, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { keepPreviousData } from "@tanstack/react-query";
 import { SlidersHorizontal } from "lucide-react";
 import { useCategoryControllerGetCategoryTree } from "@/entities/category";
 import { useBrandControllerFindAll } from "@/entities/brand";
-import type { ProductControllerFindAllParams } from "@/entities/product";
+import {
+  useProductControllerFindAll,
+  type ProductControllerFindAllParams,
+} from "@/entities/product";
 import {
   ProductFilters,
   ActiveFilterChips,
@@ -97,6 +101,17 @@ export function ProductListView({
   const view: CatalogView =
     searchParams.get("view") === "list" ? "list" : "grid";
   const currentSort = `${params.sortBy}:${params.sortOrder}`;
+
+  // Live result count for the mobile drawer's sticky "Apply" button (TASK-084).
+  // Same `params` (and therefore React Query cache key) the grid already fetches,
+  // so a warm cache resolves it with zero extra network round trips; gated on
+  // `filtersOpen` so a closed drawer never subscribes. `keepPreviousData` holds
+  // the last count on screen while a post-filter-change refetch is in flight
+  // instead of flashing to a loading state.
+  const { data: countData } = useProductControllerFindAll(params, {
+    query: { enabled: filtersOpen, placeholderData: keepPreviousData },
+  });
+  const resultCount = countData?.meta?.total;
 
   // Count of active filters INSIDE the drawer/sidebar — drives the mobile
   // "Filters" badge. The category is excluded: its control is the always-visible
@@ -247,7 +262,10 @@ export function ProductListView({
       <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
         <SheetContent
           side="left"
-          className="w-[342px] max-w-[88vw] gap-0 overflow-y-auto p-0"
+          // `overscroll-contain` stops iOS Safari scroll-chaining — dragging past
+          // the top/bottom of the filter list no longer rubber-bands the page
+          // underneath the open drawer (TASK-084).
+          className="w-[342px] max-w-[88vw] gap-0 overflow-y-auto overscroll-contain p-0"
         >
           <SheetHeader className="border-b border-border">
             <SheetTitle className="font-display text-lg font-bold">
@@ -259,15 +277,19 @@ export function ProductListView({
               idPrefix="filter-m"
               currentParams={params}
               onFilterChange={applyFilters}
+              collapsible
             />
           </div>
           <SheetFooter className="border-t border-border">
             <button
               type="button"
               onClick={() => setFiltersOpen(false)}
-              className="h-12 w-full rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90"
+              disabled={resultCount === 0}
+              className="h-12 w-full rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {dict.filters.mobileApply}
+              {resultCount == null
+                ? dict.filters.mobileApplyPending
+                : dict.filters.mobileApply(resultCount)}
             </button>
           </SheetFooter>
         </SheetContent>

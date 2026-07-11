@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Body,
   Req,
@@ -19,6 +20,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiCookieAuth,
+  ApiExcludeEndpoint,
   ApiExtraModels,
   getSchemaPath,
 } from '@nestjs/swagger';
@@ -29,8 +31,10 @@ import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { JwtRefreshGuard } from './guards';
 import { JwtAuthGuard } from './guards';
+import { GoogleAuthGuard } from './guards';
 import { CurrentUser } from './decorators';
 import { AuthTokens } from './entities';
+import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { CartService } from '../cart/cart.service';
 import { CART_TOKEN_COOKIE } from '../cart/cart-identity.types';
 import { WishlistService } from '../wishlist/wishlist.service';
@@ -275,6 +279,77 @@ export class AuthController {
     return {
       data: { message: 'Logged out' },
     };
+  }
+
+  /**
+   * GET /api/auth/google (TASK-168)
+   *
+   * Leg 1 of the Google OAuth redirect flow: a plain browser navigation that
+   * 302s to Google's consent screen (503 when Google credentials are not
+   * configured — see GoogleAuthGuard). Excluded from Swagger: it is a pure
+   * redirect endpoint, never called via fetch/axios/Orval.
+   */
+  @Get('google')
+  @UseGuards(GoogleAuthGuard)
+  @ApiExcludeEndpoint()
+  googleAuth(): void {
+    // The guard performs the redirect to Google as a side effect
+    // (passport-oauth2's standard "no code param yet → res.redirect(
+    // authorizationURL)" behavior). This body never runs for a well-formed
+    // request.
+  }
+
+  /**
+   * GET /api/auth/google/callback (TASK-168)
+   *
+   * Leg 2: Google redirects back here. On success the refresh cookie is set
+   * and guest cart/wishlist are merged — the exact same helpers the password
+   * login uses — then the browser is 302'd to the state-carried same-origin
+   * redirect target. NO token ever appears in any URL: the redirected-to page
+   * picks the session up via the existing bootstrap-refresh flow.
+   *
+   * Every failure — Google-side denial (no profile), unverified email, locked
+   * account — funnels to the single fixed `/login?oauthError=1` target with
+   * no reason code (TASK-274 generic-refusal policy).
+   *
+   * Uses @Res() WITHOUT `passthrough: true` (deliberate deviation from every
+   * other handler here): these two routes are pure redirects and must fully
+   * own the response.
+   */
+  @Get('google/callback')
+  @UseGuards(GoogleAuthGuard)
+  @ApiExcludeEndpoint()
+  async googleAuthCallback(
+    @CurrentUser() profile: GoogleOAuthProfile | undefined,
+    @Req() request: Request,
+    @Res() response: Response,
+  ): Promise<void> {
+    const storeClientUrl = this.configService.get<string>(
+      'STORE_CLIENT_URL',
+      'http://localhost:3000',
+    );
+
+    if (!profile) {
+      // Google denied/cancelled, or the guard saw no user (bad/expired state,
+      // provider error). Fixed failure target — the login page already has
+      // the TASK-287 support-link escape hatch.
+      response.redirect(302, `${storeClientUrl}/login?oauthError=1`);
+      return;
+    }
+
+    try {
+      const tokens = await this.authService.loginWithGoogleProfile(profile);
+
+      this.setRefreshCookie(response, tokens.refreshToken);
+      await this.mergeGuestCartIfPresent(request, response, tokens.accessToken);
+      await this.mergeGuestWishlistIfPresent(request, response, tokens.accessToken);
+
+      response.redirect(302, `${storeClientUrl}${profile.redirect}`);
+    } catch {
+      // Every AuthService rejection (unverified email, locked account)
+      // funnels here — same generic failure target as the !profile branch.
+      response.redirect(302, `${storeClientUrl}/login?oauthError=1`);
+    }
   }
 
   /**

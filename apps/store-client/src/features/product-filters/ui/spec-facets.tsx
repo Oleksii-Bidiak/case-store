@@ -30,6 +30,14 @@ interface SpecFacetsProps {
   specs?: string;
   onFilterChange: (updates: Record<string, string | undefined>) => void;
   idPrefix?: string;
+  /**
+   * Override the outer card wrapper class (matches `BrandFilter`). The collapsible
+   * mobile drawer (TASK-084) passes `""` so this control renders bare inside a
+   * `<details>` card that already provides the chrome.
+   */
+  cardClassName?: string;
+  /** Override the card title class — pass `"sr-only"` to hide the duplicate heading. */
+  titleClassName?: string;
 }
 
 /**
@@ -45,6 +53,8 @@ export function SpecFacets({
   specs,
   onFilterChange,
   idPrefix = "filter",
+  cardClassName = cardClass,
+  titleClassName = `${cardTitleClass} mb-4`,
 }: SpecFacetsProps) {
   const query = useCategoryControllerGetFilterableSpecs(categoryId ?? "", {
     query: { enabled: Boolean(categoryId) },
@@ -58,8 +68,8 @@ export function SpecFacets({
   }
 
   return (
-    <div className={cardClass}>
-      <h3 className={`${cardTitleClass} mb-4`}>{dict.filters.specsTitle}</h3>
+    <div className={cardClassName}>
+      <h3 className={titleClassName}>{dict.filters.specsTitle}</h3>
       <div className="flex flex-col gap-3.5">
         {facets.map((facet) => {
           const key = facet.definition.key;

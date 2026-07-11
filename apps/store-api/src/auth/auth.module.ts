@@ -5,7 +5,9 @@ import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { RefreshTokenCleanupService } from './refresh-token-cleanup.service';
-import { JwtAccessStrategy, JwtRefreshStrategy } from './strategies';
+import { JwtAccessStrategy, JwtRefreshStrategy, GoogleStrategy } from './strategies';
+import { GoogleAuthGuard } from './guards';
+import { GoogleOAuthStateStore } from './oauth/google-oauth-state.store';
 import { CartModule } from '../cart/cart.module';
 import { WishlistModule } from '../wishlist/wishlist.module';
 
@@ -37,6 +39,12 @@ import { WishlistModule } from '../wishlist/wishlist.module';
     RefreshTokenCleanupService,
     JwtAccessStrategy,
     JwtRefreshStrategy,
+    // Google OAuth (TASK-168). GoogleStrategy always constructs (inert
+    // placeholders when unconfigured); GoogleAuthGuard 503s both routes when
+    // GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET are absent.
+    GoogleOAuthStateStore,
+    GoogleStrategy,
+    GoogleAuthGuard,
   ],
   exports: [AuthRepository, AuthService],
 })

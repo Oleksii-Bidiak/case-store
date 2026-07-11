@@ -3,10 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
+import { OAuthProvider } from '@prisma/client';
 import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
 import { AuthTokens } from './entities';
 import { RegisterDto } from './dto';
+import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
 
 // ─── Mock argon2 ──────────────────────────────────────────────────────────────
@@ -101,6 +103,9 @@ describe('AuthService', () => {
       markPasswordResetTokenUsed: jest.fn(),
       invalidateActivePasswordResetTokens: jest.fn(),
       updatePasswordHash: jest.fn(),
+      findOAuthAccount: jest.fn(),
+      linkOAuthAccount: jest.fn(),
+      createUserFromOAuth: jest.fn(),
     };
 
     // Create a mock JwtService
@@ -271,6 +276,24 @@ describe('AuthService', () => {
       // A soft-deleted (tombstoned) user must never receive new tokens.
       expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
     });
+
+    it('rejects generically (with the timing burn) when the user has no password hash — Google-only account (TASK-168)', async () => {
+      // A Google-only account has passwordHash: null. An unmodified login()
+      // would crash inside argon2.verify — a distinguishable failure mode,
+      // violating the TASK-274 generic-refusal policy. It must instead behave
+      // exactly like the unknown-email branch.
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, passwordHash: null });
+
+      await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      // Same timing burn as the unknown-email case — no timing oracle.
+      expect(argon2.hash).toHaveBeenCalledTimes(1);
+      // argon2.verify must NEVER see a null hash.
+      expect(argon2.verify).not.toHaveBeenCalled();
+      expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
+    });
   });
 
   // ─── login → locked-account owner notice (TASK-287) ─────────────────────────
@@ -396,6 +419,172 @@ describe('AuthService', () => {
       await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(
         new UnauthorizedException('Invalid credentials'),
       );
+    });
+  });
+
+  // ─── loginWithGoogleProfile (TASK-168) ──────────────────────────────────────
+  //
+  // Account resolution for the Google OAuth callback: link-by-verified-email /
+  // auto-provision / locked-account refusal. Locked accounts get the exact
+  // same generic INVALID_CREDENTIALS_MESSAGE + notifyLockedAccountOwner
+  // mechanism as login() (TASK-274/287 policy applied literally).
+
+  describe('loginWithGoogleProfile', () => {
+    const googleProfile: GoogleOAuthProfile = {
+      providerId: 'google-sub-123',
+      email: 'test@example.com',
+      emailVerified: true,
+      firstName: 'John',
+      lastName: 'Doe',
+      redirect: '/',
+    };
+
+    const mockOAuthLink = {
+      id: 'oauth-uuid-1',
+      provider: OAuthProvider.GOOGLE,
+      providerId: 'google-sub-123',
+      userId: mockUser.id,
+      email: mockUser.email,
+      createdAt: new Date(),
+      user: mockUser,
+    };
+
+    let generateTokenPairSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      const tokens = new AuthTokens();
+      tokens.accessToken = 'access-token-value';
+      tokens.refreshToken = 'refresh-token-value';
+      generateTokenPairSpy = jest.spyOn(service, 'generateTokenPair').mockResolvedValue(tokens);
+    });
+
+    it('rejects an unverified Google email BEFORE any repository access', async () => {
+      // This is a fact about the caller's GOOGLE account, not ours, so —
+      // unlike every other rejection here — a distinct message is safe.
+      await expect(
+        service.loginWithGoogleProfile({ ...googleProfile, emailVerified: false }),
+      ).rejects.toThrow(new UnauthorizedException("Google account's email is not verified"));
+
+      // The DB is never even queried — an unverified email can't be used to
+      // probe whether a matching store account exists.
+      expect(authRepository.findOAuthAccount).not.toHaveBeenCalled();
+      expect(authRepository.findByEmail).not.toHaveBeenCalled();
+      expect(generateTokenPairSpy).not.toHaveBeenCalled();
+    });
+
+    it('rejects a profile without an email (scope not granted) the same way', async () => {
+      await expect(
+        service.loginWithGoogleProfile({ ...googleProfile, email: null }),
+      ).rejects.toThrow(new UnauthorizedException("Google account's email is not verified"));
+
+      expect(authRepository.findOAuthAccount).not.toHaveBeenCalled();
+      expect(authRepository.findByEmail).not.toHaveBeenCalled();
+      expect(generateTokenPairSpy).not.toHaveBeenCalled();
+    });
+
+    it('issues tokens for a returning linked user via the providerId fast path', async () => {
+      authRepository.findOAuthAccount.mockResolvedValue(mockOAuthLink);
+
+      const result = await service.loginWithGoogleProfile(googleProfile);
+
+      expect(result.accessToken).toBe('access-token-value');
+      expect(authRepository.findOAuthAccount).toHaveBeenCalledWith(
+        OAuthProvider.GOOGLE,
+        'google-sub-123',
+      );
+      expect(generateTokenPairSpy).toHaveBeenCalledWith(mockUser.id, mockUser.role);
+      // Resolved via providerId first — the email lookup never runs.
+      expect(authRepository.findByEmail).not.toHaveBeenCalled();
+      // Nothing new to link.
+      expect(authRepository.linkOAuthAccount).not.toHaveBeenCalled();
+    });
+
+    it('refuses a linked but deactivated user generically and notifies the owner', async () => {
+      authRepository.findOAuthAccount.mockResolvedValue({
+        ...mockOAuthLink,
+        user: { ...mockUser, isActive: false },
+      });
+
+      await expect(service.loginWithGoogleProfile(googleProfile)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      expect(mailOutboxService.enqueueAccountLockedNotice).toHaveBeenCalledTimes(1);
+      expect(generateTokenPairSpy).not.toHaveBeenCalled();
+    });
+
+    it('refuses a linked but soft-deleted user the same way', async () => {
+      authRepository.findOAuthAccount.mockResolvedValue({
+        ...mockOAuthLink,
+        user: { ...mockUser, deletedAt: new Date() },
+      });
+
+      await expect(service.loginWithGoogleProfile(googleProfile)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      expect(mailOutboxService.enqueueAccountLockedNotice).toHaveBeenCalledTimes(1);
+      expect(generateTokenPairSpy).not.toHaveBeenCalled();
+    });
+
+    it('links an existing active password account by verified email, preserving its role', async () => {
+      // ADMIN makes the "role preserved unchanged" regression guard meaningful
+      // (plan 153 §Risks — no silent downgrade, no silent upgrade).
+      const adminUser = { ...mockUser, role: 'ADMIN' as const };
+      authRepository.findOAuthAccount.mockResolvedValue(null);
+      authRepository.findByEmail.mockResolvedValue(adminUser);
+
+      const result = await service.loginWithGoogleProfile(googleProfile);
+
+      expect(result.accessToken).toBe('access-token-value');
+      expect(authRepository.linkOAuthAccount).toHaveBeenCalledTimes(1);
+      expect(authRepository.linkOAuthAccount).toHaveBeenCalledWith(
+        adminUser.id,
+        OAuthProvider.GOOGLE,
+        'google-sub-123',
+        googleProfile.email,
+      );
+      expect(generateTokenPairSpy).toHaveBeenCalledWith(adminUser.id, 'ADMIN');
+    });
+
+    it('never links a locked account resolved by email — no silent reactivation side channel', async () => {
+      authRepository.findOAuthAccount.mockResolvedValue(null);
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, isActive: false });
+
+      await expect(service.loginWithGoogleProfile(googleProfile)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      // The lock check must run BEFORE any link write — a banned account must
+      // never accumulate a working OAuth link.
+      expect(authRepository.linkOAuthAccount).not.toHaveBeenCalled();
+      expect(mailOutboxService.enqueueAccountLockedNotice).toHaveBeenCalledTimes(1);
+      expect(generateTokenPairSpy).not.toHaveBeenCalled();
+    });
+
+    it('auto-provisions a brand-new user (Google doubles as registration)', async () => {
+      const newUser = { ...mockUser, id: 'user-uuid-new', passwordHash: null };
+      authRepository.findOAuthAccount.mockResolvedValue(null);
+      authRepository.findByEmail.mockResolvedValue(null);
+      authRepository.createUserFromOAuth.mockResolvedValue({
+        user: newUser,
+        oauthAccount: { ...mockOAuthLink, userId: newUser.id },
+      });
+
+      const result = await service.loginWithGoogleProfile(googleProfile);
+
+      expect(result.accessToken).toBe('access-token-value');
+      expect(authRepository.createUserFromOAuth).toHaveBeenCalledWith({
+        email: googleProfile.email,
+        firstName: googleProfile.firstName,
+        lastName: googleProfile.lastName,
+        provider: OAuthProvider.GOOGLE,
+        providerId: googleProfile.providerId,
+      });
+      expect(generateTokenPairSpy).toHaveBeenCalledWith(newUser.id, newUser.role);
+      // The transaction inside createUserFromOAuth already created the link.
+      expect(authRepository.linkOAuthAccount).not.toHaveBeenCalled();
+      expect(mailOutboxService.enqueueAccountLockedNotice).not.toHaveBeenCalled();
     });
   });
 

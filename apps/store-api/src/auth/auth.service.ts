@@ -4,9 +4,11 @@ import { JwtService } from '@nestjs/jwt';
 import { PinoLogger } from 'nestjs-pino';
 import { randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
+import { OAuthProvider, User } from '@prisma/client';
 import { AuthRepository, CreateUserInput } from './auth.repository';
 import { AuthTokens } from './entities';
 import { RegisterDto } from './dto';
+import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
 
 /** Bytes of entropy for an opaque password-reset token (→ 64 hex chars). */
@@ -24,6 +26,14 @@ const INVALID_CREDENTIALS_MESSAGE = 'Invalid credentials';
  * function on the argon2-free rejection branches of `requestPasswordReset`
  * (TASK-273) and `login` (TASK-274). See {@link AuthService.burnTimingCost}. */
 const DUMMY_TIMING_PASSWORD = 'dummy-timing-equalizer-password';
+
+/** Rejection for a Google profile whose email is absent or unverified
+ * (TASK-168). Checked FIRST, before any repository call, so this branch can
+ * never leak whether a matching store account exists (the DB is never even
+ * queried). This is a fact about the caller's GOOGLE account, not ours, so —
+ * unlike every other rejection in this file — a distinct, actionable message
+ * is safe here. */
+const GOOGLE_EMAIL_UNVERIFIED_MESSAGE = "Google account's email is not verified";
 
 /** Default rate limit for the locked-account owner notice (TASK-287): at most
  * one mail per address per 24h, however many times the login is retried. */
@@ -116,7 +126,11 @@ export class AuthService {
   async login(email: string, password: string): Promise<AuthTokens> {
     const user = await this.authRepository.findByEmail(email);
 
-    if (!user) {
+    // `!user.passwordHash` (TASK-168): a Google-only account has no password —
+    // treated exactly like "no such user" (same generic message, same timing
+    // burn) and never passed to argon2.verify, which would crash on null (a
+    // distinguishable failure mode, violating the TASK-274 policy).
+    if (!user || !user.passwordHash) {
       await this.burnTimingCost();
       throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
@@ -138,6 +152,91 @@ export class AuthService {
     // argon2.verify cost, so no branch here is a timing outlier.
     if (!isPasswordValid || isLocked) {
       throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
+    }
+
+    return this.generateTokenPair(user.id, user.role);
+  }
+
+  /**
+   * Sign in (or sign up) with a normalized Google OAuth profile (TASK-168).
+   *
+   * Resolution order (plan 153 §Locked-account resolution — load-bearing):
+   * 1. Reject an absent/unverified Google email BEFORE any repository call —
+   *    that branch can never probe our account state.
+   * 2. Fast path: an existing (provider, providerId) link resolves the user.
+   * 3. Otherwise match by verified email; a brand-new email auto-provisions a
+   *    password-less user + link atomically (Google doubles as registration).
+   * 4. The lock check runs strictly AFTER user resolution and strictly BEFORE
+   *    linking or token issuance: a locked account gets the exact same generic
+   *    {@link INVALID_CREDENTIALS_MESSAGE} + {@link notifyLockedAccountOwner}
+   *    treatment as a password login (TASK-274/287), and never accumulates a
+   *    working OAuth link (no silent-reactivation side channel).
+   */
+  async loginWithGoogleProfile(profile: GoogleOAuthProfile): Promise<AuthTokens> {
+    if (!profile.email || !profile.emailVerified) {
+      throw new UnauthorizedException(GOOGLE_EMAIL_UNVERIFIED_MESSAGE);
+    }
+
+    const existingLink = await this.authRepository.findOAuthAccount(
+      OAuthProvider.GOOGLE,
+      profile.providerId,
+    );
+
+    let user: User;
+    let needsLink = false;
+
+    if (existingLink) {
+      user = existingLink.user;
+    } else {
+      const matchedUser = await this.authRepository.findByEmail(profile.email);
+
+      if (!matchedUser) {
+        // Brand-new signup — Google doubles as registration. No lock check
+        // needed (a row that doesn't exist yet can't be locked).
+        const created = await this.authRepository.createUserFromOAuth({
+          email: profile.email,
+          firstName: profile.firstName,
+          lastName: profile.lastName,
+          provider: OAuthProvider.GOOGLE,
+          providerId: profile.providerId,
+        });
+
+        this.logger.info(
+          { event: 'user.registeredViaGoogle', userId: created.user.id },
+          'User registered via Google',
+        );
+
+        return this.generateTokenPair(created.user.id, created.user.role);
+      }
+
+      user = matchedUser;
+      // Only actually link AFTER the lock check below passes.
+      needsLink = true;
+    }
+
+    const isLocked = !user.isActive || Boolean(user.deletedAt);
+
+    // Mirrors login()'s TASK-274/287 shape exactly: same notify mechanism, same
+    // generic message, same "reject before any state-revealing side effect"
+    // ordering. `needsLink` is NEVER honored on this branch — an OAuth login
+    // must not become a side channel that silently restores a banned or
+    // tombstoned account's ability to sign in.
+    if (isLocked) {
+      await this.notifyLockedAccountOwner(user.id, user.email);
+      throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
+    }
+
+    if (needsLink) {
+      await this.authRepository.linkOAuthAccount(
+        user.id,
+        OAuthProvider.GOOGLE,
+        profile.providerId,
+        profile.email,
+      );
+      this.logger.info(
+        { event: 'user.googleAccountLinked', userId: user.id },
+        'Google account linked to existing user',
+      );
     }
 
     return this.generateTokenPair(user.id, user.role);

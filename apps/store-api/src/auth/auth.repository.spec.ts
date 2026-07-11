@@ -10,6 +10,11 @@ const prismaMock = {
     create: jest.fn(),
     update: jest.fn(),
   },
+  oAuthAccount: {
+    findUnique: jest.fn(),
+    create: jest.fn(),
+  },
+  $transaction: jest.fn(),
   refreshToken: {
     findUnique: jest.fn(),
     create: jest.fn(),
@@ -414,6 +419,131 @@ describe('AuthRepository', () => {
       const result = await repository.deleteExpiredAndRevoked(now);
 
       expect(result).toBe(42);
+    });
+  });
+
+  // ─── findOAuthAccount (TASK-168) ────────────────────────────────────────────
+
+  describe('findOAuthAccount', () => {
+    const mockOAuthAccount = {
+      id: 'oauth-uuid-1',
+      provider: 'GOOGLE' as const,
+      providerId: 'google-sub-123',
+      userId: 'user-uuid-1',
+      email: 'test@example.com',
+      createdAt: new Date(),
+      user: mockUser,
+    };
+
+    it('should look up by the compound (provider, providerId) unique including the user', async () => {
+      prismaMock.oAuthAccount.findUnique.mockResolvedValue(mockOAuthAccount);
+
+      const result = await repository.findOAuthAccount('GOOGLE', 'google-sub-123');
+
+      expect(result).toEqual(mockOAuthAccount);
+      expect(prismaMock.oAuthAccount.findUnique).toHaveBeenCalledWith({
+        where: {
+          provider_providerId: { provider: 'GOOGLE', providerId: 'google-sub-123' },
+        },
+        include: { user: true },
+      });
+    });
+
+    it('should return null when no link exists', async () => {
+      prismaMock.oAuthAccount.findUnique.mockResolvedValue(null);
+
+      const result = await repository.findOAuthAccount('GOOGLE', 'unknown-sub');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  // ─── linkOAuthAccount (TASK-168) ────────────────────────────────────────────
+
+  describe('linkOAuthAccount', () => {
+    it('should create the link row for an already-resolved user', async () => {
+      const created = {
+        id: 'oauth-uuid-2',
+        provider: 'GOOGLE',
+        providerId: 'google-sub-123',
+        userId: 'user-uuid-1',
+        email: 'test@example.com',
+        createdAt: new Date(),
+      };
+      prismaMock.oAuthAccount.create.mockResolvedValue(created);
+
+      const result = await repository.linkOAuthAccount(
+        'user-uuid-1',
+        'GOOGLE',
+        'google-sub-123',
+        'test@example.com',
+      );
+
+      expect(result).toEqual(created);
+      expect(prismaMock.oAuthAccount.create).toHaveBeenCalledWith({
+        data: {
+          userId: 'user-uuid-1',
+          provider: 'GOOGLE',
+          providerId: 'google-sub-123',
+          email: 'test@example.com',
+        },
+      });
+    });
+  });
+
+  // ─── createUserFromOAuth (TASK-168) ─────────────────────────────────────────
+
+  describe('createUserFromOAuth', () => {
+    const oauthUser = { ...mockUser, passwordHash: null };
+    const oauthAccount = {
+      id: 'oauth-uuid-3',
+      provider: 'GOOGLE',
+      providerId: 'google-sub-123',
+      userId: 'user-uuid-1',
+      email: 'test@example.com',
+      createdAt: new Date(),
+    };
+
+    it('should create the user (no password) and its OAuth link in one transaction', async () => {
+      const txMock = {
+        user: { create: jest.fn().mockResolvedValue(oauthUser) },
+        oAuthAccount: { create: jest.fn().mockResolvedValue(oauthAccount) },
+      };
+      prismaMock.$transaction.mockImplementation(
+        async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
+      );
+
+      const result = await repository.createUserFromOAuth({
+        email: 'test@example.com',
+        firstName: 'John',
+        lastName: 'Doe',
+        provider: 'GOOGLE',
+        providerId: 'google-sub-123',
+      });
+
+      expect(result).toEqual({ user: oauthUser, oauthAccount });
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+
+      // The user row is created WITHOUT any passwordHash — a Google-only
+      // account has genuinely no password (schema allows null since TASK-168).
+      expect(txMock.user.create).toHaveBeenCalledWith({
+        data: {
+          email: 'test@example.com',
+          firstName: 'John',
+          lastName: 'Doe',
+        },
+      });
+
+      // The link row is created inside the SAME transaction, wired to the
+      // freshly created user's id.
+      expect(txMock.oAuthAccount.create).toHaveBeenCalledWith({
+        data: {
+          userId: oauthUser.id,
+          provider: 'GOOGLE',
+          providerId: 'google-sub-123',
+          email: 'test@example.com',
+        },
+      });
     });
   });
 });

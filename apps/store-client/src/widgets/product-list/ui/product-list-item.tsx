@@ -4,6 +4,7 @@ import { formatMoney, getCardPricing, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { Badge, ProductCardImage, RatingStars } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
+import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 
 const NEW_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
@@ -50,6 +51,11 @@ export function ProductListItem({ product }: { product: PublicProductEntity }) {
               {dict.product.newBadge}
             </Badge>
           )}
+        </div>
+        {/* Quick-view — the list-row thumbnail has no hover-reveal slot, so the
+            trigger is a small persistent icon pinned to its top-right corner. */}
+        <div className="absolute top-2 right-2 z-10">
+          <ProductQuickViewTrigger product={product} className="size-8" />
         </div>
       </div>
 
