@@ -1,5 +1,7 @@
 import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
 import { CartItemEntity } from './cart-item.entity';
+import { toCents, centsToString } from '../../addon-service';
+import type { ResolvedAddon } from '../../addon-service';
 
 /**
  * Cart totals returned alongside the cart entity.
@@ -25,6 +27,13 @@ export class CartTotals {
     example: 2,
   })
   uniqueItems!: number;
+
+  @ApiProperty({
+    description:
+      'Sum of the SELECTED add-on services across all lines, as string (TASK-174). Flat — an add-on is charged once per line, never multiplied by the line quantity. Reported separately from `subtotal`, and never part of the discount base (a coupon reduces the product subtotal only).',
+    example: '499.00',
+  })
+  addonsTotal!: string;
 }
 
 /**
@@ -78,36 +87,47 @@ export class CartEntity {
   /**
    * Create a CartEntity from a Prisma Cart model with items.
    * Converts Decimal fields to strings and calculates totals.
+   *
+   * `resolvedAddons` maps a PRODUCT id to the add-ons that apply to it — the
+   * batched resolver output the service passes in (TASK-174). Omitting it yields
+   * a cart with no add-ons offered and an `addonsTotal` of "0.00", which is
+   * exactly what a cart of add-on-less products looks like.
    */
-  static fromPrisma(cart: {
-    id: string;
-    userId: string | null;
-    token?: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-    items: Array<{
+  static fromPrisma(
+    cart: {
       id: string;
-      productId: string;
-      quantity: number;
+      userId: string | null;
+      token?: string | null;
       createdAt: Date;
       updatedAt: Date;
-      product: {
+      items: Array<{
         id: string;
-        name: string;
-        slug: string;
-        price: { toString(): string };
-        compareAtPrice: { toString(): string } | null;
-        stock: number;
-        isActive: boolean;
-        images: Array<{ url: string }>;
-      };
-    }>;
-  }): CartEntity {
+        productId: string;
+        quantity: number;
+        createdAt: Date;
+        updatedAt: Date;
+        addons?: Array<{ addonServiceId: string }>;
+        product: {
+          id: string;
+          name: string;
+          slug: string;
+          price: { toString(): string };
+          compareAtPrice: { toString(): string } | null;
+          stock: number;
+          isActive: boolean;
+          images: Array<{ url: string }>;
+        };
+      }>;
+    },
+    resolvedAddons: Map<string, ResolvedAddon[]> = new Map(),
+  ): CartEntity {
     const entity = new CartEntity();
     entity.id = cart.id;
     entity.userId = cart.userId;
-    entity.items = cart.items.map((item) => CartItemEntity.fromPrisma(item));
-    entity.totals = CartEntity.calculateTotals(cart.items);
+    entity.items = cart.items.map((item) =>
+      CartItemEntity.fromPrisma(item, resolvedAddons.get(item.productId) ?? []),
+    );
+    entity.totals = CartEntity.calculateTotals(cart.items, resolvedAddons);
     entity.createdAt = cart.createdAt;
     entity.updatedAt = cart.updatedAt;
     return entity;
@@ -118,14 +138,25 @@ export class CartEntity {
    * Uses string-based price arithmetic to avoid float precision issues.
    *
    * Price source: the product position's price (TASK-142).
+   *
+   * `addonsTotal` (TASK-174) sums the EFFECTIVE (resolved) price of every
+   * SELECTED add-on, once per line — deliberately NOT multiplied by the line's
+   * quantity (a warranty is bought for the line, not per unit; this preserves the
+   * UX the front-end stub established). It is reported alongside `subtotal`, not
+   * folded into it: the discount base is the product subtotal alone (plan 150,
+   * owner decision 4).
    */
   private static calculateTotals(
     items: Array<{
       quantity: number;
+      productId: string;
+      addons?: Array<{ addonServiceId: string }>;
       product: { price: { toString(): string } };
     }>,
+    resolvedAddons: Map<string, ResolvedAddon[]>,
   ): CartTotals {
     let subtotalCents = 0;
+    let addonsCents = 0;
     let itemCount = 0;
 
     for (const item of items) {
@@ -135,6 +166,14 @@ export class CartEntity {
       const priceCents = Math.round(parseFloat(priceStr) * 100);
       subtotalCents += priceCents * item.quantity;
       itemCount += item.quantity;
+
+      const available = resolvedAddons.get(item.productId) ?? [];
+      const selected = new Set(CartItemEntity.selectedAddonIds(item.addons ?? [], available));
+      for (const addon of available) {
+        if (selected.has(addon.addonServiceId)) {
+          addonsCents += toCents(addon.price);
+        }
+      }
     }
 
     // Convert back from cents to decimal string "XX.YY"
@@ -146,6 +185,7 @@ export class CartEntity {
       subtotal,
       itemCount,
       uniqueItems: items.length,
+      addonsTotal: centsToString(addonsCents),
     };
   }
 }

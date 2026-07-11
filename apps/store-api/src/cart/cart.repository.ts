@@ -28,6 +28,13 @@ export interface UpdateCartItemInput {
 export interface MergeCartLine {
   productId: string;
   quantity: number;
+  /**
+   * The FINAL add-on selection for the merged line (TASK-174) — the union of the
+   * guest's and the user's selections for this product, already filtered through
+   * the resolver by the service. Written as a full set-replace, so an add-on the
+   * resolver no longer allows is dropped rather than carried over blindly.
+   */
+  addonServiceIds: string[];
 }
 
 /**
@@ -49,6 +56,8 @@ export interface CartWithItems {
     quantity: number;
     createdAt: Date;
     updatedAt: Date;
+    /** Add-on services selected on this line (TASK-174). */
+    addons: Array<{ addonServiceId: string }>;
     product: {
       id: string;
       name: string;
@@ -57,6 +66,8 @@ export interface CartWithItems {
       compareAtPrice: { toString(): string } | null;
       stock: number;
       isActive: boolean;
+      /** Drives add-on template resolution (TASK-174). */
+      categoryId: string;
       images: Array<{ url: string }>;
     };
   }>;
@@ -78,6 +89,10 @@ const CART_ITEMS_INCLUDE = {
       quantity: true,
       createdAt: true,
       updatedAt: true,
+      // Selected add-ons per line (TASK-174) — pulled in the SAME query as the
+      // product/images include, never as a follow-up round trip. The AVAILABLE
+      // add-ons are computed, not stored, so they come from the resolver instead.
+      addons: { select: { addonServiceId: true } },
       product: {
         select: {
           id: true,
@@ -87,6 +102,9 @@ const CART_ITEMS_INCLUDE = {
           compareAtPrice: true,
           stock: true,
           isActive: true,
+          // The resolver walks this category's ancestor chain for the line's
+          // applicable add-on template (TASK-174).
+          categoryId: true,
           images: {
             orderBy: [{ isPrimary: 'desc' as const }, { sortOrder: 'asc' as const }],
             take: 1,
@@ -198,12 +216,43 @@ export class CartRepository {
 
     await this.prisma.$transaction(async (tx) => {
       for (const line of lines) {
-        await this.writeCartLine(tx, userCartId, line.productId, line.quantity, 'set');
+        const cartItem = await this.writeCartLine(
+          tx,
+          userCartId,
+          line.productId,
+          line.quantity,
+          'set',
+        );
+        await this.replaceItemAddons(tx, cartItem.id, line.addonServiceIds);
       }
 
-      // Cascades to the guest cart's CartItems via the schema relation.
+      // Cascades to the guest cart's CartItems via the schema relation — and, in
+      // turn, to their CartItemAddon rows.
       await tx.cart.delete({ where: { id: guestCartId } });
     });
+  }
+
+  /**
+   * Set a merged line's add-on selection to exactly `addonServiceIds` (TASK-174).
+   * Runs inside the merge transaction so a line and its add-ons can never land
+   * half-written.
+   */
+  private async replaceItemAddons(
+    tx: Prisma.TransactionClient,
+    cartItemId: string,
+    addonServiceIds: string[],
+  ): Promise<void> {
+    await tx.cartItemAddon.deleteMany({
+      where: { cartItemId, addonServiceId: { notIn: addonServiceIds } },
+    });
+
+    for (const addonServiceId of addonServiceIds) {
+      await tx.cartItemAddon.upsert({
+        where: { cartItemId_addonServiceId: { cartItemId, addonServiceId } },
+        update: {},
+        create: { cartItemId, addonServiceId },
+      });
+    }
   }
 
   /**
@@ -214,14 +263,14 @@ export class CartRepository {
    * `mode: 'increment'` adds to the existing quantity (add-to-cart); `mode:
    * 'set'` writes the absolute quantity (merge, where the service pre-clamps).
    */
-  private async writeCartLine(
+  private writeCartLine(
     tx: Prisma.TransactionClient,
     cartId: string,
     productId: string,
     quantity: number,
     mode: 'increment' | 'set',
-  ): Promise<void> {
-    await tx.cartItem.upsert({
+  ): Promise<CartItem> {
+    return tx.cartItem.upsert({
       where: { cartId_productId: { cartId, productId } },
       update: { quantity: mode === 'increment' ? { increment: quantity } : quantity },
       create: { cartId, productId, quantity },
@@ -308,5 +357,27 @@ export class CartRepository {
       where: { id: productId },
       select: { id: true, name: true, stock: true, isActive: true },
     });
+  }
+
+  /**
+   * Select an add-on service on a cart line (TASK-174). Idempotent — selecting an
+   * already-selected add-on rewrites the same row rather than duplicating it
+   * (`@@unique([cartItemId, addonServiceId])`). No price is stored: a cart is a
+   * shopping list, and the effective price is resolved live on every read.
+   */
+  async setItemAddon(cartItemId: string, addonServiceId: string): Promise<void> {
+    await this.prisma.cartItemAddon.upsert({
+      where: { cartItemId_addonServiceId: { cartItemId, addonServiceId } },
+      update: {},
+      create: { cartItemId, addonServiceId },
+    });
+  }
+
+  /**
+   * Deselect an add-on service on a cart line (TASK-174). Idempotent —
+   * deselecting one that was never selected is a no-op, not an error.
+   */
+  async unsetItemAddon(cartItemId: string, addonServiceId: string): Promise<void> {
+    await this.prisma.cartItemAddon.deleteMany({ where: { cartItemId, addonServiceId } });
   }
 }

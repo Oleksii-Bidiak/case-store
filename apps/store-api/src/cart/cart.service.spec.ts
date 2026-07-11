@@ -5,6 +5,7 @@ import { CartService } from './cart.service';
 import { CartEntity, CartItemEntity } from './entities';
 import { AddToCartDto, UpdateCartItemDto } from './dto';
 import type { ResolvedCartIdentity } from './cart-identity.types';
+import { AddonApplicabilityResolver } from '../addon-service';
 
 // ─── Identities ─────────────────────────────────────────────────────────────
 
@@ -28,6 +29,7 @@ const mockCartWithVariantItem: CartWithItems = {
       quantity: 2,
       createdAt: now,
       updatedAt: now,
+      addons: [],
       product: {
         id: 'product-uuid-1',
         name: 'iPhone 15 Pro Case',
@@ -36,6 +38,7 @@ const mockCartWithVariantItem: CartWithItems = {
         stock: 50,
         isActive: true,
         slug: 'test-product',
+        categoryId: 'cat-1',
         images: [],
       },
     },
@@ -55,6 +58,7 @@ const mockCartWithNoVariantItem: CartWithItems = {
       quantity: 1,
       createdAt: now,
       updatedAt: now,
+      addons: [],
       product: {
         id: 'product-uuid-2',
         name: 'Screen Protector',
@@ -63,6 +67,7 @@ const mockCartWithNoVariantItem: CartWithItems = {
         stock: 30,
         isActive: true,
         slug: 'test-product',
+        categoryId: 'cat-1',
         images: [],
       },
     },
@@ -82,6 +87,7 @@ const mockCartWithMultipleItems: CartWithItems = {
       quantity: 2,
       createdAt: now,
       updatedAt: now,
+      addons: [],
       product: {
         id: 'product-uuid-1',
         name: 'iPhone 15 Pro Case',
@@ -90,6 +96,7 @@ const mockCartWithMultipleItems: CartWithItems = {
         stock: 50,
         isActive: true,
         slug: 'test-product',
+        categoryId: 'cat-1',
         images: [],
       },
     },
@@ -99,6 +106,7 @@ const mockCartWithMultipleItems: CartWithItems = {
       quantity: 1,
       createdAt: now,
       updatedAt: now,
+      addons: [],
       product: {
         id: 'product-uuid-2',
         name: 'Screen Protector',
@@ -107,6 +115,7 @@ const mockCartWithMultipleItems: CartWithItems = {
         stock: 30,
         isActive: true,
         slug: 'test-product',
+        categoryId: 'cat-1',
         images: [],
       },
     },
@@ -135,6 +144,7 @@ const mockCartWithLowStockItem: CartWithItems = {
       quantity: 1,
       createdAt: now,
       updatedAt: now,
+      addons: [],
       product: {
         id: 'product-uuid-3',
         name: 'Limited Edition Case — Gold',
@@ -143,6 +153,7 @@ const mockCartWithLowStockItem: CartWithItems = {
         stock: 2,
         isActive: true,
         slug: 'test-product',
+        categoryId: 'cat-1',
         images: [],
       },
     },
@@ -163,6 +174,7 @@ const mockGuestCart: CartWithItems = {
       quantity: 2,
       createdAt: now,
       updatedAt: now,
+      addons: [],
       product: {
         id: 'product-uuid-1',
         name: 'iPhone 15 Pro Case',
@@ -171,6 +183,7 @@ const mockGuestCart: CartWithItems = {
         stock: 50,
         isActive: true,
         slug: 'test-product',
+        categoryId: 'cat-1',
         images: [],
       },
     },
@@ -180,6 +193,7 @@ const mockGuestCart: CartWithItems = {
       quantity: 1,
       createdAt: now,
       updatedAt: now,
+      addons: [],
       product: {
         id: 'product-uuid-2',
         name: 'Screen Protector',
@@ -188,6 +202,7 @@ const mockGuestCart: CartWithItems = {
         stock: 30,
         isActive: true,
         slug: 'test-product',
+        categoryId: 'cat-1',
         images: [],
       },
     },
@@ -209,6 +224,32 @@ const cartRepositoryMock = {
   clearItems: jest.fn(),
   findItem: jest.fn(),
   findProductForCartValidation: jest.fn(),
+  setItemAddon: jest.fn(),
+  unsetItemAddon: jest.fn(),
+};
+
+// ─── AddonApplicabilityResolver mock (TASK-174) ──────────────────────────────
+//
+// The resolver has its own exhaustive suite (addon-applicability.resolver.spec);
+// here it is a stub whose OUTPUT the cart's money math and validation consume.
+const addonResolverMock = {
+  resolveForProduct: jest.fn(),
+  resolveForProducts: jest.fn(),
+};
+
+const warrantyAddon = {
+  addonServiceId: 'svc-warranty',
+  name: 'Warranty',
+  description: null,
+  price: '499.00',
+  source: 'template' as const,
+};
+const insuranceAddon = {
+  addonServiceId: 'svc-insurance',
+  name: 'Insurance',
+  description: null,
+  price: '899.00',
+  source: 'template' as const,
 };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -218,9 +259,15 @@ describe('CartService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    addonResolverMock.resolveForProducts.mockResolvedValue(new Map());
+    addonResolverMock.resolveForProduct.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [CartService, { provide: CartRepository, useValue: cartRepositoryMock }],
+      providers: [
+        CartService,
+        { provide: CartRepository, useValue: cartRepositoryMock },
+        { provide: AddonApplicabilityResolver, useValue: addonResolverMock },
+      ],
     }).compile();
 
     service = module.get<CartService>(CartService);
@@ -397,6 +444,7 @@ describe('CartService', () => {
             quantity: 96,
             createdAt: now,
             updatedAt: now,
+            addons: [],
             product: {
               id: 'product-uuid-1',
               name: 'iPhone 15 Pro Case',
@@ -405,6 +453,7 @@ describe('CartService', () => {
               stock: 200,
               isActive: true,
               slug: 'test-product',
+              categoryId: 'cat-1',
               images: [],
             },
           },
@@ -673,8 +722,8 @@ describe('CartService', () => {
         userCartId: 'user-cart-raced',
         guestCartId: 'guest-cart-1',
         lines: [
-          { productId: 'product-uuid-1', quantity: 2 },
-          { productId: 'product-uuid-2', quantity: 1 },
+          { productId: 'product-uuid-1', quantity: 2, addonServiceIds: [] },
+          { productId: 'product-uuid-2', quantity: 1, addonServiceIds: [] },
         ],
       });
     });
@@ -696,8 +745,8 @@ describe('CartService', () => {
         userCartId: 'user-cart-1',
         guestCartId: 'guest-cart-1',
         lines: [
-          { productId: 'product-uuid-1', quantity: 2 },
-          { productId: 'product-uuid-2', quantity: 1 },
+          { productId: 'product-uuid-1', quantity: 2, addonServiceIds: [] },
+          { productId: 'product-uuid-2', quantity: 1, addonServiceIds: [] },
         ],
       });
     });
@@ -732,7 +781,7 @@ describe('CartService', () => {
       expect(cartRepositoryMock.mergeGuestCartIntoUser).toHaveBeenCalledWith({
         userCartId: 'user-cart-1',
         guestCartId: 'guest-cart-1',
-        lines: [{ productId: 'product-uuid-2', quantity: 99 }],
+        lines: [{ productId: 'product-uuid-2', quantity: 99, addonServiceIds: [] }],
       });
     });
 
@@ -765,7 +814,7 @@ describe('CartService', () => {
       expect(cartRepositoryMock.mergeGuestCartIntoUser).toHaveBeenCalledWith({
         userCartId: 'user-cart-1',
         guestCartId: 'guest-cart-1',
-        lines: [{ productId: 'product-uuid-3', quantity: 2 }],
+        lines: [{ productId: 'product-uuid-3', quantity: 2, addonServiceIds: [] }],
       });
     });
 
@@ -799,9 +848,266 @@ describe('CartService', () => {
         userCartId: 'user-cart-1',
         guestCartId: 'guest-cart-1',
         lines: [
-          { productId: 'product-uuid-2', quantity: 3 },
-          { productId: 'product-uuid-1', quantity: 2 },
+          { productId: 'product-uuid-2', quantity: 3, addonServiceIds: [] },
+          { productId: 'product-uuid-1', quantity: 2, addonServiceIds: [] },
         ],
+      });
+    });
+  });
+
+  // ─── Add-on services (TASK-174, plan 150 cases 15–21) ────────────────────────
+
+  describe('add-on services', () => {
+    /** Two lines, so per-line vs. per-cart behaviour is distinguishable. */
+    const twoLineCart = mockCartWithMultipleItems;
+
+    const resolvedFor = (entries: Record<string, unknown[]>) => new Map(Object.entries(entries));
+
+    describe('addonsTotal (cases 15–19)', () => {
+      it('case 15 — no selected add-ons → addonsTotal is "0.00"', async () => {
+        cartRepositoryMock.findOrCreate.mockResolvedValue(twoLineCart);
+        addonResolverMock.resolveForProducts.mockResolvedValue(
+          resolvedFor({ 'product-uuid-1': [warrantyAddon], 'product-uuid-2': [] }),
+        );
+
+        const cart = await service.getCart(userIdentity);
+
+        expect(cart.totals.addonsTotal).toBe('0.00');
+        // The add-on is still OFFERED on the line — just not selected.
+        expect(cart.items[0].availableAddons).toHaveLength(1);
+        expect(cart.items[0].selectedAddonIds).toEqual([]);
+      });
+
+      it('case 16 — one selected add-on is charged FLAT, not multiplied by line quantity', async () => {
+        // Line 1 has quantity 2 — the warranty must still be charged once.
+        cartRepositoryMock.findOrCreate.mockResolvedValue({
+          ...twoLineCart,
+          items: [
+            { ...twoLineCart.items[0], addons: [{ addonServiceId: 'svc-warranty' }] },
+            twoLineCart.items[1],
+          ],
+        });
+        addonResolverMock.resolveForProducts.mockResolvedValue(
+          resolvedFor({ 'product-uuid-1': [warrantyAddon], 'product-uuid-2': [] }),
+        );
+
+        const cart = await service.getCart(userIdentity);
+
+        expect(cart.items[0].quantity).toBe(2);
+        expect(cart.totals.addonsTotal).toBe('499.00');
+        expect(cart.items[0].selectedAddonIds).toEqual(['svc-warranty']);
+      });
+
+      it('case 17 — two add-ons selected on the SAME line sum together', async () => {
+        cartRepositoryMock.findOrCreate.mockResolvedValue({
+          ...twoLineCart,
+          items: [
+            {
+              ...twoLineCart.items[0],
+              addons: [{ addonServiceId: 'svc-warranty' }, { addonServiceId: 'svc-insurance' }],
+            },
+            twoLineCart.items[1],
+          ],
+        });
+        addonResolverMock.resolveForProducts.mockResolvedValue(
+          resolvedFor({ 'product-uuid-1': [warrantyAddon, insuranceAddon], 'product-uuid-2': [] }),
+        );
+
+        const cart = await service.getCart(userIdentity);
+
+        expect(cart.totals.addonsTotal).toBe('1398.00'); // 499 + 899
+      });
+
+      it('case 18 — the same add-on on TWO lines is counted once per line', async () => {
+        cartRepositoryMock.findOrCreate.mockResolvedValue({
+          ...twoLineCart,
+          items: [
+            { ...twoLineCart.items[0], addons: [{ addonServiceId: 'svc-warranty' }] },
+            { ...twoLineCart.items[1], addons: [{ addonServiceId: 'svc-warranty' }] },
+          ],
+        });
+        addonResolverMock.resolveForProducts.mockResolvedValue(
+          resolvedFor({ 'product-uuid-1': [warrantyAddon], 'product-uuid-2': [warrantyAddon] }),
+        );
+
+        const cart = await service.getCart(userIdentity);
+
+        expect(cart.totals.addonsTotal).toBe('998.00'); // 499 twice
+      });
+
+      it('case 19 — subtotal is unaffected by add-ons: they are separate CartTotals fields', async () => {
+        cartRepositoryMock.findOrCreate.mockResolvedValue({
+          ...twoLineCart,
+          items: [
+            { ...twoLineCart.items[0], addons: [{ addonServiceId: 'svc-warranty' }] },
+            twoLineCart.items[1],
+          ],
+        });
+        addonResolverMock.resolveForProducts.mockResolvedValue(
+          resolvedFor({ 'product-uuid-1': [warrantyAddon], 'product-uuid-2': [] }),
+        );
+
+        const cart = await service.getCart(userIdentity);
+
+        // 29.99 × 2 + 9.99 × 1 — exactly what it was with no add-ons at all.
+        expect(cart.totals.subtotal).toBe('69.97');
+        expect(cart.totals.addonsTotal).toBe('499.00');
+      });
+
+      it('uses the EFFECTIVE (overridden) price the resolver returned, not the catalog price', async () => {
+        cartRepositoryMock.findOrCreate.mockResolvedValue({
+          ...twoLineCart,
+          items: [
+            { ...twoLineCart.items[0], addons: [{ addonServiceId: 'svc-insurance' }] },
+            twoLineCart.items[1],
+          ],
+        });
+        addonResolverMock.resolveForProducts.mockResolvedValue(
+          resolvedFor({
+            'product-uuid-1': [{ ...insuranceAddon, price: '1299.00', source: 'override' }],
+            'product-uuid-2': [],
+          }),
+        );
+
+        const cart = await service.getCart(userIdentity);
+
+        expect(cart.totals.addonsTotal).toBe('1299.00');
+      });
+
+      it('drops a STALE selection (no longer resolved) from both the read and the total', async () => {
+        cartRepositoryMock.findOrCreate.mockResolvedValue({
+          ...twoLineCart,
+          items: [
+            { ...twoLineCart.items[0], addons: [{ addonServiceId: 'svc-retired' }] },
+            twoLineCart.items[1],
+          ],
+        });
+        addonResolverMock.resolveForProducts.mockResolvedValue(
+          resolvedFor({ 'product-uuid-1': [warrantyAddon], 'product-uuid-2': [] }),
+        );
+
+        const cart = await service.getCart(userIdentity);
+
+        expect(cart.items[0].selectedAddonIds).toEqual([]);
+        expect(cart.totals.addonsTotal).toBe('0.00');
+      });
+
+      it('resolves the whole cart in ONE batched call (no N+1)', async () => {
+        cartRepositoryMock.findOrCreate.mockResolvedValue(twoLineCart);
+
+        await service.getCart(userIdentity);
+
+        expect(addonResolverMock.resolveForProducts).toHaveBeenCalledTimes(1);
+        expect(addonResolverMock.resolveForProduct).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('toggleAddon (cases 20–21)', () => {
+      beforeEach(() => {
+        cartRepositoryMock.findByUserId.mockResolvedValue(twoLineCart);
+        cartRepositoryMock.findOrCreate.mockResolvedValue(twoLineCart);
+      });
+
+      it("case 20 — rejects an add-on that is NOT in the line's resolved set, writing nothing", async () => {
+        addonResolverMock.resolveForProduct.mockResolvedValue([warrantyAddon]);
+
+        await expect(
+          service.toggleAddon(userIdentity, 'item-uuid-1', 'svc-insurance', true),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(cartRepositoryMock.setItemAddon).not.toHaveBeenCalled();
+      });
+
+      it('case 20b — accepts an add-on that IS resolved for the line', async () => {
+        addonResolverMock.resolveForProduct.mockResolvedValue([warrantyAddon]);
+
+        await service.toggleAddon(userIdentity, 'item-uuid-1', 'svc-warranty', true);
+
+        expect(cartRepositoryMock.setItemAddon).toHaveBeenCalledWith('item-uuid-1', 'svc-warranty');
+      });
+
+      it('case 21 — selecting twice never duplicates the row (repository upsert)', async () => {
+        addonResolverMock.resolveForProduct.mockResolvedValue([warrantyAddon]);
+
+        await service.toggleAddon(userIdentity, 'item-uuid-1', 'svc-warranty', true);
+        await service.toggleAddon(userIdentity, 'item-uuid-1', 'svc-warranty', true);
+
+        expect(cartRepositoryMock.setItemAddon).toHaveBeenLastCalledWith(
+          'item-uuid-1',
+          'svc-warranty',
+        );
+      });
+
+      it('case 21b — deselecting an unselected add-on is a no-op, not an error', async () => {
+        await expect(
+          service.toggleAddon(userIdentity, 'item-uuid-1', 'svc-warranty', false),
+        ).resolves.toBeDefined();
+
+        expect(cartRepositoryMock.unsetItemAddon).toHaveBeenCalledWith(
+          'item-uuid-1',
+          'svc-warranty',
+        );
+        // Deselection never consults the resolver — a stale selection must stay removable.
+        expect(addonResolverMock.resolveForProduct).not.toHaveBeenCalled();
+      });
+
+      it('404s for an unknown cart item and for a missing cart', async () => {
+        await expect(
+          service.toggleAddon(userIdentity, 'ghost-item', 'svc-warranty', true),
+        ).rejects.toThrow(NotFoundException);
+
+        cartRepositoryMock.findByUserId.mockResolvedValue(null);
+        await expect(
+          service.toggleAddon(userIdentity, 'item-uuid-1', 'svc-warranty', true),
+        ).rejects.toThrow(NotFoundException);
+      });
+    });
+
+    describe('mergeGuestCart — add-on collision rule (union, then filter)', () => {
+      it('unions the guest and user selections and drops what no longer resolves', async () => {
+        cartRepositoryMock.findByToken.mockResolvedValue({
+          ...mockGuestCart,
+          items: [
+            { ...mockGuestCart.items[0], addons: [{ addonServiceId: 'svc-warranty' }] },
+            { ...mockGuestCart.items[1], addons: [{ addonServiceId: 'svc-retired' }] },
+          ],
+        });
+        cartRepositoryMock.findByUserId.mockResolvedValue({
+          ...mockCartWithMultipleItems,
+          id: 'user-cart-1',
+          items: [
+            // Same product as guest line 1, but a DIFFERENT add-on selected.
+            {
+              ...mockCartWithMultipleItems.items[0],
+              addons: [{ addonServiceId: 'svc-insurance' }],
+            },
+          ],
+        });
+        addonResolverMock.resolveForProducts.mockResolvedValue(
+          new Map([
+            ['product-uuid-1', [warrantyAddon, insuranceAddon]],
+            ['product-uuid-2', []], // 'svc-retired' no longer resolves here
+          ]),
+        );
+
+        await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+        expect(cartRepositoryMock.mergeGuestCartIntoUser).toHaveBeenCalledWith({
+          userCartId: 'user-cart-1',
+          guestCartId: 'guest-cart-1',
+          lines: [
+            {
+              productId: 'product-uuid-1',
+              quantity: 4, // 2 (guest) + 2 (user)
+              addonServiceIds: ['svc-warranty', 'svc-insurance'], // union; both still resolve
+            },
+            {
+              productId: 'product-uuid-2',
+              quantity: 1,
+              addonServiceIds: [], // the stale selection is dropped, not carried over
+            },
+          ],
+        });
       });
     });
   });
@@ -823,6 +1129,7 @@ describe('CartService', () => {
             quantity: 3,
             createdAt: now,
             updatedAt: now,
+            addons: [],
             product: {
               id: 'product-whole',
               name: 'Cable',
@@ -831,6 +1138,7 @@ describe('CartService', () => {
               stock: 100,
               isActive: true,
               slug: 'test-product',
+              categoryId: 'cat-1',
               images: [],
             },
           },
@@ -868,6 +1176,7 @@ describe('CartService', () => {
             quantity: 1,
             createdAt: now,
             updatedAt: now,
+            addons: [],
             product: {
               id: 'product-diff',
               name: 'Premium Case — Limited Edition',
@@ -876,6 +1185,7 @@ describe('CartService', () => {
               stock: 10,
               isActive: true,
               slug: 'test-product',
+              categoryId: 'cat-1',
               images: [],
             },
           },
