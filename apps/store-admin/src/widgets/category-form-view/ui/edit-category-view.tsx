@@ -12,6 +12,7 @@ import {
   type CategoryFormValues,
 } from "@/features/category-form";
 import { AttributeDefinitionEditor } from "@/features/attribute-definition-editor";
+import { CategoryAddonTemplatePicker } from "@/features/category-addon-template-picker";
 import { Separator } from "@/shared/ui";
 import {
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
@@ -131,6 +132,15 @@ export function EditCategoryView({ categoryId }: EditCategoryViewProps) {
               category's OWN characteristic templates, separate from the form
               submit above (it has its own endpoints). */}
           <AttributeDefinitionEditor categoryId={categoryId} />
+
+          <Separator className="max-w-2xl" />
+
+          {/* Add-on service template (TASK-174) — which services this category
+              offers for every product beneath it. Like the spec templates above,
+              it owns its endpoints and its own save button; it is deliberately
+              NOT part of the category form's submit, because saving it changes
+              what a whole subtree of products offers. */}
+          <CategoryAddonTemplatePicker categoryId={categoryId} />
         </>
       ) : null}
     </div>
