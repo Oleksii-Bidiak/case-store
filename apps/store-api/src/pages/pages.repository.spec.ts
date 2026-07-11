@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { PublishStatus } from '@prisma/client';
+import { PublishStatus, SlugRedirectEntity } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { SlugRedirectRepository } from '../slug-redirect';
 import { PageRepository } from './pages.repository';
 
 const mockPage = {
@@ -20,6 +21,12 @@ const mockPage = {
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
+const txMock = {
+  page: {
+    update: jest.fn(),
+  },
+};
+
 const prismaMock = {
   page: {
     findMany: jest.fn(),
@@ -31,6 +38,11 @@ const prismaMock = {
     updateMany: jest.fn(),
     delete: jest.fn(),
   },
+  $transaction: jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock)),
+};
+
+const slugRedirectRepositoryMock = {
+  recordRename: jest.fn(),
 };
 
 describe('PageRepository', () => {
@@ -40,7 +52,11 @@ describe('PageRepository', () => {
     jest.clearAllMocks();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [PageRepository, { provide: PrismaService, useValue: prismaMock }],
+      providers: [
+        PageRepository,
+        { provide: PrismaService, useValue: prismaMock },
+        { provide: SlugRedirectRepository, useValue: slugRedirectRepositoryMock },
+      ],
     }).compile();
 
     repository = module.get<PageRepository>(PageRepository);
@@ -198,6 +214,40 @@ describe('PageRepository', () => {
           isActive: true,
         }),
       });
+    });
+
+    it('never opens a transaction nor records a redirect when slugRename is absent', async () => {
+      prismaMock.page.update.mockResolvedValue(mockPage);
+
+      await repository.update('page-uuid-1', { title: 'Renamed' });
+
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+    });
+
+    it('runs the page update + recordRename inside one transaction when slugRename is given', async () => {
+      const renamed = { ...mockPage, slug: 'new-slug' };
+      txMock.page.update.mockResolvedValue(renamed);
+
+      const result = await repository.update(
+        'page-uuid-1',
+        { slug: 'new-slug' },
+        { oldSlug: 'privacy-policy', newSlug: 'new-slug' },
+      );
+
+      expect(result).toBe(renamed);
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.page.update).toHaveBeenCalledWith({
+        where: { id: 'page-uuid-1' },
+        data: { slug: 'new-slug' },
+      });
+      expect(slugRedirectRepositoryMock.recordRename).toHaveBeenCalledWith(
+        txMock,
+        SlugRedirectEntity.PAGE,
+        'privacy-policy',
+        'new-slug',
+      );
+      expect(prismaMock.page.update).not.toHaveBeenCalled();
     });
   });
 

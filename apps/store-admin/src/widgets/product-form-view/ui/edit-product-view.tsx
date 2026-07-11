@@ -51,6 +51,17 @@ export function EditProductView({ productId }: EditProductViewProps) {
   const product = data?.data;
 
   const handleSubmit = (values: ProductFormValues) => {
+    // TASK-285: renaming an ACTIVE product's slug kills its indexed URL — warn
+    // first. A blank slug means "auto-generate" (treated as no rename here).
+    const nextSlug = values.slug?.trim();
+    const wasLive = product?.isActive === true;
+    if (wasLive && product && nextSlug && nextSlug !== product.slug) {
+      if (
+        !window.confirm(dict.products.slugChangeConfirm(product.slug, nextSlug))
+      ) {
+        return;
+      }
+    }
     update.mutate(
       {
         id: productId,

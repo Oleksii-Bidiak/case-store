@@ -54,6 +54,26 @@ export class SeoSettingsEntity {
   defaultOgImage!: string | null;
 
   @ApiProperty({
+    description:
+      'Google Search Console ownership-verification token (HTML-tag method); null when not configured',
+    example: 'AbCdEfGhIjKlMnOpQrStUvWxYz1234567890',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  googleSiteVerification!: string | null;
+
+  @ApiProperty({
+    description:
+      'Bing Webmaster Tools ownership-verification token (HTML-tag method, `msvalidate.01`); null when not configured',
+    example: '1234ABCD5678EFGH9012IJKL3456MNOP',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  bingSiteVerification!: string | null;
+
+  @ApiProperty({
     description: 'Site-wide noindex kill switch (hides the whole site from search engines)',
     example: false,
   })
@@ -92,6 +112,8 @@ export class SeoSettingsEntity {
     entity.defaultMetaDescription = row.defaultMetaDescription;
     entity.titleTemplate = row.titleTemplate;
     entity.defaultOgImage = row.defaultOgImage;
+    entity.googleSiteVerification = row.googleSiteVerification;
+    entity.bingSiteVerification = row.bingSiteVerification;
     entity.noindexSite = row.noindexSite;
     entity.llmsTxtSummary = row.llmsTxtSummary;
     entity.additionalSameAsLinks = row.additionalSameAsLinks;
@@ -112,6 +134,8 @@ export class SeoSettingsEntity {
     entity.defaultMetaDescription = null;
     entity.titleTemplate = null;
     entity.defaultOgImage = null;
+    entity.googleSiteVerification = null;
+    entity.bingSiteVerification = null;
     entity.noindexSite = false;
     entity.llmsTxtSummary = null;
     entity.additionalSameAsLinks = [];

@@ -1,8 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma';
-import { Product, Prisma, AttributeType, PaymentStatus } from '@prisma/client';
+import { Product, Prisma, AttributeType, PaymentStatus, SlugRedirectEntity } from '@prisma/client';
+import { SlugRedirectRepository } from '../slug-redirect';
 import { rankProductIdsBySales } from './bestseller-rank.util';
 import { PRE_SHIPMENT_STATUSES } from '../order/order.constants';
+
+/**
+ * Slugs of a rename being persisted by this update — when present, the write
+ * additionally records a 301 redirect `oldSlug → newSlug` in the SlugRedirect
+ * ledger, atomically with the product update (TASK-285-G). The service passes
+ * it only when the product was publicly visible (active) before the write
+ * (plan 147 §Design Decision 3).
+ */
+export interface SlugRenameInput {
+  oldSlug: string;
+  newSlug: string;
+}
 
 /**
  * Parameters for paginated product queries with filtering.
@@ -252,7 +265,10 @@ export interface ProductWithRelations {
 export class ProductRepository {
   private readonly logger = new Logger(ProductRepository.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly slugRedirectRepository: SlugRedirectRepository,
+  ) {}
 
   /**
    * Aggregate approved-review ratings for a set of products in a single query.
@@ -892,17 +908,36 @@ export class ProductRepository {
    * Update a product's fields.
    * Only the fields provided in the data object will be updated.
    * Returns the updated product record.
+   *
+   * When `slugRename` is present (a publicly-visible product's slug is
+   * changing — gated by the service on the PRE-write `isActive`, plan 147
+   * §Design Decision 3), the update and the slug-redirect chain-collapse
+   * write commit in ONE transaction. When absent, the behavior is the
+   * pre-TASK-285 single-statement update (no transaction on the hot,
+   * no-rename path).
    */
-  update(id: string, data: UpdateProductInput): Promise<Product> {
+  update(id: string, data: UpdateProductInput, slugRename?: SlugRenameInput): Promise<Product> {
     const { attributes, ...rest } = data;
-    return this.prisma.product.update({
-      where: { id },
-      data: {
-        ...rest,
-        ...(attributes !== undefined
-          ? { attributes: (attributes ?? {}) as Prisma.InputJsonValue }
-          : {}),
-      },
+    const updateData: Prisma.ProductUncheckedUpdateInput = {
+      ...rest,
+      ...(attributes !== undefined
+        ? { attributes: (attributes ?? {}) as Prisma.InputJsonValue }
+        : {}),
+    };
+
+    if (!slugRename) {
+      return this.prisma.product.update({ where: { id }, data: updateData });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.product.update({ where: { id }, data: updateData });
+      await this.slugRedirectRepository.recordRename(
+        tx,
+        SlugRedirectEntity.PRODUCT,
+        slugRename.oldSlug,
+        slugRename.newSlug,
+      );
+      return updated;
     });
   }
 

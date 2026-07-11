@@ -1,7 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { BlogCategory, BlogPost, Prisma, PublishStatus } from '@prisma/client';
+import { BlogCategory, BlogPost, Prisma, PublishStatus, SlugRedirectEntity } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { SlugRedirectRepository } from '../slug-redirect';
 import type { PublishablePort, RevalidateTarget } from '../publishing';
+
+/**
+ * Slugs of a rename being persisted by this update — when present, the write
+ * additionally records a 301 redirect `oldSlug → newSlug` in the SlugRedirect
+ * ledger, atomically with the post update (TASK-285-F). The service passes it
+ * only when the post was publicly visible before the write (plan 147 §Design
+ * Decision 3).
+ */
+export interface SlugRenameInput {
+  oldSlug: string;
+  newSlug: string;
+}
 
 /** A BlogPost row with its category relation eagerly included. */
 export type BlogPostWithCategory = BlogPost & {
@@ -90,7 +103,10 @@ export interface UpdateBlogCategoryInput {
  */
 @Injectable()
 export class BlogRepository implements PublishablePort {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly slugRedirectRepository: SlugRedirectRepository,
+  ) {}
 
   /** Cache target purged when scheduled posts go live (see PublishingScheduler). */
   readonly revalidateTarget: RevalidateTarget = {
@@ -218,12 +234,41 @@ export class BlogRepository implements PublishablePort {
     });
   }
 
-  /** Update a post's provided fields. */
-  update(id: string, data: UpdateBlogPostInput): Promise<BlogPostWithCategory> {
-    return this.prisma.blogPost.update({
-      where: { id },
-      data,
-      include: CATEGORY_INCLUDE,
+  /**
+   * Update a post's provided fields.
+   *
+   * When `slugRename` is present (a publicly-visible post's slug is changing —
+   * gated by the service, plan 147 §Design Decision 3), the update and the
+   * slug-redirect chain-collapse write commit in ONE transaction. When absent,
+   * the behavior is the pre-TASK-285 single-statement update (no transaction
+   * on the hot, no-rename path).
+   */
+  update(
+    id: string,
+    data: UpdateBlogPostInput,
+    slugRename?: SlugRenameInput,
+  ): Promise<BlogPostWithCategory> {
+    if (!slugRename) {
+      return this.prisma.blogPost.update({
+        where: { id },
+        data,
+        include: CATEGORY_INCLUDE,
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.blogPost.update({
+        where: { id },
+        data,
+        include: CATEGORY_INCLUDE,
+      });
+      await this.slugRedirectRepository.recordRename(
+        tx,
+        SlugRedirectEntity.BLOG_POST,
+        slugRename.oldSlug,
+        slugRename.newSlug,
+      );
+      return updated;
     });
   }
 

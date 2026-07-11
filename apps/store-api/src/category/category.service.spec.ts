@@ -446,7 +446,61 @@ describe('CategoryService', () => {
 
       expect(result).toBeInstanceOf(CategoryEntity);
       expect(result.name).toBe('Updated Category Name');
-      expect(categoryRepositoryMock.update).toHaveBeenCalledWith('cat-uuid-1', updateInput);
+      // No slug change → no slugRename forwarded (third arg undefined).
+      expect(categoryRepositoryMock.update).toHaveBeenCalledWith(
+        'cat-uuid-1',
+        updateInput,
+        undefined,
+      );
+    });
+
+    it('records a slug redirect when renaming an ACTIVE category', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory); // isActive: true
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+      categoryRepositoryMock.update.mockResolvedValue({ ...mockCategory, slug: 'new-slug' });
+
+      await service.update('cat-uuid-1', { slug: 'new-slug' });
+
+      expect(categoryRepositoryMock.update).toHaveBeenCalledWith(
+        'cat-uuid-1',
+        expect.objectContaining({ slug: 'new-slug' }),
+        { oldSlug: 'phone-cases', newSlug: 'new-slug' },
+      );
+    });
+
+    it('does NOT record a redirect when renaming an INACTIVE category', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockInactiveCategory); // isActive: false
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+      categoryRepositoryMock.update.mockResolvedValue({
+        ...mockInactiveCategory,
+        slug: 'new-slug',
+      });
+
+      await service.update('cat-uuid-3', { slug: 'new-slug' });
+
+      expect(categoryRepositoryMock.update).toHaveBeenCalledWith(
+        'cat-uuid-3',
+        expect.objectContaining({ slug: 'new-slug' }),
+        undefined,
+      );
+    });
+
+    it('still records the redirect when renaming AND deactivating in the same call (pre-write snapshot)', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory); // isActive: true BEFORE the write
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+      categoryRepositoryMock.update.mockResolvedValue({
+        ...mockCategory,
+        slug: 'new-slug',
+        isActive: false,
+      });
+
+      await service.update('cat-uuid-1', { slug: 'new-slug', isActive: false });
+
+      expect(categoryRepositoryMock.update).toHaveBeenCalledWith(
+        'cat-uuid-1',
+        expect.objectContaining({ slug: 'new-slug', isActive: false }),
+        { oldSlug: 'phone-cases', newSlug: 'new-slug' },
+      );
     });
 
     it('should throw NotFoundException when category is not found', async () => {
@@ -534,9 +588,11 @@ describe('CategoryService', () => {
       expect(result.parentId).toBeNull();
       // null short-circuits parent-existence/cycle checks — no extra lookups.
       expect(categoryRepositoryMock.findDescendantIds).not.toHaveBeenCalled();
-      expect(categoryRepositoryMock.update).toHaveBeenCalledWith('cat-uuid-2', {
-        parentId: null,
-      });
+      expect(categoryRepositoryMock.update).toHaveBeenCalledWith(
+        'cat-uuid-2',
+        { parentId: null },
+        undefined,
+      );
     });
   });
 

@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { CategoryRepository } from '../src/category/category.repository';
 import { ProductRepository } from '../src/product/product.repository';
 import { PrismaService } from '../src/prisma';
+import { SlugRedirectRepository } from '../src/slug-redirect';
 
 /**
  * Integration regression for the TASK-236 category subtree rollup — the core
@@ -41,7 +42,7 @@ describe('Category subtree rollup (integration)', () => {
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
-      providers: [PrismaService, CategoryRepository, ProductRepository],
+      providers: [PrismaService, CategoryRepository, ProductRepository, SlugRedirectRepository],
     }).compile();
 
     app = moduleRef.createNestApplication();

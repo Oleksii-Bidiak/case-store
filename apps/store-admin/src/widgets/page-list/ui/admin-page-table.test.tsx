@@ -1,5 +1,10 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { AdminPageTable } from "./admin-page-table";
@@ -76,5 +81,49 @@ describe("AdminPageTable", () => {
       name: dict.common.edit,
     });
     expect(editLink).toHaveAttribute("href", "/pages/page-1/edit");
+  });
+
+  // TASK-285: the delete-confirm copy warns about the Google index only for a
+  // currently-published row.
+  describe("delete confirm copy (TASK-285)", () => {
+    let confirmSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(false);
+    });
+
+    afterEach(() => {
+      confirmSpy.mockRestore();
+    });
+
+    it("appends the still-may-be-indexed warning for a published page", async () => {
+      stubPages([makePageRow("page-1", "Privacy Policy", true)]);
+      renderWithProviders(<AdminPageTable />);
+      const deleteButton = await screen.findByRole("button", {
+        name: dict.common.delete,
+      });
+
+      await userEvent.click(deleteButton);
+
+      expect(confirmSpy).toHaveBeenCalledWith(
+        dict.pages.deleteConfirm("Privacy Policy", true),
+      );
+      expect(confirmSpy.mock.calls[0][0]).toContain("пошуковому індексі");
+    });
+
+    it("omits the indexed warning for a draft page", async () => {
+      stubPages([makePageRow("page-2", "FAQ", false)]);
+      renderWithProviders(<AdminPageTable />);
+      const deleteButton = await screen.findByRole("button", {
+        name: dict.common.delete,
+      });
+
+      await userEvent.click(deleteButton);
+
+      expect(confirmSpy).toHaveBeenCalledWith(
+        dict.pages.deleteConfirm("FAQ", false),
+      );
+      expect(confirmSpy.mock.calls[0][0]).not.toContain("пошуковому індексі");
+    });
   });
 });

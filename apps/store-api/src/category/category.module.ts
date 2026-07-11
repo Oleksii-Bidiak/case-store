@@ -3,8 +3,10 @@ import { CategoryRepository } from './category.repository';
 import { CategoryService } from './category.service';
 import { CategoryController } from './category.controller';
 import { AdminCategoryController } from './admin-category.controller';
+import { SlugRedirectModule } from '../slug-redirect';
 
 @Module({
+  imports: [SlugRedirectModule],
   controllers: [CategoryController, AdminCategoryController],
   providers: [CategoryRepository, CategoryService],
   // CategoryRepository is exported so ProductModule (subtree rollup, TASK-236-B)

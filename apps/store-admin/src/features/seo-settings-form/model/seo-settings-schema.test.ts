@@ -3,8 +3,45 @@ import {
   seoSettingsSchema,
   seoSettingsFormValuesToDto,
   mapSettingsToFormValues,
+  normalizeSiteVerificationValue,
 } from "./seo-settings-schema";
 import type { SeoSettingsEntity } from "@/entities/seo-settings";
+
+describe("normalizeSiteVerificationValue (TASK-280)", () => {
+  it("passes a bare token through unchanged", () => {
+    expect(normalizeSiteVerificationValue("AbCdEfGh1234567890")).toBe(
+      "AbCdEfGh1234567890",
+    );
+  });
+
+  it("extracts the token from a full Google meta tag", () => {
+    expect(
+      normalizeSiteVerificationValue(
+        '<meta name="google-site-verification" content="XYZ" />',
+      ),
+    ).toBe("XYZ");
+  });
+
+  it("extracts the token from a full Bing meta tag (name-agnostic)", () => {
+    expect(
+      normalizeSiteVerificationValue(
+        '<meta name="msvalidate.01" content="ABC">',
+      ),
+    ).toBe("ABC");
+  });
+
+  it("handles a single-quoted content attribute", () => {
+    expect(
+      normalizeSiteVerificationValue(
+        "<meta name='google-site-verification' content='QRS' />",
+      ),
+    ).toBe("QRS");
+  });
+
+  it("normalizes whitespace-only input to an empty string", () => {
+    expect(normalizeSiteVerificationValue("   ")).toBe("");
+  });
+});
 
 describe("parseSameAsLinks", () => {
   it("splits on newlines, trims, and drops blank lines", () => {
@@ -83,6 +120,25 @@ describe("seoSettingsFormValuesToDto", () => {
       "https://b.com",
     ]);
   });
+
+  it("omits blank verification fields and normalizes a pasted meta tag on submit (TASK-280)", () => {
+    const dto = seoSettingsFormValuesToDto({
+      defaultMetaTitle: "",
+      defaultMetaDescription: "",
+      titleTemplate: "",
+      defaultOgImage: "",
+      googleSiteVerification:
+        '<meta name="google-site-verification" content="G-TOKEN" />',
+      bingSiteVerification: "",
+      noindexSite: false,
+      llmsTxtSummary: "",
+      additionalSameAsLinks: "",
+    });
+
+    // Defense-in-depth: the pasted tag is normalized even without a blur event.
+    expect(dto.googleSiteVerification).toBe("G-TOKEN");
+    expect(dto.bingSiteVerification).toBeUndefined();
+  });
 });
 
 describe("mapSettingsToFormValues", () => {
@@ -93,6 +149,8 @@ describe("mapSettingsToFormValues", () => {
       defaultMetaDescription: "Опис",
       titleTemplate: null,
       defaultOgImage: null,
+      googleSiteVerification: "G-TOKEN",
+      bingSiteVerification: null,
       noindexSite: true,
       llmsTxtSummary: null,
       additionalSameAsLinks: ["https://a.com", "https://b.com"],
@@ -104,6 +162,8 @@ describe("mapSettingsToFormValues", () => {
 
     expect(values.defaultMetaTitle).toBe("");
     expect(values.defaultMetaDescription).toBe("Опис");
+    expect(values.googleSiteVerification).toBe("G-TOKEN");
+    expect(values.bingSiteVerification).toBe("");
     expect(values.noindexSite).toBe(true);
     expect(values.additionalSameAsLinks).toBe("https://a.com\nhttps://b.com");
   });

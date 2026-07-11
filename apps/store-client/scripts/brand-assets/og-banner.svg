@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <!--
+    Brand Open Graph fallback banner master, 1200x630 (plan 145 / TASK-279-A,
+    Design Decision 2). Rendered to public/brand/og-fallback.png by:
+
+        npm run generate:brand-assets -w apps/store-client
+
+    Served whenever SeoSettings.defaultOgImage is empty (tier-3 zero-config
+    fallback wired in app/layout.tsx generateMetadata()).
+
+    NOTE: the brand name + tagline are baked in statically at generation time -
+    a raster image cannot read dictionary.ts. If the brand copy changes, edit
+    this SVG and re-run the generator (documented in plan 145 Risks).
+  -->
+  <rect width="1200" height="630" fill="#4f46e5"/>
+  <!-- Subtle monogram echo, right side - keeps the card from feeling empty. -->
+  <g opacity="0.14">
+    <rect x="820" y="115" width="400" height="400" rx="88" fill="#ffffff" opacity="0.35"/>
+    <text
+      x="1020"
+      y="406"
+      text-anchor="middle"
+      font-family="Arial, 'Helvetica Neue', 'Segoe UI', sans-serif"
+      font-weight="800"
+      font-size="260"
+      fill="#ffffff"
+    >M</text>
+  </g>
+  <text
+    x="80"
+    y="330"
+    font-family="Arial, 'Helvetica Neue', 'Segoe UI', sans-serif"
+    font-weight="800"
+    font-size="104"
+    fill="#ffffff"
+  >MobileStore</text>
+  <text
+    x="82"
+    y="410"
+    font-family="Arial, 'Helvetica Neue', 'Segoe UI', sans-serif"
+    font-weight="400"
+    font-size="42"
+    fill="#ffffff"
+    opacity="0.88"
+  >Аксесуари та техніка Apple</text>
+</svg>

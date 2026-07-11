@@ -10,6 +10,8 @@ const mockRow = {
   defaultMetaDescription: 'Магазин аксесуарів',
   titleTemplate: null,
   defaultOgImage: null,
+  googleSiteVerification: null,
+  bingSiteVerification: null,
   noindexSite: false,
   llmsTxtSummary: null,
   additionalSameAsLinks: [] as string[],
@@ -53,8 +55,23 @@ describe('SeoSettingsService', () => {
       expect(result.defaultMetaTitle).toBeNull();
       expect(result.defaultMetaDescription).toBeNull();
       expect(result.titleTemplate).toBeNull();
+      expect(result.googleSiteVerification).toBeNull();
+      expect(result.bingSiteVerification).toBeNull();
       expect(result.noindexSite).toBe(false);
       expect(result.additionalSameAsLinks).toEqual([]);
+    });
+
+    it('maps the search-console verification tokens through fromPrisma (TASK-280)', async () => {
+      repositoryMock.findSettings.mockResolvedValue({
+        ...mockRow,
+        googleSiteVerification: 'google-token-123',
+        bingSiteVerification: 'bing-token-456',
+      });
+
+      const result = await service.getSettings();
+
+      expect(result.googleSiteVerification).toBe('google-token-123');
+      expect(result.bingSiteVerification).toBe('bing-token-456');
     });
 
     it('returns a mapped entity when the row exists', async () => {
@@ -82,9 +99,24 @@ describe('SeoSettingsService', () => {
       expect(result.defaultMetaTitle).toBe('Новий заголовок');
       expect(result.noindexSite).toBe(true);
     });
+
+    it('passes the search-console verification fields through unchanged (TASK-280)', async () => {
+      const dto = {
+        googleSiteVerification: 'google-token-123',
+        bingSiteVerification: 'bing-token-456',
+      };
+      repositoryMock.upsertSettings.mockResolvedValue({ ...mockRow, ...dto });
+      revalidationMock.revalidate.mockResolvedValue(undefined);
+
+      const result = await service.updateSettings(dto);
+
+      expect(repositoryMock.upsertSettings).toHaveBeenCalledWith(dto);
+      expect(result.googleSiteVerification).toBe('google-token-123');
+      expect(result.bingSiteVerification).toBe('bing-token-456');
+    });
   });
 
-  describe('getHealth (TASK-269)', () => {
+  describe('getHealth (TASK-269 + TASK-285)', () => {
     it('maps the repository counts through SeoHealthEntity.fromCounts', async () => {
       const counts = {
         productsMissingMetaTitle: 12,
@@ -93,6 +125,8 @@ describe('SeoSettingsService', () => {
         categoriesTotal: 8,
         pagesMissingMetaTitle: 1,
         pagesTotal: 5,
+        pagesMissingMetaDescription: 2,
+        pagesThinContent: 4,
       };
       repositoryMock.getContentSeoCounts.mockResolvedValue(counts);
 
@@ -101,6 +135,9 @@ describe('SeoSettingsService', () => {
       expect(repositoryMock.getContentSeoCounts).toHaveBeenCalledTimes(1);
       expect(result).toBeInstanceOf(SeoHealthEntity);
       expect(result).toEqual(counts);
+      // TASK-285: the two new gap counters pass through fromCounts intact.
+      expect(result.pagesMissingMetaDescription).toBe(2);
+      expect(result.pagesThinContent).toBe(4);
     });
   });
 });

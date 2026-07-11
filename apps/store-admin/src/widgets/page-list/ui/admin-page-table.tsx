@@ -65,8 +65,8 @@ export function AdminPageTable() {
     );
   };
 
-  const handleDelete = (id: string, title: string) => {
-    if (!window.confirm(dict.pages.deleteConfirm(title))) return;
+  const handleDelete = (id: string, title: string, isPublished: boolean) => {
+    if (!window.confirm(dict.pages.deleteConfirm(title, isPublished))) return;
     remove.mutate(
       { id },
       {
@@ -155,7 +155,9 @@ export function AdminPageTable() {
                     variant="destructive"
                     size="sm"
                     disabled={isMutating}
-                    onClick={() => handleDelete(page.id, page.title)}
+                    onClick={() =>
+                      handleDelete(page.id, page.title, page.isActive)
+                    }
                   >
                     {dict.common.delete}
                   </Button>

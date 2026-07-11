@@ -233,3 +233,4 @@ When working on this project, read these files for additional context:
 - `docs/manual-qa-pending.md` — Outstanding manual checks on a running stack
 - `docs/admin-guide.md` — Admin-panel onboarding guide (UA, for non-technical operators)
 - `docs/deploy.md` — Staging deploy runbook (UA, for non-technical operators): logs, restart, rollback, server prep
+- `docs/deploy-vercel.md` — Beginner test-server runbook (UA): frontends on Vercel + API/Postgres/Redis on Railway (cross-site cookie + swagger.json caveats)

@@ -21,6 +21,16 @@ export const CURRENCY = process.env.NEXT_PUBLIC_CURRENCY ?? "UAH";
 // Human-readable brand / site name used in <title> templates and structured data.
 export const SITE_NAME = "MobileStore";
 
+// ─── Brand OG-image fallback (TASK-279, plan 145) ────────────────────────────
+// Static branded 1200×630 card served whenever SeoSettings.defaultOgImage is
+// empty (tier-3 zero-config fallback, wired in app/layout.tsx generateMetadata).
+// The PNG is generated from scripts/brand-assets/og-banner.svg via
+// `npm run generate:brand-assets -w apps/store-client`. The path is relative —
+// layout.tsx's `metadataBase` resolves it to an absolute URL.
+export const BRAND_OG_IMAGE_PATH = "/brand/og-fallback.png";
+export const BRAND_OG_IMAGE_WIDTH = 1200;
+export const BRAND_OG_IMAGE_HEIGHT = 630;
+
 // ─── Umami self-hosted analytics (TASK-261) ──────────────────────────────────
 // Both must be set together for tracking to activate:
 //   NEXT_PUBLIC_UMAMI_SRC        — full URL of Umami's tracker script

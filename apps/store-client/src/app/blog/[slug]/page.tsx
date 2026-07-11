@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { BlogArticleView, toBlogPostView } from "@/widgets/blog";
+import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import {
   fetchPublishedPost,
   fetchPublishedPosts,
@@ -52,6 +53,12 @@ export default async function BlogArticlePage({
   const { slug } = await params;
   const entity = await fetchPublishedPost(slug);
   if (!entity) {
+    // TASK-285: an admin may have renamed the slug — serve a permanent (308)
+    // redirect to the current address instead of a dead 404.
+    const newSlug = await resolveSlugRedirect("BLOG_POST", slug);
+    if (newSlug) {
+      permanentRedirect(`/blog/${newSlug}`);
+    }
     notFound();
   }
 

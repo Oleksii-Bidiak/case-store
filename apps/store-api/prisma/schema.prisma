@@ -540,6 +540,15 @@ model SeoSettings {
   /// Null → falls back to the current hardcoded `%s | ${SITE_NAME}` template.
   titleTemplate          String?  @map("title_template")
   defaultOgImage         String?  @map("default_og_image")
+  /// Google Search Console ownership-verification token (HTML-tag method): the
+  /// `content` attribute value of `<meta name="google-site-verification" content="…">`.
+  /// Null → no `verification.google` key is emitted in the root layout's metadata
+  /// (Next omits the tag entirely rather than rendering an empty one). See plan 146.
+  googleSiteVerification String?  @map("google_site_verification")
+  /// Bing Webmaster Tools ownership-verification token (HTML-tag method): the
+  /// `content` attribute value of `<meta name="msvalidate.01" content="…">`.
+  /// Null → no `verification.other['msvalidate.01']` key is emitted. See plan 146.
+  bingSiteVerification   String?  @map("bing_site_verification")
   /// Site-wide noindex kill switch (staging vs prod). Default false (assume
   /// production once this ships).
   noindexSite            Boolean  @default(false) @map("noindex_site")
@@ -926,4 +935,38 @@ model ProductAttributeValue {
   @@unique([productId, definitionId])
   @@index([definitionId, value])
   @@map("product_attribute_values")
+}
+
+/// Discriminates which content model a SlugRedirect row belongs to (TASK-285).
+enum SlugRedirectEntity {
+  PAGE
+  BLOG_POST
+  PRODUCT
+  CATEGORY
+}
+
+/// Server-side 301-redirect ledger for admin-renamed content slugs (TASK-285, SEO-10). One row
+/// per DEAD alias: `oldSlug` no longer resolves directly for that entity type, and a visitor
+/// landing on it should be sent to `newSlug` with a PERMANENT (301) redirect.
+///
+/// INVARIANT, maintained entirely at write time by `slug-redirect-chain.util.ts` (never at read
+/// time): for a given `entity`, no row's `newSlug` ever equals another row's `oldSlug` — every
+/// dead alias points DIRECTLY at the entity's CURRENT live slug, never through an intermediate
+/// dead one, and a row can never have `oldSlug === newSlug` (a self-redirect). This is what makes
+/// the public lookup a single O(1) unique-key read with no chain-walking and — critically — no
+/// possibility of a redirect loop, however many times the same entity gets renamed back and
+/// forth. See plan 147 §Design Decision 2 for the exact write-time algorithm and its proof.
+model SlugRedirect {
+  id      String             @id @default(uuid())
+  entity  SlugRedirectEntity
+  oldSlug String             @map("old_slug")
+  newSlug String             @map("new_slug")
+  /// Updated whenever a later rename repoints this row (chain collapse) — see plan 147
+  /// Design Decision 1.
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([entity, oldSlug])
+  @@index([entity, newSlug])
+  @@map("slug_redirects")
 }

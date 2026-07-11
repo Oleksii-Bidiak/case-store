@@ -48,6 +48,17 @@ export function EditBlogPostView({ postId }: EditBlogPostViewProps) {
   const post = data?.data;
 
   const handleSubmit = (values: BlogPostFormValues) => {
+    // TASK-285: renaming a PUBLISHED post's slug kills its indexed URL — warn
+    // first. A blank slug means "auto-generate" (treated as no rename here).
+    const nextSlug = values.slug?.trim();
+    const wasLive = post?.status === "PUBLISHED";
+    if (wasLive && post && nextSlug && nextSlug !== post.slug) {
+      if (
+        !window.confirm(dict.blogPosts.slugChangeConfirm(post.slug, nextSlug))
+      ) {
+        return;
+      }
+    }
     update.mutate(
       { id: postId, data: blogPostFormValuesToUpdateDto(values) },
       {

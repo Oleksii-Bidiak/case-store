@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ProductRepository } from '../product/product.repository';
 import { CategoryModule } from '../category';
+import { SlugRedirectModule } from '../slug-redirect';
 import { MeiliClient } from './meili.client';
 import { SearchService } from './search.service';
 import { ProductIndexer, SearchProductIndexer } from './product-indexer';
@@ -21,7 +22,9 @@ import { AdminSearchController } from './admin-search.controller';
 @Module({
   // CategoryModule supplies CategoryRepository for the TASK-236 ancestor-id
   // expansion in `toDocument`. ProductRepository stays module-local (see below).
-  imports: [CategoryModule],
+  // SlugRedirectModule supplies SlugRedirectRepository — a constructor
+  // dependency of the module-local ProductRepository since TASK-285-G.
+  imports: [CategoryModule, SlugRedirectModule],
   controllers: [SearchController, AdminSearchController],
   providers: [
     MeiliClient,

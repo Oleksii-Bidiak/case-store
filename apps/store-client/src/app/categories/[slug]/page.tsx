@@ -1,7 +1,7 @@
 import { Suspense, Fragment } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import {
   ProductListView,
   ProductListSkeleton,
@@ -24,6 +24,7 @@ import {
   type ListingFilterParams,
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
 
 interface CategoryLandingPageProps {
@@ -128,13 +129,24 @@ export default async function CategoryLandingPage({
 
   const path = await resolveCategoryPath(slug);
   if (!path) {
+    // TASK-285 (Крок W): an admin may have renamed the slug — serve a
+    // permanent (308) redirect to the current address instead of a dead 404.
+    // Same page-body-only pattern as products/[slug]: generateMetadata keeps
+    // its minimal fallback for an unknown slug, because this route has no
+    // loading.tsx (see below), so the redirect thrown here still owns the
+    // HTTP response.
+    const newSlug = await resolveSlugRedirect("CATEGORY", slug);
+    if (newSlug) {
+      permanentRedirect(`/categories/${newSlug}`);
+    }
     // Real HTTP 404 — the category is resolved server-side before the
     // response is built (unlike the PDP's client-fetched soft-404). This is
     // also why the route deliberately has NO route-level loading.tsx: a
     // loading boundary starts streaming a 200 shell before notFound() can set
-    // the status (verified live; /legal/[slug] has that flaw, /blog/[slug]
-    // without loading.tsx returns a true 404). The in-page <Suspense>
-    // skeleton below covers the grid-loading UX instead.
+    // the status (verified live; /legal/[slug] and /products/[slug] had that
+    // flaw until their loading.tsx removal in the TASK-285 review follow-up;
+    // /blog/[slug] never had one and returns a true 404). The in-page
+    // <Suspense> skeleton below covers the grid-loading UX instead.
     notFound();
   }
   const node = path.at(-1)!;
