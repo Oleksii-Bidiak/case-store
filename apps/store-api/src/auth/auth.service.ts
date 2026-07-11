@@ -16,8 +16,13 @@ const PASSWORD_RESET_TOKEN_BYTES = 32;
  * specific check failed (not-found / used / expired / deactivated owner). */
 const INVALID_RESET_TOKEN_MESSAGE = 'Invalid or expired reset token';
 
+/** Generic error message for every `login` failure — never leaks which specific
+ * check failed (unknown email / wrong password / deactivated / soft-deleted). */
+const INVALID_CREDENTIALS_MESSAGE = 'Invalid credentials';
+
 /** Not a secret — a fixed input whose only purpose is to drive argon2's cost
- * function on `requestPasswordReset`'s no-op branch (TASK-273 timing hardening). */
+ * function on the argon2-free rejection branches of `requestPasswordReset`
+ * (TASK-273) and `login` (TASK-274). See {@link AuthService.burnTimingCost}. */
 const DUMMY_TIMING_PASSWORD = 'dummy-timing-equalizer-password';
 
 @Injectable()
@@ -87,28 +92,34 @@ export class AuthService {
   }
 
   /**
-   * Login with email and password.
-   * Finds user, verifies password, returns token pair.
+   * Login with email and password (TASK-274 timing-hardened).
+   *
+   * Every failure — unknown email, wrong password, deactivated or soft-deleted
+   * account — throws the SAME generic {@link INVALID_CREDENTIALS_MESSAGE}, so the
+   * response body can never be used to enumerate accounts or probe their state.
+   *
+   * The unknown-email branch additionally burns a fixed argon2 cost: returning
+   * before doing any hashing work would make it measurably faster than the
+   * found-user branch (which pays for `argon2.verify`), i.e. a timing oracle.
    */
   async login(email: string, password: string): Promise<AuthTokens> {
-    // Find user by email
     const user = await this.authRepository.findByEmail(email);
+
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      await this.burnTimingCost();
+      throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
 
-    // Verify password with argon2
     const isPasswordValid = await argon2.verify(user.passwordHash, password);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+
+    // Deactivated (banned) and soft-deleted (tombstoned) accounts must never
+    // obtain tokens. Folded in with the password check so all three rejections
+    // are indistinguishable to the client — and each has already paid the
+    // argon2.verify cost, so no branch here is a timing outlier.
+    if (!isPasswordValid || !user.isActive || user.deletedAt) {
+      throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
 
-    // Reject deactivated (banned) accounts — they must not obtain new tokens.
-    if (!user.isActive) {
-      throw new UnauthorizedException('Account is deactivated');
-    }
-
-    // Generate and return token pair
     return this.generateTokenPair(user.id, user.role);
   }
 
@@ -178,10 +189,8 @@ export class AuthService {
 
     // Silent no-op for a non-existent / banned / soft-deleted account.
     if (!user || !user.isActive || user.deletedAt) {
-      // TASK-273: burn a fixed argon2 cost so this branch's latency is in the
-      // same ballpark as the found+active branch — a near-instant return would
-      // be a timing oracle for account enumeration. Result is discarded.
-      await argon2.hash(DUMMY_TIMING_PASSWORD);
+      // TASK-273: without this the no-op branch would return near-instantly.
+      await this.burnTimingCost();
       return;
     }
 
@@ -279,6 +288,19 @@ export class AuthService {
     tokens.accessToken = accessToken;
     tokens.refreshToken = refreshToken;
     return tokens;
+  }
+
+  /**
+   * Spend a fixed amount of argon2 work on a branch that would otherwise do no
+   * hashing at all, so its latency stays in the same ballpark as the branch that
+   * does (`argon2.verify` on login, the full token+email path on password reset).
+   * Without it, "no such account" answers back measurably faster than "wrong
+   * password" — a timing oracle for account enumeration.
+   *
+   * The hash is deliberately discarded, and nothing about the account is logged.
+   */
+  private async burnTimingCost(): Promise<void> {
+    await argon2.hash(DUMMY_TIMING_PASSWORD);
   }
 
   /**

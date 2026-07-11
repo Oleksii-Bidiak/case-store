@@ -300,7 +300,9 @@ describe('AuthController (e2e)', () => {
         .send({ email: testUser.email, password: testUser.password })
         .expect(401);
 
-      expect(response.body.message).toBe('Account is deactivated');
+      // TASK-274: login answers every rejection with the same generic message —
+      // a distinct "Account is deactivated" reply would confirm the account exists.
+      expect(response.body.message).toBe('Invalid credentials');
       // A banned user must never be issued tokens.
       expect(authRepositoryMock.saveRefreshToken).not.toHaveBeenCalled();
     });
