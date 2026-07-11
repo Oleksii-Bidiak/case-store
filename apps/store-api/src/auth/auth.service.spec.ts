@@ -113,6 +113,9 @@ describe('AuthService', () => {
     const mailOutboxServiceMock = {
       enqueuePasswordReset: jest.fn(),
       enqueueOrderConfirmation: jest.fn(),
+      enqueueAccountLockedNotice: jest.fn(),
+      // Default: nothing was sent recently, so the rate limit does not bite.
+      hasRecentAccountLockedNotice: jest.fn().mockResolvedValue(false),
     };
 
     const pinoLoggerMock = {
@@ -267,6 +270,132 @@ describe('AuthService', () => {
 
       // A soft-deleted (tombstoned) user must never receive new tokens.
       expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── login → locked-account owner notice (TASK-287) ─────────────────────────
+  //
+  // The API response stays generic (TASK-274) — the truth is delivered out of
+  // band, to the address that owns the account, and only to someone who already
+  // proved knowledge of the password.
+
+  describe('login — deactivated/soft-deleted owner notice', () => {
+    const loginEmail = 'test@example.com';
+    const loginPassword = 'StrongP@ss123';
+
+    it('enqueues the notice when the password is correct but the account is deactivated', async () => {
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, isActive: false });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      expect(mailOutboxService.enqueueAccountLockedNotice).toHaveBeenCalledTimes(1);
+      const [payload] = mailOutboxService.enqueueAccountLockedNotice.mock.calls[0];
+      expect(payload.to).toBe(mockUser.email);
+      expect(payload.supportUrl).toBe('http://localhost:3000/contact');
+    });
+
+    it('enqueues the notice when the password is correct but the account is soft-deleted', async () => {
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, deletedAt: new Date() });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      expect(mailOutboxService.enqueueAccountLockedNotice).toHaveBeenCalledTimes(1);
+    });
+
+    it('does NOT enqueue the notice when the password is wrong on a deactivated account', async () => {
+      // Credential stuffing: a stranger holding a wrong password must not be
+      // able to spray mail at the owner (nor confirm the account exists).
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, isActive: false });
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+
+      await expect(service.login(loginEmail, 'WrongPassword123')).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      expect(mailOutboxService.enqueueAccountLockedNotice).not.toHaveBeenCalled();
+    });
+
+    it('does NOT enqueue the notice for an unknown email', async () => {
+      authRepository.findByEmail.mockResolvedValue(null);
+
+      await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      expect(mailOutboxService.enqueueAccountLockedNotice).not.toHaveBeenCalled();
+    });
+
+    it('does NOT enqueue the notice on a normal successful login', async () => {
+      authRepository.findByEmail.mockResolvedValue(mockUser);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      jwtService.sign.mockReturnValueOnce('access-token-value');
+      jwtService.sign.mockReturnValueOnce('refresh-token-value');
+      authRepository.saveRefreshToken.mockResolvedValue(mockRefreshTokenRecord);
+
+      await service.login(loginEmail, loginPassword);
+
+      expect(mailOutboxService.enqueueAccountLockedNotice).not.toHaveBeenCalled();
+    });
+
+    it('does NOT enqueue a second notice inside the rate-limit window', async () => {
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, isActive: false });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      // A notice for this address already exists inside the window.
+      mailOutboxService.hasRecentAccountLockedNotice.mockResolvedValue(true);
+
+      await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      expect(mailOutboxService.enqueueAccountLockedNotice).not.toHaveBeenCalled();
+    });
+
+    it('checks the rate limit against a window that starts N hours ago (default 24h)', async () => {
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, isActive: false });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      const before = Date.now();
+      await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(UnauthorizedException);
+
+      expect(mailOutboxService.hasRecentAccountLockedNotice).toHaveBeenCalledTimes(1);
+      const [recipient, since] = mailOutboxService.hasRecentAccountLockedNotice.mock.calls[0];
+      expect(recipient).toBe(mockUser.email);
+      const windowMs = before - since.getTime();
+      // 24h ± a second of test execution time.
+      expect(windowMs).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 1000);
+      expect(windowMs).toBeLessThanOrEqual(24 * 60 * 60 * 1000 + 1000);
+    });
+
+    it('enqueues again once the window has elapsed (no recent notice found)', async () => {
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, isActive: false });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      // First attempt: a notice already went out inside the window → suppressed.
+      mailOutboxService.hasRecentAccountLockedNotice.mockResolvedValueOnce(true);
+      await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(UnauthorizedException);
+      expect(mailOutboxService.enqueueAccountLockedNotice).not.toHaveBeenCalled();
+
+      // Second attempt, window elapsed: the lookup finds nothing recent → sends.
+      mailOutboxService.hasRecentAccountLockedNotice.mockResolvedValueOnce(false);
+      await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(UnauthorizedException);
+      expect(mailOutboxService.enqueueAccountLockedNotice).toHaveBeenCalledTimes(1);
+    });
+
+    it('still answers with the generic message when enqueueing the notice fails', async () => {
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, isActive: false });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      mailOutboxService.enqueueAccountLockedNotice.mockRejectedValue(new Error('db down'));
+
+      // A mail-outbox hiccup must never turn a 401 into a 500 — that difference
+      // would itself be an oracle.
+      await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
     });
   });
 
