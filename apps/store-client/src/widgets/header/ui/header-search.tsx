@@ -250,7 +250,7 @@ export function HeaderSearch() {
               {categories.map((category) => (
                 <li key={category.id}>
                   <Link
-                    href={`/products?categoryId=${category.id}`}
+                    href={`/categories/${category.slug}`}
                     role="menuitem"
                     onClick={() => setCatalogOpen(false)}
                     className="flex items-center rounded-xl px-3 py-2.5 text-sm font-medium text-popover-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"

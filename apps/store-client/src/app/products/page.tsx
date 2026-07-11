@@ -79,6 +79,11 @@ export async function generateMetadata({
         fallback: dict.meta.productsTitle,
       }),
       description: seoMeta.description ?? dict.meta.productsDescription,
+      // The clean /categories/[slug] landing page is the indexable home of
+      // this view (TASK-277) — the ?categoryId= form stays fully functional
+      // but consolidates its search signal onto the canonical URL. The
+      // unfiltered/keyword-search branch below is TASK-278's remit.
+      alternates: { canonical: `${SITE_URL}/categories/${node.slug}` },
     };
   }
 

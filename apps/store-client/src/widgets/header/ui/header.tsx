@@ -159,7 +159,7 @@ export function Header({ announcement }: HeaderProps = {}) {
                       {categories.map((category) => (
                         <Link
                           key={category.id}
-                          href={`/products?categoryId=${category.id}`}
+                          href={`/categories/${category.slug}`}
                           onClick={() => setMenuOpen(false)}
                           className={MOBILE_LINK_CLASS}
                         >

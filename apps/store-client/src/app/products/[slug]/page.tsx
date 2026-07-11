@@ -134,7 +134,7 @@ async function buildProductPageSchemas(slug: string): Promise<{
         { name: dict.product.breadcrumbProducts, item: `${SITE_URL}/products` },
         {
           name: category.name,
-          item: `${SITE_URL}/products?categoryId=${category.id}`,
+          item: `${SITE_URL}/categories/${category.slug}`,
         },
         { name: product.name, item: canonical },
       ]),

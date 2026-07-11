@@ -57,7 +57,7 @@ export function HeroCategorySidebar() {
             {(data?.data ?? []).map((category, i) => (
               <li key={category.id}>
                 <Link
-                  href={`/products?categoryId=${category.id}`}
+                  href={`/categories/${category.slug}`}
                   className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <span
