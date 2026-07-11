@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuth, useAuthControllerLogin } from "@/entities/session";
 import { Button, Input, Label } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, STOREFRONT_URL } from "@/shared/config";
 
 const loginSchema = z.object({
   email: z.string().email(dict.login.emailInvalid),
@@ -15,17 +15,6 @@ const loginSchema = z.object({
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
-
-/**
- * Extract `message` from the API error envelope
- * (`{ statusCode, error, message }`) without trusting the response shape —
- * returns "" for anything unexpected.
- */
-function getErrorEnvelopeMessage(data: unknown): string {
-  if (typeof data !== "object" || data === null) return "";
-  const message = (data as { message?: unknown }).message;
-  return typeof message === "string" ? message : "";
-}
 
 /** Decode a JWT payload to read the role claim (informational only). */
 function decodeRole(token: string): string | null {
@@ -94,23 +83,18 @@ export function AdminLoginForm() {
   };
 
   const status = login.error?.response?.status;
-  // A 401 is either bad credentials or a deactivated (banned) account — the
-  // API distinguishes them only by the error-envelope `message` ("Account is
-  // deactivated"). Matching is defensive: case-insensitive contains (TASK-202).
-  const isDeactivated =
-    status === 401 &&
-    getErrorEnvelopeMessage(login.error?.response?.data)
-      .toLowerCase()
-      .includes("deactivated");
+  // Every 401 is the same generic "Invalid credentials" — the API deliberately
+  // does not distinguish unknown email / wrong password / deactivated account
+  // (TASK-274), so there is nothing here to branch on. A deactivated owner is
+  // told the truth by email instead (TASK-287); everyone sees the support link
+  // below the form.
   const errorMessage = notAdmin
     ? dict.login.errorNotAdmin
-    : isDeactivated
-      ? dict.login.errorDeactivated
-      : status === 401
-        ? dict.login.errorInvalid
-        : login.isError
-          ? dict.login.errorGeneric
-          : null;
+    : status === 401
+      ? dict.login.errorInvalid
+      : login.isError
+        ? dict.login.errorGeneric
+        : null;
 
   return (
     <form
@@ -157,6 +141,20 @@ export function AdminLoginForm() {
       <Button type="submit" disabled={login.isPending}>
         {login.isPending ? dict.login.signingIn : dict.login.signIn}
       </Button>
+
+      {/* Always visible, for everyone (TASK-287). The API can no longer tell a
+          user that their account is deactivated, so the form must always offer a
+          human route out. The admin app has no contact page of its own — link to
+          the storefront's existing one. */}
+      <p className="text-center text-sm text-muted-foreground">
+        {dict.authSupport.loginTrouble}{" "}
+        <a
+          href={`${STOREFRONT_URL}/contact`}
+          className="font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {dict.authSupport.contactLink}
+        </a>
+      </p>
     </form>
   );
 }

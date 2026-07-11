@@ -18,17 +18,6 @@ const loginSchema = z.object({
   password: z.string().min(1, dict.auth.login.validationPassword),
 });
 
-/**
- * Extract `message` from the API error envelope
- * (`{ statusCode, error, message }`) without trusting the response shape —
- * returns "" for anything unexpected.
- */
-function getErrorEnvelopeMessage(data: unknown): string {
-  if (typeof data !== "object" || data === null) return "";
-  const message = (data as { message?: unknown }).message;
-  return typeof message === "string" ? message : "";
-}
-
 type LoginValues = z.infer<typeof loginSchema>;
 
 const fieldClass =
@@ -115,18 +104,13 @@ export function LoginForm({
   };
 
   const status = login.error?.response?.status;
-  // A 401 is either bad credentials or a deactivated (banned) account — the
-  // API distinguishes them only by the error-envelope `message` ("Account is
-  // deactivated"). Read it defensively: the generated error type carries no
-  // body shape, and matching is case-insensitive contains (TASK-202).
-  const isDeactivated =
-    status === 401 &&
-    getErrorEnvelopeMessage(login.error?.response?.data)
-      .toLowerCase()
-      .includes("deactivated");
-  const errorMessage = isDeactivated
-    ? dict.auth.login.errorDeactivated
-    : status === 401
+  // Every 401 is the same generic "Invalid credentials" — the API deliberately
+  // does not distinguish unknown email / wrong password / deactivated account
+  // (TASK-274), so there is nothing here to branch on. A deactivated owner is
+  // told the truth by email instead (TASK-287); everyone sees the support link
+  // below the form.
+  const errorMessage =
+    status === 401
       ? dict.auth.login.errorInvalid
       : login.isError
         ? dict.common.genericError
@@ -251,6 +235,19 @@ export function LoginForm({
           {dict.auth.login.apple}
         </button>
       </div>
+
+      {/* Always visible, for everyone (TASK-287). The API can no longer tell a
+          user that their account is deactivated, so the form must always offer a
+          human route out — it reveals nothing about any account's state. */}
+      <p className="text-center text-sm text-muted-foreground">
+        {dict.auth.support.loginTrouble}{" "}
+        <Link
+          href="/contact"
+          className="font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {dict.auth.support.contactLink}
+        </Link>
+      </p>
 
       <p className="text-center text-sm text-muted-foreground">
         {dict.auth.login.noAccount}{" "}
