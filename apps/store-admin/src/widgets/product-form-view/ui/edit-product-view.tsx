@@ -19,6 +19,7 @@ import {
 } from "@/entities/product";
 import { ProductImageManager } from "@/features/product-image-manager";
 import { ProductDeviceCompatManager } from "@/features/product-device-compat";
+import { ProductAddonDeltaPanel } from "@/features/product-addon-delta-panel";
 import { ProductSpecsEditor } from "@/features/product-specs-editor";
 import { Separator } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -155,6 +156,14 @@ export function EditProductView({ productId }: EditProductViewProps) {
             </h3>
             <ProductImageManager productId={productId} />
           </section>
+
+          <Separator />
+
+          {/* Per-product add-on exceptions (TASK-174). The product inherits its
+              category's template automatically; this panel owns only the
+              ADD/REMOVE/OVERRIDE deltas, via its own endpoints — deliberately
+              not part of the product form's submit. */}
+          <ProductAddonDeltaPanel productId={productId} />
 
           <Separator />
 
