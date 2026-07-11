@@ -240,7 +240,10 @@ export function AdminOrderTable() {
             </TableHeader>
             <TableBody>
               {orders.map((order) => (
-                <TableRow key={order.id}>
+                <TableRow
+                  key={order.id}
+                  rowLabel={dict.orders.rowAria(order.id.slice(0, 8))}
+                >
                   <TableCell
                     label={dict.orders.colOrder}
                     className="font-mono text-xs"

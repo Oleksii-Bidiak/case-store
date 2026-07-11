@@ -165,6 +165,7 @@ export function MessageInbox() {
               {messages.map((message) => (
                 <TableRow
                   key={message.id}
+                  rowLabel={dict.messages.rowAria(message.name)}
                   className={
                     message.status === AdminContactListStatus.NEW
                       ? "font-medium"

@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { cn } from "@/shared/lib/utils";
+import { useMediaQuery } from "@/shared/lib/use-media-query";
 
 /**
  * Table layout mode (TASK-258).
@@ -17,6 +18,22 @@ import { cn } from "@/shared/lib/utils";
 type TableLayout = "scroll" | "card";
 
 const TableLayoutContext = React.createContext<TableLayout>("scroll");
+
+/**
+ * Which `<table>` section the current row/cell belongs to. Only body rows get
+ * the card-mode group semantics (TASK-276) — a header/footer row is not a
+ * record.
+ */
+type TableSection = "head" | "body" | "foot";
+
+const TableSectionContext = React.createContext<TableSection>("body");
+
+/**
+ * Mirror of Tailwind's `max-md:` variant (`md` = 48rem). The card layout is a
+ * pure CSS transform, so a row only *is* a card while this query matches —
+ * which is exactly when its ARIA role may deviate from the native `row`.
+ */
+const CARD_LAYOUT_QUERY = "(max-width: 47.999rem)";
 
 interface TableProps extends React.ComponentProps<"table"> {
   /** Layout mode below `md`. Defaults to `"scroll"` (today's behavior). */
@@ -47,48 +64,84 @@ function Table({ layout = "scroll", className, ...props }: TableProps) {
 function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   const layout = React.useContext(TableLayoutContext);
   return (
-    <thead
-      data-slot="table-header"
-      className={cn(
-        "bg-muted [&_tr]:border-b",
-        layout === "card" && "max-md:hidden",
-        className,
-      )}
-      {...props}
-    />
+    <TableSectionContext.Provider value="head">
+      <thead
+        data-slot="table-header"
+        className={cn(
+          "bg-muted [&_tr]:border-b",
+          layout === "card" && "max-md:hidden",
+          className,
+        )}
+        {...props}
+      />
+    </TableSectionContext.Provider>
   );
 }
 
 function TableBody({ className, ...props }: React.ComponentProps<"tbody">) {
   const layout = React.useContext(TableLayoutContext);
   return (
-    <tbody
-      data-slot="table-body"
-      className={cn(
-        "[&_tr:last-child]:border-0",
-        layout === "card" && "max-md:block",
-        className,
-      )}
-      {...props}
-    />
+    <TableSectionContext.Provider value="body">
+      <tbody
+        data-slot="table-body"
+        className={cn(
+          "[&_tr:last-child]:border-0",
+          layout === "card" && "max-md:block",
+          className,
+        )}
+        {...props}
+      />
+    </TableSectionContext.Provider>
   );
 }
 
 function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
   return (
-    <tfoot
-      data-slot="table-footer"
-      className={cn(
-        "border-t bg-muted/50 font-medium [&>tr]:last:border-b-0",
-        className,
-      )}
-      {...props}
-    />
+    <TableSectionContext.Provider value="foot">
+      <tfoot
+        data-slot="table-footer"
+        className={cn(
+          "border-t bg-muted/50 font-medium [&>tr]:last:border-b-0",
+          className,
+        )}
+        {...props}
+      />
+    </TableSectionContext.Provider>
   );
 }
 
-function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
+interface TableRowProps extends React.ComponentProps<"tr"> {
+  /**
+   * Human-readable identity of the record this row shows — the field an
+   * operator would use to name it (product name, customer email, order number).
+   *
+   * Card mode only (TASK-276): while the card layout is actually painted
+   * (below `md`), the row is exposed as `role="group"` with this string as its
+   * `aria-label`, so a screen reader announces a group boundary and the record
+   * the stacked fields belong to. Ignored in `"scroll"` layout, at `md`+ (where
+   * the native `<tr>` row semantics are intact and must not be overridden), and
+   * on header/footer rows. An empty/blank value renders no `aria-label` — the
+   * group simply stays unnamed rather than carrying an empty one.
+   */
+  rowLabel?: string;
+}
+
+function TableRow({ className, rowLabel, ...props }: TableRowProps) {
   const layout = React.useContext(TableLayoutContext);
+  const section = React.useContext(TableSectionContext);
+  // Card mode is a CSS-only transform, so the row is a `display: flex` card
+  // below `md` (native table roles already gone) and a real `display: table-row`
+  // at `md`+ (native roles intact). The ARIA state has to follow what is really
+  // painted — hence the media query rather than a role hardcoded per layout.
+  const isCardRow = layout === "card" && section === "body";
+  const isCardViewport = useMediaQuery(isCardRow ? CARD_LAYOUT_QUERY : null);
+  const asGroup = isCardRow && isCardViewport;
+  const label = rowLabel?.trim();
+
+  const groupProps = asGroup
+    ? { role: "group", ...(label ? { "aria-label": label } : {}) }
+    : {};
+
   return (
     <tr
       data-slot="table-row"
@@ -99,6 +152,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
         className,
       )}
       {...props}
+      {...groupProps}
     />
   );
 }

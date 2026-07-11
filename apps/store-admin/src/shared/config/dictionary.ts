@@ -1173,6 +1173,8 @@ export const dict = {
     colTotal: "Сума",
     colItems: "Позиції",
     colCreated: "Створено",
+    // TASK-276: names the card-mode row group for screen readers.
+    rowAria: (id: string) => `Замовлення ${id}`,
     back: "← Назад до замовлень",
     title: (id: string) => `Замовлення #${id}`,
     payment: (s: string) => `Оплата: ${s}`,
@@ -1224,6 +1226,9 @@ export const dict = {
     rejectSuccess: "Відгук відхилено.",
     actionError: "Не вдалося виконати дію. Спробуйте ще раз.",
     ratingAria: (rating: number) => `${rating} з 5 зірок`,
+    // TASK-276: names the card-mode row group for screen readers.
+    rowAria: (product: string, author: string) =>
+      `Відгук на «${product}» від ${author}`,
   },
 
   // --- Contact messages (TASK-177) --------------------------------------------
@@ -1240,6 +1245,8 @@ export const dict = {
     colMessage: "Повідомлення",
     colStatus: "Статус",
     colDate: "Отримано",
+    // TASK-276: names the card-mode row group for screen readers.
+    rowAria: (name: string) => `Повідомлення від ${name}`,
     statusNew: "Нове",
     statusRead: "Прочитане",
     statusArchived: "В архіві",

@@ -1,4 +1,4 @@
-import { render } from "@/shared/test/render";
+import { render, screen, within } from "@/shared/test/render";
 import {
   Table,
   TableBody,
@@ -8,6 +8,24 @@ import {
   TableRow,
 } from "./table";
 import { SortableColumnHeader } from "./sortable-column-header";
+
+/**
+ * jsdom has no layout, so the card breakpoint is simulated by stubbing
+ * `window.matchMedia` — the same source `TableRow` reads to decide whether the
+ * card layout is actually painted (TASK-276).
+ */
+function setCardViewport(matches: boolean) {
+  window.matchMedia = ((query: string) => ({
+    matches,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+}
 
 /**
  * Responsive table primitive (TASK-258-A).
@@ -170,6 +188,91 @@ describe("Table (layout='card')", () => {
   it("never renders a literal 'undefined' caption", () => {
     const { container } = renderCardTable();
     expect(container.textContent).not.toContain("undefined");
+  });
+});
+
+describe("Card-mode row grouping (TASK-276)", () => {
+  const originalMatchMedia = window.matchMedia;
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  function renderRows(layout: "scroll" | "card", rowLabel?: string) {
+    return renderTable(
+      <Table layout={layout}>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
+            <TableHead>Price</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <TableRow rowLabel={rowLabel}>
+            <TableCell label="Name">AirPods Pro</TableCell>
+            <TableCell label="Price">$249</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>,
+    );
+  }
+
+  it("exposes a card-mode row as a labelled group (narrow viewport)", () => {
+    setCardViewport(true);
+    renderRows("card", "AirPods Pro");
+
+    const group = screen.getByRole("group", { name: "AirPods Pro" });
+    expect(group).toHaveAttribute("data-slot", "table-row");
+    // The row's fields are announced inside the group boundary.
+    expect(within(group).getByText("$249")).toBeInTheDocument();
+  });
+
+  it("keeps the sr-only cell labels inside the group", () => {
+    setCardViewport(true);
+    const { cells } = renderRows("card", "AirPods Pro");
+    expect(cells[0].querySelector(".sr-only")?.textContent).toBe("Name: ");
+    expect(cells[0].textContent).toBe("Name: AirPods Pro");
+  });
+
+  it("renders no empty aria-label when rowLabel is omitted", () => {
+    setCardViewport(true);
+    const { row } = renderRows("card");
+    expect(row).toHaveAttribute("role", "group");
+    expect(row).not.toHaveAttribute("aria-label");
+  });
+
+  it("renders no empty aria-label when rowLabel is blank", () => {
+    setCardViewport(true);
+    const { row } = renderRows("card", "   ");
+    expect(row).toHaveAttribute("role", "group");
+    expect(row).not.toHaveAttribute("aria-label");
+  });
+
+  it("leaves native table semantics intact at md+ (card layout not painted)", () => {
+    setCardViewport(false);
+    const { row } = renderRows("card", "AirPods Pro");
+    expect(row).not.toHaveAttribute("role");
+    expect(row).not.toHaveAttribute("aria-label");
+    expect(screen.queryByRole("group")).toBeNull();
+    // Still a real table row.
+    expect(screen.getAllByRole("row")).toHaveLength(2);
+  });
+
+  it("never groups rows in scroll layout, even on a narrow viewport", () => {
+    setCardViewport(true);
+    const { row } = renderRows("scroll", "AirPods Pro");
+    expect(row).not.toHaveAttribute("role");
+    expect(screen.queryByRole("group")).toBeNull();
+  });
+
+  it("does not group the header row in card mode", () => {
+    setCardViewport(true);
+    const { container } = renderRows("card", "AirPods Pro");
+    const headerRow = container.querySelector(
+      '[data-slot="table-header"] [data-slot="table-row"]',
+    );
+    expect(headerRow).not.toHaveAttribute("role");
+    expect(screen.getAllByRole("group")).toHaveLength(1);
   });
 });
 
