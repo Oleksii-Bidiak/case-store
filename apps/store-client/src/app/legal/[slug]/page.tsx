@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import {
   fetchPublishedPage,
   fetchPublishedPages,
 } from "@/shared/api/pages-server";
+import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { LegalDocView, type LegalOtherDoc } from "@/widgets/legal-doc";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
@@ -81,6 +82,12 @@ export default async function LegalDocPage({ params }: LegalDocPageProps) {
   // A draft / missing page resolves to 404 on the API; any error → Next 404.
   const page = await getPage(slug);
   if (!page) {
+    // TASK-285: an admin may have renamed the slug — serve a permanent (308)
+    // redirect to the current address instead of a dead 404.
+    const newSlug = await resolveSlugRedirect("PAGE", slug);
+    if (newSlug) {
+      permanentRedirect(`/legal/${newSlug}`);
+    }
     notFound();
   }
 

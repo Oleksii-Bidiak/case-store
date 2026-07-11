@@ -18,10 +18,30 @@ jest.mock("@/shared/api/seo-settings-server", () => ({
 // `sanitize-html` → `isomorphic-dompurify` (bundled jsdom) can't initialize in
 // the node unit project. generateMetadata never touches it, so stub the barrel.
 jest.mock("@/widgets/legal-doc", () => ({ LegalDocView: () => null }));
+// Next's notFound()/permanentRedirect() throw special signals; mock them with
+// throwing jest.fn()s so the default-export tests can assert which one fired.
+jest.mock("next/navigation", () => ({
+  notFound: jest.fn(() => {
+    throw new Error("NEXT_NOT_FOUND");
+  }),
+  permanentRedirect: jest.fn((url: string) => {
+    throw new Error(`NEXT_REDIRECT:${url}`);
+  }),
+}));
+// Slug-redirect lookup (TASK-285) — mocked per-case below.
+jest.mock("@/shared/lib/slug-redirect", () => ({
+  resolveSlugRedirect: jest.fn(),
+}));
 
-import { generateMetadata } from "./page";
+import LegalDocPage, { generateMetadata } from "./page";
+import { notFound, permanentRedirect } from "next/navigation";
 import { fetchPublishedPage } from "@/shared/api/pages-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
+
+const resolveRedirect = resolveSlugRedirect as jest.MockedFunction<
+  typeof resolveSlugRedirect
+>;
 
 const fetchPage = fetchPublishedPage as jest.MockedFunction<
   typeof fetchPublishedPage
@@ -128,5 +148,44 @@ describe("legal/[slug] generateMetadata (TASK-268 review)", () => {
 
     expect(meta.title).toBeDefined();
     expect(typeof meta.title).toBe("string");
+  });
+});
+
+describe("legal/[slug] slug-redirect (TASK-285)", () => {
+  const runPage = (slug: string) =>
+    LegalDocPage({ params: Promise.resolve({ slug }) });
+
+  it("permanently redirects a renamed slug to its current address", async () => {
+    fetchPage.mockResolvedValue(null); // dead slug — content fetch 404s
+    resolveRedirect.mockResolvedValue("nova-adresa");
+
+    await expect(runPage("stara-adresa")).rejects.toThrow(
+      "NEXT_REDIRECT:/legal/nova-adresa",
+    );
+
+    expect(resolveRedirect).toHaveBeenCalledWith("PAGE", "stara-adresa");
+    expect(permanentRedirect).toHaveBeenCalledWith("/legal/nova-adresa");
+    expect(notFound).not.toHaveBeenCalled();
+  });
+
+  it("still 404s a dead slug with no redirect row (regression)", async () => {
+    fetchPage.mockResolvedValue(null);
+    resolveRedirect.mockResolvedValue(null);
+
+    await expect(runPage("never-existed")).rejects.toThrow("NEXT_NOT_FOUND");
+
+    expect(permanentRedirect).not.toHaveBeenCalled();
+    expect(notFound).toHaveBeenCalled();
+  });
+
+  it("never consults the redirect ledger when the page resolves", async () => {
+    fetchPage.mockResolvedValue(makePage());
+    fetchSeo.mockResolvedValue(settings);
+
+    await runPage("dostavka-ta-oplata");
+
+    expect(resolveRedirect).not.toHaveBeenCalled();
+    expect(permanentRedirect).not.toHaveBeenCalled();
+    expect(notFound).not.toHaveBeenCalled();
   });
 });
