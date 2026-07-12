@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { PinoLogger } from 'nestjs-pino';
 import {
   CategoryRepository,
+  CategoryUpdateResult,
   CreateCategoryInput,
   UpdateCategoryInput,
   FindRootParams,
@@ -247,8 +248,10 @@ export class CategoryService {
     // on a pre-lock read; the repository re-runs the authoritative self-parent / cycle /
     // depth checks against an in-transaction snapshot under the tree advisory lock
     // (plan 158 §3.10.4) and throws the same domain errors, which `toHttp` maps below.
-    const parentChanging = input.parentId !== undefined && input.parentId !== category.parentId;
-
+    // NOTE: this comparison is NON-authoritative and is used for NOTHING but these
+    // fast-fail guards — a concurrent reparent can make it disagree with what actually
+    // happens under the lock, so the side effects below key off the repository's
+    // in-transaction `reparented` flag instead.
     if (input.parentId !== undefined && input.parentId !== category.parentId) {
       // A category can never be its own parent (pre-existing hole, plan §2.1).
       if (input.parentId === id) {
@@ -285,23 +288,31 @@ export class CategoryService {
         ? { oldSlug: category.slug, newSlug: input.slug }
         : undefined;
 
-    let updatedCategory;
+    let result: CategoryUpdateResult;
     try {
-      updatedCategory = await this.categoryRepository.update(id, input, slugRename);
+      result = await this.categoryRepository.update(id, input, slugRename);
     } catch (error) {
       throw this.toHttp(error);
     }
 
-    if (parentChanging) {
+    if (result.reparented) {
       // Same post-commit side effects as the batch endpoint (plan §3.13) — a reparent
       // changes subtree membership, which is baked into BOTH the category-filtered
       // product-list cache key rollup and the products' indexed ancestor chains. Both
       // were pre-existing holes on this path (§2.1).
+      //
+      // The gate is the repository's AUTHORITATIVE, tree-locked verdict — NOT the
+      // pre-transaction `input.parentId !== category.parentId` comparison above. Those
+      // two disagree whenever another admin reparents this node between our unlocked read
+      // and the lock: a full-object PUT re-sending the (now stale) parent would then look
+      // like "no change" here while the repository legitimately moves the node back — and
+      // the cache/index would silently rot. `movedIds` does the same job for the batch
+      // endpoint; this is its single-node twin.
       await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
       this.reindexSubtreesInBackground([id]);
     }
 
-    return CategoryEntity.fromPrisma(updatedCategory);
+    return CategoryEntity.fromPrisma(result.category);
   }
 
   /**

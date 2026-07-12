@@ -13,6 +13,21 @@ import {
 } from '../src/category/category.errors';
 import { PrismaService } from '../src/prisma';
 import { SlugRedirectRepository } from '../src/slug-redirect';
+import { treeLockKey } from '../src/common/reorder';
+
+/** The very key `CategoryRepository` locks on for any parent change (plan 158 §3.8). */
+const TREE_LOCK_KEY = treeLockKey('categories');
+
+/** Reject (rather than hang) if `promise` is still pending after `ms`. */
+const withTimeout = <T>(promise: Promise<T>, ms: number, what: string): Promise<T> => {
+  let timer: NodeJS.Timeout;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`Timed out after ${ms}ms: ${what}`)), ms);
+    }),
+  ]);
+};
 
 /**
  * Integration tests for the batch reorder/reparent write path (TASK-291-C, plan
@@ -306,6 +321,12 @@ describe('CategoryRepository batch reorder (integration)', () => {
 
       await repo.applyTreeMoves([{ parentId: root, orderedIds: [a2, a1] }]);
       const before = await rows([root, a1, a2]);
+
+      // The FIRST call must actually have written the requested order — without this the
+      // test would pass green against a no-op `applyTreeMoves` (both snapshots identical).
+      const firstPass = await bucket(root);
+      expect(firstPass.map((c) => c.id)).toEqual([a2, a1]);
+      expectContiguous(firstPass);
 
       await repo.applyTreeMoves([{ parentId: root, orderedIds: [a2, a1] }]);
       const after = await rows([root, a1, a2]);
@@ -607,8 +628,9 @@ describe('CategoryRepository batch reorder (integration)', () => {
       const a3 = await mk('ud-a3', a, 2);
       const b1 = await mk('ud-b1', b, 0);
 
-      const moved = await repo.update(a2, { parentId: b });
+      const { category: moved, reparented } = await repo.update(a2, { parentId: b });
 
+      expect(reparented).toBe(true);
       expect(moved.parentId).toBe(b);
       expect(moved.sortOrder).toBe(1); // max(b) = 0 → 1
 
@@ -619,6 +641,43 @@ describe('CategoryRepository batch reorder (integration)', () => {
       const dest = await bucket(b);
       expect(dest.map((c) => c.id)).toEqual([b1, a2]);
       expectContiguous(dest);
+    });
+
+    // Plan §3.10.4 scopes the whole-tree lock to an ACTUAL parent change. A full-object
+    // PUT re-sends the unchanged current parent on every rename; if that took the tree
+    // lock, ordinary renames would serialise against every drag-and-drop in the tree.
+    it('does NOT take the tree lock when parentId is present but unchanged', async () => {
+      const root = await mk('nl-root', null);
+      const a = await mk('nl-a', root, 0);
+      const b = await mk('nl-b', root, 1);
+
+      // Hold the tree lock in another transaction for the duration of the call.
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      const holder = prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${TREE_LOCK_KEY}::text, 0))`;
+          await held;
+        },
+        { timeout: 20_000, maxWait: 10_000 },
+      );
+
+      try {
+        const result = await withTimeout(
+          repo.update(a, { name: 'nl-a-renamed', parentId: root }),
+          3_000,
+          'update(parentId unchanged) blocked on the tree lock',
+        );
+
+        expect(result.reparented).toBe(false);
+        expect(result.category.name).toBe('nl-a-renamed');
+        expect(result.category.parentId).toBe(root);
+        // The sibling bucket was not resequenced by a phantom "move".
+        expect((await bucket(root)).map((c) => c.id)).toEqual([a, b]);
+      } finally {
+        release();
+        await holder;
+      }
     });
 
     it('rejects a self-parent (parentId === id) — the hole PUT /:id has today', async () => {
@@ -654,12 +713,13 @@ describe('CategoryRepository batch reorder (integration)', () => {
       const before = await prisma.category.findUnique({ where: { id: child } });
 
       const newSlug = `ur-child-renamed-${randomUUID()}`;
-      const updated = await repo.update(
+      const { category: updated, reparented } = await repo.update(
         child,
         { parentId: b, slug: newSlug },
         { oldSlug: before!.slug, newSlug },
       );
 
+      expect(reparented).toBe(true);
       expect(updated.parentId).toBe(b);
       expect(updated.slug).toBe(newSlug);
 

@@ -5,8 +5,11 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsUUID,
+  Validate,
   ValidateIf,
   ValidateNested,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
 } from 'class-validator';
 
 /**
@@ -23,6 +26,40 @@ import {
  * invent an absolute `sortOrder` (the collision source). The server does NOT trust the
  * payload's bucket set: it computes the affected-parent closure itself, in-transaction.
  */
+
+/**
+ * Hard cap on the TOTAL number of ids a single reorder request may carry, across ALL its
+ * groups (plan 158 §3.7: the taxonomy is tens–low hundreds of rows).
+ *
+ * The per-field maxima alone (`@ArrayMaxSize(20)` groups × `@ArrayMaxSize(500)` ids) would
+ * multiply out to 10 000 ids — orders of magnitude beyond any legitimate bucket — and each
+ * one is looked up against a full in-transaction table snapshot while the TREE advisory
+ * lock is held, so an oversized (and, in practice, entirely bogus) payload would hold that
+ * lock far longer than any real reorder needs it. Admin-gated, so this is not a DoS vector;
+ * the cap is here so an admin-side mistake (or a compromised admin session) cannot stall
+ * every other category write.
+ */
+export const MAX_REORDER_IDS = 500;
+
+/** Enforces {@link MAX_REORDER_IDS} across the whole payload, not per field. */
+@ValidatorConstraint({ name: 'maxTotalOrderedIds', async: false })
+export class MaxTotalOrderedIdsConstraint implements ValidatorConstraintInterface {
+  validate(groups: unknown): boolean {
+    // Shape violations are reported by @IsArray/@ValidateNested — not this constraint's job.
+    if (!Array.isArray(groups)) return true;
+
+    const total = groups.reduce<number>((sum, group: unknown) => {
+      const ids = (group as ReorderGroupDto | undefined)?.orderedIds;
+      return sum + (Array.isArray(ids) ? ids.length : 0);
+    }, 0);
+
+    return total <= MAX_REORDER_IDS;
+  }
+
+  defaultMessage(): string {
+    return `groups must not carry more than ${MAX_REORDER_IDS} ids in total`;
+  }
+}
 
 /** One parent bucket's complete, final child list. */
 export class ReorderGroupDto {
@@ -62,6 +99,7 @@ export class ReorderTreeDto {
   @IsArray()
   @ArrayNotEmpty()
   @ArrayMaxSize(20)
+  @Validate(MaxTotalOrderedIdsConstraint)
   @ValidateNested({ each: true })
   @Type(() => ReorderGroupDto)
   groups!: ReorderGroupDto[];
@@ -74,6 +112,7 @@ export class ReorderFlatDto {
     type: [String],
   })
   @IsArray()
+  @ArrayMaxSize(MAX_REORDER_IDS)
   @IsUUID('4', { each: true })
   orderedIds!: string[];
 }

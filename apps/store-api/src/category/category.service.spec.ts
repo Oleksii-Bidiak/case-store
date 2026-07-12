@@ -485,7 +485,10 @@ describe('CategoryService', () => {
         updatedAt: new Date('2026-05-05T12:00:00.000Z'),
       };
       categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
-      categoryRepositoryMock.update.mockResolvedValue(updatedCategory);
+      categoryRepositoryMock.update.mockResolvedValue({
+        category: updatedCategory,
+        reparented: false,
+      });
 
       const result = await service.update('cat-uuid-1', updateInput);
 
@@ -502,7 +505,10 @@ describe('CategoryService', () => {
     it('records a slug redirect when renaming an ACTIVE category', async () => {
       categoryRepositoryMock.findById.mockResolvedValue(mockCategory); // isActive: true
       categoryRepositoryMock.findBySlug.mockResolvedValue(null);
-      categoryRepositoryMock.update.mockResolvedValue({ ...mockCategory, slug: 'new-slug' });
+      categoryRepositoryMock.update.mockResolvedValue({
+        category: { ...mockCategory, slug: 'new-slug' },
+        reparented: false,
+      });
 
       await service.update('cat-uuid-1', { slug: 'new-slug' });
 
@@ -517,8 +523,8 @@ describe('CategoryService', () => {
       categoryRepositoryMock.findById.mockResolvedValue(mockInactiveCategory); // isActive: false
       categoryRepositoryMock.findBySlug.mockResolvedValue(null);
       categoryRepositoryMock.update.mockResolvedValue({
-        ...mockInactiveCategory,
-        slug: 'new-slug',
+        category: { ...mockInactiveCategory, slug: 'new-slug' },
+        reparented: false,
       });
 
       await service.update('cat-uuid-3', { slug: 'new-slug' });
@@ -534,9 +540,8 @@ describe('CategoryService', () => {
       categoryRepositoryMock.findById.mockResolvedValue(mockCategory); // isActive: true BEFORE the write
       categoryRepositoryMock.findBySlug.mockResolvedValue(null);
       categoryRepositoryMock.update.mockResolvedValue({
-        ...mockCategory,
-        slug: 'new-slug',
-        isActive: false,
+        category: { ...mockCategory, slug: 'new-slug', isActive: false },
+        reparented: false,
       });
 
       await service.update('cat-uuid-1', { slug: 'new-slug', isActive: false });
@@ -578,7 +583,10 @@ describe('CategoryService', () => {
       };
       categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
       categoryRepositoryMock.findBySlug.mockResolvedValue(mockCategory); // same category
-      categoryRepositoryMock.update.mockResolvedValue(mockCategory);
+      categoryRepositoryMock.update.mockResolvedValue({
+        category: mockCategory,
+        reparented: false,
+      });
 
       const result = await service.update('cat-uuid-1', updateWithSameSlug);
 
@@ -621,8 +629,8 @@ describe('CategoryService', () => {
       // mockChildCategory has parentId 'cat-uuid-1'; clearing it makes it a root.
       categoryRepositoryMock.findById.mockResolvedValue(mockChildCategory);
       categoryRepositoryMock.update.mockResolvedValue({
-        ...mockChildCategory,
-        parentId: null,
+        category: { ...mockChildCategory, parentId: null },
+        reparented: true,
       });
 
       const updateClearParent: UpdateCategoryInput = { parentId: null };
@@ -692,8 +700,8 @@ describe('CategoryService', () => {
       categoryRepositoryMock.findById.mockResolvedValueOnce(mockCategory); // new parent
       categoryRepositoryMock.findDescendantIds.mockResolvedValue([]);
       categoryRepositoryMock.update.mockResolvedValue({
-        ...mockChildCategory,
-        parentId: 'cat-uuid-3',
+        category: { ...mockChildCategory, parentId: 'cat-uuid-3' },
+        reparented: true,
       });
 
       await service.update('cat-uuid-2', { parentId: 'cat-uuid-3' });
@@ -709,9 +717,51 @@ describe('CategoryService', () => {
 
     it('does NOT evict or reindex when the parent is not changing', async () => {
       categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
-      categoryRepositoryMock.update.mockResolvedValue({ ...mockCategory, name: 'Renamed' });
+      categoryRepositoryMock.update.mockResolvedValue({
+        category: { ...mockCategory, name: 'Renamed' },
+        reparented: false,
+      });
 
       await service.update('cat-uuid-1', { name: 'Renamed' });
+
+      expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+      expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
+    });
+
+    // The side effects are gated on the repository's AUTHORITATIVE, tree-locked verdict —
+    // NOT on the service's pre-lock `input.parentId !== category.parentId` comparison.
+    // A full-object PUT re-sending the parent it read a moment ago looks like "no change"
+    // here, yet the repository (which re-reads the parent under the tree lock, after a
+    // concurrent admin moved the node elsewhere) legitimately moves it back. Missing the
+    // eviction/reindex here rots the product-list cache and the indexed ancestor chains.
+    it('evicts and reindexes when the repository reports a reparent the pre-lock read did not predict', async () => {
+      // mockChildCategory.parentId === 'cat-uuid-1'; the payload re-sends exactly that.
+      categoryRepositoryMock.findById.mockResolvedValue(mockChildCategory);
+      categoryRepositoryMock.findById.mockResolvedValueOnce(mockChildCategory); // the node
+      categoryRepositoryMock.update.mockResolvedValue({
+        category: mockChildCategory,
+        reparented: true, // …but under the lock the node DID move (back) — a real reparent
+      });
+
+      await service.update('cat-uuid-2', { parentId: 'cat-uuid-1' });
+
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledWith(['cat-uuid-2']);
+    });
+
+    // The mirror image: the pre-lock read says "changing", but under the lock a concurrent
+    // write had already put the node there, so NOTHING moved — no side effects.
+    it('does NOT evict or reindex when the repository reports no actual reparent', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
+      categoryRepositoryMock.findById.mockResolvedValueOnce(mockChildCategory);
+      categoryRepositoryMock.findById.mockResolvedValueOnce(mockCategory);
+      categoryRepositoryMock.findDescendantIds.mockResolvedValue([]);
+      categoryRepositoryMock.update.mockResolvedValue({
+        category: { ...mockChildCategory, parentId: 'cat-uuid-3' },
+        reparented: false,
+      });
+
+      await service.update('cat-uuid-2', { parentId: 'cat-uuid-3' });
 
       expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
       expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
@@ -723,8 +773,8 @@ describe('CategoryService', () => {
       categoryRepositoryMock.findById.mockResolvedValueOnce(mockCategory);
       categoryRepositoryMock.findDescendantIds.mockResolvedValue([]);
       categoryRepositoryMock.update.mockResolvedValue({
-        ...mockChildCategory,
-        parentId: 'cat-uuid-3',
+        category: { ...mockChildCategory, parentId: 'cat-uuid-3' },
+        reparented: true,
       });
       subtreeIndexerMock.reindexSubtrees.mockRejectedValue(new Error('meili down'));
 

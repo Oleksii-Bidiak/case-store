@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SlugRedirectEntity } from '@prisma/client';
 import { CategoryRepository } from './category.repository';
+import { CategoryNotFoundError } from './category.errors';
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
 
@@ -13,8 +14,10 @@ import { SlugRedirectRepository } from '../slug-redirect';
  * Postgres tree in `test/category.repository.int-spec.ts`.
  */
 const txMock = {
+  $executeRaw: jest.fn(),
   category: {
     update: jest.fn(),
+    findUnique: jest.fn(),
   },
 };
 
@@ -27,6 +30,7 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
   const queryRaw = jest.fn();
   const findMany = jest.fn();
   const update = jest.fn();
+  const findUnique = jest.fn();
   const $transaction = jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock));
 
   beforeEach(async () => {
@@ -36,7 +40,11 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
         CategoryRepository,
         {
           provide: PrismaService,
-          useValue: { $queryRaw: queryRaw, category: { findMany, update }, $transaction },
+          useValue: {
+            $queryRaw: queryRaw,
+            category: { findMany, update, findUnique },
+            $transaction,
+          },
         },
         { provide: SlugRedirectRepository, useValue: slugRedirectRepositoryMock },
       ],
@@ -48,11 +56,43 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
     it('never opens a transaction nor records a redirect when slugRename is absent', async () => {
       update.mockResolvedValue({ id: 'cat-1' });
 
-      await repo.update('cat-1', { name: 'Renamed' });
+      const result = await repo.update('cat-1', { name: 'Renamed' });
 
+      expect(result.reparented).toBe(false);
       expect(update).toHaveBeenCalledTimes(1);
       expect($transaction).not.toHaveBeenCalled();
       expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+    });
+
+    // Plan 158 §3.10.4: the whole-tree lock is for an ACTUAL parent change. A full-object
+    // PUT re-sending the unchanged current parent must stay on the lock-free fast path —
+    // and must never write `parentId` back outside the locks.
+    it('takes the fast path (no transaction) when parentId is present but unchanged', async () => {
+      findUnique.mockResolvedValue({ parentId: 'parent-1' });
+      update.mockResolvedValue({ id: 'cat-1', parentId: 'parent-1' });
+
+      const result = await repo.update('cat-1', { name: 'Renamed', parentId: 'parent-1' });
+
+      expect(result.reparented).toBe(false);
+      expect($transaction).not.toHaveBeenCalled();
+      expect(update).toHaveBeenCalledWith({
+        where: { id: 'cat-1' },
+        data: { name: 'Renamed' }, // parentId dropped — it is not changing
+      });
+    });
+
+    it('opens the locked transaction when parentId actually differs from the current one', async () => {
+      findUnique.mockResolvedValue({ parentId: 'parent-1' });
+      txMock.category.findUnique.mockResolvedValue(null); // prepareReparent's in-tx re-read
+
+      await expect(repo.update('cat-1', { parentId: 'parent-2' })).rejects.toBeInstanceOf(
+        CategoryNotFoundError,
+      );
+
+      // The locked path WAS entered (the tree lock was taken before the in-tx re-read).
+      expect($transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.$executeRaw).toHaveBeenCalled();
+      expect(update).not.toHaveBeenCalled();
     });
 
     it('runs the category update + recordRename inside one transaction when slugRename is given', async () => {
@@ -65,7 +105,8 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
         { oldSlug: 'old-slug', newSlug: 'new-slug' },
       );
 
-      expect(result).toBe(renamed);
+      expect(result.category).toBe(renamed);
+      expect(result.reparented).toBe(false);
       expect($transaction).toHaveBeenCalledTimes(1);
       expect(txMock.category.update).toHaveBeenCalledWith(
         expect.objectContaining({

@@ -567,9 +567,12 @@ describe('CategoryController (e2e)', () => {
 
       categoryRepositoryMock.findById.mockResolvedValue(testCategory);
       categoryRepositoryMock.update.mockResolvedValue({
-        ...testCategory,
-        name: 'Updated Category Name',
-        updatedAt: new Date('2026-05-05T12:00:00.000Z'),
+        category: {
+          ...testCategory,
+          name: 'Updated Category Name',
+          updatedAt: new Date('2026-05-05T12:00:00.000Z'),
+        },
+        reparented: false,
       });
 
       const response = await request(app.getHttpServer())

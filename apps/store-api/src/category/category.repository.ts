@@ -180,6 +180,21 @@ export interface TreeMovesResult {
   movedIds: string[];
 }
 
+/**
+ * Result of {@link CategoryRepository.update} (TASK-291).
+ *
+ * `reparented` — the single-node counterpart of {@link TreeMovesResult.movedIds}: `true`
+ * iff a parent change was ACTUALLY applied, as decided under the tree advisory lock by
+ * `prepareReparent` against the freshly locked row (never from the service's pre-lock
+ * read, which a concurrent reparent can invalidate — plan 158 §3.13). The service keys
+ * its post-commit side effects (product-list cache eviction + subtree re-index) off THIS
+ * flag, so a move can never commit without them.
+ */
+export interface CategoryUpdateResult {
+  category: Category;
+  reparented: boolean;
+}
+
 @Injectable()
 export class CategoryRepository {
   private readonly logger = new Logger(CategoryRepository.name);
@@ -791,15 +806,39 @@ export class CategoryRepository {
    * write commit in ONE transaction. When absent, the behavior is the
    * pre-TASK-285 single-statement update (no transaction on the hot,
    * no-rename path).
+   *
+   * Returns {@link CategoryUpdateResult} — the `reparented` flag is the AUTHORITATIVE
+   * (in-transaction, tree-locked) answer to "did this write actually move the node?", and
+   * is what the service gates its post-commit side effects on (§3.13).
    */
-  update(id: string, data: UpdateCategoryInput, slugRename?: SlugRenameInput): Promise<Category> {
-    const mayChangeParent = data.parentId !== undefined;
+  async update(
+    id: string,
+    data: UpdateCategoryInput,
+    slugRename?: SlugRenameInput,
+  ): Promise<CategoryUpdateResult> {
+    // PRESENCE of `parentId` is not a parent CHANGE: a full-object PUT re-sends the
+    // unchanged current parent on every rename, and taking the whole-tree lock for that
+    // would serialise every rename against every drag-and-drop (§3.10.4 scopes the locked
+    // path to an ACTUAL change). This read is UNLOCKED and therefore only a hint — which
+    // is safe in BOTH directions:
+    //   • hint says "changing"  → `prepareReparent` re-decides under the tree lock and may
+    //     find there is nothing to move (someone got there first) → `reparented: false`.
+    //   • hint says "unchanged" → `parentId` is DROPPED from the write, so a reparent that
+    //     commits between this read and the write is never silently undone OUTSIDE the
+    //     locks (it simply wins — an equivalent serialisation of the two requests).
+    const mayChangeParent =
+      data.parentId !== undefined && data.parentId !== (await this.currentParentId(id));
+
+    // Parent is present but unchanged as of the read above → never write it.
+    let writeData: UpdateCategoryInput = data;
+    if (data.parentId !== undefined && !mayChangeParent) {
+      writeData = { ...data };
+      delete writeData.parentId;
+    }
 
     if (!slugRename && !mayChangeParent) {
-      return this.prisma.category.update({
-        where: { id },
-        data,
-      });
+      const category = await this.prisma.category.update({ where: { id }, data: writeData });
+      return { category, reparented: false };
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -809,9 +848,9 @@ export class CategoryRepository {
       // relies on (plan 158 §3.10.4).
       const reparent = mayChangeParent ? await this.prepareReparent(tx, id, data.parentId!) : null;
 
-      const updated = await tx.category.update({
+      const category = await tx.category.update({
         where: { id },
-        data: reparent ? { ...data, sortOrder: reparent.sortOrder } : data,
+        data: reparent ? { ...writeData, sortOrder: reparent.sortOrder } : writeData,
       });
 
       if (reparent) {
@@ -827,8 +866,24 @@ export class CategoryRepository {
         );
       }
 
-      return updated;
+      return { category, reparented: reparent !== null };
     });
+  }
+
+  /**
+   * The committed `parentId` of `id`. Read WITHOUT any lock — a hint only (see
+   * {@link update}); every authoritative parentage decision is re-taken by
+   * `prepareReparent` under {@link TREE_LOCK_KEY}.
+   */
+  private async currentParentId(id: string): Promise<string | null> {
+    const current = await this.prisma.category.findUnique({
+      where: { id },
+      select: { parentId: true },
+    });
+    if (!current) {
+      throw new CategoryNotFoundError(`Category "${id}" not found`);
+    }
+    return current.parentId;
   }
 
   /**
