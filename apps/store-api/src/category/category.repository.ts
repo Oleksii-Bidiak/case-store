@@ -112,7 +112,8 @@ export interface CreateCategoryInput {
   description?: string | null;
   image?: string | null;
   parentId?: string | null;
-  sortOrder?: number;
+  // No `sortOrder` (TASK-291, plan 158 §3.10.1): the batch reorder endpoint is the ONLY
+  // writer of `sortOrder`. `create()` appends to the end of the destination bucket.
   isActive?: boolean;
   metaTitle?: string | null;
   metaDescription?: string | null;
@@ -128,7 +129,8 @@ export interface UpdateCategoryInput {
   description?: string | null;
   image?: string | null;
   parentId?: string | null;
-  sortOrder?: number;
+  // No `sortOrder` (TASK-291, plan 158 §3.10.1) — see {@link CreateCategoryInput}. A
+  // parent change re-appends the node to its destination bucket under the tree lock.
   isActive?: boolean;
   metaTitle?: string | null;
   metaDescription?: string | null;
@@ -157,6 +159,20 @@ export interface CategoryWithCountResult {
 export interface PaginatedCategoriesWithCountResult {
   categories: CategoryWithCountResult[];
   total: number;
+}
+
+/**
+ * Result of {@link CategoryRepository.applyTreeMoves} (TASK-291).
+ *
+ * `movedIds` — the nodes whose `parentId` ACTUALLY changed (a pure sibling reorder moves
+ * nothing). The service needs it for the post-commit side effects (§3.13: subtree
+ * re-index + the audit log line), and only the transaction that holds the snapshot can
+ * compute it, so it is reported alongside the refreshed tree rather than re-derived from
+ * a second, racy read.
+ */
+export interface TreeMovesResult {
+  tree: AdminCategoryTreeNodeEntity[];
+  movedIds: string[];
 }
 
 @Injectable()
@@ -432,7 +448,7 @@ export class CategoryRepository {
    * Throws the domain errors of `category.errors.ts` (never HTTP exceptions — the service
    * maps them).
    */
-  async applyTreeMoves(groups: ReorderGroupInput[]): Promise<AdminCategoryTreeNodeEntity[]> {
+  async applyTreeMoves(groups: ReorderGroupInput[]): Promise<TreeMovesResult> {
     // A pure same-parent reorder only needs its buckets locked; ANY reparent needs the
     // tree-scoped lock. Whether the payload reparents anything can only be known against
     // a parent map, so it is guessed from an unlocked read and — if the guess turns out
@@ -450,10 +466,7 @@ export class CategoryRepository {
     }
   }
 
-  private runTreeMoves(
-    groups: ReorderGroupInput[],
-    treeMode: boolean,
-  ): Promise<AdminCategoryTreeNodeEntity[]> {
+  private runTreeMoves(groups: ReorderGroupInput[], treeMode: boolean): Promise<TreeMovesResult> {
     return this.prisma.$transaction(
       async (tx) => {
         let snapshot: CategorySnapshotRow[];
@@ -506,7 +519,14 @@ export class CategoryRepository {
 
         await this.writeRows(tx, writes);
 
-        return this.findCategoryTreeForAdmin(tx);
+        // The MOVED set (plan §3.13): the rows whose `parentId` actually changes. It is
+        // exactly the set of subtree roots whose products' indexed ancestor chains went
+        // stale, so the service reindexes and logs precisely these.
+        const movedIds = writes
+          .filter((write) => parentById.get(write.id) !== write.parentId)
+          .map((write) => write.id);
+
+        return { tree: await this.findCategoryTreeForAdmin(tx), movedIds };
       },
       // A lock wait happens INSIDE the transaction, so it is charged against `timeout`
       // (not `maxWait`); the defaults (5s/2s) are raised so a short queue of admins can

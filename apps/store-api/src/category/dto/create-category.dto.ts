@@ -3,14 +3,11 @@ import {
   IsOptional,
   IsBoolean,
   IsUUID,
-  IsInt,
   MaxLength,
-  Min,
   Matches,
   IsUrl,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
 
 /**
  * DTO for creating a new category.
@@ -71,17 +68,11 @@ export class CreateCategoryDto {
   @IsUUID(4, { message: 'Parent ID must be a valid UUID' })
   parentId?: string;
 
-  @ApiProperty({
-    description: 'Sort order for display (lower values appear first)',
-    example: 0,
-    required: false,
-    default: 0,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt({ message: 'Sort order must be an integer' })
-  @Min(0, { message: 'Sort order must be at least 0' })
-  sortOrder?: number;
+  // NOTE (TASK-291, plan 158 §3.10.1): `sortOrder` is deliberately NOT accepted here.
+  // `PATCH /api/admin/categories/reorder` is the single writer of sibling order, and a
+  // new category is appended to the end of its destination bucket by the repository.
+  // Re-adding this field would let a stale or scripted call re-introduce a duplicate
+  // slot into a bucket the batch endpoint just densified to a contiguous 0..n-1.
 
   @ApiProperty({
     description: 'Whether the category is active and visible in the store',

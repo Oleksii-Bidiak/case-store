@@ -205,7 +205,9 @@ describe('CategoryRepository batch reorder (integration)', () => {
       const a2 = await mk('ro-a2', root, 1);
       const a3 = await mk('ro-a3', root, 2);
 
-      const tree = await repo.applyTreeMoves([{ parentId: root, orderedIds: [a3, a1, a2] }]);
+      const { tree, movedIds } = await repo.applyTreeMoves([
+        { parentId: root, orderedIds: [a3, a1, a2] },
+      ]);
 
       const children = await bucket(root);
       expect(children.map((c) => c.id)).toEqual([a3, a1, a2]);
@@ -214,6 +216,26 @@ describe('CategoryRepository batch reorder (integration)', () => {
       // The returned tree is the refreshed admin tree.
       const node = tree.find((n) => n.id === root)!;
       expect(node.children.map((n) => n.id)).toEqual([a3, a1, a2]);
+
+      // A pure sibling reorder moves NOTHING between buckets (TASK-291-D §3.13).
+      expect(movedIds).toEqual([]);
+    });
+  });
+
+  describe('applyTreeMoves — movedIds (post-commit side-effect input, §3.13)', () => {
+    it('reports exactly the nodes whose parentId actually changed', async () => {
+      const root = await mk('mv-root', null);
+      const a = await mk('mv-a', root, 0);
+      const b = await mk('mv-b', root, 1);
+      const a1 = await mk('mv-a1', a, 0);
+      const a2 = await mk('mv-a2', a, 1);
+
+      const { movedIds } = await repo.applyTreeMoves([
+        { parentId: a, orderedIds: [a2] },
+        { parentId: b, orderedIds: [a1] }, // a1 is the only REPARENTED node
+      ]);
+
+      expect(movedIds).toEqual([a1]);
     });
   });
 

@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { ProductRepository, ProductIndexSource } from '../product/product.repository';
-import { CategoryRepository } from '../category';
+import { CategoryRepository } from '../category/category.repository';
 import { PublicProductEntity } from '../product/entities';
 import { MeiliClient, ProductSearchDocument, IndexSettings } from './meili.client';
 import { UA_EN_SYNONYMS, extractUaSearchTerms } from './search-synonyms';

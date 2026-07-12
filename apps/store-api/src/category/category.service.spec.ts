@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
 import {
   CategoryRepository,
   CreateCategoryInput,
@@ -15,6 +16,16 @@ import {
   CategoryWithCountEntity,
 } from './entities';
 import { CategoryListQueryDto } from './dto';
+import {
+  CategoryCycleError,
+  CategoryDuplicateIdError,
+  CategoryMaxDepthError,
+  CategoryNotFoundError,
+  CategorySelfParentError,
+  CategoryTreeStaleError,
+} from './category.errors';
+import { CacheService, PRODUCT_LIST_PREFIX } from '../cache';
+import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -71,6 +82,22 @@ const categoryRepositoryMock = {
   activate: jest.fn(),
   findChildren: jest.fn(),
   findDescendantIds: jest.fn(),
+  applyTreeMoves: jest.fn(),
+};
+
+const cacheMock = {
+  delByPrefix: jest.fn().mockResolvedValue(undefined),
+};
+
+const subtreeIndexerMock = {
+  reindexSubtrees: jest.fn().mockResolvedValue(undefined),
+};
+
+const pinoLoggerMock = {
+  setContext: jest.fn(),
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
 };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -80,6 +107,8 @@ describe('CategoryService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    cacheMock.delByPrefix.mockResolvedValue(undefined);
+    subtreeIndexerMock.reindexSubtrees.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -88,6 +117,9 @@ describe('CategoryService', () => {
           provide: CategoryRepository,
           useValue: categoryRepositoryMock,
         },
+        { provide: CacheService, useValue: cacheMock },
+        { provide: CategorySubtreeIndexer, useValue: subtreeIndexerMock },
+        { provide: PinoLogger, useValue: pinoLoggerMock },
       ],
     }).compile();
 
@@ -606,6 +638,220 @@ describe('CategoryService', () => {
         { parentId: null },
         undefined,
       );
+    });
+  });
+
+  // ─── update — parent-change guards + side effects (TASK-291-D) ───────────────
+
+  describe('update — parent change (plan 158 §3.10 / §3.13)', () => {
+    it('rejects a self-parent with a coded 400 and never reaches the repository', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
+
+      await expect(service.update('cat-uuid-1', { parentId: 'cat-uuid-1' })).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.update('cat-uuid-1', { parentId: 'cat-uuid-1' })).rejects.toMatchObject({
+        response: { error: 'CATEGORY_SELF_PARENT' },
+      });
+      expect(categoryRepositoryMock.update).not.toHaveBeenCalled();
+      expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+      expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
+    });
+
+    it('maps the repository depth guard (level + height − 1 > 4) to a coded 400', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
+      categoryRepositoryMock.findById.mockResolvedValueOnce(mockChildCategory); // the node
+      categoryRepositoryMock.findById.mockResolvedValueOnce(mockCategory); // the new parent
+      categoryRepositoryMock.findDescendantIds.mockResolvedValue([]);
+      categoryRepositoryMock.update.mockRejectedValue(new CategoryMaxDepthError());
+
+      await expect(service.update('cat-uuid-2', { parentId: 'cat-uuid-1' })).rejects.toMatchObject({
+        status: 400,
+        response: { error: 'CATEGORY_MAX_DEPTH' },
+      });
+      expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+      expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
+    });
+
+    it('maps the repository cycle guard to a coded 400', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
+      categoryRepositoryMock.findById.mockResolvedValueOnce(mockChildCategory);
+      categoryRepositoryMock.findById.mockResolvedValueOnce(mockCategory);
+      categoryRepositoryMock.findDescendantIds.mockResolvedValue([]);
+      categoryRepositoryMock.update.mockRejectedValue(new CategoryCycleError());
+
+      await expect(service.update('cat-uuid-2', { parentId: 'cat-uuid-1' })).rejects.toMatchObject({
+        status: 400,
+        response: { error: 'CATEGORY_CYCLE' },
+      });
+    });
+
+    it('evicts the product-list cache AFTER the write and reindexes the moved subtree', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
+      categoryRepositoryMock.findById.mockResolvedValueOnce(mockChildCategory); // cat-uuid-2
+      categoryRepositoryMock.findById.mockResolvedValueOnce(mockCategory); // new parent
+      categoryRepositoryMock.findDescendantIds.mockResolvedValue([]);
+      categoryRepositoryMock.update.mockResolvedValue({
+        ...mockChildCategory,
+        parentId: 'cat-uuid-3',
+      });
+
+      await service.update('cat-uuid-2', { parentId: 'cat-uuid-3' });
+
+      expect(cacheMock.delByPrefix).toHaveBeenCalledTimes(1);
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.delByPrefix.mock.invocationCallOrder[0]).toBeGreaterThan(
+        categoryRepositoryMock.update.mock.invocationCallOrder[0],
+      );
+      expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledTimes(1);
+      expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledWith(['cat-uuid-2']);
+    });
+
+    it('does NOT evict or reindex when the parent is not changing', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
+      categoryRepositoryMock.update.mockResolvedValue({ ...mockCategory, name: 'Renamed' });
+
+      await service.update('cat-uuid-1', { name: 'Renamed' });
+
+      expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+      expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
+    });
+
+    it('does not fail the request when the subtree reindex rejects', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
+      categoryRepositoryMock.findById.mockResolvedValueOnce(mockChildCategory);
+      categoryRepositoryMock.findById.mockResolvedValueOnce(mockCategory);
+      categoryRepositoryMock.findDescendantIds.mockResolvedValue([]);
+      categoryRepositoryMock.update.mockResolvedValue({
+        ...mockChildCategory,
+        parentId: 'cat-uuid-3',
+      });
+      subtreeIndexerMock.reindexSubtrees.mockRejectedValue(new Error('meili down'));
+
+      await expect(
+        service.update('cat-uuid-2', { parentId: 'cat-uuid-3' }),
+      ).resolves.toBeInstanceOf(CategoryEntity);
+    });
+  });
+
+  // ─── reorderTree (admin, TASK-291-D) ─────────────────────────────────────────
+
+  describe('reorderTree', () => {
+    const adminTree = [
+      {
+        id: 'cat-uuid-1',
+        name: 'Phone Cases',
+        slug: 'phone-cases',
+        parentId: null,
+        productCount: 2,
+        depth: 1,
+        children: [],
+      },
+    ] as unknown as AdminCategoryTreeNodeEntity[];
+
+    const groups = [
+      { parentId: null, orderedIds: ['cat-uuid-1'] },
+      { parentId: 'cat-uuid-1', orderedIds: ['cat-uuid-2'] },
+    ];
+
+    it('returns the refreshed admin tree and calls the repository EXACTLY ONCE', async () => {
+      categoryRepositoryMock.applyTreeMoves.mockResolvedValue({
+        tree: adminTree,
+        movedIds: ['cat-uuid-2'],
+      });
+
+      const result = await service.reorderTree({ groups }, 'admin-1');
+
+      expect(result).toEqual({ data: adminTree });
+      expect(categoryRepositoryMock.applyTreeMoves).toHaveBeenCalledTimes(1);
+      expect(categoryRepositoryMock.applyTreeMoves).toHaveBeenCalledWith(groups);
+    });
+
+    it('evicts the product-list cache exactly once, AFTER the transaction', async () => {
+      categoryRepositoryMock.applyTreeMoves.mockResolvedValue({
+        tree: adminTree,
+        movedIds: ['cat-uuid-2'],
+      });
+
+      await service.reorderTree({ groups }, 'admin-1');
+
+      expect(cacheMock.delByPrefix).toHaveBeenCalledTimes(1);
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.delByPrefix.mock.invocationCallOrder[0]).toBeGreaterThan(
+        categoryRepositoryMock.applyTreeMoves.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('reindexes exactly once with the moved-root ids reported by the repository', async () => {
+      categoryRepositoryMock.applyTreeMoves.mockResolvedValue({
+        tree: adminTree,
+        movedIds: ['cat-uuid-2', 'cat-uuid-3'],
+      });
+
+      await service.reorderTree({ groups }, 'admin-1');
+
+      expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledTimes(1);
+      expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledWith(['cat-uuid-2', 'cat-uuid-3']);
+    });
+
+    it('does NOT fail the request when the Meilisearch reindex rejects', async () => {
+      categoryRepositoryMock.applyTreeMoves.mockResolvedValue({
+        tree: adminTree,
+        movedIds: ['cat-uuid-2'],
+      });
+      subtreeIndexerMock.reindexSubtrees.mockRejectedValue(new Error('meili down'));
+
+      await expect(service.reorderTree({ groups }, 'admin-1')).resolves.toEqual({
+        data: adminTree,
+      });
+    });
+
+    it('logs one structured line with the event, groups, movedIds and actorId', async () => {
+      categoryRepositoryMock.applyTreeMoves.mockResolvedValue({
+        tree: adminTree,
+        movedIds: ['cat-uuid-2'],
+      });
+
+      await service.reorderTree({ groups }, 'admin-1');
+
+      expect(pinoLoggerMock.info).toHaveBeenCalledTimes(1);
+      expect(pinoLoggerMock.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'category.reorder',
+          groups,
+          movedIds: ['cat-uuid-2'],
+          actorId: 'admin-1',
+        }),
+        expect.any(String),
+      );
+    });
+
+    it.each([
+      [new CategoryCycleError(), 400, 'CATEGORY_CYCLE'],
+      [new CategoryMaxDepthError(), 400, 'CATEGORY_MAX_DEPTH'],
+      [new CategorySelfParentError(), 400, 'CATEGORY_SELF_PARENT'],
+      [new CategoryDuplicateIdError(), 400, 'CATEGORY_DUPLICATE_ID'],
+      [new CategoryNotFoundError(), 404, 'CATEGORY_NOT_FOUND'],
+      [new CategoryTreeStaleError(), 409, 'CATEGORY_TREE_STALE'],
+    ])('maps %s to HTTP %i with the code in the envelope', async (domainError, status, code) => {
+      categoryRepositoryMock.applyTreeMoves.mockRejectedValue(domainError);
+
+      await expect(service.reorderTree({ groups }, 'admin-1')).rejects.toMatchObject({
+        status,
+        response: { error: code },
+      });
+
+      // A rejected batch runs NO side effects.
+      expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+      expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
+      expect(pinoLoggerMock.info).not.toHaveBeenCalled();
+    });
+
+    it('rethrows a non-domain repository failure untouched', async () => {
+      const boom = new Error('connection reset');
+      categoryRepositoryMock.applyTreeMoves.mockRejectedValue(boom);
+
+      await expect(service.reorderTree({ groups }, 'admin-1')).rejects.toBe(boom);
     });
   });
 
