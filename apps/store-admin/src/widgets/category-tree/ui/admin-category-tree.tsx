@@ -67,6 +67,7 @@ import {
   TableHeader,
   TableRow,
   useAnnouncer,
+  type SortableTreeAnnouncements,
   type SortableTreeRowRenderProps,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -151,6 +152,48 @@ function insertionPointOf(items: TreeItem[], id: string) {
   return {
     targetParentId: item.parentId,
     targetIndex: siblings.findIndex((i) => i.id === id),
+  };
+}
+
+/**
+ * Pointer-drag announcements (§7.3), resolved from the REAL tree — a pointer
+ * drop must never announce a fabricated position.
+ *
+ * `dropped` is deliberately NOT wired: a successful drop goes straight into the
+ * mutation lifecycle, which already announces «Зберігаю зміни…» and then the
+ * committed position. Wiring it here would double-speak the same drop.
+ */
+export function pointerAnnouncements(
+  items: TreeItem[],
+): Partial<SortableTreeAnnouncements> {
+  return {
+    grabbed: (item) => {
+      const at = positionOf(items, item.id);
+      if (!at) return "";
+      return at.parent === null
+        ? a.grabbedRoot(at.name, at.pos, at.size)
+        : a.grabbed(at.name, at.pos, at.size, at.level, at.parent);
+    },
+    droppedNoop: (item) => {
+      const at = positionOf(items, item.id);
+      if (!at) return "";
+      return a.committedNoop(
+        at.name,
+        at.pos,
+        at.size,
+        at.parent ?? dict.categories.root,
+      );
+    },
+    cancelled: (item) => {
+      const at = positionOf(items, item.id);
+      if (!at) return "";
+      return a.cancelled(
+        at.name,
+        at.pos,
+        at.size,
+        at.parent ?? dict.categories.root,
+      );
+    },
   };
 }
 
@@ -266,6 +309,37 @@ function CategoryTreeView() {
       /* private mode / quota — persistence is a convenience, not a contract */
     }
   }, [expanded]);
+
+  /* ── a held grab whose base tree vanished ───────────────────────────────── */
+
+  const [staleMoveNotice, setStaleMoveNotice] = useState(0);
+
+  /**
+   * Render-time sync guard (docs/conventions/forms.md Rule 1a): the SERVER tree
+   * was replaced under a held grab — another admin's write arriving on a
+   * refetch, or this operator's own status toggle invalidating the query (the
+   * reorder lock only spans a PATCH in flight, and a grabbed-but-uncommitted
+   * move has no PATCH yet). The preview was built on a tree that no longer
+   * exists, so committing it would diff stale sibling buckets against fresh ones
+   * and silently PATCH the wrong order. Drop the grab (and anything it
+   * auto-expanded) instead, and tell the operator.
+   */
+  if (moveState && moveState.original !== reorder.items) {
+    const stale = moveState;
+    setMoveState(null);
+    setStaleMoveNotice((n) => n + 1);
+    if (stale.autoExpanded.length > 0) {
+      setExpanded((current) => {
+        const copy = new Set(current ?? []);
+        for (const id of stale.autoExpanded) copy.delete(id);
+        return copy;
+      });
+    }
+  }
+
+  useEffect(() => {
+    if (staleMoveNotice > 0) announcePolite(a.treeChangedDuringMove);
+  }, [announcePolite, staleMoveNotice]);
 
   /* ── the rendered model ─────────────────────────────────────────────────── */
 
@@ -385,6 +459,24 @@ function CategoryTreeView() {
     }
     return rows[0].item.id;
   }, [focusedId, items, rows, visibleIds]);
+
+  /**
+   * §7.5 — "never let focus fall to `document.body`". `collapseRow` handles the
+   * ONE transition it can see coming (it moves focus to the collapsing ancestor
+   * BEFORE the descendants unmount). Every OTHER way a focused row can leave the
+   * visible set — a search filter landing, a refetched tree that no longer
+   * contains the row — unmounts a focused `<tr>` and drops focus on `<body>`.
+   * Recover it onto the new roving-tabindex owner.
+   */
+  useLayoutEffect(() => {
+    if (!focusedId || !ownerId || visibleIds.has(focusedId)) return;
+    // Focus the operator moved somewhere else on purpose is left alone.
+    if (document.activeElement && document.activeElement !== document.body) {
+      return;
+    }
+    // `focusedId` follows on its own: the row's `onFocus` owns that state.
+    rowRefs.current.get(ownerId)?.focus();
+  }, [focusedId, ownerId, visibleIds]);
 
   // §3.11 — the visible order is not the real sibling order while a filter is
   // active, so every move affordance is off and the lock is announced.
@@ -902,9 +994,7 @@ function CategoryTreeView() {
                 disabled={isLocked || reorder.isPending || moveState !== null}
                 renderRow={renderRow}
                 onMove={handlePointerMove}
-                announcements={{
-                  droppedNoop: (item) => a.committedNoop(item.label, 1, 1, ""),
-                }}
+                announcements={pointerAnnouncements(items)}
               />
             </TableBody>
           </Table>
@@ -986,6 +1076,16 @@ function CategoryTreeRow({
   handleProps,
 }: CategoryTreeRowProps) {
   const statusRef = useRef<HTMLButtonElement>(null);
+
+  /**
+   * The APG `treegrid` Tab contract (§7.1/§7.2): from the focused row, `Tab`
+   * steps through the row's OWN focusable controls (twisty → grip → status
+   * toggle → actions menu, in DOM order) and then leaves the grid. That is
+   * exactly native Tab behaviour once the controls of the row that owns the
+   * roving `tabindex` are the only tabbable ones in the grid — every other row's
+   * controls stay at `-1`, so Tab never walks the whole table.
+   */
+  const controlTabIndex = isOwner ? 0 : -1;
   const { toggle: toggleStatus, isPending: statusPending } =
     useCategoryStatusToggle({
       categoryId: id,
@@ -1035,7 +1135,7 @@ function CategoryTreeRow({
               type="button"
               variant="ghost"
               size="sm"
-              tabIndex={-1}
+              tabIndex={controlTabIndex}
               className="size-6 p-0"
               aria-label={
                 ariaExpanded ? t.collapseRow(name) : t.expandRow(name)
@@ -1051,7 +1151,7 @@ function CategoryTreeRow({
           <button
             type="button"
             {...handleProps}
-            tabIndex={-1}
+            tabIndex={controlTabIndex}
             aria-label={dict.reorderTree.handleLabel(name)}
             aria-disabled={locked || undefined}
             className="inline-flex size-6 min-h-11 min-w-11 cursor-grab items-center justify-center text-muted-foreground md:min-h-0 md:min-w-0"
@@ -1073,7 +1173,7 @@ function CategoryTreeRow({
           type="button"
           variant="ghost"
           size="sm"
-          tabIndex={-1}
+          tabIndex={controlTabIndex}
           onClick={toggleStatus}
           disabled={statusPending}
           aria-label={
@@ -1094,6 +1194,7 @@ function CategoryTreeRow({
             categoryId={id}
             name={name}
             isActive={isActive}
+            tabIndex={controlTabIndex}
             disabled={locked || reorder.isPending}
             onMove={reorder.move}
             onMoveTo={onMoveTo}

@@ -37,6 +37,12 @@ export interface CategoryTreeRowActionsProps {
   categoryId: string;
   name: string;
   isActive: boolean;
+  /**
+   * Roving tab stop (§7.1/§7.2): `0` only on the row that owns the treegrid's
+   * roving `tabindex`, so `Tab` from that row walks ITS controls and then leaves
+   * the grid — instead of walking every row's menu in the table.
+   */
+  tabIndex?: number;
   /** Moves are unavailable (a search filter is active, or a PATCH is in flight). */
   disabled?: boolean;
   /** Commit a move — the same `move()` the keyboard and pointer paths call. */
@@ -56,6 +62,7 @@ export function CategoryTreeRowActions({
   categoryId,
   name,
   isActive,
+  tabIndex,
   disabled = false,
   onMove,
   onMoveTo,
@@ -91,6 +98,11 @@ export function CategoryTreeRowActions({
           type="button"
           variant="ghost"
           size="sm"
+          tabIndex={tabIndex}
+          // §7.7: pointer dragging is OFF on coarse pointers, so below `md` this
+          // menu is the row's primary move affordance — its tap target must be
+          // ≥ 44×44 CSS px (the grip handle carries the same treatment).
+          className="min-h-11 min-w-11 md:min-h-0 md:min-w-0"
           aria-label={t.actionsLabel(name)}
         >
           <MoreHorizontal aria-hidden="true" className="size-4" />

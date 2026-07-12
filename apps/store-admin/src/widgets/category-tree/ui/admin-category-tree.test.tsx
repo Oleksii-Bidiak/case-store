@@ -19,14 +19,19 @@ import {
   fireEvent,
   renderWithProviders,
   screen,
+  userEvent,
   waitFor,
   within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { resetReorderLock } from "@/shared/lib/reorder-lock";
+import { getCategoryControllerGetAdminTreeQueryKey } from "@/entities/category";
 import { AdminCategoryTree } from "./admin-category-tree";
-import { EXPANDED_STORAGE_KEY } from "./admin-category-tree";
+import {
+  EXPANDED_STORAGE_KEY,
+  pointerAnnouncements,
+} from "./admin-category-tree";
 
 /* ─────────────────────────────── fixtures ──────────────────────────────── */
 
@@ -62,8 +67,15 @@ function node(
   return { id, parentId, depth, children };
 }
 
+/** Default shape: A(A1(A1A), A2), B, C. */
+const DEFAULT_ROOTS = (): Node[] => [
+  node(A, null, 1, [node(A1, A, 2, [node(A1A, A1, 3)]), node(A2, A, 2)]),
+  node(B, null, 1),
+  node(C, null, 1),
+];
+
 /** The nested `AdminCategoryTreeNodeEntity[]` the admin tree endpoint returns. */
-function treeResponse() {
+function treeResponse(roots: Node[] = DEFAULT_ROOTS()) {
   const toEntity = (n: Node, sortOrder: number): unknown => ({
     id: n.id,
     name: NAMES[n.id],
@@ -81,11 +93,6 @@ function treeResponse() {
     children: n.children.map((child, i) => toEntity(child, i)),
   });
 
-  const roots = [
-    node(A, null, 1, [node(A1, A, 2, [node(A1A, A1, 3)]), node(A2, A, 2)]),
-    node(B, null, 1),
-    node(C, null, 1),
-  ];
   return { data: roots.map((root, i) => toEntity(root, i)) };
 }
 
@@ -668,6 +675,248 @@ describe("AdminCategoryTree — single in-flight PATCH (§3.11)", () => {
     );
     expect(bodies).toHaveLength(1);
     assertAriaInvariants();
+  });
+});
+
+describe("AdminCategoryTree — pointer-drag announcements (§7.3)", () => {
+  // jsdom has no layout, so a REAL dnd-kit drag cannot run here (§3.2). What
+  // CAN be pinned is the announcement callbacks the widget hands to the
+  // primitive: they must resolve the row's REAL position, never placeholders.
+  const items = [
+    { id: A, parentId: null, label: "Аксесуари" },
+    { id: A1, parentId: A, label: "Чохли" },
+    { id: A1A, parentId: A1, label: "Силіконові" },
+    { id: A2, parentId: A, label: "Скло" },
+    { id: B, parentId: null, label: "Кабелі" },
+    { id: C, parentId: null, label: "Зарядки" },
+  ];
+
+  it("droppedNoop names the row's REAL position, size and parent — not 1 of 1 at the root", () => {
+    const announce = pointerAnnouncements(items);
+
+    expect(announce.droppedNoop?.(items[3])).toBe(
+      dict.reorderTree.announce.committedNoop("Скло", 2, 2, "Аксесуари"),
+    );
+    expect(announce.droppedNoop?.(items[4])).toBe(
+      dict.reorderTree.announce.committedNoop(
+        "Кабелі",
+        2,
+        3,
+        dict.categories.root,
+      ),
+    );
+  });
+
+  it("a pointer pick-up and a pointer cancel are announced (never silent)", () => {
+    const announce = pointerAnnouncements(items);
+
+    expect(announce.grabbed?.(items[1])).toBe(
+      dict.reorderTree.announce.grabbed("Чохли", 1, 2, 2, "Аксесуари"),
+    );
+    expect(announce.grabbed?.(items[4])).toBe(
+      dict.reorderTree.announce.grabbedRoot("Кабелі", 2, 3),
+    );
+    expect(announce.cancelled?.(items[3])).toBe(
+      dict.reorderTree.announce.cancelled("Скло", 2, 2, "Аксесуари"),
+    );
+  });
+});
+
+describe("AdminCategoryTree — row-internal Tab cycle (§7.1, §7.2)", () => {
+  it("Tab from the focused row walks ITS controls in DOM order, then leaves the grid", async () => {
+    mockReorder();
+    await renderTree();
+
+    rowEl(A).focus();
+    const row = within(rowEl(A));
+
+    await userEvent.tab();
+    expect(
+      row.getByRole("button", {
+        name: dict.categories.tree.collapseRow("Аксесуари"),
+      }),
+    ).toHaveFocus();
+
+    await userEvent.tab();
+    expect(
+      row.getByRole("button", {
+        name: dict.reorderTree.handleLabel("Аксесуари"),
+      }),
+    ).toHaveFocus();
+
+    await userEvent.tab();
+    expect(
+      row.getByRole("button", { name: dict.statusToggle.categoryDeactivate }),
+    ).toHaveFocus();
+
+    await userEvent.tab();
+    expect(
+      row.getByRole("button", {
+        name: dict.categories.tree.actionsLabel("Аксесуари"),
+      }),
+    ).toHaveFocus();
+
+    // From the last control, Tab LEAVES the grid — it never walks into the
+    // controls of the other rows.
+    await userEvent.tab();
+    const grid = screen.getByRole("treegrid");
+    expect(grid.contains(document.activeElement)).toBe(false);
+    assertAriaInvariants();
+  });
+
+  it("only the roving-tabindex OWNER row's controls are tabbable", async () => {
+    mockReorder();
+    await renderTree();
+
+    rowEl(A).focus();
+
+    const otherGrip = within(rowEl(B)).getByRole("button", {
+      name: dict.reorderTree.handleLabel("Кабелі"),
+    });
+    const otherMenu = within(rowEl(B)).getByRole("button", {
+      name: dict.categories.tree.actionsLabel("Кабелі"),
+    });
+    expect(otherGrip.tabIndex).toBe(-1);
+    expect(otherMenu.tabIndex).toBe(-1);
+    assertAriaInvariants();
+  });
+});
+
+describe("AdminCategoryTree — coarse-pointer targets (§7.7)", () => {
+  it("the row's «Дії» trigger is ≥44×44 CSS px below `md` (pointer DnD is off there)", async () => {
+    mockReorder();
+    await renderTree();
+
+    const trigger = within(rowEl(B)).getByRole("button", {
+      name: dict.categories.tree.actionsLabel("Кабелі"),
+    });
+    expect(trigger).toHaveClass("min-h-11", "min-w-11");
+    // …and compact again from `md` up, exactly like the grip handle.
+    expect(trigger).toHaveClass("md:min-h-0", "md:min-w-0");
+  });
+});
+
+describe("AdminCategoryTree — focus never falls to document.body (§7.5)", () => {
+  it("a search filter that hides the focused row moves focus to the new tabindex owner", async () => {
+    mockReorder();
+    const view = await renderTree();
+
+    // Focus a row that the upcoming search will NOT match (and whose ancestors
+    // it will not match either).
+    rowEl(A1).focus();
+    fireEvent.keyDown(rowEl(A1), { key: "ArrowRight" }); // expand Чохли
+    await waitFor(() => expect(visibleIds()).toContain(A1A));
+    fireEvent.keyDown(rowEl(A1), { key: "ArrowRight" }); // focus Силіконові
+    expect(rowEl(A1A)).toHaveFocus();
+
+    // The `?search=` param lands (deep link / Back-Forward) — Силіконові
+    // unmounts under the focused element.
+    mockSearchParams = new URLSearchParams("search=Кабелі");
+    view.rerender(<AdminCategoryTree />);
+
+    expect(visibleIds()).toEqual([B]);
+    expect(document.activeElement).not.toBe(document.body);
+    expect(rowEl(B)).toHaveFocus();
+    assertAriaInvariants();
+  });
+});
+
+describe("AdminCategoryTree — server tree replaced under a held grab (§7.5)", () => {
+  it("cancels the uncommitted move instead of committing a diff against a tree that no longer exists", async () => {
+    mockReorder();
+    const view = await renderTree();
+
+    rowEl(B).focus();
+    fireEvent.keyDown(rowEl(B), { key: " " });
+    fireEvent.keyDown(rowEl(B), { key: "ArrowUp" });
+    expect(visibleIds()).toEqual([B, A, A1, A2, C]);
+    expect(rowEl(B)).toHaveAttribute("data-grabbed", "true");
+
+    // Another admin's write (or this operator's own status toggle) lands: the
+    // admin-tree query is replaced while the row is still held.
+    act(() => {
+      view.queryClient.setQueryData(
+        getCategoryControllerGetAdminTreeQueryKey(),
+        treeResponse([
+          node(A, null, 1, [
+            node(A1, A, 2, [node(A1A, A1, 3)]),
+            node(A2, A, 2),
+          ]),
+          node(C, null, 1),
+          node(B, null, 1),
+        ]),
+      );
+    });
+
+    await waitFor(() =>
+      expect(polite()).toBe(dict.reorderTree.announce.treeChangedDuringMove),
+    );
+    expect(rowEl(B)).toHaveAttribute("data-grabbed", "false");
+    // The fresh SERVER order renders — not the stale preview.
+    expect(visibleIds()).toEqual([A, A1, A2, C, B]);
+    expect(bodies).toHaveLength(0);
+    assertAriaInvariants();
+  });
+});
+
+describe("AdminCategoryTree — undo rejection names the undo's TARGET (§7.3)", () => {
+  it("a CATEGORY_CYCLE on undo names the parent the undo was restoring to, not the current one", async () => {
+    let call = 0;
+    server.use(
+      http.get("*/api/categories/admin/tree", () =>
+        HttpResponse.json(treeResponse()),
+      ),
+      http.patch("*/api/admin/categories/reorder", async ({ request }) => {
+        bodies.push(await request.json());
+        call += 1;
+        if (call === 1) {
+          // The outdent succeeded: Силіконові now sits under Аксесуари.
+          return HttpResponse.json(
+            treeResponse([
+              node(A, null, 1, [
+                node(A1, A, 2),
+                node(A1A, A, 2),
+                node(A2, A, 2),
+              ]),
+              node(B, null, 1),
+              node(C, null, 1),
+            ]),
+          );
+        }
+        return HttpResponse.json(
+          { statusCode: 400, error: "CATEGORY_CYCLE", message: "x" },
+          { status: 400 },
+        );
+      }),
+    );
+    await renderTree();
+
+    // Outdent Силіконові out of Чохли, then undo it.
+    rowEl(A1).focus();
+    fireEvent.keyDown(rowEl(A1), { key: "ArrowRight" }); // expand
+    await waitFor(() => expect(visibleIds()).toContain(A1A));
+    rowEl(A1A).focus();
+    fireEvent.keyDown(rowEl(A1A), {
+      key: "ArrowLeft",
+      altKey: true,
+      shiftKey: true,
+    });
+    await waitFor(() => expect(bodies).toHaveLength(1));
+
+    const undo = await screen.findByRole("button", {
+      name: dict.categories.tree.undo,
+    });
+    await waitFor(() => expect(undo).toHaveAttribute("aria-disabled", "false"));
+    fireEvent.click(undo);
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    // The undo aimed Силіконові back under „Чохли“ — NOT under „Аксесуари“,
+    // where the original move left it.
+    await waitFor(() =>
+      expect(assertive()).toBe(
+        dict.reorderTree.rejected.CATEGORY_CYCLE("Силіконові", "Чохли"),
+      ),
+    );
   });
 });
 

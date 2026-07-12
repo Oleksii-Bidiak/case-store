@@ -1924,6 +1924,12 @@ export const dict = {
         `Переміщення скасовано. „${name}“ повернуто на позицію ${pos} з ${size} у категорії „${parent}“.`,
       searchLocked: "Пошук активний. Очистіть пошук, щоб змінювати порядок.",
       undone: "Переміщення скасовано.",
+      // The server tree was REPLACED while a row was held in move mode (another
+      // admin's write, or this operator's own status toggle refetching). The
+      // uncommitted preview was built on a tree that no longer exists, so the
+      // grab is dropped rather than committed against stale sibling lists.
+      treeChangedDuringMove:
+        "Дерево категорій змінилося. Переміщення скасовано — почніть заново.",
       // Spoken POLITELY after the assertive CATEGORY_TREE_STALE alert (§7.3):
       // the operator's node is re-focused at its refetched location and its new
       // position is read out. Carries the level, unlike `moved`.

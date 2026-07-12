@@ -227,6 +227,47 @@ describe("useCategoryTreeReorder — mutation lifecycle (TASK-291-I)", () => {
     );
   });
 
+  it("a retry issued DURING the 409 recovery fetch is refused — the single-in-flight guard spans the recovery too", async () => {
+    let calls = 0;
+    server.use(
+      http.get("*/api/categories/admin/tree", async () => {
+        // The recovery GET is still running when the operator re-presses the key.
+        await delay(300);
+        return HttpResponse.json(SERVER_TREE);
+      }),
+      http.patch("*/api/admin/categories/reorder", () => {
+        calls += 1;
+        return HttpResponse.json(
+          { statusCode: 409, error: "CATEGORY_TREE_STALE", message: "stale" },
+          { status: 409 },
+        );
+      }),
+    );
+
+    renderHarness();
+    const trigger = screen.getByRole("button", { name: "move-alpha-down" });
+
+    await userEvent.click(trigger);
+    await waitFor(() =>
+      expect(assertive()).toBe(dict.reorderTree.rejected.CATEGORY_TREE_STALE),
+    );
+
+    // The reflexive retry, while the recovery GET is still in flight: refused,
+    // announced, and NO second PATCH (which would race the recovery write).
+    await userEvent.click(trigger);
+    expect(polite()).toBe(dict.reorderTree.announce.busyRefused);
+    expect(calls).toBe(1);
+
+    // Once the recovery lands, the guard is released again.
+    await waitFor(() =>
+      expect(polite()).toBe(
+        dict.reorderTree.announce.positionAfterConflict("Alpha", 2, 3, 1, null),
+      ),
+    );
+    await userEvent.click(trigger);
+    await waitFor(() => expect(calls).toBe(2));
+  });
+
   it("CATEGORY_TREE_STALE (409): assertive conflict, refetch, re-focus, then the new position politely", async () => {
     server.use(
       http.get("*/api/categories/admin/tree", () =>

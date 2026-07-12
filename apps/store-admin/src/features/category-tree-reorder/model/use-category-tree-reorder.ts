@@ -89,6 +89,13 @@ interface UndoState {
   groups: ReorderGroupDto[];
   movingId: string;
   expiresAt: number;
+  /**
+   * The tree as it was BEFORE the move this undo reverses — i.e. the tree the
+   * undo is trying to restore. It is the `attempted` tree of the undo request:
+   * a rejection (`CATEGORY_CYCLE`) must name the parent the undo AIMED at, not
+   * the one the original move already put the node under.
+   */
+  prevTree: TreeItem[];
 }
 
 /** The shape the backend error envelope reaches us in (`HttpExceptionFilter`). */
@@ -167,6 +174,17 @@ export function useCategoryTreeReorder({
    */
   const inFlightRef = useRef(false);
 
+  /**
+   * The 409 recovery GET is ALSO a single-in-flight window. `onSettled` releases
+   * `inFlightRef` as soon as the rejected PATCH settles, but the recovery
+   * `fetchQuery` it kicked off is still running and WILL write its tree into the
+   * cache when it lands. A reflexive retry issued in that gap would (a) diff
+   * against the stale pre-conflict cache and (b) have its authoritative
+   * `setQueryData` clobbered by the late recovery write. The guard therefore
+   * spans the recovery too.
+   */
+  const recoveringRef = useRef(false);
+
   /** What the UI renders: the optimistic override while saving, else the server tree. */
   const effective = pendingTree ?? items;
 
@@ -209,6 +227,10 @@ export function useCategoryTreeReorder({
       if (status === 409 || code === "CATEGORY_TREE_STALE") {
         announceAssertive(rejected.CATEGORY_TREE_STALE);
         toast.error(rejected.CATEGORY_TREE_STALE);
+        // Hold the single-in-flight guard (and the sibling-invalidation lock)
+        // for the FULL recovery window — see `recoveringRef`.
+        recoveringRef.current = true;
+        beginReorder();
         // `fetchQuery`, not `refetchQueries`: the latter only touches queries
         // that already have an observer, so it silently no-ops if the tree is
         // read anywhere other than a currently-mounted component. `fetchQuery`
@@ -235,6 +257,10 @@ export function useCategoryTreeReorder({
           })
           .catch(() => {
             /* the assertive conflict alert already fired — nothing to add */
+          })
+          .finally(() => {
+            recoveringRef.current = false;
+            endReorder();
           });
         return;
       }
@@ -281,7 +307,7 @@ export function useCategoryTreeReorder({
 
   const move = useCallback(
     (next: TreeItem[], movingId: string, options?: MoveOptions) => {
-      if (inFlightRef.current) {
+      if (inFlightRef.current || recoveringRef.current) {
         announcePolite(a.busyRefused);
         return;
       }
@@ -304,6 +330,7 @@ export function useCategoryTreeReorder({
               groups: toReorderGroups(next, prev),
               movingId,
               expiresAt: Date.now() + UNDO_WINDOW_MS,
+              prevTree: prev,
             });
             const from = describe(prev, movingId);
             const to = describe(next, movingId);
@@ -339,12 +366,12 @@ export function useCategoryTreeReorder({
   );
 
   const undo = useCallback(() => {
-    if (inFlightRef.current || !undoState) return;
+    if (inFlightRef.current || recoveringRef.current || !undoState) return;
     if (undoState.expiresAt <= Date.now()) {
       setUndoState(null);
       return;
     }
-    const { groups, movingId } = undoState;
+    const { groups, movingId, prevTree } = undoState;
 
     inFlightRef.current = true;
     beginReorder();
@@ -359,7 +386,10 @@ export function useCategoryTreeReorder({
           announcePolite(a.undone);
           onFocusRow?.(movingId);
         },
-        onError: (error) => handleError(error, movingId, effective, effective),
+        // `attempted` is the tree the undo RESTORES (`prevTree`), never the
+        // current one: a `CATEGORY_CYCLE` rejection must name the parent the
+        // undo aimed at, not the parent the original move left the node under.
+        onError: (error) => handleError(error, movingId, effective, prevTree),
         onSettled: settle,
       },
     );
