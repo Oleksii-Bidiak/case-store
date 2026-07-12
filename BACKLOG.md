@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-296**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-297**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -306,6 +306,7 @@
 | TASK-293 | Category tree: multi-select + bulk activate/deactivate — deliberately deferred out of TASK-291 (plan 158 §3.11/§12): the treegrid ships with a per-row status toggle only. Needs a selection column, a bulk `PATCH` (or reuse of the per-id toggle in a loop) and a decision on whether deactivating a parent cascades to descendants | ⬜ | 158 |
 | TASK-294 | Storefront ISR revalidation on category reorder/reparent — TASK-291 evicts the product-list cache and reindexes Meili subtrees, but does NOT call `/api/revalidate` (plan 158 §3.13, deferred): the storefront mega-menu / category pages stay stale until their own ISR window elapses. Wire the reorder mutation into the TASK-104 publish/revalidate pipeline | ⬜ | 158 |
 | TASK-295 | Roll the reusable reorder mechanics out to the remaining admin lists — banners, blog-categories, device-brands (flat sibling buckets) and product-groups; all still expose a raw read-only `sortOrder` number input (the exact anti-pattern TASK-291 removed for categories). Reuse `shared/lib/sortable-tree` + `shared/ui/sortable-tree` + the `common/reorder` backend util (plan 157 §4, plan 158 §12) | ⬜ | 158 |
+| TASK-296 | Flaky `test:e2e`: the serial store-api e2e run intermittently dies on a native V8 abort (exit `3221226505` / `0xC0000409`) mid-run, with NO failing test — 22 Nest apps are booted and torn down in ONE process because `--runInBand` is mandatory (parallel workers contend for the single test DB / shared Redis throttler). Reproduces on `develop` too, so it predates TASK-291; a clean run is 22/22 suites, 337/337. Will randomly redden CI once e2e runs there, and each red is a false alarm. Fix direction: boot one shared Nest app across the e2e suites instead of 22, or shard the run across processes with a DB per shard (`--max-old-space-size` alone did NOT reliably help) | ⬜ | — |
 
 ### Parked
 
@@ -327,6 +328,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-296**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-297**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
