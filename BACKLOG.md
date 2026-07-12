@@ -298,7 +298,8 @@
 | TASK-084 | Mobile filter drawer polish deferrals — shipped 2026-07-12: live "Показати N товарів" sticky footer, per-section collapse, overscroll containment; mobile-viewport smoke → manual-qa | ✅ | 156 |
 | TASK-086 | Quick-view modal — shipped 2026-07-12: ProductQuickView Dialog (fullscreen on mobile) via the renamed `hoverAction` card slot, wired into all card render sites; a11y focus-return leg → manual-qa | ✅ | 156 |
 | TASK-139 | Admin-managed recommendation carousels — owner 2026-07-11: rules + manual model (source enum + CarouselItem), mirrors Banner pattern. Shipped 2026-07-12: carousels module + admin CRUD with MANUAL item picker + tagged-ISR home widget below PopularRail; live smoke → manual-qa | ✅ | 154 |
-| TASK-140 | Admin tables UX rethink — largely superseded by TASK-147/192; re-scope what actually remains before starting — discovery done, see re-scope memo (plan 157): recommendation = split (close DataTable rewrite as superseded / re-scope category rethink / park TanStack pilot) | ⬜ | 157 |
+| TASK-140 | Admin tables UX rethink — split per plan 157: DataTable rewrite closed as superseded (147/192/258/276); category rethink → TASK-291; TanStack pilot parked → TASK-292 | ✅ | 157 |
+| TASK-291 | [D/M] Admin category tree — tree view (expand/collapse) instead of the flat paginated table + drag reorder (replaces the manual `sortOrder` input) + drag reparent (replaces the flat parent Select, guarded by `findDescendantIds` cycle detection) + optional inline bulk activate/deactivate; needs a new batch reorder/reparent write endpoint (does not exist yet) and full DnD a11y (keyboard reorder + aria announcements); re-scoped out of TASK-140 (plan 157 §4, Option C) | ⬜ | 158 |
 | TASK-288 | Replace hardcoded PopularRail tabs with three admin-managed carousels — the tabs (Хіти/Новинки/Акційні) map 1:1 onto BESTSELLING/NEWEST/ON_SALE sources; follow-up idea from TASK-139 (plan 154 §Open Questions); needs owner decision before scheduling | ⬜ | — |
 | TASK-289 | Category tile images via next/image — widen `next.config.ts` `images.remotePatterns` (wildcard or validated host allowlist) and swap the plain `<img>` in `shared/ui/category-tile-image.tsx`; revisits the deliberate plan-155 design decision to gain image optimization | ⬜ | — |
 | TASK-290 | Wishlist-page parity for catalog UX — quick-view trigger on wishlist item cards/rows + collapsible sections in the wishlist filter drawer (both deliberately out of scope in plan 156; wishlist drawer already got the live-count footer) | ⬜ | — |
@@ -313,6 +314,7 @@
 | TASK-050 | GA4 + Facebook Pixel — blocked on TASK-090 (consent must land first) | 🅿️ | — |
 | TASK-085 | Product comparison — PDP/account stubs already reference it | 🅿️ | — |
 | TASK-090 | Cookie consent + compliant marketing signup — bundled with the marketing push | 🅿️ | — |
+| TASK-292 | TanStack Table pilot on 1–2 tables (orders/products) — parked per plan 157 (Option B): unblocks only on a confirmed bulk selection / bulk-actions requirement; never as a mass rewrite of the ~21 admin tables | 🅿️ | 157 |
 
 ---
 
@@ -322,6 +324,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-286**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-293**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
