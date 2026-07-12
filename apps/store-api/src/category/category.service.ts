@@ -11,7 +11,12 @@ import {
   FindRootParams,
   FindAllParams,
 } from './category.repository';
-import { CategoryEntity, CategoryTreeNodeEntity, CategoryWithCountEntity } from './entities';
+import {
+  AdminCategoryTreeNodeEntity,
+  CategoryEntity,
+  CategoryTreeNodeEntity,
+  CategoryWithCountEntity,
+} from './entities';
 import { CategoryListQueryDto } from './dto';
 import { generateSlug } from '../common/utils';
 
@@ -46,6 +51,13 @@ interface PaginatedCategoriesWithCountResponse {
  */
 interface CategoryTreeResponse {
   data: CategoryTreeNodeEntity[];
+}
+
+/**
+ * Admin category tree response (TASK-291) — same envelope, richer nodes.
+ */
+interface AdminCategoryTreeResponse {
+  data: AdminCategoryTreeNodeEntity[];
 }
 
 /**
@@ -100,17 +112,17 @@ export class CategoryService {
   }
 
   /**
-   * Get the FULL category tree for admin tooling (TASK-236) — all `isActive`
-   * states, still capped at 3 levels. Used by the admin product form so staff
-   * can assign a product to a leaf category (including temporarily deactivated
-   * ones). Reuses {@link CategoryTreeNodeEntity}.
+   * Get the FULL category tree for admin tooling (TASK-236, rewritten by TASK-291)
+   * — all `isActive` states and, since the read became a flat query (plan 158
+   * §3.3), no structural depth cap either. The repository already returns
+   * {@link AdminCategoryTreeNodeEntity} nodes (a strict superset of
+   * {@link CategoryTreeNodeEntity}: `parentId`, `productCount`, `depth`), so this is
+   * a pass-through — there is nothing left to map.
    */
-  async getCategoryTreeForAdmin(): Promise<CategoryTreeResponse> {
-    const tree = await this.categoryRepository.findCategoryTreeForAdmin();
+  async getCategoryTreeForAdmin(): Promise<AdminCategoryTreeResponse> {
+    const data = await this.categoryRepository.findCategoryTreeForAdmin();
 
-    return {
-      data: tree.map((node) => CategoryTreeNodeEntity.fromPrisma(node)),
-    };
+    return { data };
   }
 
   /**

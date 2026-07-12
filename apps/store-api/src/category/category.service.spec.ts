@@ -8,7 +8,12 @@ import {
   PaginatedCategoriesWithCountResult,
 } from './category.repository';
 import { CategoryService } from './category.service';
-import { CategoryEntity, CategoryTreeNodeEntity, CategoryWithCountEntity } from './entities';
+import {
+  AdminCategoryTreeNodeEntity,
+  CategoryEntity,
+  CategoryTreeNodeEntity,
+  CategoryWithCountEntity,
+} from './entities';
 import { CategoryListQueryDto } from './dto';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
@@ -250,29 +255,37 @@ describe('CategoryService', () => {
   // ─── getCategoryTreeForAdmin (admin, TASK-236) ───────────────────────────────
 
   describe('getCategoryTreeForAdmin', () => {
-    it('maps the full (incl. inactive) tree to CategoryTreeNodeEntity via the admin repo call', async () => {
-      const treeData = [
-        {
-          ...mockCategory,
-          children: [
-            {
-              ...mockInactiveCategory,
-              children: [],
-            },
-          ],
-        },
-      ];
-      categoryRepositoryMock.findCategoryTreeForAdmin.mockResolvedValue(treeData as any);
+    // Since TASK-291 the repository assembles the flat admin read into
+    // AdminCategoryTreeNodeEntity nodes itself (parentId / productCount / depth), so the
+    // service is a pass-through — there is no mapping step left to assert.
+    it('returns the repository’s admin tree unchanged, with the admin-only fields intact', async () => {
+      const child = AdminCategoryTreeNodeEntity.fromRow(
+        { ...mockInactiveCategory, parentId: mockCategory.id, _count: { products: 3 } },
+        2,
+      );
+      const root = AdminCategoryTreeNodeEntity.fromRow(
+        { ...mockCategory, parentId: null, _count: { products: 7 } },
+        1,
+      );
+      root.children = [child];
+      categoryRepositoryMock.findCategoryTreeForAdmin.mockResolvedValue([root]);
 
       const result = await service.getCategoryTreeForAdmin();
 
       expect(categoryRepositoryMock.findCategoryTreeForAdmin).toHaveBeenCalled();
       // Uses the admin (unfiltered) traversal, NOT the public isActive-filtered one.
       expect(categoryRepositoryMock.findCategoryTree).not.toHaveBeenCalled();
+      expect(result.data[0]).toBeInstanceOf(AdminCategoryTreeNodeEntity);
+      // Still a CategoryTreeNodeEntity — the admin node is a strict superset.
       expect(result.data[0]).toBeInstanceOf(CategoryTreeNodeEntity);
-      expect(result.data[0].children[0]).toBeInstanceOf(CategoryTreeNodeEntity);
-      // Inactive child is present (not filtered out).
+      expect(result.data[0].productCount).toBe(7);
+      expect(result.data[0].depth).toBe(1);
+      expect(result.data[0].parentId).toBeNull();
+      // Inactive child is present (not filtered out) and carries the admin fields.
       expect(result.data[0].children[0].isActive).toBe(false);
+      expect(result.data[0].children[0].parentId).toBe(mockCategory.id);
+      expect(result.data[0].children[0].productCount).toBe(3);
+      expect(result.data[0].children[0].depth).toBe(2);
     });
   });
 
