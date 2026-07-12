@@ -15,6 +15,7 @@ export {
   AdminCategoryTable,
   AdminCategoryTableSkeleton,
 } from "./category-list";
+export { AdminCategoryTree, AdminCategoryTreeSkeleton } from "./category-tree";
 export { CreateCategoryView, EditCategoryView } from "./category-form-view";
 export {
   DeviceBrandTable,

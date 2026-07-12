@@ -391,6 +391,11 @@ export const dict = {
     // "Дії" menu (the WCAG 2.2 SC 2.5.7 non-dragging alternative), the
     // "Перемістити до…" dialog, and the blast-radius deactivate confirmation.
     tree: {
+      label: "Дерево категорій",
+      expandRow: (name: string) => `Розгорнути „${name}“`,
+      collapseRow: (name: string) => `Згорнути „${name}“`,
+      searchLockedHint:
+        "Пошук активний — переміщення вимкнено. Очистіть пошук, щоб змінювати порядок.",
       undo: "Скасувати останнє переміщення",
       actionsLabel: (name: string) => `Дії: „${name}“`,
       moveUp: "Перемістити вгору",

@@ -140,8 +140,18 @@ export interface SortableTreeProps {
   /** 1-based structural cap. `1` ⇒ flat sortable list. */
   maxDepth?: number;
   renderRow: (props: SortableTreeRowRenderProps) => ReactNode;
-  /** Fired on a drop that actually changes the tree. `next` is the new flat state. */
-  onMove: (groups: ReorderGroupDto[], next: TreeItem[]) => void;
+  /**
+   * Fired on a drop that actually changes the tree. `next` is the new flat state
+   * of the items THIS component was given (i.e. the VISIBLE rows), and
+   * `movingId` is the dragged node — a consumer that renders a partially
+   * collapsed tree needs it to re-derive the same move against its FULL tree
+   * (the visible list under-counts a collapsed subtree's height).
+   */
+  onMove: (
+    groups: ReorderGroupDto[],
+    next: TreeItem[],
+    movingId: string,
+  ) => void;
   announcements?: Partial<SortableTreeAnnouncements>;
   /** Disables dragging entirely (e.g. while a search filter is active, §3.11). */
   disabled?: boolean;
@@ -240,7 +250,7 @@ export function SortableTree({
     }
 
     if (announcements?.dropped) announcePolite(announcements.dropped(item));
-    onMove(groups, next);
+    onMove(groups, next, id);
   };
 
   const handleDragCancel = () => {
