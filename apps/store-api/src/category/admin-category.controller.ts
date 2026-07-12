@@ -86,8 +86,12 @@ class AdminCategoryListResponse {
  * Returned by the batch reorder endpoint: the whole refreshed tree, re-read after the
  * write inside the same transaction, so the client resynchronises to server truth in one
  * round trip (rollback/resync is a single state replacement, not a diff).
+ *
+ * EXPORTED because `GET /api/categories/admin/tree` (`category.controller.ts`) returns the
+ * exact same payload and must advertise the exact same Swagger schema — one schema name,
+ * one generated Orval model, no drift between the read and the write route.
  */
-class AdminCategoryTreeResponse {
+export class AdminCategoryTreeResponse {
   @ApiProperty({
     type: [AdminCategoryTreeNodeEntity],
     description: 'Full admin category tree (all statuses, no depth cap)',

@@ -11,6 +11,7 @@ import {
 import { CategoryService } from './category.service';
 import { CategoryListQueryDto } from './dto';
 import { CategoryEntity, CategoryTreeNodeEntity, CategoryWithCountEntity } from './entities';
+import { AdminCategoryTreeResponse } from './admin-category.controller';
 import { AdminGuard } from '../auth/guards';
 
 /**
@@ -107,11 +108,16 @@ export class CategoryController {
    * GET /api/categories/admin/tree
    *
    * Returns the FULL category tree including INACTIVE categories (TASK-236),
-   * still capped at 3 levels. Admin-only — backs the admin product form's
-   * leaf-category picker so staff can assign a product to a temporarily hidden
-   * subcategory. Same per-route `AdminGuard` bypass pattern as
+   * with NO structural depth cap and with `parentId` / `productCount` / `depth`
+   * on every node (TASK-291, plan 158 §3.3 — the flat admin read). Admin-only —
+   * backs the admin category tree widget plus the product form's leaf-category
+   * picker. Same per-route `AdminGuard` bypass pattern as
    * `GET /products/admin/list` (TASK-230). Declared before `@Get(':slug')` so
    * the literal `admin/tree` path is never captured as a slug.
+   *
+   * The payload is a strict superset of the public tree node, so the schema is the
+   * SAME `AdminCategoryTreeResponse` the reorder endpoint returns — one schema, one
+   * generated Orval model.
    */
   @Get('admin/tree')
   @UseGuards(AdminGuard)
@@ -123,10 +129,10 @@ export class CategoryController {
   @ApiResponse({
     status: 200,
     description: 'Full category tree (all statuses) for admin tooling',
-    type: CategoryTreeResponse,
+    type: AdminCategoryTreeResponse,
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  async getCategoryTreeForAdmin(): Promise<CategoryTreeResponse> {
+  async getCategoryTreeForAdmin(): Promise<AdminCategoryTreeResponse> {
     return this.categoryService.getCategoryTreeForAdmin();
   }
 
