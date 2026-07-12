@@ -15,6 +15,12 @@ import {
   CategoryNotFoundError,
   CategorySelfParentError,
 } from './category.errors';
+import {
+  acquireAdvisoryLocks,
+  applySortOrderWrites,
+  lockKey,
+  treeLockKey,
+} from '../common/reorder';
 
 /**
  * Any Prisma client the read helpers accept: the injected singleton or an
@@ -32,13 +38,13 @@ export type CategoryDbClient = PrismaService | Prisma.TransactionClient;
 const MAX_CATEGORY_DEPTH = 50;
 
 /**
- * Advisory-lock key namespace (plan 158 §3.8). Postgres advisory locks are
- * DATABASE-GLOBAL, and the same recipe is meant to be reused by the flat sortable
- * admins (banners / blog-categories / device-brands), which all have a `'__root__'`
- * bucket — without the prefix a banner reorder would serialise against a root-category
- * reorder.
+ * Advisory-lock resource namespace (plan 158 §3.8). The key helpers themselves live in
+ * `common/reorder/sibling-order.util.ts` so the flat sortable admins (banners /
+ * blog-categories / device-brands) reuse the exact same recipe: advisory locks are
+ * DATABASE-GLOBAL and every resource has a `__root__` bucket, so without the resource
+ * prefix a banner reorder would serialise against a root-category reorder.
  */
-const LOCK_NAMESPACE = 'categories:';
+const LOCK_RESOURCE = 'categories';
 
 /**
  * The TREE-SCOPED lock key. Taken by ANY write that changes a node's `parentId`
@@ -50,11 +56,10 @@ const LOCK_NAMESPACE = 'categories:';
  * sets; at READ COMMITTED both snapshot before the other commits, both guards see only
  * committed rows, and an `X → Y → X` cycle lands in the table (textbook write skew).
  */
-const TREE_LOCK_KEY = `${LOCK_NAMESPACE}__tree__`;
+const TREE_LOCK_KEY = treeLockKey(LOCK_RESOURCE);
 
 /** Per-bucket lock key. `null` (the root bucket) has no row to lock — hence the sentinel. */
-const bucketLockKey = (parentId: string | null): string =>
-  `${LOCK_NAMESPACE}${parentId ?? '__root__'}`;
+const bucketLockKey = (parentId: string | null): string => lockKey(LOCK_RESOURCE, parentId);
 
 /**
  * Thrown internally when a batch that LOOKED like a pure same-parent reorder turns out —
@@ -591,13 +596,18 @@ export class CategoryRepository {
   }
 
   /**
-   * Take transaction-scoped advisory locks, in the given (sorted) order. Released
-   * automatically on COMMIT or ROLLBACK — never manually, never leaked.
+   * Take transaction-scoped advisory locks. Delegates to the SHARED helper
+   * (`common/reorder/sibling-order.util.ts`) — it de-duplicates and sorts the keys, which
+   * is what makes multi-key acquisition deadlock-free — so the flat sortable admins reuse
+   * exactly this recipe rather than re-deriving it. Locks are released automatically on
+   * COMMIT or ROLLBACK, never manually, never leaked.
+   *
+   * Callers that need both the tree key and bucket keys call this TWICE (tree first,
+   * then the buckets): the global order `tree → buckets(sorted)` is what keeps a
+   * reparenting batch and a pure reorder from deadlocking each other.
    */
-  private async acquireLocks(tx: Prisma.TransactionClient, keys: string[]): Promise<void> {
-    for (const key of keys) {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}::text, 0))`;
-    }
+  private acquireLocks(tx: Prisma.TransactionClient, keys: string[]): Promise<void> {
+    return acquireAdvisoryLocks(tx, keys);
   }
 
   /**
@@ -614,18 +624,17 @@ export class CategoryRepository {
   }
 
   /**
-   * Apply resolved writes. `updateMany` (not `update`) so a row that vanished
-   * concurrently is a silent no-op rather than a P2025 aborting an otherwise legal batch.
-   * Rows already at their target are never in `writes`, so `@updatedAt` churn (which the
-   * storefront sitemap's `lastModified` reads) is avoided.
+   * Apply resolved writes through the SHARED writer (`common/reorder`): `updateMany`
+   * (not `update`) so a row that vanished concurrently is a silent no-op rather than a
+   * P2025 aborting an otherwise legal batch. Rows already at their target are never in
+   * `writes` (the rules module omits them), so `@updatedAt` churn — which the storefront
+   * sitemap's `lastModified` reads — is avoided.
+   *
+   * The flat resources call the util's `writeSiblingOrder(delegate, orderedIds, scope)`
+   * instead: same primitive, minus the `parentId` the tree also has to assign.
    */
-  private async writeRows(tx: Prisma.TransactionClient, writes: ResolvedWrite[]): Promise<void> {
-    for (const write of writes) {
-      await tx.category.updateMany({
-        where: { id: write.id },
-        data: { parentId: write.parentId, sortOrder: write.sortOrder },
-      });
-    }
+  private writeRows(tx: Prisma.TransactionClient, writes: ResolvedWrite[]): Promise<void> {
+    return applySortOrderWrites(tx.category, writes);
   }
 
   /**

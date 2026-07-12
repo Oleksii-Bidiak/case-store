@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Put, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Param,
+  Body,
+  Query,
+  UseGuards,
+  HttpCode,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -7,11 +18,22 @@ import {
   ApiParam,
   ApiProperty,
   ApiExtraModels,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { CategoryService } from './category.service';
-import { CreateCategoryDto, UpdateCategoryDto, CategoryListQueryDto } from './dto';
+import {
+  CreateCategoryDto,
+  UpdateCategoryDto,
+  CategoryListQueryDto,
+  ReorderCategoriesDto,
+} from './dto';
 import { AdminGuard } from '../auth/guards';
-import { CategoryEntity, CategoryWithCountEntity } from './entities';
+// Direct file import, NOT the `../auth` barrel: the barrel pulls in `auth.module` →
+// `auth.controller` → … → the `../category` barrel → this file, and that require cycle
+// leaves `CurrentUser` undefined at decorator-evaluation time ("CurrentUser is not a
+// function"). Anything on a module cycle's edge must bypass the barrels.
+import { CurrentUser } from '../auth/decorators';
+import { AdminCategoryTreeNodeEntity, CategoryEntity, CategoryWithCountEntity } from './entities';
 
 /**
  * Response envelope for a single category.
@@ -59,10 +81,26 @@ class AdminCategoryListResponse {
 }
 
 /**
+ * Response envelope for the FULL admin category tree (TASK-291, plan 158 §6).
+ *
+ * Returned by the batch reorder endpoint: the whole refreshed tree, re-read after the
+ * write inside the same transaction, so the client resynchronises to server truth in one
+ * round trip (rollback/resync is a single state replacement, not a diff).
+ */
+class AdminCategoryTreeResponse {
+  @ApiProperty({
+    type: [AdminCategoryTreeNodeEntity],
+    description: 'Full admin category tree (all statuses, no depth cap)',
+  })
+  data!: AdminCategoryTreeNodeEntity[];
+}
+
+/**
  * Controller for admin category management endpoints.
  *
  * Admin endpoints (ADMIN role required):
  *   GET    /admin/categories                  — List all categories with product counts
+ *   PATCH  /admin/categories/reorder          — Batch reorder / reparent (tree)
  *   GET    /admin/categories/:id              — Get category by ID
  *   POST   /admin/categories                  — Create a new category
  *   PUT    /admin/categories/:id              — Update a category
@@ -75,11 +113,53 @@ class AdminCategoryListResponse {
   AdminCategoryPaginationMeta,
   CategoryWithCountEntity,
   CategoryResponseEnvelope,
+  AdminCategoryTreeResponse,
+  AdminCategoryTreeNodeEntity,
 )
 @Controller('admin/categories')
 @UseGuards(AdminGuard)
 export class AdminCategoryController {
   constructor(private readonly categoryService: CategoryService) {}
+
+  /**
+   * PATCH /api/admin/categories/reorder
+   *
+   * Batch reorder / reparent of the category tree — the ONLY writer of `sortOrder`
+   * (TASK-291, plan 158 §3.4). Each group carries the COMPLETE, FINAL child list of one
+   * parent bucket; the array index becomes `sortOrder`. Applied in ONE advisory-locked
+   * transaction; returns the full refreshed admin tree.
+   *
+   * DECLARED BEFORE the `:id` routes — otherwise `reorder` is captured as an `:id`.
+   */
+  @Patch('reorder')
+  @HttpCode(200)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Batch reorder / reparent categories (admin)',
+    operationId: 'adminCategoryControllerReorder',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The full refreshed admin category tree',
+    schema: { $ref: getSchemaPath(AdminCategoryTreeResponse) },
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Validation error or a rejected move (cycle / max depth / self-parent / duplicate id)',
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({ status: 404, description: 'Unknown category or parent id' })
+  @ApiResponse({
+    status: 409,
+    description: 'CATEGORY_TREE_STALE — another admin changed the tree first',
+  })
+  async reorder(
+    @Body() dto: ReorderCategoriesDto,
+    @CurrentUser('id') adminUserId: string,
+  ): Promise<AdminCategoryTreeResponse> {
+    return this.categoryService.reorderTree(dto, adminUserId);
+  }
 
   /**
    * GET /api/admin/categories
