@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-286**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-293**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -299,7 +299,7 @@
 | TASK-086 | Quick-view modal — shipped 2026-07-12: ProductQuickView Dialog (fullscreen on mobile) via the renamed `hoverAction` card slot, wired into all card render sites; a11y focus-return leg → manual-qa | ✅ | 156 |
 | TASK-139 | Admin-managed recommendation carousels — owner 2026-07-11: rules + manual model (source enum + CarouselItem), mirrors Banner pattern. Shipped 2026-07-12: carousels module + admin CRUD with MANUAL item picker + tagged-ISR home widget below PopularRail; live smoke → manual-qa | ✅ | 154 |
 | TASK-140 | Admin tables UX rethink — split per plan 157: DataTable rewrite closed as superseded (147/192/258/276); category rethink → TASK-291; TanStack pilot parked → TASK-292 | ✅ | 157 |
-| TASK-291 | [D/M] Admin category tree — tree view (expand/collapse) instead of the flat paginated table + drag reorder (replaces the manual `sortOrder` input) + drag reparent (replaces the flat parent Select, guarded by `findDescendantIds` cycle detection) + optional inline bulk activate/deactivate; needs a new batch reorder/reparent write endpoint (does not exist yet) and full DnD a11y (keyboard reorder + aria announcements); re-scoped out of TASK-140 (plan 157 §4, Option C). ⚠️ IN PROGRESS on `feature/291-admin-category-tree`: the backend slice (291-A…E) drops `sortOrder` from Create/UpdateCategoryDto, so `store-admin` does NOT typecheck until the frontend slice (291-F/G) removes the `sortOrder` input — the branch must land ATOMICALLY (backend + frontend together), never a backend-only merge to `develop` | 🚧 | 158 |
+| TASK-291 | [D/M] Admin category tree — tree view (expand/collapse) instead of the flat paginated table + drag reorder (replaces the manual `sortOrder` input) + drag reparent (replaces the flat parent Select, guarded by `findDescendantIds` cycle detection) + optional inline bulk activate/deactivate; needs a new batch reorder/reparent write endpoint (does not exist yet) and full DnD a11y (keyboard reorder + aria announcements); re-scoped out of TASK-140 (plan 157 §4, Option C). In progress on `feature/291-admin-category-tree`: the backend slice (291-A…E) drops `sortOrder` from Create/UpdateCategoryDto, so `store-admin` does not typecheck until the frontend slice removes the `sortOrder` input — the branch must land atomically (backend + frontend together), never a backend-only merge to `develop` | 🔄 | 158 |
 | TASK-288 | Replace hardcoded PopularRail tabs with three admin-managed carousels — the tabs (Хіти/Новинки/Акційні) map 1:1 onto BESTSELLING/NEWEST/ON_SALE sources; follow-up idea from TASK-139 (plan 154 §Open Questions); needs owner decision before scheduling | ⬜ | — |
 | TASK-289 | Category tile images via next/image — widen `next.config.ts` `images.remotePatterns` (wildcard or validated host allowlist) and swap the plain `<img>` in `shared/ui/category-tile-image.tsx`; revisits the deliberate plan-155 design decision to gain image optimization | ⬜ | — |
 | TASK-290 | Wishlist-page parity for catalog UX — quick-view trigger on wishlist item cards/rows + collapsible sections in the wishlist filter drawer (both deliberately out of scope in plan 156; wishlist drawer already got the live-count footer) | ⬜ | — |
