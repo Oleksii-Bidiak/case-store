@@ -298,7 +298,10 @@
 | TASK-084 | Mobile filter drawer polish deferrals — shipped 2026-07-12: live "Показати N товарів" sticky footer, per-section collapse, overscroll containment; mobile-viewport smoke → manual-qa | ✅ | 156 |
 | TASK-086 | Quick-view modal — shipped 2026-07-12: ProductQuickView Dialog (fullscreen on mobile) via the renamed `hoverAction` card slot, wired into all card render sites; a11y focus-return leg → manual-qa | ✅ | 156 |
 | TASK-139 | Admin-managed recommendation carousels — owner 2026-07-11: rules + manual model (source enum + CarouselItem), mirrors Banner pattern. Shipped 2026-07-12: carousels module + admin CRUD with MANUAL item picker + tagged-ISR home widget below PopularRail; live smoke → manual-qa | ✅ | 154 |
-| TASK-140 | Admin tables UX rethink — largely superseded by TASK-147/192; re-scope what actually remains before starting — discovery in progress (plan 157) | ⬜ | — |
+| TASK-140 | Admin tables UX rethink — largely superseded by TASK-147/192; re-scope what actually remains before starting — discovery done, see re-scope memo (plan 157): recommendation = split (close DataTable rewrite as superseded / re-scope category rethink / park TanStack pilot) | ⬜ | 157 |
+| TASK-288 | Replace hardcoded PopularRail tabs with three admin-managed carousels — the tabs (Хіти/Новинки/Акційні) map 1:1 onto BESTSELLING/NEWEST/ON_SALE sources; follow-up idea from TASK-139 (plan 154 §Open Questions); needs owner decision before scheduling | ⬜ | — |
+| TASK-289 | Category tile images via next/image — widen `next.config.ts` `images.remotePatterns` (wildcard or validated host allowlist) and swap the plain `<img>` in `shared/ui/category-tile-image.tsx`; revisits the deliberate plan-155 design decision to gain image optimization | ⬜ | — |
+| TASK-290 | Wishlist-page parity for catalog UX — quick-view trigger on wishlist item cards/rows + collapsible sections in the wishlist filter drawer (both deliberately out of scope in plan 156; wishlist drawer already got the live-count footer) | ⬜ | — |
 
 ### Parked
 
