@@ -1,4 +1,4 @@
-＃ План 157 — TASK-140 re-scope memo (discovery-only)
+# План 157 — TASK-140 re-scope memo (discovery-only)
 
 > **Discovery-only.** This is a MEMO, not an implementation plan. It contains no task
 > breakdown and no acceptance criteria for code. Nothing here is approved work. Produced by
