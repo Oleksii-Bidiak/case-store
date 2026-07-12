@@ -9,10 +9,11 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /**
  * Validation schema for the admin category form.
  *
- * As in the product form, the single numeric field (`sortOrder`) is modelled as
- * a string on the zod INPUT side (bound to a text input) and transformed to a
- * number on the OUTPUT side, so `react-hook-form` registration stays string-only
- * while `onSubmit` receives a parsed number.
+ * TASK-291 (§3.11): `sortOrder` is NOT part of this form any more. Sibling order
+ * is owned exclusively by the treegrid (`PATCH /api/admin/categories/reorder`,
+ * which rewrites a whole sibling bucket atomically); the narrowed
+ * `CreateCategoryDto`/`UpdateCategoryDto` no longer accept the field, so a hand-
+ * typed number here could only fight the tree.
  */
 export const categorySchema = z.object({
   name: z.string().trim().min(1, e.nameRequired).max(255, e.nameMax),
@@ -40,13 +41,6 @@ export const categorySchema = z.object({
     .uuid(e.parentInvalid)
     .optional()
     .or(z.literal("")),
-
-  sortOrder: z
-    .string()
-    .trim()
-    .optional()
-    .refine((v) => v === undefined || v === "" || /^\d+$/.test(v), e.sortInt)
-    .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
 
   isActive: z.boolean().optional(),
 
@@ -105,7 +99,6 @@ export function categoryFormValuesToDto(
     description: description ? description : undefined,
     image: image ? image : undefined,
     parentId: parentId ? parentId : options.isUpdate ? null : undefined,
-    sortOrder: values.sortOrder,
     isActive: values.isActive,
     // Blank clears the override on UPDATE (explicit null so Prisma writes it),
     // and is simply omitted on CREATE (same rule as parentId, TASK-236).

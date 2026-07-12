@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useAdminCategoryControllerFindAllWithProductCount } from "@/entities/category";
+import {
+  flattenAdminCategoryTree,
+  useCategoryControllerGetAdminTree,
+} from "@/entities/category";
+import { descendantsOf } from "@/shared/lib/sortable-tree";
 import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
 import { slugify } from "@/shared/lib";
 import {
@@ -54,7 +58,6 @@ const EMPTY_VALUES: CategoryFormInput = {
   description: "",
   image: "",
   parentId: "",
-  sortOrder: "0",
   isActive: true,
   metaTitle: "",
   metaDescription: "",
@@ -97,12 +100,25 @@ export function CategoryForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const categoriesQuery = useAdminCategoryControllerFindAllWithProductCount({
-    limit: 100,
-  });
-  const parentOptions = (categoriesQuery.data?.data ?? []).filter(
-    (category) => category.id !== excludeParentId,
+  // TASK-291 (§3.11 / §7.6.3): the parent <Select> is the WCAG 2.2 SC 2.5.7
+  // non-dragging fallback and the no-JS fallback, so it is KEPT — but it is fed
+  // from the COMPLETE admin tree, not from the 100-row-capped flat admin list.
+  // A capped page is a PARTIAL graph: a descendant beyond the cap is simply
+  // absent, so a descendant-exclusion computed over it silently UNDER-excludes
+  // (and a legitimate parent may not be selectable at all). Options are indented
+  // by their tree depth, and SELF *plus all descendants* are excluded.
+  const categoriesQuery = useCategoryControllerGetAdminTree();
+  const treeItems = useMemo(
+    () => flattenAdminCategoryTree(categoriesQuery.data?.data),
+    [categoriesQuery.data],
   );
+  const parentOptions = useMemo(() => {
+    if (!excludeParentId) return treeItems;
+    const excluded = descendantsOf(treeItems, excludeParentId);
+    return treeItems.filter(
+      (item) => item.id !== excludeParentId && !excluded.has(item.id),
+    );
+  }, [treeItems, excludeParentId]);
 
   // Live SERP preview (TASK-268): resolve the exact title/description the
   // storefront would render for this category page through the same three-tier
@@ -194,7 +210,10 @@ export function CategoryForm({
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      {/* TASK-291-K: the "Порядок сортування" number input that used to sit next
+          to this Select is GONE — sibling order is owned by the treegrid alone.
+          The parent Select stays (§7.6.3, WCAG 2.5.7 non-dragging fallback). */}
+      <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="category-parent">{dict.categoryForm.parent}</Label>
           <Controller
@@ -233,7 +252,16 @@ export function CategoryForm({
                   </SelectItem>
                   {parentOptions.map((category) => (
                     <SelectItem key={category.id} value={category.id}>
-                      {category.name}
+                      {/* Depth indent via padding, not text: a text prefix would
+                          leak into the option's accessible name. */}
+                      <span
+                        className="inline-block"
+                        style={{
+                          paddingInlineStart: `${(category.depth - 1) * 12}px`,
+                        }}
+                      >
+                        {category.label}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -243,23 +271,6 @@ export function CategoryForm({
           {errors.parentId && (
             <p role="alert" className="text-sm text-destructive">
               {errors.parentId.message}
-            </p>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="category-sort">{dict.categoryForm.sortOrder}</Label>
-          <Input
-            id="category-sort"
-            type="number"
-            inputMode="numeric"
-            min="0"
-            step="1"
-            {...register("sortOrder")}
-          />
-          {errors.sortOrder && (
-            <p role="alert" className="text-sm text-destructive">
-              {errors.sortOrder.message}
             </p>
           )}
         </div>

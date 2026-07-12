@@ -12,6 +12,8 @@ export {
   PaginatedCategoriesResult,
   CategoryWithCountResult,
   PaginatedCategoriesWithCountResult,
+  TreeMovesResult,
+  CategoryUpdateResult,
 } from './category.repository';
 export { CategoryEntity, CategoryTreeNodeEntity, CategoryWithCountEntity } from './entities';
 export { CreateCategoryDto, UpdateCategoryDto, CategoryListQueryDto } from './dto';

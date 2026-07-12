@@ -1,1 +1,6 @@
-export { CategoryStatusToggle } from "./ui/category-status-toggle";
+export {
+  CategoryStatusToggle,
+  useCategoryStatusToggle,
+  type CategoryStatusToggleProps,
+  type UseCategoryStatusToggleOptions,
+} from "./ui/category-status-toggle";

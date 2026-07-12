@@ -1,0 +1,57 @@
+/**
+ * Flatten the NESTED admin category tree into the flat `TreeItem[]` model every
+ * move path speaks (plan 158 §3.2/§3.3).
+ *
+ * `GET /api/categories/admin/tree` returns NESTED `AdminCategoryTreeNodeEntity`
+ * nodes (`children[]`), NOT a flat array — the pure reducer in
+ * `shared/lib/sortable-tree` consumes a flat, ordered `{ id, parentId }` list
+ * where array order within a parent bucket IS the sibling order. This is the
+ * single conversion point.
+ *
+ * The result is in depth-first order, which is also the row order the treegrid
+ * renders, and is a strict SUPERSET of `TreeItem` — the extra columns
+ * (`slug`, `isActive`, `productCount`, `depth`) ride along so the widget does
+ * not need a second lookup map.
+ */
+
+import type { TreeItem } from "@/shared/lib/sortable-tree";
+import type { AdminCategoryTreeNodeEntity } from "@/shared/api";
+
+export interface CategoryTreeItem extends TreeItem {
+  slug: string;
+  isActive: boolean;
+  productCount: number;
+  /** 1-based level as computed by the server (a root category is level 1). */
+  depth: number;
+}
+
+/** Depth-first flatten of the nested admin tree. */
+export function flattenAdminCategoryTree(
+  nodes: AdminCategoryTreeNodeEntity[] | undefined,
+): CategoryTreeItem[] {
+  const out: CategoryTreeItem[] = [];
+
+  const visit = (
+    node: AdminCategoryTreeNodeEntity,
+    parentId: string | null,
+  ) => {
+    out.push({
+      id: node.id,
+      parentId,
+      label: node.name,
+      slug: node.slug,
+      isActive: node.isActive,
+      productCount: node.productCount,
+      depth: node.depth,
+    });
+    for (const child of node.children ?? []) {
+      visit(child, node.id);
+    }
+  };
+
+  for (const node of nodes ?? []) {
+    visit(node, node.parentId ?? null);
+  }
+
+  return out;
+}

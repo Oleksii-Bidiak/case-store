@@ -17,6 +17,7 @@ import { Separator } from "@/shared/ui";
 import {
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
   getAdminCategoryControllerFindByIdQueryKey,
+  getCategoryControllerGetAdminTreeQueryKey,
   useAdminCategoryControllerFindById,
   useAdminCategoryControllerUpdate,
 } from "@/entities/category";
@@ -77,6 +78,12 @@ export function EditCategoryView({ categoryId }: EditCategoryViewProps) {
           });
           void queryClient.invalidateQueries({
             queryKey: getAdminCategoryControllerFindByIdQueryKey(categoryId),
+          });
+          // §3.11: the treegrid reads the admin-tree query, which nothing
+          // invalidated before TASK-291 — a rename or a parent change made
+          // through the kept <Select> would leave the tree stale until reload.
+          void queryClient.invalidateQueries({
+            queryKey: getCategoryControllerGetAdminTreeQueryKey(),
           });
           toast.success(dict.categories.toastUpdated);
           router.push("/categories");
@@ -154,7 +161,6 @@ function mapCategoryToFormValues(category: {
   description?: string | null;
   image?: string | null;
   parentId?: string | null;
-  sortOrder: number;
   isActive: boolean;
   metaTitle?: string | null;
   metaDescription?: string | null;
@@ -165,7 +171,6 @@ function mapCategoryToFormValues(category: {
     description: category.description ?? "",
     image: category.image ?? "",
     parentId: category.parentId ?? "",
-    sortOrder: String(category.sortOrder),
     isActive: category.isActive,
     metaTitle: category.metaTitle ?? "",
     metaDescription: category.metaDescription ?? "",

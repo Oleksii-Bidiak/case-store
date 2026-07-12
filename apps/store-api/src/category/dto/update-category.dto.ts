@@ -3,15 +3,12 @@ import {
   IsOptional,
   IsBoolean,
   IsUUID,
-  IsInt,
   MaxLength,
-  Min,
   Matches,
   IsUrl,
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
 
 /**
  * DTO for updating an existing category.
@@ -79,16 +76,10 @@ export class UpdateCategoryDto {
   @IsUUID(4, { message: 'Parent ID must be a valid UUID' })
   parentId?: string | null;
 
-  @ApiProperty({
-    description: 'Sort order for display (lower values appear first)',
-    example: 10,
-    required: false,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt({ message: 'Sort order must be an integer' })
-  @Min(0, { message: 'Sort order must be at least 0' })
-  sortOrder?: number;
+  // NOTE (TASK-291, plan 158 §3.10.1): `sortOrder` is deliberately NOT accepted here —
+  // see CreateCategoryDto. A parent change made through this endpoint re-appends the node
+  // to the end of its destination bucket and re-densifies the source bucket, under the
+  // same advisory locks as the batch reorder endpoint.
 
   @ApiProperty({
     description: 'Whether the category is active and visible',

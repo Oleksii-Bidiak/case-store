@@ -278,8 +278,9 @@ and announcements are owned in-repo anyway.
 
 **Decision.** The admin tree does NOT use `findCategoryTree` (isActive-filtered at every level,
 fixed 3-level nested `include`). Instead: rewrite `CategoryRepository.findCategoryTreeForAdmin()`
-as a SINGLE FLAT `findMany` — no nested includes — selecting `id, name, slug, parentId, isActive,
-sortOrder, updatedAt` plus `_count: { select: { products: { where: { isActive: true } } } }`,
+as a SINGLE FLAT `findMany` — no nested includes — selecting `id, name, slug, description, image,
+parentId, isActive, sortOrder, metaTitle, metaDescription, updatedAt` plus `_count: { select: {
+products: { where: { isActive: true } } } }`,
 `orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }]`, assembled into a tree in the repository. New
 entity `apps/store-api/src/category/entities/admin-category-tree-node.entity.ts`
 (`AdminCategoryTreeNodeEntity`): adds `parentId: string | null`, `productCount: number`, `depth:
@@ -299,6 +300,13 @@ required because the DnD payload is built from parent buckets; `productCount` is
 the Товари column operators use today. A separate ADMIN entity keeps the public storefront
 contract (which feeds the sitemap via `updatedAt`) free of permanently-undefined admin-only
 fields.
+
+> **Shipped-code note (TASK-291-C).** The `select` list above is the FULL public tree-node field
+> set (`description`, `image`, `metaTitle`, `metaDescription` included), not a narrower one: §6 is
+> the binding contract and requires `AdminCategoryTreeNodeEntity` to stay a strict SUPERSET of the
+> public `CategoryTreeNodeEntity`, so the existing consumers (`product-form.tsx`,
+> `carousel-form.tsx`) keep compiling. An earlier draft of this section listed only the
+> tree-specific columns; the code follows §6.
 
 **Rejected alternatives.** Adding `productCount?` to the PUBLIC `CategoryTreeNodeEntity` and
 leaving it undefined in the public mapper — pollutes the storefront's generated Orval model on an
@@ -888,7 +896,7 @@ separate BACKLOG rows (mirrors the plan-154 convention for a single large task).
       `src/discount/discount.errors.ts`
 - [ ] `category-reorder.rules.ts`: `MAX_CATEGORY_TREE_LEVELS = 4` (1-based levels, root = level 1
       — §3.7), `CategorySnapshotRow` type, `validateAndResolveReorder(snapshot, groups):
-    ResolvedWrite[]` — no Prisma import, no Nest DI import
+  ResolvedWrite[]` — no Prisma import, no Nest DI import
 - [ ] Unit spec `category-reorder.rules.spec.ts` (RED before implementation) covers: duplicate id
       (across/within groups); unknown id/parent; self-parent (`parentId ∈` its own `orderedIds`);
       single-move cycle; **multi-move cycle** (A→under B and B→under A in one payload, each
@@ -949,13 +957,13 @@ not shipped code) · **Depends on:** —
 
 - [ ] `CategoryRepository.findCategoryTreeForAdmin()` rewritten as a single flat `findMany`
       (`select: id, name, slug, parentId, isActive, sortOrder, updatedAt` + `_count.products
-    (isActive: true)`, `orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }]`), assembled into a tree
+  (isActive: true)`, `orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }]`), assembled into a tree
       in-repository; new `AdminCategoryTreeNodeEntity` (`parentId`, `productCount`, `depth` added
       to the existing tree-node fields)
 - [ ] `findCategoryTree`'s sibling `orderBy` gains the `{ id: 'asc' }` tiebreaker at every nesting
       level (§3.9) — public entity/route untouched otherwise
 - [ ] `findDescendantIds(categoryId, client: Prisma.TransactionClient | PrismaService =
-    this.prisma)` — signature widened, raw CTE body byte-identical; existing callers (
+  this.prisma)` — signature widened, raw CTE body byte-identical; existing callers (
       `category.service.ts` non-tx path) unaffected; TASK-238's int-spec still passes unmodified
 - [ ] `CategoryRepository.applyTreeMoves(groups: ReorderGroupDto[]): Promise<AdminCategoryTreeNodeEntity[]>`
       implemented per §3.6/§3.7/§3.8: one interactive `$transaction`, sorted-key advisory locks
@@ -971,8 +979,8 @@ not shipped code) · **Depends on:** —
       race a concurrent append or resequence
 - [ ] `CategoryRepository.update()`'s parent-change path routed through the same locked path
       (§3.10.4): tree-scoped advisory lock, in-tx guards, `sortOrder = max(destination siblings)
-    + 1`, source bucket re-densified to 0..n-1 — all inside its existing interactive
-      `$transaction` (which already writes the slug-redirect ledger)
+  - 1`, source bucket re-densified to 0..n-1 — all inside its existing interactive
+`$transaction` (which already writes the slug-redirect ledger)
 - [ ] Integration tests (real Postgres, `test/category-reorder.repository.int-spec.ts`, bootstrap
       copied from `test/category.repository.int-spec.ts:45-76`): reorder within a parent;
       reparent across parents (source re-densified, no hole; `findDescendantIds(newAncestor)` now
@@ -982,7 +990,7 @@ not shipped code) · **Depends on:** —
       the same parent with different orderings → no crash, final order equals exactly ONE submitted
       ordering, `sortOrder` exactly 0..n-1, no duplicates/gaps, no 409 (equal member sets = pure
       last-writer-wins, §3.7); **concurrent INVERSE reparents** — `Promise.all([applyTreeMoves(X
-    under Y), applyTreeMoves(Y under X)])` → exactly one succeeds, the other throws
+  under Y), applyTreeMoves(Y under X)])` → exactly one succeeds, the other throws
       `CategoryCycleError`, and the committed table contains NO cycle (this test FAILS with
       per-bucket locks and passes only with the tree-scoped lock); concurrent reparent+reorder of
       the same node → never writer-A's `parentId` with writer-B's slot, and the reorder loser gets
@@ -1012,7 +1020,7 @@ not shipped code) · **Depends on:** —
 **Acceptance Criteria:**
 
 - [ ] `CategoryService.reorderTree(dto: ReorderTreeDto): Promise<{ data:
-    AdminCategoryTreeNodeEntity[] }>` — calls `applyTreeMoves`, catches each domain error class
+  AdminCategoryTreeNodeEntity[] }>` — calls `applyTreeMoves`, catches each domain error class
       and maps to the matching HTTP helper from `category.errors.ts`, then runs post-commit side
       effects (§3.13): `cache.delByPrefix(PRODUCT_LIST_PREFIX)` exactly once; a single best-effort,
       non-blocking `categorySubtreeIndexer.reindexSubtrees(movedRootIds)` (log-and-continue on
@@ -1030,8 +1038,28 @@ not shipped code) · **Depends on:** —
       and the `level + height − 1 ≤ 4` check (reusing `category-reorder.rules.ts` helpers), PLUS the
       same `cache.delByPrefix(PRODUCT_LIST_PREFIX)` eviction and the same
       `reindexSubtrees([movedId])` call on its own parent-change path (pre-existing holes, §2.1)
+  - **Accepted deviation (as shipped).** The DEPTH check is enforced ONCE, inside
+    `CategoryRepository.prepareReparent`, against the in-transaction snapshot held under the
+    tree advisory lock (§3.10.4); the service only maps the resulting `CategoryMaxDepthError`
+    to its coded 400 via `toHttp`. Running `assertMoveDepth` in the service too would need a
+    second, UNLOCKED full-table snapshot read whose verdict the repository would immediately
+    re-take anyway. The self-parent guard IS in the service (a free fast-fail) and is also
+    re-checked under the lock. Wire contract unchanged: 400 `CATEGORY_MAX_DEPTH`.
+  - **Accepted deviation (as shipped).** The eviction/reindex are gated on the repository's
+    AUTHORITATIVE in-transaction verdict — `CategoryRepository.update()` returns
+    `{ category, reparented }` (the single-node twin of `TreeMovesResult.movedIds`) — NOT on
+    the service's pre-lock `input.parentId !== category.parentId` comparison, which a
+    concurrent reparent can invalidate (a full-object PUT re-sending the stale parent would
+    look like "no change" while the repository legitimately moves the node back, silently
+    rotting the cache and the indexed ancestor chains).
 - [ ] `sortOrder` removed from `CreateCategoryDto` and `UpdateCategoryDto` (§3.10); existing
       create/update unit + e2e tests updated to drop `sortOrder` assertions
+  - ⚠️ **Cross-app breaking change — the branch must land ATOMICALLY.** This narrows the
+    generated Orval `CreateCategoryDto`/`UpdateCategoryDto`, and `store-admin`'s
+    `features/category-form/model/category-schema.ts` still sends `sortOrder` until
+    TASK-291-F/G delete that input. Between the two slices `npm run typecheck -w
+    apps/store-admin` FAILS (`TS2353 … 'sortOrder' does not exist`). Do NOT merge the
+    backend-only slice into `develop` on its own.
 - [ ] Unit tests (`category.service.spec.ts`): domain error → correct HTTP class AND the code
       lands in the envelope's `error` field; repository called EXACTLY ONCE per `reorderTree` call
       (one transaction, not N); `cache.delByPrefix` called exactly once, AFTER the repo call — for
@@ -1066,7 +1094,7 @@ not shipped code) · **Depends on:** —
 - [ ] `src/common/dto/reorder.dto.ts` created: `ReorderGroupDto`, `ReorderTreeDto`,
       `ReorderFlatDto` per §3.4 (shared, hoisted for future flat-resource reuse — §4)
 - [ ] `src/common/reorder/sibling-order.util.ts` created: `writeSiblingOrder(delegate, orderedIds,
-    scope)` + the namespaced advisory-lock helper (`lockKey(resource, parentId)`), extracted
+  scope)` + the namespaced advisory-lock helper (`lockKey(resource, parentId)`), extracted
       from `applyTreeMoves`'s lock logic so it's genuinely shared (§4)
 - [ ] `apps/store-api/src/category/dto/reorder-categories.dto.ts` extends `ReorderTreeDto`
 - [ ] `AdminCategoryController` gains `PATCH /admin/categories/reorder`, declared BEFORE the
@@ -1079,7 +1107,7 @@ not shipped code) · **Depends on:** —
       EMPTY `orderedIds` group is ACCEPTED (regression guard against re-adding
       `@ArrayNotEmpty()` at the group level); the 400 body's `error` field carries
       `CATEGORY_CYCLE` as it reaches the wire through `HttpExceptionFilter`; 200 → `{ data:
-    AdminCategoryTreeNodeEntity[] }`
+  AdminCategoryTreeNodeEntity[] }`
 - [ ] Tests pass: `npm run test:e2e -w apps/store-api -- --runInBand`
 - [ ] `npm run lint -w apps/store-api` / `npm run typecheck -w apps/store-api` clean
 
@@ -1130,7 +1158,7 @@ unit tests required, not formal TDD) · **Depends on:** —
       `removeChildrenOf` (MIT header retained verbatim). **`sortableTreeKeyboardCoordinates` is
       deliberately NOT vendored and no `KeyboardSensor` is registered** (§3.2 — dnd-kit is
       pointer-only). Plus our own measurement-free `applyMove(items, movingId, { targetParentId,
-    targetIndex })` reducer (the single path shared by keyboard/pointer/menu/dialog, §7),
+  targetIndex })` reducer (the single path shared by keyboard/pointer/menu/dialog, §7),
       `projectionToInsertionPoint(projection, over)` (the pointer adapter), and
       `toReorderGroups(prev, next)` (diff → `ReorderGroupDto[]`)
 - [ ] Pure unit tests (jsdom project, no DOM needed for these): `flattenTree`/`buildTree`
@@ -1141,13 +1169,13 @@ unit tests required, not formal TDD) · **Depends on:** —
       boundary no-ops and the `level + height − 1 ≤ 4` refusal; `toReorderGroups` produces 1 group
       for a same-parent reorder and 2 groups (source + destination) for a reparent
 - [ ] `shared/ui/sortable-tree/` — entity-agnostic primitive: `{ items: {id, parentId, label,
-    disabled?}[], maxDepth, renderRow, onMove(groups), announcements?, disabled? }`;
+  disabled?}[], maxDepth, renderRow, onMove(groups), announcements?, disabled? }`;
       `maxDepth: 1` collapses it to the flat sortable-list case (§4) — a unit test asserts
       `getProjection` never returns depth > 1 and `restrictToVerticalAxis` is applied when
       `maxDepth === 1`
 - [ ] `shared/ui/live-announcer/` — two permanently-mounted, empty-on-mount `sr-only` regions
       (`role="status" aria-live="polite" data-testid="tree-live-polite"`, `role="alert"
-    aria-live="assertive" data-testid="tree-live-assertive"`, both `aria-atomic="true"`,
+  aria-live="assertive" data-testid="tree-live-assertive"`, both `aria-atomic="true"`,
       clip-based `sr-only`, never `display:none`) + `useAnnouncer()` hook returning
       `{ announcePolite(msg), announceAssertive(msg) }`. **Announcement timing (precise):** emit
       IMMEDIATELY (leading edge) when `event.repeat === false`; when `event.repeat === true`,

@@ -386,6 +386,44 @@ export const dict = {
     toastCreateFailed: "Не вдалося створити категорію",
     toastUpdated: "Категорію оновлено",
     toastUpdateFailed: "Не вдалося оновити категорію",
+    // --- Category tree (TASK-291) ---------------------------------------------
+    // Labels for the treegrid screen: the persistent Undo control, the per-row
+    // "Дії" menu (the WCAG 2.2 SC 2.5.7 non-dragging alternative), the
+    // "Перемістити до…" dialog, and the blast-radius deactivate confirmation.
+    tree: {
+      label: "Дерево категорій",
+      expandRow: (name: string) => `Розгорнути „${name}“`,
+      collapseRow: (name: string) => `Згорнути „${name}“`,
+      searchLockedHint:
+        "Пошук активний — переміщення вимкнено. Очистіть пошук, щоб змінювати порядок.",
+      undo: "Скасувати останнє переміщення",
+      actionsLabel: (name: string) => `Дії: „${name}“`,
+      moveUp: "Перемістити вгору",
+      moveDown: "Перемістити вниз",
+      indentUnder: (name: string) => `Зробити підкатегорією „${name}“`,
+      indent: "Зробити підкатегорією",
+      outdent: "Підняти на рівень вище",
+      moveTo: "Перемістити до…",
+      edit: "Редагувати",
+      activate: "Активувати",
+      deactivate: "Деактивувати",
+      // Blast radius (§3.11): stated BEFORE the mutation fires, N computed from
+      // the tree already in memory.
+      deactivateConfirm: (name: string, count: number) =>
+        `„${name}“ буде приховано разом із ${count} підкатегоріями`,
+      moveDialog: {
+        title: (name: string) => `Перемістити „${name}“`,
+        description:
+          "Оберіть нову батьківську категорію та позицію серед її підкатегорій.",
+        parentLabel: "Батьківська категорія",
+        rootOption: "Коренева (без батьківської)",
+        positionLabel: "Позиція",
+        positionOption: (pos: number, size: number) => `${pos} з ${size}`,
+        submit: "Перемістити",
+        cancel: "Скасувати",
+        loading: "Завантаження…",
+      },
+    },
     // TASK-285: slug-rename guard on a publicly visible category.
     slugChangeConfirm: (oldSlug: string, newSlug: string) =>
       `Ви змінюєте адресу активної категорії з «${oldSlug}» на «${newSlug}». ` +
@@ -403,7 +441,8 @@ export const dict = {
     parent: "Батьківська категорія",
     rootOption: "Коренева (без батьківської)",
     loading: "Завантаження…",
-    sortOrder: "Порядок сортування",
+    // TASK-291-K: no `sortOrder` label — the order field is gone from this form
+    // (sibling order lives in the treegrid).
     active: "Активна (показувати в магазині)",
     metaTitle: "SEO-заголовок (meta title)",
     metaTitlePlaceholder: "Залиште порожнім, щоб використати назву",
@@ -418,7 +457,6 @@ export const dict = {
       descriptionMax: "Опис має містити не більше 2000 символів",
       imageUrl: "Вкажіть коректний URL",
       parentInvalid: "Оберіть коректну категорію",
-      sortInt: "Порядок сортування має бути невід'ємним цілим числом",
       metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
       metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
     },
@@ -1807,6 +1845,127 @@ export const dict = {
     inactiveBadge: "Неактивний",
     toastSaved: "Список товарів збережено",
     toastSaveFailed: "Не вдалося зберегти список товарів",
+  },
+
+  // --- Generic drag-and-drop / keyboard reorder tree (TASK-291, plan 158 §7.3–§7.4) ---
+  // Entity-agnostic on purpose: the same strings serve the flat sortable lists
+  // (banners / blog-categories / device-brands) once they adopt the primitive.
+  reorderTree: {
+    instructionsLong:
+      "Це дерево категорій. Стрілки вгору й вниз — переходити між рядками, вправо — розгорнути, вліво — згорнути. Щоб перемістити категорію, натисніть Пробіл: далі стрілки вгору й вниз змінюють позицію, вліво й вправо — рівень вкладеності, Enter підтверджує, Escape скасовує. Швидкі клавіші без режиму переміщення: Alt+Shift+стрілки вгору/вниз — позиція, Alt+Shift+стрілки вліво/вправо — рівень. Ті самі дії доступні в меню «Дії» кожного рядка.",
+    instructionsShort:
+      "Пробіл — узяти для переміщення. Меню „Дії“ — перемістити без перетягування.",
+    handleLabel: (name: string) => `Перемістити „${name}“`,
+
+    announce: {
+      grabbed: (
+        name: string,
+        pos: number,
+        size: number,
+        level: number,
+        parent: string,
+      ) =>
+        `Взято «${name}». Позиція ${pos} з ${size}, рівень ${level}, у категорії «${parent}». Стрілки вгору й вниз — змінити позицію, вліво й вправо — змінити рівень, Enter — підтвердити, Escape — скасувати.`,
+      grabbedRoot: (name: string, pos: number, size: number) =>
+        `Взято «${name}». Позиція ${pos} з ${size}, кореневий рівень. Стрілки вгору й вниз — змінити позицію, вправо — зробити підкатегорією, Enter — підтвердити, Escape — скасувати.`,
+      moved: (name: string, pos: number, size: number, parent: string) =>
+        `„${name}“ — позиція ${pos} з ${size}, у категорії „${parent}“.`,
+      movedRoot: (name: string, pos: number, size: number) =>
+        `„${name}“ — позиція ${pos} з ${size}, кореневий рівень.`,
+      indented: (
+        name: string,
+        parent: string,
+        pos: number,
+        size: number,
+        level: number,
+      ) =>
+        `„${name}“ тепер підкатегорія „${parent}“. Позиція ${pos} з ${size}, рівень ${level}.`,
+      outdented: (
+        name: string,
+        parent: string,
+        pos: number,
+        size: number,
+        level: number,
+      ) =>
+        `„${name}“ піднято на рівень вище — тепер підкатегорія „${parent}“. Позиція ${pos} з ${size}, рівень ${level}.`,
+      outdentedRoot: (name: string, pos: number, size: number) =>
+        `„${name}“ піднято на кореневий рівень. Позиція ${pos} з ${size}.`,
+      atTop: "Це вже перша позиція.",
+      atBottom: "Це вже остання позиція.",
+      cannotIndentNoSibling:
+        "Немає категорії, у яку можна вкласти — це перша серед сусідніх.",
+      cannotIndentMaxDepth:
+        "Максимальна глибина — чотири рівні. Глибше вкласти не можна.",
+      cannotOutdentRoot: "Це вже кореневий рівень.",
+      tabBlocked:
+        "Спершу завершіть переміщення: Enter — підтвердити, Escape — скасувати.",
+      autoExpanded: (parent: string, count: number) =>
+        `„${parent}“ розгорнуто, підкатегорій: ${count}.`,
+      saving: "Зберігаю зміни…",
+      busyRefused: "Зачекайте, попереднє переміщення ще зберігається.",
+      committed: (
+        name: string,
+        newPos: number,
+        newSize: number,
+        newParent: string,
+        oldPos: number,
+        oldSize: number,
+        oldParent: string,
+      ) =>
+        `„${name}“ переміщено. Тепер: позиція ${newPos} з ${newSize} у категорії „${newParent}“. Було: позиція ${oldPos} з ${oldSize} у категорії „${oldParent}“. Щоб повернути, скористайтеся кнопкою „Скасувати останнє переміщення“.`,
+      committedNoop: (
+        name: string,
+        pos: number,
+        size: number,
+        parent: string,
+      ) =>
+        `„${name}“ залишено на місці: позиція ${pos} з ${size} у категорії „${parent}“.`,
+      cancelled: (name: string, pos: number, size: number, parent: string) =>
+        `Переміщення скасовано. „${name}“ повернуто на позицію ${pos} з ${size} у категорії „${parent}“.`,
+      searchLocked: "Пошук активний. Очистіть пошук, щоб змінювати порядок.",
+      undone: "Переміщення скасовано.",
+      // The server tree was REPLACED while a row was held in move mode (another
+      // admin's write, or this operator's own status toggle refetching). The
+      // uncommitted preview was built on a tree that no longer exists, so the
+      // grab is dropped rather than committed against stale sibling lists.
+      treeChangedDuringMove:
+        "Дерево категорій змінилося. Переміщення скасовано — почніть заново.",
+      // Spoken POLITELY after the assertive CATEGORY_TREE_STALE alert (§7.3):
+      // the operator's node is re-focused at its refetched location and its new
+      // position is read out. Carries the level, unlike `moved`.
+      positionAfterConflict: (
+        name: string,
+        pos: number,
+        size: number,
+        level: number,
+        parent: string | null,
+      ) =>
+        parent === null
+          ? `„${name}“ — позиція ${pos} з ${size}, рівень ${level}, кореневий рівень.`
+          : `„${name}“ — позиція ${pos} з ${size}, рівень ${level}, у категорії „${parent}“.`,
+    },
+
+    // Assertive region (rejections only) — one string per backend error code.
+    // The client NEVER announces a raw backend message and NEVER leaves the
+    // region empty: an unrecognised code falls back to `rejectedUnknown`.
+    rejected: {
+      CATEGORY_CYCLE: (name: string, target: string) =>
+        `Не можна перемістити „${name}“ всередину власної підкатегорії „${target}“. Позицію не змінено.`,
+      CATEGORY_MAX_DEPTH:
+        "Максимальна глибина дерева — чотири рівні. Переміщення скасовано.",
+      CATEGORY_SELF_PARENT: (name: string) =>
+        `Категорію „${name}“ не можна зробити батьківською для самої себе. Переміщення скасовано.`,
+      CATEGORY_DUPLICATE_ID: (name: string) =>
+        `Помилка запиту: категорія „${name}“ вказана двічі. Переміщення скасовано.`,
+      CATEGORY_NOT_FOUND: (name: string) =>
+        `Категорію „${name}“ або її нову батьківську категорію не знайдено — можливо, її щойно видалив інший адміністратор. Список оновлено.`,
+      CATEGORY_TREE_STALE:
+        "Дерево категорій змінив інший адміністратор. Список оновлено — повторіть переміщення.",
+    },
+    rejectedUnknown: (name: string) =>
+      `Не вдалося перемістити „${name}“. Дерево оновлено.`,
+    saveFailed: (name: string) =>
+      `Не вдалося зберегти переміщення „${name}“. Попередній порядок відновлено. Спробуйте ще раз.`,
   },
 } as const;
 

@@ -109,6 +109,14 @@ export const handlers = [
     }),
   ),
 
+  // Admin category tree (TASK-291) — the complete, uncapped tree that feeds the
+  // treegrid, the category form's parent <Select> and the "Перемістити до…"
+  // dialog. Empty by default so any incidental mount stays off
+  // onUnhandledRequest; the category suites override it per-case.
+  http.get("*/api/categories/admin/tree", () =>
+    HttpResponse.json({ data: [] }),
+  ),
+
   // Auth — admin session bootstrap.
   http.post("*/api/auth/login", () =>
     HttpResponse.json({ data: { accessToken: "test.access.token" } }),

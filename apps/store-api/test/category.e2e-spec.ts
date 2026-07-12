@@ -9,6 +9,8 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CategoryRepository } from '../src/category/category.repository';
+import { CategoryCycleError } from '../src/category/category.errors';
+import { HttpExceptionFilter } from '../src/common/filters';
 import { PrismaService } from '../src/prisma';
 
 /**
@@ -70,6 +72,10 @@ describe('CategoryController (e2e)', () => {
     activate: jest.fn(),
     findChildren: jest.fn(),
     findDescendantIds: jest.fn(),
+    // TASK-291: batch reorder/reparent + the subtree expansion the post-commit
+    // re-index uses (best-effort, so its failure never reaches the response).
+    applyTreeMoves: jest.fn(),
+    findSubtreeIds: jest.fn(),
   };
 
   // Mock PrismaService — prevents database connection errors
@@ -191,6 +197,13 @@ describe('CategoryController (e2e)', () => {
         },
       }),
     );
+
+    // Registered exactly as `main.ts` does (DI-resolved, for its PinoLogger): the reorder
+    // contract (plan 158 §3.5) depends on the STABLE error code surviving this filter's
+    // envelope rebuild — it reads ONLY `error` + `message` off the thrown body and
+    // discards every other property. Asserting the code on the wire is meaningless
+    // without it.
+    app.useGlobalFilters(moduleFixture.get(HttpExceptionFilter));
 
     app.setGlobalPrefix('api', {
       exclude: ['health'],
@@ -554,9 +567,12 @@ describe('CategoryController (e2e)', () => {
 
       categoryRepositoryMock.findById.mockResolvedValue(testCategory);
       categoryRepositoryMock.update.mockResolvedValue({
-        ...testCategory,
-        name: 'Updated Category Name',
-        updatedAt: new Date('2026-05-05T12:00:00.000Z'),
+        category: {
+          ...testCategory,
+          name: 'Updated Category Name',
+          updatedAt: new Date('2026-05-05T12:00:00.000Z'),
+        },
+        reparented: false,
       });
 
       const response = await request(app.getHttpServer())
@@ -611,6 +627,161 @@ describe('CategoryController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .send({ parentId: 'cat-e2e-2' })
         .expect(400);
+    });
+  });
+
+  // ─── PATCH /api/admin/categories/reorder (admin, TASK-291) ──────────────────
+
+  describe('PATCH /api/admin/categories/reorder', () => {
+    // Real UUIDs — the DTO validates `@IsUUID('4')` on every id.
+    const rootId = '550e8400-e29b-41d4-a716-446655440000';
+    const childA = '550e8400-e29b-41d4-a716-446655440001';
+    const childB = '550e8400-e29b-41d4-a716-446655440002';
+
+    const adminTreeNode = {
+      id: rootId,
+      name: 'Phone Cases',
+      slug: 'phone-cases',
+      description: null,
+      image: null,
+      parentId: null,
+      isActive: true,
+      sortOrder: 0,
+      metaTitle: null,
+      metaDescription: null,
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      productCount: 3,
+      depth: 1,
+      children: [],
+    };
+
+    it('should return 401 without auth token', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/admin/categories/reorder')
+        .send({ groups: [{ parentId: null, orderedIds: [rootId] }] })
+        .expect(401);
+    });
+
+    it('should return 403 for non-admin user', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/categories/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ groups: [{ parentId: null, orderedIds: [rootId] }] })
+        .expect(403);
+    });
+
+    it('should return 400 when an ordered id is not a uuid', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/categories/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ groups: [{ parentId: null, orderedIds: ['not-a-uuid'] }] })
+        .expect(400);
+
+      expect(categoryRepositoryMock.applyTreeMoves).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when groups is missing', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/categories/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(400);
+
+      expect(categoryRepositoryMock.applyTreeMoves).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 on an extra property (forbidNonWhitelisted)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/categories/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          groups: [{ parentId: null, orderedIds: [rootId] }],
+          sortOrder: 3,
+        })
+        .expect(400);
+
+      expect(categoryRepositoryMock.applyTreeMoves).not.toHaveBeenCalled();
+    });
+
+    // Regression guard (plan 158 §3.4): dragging the LAST child out of a parent sends
+    // that parent an EMPTY orderedIds — `@ArrayNotEmpty()` on the group would 400 a
+    // legal, day-one operator action.
+    it('should ACCEPT a group with an empty orderedIds array', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      categoryRepositoryMock.applyTreeMoves.mockResolvedValue({
+        tree: [adminTreeNode],
+        movedIds: [childA],
+      });
+
+      const groups = [
+        { parentId: rootId, orderedIds: [] },
+        { parentId: null, orderedIds: [rootId, childA] },
+      ];
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/categories/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ groups })
+        .expect(200);
+
+      expect(response.body).toHaveProperty('data');
+      expect(categoryRepositoryMock.applyTreeMoves).toHaveBeenCalledWith(groups);
+    });
+
+    it('should surface the CATEGORY_CYCLE code in the 400 body’s error field', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      categoryRepositoryMock.applyTreeMoves.mockRejectedValue(new CategoryCycleError());
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/categories/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ groups: [{ parentId: childA, orderedIds: [rootId] }] })
+        .expect(400);
+
+      // The stable code must survive HttpExceptionFilter's envelope rebuild — it reads
+      // ONLY `error` and `message` off the thrown body (plan 158 §3.5).
+      expect(response.body).toHaveProperty('error', 'CATEGORY_CYCLE');
+      expect(response.body).toHaveProperty('statusCode', 400);
+      expect(response.body).toHaveProperty('message');
+    });
+
+    it('should return 200 with the refreshed admin tree for admin', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      categoryRepositoryMock.applyTreeMoves.mockResolvedValue({
+        tree: [adminTreeNode],
+        movedIds: [],
+      });
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/categories/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ groups: [{ parentId: rootId, orderedIds: [childB, childA] }] })
+        .expect(200);
+
+      expect(response.body).toHaveProperty('data');
+      expect(Array.isArray(response.body.data)).toBe(true);
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.data[0]).toMatchObject({
+        id: rootId,
+        parentId: null,
+        productCount: 3,
+        depth: 1,
+      });
+      expect(categoryRepositoryMock.applyTreeMoves).toHaveBeenCalledTimes(1);
+      expect(categoryRepositoryMock.applyTreeMoves).toHaveBeenCalledWith([
+        { parentId: rootId, orderedIds: [childB, childA] },
+      ]);
     });
   });
 

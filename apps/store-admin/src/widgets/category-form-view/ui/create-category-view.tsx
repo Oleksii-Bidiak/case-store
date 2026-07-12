@@ -11,6 +11,7 @@ import {
 } from "@/features/category-form";
 import {
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
+  getCategoryControllerGetAdminTreeQueryKey,
   useAdminCategoryControllerCreate,
 } from "@/entities/category";
 import { dict } from "@/shared/config";
@@ -32,6 +33,10 @@ export function CreateCategoryView() {
           void queryClient.invalidateQueries({
             queryKey:
               getAdminCategoryControllerFindAllWithProductCountQueryKey(),
+          });
+          // §3.11: the new category must appear in the treegrid without a reload.
+          void queryClient.invalidateQueries({
+            queryKey: getCategoryControllerGetAdminTreeQueryKey(),
           });
           toast.success(dict.categories.toastCreated);
           router.push("/categories");

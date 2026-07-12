@@ -8,13 +8,16 @@ import {
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
-const SKELETON_ROWS = 5;
-const COLUMN_COUNT = 7;
+const SKELETON_ROWS = 6;
+const COLUMN_COUNT = 5;
 
 /**
- * Loading placeholder matching the AdminCategoryTable column structure.
+ * Loading placeholder for `AdminCategoryTree` (plan 158 §5, TASK-291-J).
+ * Replaces `AdminCategoryTableSkeleton` — the tree has five columns
+ * (Назва | Slug | Товари | Статус | Дії); Батьківська and Порядок are gone,
+ * that information IS the tree now (§3.11).
  */
-export function AdminCategoryTableSkeleton() {
+export function AdminCategoryTreeSkeleton() {
   return (
     <div className="rounded-lg border border-border shadow-card overflow-hidden">
       <Table>
@@ -22,9 +25,7 @@ export function AdminCategoryTableSkeleton() {
           <TableRow>
             <TableHead>{dict.categories.colName}</TableHead>
             <TableHead>{dict.categories.colSlug}</TableHead>
-            <TableHead>{dict.categories.colParent}</TableHead>
             <TableHead>{dict.categories.colProducts}</TableHead>
-            <TableHead>{dict.categories.colSort}</TableHead>
             <TableHead>{dict.categories.colStatus}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
@@ -34,7 +35,16 @@ export function AdminCategoryTableSkeleton() {
             <TableRow key={index}>
               {Array.from({ length: COLUMN_COUNT }).map((__, cell) => (
                 <TableCell key={cell}>
-                  <div className="h-4 w-full max-w-[8rem] animate-pulse rounded bg-muted" />
+                  <div
+                    className="h-4 w-full max-w-32 animate-pulse rounded bg-muted"
+                    style={
+                      // Stagger the first column so the placeholder reads as a
+                      // tree rather than a flat table.
+                      cell === 0
+                        ? { marginInlineStart: (index % 3) * 24 }
+                        : undefined
+                    }
+                  />
                 </TableCell>
               ))}
             </TableRow>

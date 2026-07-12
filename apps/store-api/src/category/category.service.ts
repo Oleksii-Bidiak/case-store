@@ -1,19 +1,31 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
 import {
   CategoryRepository,
+  CategoryUpdateResult,
   CreateCategoryInput,
   UpdateCategoryInput,
   FindRootParams,
   FindAllParams,
 } from './category.repository';
-import { CategoryEntity, CategoryTreeNodeEntity, CategoryWithCountEntity } from './entities';
+import {
+  AdminCategoryTreeNodeEntity,
+  CategoryEntity,
+  CategoryTreeNodeEntity,
+  CategoryWithCountEntity,
+} from './entities';
 import { CategoryListQueryDto } from './dto';
+import {
+  CategoryDomainError,
+  CategoryErrorCode,
+  badCategory,
+  conflictCategory,
+  notFoundCategory,
+} from './category.errors';
+import { ReorderGroupInput } from './category-reorder.rules';
 import { generateSlug } from '../common/utils';
+import { CacheService, PRODUCT_LIST_PREFIX } from '../cache';
+import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
 
 /**
  * Pagination metadata returned alongside paginated results.
@@ -49,6 +61,13 @@ interface CategoryTreeResponse {
 }
 
 /**
+ * Admin category tree response (TASK-291) — same envelope, richer nodes.
+ */
+interface AdminCategoryTreeResponse {
+  data: AdminCategoryTreeNodeEntity[];
+}
+
+/**
  * Category detail response with product count.
  */
 interface CategoryWithCountResponse {
@@ -56,9 +75,25 @@ interface CategoryWithCountResponse {
   productCount: number;
 }
 
+/**
+ * Batch reorder/reparent payload (TASK-291). Structural on purpose: `ReorderTreeDto`
+ * (class-validator, added in TASK-291-E) satisfies it, so the service does not depend
+ * on the DTO's shape beyond the one field it forwards.
+ */
+export interface ReorderTreeInput {
+  groups: ReorderGroupInput[];
+}
+
 @Injectable()
 export class CategoryService {
-  constructor(private readonly categoryRepository: CategoryRepository) {}
+  constructor(
+    private readonly categoryRepository: CategoryRepository,
+    private readonly cache: CacheService,
+    private readonly categorySubtreeIndexer: CategorySubtreeIndexer,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(CategoryService.name);
+  }
 
   /**
    * Get a paginated list of root categories (parentId = null).
@@ -100,17 +135,17 @@ export class CategoryService {
   }
 
   /**
-   * Get the FULL category tree for admin tooling (TASK-236) — all `isActive`
-   * states, still capped at 3 levels. Used by the admin product form so staff
-   * can assign a product to a leaf category (including temporarily deactivated
-   * ones). Reuses {@link CategoryTreeNodeEntity}.
+   * Get the FULL category tree for admin tooling (TASK-236, rewritten by TASK-291)
+   * — all `isActive` states and, since the read became a flat query (plan 158
+   * §3.3), no structural depth cap either. The repository already returns
+   * {@link AdminCategoryTreeNodeEntity} nodes (a strict superset of
+   * {@link CategoryTreeNodeEntity}: `parentId`, `productCount`, `depth`), so this is
+   * a pass-through — there is nothing left to map.
    */
-  async getCategoryTreeForAdmin(): Promise<CategoryTreeResponse> {
-    const tree = await this.categoryRepository.findCategoryTreeForAdmin();
+  async getCategoryTreeForAdmin(): Promise<AdminCategoryTreeResponse> {
+    const data = await this.categoryRepository.findCategoryTreeForAdmin();
 
-    return {
-      data: tree.map((node) => CategoryTreeNodeEntity.fromPrisma(node)),
-    };
+    return { data };
   }
 
   /**
@@ -209,8 +244,20 @@ export class CategoryService {
       }
     }
 
-    // If parentId is being changed, validate the new parent
+    // If parentId is being changed, validate the new parent. These are FAST-FAIL guards
+    // on a pre-lock read; the repository re-runs the authoritative self-parent / cycle /
+    // depth checks against an in-transaction snapshot under the tree advisory lock
+    // (plan 158 §3.10.4) and throws the same domain errors, which `toHttp` maps below.
+    // NOTE: this comparison is NON-authoritative and is used for NOTHING but these
+    // fast-fail guards — a concurrent reparent can make it disagree with what actually
+    // happens under the lock, so the side effects below key off the repository's
+    // in-transaction `reparented` flag instead.
     if (input.parentId !== undefined && input.parentId !== category.parentId) {
+      // A category can never be its own parent (pre-existing hole, plan §2.1).
+      if (input.parentId === id) {
+        throw badCategory(CategoryErrorCode.SELF_PARENT, 'A category cannot be its own parent');
+      }
+
       // Setting to null (making it a root category) is always valid
       if (input.parentId !== null) {
         // Validate parent exists
@@ -222,7 +269,8 @@ export class CategoryService {
         // Detect cycles: cannot set parent to one of our own descendants
         const descendantIds = await this.categoryRepository.findDescendantIds(id);
         if (descendantIds.includes(input.parentId)) {
-          throw new BadRequestException(
+          throw badCategory(
+            CategoryErrorCode.CYCLE,
             'Cannot set parent to a descendant category (circular reference)',
           );
         }
@@ -240,9 +288,100 @@ export class CategoryService {
         ? { oldSlug: category.slug, newSlug: input.slug }
         : undefined;
 
-    const updatedCategory = await this.categoryRepository.update(id, input, slugRename);
+    let result: CategoryUpdateResult;
+    try {
+      result = await this.categoryRepository.update(id, input, slugRename);
+    } catch (error) {
+      throw this.toHttp(error);
+    }
 
-    return CategoryEntity.fromPrisma(updatedCategory);
+    if (result.reparented) {
+      // Same post-commit side effects as the batch endpoint (plan §3.13) — a reparent
+      // changes subtree membership, which is baked into BOTH the category-filtered
+      // product-list cache key rollup and the products' indexed ancestor chains. Both
+      // were pre-existing holes on this path (§2.1).
+      //
+      // The gate is the repository's AUTHORITATIVE, tree-locked verdict — NOT the
+      // pre-transaction `input.parentId !== category.parentId` comparison above. Those
+      // two disagree whenever another admin reparents this node between our unlocked read
+      // and the lock: a full-object PUT re-sending the (now stale) parent would then look
+      // like "no change" here while the repository legitimately moves the node back — and
+      // the cache/index would silently rot. `movedIds` does the same job for the batch
+      // endpoint; this is its single-node twin.
+      await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+      this.reindexSubtreesInBackground([id]);
+    }
+
+    return CategoryEntity.fromPrisma(result.category);
+  }
+
+  /**
+   * Apply a batch of sibling-bucket rewrites (reorder and/or reparent) and return the
+   * refreshed admin tree (TASK-291, plan 158 §3.13).
+   *
+   * ONE repository call = ONE transaction (never one per group). All side effects fire
+   * exactly once, AFTER it commits: the product-list cache eviction (a reparent changes
+   * the subtree rollup baked into its key), a best-effort NON-BLOCKING search re-index of
+   * the moved subtrees (a Meilisearch outage must never fail an admin request), and one
+   * structured audit line.
+   *
+   * The repository's domain errors are mapped to HTTP here — the wire body carries the
+   * stable `error` code the admin panel keys its UA announcements off.
+   */
+  async reorderTree(dto: ReorderTreeInput, actorId?: string): Promise<AdminCategoryTreeResponse> {
+    let result;
+    try {
+      result = await this.categoryRepository.applyTreeMoves(dto.groups);
+    } catch (error) {
+      throw this.toHttp(error);
+    }
+
+    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    this.reindexSubtreesInBackground(result.movedIds);
+
+    this.logger.info(
+      {
+        event: 'category.reorder',
+        groups: dto.groups,
+        movedIds: result.movedIds,
+        actorId,
+      },
+      'Category tree reordered',
+    );
+
+    return { data: result.tree };
+  }
+
+  /**
+   * Fire the subtree re-index WITHOUT awaiting it: the index is eventually consistent and
+   * the reindex endpoint repairs any drift, so an indexing failure may neither delay nor
+   * fail the admin write. The port is best-effort by contract; the `catch` is belt-and-
+   * braces against an unhandled rejection from a faulty implementation.
+   */
+  private reindexSubtreesInBackground(rootCategoryIds: string[]): void {
+    void this.categorySubtreeIndexer.reindexSubtrees(rootCategoryIds).catch((err: unknown) => {
+      this.logger.warn({ err, rootCategoryIds }, 'Best-effort category subtree reindex failed');
+    });
+  }
+
+  /**
+   * Map a category domain error onto its HTTP status (plan 158 §3.5 / §6). Anything that
+   * is not a domain error (a Prisma failure, a lost connection) is rethrown untouched so
+   * the global filter still reports it as a 500.
+   */
+  private toHttp(error: unknown): Error {
+    if (!(error instanceof CategoryDomainError)) {
+      return error instanceof Error ? error : new Error(String(error));
+    }
+
+    switch (error.code) {
+      case CategoryErrorCode.NOT_FOUND:
+        return notFoundCategory(error.code, error.message);
+      case CategoryErrorCode.TREE_STALE:
+        return conflictCategory(error.code, error.message);
+      default:
+        return badCategory(error.code, error.message);
+    }
   }
 
   /**

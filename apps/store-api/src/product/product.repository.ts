@@ -801,6 +801,28 @@ export class ProductRepository {
   }
 
   /**
+   * Resolve the ids of every active, non-deleted product filed DIRECTLY in any of
+   * the given categories (TASK-291, plan 158 §3.13.2). The caller (the search
+   * subtree-indexer) expands each moved category root into its full subtree first,
+   * so a plain `categoryId IN (...)` is the correct membership test here.
+   *
+   * Inactive / soft-deleted products are excluded: they are not in the search index,
+   * so re-indexing them would only issue a redundant delete.
+   */
+  async findIdsByCategoryIds(categoryIds: string[]): Promise<string[]> {
+    if (categoryIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.prisma.product.findMany({
+      where: { categoryId: { in: categoryIds }, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+
+    return rows.map((row) => row.id);
+  }
+
+  /**
    * Load a single active, non-deleted product as a search-index source
    * (TASK-075). Joins the category name + primary image so the built document is
    * self-contained. Returns null when the product is missing, soft-deleted, or

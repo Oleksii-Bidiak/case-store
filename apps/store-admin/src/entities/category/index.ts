@@ -10,9 +10,18 @@ export {
   useAdminCategoryControllerUpdate,
   useAdminCategoryControllerDeactivate,
   useAdminCategoryControllerActivate,
+  useAdminCategoryControllerReorder,
+  useCategoryControllerGetAdminTree,
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
   getAdminCategoryControllerFindByIdQueryKey,
+  getCategoryControllerGetAdminTreeQueryKey,
+  getCategoryControllerGetAdminTreeQueryOptions,
 } from "@/shared/api";
+
+export {
+  flattenAdminCategoryTree,
+  type CategoryTreeItem,
+} from "./lib/flatten-admin-tree";
 
 export type {
   CategoryEntity,
@@ -21,4 +30,8 @@ export type {
   UpdateCategoryDto,
   AdminCategoryControllerFindAllWithProductCountParams,
   AdminCategoryListResponse,
+  AdminCategoryTreeNodeEntity,
+  AdminCategoryTreeResponse,
+  ReorderCategoriesDto,
+  ReorderGroupDto,
 } from "@/shared/api";
