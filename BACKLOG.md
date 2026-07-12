@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-293**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-296**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -299,10 +299,13 @@
 | TASK-086 | Quick-view modal — shipped 2026-07-12: ProductQuickView Dialog (fullscreen on mobile) via the renamed `hoverAction` card slot, wired into all card render sites; a11y focus-return leg → manual-qa | ✅ | 156 |
 | TASK-139 | Admin-managed recommendation carousels — owner 2026-07-11: rules + manual model (source enum + CarouselItem), mirrors Banner pattern. Shipped 2026-07-12: carousels module + admin CRUD with MANUAL item picker + tagged-ISR home widget below PopularRail; live smoke → manual-qa | ✅ | 154 |
 | TASK-140 | Admin tables UX rethink — split per plan 157: DataTable rewrite closed as superseded (147/192/258/276); category rethink → TASK-291; TanStack pilot parked → TASK-292 | ✅ | 157 |
-| TASK-291 | [D/M] Admin category tree — tree view (expand/collapse) instead of the flat paginated table + drag reorder (replaces the manual `sortOrder` input) + drag reparent (replaces the flat parent Select, guarded by `findDescendantIds` cycle detection) + optional inline bulk activate/deactivate; needs a new batch reorder/reparent write endpoint (does not exist yet) and full DnD a11y (keyboard reorder + aria announcements); re-scoped out of TASK-140 (plan 157 §4, Option C). In progress on `feature/291-admin-category-tree`: the backend slice (291-A…E) drops `sortOrder` from Create/UpdateCategoryDto, so `store-admin` does not typecheck until the frontend slice removes the `sortOrder` input — the branch must land atomically (backend + frontend together), never a backend-only merge to `develop` | 🔄 | 158 |
+| TASK-291 | Admin category tree — re-scoped out of TASK-140 (plan 157 §4, Option C). Shipped 2026-07-12 on `feature/291-admin-category-tree`: `PATCH /api/admin/categories/reorder` (batch reorder/reparent, advisory-locked, tree-scoped lock on any reparent, `findDescendantIds` cycle guard, 409 `CATEGORY_TREE_STALE`) — no Prisma change; admin `role="treegrid"` widget replaces the flat table and the manual `sortOrder` input: pointer DnD (@dnd-kit) + keyboard reorder/reparent + «Перемістити в…» dialog, all through one pure `applyMove()` reducer, Ukrainian live-region announcements, blast-radius confirm, 30s undo. Bulk activate/deactivate deferred → TASK-293. Live drag/drop + keyboard reorder + screen-reader audit → manual-qa | ✅ | 158 |
 | TASK-288 | Replace hardcoded PopularRail tabs with three admin-managed carousels — the tabs (Хіти/Новинки/Акційні) map 1:1 onto BESTSELLING/NEWEST/ON_SALE sources; follow-up idea from TASK-139 (plan 154 §Open Questions); needs owner decision before scheduling | ⬜ | — |
 | TASK-289 | Category tile images via next/image — widen `next.config.ts` `images.remotePatterns` (wildcard or validated host allowlist) and swap the plain `<img>` in `shared/ui/category-tile-image.tsx`; revisits the deliberate plan-155 design decision to gain image optimization | ⬜ | — |
 | TASK-290 | Wishlist-page parity for catalog UX — quick-view trigger on wishlist item cards/rows + collapsible sections in the wishlist filter drawer (both deliberately out of scope in plan 156; wishlist drawer already got the live-count footer) | ⬜ | — |
+| TASK-293 | Category tree: multi-select + bulk activate/deactivate — deliberately deferred out of TASK-291 (plan 158 §3.11/§12): the treegrid ships with a per-row status toggle only. Needs a selection column, a bulk `PATCH` (or reuse of the per-id toggle in a loop) and a decision on whether deactivating a parent cascades to descendants | ⬜ | 158 |
+| TASK-294 | Storefront ISR revalidation on category reorder/reparent — TASK-291 evicts the product-list cache and reindexes Meili subtrees, but does NOT call `/api/revalidate` (plan 158 §3.13, deferred): the storefront mega-menu / category pages stay stale until their own ISR window elapses. Wire the reorder mutation into the TASK-104 publish/revalidate pipeline | ⬜ | 158 |
+| TASK-295 | Roll the reusable reorder mechanics out to the remaining admin lists — banners, blog-categories, device-brands (flat sibling buckets) and product-groups; all still expose a raw read-only `sortOrder` number input (the exact anti-pattern TASK-291 removed for categories). Reuse `shared/lib/sortable-tree` + `shared/ui/sortable-tree` + the `common/reorder` backend util (plan 157 §4, plan 158 §12) | ⬜ | 158 |
 
 ### Parked
 
@@ -324,6 +327,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-293**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-296**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
