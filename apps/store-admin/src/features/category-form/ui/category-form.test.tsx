@@ -16,6 +16,11 @@ import {
 const UUID_A = "11111111-1111-4111-8111-111111111111";
 const UUID_B = "22222222-2222-4222-8222-222222222222";
 
+/**
+ * TASK-291 (§3.11): the parent <Select> is now fed from the COMPLETE admin tree
+ * (`GET /api/categories/admin/tree`, nested `AdminCategoryTreeNodeEntity`), not
+ * from the 100-row-capped flat admin list — so these stubs serve the tree.
+ */
 function makeCategoryRow(id: string, name: string) {
   return {
     id,
@@ -24,11 +29,14 @@ function makeCategoryRow(id: string, name: string) {
     description: null,
     image: null,
     parentId: null,
+    depth: 1,
     sortOrder: 0,
     isActive: true,
     productCount: 0,
-    createdAt: "2026-06-01T10:00:00.000Z",
+    metaTitle: null,
+    metaDescription: null,
     updatedAt: "2026-06-01T10:00:00.000Z",
+    children: [],
   };
 }
 
@@ -40,11 +48,8 @@ function stubCategories(
   ],
 ) {
   server.use(
-    http.get("*/api/admin/categories", () =>
-      HttpResponse.json({
-        data: rows,
-        meta: { total: rows.length, page: 1, limit: 100, totalPages: 1 },
-      }),
+    http.get("*/api/categories/admin/tree", () =>
+      HttpResponse.json({ data: rows }),
     ),
   );
 }
@@ -198,14 +203,13 @@ describe("CategoryForm — parent survives late-loading options (TASK-201)", () 
    *  categories list arrives — this reproduces the QA sequence. */
   function stubCategoriesDelayed(ms = 75) {
     server.use(
-      http.get("*/api/admin/categories", async () => {
+      http.get("*/api/categories/admin/tree", async () => {
         await delay(ms);
         return HttpResponse.json({
           data: [
             makeCategoryRow(UUID_A, "Category A"),
             makeCategoryRow(UUID_B, "Category B"),
           ],
-          meta: { total: 2, page: 1, limit: 100, totalPages: 1 },
         });
       }),
     );

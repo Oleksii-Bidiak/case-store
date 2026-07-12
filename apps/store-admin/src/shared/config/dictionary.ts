@@ -386,6 +386,39 @@ export const dict = {
     toastCreateFailed: "Не вдалося створити категорію",
     toastUpdated: "Категорію оновлено",
     toastUpdateFailed: "Не вдалося оновити категорію",
+    // --- Category tree (TASK-291) ---------------------------------------------
+    // Labels for the treegrid screen: the persistent Undo control, the per-row
+    // "Дії" menu (the WCAG 2.2 SC 2.5.7 non-dragging alternative), the
+    // "Перемістити до…" dialog, and the blast-radius deactivate confirmation.
+    tree: {
+      undo: "Скасувати останнє переміщення",
+      actionsLabel: (name: string) => `Дії: „${name}“`,
+      moveUp: "Перемістити вгору",
+      moveDown: "Перемістити вниз",
+      indentUnder: (name: string) => `Зробити підкатегорією „${name}“`,
+      indent: "Зробити підкатегорією",
+      outdent: "Підняти на рівень вище",
+      moveTo: "Перемістити до…",
+      edit: "Редагувати",
+      activate: "Активувати",
+      deactivate: "Деактивувати",
+      // Blast radius (§3.11): stated BEFORE the mutation fires, N computed from
+      // the tree already in memory.
+      deactivateConfirm: (name: string, count: number) =>
+        `„${name}“ буде приховано разом із ${count} підкатегоріями`,
+      moveDialog: {
+        title: (name: string) => `Перемістити „${name}“`,
+        description:
+          "Оберіть нову батьківську категорію та позицію серед її підкатегорій.",
+        parentLabel: "Батьківська категорія",
+        rootOption: "Коренева (без батьківської)",
+        positionLabel: "Позиція",
+        positionOption: (pos: number, size: number) => `${pos} з ${size}`,
+        submit: "Перемістити",
+        cancel: "Скасувати",
+        loading: "Завантаження…",
+      },
+    },
     // TASK-285: slug-rename guard on a publicly visible category.
     slugChangeConfirm: (oldSlug: string, newSlug: string) =>
       `Ви змінюєте адресу активної категорії з «${oldSlug}» на «${newSlug}». ` +
@@ -1886,6 +1919,19 @@ export const dict = {
         `Переміщення скасовано. „${name}“ повернуто на позицію ${pos} з ${size} у категорії „${parent}“.`,
       searchLocked: "Пошук активний. Очистіть пошук, щоб змінювати порядок.",
       undone: "Переміщення скасовано.",
+      // Spoken POLITELY after the assertive CATEGORY_TREE_STALE alert (§7.3):
+      // the operator's node is re-focused at its refetched location and its new
+      // position is read out. Carries the level, unlike `moved`.
+      positionAfterConflict: (
+        name: string,
+        pos: number,
+        size: number,
+        level: number,
+        parent: string | null,
+      ) =>
+        parent === null
+          ? `„${name}“ — позиція ${pos} з ${size}, рівень ${level}, кореневий рівень.`
+          : `„${name}“ — позиція ${pos} з ${size}, рівень ${level}, у категорії „${parent}“.`,
     },
 
     // Assertive region (rejections only) — one string per backend error code.

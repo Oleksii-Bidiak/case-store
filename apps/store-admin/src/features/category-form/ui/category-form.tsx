@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useAdminCategoryControllerFindAllWithProductCount } from "@/entities/category";
+import {
+  flattenAdminCategoryTree,
+  useCategoryControllerGetAdminTree,
+} from "@/entities/category";
+import { descendantsOf } from "@/shared/lib/sortable-tree";
 import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
 import { slugify } from "@/shared/lib";
 import {
@@ -97,12 +101,25 @@ export function CategoryForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const categoriesQuery = useAdminCategoryControllerFindAllWithProductCount({
-    limit: 100,
-  });
-  const parentOptions = (categoriesQuery.data?.data ?? []).filter(
-    (category) => category.id !== excludeParentId,
+  // TASK-291 (§3.11 / §7.6.3): the parent <Select> is the WCAG 2.2 SC 2.5.7
+  // non-dragging fallback and the no-JS fallback, so it is KEPT — but it is fed
+  // from the COMPLETE admin tree, not from the 100-row-capped flat admin list.
+  // A capped page is a PARTIAL graph: a descendant beyond the cap is simply
+  // absent, so a descendant-exclusion computed over it silently UNDER-excludes
+  // (and a legitimate parent may not be selectable at all). Options are indented
+  // by their tree depth, and SELF *plus all descendants* are excluded.
+  const categoriesQuery = useCategoryControllerGetAdminTree();
+  const treeItems = useMemo(
+    () => flattenAdminCategoryTree(categoriesQuery.data?.data),
+    [categoriesQuery.data],
   );
+  const parentOptions = useMemo(() => {
+    if (!excludeParentId) return treeItems;
+    const excluded = descendantsOf(treeItems, excludeParentId);
+    return treeItems.filter(
+      (item) => item.id !== excludeParentId && !excluded.has(item.id),
+    );
+  }, [treeItems, excludeParentId]);
 
   // Live SERP preview (TASK-268): resolve the exact title/description the
   // storefront would render for this category page through the same three-tier
@@ -233,7 +250,16 @@ export function CategoryForm({
                   </SelectItem>
                   {parentOptions.map((category) => (
                     <SelectItem key={category.id} value={category.id}>
-                      {category.name}
+                      {/* Depth indent via padding, not text: a text prefix would
+                          leak into the option's accessible name. */}
+                      <span
+                        className="inline-block"
+                        style={{
+                          paddingInlineStart: `${(category.depth - 1) * 12}px`,
+                        }}
+                      >
+                        {category.label}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
