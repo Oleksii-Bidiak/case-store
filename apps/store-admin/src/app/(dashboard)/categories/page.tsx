@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { AdminCategoryTable, AdminCategoryTableSkeleton } from "@/widgets";
+import { AdminCategoryTree, AdminCategoryTreeSkeleton } from "@/widgets";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
@@ -21,8 +21,10 @@ export default function CategoriesPage() {
         </Button>
       </div>
 
-      <Suspense fallback={<AdminCategoryTableSkeleton />}>
-        <AdminCategoryTable />
+      {/* TASK-291 (§3.11): the drag-and-drop treegrid replaces the flat table —
+          it is the single place where hierarchy and sibling order are edited. */}
+      <Suspense fallback={<AdminCategoryTreeSkeleton />}>
+        <AdminCategoryTree />
       </Suspense>
     </div>
   );

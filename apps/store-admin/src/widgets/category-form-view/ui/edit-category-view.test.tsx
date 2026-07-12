@@ -7,6 +7,7 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { getCategoryControllerGetAdminTreeQueryKey } from "@/entities/category";
 import { EditCategoryView } from "./edit-category-view";
 
 // next/navigation is unavailable under jsdom — mock the router.
@@ -36,12 +37,10 @@ function makeCategory(isActive: boolean) {
 function stubCategory(category: ReturnType<typeof makeCategory>) {
   const putCalls: unknown[] = [];
   server.use(
-    // Parent-category options for the form's select.
-    http.get("*/api/admin/categories", () =>
-      HttpResponse.json({
-        data: [],
-        meta: { total: 0, page: 1, limit: 100, totalPages: 0 },
-      }),
+    // Parent-category options for the form's select — TASK-291 feeds it from the
+    // COMPLETE admin tree, not the capped flat admin list.
+    http.get("*/api/categories/admin/tree", () =>
+      HttpResponse.json({ data: [] }),
     ),
     // Structured-spec template editor mounted below the form (TASK-191).
     http.get(`*/api/categories/${CATEGORY_ID}/attribute-definitions`, () =>
@@ -60,13 +59,15 @@ function stubCategory(category: ReturnType<typeof makeCategory>) {
 
 async function renderAndWaitForForm(category: ReturnType<typeof makeCategory>) {
   const putCalls = stubCategory(category);
-  renderWithProviders(<EditCategoryView categoryId={CATEGORY_ID} />);
+  const { queryClient } = renderWithProviders(
+    <EditCategoryView categoryId={CATEGORY_ID} />,
+  );
   await waitFor(() =>
     expect(screen.getByLabelText(dict.categoryForm.slug)).toHaveValue(
       category.slug,
     ),
   );
-  return putCalls;
+  return { putCalls, queryClient };
 }
 
 const submit = () =>
@@ -86,7 +87,7 @@ describe("EditCategoryView — slug-rename guard (TASK-285)", () => {
   });
 
   it("submits without any confirm when the slug is unchanged on an active category", async () => {
-    const putCalls = await renderAndWaitForForm(makeCategory(true));
+    const { putCalls } = await renderAndWaitForForm(makeCategory(true));
 
     await submit();
 
@@ -96,7 +97,7 @@ describe("EditCategoryView — slug-rename guard (TASK-285)", () => {
 
   it("blocks the update when the admin cancels the active-slug-change confirm", async () => {
     confirmSpy.mockReturnValue(false);
-    const putCalls = await renderAndWaitForForm(makeCategory(true));
+    const { putCalls } = await renderAndWaitForForm(makeCategory(true));
 
     const slugField = screen.getByLabelText(dict.categoryForm.slug);
     await userEvent.clear(slugField);
@@ -110,7 +111,7 @@ describe("EditCategoryView — slug-rename guard (TASK-285)", () => {
   });
 
   it("fires the update after the admin accepts the confirm", async () => {
-    const putCalls = await renderAndWaitForForm(makeCategory(true));
+    const { putCalls } = await renderAndWaitForForm(makeCategory(true));
 
     const slugField = screen.getByLabelText(dict.categoryForm.slug);
     await userEvent.clear(slugField);
@@ -122,7 +123,7 @@ describe("EditCategoryView — slug-rename guard (TASK-285)", () => {
   });
 
   it("never confirms a slug change on an INACTIVE category", async () => {
-    const putCalls = await renderAndWaitForForm(makeCategory(false));
+    const { putCalls } = await renderAndWaitForForm(makeCategory(false));
 
     const slugField = screen.getByLabelText(dict.categoryForm.slug);
     await userEvent.clear(slugField);
@@ -131,5 +132,27 @@ describe("EditCategoryView — slug-rename guard (TASK-285)", () => {
 
     await waitFor(() => expect(putCalls).toHaveLength(1));
     expect(confirmSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("EditCategoryView — cache invalidation (TASK-291-K)", () => {
+  it("invalidates the admin-tree query after a successful save", async () => {
+    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    const { putCalls, queryClient } = await renderAndWaitForForm(
+      makeCategory(true),
+    );
+    const invalidate = jest.spyOn(queryClient, "invalidateQueries");
+
+    await submit();
+
+    await waitFor(() => expect(putCalls).toHaveLength(1));
+    // The treegrid reads the admin-tree query; a rename or a parent change made
+    // through the form's kept <Select> must not leave it stale (§3.11).
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: getCategoryControllerGetAdminTreeQueryKey(),
+      }),
+    );
+    confirmSpy.mockRestore();
   });
 });

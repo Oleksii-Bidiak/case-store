@@ -295,6 +295,72 @@ describe("CategoryForm — parent survives late-loading options (TASK-201)", () 
   });
 });
 
+describe("CategoryForm — order field removed, parent Select kept (TASK-291-K)", () => {
+  it("renders no sort-order input at all", async () => {
+    stubCategories();
+    renderWithProviders(
+      <CategoryForm onSubmit={jest.fn()} isPending={false} />,
+    );
+
+    await screen.findByRole("combobox");
+    // The order input was the form's only number input.
+    expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Порядок/)).not.toBeInTheDocument();
+  });
+
+  it("submits without a sortOrder key (the DTO no longer accepts one)", async () => {
+    stubCategories();
+    const onSubmit = jest.fn();
+    renderWithProviders(<CategoryForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(
+      screen.getByLabelText(dict.categoryForm.name),
+      "New Category",
+    );
+    await submitForm();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    const values = onSubmit.mock.calls[0][0] as CategoryFormValues;
+    expect(values).not.toHaveProperty("sortOrder");
+    expect(categoryFormValuesToDto(values)).not.toHaveProperty("sortOrder");
+  });
+
+  it("excludes self AND descendants from the parent options", async () => {
+    const child = { ...makeCategoryRow(UUID_B, "Child B"), parentId: UUID_A };
+    server.use(
+      http.get("*/api/categories/admin/tree", () =>
+        HttpResponse.json({
+          data: [
+            { ...makeCategoryRow(UUID_A, "Category A"), children: [child] },
+          ],
+        }),
+      ),
+    );
+    renderWithProviders(
+      <CategoryForm
+        id="cat-1"
+        excludeParentId={UUID_A}
+        defaultValues={{ name: "Sub" }}
+        onSubmit={jest.fn()}
+        isPending={false}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("combobox"));
+
+    expect(
+      await screen.findByRole("option", { name: dict.categoryForm.rootOption }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "Category A" }),
+    ).not.toBeInTheDocument();
+    // The descendant must be excluded too — reparenting under it would cycle.
+    expect(
+      screen.queryByRole("option", { name: "Child B" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("CategoryForm — SERP snippet preview (TASK-268)", () => {
   const previewTitle = () => screen.getByTestId("seo-snippet-title");
   const previewHint = () => screen.getByTestId("seo-snippet-hint");
@@ -340,13 +406,14 @@ describe("CategoryForm — SERP snippet preview (TASK-268)", () => {
 });
 
 describe("categoryFormValuesToDto — parent mapping (TASK-149)", () => {
+  // TASK-291-K: `sortOrder` is no longer part of the form values (nor of
+  // Create/UpdateCategoryDto) — sibling order is owned by the treegrid.
   const baseValues: CategoryFormValues = {
     name: "Cat",
     slug: "",
     description: "",
     image: "",
     parentId: "",
-    sortOrder: 0,
     isActive: true,
   };
 
@@ -376,7 +443,6 @@ describe("categoryFormValuesToDto — SEO meta mapping (TASK-236)", () => {
     description: "",
     image: "",
     parentId: "",
-    sortOrder: 0,
     isActive: true,
     metaTitle: "",
     metaDescription: "",

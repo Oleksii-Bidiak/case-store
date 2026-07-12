@@ -161,7 +161,6 @@ function mapCategoryToFormValues(category: {
   description?: string | null;
   image?: string | null;
   parentId?: string | null;
-  sortOrder: number;
   isActive: boolean;
   metaTitle?: string | null;
   metaDescription?: string | null;
@@ -172,7 +171,6 @@ function mapCategoryToFormValues(category: {
     description: category.description ?? "",
     image: category.image ?? "",
     parentId: category.parentId ?? "",
-    sortOrder: String(category.sortOrder),
     isActive: category.isActive,
     metaTitle: category.metaTitle ?? "",
     metaDescription: category.metaDescription ?? "",

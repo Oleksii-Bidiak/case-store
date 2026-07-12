@@ -441,7 +441,8 @@ export const dict = {
     parent: "Батьківська категорія",
     rootOption: "Коренева (без батьківської)",
     loading: "Завантаження…",
-    sortOrder: "Порядок сортування",
+    // TASK-291-K: no `sortOrder` label — the order field is gone from this form
+    // (sibling order lives in the treegrid).
     active: "Активна (показувати в магазині)",
     metaTitle: "SEO-заголовок (meta title)",
     metaTitlePlaceholder: "Залиште порожнім, щоб використати назву",
@@ -456,7 +457,6 @@ export const dict = {
       descriptionMax: "Опис має містити не більше 2000 символів",
       imageUrl: "Вкажіть коректний URL",
       parentInvalid: "Оберіть коректну категорію",
-      sortInt: "Порядок сортування має бути невід'ємним цілим числом",
       metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
       metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
     },

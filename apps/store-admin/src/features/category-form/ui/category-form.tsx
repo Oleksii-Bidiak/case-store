@@ -58,7 +58,6 @@ const EMPTY_VALUES: CategoryFormInput = {
   description: "",
   image: "",
   parentId: "",
-  sortOrder: "0",
   isActive: true,
   metaTitle: "",
   metaDescription: "",
@@ -211,7 +210,10 @@ export function CategoryForm({
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      {/* TASK-291-K: the "Порядок сортування" number input that used to sit next
+          to this Select is GONE — sibling order is owned by the treegrid alone.
+          The parent Select stays (§7.6.3, WCAG 2.5.7 non-dragging fallback). */}
+      <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="category-parent">{dict.categoryForm.parent}</Label>
           <Controller
@@ -269,23 +271,6 @@ export function CategoryForm({
           {errors.parentId && (
             <p role="alert" className="text-sm text-destructive">
               {errors.parentId.message}
-            </p>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="category-sort">{dict.categoryForm.sortOrder}</Label>
-          <Input
-            id="category-sort"
-            type="number"
-            inputMode="numeric"
-            min="0"
-            step="1"
-            {...register("sortOrder")}
-          />
-          {errors.sortOrder && (
-            <p role="alert" className="text-sm text-destructive">
-              {errors.sortOrder.message}
             </p>
           )}
         </div>
