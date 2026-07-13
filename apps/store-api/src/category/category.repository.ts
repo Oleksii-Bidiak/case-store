@@ -181,6 +181,18 @@ export interface TreeMovesResult {
 }
 
 /**
+ * Result of {@link CategoryRepository.setActiveMany} (TASK-293).
+ *
+ * The refreshed tree is read inside the same transaction as the write, so the admin panel
+ * resyncs from one round-trip — exactly as `reorder` does. `updatedCount` is what the DB
+ * actually wrote, not what the payload asked for, so the announcement cannot overstate it.
+ */
+export interface BulkStatusResult {
+  tree: AdminCategoryTreeNodeEntity[];
+  updatedCount: number;
+}
+
+/**
  * Result of {@link CategoryRepository.update} (TASK-291).
  *
  * `reparented` — the single-node counterpart of {@link TreeMovesResult.movedIds}: `true`
@@ -951,6 +963,44 @@ export class CategoryRepository {
     });
 
     return { sortOrder: destMax + 1, sourceRewrites };
+  }
+
+  /**
+   * Set `isActive` on many categories at once, and return the refreshed admin tree
+   * (TASK-293).
+   *
+   * NO CASCADE, by owner decision: exactly the named rows are written. Descendants keep
+   * their own `isActive` — a bulk deactivate is the per-row toggle applied N times, not a
+   * subtree operation. (Deactivating a parent already hides its whole branch from the
+   * public tree: `findCategoryTree` filters `isActive` at every level of the nested
+   * include, so an inactive node — and with it everything under it — is simply not
+   * returned. Only the branch's *visibility* is inherited; the flags are not.)
+   *
+   * Needs no advisory lock: it touches neither `parentId` nor `sortOrder`, so it cannot
+   * race the reorder invariants that `applyTreeMoves` protects. Unknown ids are rejected
+   * as a whole (all-or-nothing) rather than silently skipped, so the admin panel can never
+   * report "12 updated" when only 11 rows existed.
+   */
+  async setActiveMany(ids: string[], isActive: boolean): Promise<BulkStatusResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const found = await tx.category.findMany({
+        where: { id: { in: ids } },
+        select: { id: true },
+      });
+
+      if (found.length !== ids.length) {
+        const known = new Set(found.map((row) => row.id));
+        const missing = ids.filter((id) => !known.has(id));
+        throw new CategoryNotFoundError(`Unknown category id(s): ${missing.join(', ')}`);
+      }
+
+      const { count } = await tx.category.updateMany({
+        where: { id: { in: ids } },
+        data: { isActive },
+      });
+
+      return { tree: await this.findCategoryTreeForAdmin(tx), updatedCount: count };
+    });
   }
 
   /**

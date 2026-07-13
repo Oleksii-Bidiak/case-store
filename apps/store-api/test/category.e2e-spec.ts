@@ -9,7 +9,7 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CategoryRepository } from '../src/category/category.repository';
-import { CategoryCycleError } from '../src/category/category.errors';
+import { CategoryCycleError, CategoryNotFoundError } from '../src/category/category.errors';
 import { HttpExceptionFilter } from '../src/common/filters';
 import { PrismaService } from '../src/prisma';
 
@@ -75,6 +75,7 @@ describe('CategoryController (e2e)', () => {
     // TASK-291: batch reorder/reparent + the subtree expansion the post-commit
     // re-index uses (best-effort, so its failure never reaches the response).
     applyTreeMoves: jest.fn(),
+    setActiveMany: jest.fn(),
     findSubtreeIds: jest.fn(),
   };
 
@@ -782,6 +783,120 @@ describe('CategoryController (e2e)', () => {
       expect(categoryRepositoryMock.applyTreeMoves).toHaveBeenCalledWith([
         { parentId: rootId, orderedIds: [childB, childA] },
       ]);
+    });
+  });
+
+  // ─── PATCH /api/admin/categories/status (admin, TASK-293) ───────────────────
+
+  describe('PATCH /api/admin/categories/status', () => {
+    const rootId = '550e8400-e29b-41d4-a716-446655440000';
+    const childA = '550e8400-e29b-41d4-a716-446655440001';
+
+    const adminTreeNode = {
+      id: rootId,
+      name: 'Phone Cases',
+      slug: 'phone-cases',
+      description: null,
+      image: null,
+      parentId: null,
+      isActive: false,
+      sortOrder: 0,
+      metaTitle: null,
+      metaDescription: null,
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      productCount: 3,
+      depth: 1,
+      children: [],
+    };
+
+    it('should return 401 without auth token', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/admin/categories/status')
+        .send({ ids: [rootId], isActive: false })
+        .expect(401);
+    });
+
+    it('should return 403 for non-admin user', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/categories/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: [rootId], isActive: false })
+        .expect(403);
+    });
+
+    // The route-order trap: `status` must be matched by the bulk handler, never captured
+    // as `:id` by `PATCH /:id/...`. A 404/400 "category not found: status" here would mean
+    // the declaration order regressed.
+    it('is matched by the bulk handler, not captured as an `:id`', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      categoryRepositoryMock.setActiveMany.mockResolvedValue({
+        tree: [adminTreeNode],
+        updatedCount: 2,
+      });
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/categories/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: [rootId, childA], isActive: false })
+        .expect(200);
+
+      expect(response.body.data[0]).toMatchObject({ id: rootId, isActive: false });
+      expect(categoryRepositoryMock.setActiveMany).toHaveBeenCalledWith([rootId, childA], false);
+    });
+
+    it('should return 400 on an empty id list', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/categories/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: [], isActive: true })
+        .expect(400);
+
+      expect(categoryRepositoryMock.setActiveMany).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when an id is not a uuid', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/categories/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: ['not-a-uuid'], isActive: true })
+        .expect(400);
+
+      expect(categoryRepositoryMock.setActiveMany).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when isActive is missing', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/categories/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: [rootId] })
+        .expect(400);
+
+      expect(categoryRepositoryMock.setActiveMany).not.toHaveBeenCalled();
+    });
+
+    it('should return 404 when the batch names an unknown category', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      categoryRepositoryMock.setActiveMany.mockRejectedValue(
+        new CategoryNotFoundError(`Unknown category id(s): ${childA}`),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/categories/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: [rootId, childA], isActive: true })
+        .expect(404);
+
+      expect(response.body).toHaveProperty('error', 'CATEGORY_NOT_FOUND');
     });
   });
 

@@ -385,10 +385,35 @@ export class CategoryService {
   }
 
   /**
+   * Set `isActive` on many categories in one transaction (TASK-293), and return the
+   * refreshed admin tree so the panel resyncs from a single round-trip — the same contract
+   * as {@link reorderTree}.
+   *
+   * NO CASCADE (owner decision): exactly the named rows change. To switch a whole branch
+   * off, the operator selects the whole branch.
+   */
+  async setStatusMany(
+    ids: string[],
+    isActive: boolean,
+    actorId?: string,
+  ): Promise<AdminCategoryTreeResponse> {
+    let result;
+    try {
+      result = await this.categoryRepository.setActiveMany(ids, isActive);
+    } catch (error) {
+      throw this.toHttp(error);
+    }
+
+    await this.afterStatusChange(ids, isActive, actorId, result.updatedCount);
+
+    return { data: result.tree };
+  }
+
+  /**
    * Deactivate a category by setting isActive = false (admin-only).
    * Throws NotFoundException if the category is not found.
    */
-  async deactivate(id: string): Promise<CategoryEntity> {
+  async deactivate(id: string, actorId?: string): Promise<CategoryEntity> {
     const category = await this.categoryRepository.findById(id);
 
     if (!category) {
@@ -396,6 +421,7 @@ export class CategoryService {
     }
 
     const deactivatedCategory = await this.categoryRepository.deactivate(id);
+    await this.afterStatusChange([id], false, actorId, 1);
 
     return CategoryEntity.fromPrisma(deactivatedCategory);
   }
@@ -404,7 +430,7 @@ export class CategoryService {
    * Activate a category by setting isActive = true (admin-only).
    * Throws NotFoundException if the category is not found.
    */
-  async activate(id: string): Promise<CategoryEntity> {
+  async activate(id: string, actorId?: string): Promise<CategoryEntity> {
     const category = await this.categoryRepository.findById(id);
 
     if (!category) {
@@ -412,8 +438,33 @@ export class CategoryService {
     }
 
     const activatedCategory = await this.categoryRepository.activate(id);
+    await this.afterStatusChange([id], true, actorId, 1);
 
     return CategoryEntity.fromPrisma(activatedCategory);
+  }
+
+  /**
+   * The post-commit side effects of a status change — shared by the per-row toggles and
+   * the bulk endpoint (TASK-293).
+   *
+   * Until TASK-293 the per-row toggles did NONE of this: flipping a category off left the
+   * cached product lists advertising it, left its products indexed under it in Meili, and
+   * left no trace in the log. `reorderTree` already did all three; a status change is just
+   * as visible to shoppers, so it now does the same.
+   */
+  private async afterStatusChange(
+    ids: string[],
+    isActive: boolean,
+    actorId: string | undefined,
+    updatedCount: number,
+  ): Promise<void> {
+    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    this.reindexSubtreesInBackground(ids);
+
+    this.logger.info(
+      { event: 'category.status', ids, isActive, updatedCount, actorId },
+      isActive ? 'Categories activated' : 'Categories deactivated',
+    );
   }
 
   /**

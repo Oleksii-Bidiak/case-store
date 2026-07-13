@@ -411,6 +411,33 @@ export const dict = {
       // the tree already in memory.
       deactivateConfirm: (name: string, count: number) =>
         `„${name}“ буде приховано разом із ${count} підкатегоріями`,
+      // Bulk activate/deactivate (TASK-293). NO CASCADE: the selected rows change
+      // status, their descendants keep theirs — but a hidden parent still hides its
+      // whole branch from the storefront, so the confirmation says both.
+      bulk: {
+        colSelect: "Вибір",
+        selectRow: (name: string) => `Вибрати „${name}“`,
+        selectAll: "Вибрати всі видимі категорії",
+        selectedCount: (count: number) => `Вибрано: ${count}`,
+        activate: (count: number) => `Активувати (${count})`,
+        deactivate: (count: number) => `Деактивувати (${count})`,
+        clear: "Зняти вибір",
+        deactivateConfirm: (count: number) =>
+          `Деактивувати вибрані категорії (${count})? Кожна з них зникне з вітрини разом з усім, що під нею. Статус самих підкатегорій не зміниться.`,
+        announce: {
+          selected: (name: string, count: number) =>
+            `Вибрано „${name}“. Усього вибрано: ${count}.`,
+          deselected: (name: string, count: number) =>
+            `Знято вибір із „${name}“. Усього вибрано: ${count}.`,
+          cleared: "Вибір знято.",
+          saving: (count: number) => `Зберігаю зміни для ${count} категорій…`,
+          done: (count: number, isActive: boolean) =>
+            isActive
+              ? `Активовано категорій: ${count}.`
+              : `Деактивовано категорій: ${count}.`,
+          failed: "Не вдалося змінити статус. Спробуйте ще раз.",
+        },
+      },
       moveDialog: {
         title: (name: string) => `Перемістити „${name}“`,
         description:

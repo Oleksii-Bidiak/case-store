@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-297**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-298**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -303,10 +303,11 @@
 | TASK-288 | Replace hardcoded PopularRail tabs with three admin-managed carousels — the tabs (Хіти/Новинки/Акційні) map 1:1 onto BESTSELLING/NEWEST/ON_SALE sources; follow-up idea from TASK-139 (plan 154 §Open Questions); needs owner decision before scheduling | ⬜ | — |
 | TASK-289 | Category tile images via next/image — widen `next.config.ts` `images.remotePatterns` (wildcard or validated host allowlist) and swap the plain `<img>` in `shared/ui/category-tile-image.tsx`; revisits the deliberate plan-155 design decision to gain image optimization | ⬜ | — |
 | TASK-290 | Wishlist-page parity for catalog UX — quick-view trigger on wishlist item cards/rows + collapsible sections in the wishlist filter drawer (both deliberately out of scope in plan 156; wishlist drawer already got the live-count footer) | ⬜ | — |
-| TASK-293 | Category tree: multi-select + bulk activate/deactivate — deliberately deferred out of TASK-291 (plan 158 §3.11/§12): the treegrid ships with a per-row status toggle only. Needs a selection column, a bulk `PATCH` (or reuse of the per-id toggle in a loop) and a decision on whether deactivating a parent cascades to descendants | ⬜ | 158 |
+| TASK-293 | Category tree: multi-select + bulk activate/deactivate — shipped 2026-07-13. `PATCH /api/admin/categories/status` (declared before the `:id` routes) writes `isActive` on exactly the selected ids in one transaction and returns the refreshed admin tree; **NO CASCADE** (owner decision) — a bulk deactivate is the per-row toggle applied to N rows, and to switch a branch off the operator selects the branch. Admin: checkbox column + `aria-multiselectable` + `aria-selected`, `Ctrl+Space` to select (bare `Space` stays "pick up"), `Shift+↑/↓` range, tri-state select-all, bulk bar with a blast-radius confirm. Also closed a pre-existing hole: the per-row `activate`/`deactivate` did NO cache eviction, NO Meili re-index and NO audit log — they now share the bulk path's side effects | ✅ | 158 |
 | TASK-294 | ~~Storefront ISR revalidation on category reorder/reparent~~ — **closed as invalid (2026-07-13), zero code.** The premise was wrong: nothing on the storefront caches category order, so there is nothing to revalidate. Every surface that renders it (`CategoryNav`, mega-menu, `/categories` hub, catalog sidebar) is a client component on react-query, and the two server readers (`/categories/[slug]`, `/products`) `await searchParams` — which makes them dynamic — and fetch through axios, which never enters Next's fetch cache; no `categories` tag exists because none is needed. Plan 158 §3.13/§12 corrected in place. Reopen only if a category read ever moves onto a cached server `fetch` — then it needs a `categories-server.ts` shim + tag + `RevalidationNotifier`. Live-stack confirmation rides along with the TASK-291 manual-QA item «Вітрина після перестановки» | ✅ | 158 |
 | TASK-295 | Roll the reusable reorder mechanics out to the remaining admin lists — banners, blog-categories, device-brands (flat sibling buckets) and product-groups; all still expose a raw read-only `sortOrder` number input (the exact anti-pattern TASK-291 removed for categories). Reuse `shared/lib/sortable-tree` + `shared/ui/sortable-tree` + the `common/reorder` backend util (plan 157 §4, plan 158 §12) | ⬜ | 158 |
 | TASK-296 | Flaky `test:e2e`: the store-api e2e run intermittently died on a native abort (Windows exit `3221226505` / `0xC0000409`) mid-run with NO failing test. Cause: serial mode. `--runInBand` makes Jest run every spec in-band, so all 22 AppModule boots accumulated in ONE process (~950 MB RSS by the last file) until it aborted at a random point. Serial mode was only a workaround for the shared-Redis 429s, which `setup-e2e` already fixes with `REDIS_HOST=''` — the e2e suites use no DB at all (Prisma is mocked in all 22), so the row's original "DB per shard" direction addressed a non-problem. Fixed by `maxWorkers: 2` + `workerIdleMemoryLimit` in `jest-e2e.json` (≈11 boots per process): 1 abort in 4 serial runs → 0 in 17 worker runs, `--detectOpenHandles` clean, 337/337, ~25% faster. Two real shutdown leaks closed on the way (Redis throttler storage + cache store never called `quit()`; the Pino pretty transport worker outlived `app.close()` and is now off under test) | ✅ | — |
+| TASK-297 | Products of an INACTIVE category stay sellable — a pre-existing inconsistency found during TASK-293, not introduced by it. `findCategoryTree` filters `isActive` at every level, so deactivating a category removes its whole branch from the storefront nav; but `CategoryRepository.findBySlug` has no `isActive` filter (the category page stays reachable by direct URL) and `ProductRepository.findAll` has no join filter on `category.isActive` (its products keep listing, and stay addable to a cart). Decide the intended semantics — is `isActive: false` "hide from nav" or "withdraw from sale"? — then make the read paths agree | ⬜ | — |
 
 ### Parked
 
@@ -328,6 +329,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-297**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-298**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.

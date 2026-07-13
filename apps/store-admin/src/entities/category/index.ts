@@ -11,6 +11,7 @@ export {
   useAdminCategoryControllerDeactivate,
   useAdminCategoryControllerActivate,
   useAdminCategoryControllerReorder,
+  useAdminCategoryControllerSetStatusMany,
   useCategoryControllerGetAdminTree,
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
   getAdminCategoryControllerFindByIdQueryKey,
@@ -34,4 +35,5 @@ export type {
   AdminCategoryTreeResponse,
   ReorderCategoriesDto,
   ReorderGroupDto,
+  BulkCategoryStatusDto,
 } from "@/shared/api";

@@ -18,6 +18,8 @@ const txMock = {
   category: {
     update: jest.fn(),
     findUnique: jest.fn(),
+    findMany: jest.fn(),
+    updateMany: jest.fn(),
   },
 };
 
@@ -357,6 +359,53 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
       const arg = findMany.mock.calls[0][0];
       expect(arg).toHaveProperty('include');
       expect(arg).not.toHaveProperty('select');
+    });
+  });
+
+  // ─── setActiveMany (bulk status, TASK-293) ─────────────────────────────────
+
+  describe('setActiveMany', () => {
+    it('writes exactly the named ids and returns the refreshed tree with the row count', async () => {
+      txMock.category.findMany
+        .mockResolvedValueOnce([{ id: 'cat-1' }, { id: 'cat-2' }]) // existence check
+        .mockResolvedValueOnce([]); // the in-tx admin-tree read
+      txMock.category.updateMany.mockResolvedValue({ count: 2 });
+
+      const result = await repo.setActiveMany(['cat-1', 'cat-2'], false);
+
+      expect($transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.category.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['cat-1', 'cat-2'] } },
+        data: { isActive: false },
+      });
+      expect(result.updatedCount).toBe(2);
+      expect(result.tree).toEqual([]);
+    });
+
+    // All-or-nothing: a partially valid selection must not half-apply, or the panel would
+    // report more rows changed than exist.
+    it('rejects the whole batch when an id is unknown, naming the missing ones', async () => {
+      txMock.category.findMany.mockResolvedValueOnce([{ id: 'cat-1' }]);
+
+      await expect(repo.setActiveMany(['cat-1', 'ghost'], true)).rejects.toThrow(
+        expect.objectContaining({
+          constructor: CategoryNotFoundError,
+          message: expect.stringContaining('ghost'),
+        }) as Error,
+      );
+
+      expect(txMock.category.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('never touches parentId or sortOrder (a status change is not a move)', async () => {
+      txMock.category.findMany.mockResolvedValueOnce([{ id: 'cat-1' }]).mockResolvedValueOnce([]);
+      txMock.category.updateMany.mockResolvedValue({ count: 1 });
+
+      await repo.setActiveMany(['cat-1'], true);
+
+      const data = txMock.category.updateMany.mock.calls[0][0].data;
+      expect(data).toEqual({ isActive: true });
+      expect(txMock.$executeRaw).not.toHaveBeenCalled(); // no advisory lock needed
     });
   });
 });
