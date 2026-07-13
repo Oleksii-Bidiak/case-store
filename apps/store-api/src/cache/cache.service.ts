@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, type OnModuleDestroy } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { PinoLogger } from 'nestjs-pino';
 import type { Cache } from 'cache-manager';
@@ -35,7 +35,7 @@ interface ScanCapableClient {
  * converts internally, so callers never juggle units.
  */
 @Injectable()
-export class CacheService {
+export class CacheService implements OnModuleDestroy {
   constructor(
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
     private readonly logger: PinoLogger,
@@ -118,6 +118,32 @@ export class CacheService {
     await Promise.all(
       keys.filter((k) => k.startsWith(prefix)).map((k) => this.cacheManager.del(k)),
     );
+  }
+
+  /**
+   * Close the Redis connection on shutdown (TASK-296).
+   *
+   * `cache-manager-ioredis-yet` never ends its ioredis client, so without this
+   * the connection (and its reconnect timer) outlives `app.close()` — a handle
+   * leak in any process that boots more than one app, i.e. every test run. The
+   * in-memory store has no client and is skipped.
+   */
+  async onModuleDestroy(): Promise<void> {
+    const client = this.getQuitClient();
+    if (!client) return;
+    try {
+      await client.quit();
+    } catch {
+      // Already closed, or never connected — nothing left to release.
+    }
+  }
+
+  /** The ioredis client when the active store is Redis-backed, else `undefined`. */
+  private getQuitClient(): { quit: () => Promise<unknown> } | undefined {
+    const client = (this.cacheManager as unknown as { store?: { client?: unknown } }).store?.client;
+    return client && typeof (client as { quit?: unknown }).quit === 'function'
+      ? (client as { quit: () => Promise<unknown> })
+      : undefined;
   }
 
   /** The underlying cache-manager store, if reachable. */

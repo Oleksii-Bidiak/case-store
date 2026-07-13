@@ -132,4 +132,30 @@ describe('CacheService', () => {
       await expect(service.delByPrefix('product:list')).resolves.toBeUndefined();
     });
   });
+
+  // ─── onModuleDestroy (TASK-296) ───────────────────────────────────────────
+
+  describe('onModuleDestroy', () => {
+    it('quits the ioredis client so it does not outlive the app', async () => {
+      const quit = jest.fn().mockResolvedValue('OK');
+      cacheManagerMock.store = { client: { quit } };
+
+      await service.onModuleDestroy();
+
+      expect(quit).toHaveBeenCalledTimes(1);
+    });
+
+    it('is a no-op on the in-memory store (no client to close)', async () => {
+      cacheManagerMock.store = { keys: jest.fn() };
+
+      await expect(service.onModuleDestroy()).resolves.toBeUndefined();
+    });
+
+    it('never throws when the client is already closed', async () => {
+      const quit = jest.fn().mockRejectedValue(new Error('Connection is closed.'));
+      cacheManagerMock.store = { client: { quit } };
+
+      await expect(service.onModuleDestroy()).resolves.toBeUndefined();
+    });
+  });
 });
