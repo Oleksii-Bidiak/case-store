@@ -75,9 +75,21 @@ describe('CsrfService', () => {
     expect(service.cookieName).toBe(CSRF_COOKIE_PROD);
   });
 
-  it('warns when CSRF_SECRET is missing in production', () => {
+  it('refuses to start in production when CSRF_SECRET is missing', () => {
+    expect(
+      () => new CsrfService(makeConfig({ NODE_ENV: 'production', CSRF_SECRET: undefined })),
+    ).toThrow(/CSRF_SECRET/i);
+  });
+
+  it('refuses to start in production when CSRF_SECRET is too short', () => {
+    expect(
+      () => new CsrfService(makeConfig({ NODE_ENV: 'production', CSRF_SECRET: 'short' })),
+    ).toThrow(/CSRF_SECRET/i);
+  });
+
+  it('warns and falls back to the dev secret when CSRF_SECRET is missing outside production', () => {
     const loggerWarn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-    new CsrfService(makeConfig({ NODE_ENV: 'production', CSRF_SECRET: undefined }));
+    expect(() => new CsrfService(makeConfig({ CSRF_SECRET: undefined }))).not.toThrow();
     expect(loggerWarn).toHaveBeenCalled();
     loggerWarn.mockRestore();
   });

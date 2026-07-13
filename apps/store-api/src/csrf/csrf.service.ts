@@ -8,6 +8,7 @@ import {
   CSRF_DEV_FALLBACK_SECRET,
   CSRF_HEADER,
   CSRF_SAFE_METHODS,
+  CSRF_SECRET_MIN_LENGTH,
 } from './csrf.constants';
 
 /**
@@ -34,10 +35,20 @@ export class CsrfService {
     this.isProduction = this.configService.get<string>('NODE_ENV') === 'production';
 
     const configured = this.configService.get<string>('CSRF_SECRET');
-    if (this.isProduction && !configured) {
+
+    // Fail fast in production: the fallback secret is public (it lives in this
+    // repository), so signing tokens with it lets anyone forge a valid CSRF
+    // token and defeat the double-submit check entirely. `env.validation.ts`
+    // enforces the same rule at boot; this guard also covers a CsrfService built
+    // outside that ConfigModule validation.
+    if (this.isProduction && (!configured || configured.length < CSRF_SECRET_MIN_LENGTH)) {
+      throw new Error(
+        `CSRF_SECRET must be set to at least ${CSRF_SECRET_MIN_LENGTH} characters in production`,
+      );
+    }
+    if (!configured) {
       this.logger.warn(
-        'CSRF_SECRET is not set in production — using a weak default. ' +
-          'Set CSRF_SECRET to a 32+ character secret.',
+        'CSRF_SECRET is not set — signing CSRF tokens with the development fallback secret.',
       );
     }
     this.secret = configured ?? CSRF_DEV_FALLBACK_SECRET;

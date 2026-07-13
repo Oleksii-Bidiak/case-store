@@ -139,11 +139,24 @@ export class DiscountService {
   }
 
   /**
-   * Redeem a discount inside the order-creation transaction. Re-validates the
-   * caps against the live row (the preview may be stale), bumps the global
-   * counter, and inserts the redemption. The unique `orderId` makes a repeated
-   * apply to the same order idempotent (it throws a unique-constraint error
-   * rather than double-counting).
+   * Redeem a discount inside the order-creation transaction. The caps are
+   * re-validated against the live row (the preview may be stale), the global
+   * counter is claimed, and the redemption is inserted. The unique `orderId`
+   * makes a repeated apply to the same order idempotent (it throws a
+   * unique-constraint error rather than double-counting).
+   *
+   * Concurrency (the reason for the odd-looking ordering): the global cap is
+   * enforced by a CONDITIONAL update — `tryIncrementRedeemed` bumps
+   * `redeemedCount` only while it is still below `maxRedemptions` and reports 0
+   * rows when it is not. A read-then-check gate would let two order transactions
+   * at the cap both pass under READ COMMITTED and overshoot it.
+   *
+   * That claim runs BEFORE the per-user count on purpose: the UPDATE row-locks
+   * the discount until this transaction ends, so a concurrent redemption of the
+   * same code blocks there and only reaches its own per-user count after we
+   * commit (or roll back) — which is what makes the `perUserLimit` count, whose
+   * own read cannot see uncommitted rows, race-free as well. Throwing after the
+   * claim is safe: the whole order transaction rolls back, undoing the bump.
    *
    * @throws ConflictException when a cap was exhausted between preview and order
    *   placement (the whole order transaction then rolls back).
@@ -154,18 +167,21 @@ export class DiscountService {
     orderId: string,
     tx: Prisma.TransactionClient,
   ): Promise<void> {
-    const discount = await tx.discount.findUnique({ where: { id: discountId } });
+    const discount = await this.discountRepository.findById(discountId, tx);
     if (!discount || !discount.isActive) {
       throw conflictDiscount(DiscountErrorCode.INACTIVE, 'This promo code is no longer active');
     }
-    if (discount.maxRedemptions !== null && discount.redeemedCount >= discount.maxRedemptions) {
+
+    const claimed = await this.discountRepository.tryIncrementRedeemed(discountId, tx);
+    if (claimed === 0) {
       throw conflictDiscount(
         DiscountErrorCode.MAX_REDEMPTIONS_REACHED,
         'This promo code has reached its redemption limit',
       );
     }
+
     if (discount.perUserLimit !== null) {
-      const userCount = await tx.discountRedemption.count({ where: { discountId, userId } });
+      const userCount = await this.discountRepository.countUserRedemptions(discountId, userId, tx);
       if (userCount >= discount.perUserLimit) {
         throw conflictDiscount(
           DiscountErrorCode.USER_LIMIT_REACHED,
@@ -174,7 +190,6 @@ export class DiscountService {
       }
     }
 
-    await this.discountRepository.incrementRedeemed(discountId, tx);
     await this.discountRepository.createRedemption({ discountId, userId, orderId }, tx);
   }
 

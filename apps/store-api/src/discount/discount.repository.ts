@@ -66,9 +66,10 @@ const ALLOWED_SORT: Record<string, keyof Prisma.DiscountOrderByWithRelationInput
  * DiscountRepository — all Prisma access for discounts and their redemptions.
  *
  * Injects {@link PrismaService} (never the raw PrismaClient). The redemption
- * mutations (`incrementRedeemed`, `createRedemption`) are transaction-aware: the
- * order-creation flow passes its `tx` so the cap re-check, counter bump, and
- * redemption insert all commit atomically with the order.
+ * reads and mutations (`findById`, `countUserRedemptions`, `tryIncrementRedeemed`,
+ * `createRedemption`) are transaction-aware: the order-creation flow passes its
+ * `tx` so the cap claim, per-user re-check, and redemption insert all commit
+ * atomically with the order.
  */
 @Injectable()
 export class DiscountRepository {
@@ -82,9 +83,14 @@ export class DiscountRepository {
     return this.prisma.discount.findUnique({ where: { code } });
   }
 
-  /** Find a discount by ID, or null if it does not exist. */
-  findById(id: string): Promise<Discount | null> {
-    return this.prisma.discount.findUnique({ where: { id } });
+  /**
+   * Find a discount by ID, or null if it does not exist. Accepts an optional
+   * transaction client so the order flow reads the row inside its own
+   * transaction.
+   */
+  findById(id: string, tx?: Prisma.TransactionClient): Promise<Discount | null> {
+    const client = tx ?? this.prisma;
+    return client.discount.findUnique({ where: { id } });
   }
 
   /**
@@ -166,21 +172,49 @@ export class DiscountRepository {
   /**
    * Count how many times a user has already redeemed a given discount. Drives
    * the `perUserLimit` gate in both the preview and the order-redeem re-check.
+   * Accepts an optional transaction client (the redeem path passes the order
+   * `tx`, so the count sees that transaction's own writes and is serialized by
+   * the discount row lock {@link tryIncrementRedeemed} takes).
    */
-  countUserRedemptions(discountId: string, userId: string): Promise<number> {
-    return this.prisma.discountRedemption.count({ where: { discountId, userId } });
+  countUserRedemptions(
+    discountId: string,
+    userId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<number> {
+    const client = tx ?? this.prisma;
+    return client.discountRedemption.count({ where: { discountId, userId } });
   }
 
   /**
-   * Atomically increment a discount's global `redeemedCount`. Accepts an
-   * optional transaction client so it commits with the order in `createOrder`.
+   * Claim ONE redemption slot: increment `redeemedCount`, but only while the
+   * global cap still has room. Returns the number of rows changed — 0 means the
+   * cap was exhausted and the caller must abort (MAX_REDEMPTIONS_REACHED).
+   *
+   * The cap check lives INSIDE the UPDATE's `WHERE` (a `redeemedCount <
+   * maxRedemptions` column-vs-column comparison via a Prisma field reference),
+   * never in a preceding read: under READ COMMITTED two order transactions at
+   * the cap would both pass a read-then-check gate and both increment. Postgres
+   * re-evaluates this predicate against the freshly committed row version, so
+   * the loser matches no row. Same pattern as the conditional stock decrement in
+   * `order.repository.ts`.
+   *
+   * Side effect the redeem flow depends on: the UPDATE takes a row lock on the
+   * discount that is held until the transaction ends, which serializes concurrent
+   * redemptions of the same code.
    */
-  incrementRedeemed(discountId: string, tx?: Prisma.TransactionClient): Promise<Discount> {
+  async tryIncrementRedeemed(discountId: string, tx?: Prisma.TransactionClient): Promise<number> {
     const client = tx ?? this.prisma;
-    return client.discount.update({
-      where: { id: discountId },
+    const { count } = await client.discount.updateMany({
+      where: {
+        id: discountId,
+        OR: [
+          { maxRedemptions: null },
+          { redeemedCount: { lt: this.prisma.discount.fields.maxRedemptions } },
+        ],
+      },
       data: { redeemedCount: { increment: 1 } },
     });
+    return count;
   }
 
   /**

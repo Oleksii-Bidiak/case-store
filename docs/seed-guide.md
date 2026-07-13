@@ -67,6 +67,10 @@ Re-running `npm run db:seed` on a populated DB is **safe** — it will not creat
   source even if you change axis names or image lists between runs.
 - **Brands, discounts, pages** upsert on their unique key (`slug` / `code` / `slug`);
   **contact messages** on a deterministic id; **newsletter subscribers** on the normalized email.
+- **Banners, carousels, FAQ items** upsert on a deterministic/fixed id; **blog categories/posts**
+  and **device brands/models** on their unique `slug`. A carousel's MANUAL **items** are deleted and
+  recreated wholesale per run (like images). **Addon services** have no unique key in the schema, so
+  the seed looks them up by `name` and updates in place instead of upserting.
 - **Attribute definitions** upsert on the `(categoryId, key)` unique, **attribute values** on
   `(productId, definitionId)`, and **device-compat links** on the `(productId, deviceModelId)`
   composite key — all safe to re-run.
@@ -116,30 +120,65 @@ or shared database** — it is destructive and irreversible.
 
 ---
 
-## 6. Admin credential override
+## 6. Production guard (`ALLOW_PROD_SEED`)
 
-By default the seed creates the primary admin as `admin@store.com` / `Admin123!`. To use
-different credentials for **that account**, set these env vars in `apps/store-api/.env`
-**before seeding**:
+The seed is **dev/demo fixture data**: it creates accounts whose passwords are published in this
+very file. Running it against production would hand anyone a working login. Therefore
+`assertSeedAllowed()` (in `prisma/seed.ts`, called first thing in `main()`, **before** the
+connection pool is opened) enforces:
+
+| `NODE_ENV`       | `ALLOW_PROD_SEED`     | Result                                                                                    |
+| ---------------- | --------------------- | ----------------------------------------------------------------------------------------- |
+| not `production` | (ignored)             | Seeds normally — dev fallback credentials allowed.                                        |
+| `production`     | unset / anything else | **Throws, exits 1, writes nothing.**                                                      |
+| `production`     | `true`                | Runs — **but** `ADMIN_SEED_EMAIL` + `ADMIN_SEED_PASSWORD` must both be set, or it throws. |
+
+The escape hatch exists for one legitimate case: bootstrapping a **fresh** staging/demo instance
+that must come up with content (categories, products, banners, carousels, pages). Be aware it also
+creates the demo customers and the 23 reviewer accounts with the fixed passwords listed below —
+never point it at a database holding real customers.
+
+```bash
+# Staging bootstrap (deliberate):
+NODE_ENV=production ALLOW_PROD_SEED=true ADMIN_SEED_EMAIL=you@example.com \
+  ADMIN_SEED_PASSWORD='<strong-unique-password>' npm run db:seed
+```
+
+---
+
+## 7. Admin credential override
+
+The seed creates exactly **one** admin: `admin@store.com` / `Admin123!` by default. To use
+different credentials for that account, set these env vars in `apps/store-api/.env`
+**before seeding** (in production they are mandatory — see §6):
 
 ```env
 ADMIN_SEED_EMAIL=you@example.com
 ADMIN_SEED_PASSWORD=YourStrongPassword123!
 ```
 
-The admin upsert is idempotent and re-asserts the `ADMIN` role on every run. To promote an
-already-registered account instead of seeding a new admin, run SQL directly:
+The admin upsert is idempotent and re-asserts the `ADMIN` role on every run.
+
+### Adding a second admin (the seed no longer does)
+
+The seed used to create a hardcoded second admin (`manager@store.com` / `Manager123!`). It was
+removed — a fixed, non-overridable credential pair in a script that anyone can run is exactly the
+hazard §6 guards against. To get a second admin, register the account through the storefront/admin
+sign-up and then promote it:
 
 ```sql
 UPDATE users SET role = 'ADMIN' WHERE email = '<email>';
 ```
 
+> If your dev database was seeded **before** this change it still contains the old
+> `manager@store.com` ADMIN row — the seed only stops maintaining it, it never deletes rows.
+> Remove it with `DELETE FROM users WHERE email = 'manager@store.com';` (or reset the DB, §5).
+
 ### Seeded login credentials
 
 | Role     | Email                  | Password       | Notes                                 |
 | -------- | ---------------------- | -------------- | ------------------------------------- |
-| Admin 1  | `admin@store.com`      | `Admin123!`    | Олександр Коваленко (env-overridable) |
-| Admin 2  | `manager@store.com`    | `Manager123!`  | Ірина Мельник (fixed)                 |
+| Admin    | `admin@store.com`      | `Admin123!`    | Олександр Коваленко (env-overridable) |
 | Customer | `customer@store.com`   | `Customer123!` | Demo account (John Doe)               |
 | Customer | `oksana@example.com`   | `Customer123!` | Оксана Шевченко                       |
 | Customer | `taras@example.com`    | `Customer123!` | Тарас Бондаренко                      |
@@ -147,20 +186,20 @@ UPDATE users SET role = 'ADMIN' WHERE email = '<email>';
 | Customer | `dmytro@example.com`   | `Customer123!` | Дмитро Ткаченко                       |
 | Customer | `nataliia@example.com` | `Customer123!` | Наталія Кравченко                     |
 
-Only Admin 1's email/password are configurable (via the env vars above). Everything else is
+Only the admin's email/password are configurable (via the env vars above). Everything else is
 fixed. The 20 approved-review accounts (`reviewer1@store.com` … `reviewer20@store.com`) and 3
 pending-review accounts (`pending-reviewer1@store.com` … `pending-reviewer3@store.com`) all use
 password `Reviewer123!` and are not configurable.
 
 ---
 
-## 7. What gets seeded
+## 8. What gets seeded
 
-A clean seed produces (counts as of the seed-enrichment pass — Users/Brands/Смартфони/Orders):
+A clean seed produces:
 
 | Entity                 | Count        | Notes                                                                                                      |
 | ---------------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
-| Users                  | 31           | 2 admins + 6 customers + 20 reviewers + 3 pending-review accounts                                          |
+| Users                  | 30           | 1 admin + 6 customers + 20 reviewers + 3 pending-review accounts                                           |
 | Brands                 | 6            | Apple, Samsung, Xiaomi, Baseus, Anker, Spigen (product manufacturers, TASK-189)                            |
 | Categories             | 15           | 5 root (Cases, Chargers, Cables, Screen Protectors, **Смартфони**) + 10 subcategories (incl. **iPhone**)   |
 | Product groups         | 14           | Multi-variant entries become groups (variant-as-position, TASK-142); incl. iPhone 15 Pro (storage × color) |
@@ -168,7 +207,13 @@ A clean seed produces (counts as of the seed-enrichment pass — Users/Brands/С
 | Product images         | 69           | Deterministic `picsum.photos` URLs per position                                                            |
 | Attribute definitions  | 4            | Екран / Пам'ять / Камера / Акумулятор on **Смартфони** (inherited by iPhone), TASK-191                     |
 | Attribute values       | 32           | 4 structured specs filled on each of the 8 iPhone positions                                                |
+| Addon services         | 4            | + 3 category templates on «Смартфони» and 3 product deltas (ADD / REMOVE / OVERRIDE)                       |
+| Device brands          | 3            | Compatible-device taxonomy (Apple / Samsung / Xiaomi) — distinct from product Brands, TASK-190             |
+| Device models          | 40           | Grouped by `series` for the storefront ModelPicker cascade                                                 |
 | Device compat links    | 30           | Accessories ↔ Apple device models (`ProductDeviceCompat`, TASK-190)                                        |
+| Banners                | 6            | PUBLISHED, across the homepage placements (HERO_SLIDE / PROMO_TILE / …), TASK-186                          |
+| **Carousels**          | **5**        | **3 `HOME_TABS` + 2 `HOME_RAILS`, all PUBLISHED — see below (TASK-139, TASK-288)**                         |
+| Carousel items         | 4            | Hand-picked products on the MANUAL rail; replaced wholesale on re-run                                      |
 | Reviews (approved)     | 5–20/product | Pre-approved (`isActive = true`), deterministic, ratings skewed positive                                   |
 | Reviews (pending)      | 6            | `isActive = false` with UA comments — populate the admin moderation queue                                  |
 | Discounts              | 5            | WELCOME10, SUMMER500 (minSpend), VIP20, EXPIRED15 (past), OLDPROMO (inactive)                              |
@@ -179,8 +224,36 @@ A clean seed produces (counts as of the seed-enrichment pass — Users/Brands/С
 | Contact messages       | 5            | NEW / READ / ARCHIVED (TASK-177)                                                                           |
 | Newsletter subscribers | 6            | Mix of SUBSCRIBED / UNSUBSCRIBED (TASK-188)                                                                |
 | Pages                  | 6            | UA PUBLISHED info pages (about, delivery, returns, warranty, privacy-policy, terms), TASK-187              |
+| Blog categories        | 5            | UA; upsert on `slug`                                                                                       |
 | Blog posts             | 12           | UA, PUBLISHED; ≥2 featured                                                                                 |
+| FAQ items              | 6            | UA Q&A migrated from the storefront's former static list (TASK-242)                                        |
+| Site contact settings  | 1            | Singleton row (fixed id `…0001`), TASK-154                                                                 |
+| SEO settings           | 1            | Singleton row (fixed id `…0002`) with zero-config defaults, TASK-239                                       |
 | Addresses              | 8            | `seed-address-1` (John) + 1–2 UA addresses per new customer (deterministic ids)                            |
+
+### Homepage carousels (TASK-288)
+
+`Carousel.placement` decides where a carousel surfaces; `sortOrder` is scoped **within** a
+placement (so both buckets start at 0):
+
+| Placement    | Title                | Source        | sortOrder | itemLimit |
+| ------------ | -------------------- | ------------- | --------- | --------- |
+| `HOME_TABS`  | Хіти продажів        | `BESTSELLING` | 0         | 12        |
+| `HOME_TABS`  | Новинки              | `NEWEST`      | 1         | 12        |
+| `HOME_TABS`  | Акційні              | `ON_SALE`     | 2         | 12        |
+| `HOME_RAILS` | Чохли для смартфонів | `CATEGORY`    | 0         | 12        |
+| `HOME_RAILS` | Редакція обирає      | `MANUAL`      | 1         | — (items) |
+
+The three `HOME_TABS` rows reproduce the storefront's former **hardcoded** "Популярне" tabs 1:1 —
+titles are copied from `store-client/src/shared/config/dictionary.ts` (`home.popular.tabs.*`) and
+`itemLimit: 12` matches the size the hardcoded rail fetched. Tab order = `sortOrder`. Editing these
+rows in the admin now changes the homepage tabs; deleting them all leaves the section empty (the
+storefront renders correctly with zero carousels).
+
+The BESTSELLING carousel is a **tab**, not a rail: before TASK-288 the seed also created it as a
+standalone "Хіти продажів" rail, which would now render the same products twice under the same
+heading. Re-seeding an existing dev DB flips that row's `placement` to `HOME_TABS` in place (same
+deterministic id).
 
 Images use deterministic `https://picsum.photos/seed/{positionSlug}-{sortOrder}/800/800` URLs so the
 storefront looks populated without real uploads. The first image (`sortOrder === 0`) of each
@@ -190,7 +263,7 @@ enabled for QA.
 
 ---
 
-## 8. Known constraints
+## 9. Known constraints
 
 - **`seed-address-1`** is a hard-coded address id used for idempotency. Do not reuse that id for
   test data outside the seed, or the upsert will overwrite your row.

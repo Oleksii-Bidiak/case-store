@@ -4,14 +4,19 @@ import { PrismaService } from '../prisma';
 
 // ─── Prisma mock ──────────────────────────────────────────────────────────────
 
+/** Stand-in for Prisma's field-reference token (`prisma.discount.fields.maxRedemptions`). */
+const MAX_REDEMPTIONS_FIELD_REF = { name: 'maxRedemptions' };
+
 const prismaMock = {
   $transaction: jest.fn(),
   discount: {
+    fields: { maxRedemptions: MAX_REDEMPTIONS_FIELD_REF },
     findUnique: jest.fn(),
     findMany: jest.fn(),
     count: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
   },
   discountRedemption: {
     count: jest.fn(),
@@ -47,6 +52,16 @@ describe('DiscountRepository', () => {
 
       expect(prismaMock.discount.findUnique).toHaveBeenCalledWith({ where: { id: 'missing' } });
       expect(result).toBeNull();
+    });
+
+    it('reads through the provided transaction client when given', async () => {
+      const tx = { discount: { findUnique: jest.fn().mockResolvedValue({ id: 'd1' }) } };
+
+      const result = await repository.findById('d1', tx as unknown as Prisma.TransactionClient);
+
+      expect(tx.discount.findUnique).toHaveBeenCalledWith({ where: { id: 'd1' } });
+      expect(prismaMock.discount.findUnique).not.toHaveBeenCalled();
+      expect(result).toEqual({ id: 'd1' });
     });
   });
 
@@ -153,30 +168,57 @@ describe('DiscountRepository', () => {
       });
       expect(result).toBe(2);
     });
+
+    it('counts through the provided transaction client when given', async () => {
+      const tx = { discountRedemption: { count: jest.fn().mockResolvedValue(1) } };
+
+      const result = await repository.countUserRedemptions(
+        'd1',
+        'u1',
+        tx as unknown as Prisma.TransactionClient,
+      );
+
+      expect(tx.discountRedemption.count).toHaveBeenCalledWith({
+        where: { discountId: 'd1', userId: 'u1' },
+      });
+      expect(prismaMock.discountRedemption.count).not.toHaveBeenCalled();
+      expect(result).toBe(1);
+    });
   });
 
-  describe('incrementRedeemed', () => {
-    it('increments redeemedCount on the base client when no tx is given', async () => {
-      prismaMock.discount.update.mockResolvedValue({ id: 'd1' });
+  describe('tryIncrementRedeemed', () => {
+    // The cap check must live INSIDE the UPDATE's WHERE (column-vs-column), not
+    // in a preceding read — that is what makes the global cap race-proof.
+    const expectedCall = {
+      where: {
+        id: 'd1',
+        OR: [{ maxRedemptions: null }, { redeemedCount: { lt: MAX_REDEMPTIONS_FIELD_REF } }],
+      },
+      data: { redeemedCount: { increment: 1 } },
+    };
 
-      await repository.incrementRedeemed('d1');
+    it('claims a slot with a conditional updateMany and returns the row count', async () => {
+      prismaMock.discount.updateMany.mockResolvedValue({ count: 1 });
 
-      expect(prismaMock.discount.update).toHaveBeenCalledWith({
-        where: { id: 'd1' },
-        data: { redeemedCount: { increment: 1 } },
-      });
+      const result = await repository.tryIncrementRedeemed('d1');
+
+      expect(prismaMock.discount.updateMany).toHaveBeenCalledWith(expectedCall);
+      expect(result).toBe(1);
+    });
+
+    it('returns 0 when the cap is exhausted (no row matched the predicate)', async () => {
+      prismaMock.discount.updateMany.mockResolvedValue({ count: 0 });
+
+      expect(await repository.tryIncrementRedeemed('d1')).toBe(0);
     });
 
     it('uses the provided transaction client when given', async () => {
-      const tx = { discount: { update: jest.fn().mockResolvedValue({ id: 'd1' }) } };
+      const tx = { discount: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) } };
 
-      await repository.incrementRedeemed('d1', tx as unknown as Prisma.TransactionClient);
+      await repository.tryIncrementRedeemed('d1', tx as unknown as Prisma.TransactionClient);
 
-      expect(tx.discount.update).toHaveBeenCalledWith({
-        where: { id: 'd1' },
-        data: { redeemedCount: { increment: 1 } },
-      });
-      expect(prismaMock.discount.update).not.toHaveBeenCalled();
+      expect(tx.discount.updateMany).toHaveBeenCalledWith(expectedCall);
+      expect(prismaMock.discount.updateMany).not.toHaveBeenCalled();
     });
   });
 

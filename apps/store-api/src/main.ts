@@ -49,9 +49,15 @@ async function bootstrap() {
   // matches the path and all sub-paths, so '/api/cart' covers /api/cart/items
   // and /api/cart/items/:id; safe methods (GET on those paths) pass through and
   // bootstrap the token cookie.
+  //
+  // '/api/wishlist' belongs here for the same reason as the cart: a guest
+  // wishlist is identified purely by the `wishlistToken` cookie (see
+  // WishlistIdentityInterceptor), so POST /items, POST /toggle and DELETE
+  // /items/:productId are cookie-authenticated state changes.
   const csrfService = app.get(CsrfService);
   app.use('/api/auth/refresh', csrfService.protect);
   app.use('/api/cart', csrfService.protect);
+  app.use('/api/wishlist', csrfService.protect);
 
   // CORS configuration — never fall back to wildcard with credentials
   const corsOrigins = configService.get<string>('CORS_ORIGINS', 'http://localhost:3000');

@@ -16,3 +16,10 @@ export const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /** Weak default secret used only in development when CSRF_SECRET is unset. */
 export const CSRF_DEV_FALLBACK_SECRET = 'dev-csrf-secret-change-me-in-prod-32b';
+
+/**
+ * Minimum length of a production CSRF_SECRET (the HMAC key signing the
+ * double-submit token). Mirrors the JWT secret floor; enforced both at env
+ * validation (boot) and in CsrfService's constructor.
+ */
+export const CSRF_SECRET_MIN_LENGTH = 32;
