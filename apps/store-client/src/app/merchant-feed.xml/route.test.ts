@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { GET } from "./route";
 import { fetchAllActiveProducts } from "@/shared/lib/schema";
 import type { PublicProductEntity } from "@/shared/api/generated/models";
@@ -6,8 +7,13 @@ jest.mock("@/shared/lib/schema", () => ({
   fetchAllActiveProducts: jest.fn(),
 }));
 
+// The real SDK is a Next-runtime module; the route only needs the capture entry
+// point (a no-op without a DSN anyway).
+jest.mock("@sentry/nextjs", () => ({ captureException: jest.fn() }));
+
 const mockFetchAllActiveProducts =
   fetchAllActiveProducts as jest.MockedFunction<typeof fetchAllActiveProducts>;
+const captureException = Sentry.captureException as jest.Mock;
 
 function makeProduct(
   overrides: Partial<PublicProductEntity> = {},
@@ -82,7 +88,21 @@ describe("GET /merchant-feed.xml", () => {
       "[merchant-feed] Failed to fetch products:",
       expect.any(Error),
     );
+    // The 200 is deliberate (a 5xx can get the feed suspended), so nothing else
+    // signals the failure — console.* does not reach Sentry from the Node runtime.
+    expect(captureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ tags: { route: "merchant-feed" } }),
+    );
 
     consoleErrorSpy.mockRestore();
+  });
+
+  it("reports nothing to Sentry on the happy path", async () => {
+    mockFetchAllActiveProducts.mockResolvedValue([makeProduct()]);
+
+    await GET();
+
+    expect(captureException).not.toHaveBeenCalled();
   });
 });

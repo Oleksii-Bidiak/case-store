@@ -15,6 +15,49 @@ const apiUrl = new URL(
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001",
 );
 
+/**
+ * Extra image hosts an operator may allow (TASK-289): `Category.image` is a
+ * free-text admin field, so a store that keeps its category art on a CDN needs a
+ * way in without a code change. Comma-separated **bare hostnames**
+ * (`cdn.mystore.ua,images.brand.com`) — anything with a scheme, port, path,
+ * whitespace or a wildcard is dropped with a warning.
+ *
+ * Deliberately NOT a wildcard/`**` allow-any pattern: the image optimizer fetches
+ * whatever host it is told to, so a permissive pattern turns it into an SSRF
+ * vector and a free bandwidth proxy. Exact hostnames only — the trade-off is that
+ * adding a CDN needs an env change + rebuild (next.config is build-time), which
+ * is the intended friction. URLs on any other host fall back to the icon/gradient
+ * tile (`shared/ui/category-tile-image.tsx` pre-checks the same rules client-side,
+ * so they never reach the optimizer).
+ */
+const HOSTNAME_RE = /^[a-z0-9.-]+$/;
+const extraImageHosts = (process.env.NEXT_PUBLIC_IMAGE_HOSTS ?? "")
+  .split(",")
+  .map((host) => host.trim().toLowerCase())
+  .filter((host) => host.length > 0)
+  .filter((host) => {
+    if (HOSTNAME_RE.test(host)) return true;
+    console.warn(
+      `[next.config] NEXT_PUBLIC_IMAGE_HOSTS: ignoring invalid hostname "${host}" ` +
+        "(bare hostnames only — no scheme, port, path or wildcard)",
+    );
+    return false;
+  });
+
+/**
+ * Storefront security headers. `X-Frame-Options: SAMEORIGIN` is safe here — no
+ * page is meant to be framed by third parties. No CSP: Next injects inline
+ * <style>/<script> (RSC payload, next/font, the theme-flash guard) whose hashes
+ * we do not control, so a hand-written policy would either break rendering or be
+ * neutered by `unsafe-inline`. A nonce-based CSP needs a middleware + a
+ * `Content-Security-Policy` wired through `next/headers`; tracked separately.
+ */
+const securityHeaders = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+];
+
 const nextConfig: NextConfig = {
   // Produce a self-contained `.next/standalone` server for Docker (TASK-270).
   // `outputFileTracingRoot` points at the monorepo root (two levels up) so the
@@ -49,7 +92,17 @@ const nextConfig: NextConfig = {
         hostname: "picsum.photos",
         pathname: "/**",
       },
+      // Operator-configured CDN hosts for admin-entered `Category.image` URLs.
+      // https only — see the note on `extraImageHosts`.
+      ...extraImageHosts.map((hostname) => ({
+        protocol: "https" as const,
+        hostname,
+        pathname: "/**",
+      })),
     ],
+  },
+  async headers() {
+    return [{ source: "/:path*", headers: securityHeaders }];
   },
 };
 

@@ -1,3 +1,11 @@
+// The real SDK is a Next-runtime module; only the two capture entry points are
+// exercised here (they are no-ops without a DSN in production anyway).
+jest.mock("@sentry/nextjs", () => ({
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
+
+import * as Sentry from "@sentry/nextjs";
 import {
   getIndexNowKey,
   buildIndexNowPayload,
@@ -5,6 +13,9 @@ import {
 } from "./indexnow";
 import { GET as getIndexNowKeyFile } from "@/app/indexnow.txt/route";
 import { SITE_URL } from "@/shared/config";
+
+const captureException = Sentry.captureException as jest.Mock;
+const captureMessage = Sentry.captureMessage as jest.Mock;
 
 /**
  * NODE_ENV is typed readonly in Next's ProcessEnv, so tests flip it through a
@@ -27,6 +38,8 @@ describe("indexnow", () => {
     fetchMock = jest.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
     warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    captureException.mockClear();
+    captureMessage.mockClear();
   });
 
   afterEach(() => {
@@ -144,6 +157,11 @@ describe("indexnow", () => {
         "[indexnow] Submission failed:",
         expect.any(Error),
       );
+      // console.* never reaches Sentry from the Node runtime — capture explicitly.
+      expect(captureException).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({ tags: { integration: "indexnow" } }),
+      );
     });
 
     it("resolves and warns on a non-2xx response", async () => {
@@ -159,6 +177,25 @@ describe("indexnow", () => {
           "[indexnow] Submission rejected with status 422",
         ),
       );
+      // A rejected submission carries no Error object — report it as a message.
+      expect(captureMessage).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "[indexnow] Submission rejected with status 422",
+        ),
+        "warning",
+      );
+      expect(captureException).not.toHaveBeenCalled();
+    });
+
+    it("reports nothing to Sentry on a successful submission", async () => {
+      setNodeEnv("production");
+      process.env.INDEXNOW_KEY = "abc123";
+      fetchMock.mockResolvedValue({ ok: true, status: 200 });
+
+      await submitToIndexNow([`${SITE_URL}/blog`]);
+
+      expect(captureException).not.toHaveBeenCalled();
+      expect(captureMessage).not.toHaveBeenCalled();
     });
   });
 

@@ -1,4 +1,4 @@
-import type { ProductImageEntity } from "@/entities/product";
+import type { ProductImageEntity } from "@/shared/api/generated/models";
 import { dict } from "@/shared/config";
 import {
   act,

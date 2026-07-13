@@ -23,6 +23,15 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 /** Cache tag for the whole published-carousels collection. */
 export const CAROUSELS_COLLECTION_TAG = "carousels";
 
+/** Placement slot keys — mirror of the API's CarouselPlacement enum (TASK-288). */
+export type CarouselPlacementKey = "HOME_TABS" | "HOME_RAILS";
+
+/** Published carousels grouped by placement (each group ordered by sortOrder). */
+export type CarouselsByPlacement = Record<
+  CarouselPlacementKey,
+  PublicCarouselEntity[]
+>;
+
 /**
  * Fetch all PUBLISHED carousels with their resolved product lists, tagged for
  * on-demand revalidation. Never throws — returns `[]` on any error. Empty
@@ -43,4 +52,25 @@ export async function fetchPublishedCarousels(): Promise<
   } catch {
     return [];
   }
+}
+
+/**
+ * Same single request, grouped by placement (TASK-288) — the homepage feeds
+ * HOME_TABS to the «Популярне» tab rail and HOME_RAILS to RecommendationCarousels,
+ * so no carousel can render twice.
+ *
+ * Grouping locally rather than issuing two `?placement=` requests: the API sorts
+ * the whole list by `sortOrder asc` and `sortOrder` is scoped per placement, so
+ * each filtered subsequence is already in its own display order — one round-trip,
+ * one cache entry, same result.
+ */
+export async function fetchPublishedCarouselsByPlacement(): Promise<CarouselsByPlacement> {
+  const groups: CarouselsByPlacement = { HOME_TABS: [], HOME_RAILS: [] };
+
+  for (const carousel of await fetchPublishedCarousels()) {
+    const key = carousel.placement as CarouselPlacementKey;
+    if (groups[key]) groups[key].push(carousel);
+  }
+
+  return groups;
 }

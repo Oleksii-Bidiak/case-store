@@ -1,5 +1,6 @@
 import {
   fetchPublishedCarousels,
+  fetchPublishedCarouselsByPlacement,
   CAROUSELS_COLLECTION_TAG,
 } from "./carousels-server";
 
@@ -13,6 +14,7 @@ function carouselRow(
     id,
     title,
     source: "BESTSELLING",
+    placement: "HOME_RAILS",
     sortOrder: 0,
     products,
     ...extra,
@@ -65,5 +67,78 @@ describe("fetchPublishedCarousels", () => {
       .mockRejectedValue(new Error("ECONNREFUSED")) as never;
 
     await expect(fetchPublishedCarousels()).resolves.toEqual([]);
+  });
+});
+
+describe("fetchPublishedCarouselsByPlacement (TASK-288)", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    jest.restoreAllMocks();
+  });
+
+  function mockList(rows: unknown[]): jest.Mock {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: rows }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  it("splits the single response into the two placement groups, preserving order", async () => {
+    // The API returns the whole published list sorted by sortOrder; sortOrder is
+    // scoped per placement, so each filtered subsequence is already ordered.
+    const fetchMock = mockList([
+      carouselRow("t1", "Хіти", [{ id: "p1" }], {
+        placement: "HOME_TABS",
+        sortOrder: 0,
+      }),
+      carouselRow("r1", "Рейл A", [{ id: "p2" }], {
+        placement: "HOME_RAILS",
+        sortOrder: 0,
+      }),
+      carouselRow("t2", "Новинки", [{ id: "p3" }], {
+        placement: "HOME_TABS",
+        sortOrder: 1,
+      }),
+      carouselRow("r2", "Рейл B", [], {
+        placement: "HOME_RAILS",
+        sortOrder: 1,
+      }),
+    ]);
+
+    const groups = await fetchPublishedCarouselsByPlacement();
+
+    expect(groups.HOME_TABS.map((c) => c.id)).toEqual(["t1", "t2"]);
+    expect(groups.HOME_RAILS.map((c) => c.id)).toEqual(["r1", "r2"]);
+    // One request for both groups (not one per placement).
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].next.tags).toContain(
+      CAROUSELS_COLLECTION_TAG,
+    );
+  });
+
+  it("ignores an unknown placement instead of throwing", async () => {
+    mockList([
+      carouselRow("x", "Майбутнє", [{ id: "p1" }], { placement: "SIDEBAR" }),
+    ]);
+
+    await expect(fetchPublishedCarouselsByPlacement()).resolves.toEqual({
+      HOME_TABS: [],
+      HOME_RAILS: [],
+    });
+  });
+
+  it("returns empty groups when the API is unreachable", async () => {
+    global.fetch = jest
+      .fn()
+      .mockRejectedValue(new Error("ECONNREFUSED")) as never;
+
+    await expect(fetchPublishedCarouselsByPlacement()).resolves.toEqual({
+      HOME_TABS: [],
+      HOME_RAILS: [],
+    });
   });
 });

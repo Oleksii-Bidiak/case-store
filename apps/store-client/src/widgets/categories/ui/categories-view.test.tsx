@@ -107,18 +107,17 @@ describe("CategoriesView", () => {
   });
 
   it("renders a child tile image when Category.image is set (TASK-083)", async () => {
+    // Since TASK-289 the tile renders through next/image: only hosts in
+    // `images.remotePatterns` are drawn (anything else takes the gradient
+    // fallback), and `src` becomes the optimizer route.
+    const image = "https://picsum.photos/seed/cases/800/800";
     server.use(
       http.get("*/api/categories/tree", () =>
         HttpResponse.json({
           data: [
             {
               ...tree.data[0],
-              children: [
-                {
-                  ...tree.data[0].children[0],
-                  image: "https://cdn.example.com/cases.jpg",
-                },
-              ],
+              children: [{ ...tree.data[0].children[0], image }],
             },
           ],
         }),
@@ -128,6 +127,6 @@ describe("CategoriesView", () => {
 
     const tile = await screen.findByRole("link", { name: "Чохли" });
     const img = tile.querySelector("img");
-    expect(img).toHaveAttribute("src", "https://cdn.example.com/cases.jpg");
+    expect(img?.getAttribute("src")).toContain(encodeURIComponent(image));
   });
 });

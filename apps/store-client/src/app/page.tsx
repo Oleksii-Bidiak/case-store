@@ -16,7 +16,7 @@ import {
 } from "@/shared/lib/schema";
 import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
-import { fetchPublishedCarousels } from "@/shared/api/carousels-server";
+import { fetchPublishedCarouselsByPlacement } from "@/shared/api/carousels-server";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
@@ -55,10 +55,13 @@ export default async function HomePage() {
   // always renders even if the API is unreachable.
   const banners = await fetchPublishedBanners();
 
-  // Admin-managed recommendation carousels (TASK-139; ISR, tag `carousels`).
-  // Resilient like the banners fetch — an unreachable API yields [] and the
-  // widget renders nothing, so the homepage always renders.
-  const carousels = await fetchPublishedCarousels();
+  // Admin-managed carousels (TASK-139; ISR, tag `carousels`), split by placement
+  // (TASK-288) so the same carousel never renders twice: HOME_TABS feeds the
+  // «Популярне» tab rail, HOME_RAILS the standalone rails below it. Resilient
+  // like the banners fetch — an unreachable API yields empty groups, PopularRail
+  // falls back to its query-driven tabs and RecommendationCarousels renders
+  // nothing, so the homepage always renders.
+  const carousels = await fetchPublishedCarouselsByPlacement();
 
   // Admin-managed social links feed the Organization `sameAs` (brand-entity
   // signal for AI/search). Deduped with the footer's fetch of the same tagged
@@ -79,8 +82,15 @@ export default async function HomePage() {
 
   return (
     <div className="flex flex-col gap-14 pb-16">
+      {/* `logo` (TASK-299) is a recommended Organization property — Google reads it
+          for the brand's knowledge panel; it is the admin-uploaded logo or absent. */}
       <JsonLd
-        schema={buildOrganizationSchema(SITE_URL, SITE_NAME, socialLinks)}
+        schema={buildOrganizationSchema(
+          SITE_URL,
+          SITE_NAME,
+          socialLinks,
+          seo?.logoUrl,
+        )}
       />
       <JsonLd schema={buildWebSiteSchema(SITE_URL, SITE_NAME)} />
 
@@ -90,10 +100,10 @@ export default async function HomePage() {
       />
       <TrustStrip />
       <CategoryNav />
-      <PopularRail />
+      <PopularRail carousels={carousels.HOME_TABS} />
       {/* Owner-approved default (plan 154): admin carousels COEXIST below the
-          hardcoded PopularRail, grouped with the other product-rail section. */}
-      <RecommendationCarousels carousels={carousels} />
+          PopularRail, grouped with the other product-rail section. */}
+      <RecommendationCarousels carousels={carousels.HOME_RAILS} />
       <PromoBanner banner={banners.PROMO_BANNER[0]} />
       <RecentlyViewed />
       <Newsletter />

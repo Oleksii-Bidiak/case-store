@@ -4,7 +4,11 @@ import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { BarChart3 } from "lucide-react";
-import { useProductControllerFindBySlug } from "@/entities/product";
+import {
+  ProductImageGallery,
+  ProductStockIndicator,
+  useProductControllerFindBySlug,
+} from "@/entities/product";
 import { pushRecentlyViewed } from "@/widgets/recently-viewed";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
@@ -12,9 +16,7 @@ import { formatMoney, trackEvent } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { RatingStars } from "@/shared/ui";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
-import { ProductImageGallery } from "./product-image-gallery";
 import { ProductSiblingNavigator } from "./product-sibling-navigator";
-import { ProductStockIndicator } from "./product-stock-indicator";
 import { ProductTrustBadges } from "./product-trust-badges";
 import { ProductSpecsTabs } from "./product-specs-tabs";
 import { ProductHighlights } from "./product-highlights";

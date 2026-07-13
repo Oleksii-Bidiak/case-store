@@ -40,6 +40,30 @@ describe("buildOrganizationSchema", () => {
       buildOrganizationSchema(SITE, "MobileStore", [null, "", "  "]).sameAs,
     ).toBeUndefined();
   });
+
+  it("emits the uploaded store logo (TASK-299)", () => {
+    const logo = "http://localhost:3001/uploads/branding/logo.svg";
+    expect(buildOrganizationSchema(SITE, "MobileStore", [], logo).logo).toBe(
+      logo,
+    );
+  });
+
+  it("absolutizes a site-relative logo path against the site url", () => {
+    expect(
+      buildOrganizationSchema(SITE, "MobileStore", [], "/uploads/logo.webp")
+        .logo,
+    ).toBe(`${SITE}/uploads/logo.webp`);
+  });
+
+  it("omits logo when unset, blank or unparseable", () => {
+    expect(buildOrganizationSchema(SITE, "MobileStore").logo).toBeUndefined();
+    expect(
+      buildOrganizationSchema(SITE, "MobileStore", [], null).logo,
+    ).toBeUndefined();
+    expect(
+      buildOrganizationSchema(SITE, "MobileStore", [], "   ").logo,
+    ).toBeUndefined();
+  });
 });
 
 describe("buildWebSiteSchema", () => {

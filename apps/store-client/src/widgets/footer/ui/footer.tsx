@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { fetchPublishedPages } from "@/shared/api/pages-server";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { Logo } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
 // Defensive cap on how many published legal pages render as footer links, so the
@@ -39,11 +41,14 @@ const SOCIAL_LINKS = [
  */
 export async function Footer() {
   const year = new Date().getFullYear();
-  // Fetch contact settings and published legal pages in parallel — avoids
-  // turning two independent reads into a sequential await waterfall.
-  const [contact, legalPages] = await Promise.all([
+  // Fetch contact settings, published legal pages and the SEO singleton (for the
+  // store logo, TASK-299) in parallel — avoids turning independent reads into a
+  // sequential await waterfall. The seo-settings request is the same tagged URL
+  // the layout/homepage already read, so Next dedupes it within the request.
+  const [contact, legalPages, seo] = await Promise.all([
     fetchSiteContactSettings(),
     fetchPublishedPages(),
+    fetchSeoSettings(),
   ]);
 
   const email = contact?.email ?? dict.footer.contactEmail;
@@ -74,16 +79,8 @@ export async function Footer() {
       <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-4 py-12 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
         {/* Brand + socials */}
         <div className="flex flex-col gap-4">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span
-              aria-hidden="true"
-              className="inline-flex size-9 items-center justify-center rounded-xl bg-primary font-display text-lg font-bold text-primary-foreground"
-            >
-              M
-            </span>
-            <span className="font-display text-xl font-bold tracking-tight">
-              MobileStore
-            </span>
+          <Link href="/">
+            <Logo logoUrl={seo?.logoUrl} className="gap-2.5" />
           </Link>
           <p className="max-w-xs text-sm leading-relaxed text-footer-foreground/70">
             {dict.footer.tagline}
