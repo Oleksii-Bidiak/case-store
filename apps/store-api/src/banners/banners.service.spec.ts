@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { BannerPlacement, PublishStatus } from '@prisma/client';
+import { PinoLogger } from 'nestjs-pino';
+import { ReorderStaleError } from '../common/reorder';
 import { BannerRepository } from './banners.repository';
 import { BannerService } from './banners.service';
 import { BannerEntity } from './entities';
@@ -41,9 +43,17 @@ const bannerRepositoryMock = {
   publish: jest.fn(),
   unpublish: jest.fn(),
   delete: jest.fn(),
+  reorderPlacement: jest.fn(),
 };
 
 const revalidationMock = { revalidate: jest.fn() };
+
+const pinoLoggerMock = {
+  setContext: jest.fn(),
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+};
 
 describe('BannerService', () => {
   let service: BannerService;
@@ -57,6 +67,7 @@ describe('BannerService', () => {
         BannerService,
         { provide: BannerRepository, useValue: bannerRepositoryMock },
         { provide: RevalidationNotifier, useValue: revalidationMock },
+        { provide: PinoLogger, useValue: pinoLoggerMock },
       ],
     }).compile();
 
@@ -273,6 +284,57 @@ describe('BannerService', () => {
       await service.delete('banner-uuid-2');
 
       expect(bannerRepositoryMock.delete).toHaveBeenCalledWith('banner-uuid-2');
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── reorderPlacement (TASK-295) ──────────────────────────────────────────
+
+  describe('reorderPlacement', () => {
+    const a = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const b = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    it('returns the refreshed FULL admin list and revalidates a bucket with a live banner', async () => {
+      bannerRepositoryMock.reorderPlacement.mockResolvedValue([mockBanner, draftBanner]);
+
+      const result = await service.reorderPlacement(
+        { placement: BannerPlacement.HERO_SLIDE, orderedIds: [b, a] },
+        'admin-1',
+      );
+
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0]).toBeInstanceOf(BannerEntity);
+      expect(bannerRepositoryMock.reorderPlacement).toHaveBeenCalledWith(
+        BannerPlacement.HERO_SLIDE,
+        [b, a],
+      );
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith({ tags: ['banners'], paths: ['/'] });
+    });
+
+    // A pure DRAFT shuffle changes nothing the shopper can see — same visibility gate the
+    // rest of this service applies to create / update / delete.
+    it('does NOT revalidate when the reordered bucket holds no PUBLISHED banner', async () => {
+      bannerRepositoryMock.reorderPlacement.mockResolvedValue([
+        draftBanner,
+        // A live banner in ANOTHER placement must not trigger a revalidation of THIS drag.
+        { ...mockBanner, placement: BannerPlacement.ANNOUNCEMENT_BAR },
+      ]);
+
+      await service.reorderPlacement(
+        { placement: BannerPlacement.HERO_SLIDE, orderedIds: [b] },
+        'admin-1',
+      );
+
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+
+    it('maps a stale reorder onto a 409 carrying the stable code', async () => {
+      bannerRepositoryMock.reorderPlacement.mockRejectedValue(new ReorderStaleError());
+
+      await expect(
+        service.reorderPlacement({ placement: BannerPlacement.HERO_SLIDE, orderedIds: [a] }, 'x'),
+      ).rejects.toBeInstanceOf(ConflictException);
+
       expect(revalidationMock.revalidate).not.toHaveBeenCalled();
     });
   });

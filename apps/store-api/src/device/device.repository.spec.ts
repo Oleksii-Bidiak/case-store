@@ -1,17 +1,33 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DeviceRepository } from './device.repository';
 import { PrismaService } from '../prisma';
+import { ReorderDuplicateIdError } from '../common/reorder';
 
 describe('DeviceRepository', () => {
   let repo: DeviceRepository;
 
+  /**
+   * ONE deviceBrand delegate shared by the singleton and the transaction client (TASK-295):
+   * `createBrand` and `reorderBrands` write through `tx.deviceBrand`, the plain reads
+   * through `this.prisma.deviceBrand`, and the assertions do not care which.
+   */
+  const deviceBrandDelegate = {
+    findMany: jest.fn(),
+    findUnique: jest.fn(),
+    aggregate: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  };
+
+  const txMock = {
+    deviceBrand: deviceBrandDelegate,
+    // `pg_advisory_xact_lock` — taken by `createBrand` and by `reorderBrands`.
+    $executeRaw: jest.fn(),
+  };
+
   const prismaMock = {
-    deviceBrand: {
-      findMany: jest.fn(),
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-    },
+    deviceBrand: deviceBrandDelegate,
     deviceModel: {
       findMany: jest.fn(),
       count: jest.fn(),
@@ -19,6 +35,7 @@ describe('DeviceRepository', () => {
       create: jest.fn(),
       update: jest.fn(),
     },
+    $transaction: jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock)),
   };
 
   beforeEach(async () => {
@@ -27,6 +44,85 @@ describe('DeviceRepository', () => {
       providers: [DeviceRepository, { provide: PrismaService, useValue: prismaMock }],
     }).compile();
     repo = module.get(DeviceRepository);
+  });
+
+  // ─── brands: create + reorder (TASK-295) ──────────────────────────────────
+
+  describe('createBrand', () => {
+    // Trap A: with the hand-typed `sortOrder` field gone from the admin form, the old
+    // `?? 0` default would stack every new brand ON TOP OF the first one.
+    it('APPENDS a new brand to the end of the list (max + 1), under the bucket lock', async () => {
+      deviceBrandDelegate.aggregate.mockResolvedValue({ _max: { sortOrder: 1 } });
+      deviceBrandDelegate.create.mockResolvedValue({ id: 'brand-1' });
+
+      await repo.createBrand({ name: 'Xiaomi', slug: 'xiaomi' });
+
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(deviceBrandDelegate.create).toHaveBeenCalledWith({
+        data: { name: 'Xiaomi', slug: 'xiaomi', sortOrder: 2, isActive: true },
+      });
+    });
+
+    it('starts an EMPTY list at slot 0', async () => {
+      deviceBrandDelegate.aggregate.mockResolvedValue({ _max: { sortOrder: null } });
+      deviceBrandDelegate.create.mockResolvedValue({ id: 'brand-1' });
+
+      await repo.createBrand({ name: 'Apple', slug: 'apple' });
+
+      expect(deviceBrandDelegate.create).toHaveBeenCalledWith({
+        data: { name: 'Apple', slug: 'apple', sortOrder: 0, isActive: true },
+      });
+    });
+
+    it('honours an EXPLICIT sortOrder without reading the list max', async () => {
+      deviceBrandDelegate.create.mockResolvedValue({ id: 'brand-1' });
+
+      await repo.createBrand({ name: 'Apple', slug: 'apple', sortOrder: 9 });
+
+      expect(deviceBrandDelegate.aggregate).not.toHaveBeenCalled();
+      expect(deviceBrandDelegate.create).toHaveBeenCalledWith({
+        data: { name: 'Apple', slug: 'apple', sortOrder: 9, isActive: true },
+      });
+    });
+  });
+
+  describe('reorderBrands', () => {
+    const a = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const b = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    it('locks the list, writes index → sortOrder and returns the refreshed admin list', async () => {
+      // 1st findMany = the in-tx snapshot; 2nd = the refreshed list WITH model counts.
+      deviceBrandDelegate.findMany
+        .mockResolvedValueOnce([{ id: a }, { id: b }])
+        .mockResolvedValueOnce([
+          { id: b, name: 'Samsung', _count: { models: 4 } },
+          { id: a, name: 'Apple', _count: { models: 7 } },
+        ]);
+
+      const result = await repo.reorderBrands([b, a]);
+
+      expect(result).toEqual([
+        { brand: { id: b, name: 'Samsung' }, modelCount: 4 },
+        { brand: { id: a, name: 'Apple' }, modelCount: 7 },
+      ]);
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(deviceBrandDelegate.updateMany).toHaveBeenNthCalledWith(1, {
+        where: { id: b },
+        data: { sortOrder: 0 },
+      });
+      expect(deviceBrandDelegate.updateMany).toHaveBeenNthCalledWith(2, {
+        where: { id: a },
+        data: { sortOrder: 1 },
+      });
+    });
+
+    it('rejects a duplicate id (DUPLICATE_ID) and writes nothing', async () => {
+      deviceBrandDelegate.findMany.mockResolvedValueOnce([{ id: a }, { id: b }]);
+
+      await expect(repo.reorderBrands([a, a])).rejects.toBeInstanceOf(ReorderDuplicateIdError);
+
+      expect(deviceBrandDelegate.updateMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('findModels', () => {

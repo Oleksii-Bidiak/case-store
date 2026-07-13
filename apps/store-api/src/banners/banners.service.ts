@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PublishStatus } from '@prisma/client';
+import { PinoLogger } from 'nestjs-pino';
 import {
   BannerRepository,
   CreateBannerInput,
@@ -13,8 +14,10 @@ import {
   UpdateBannerDto,
   BannerListQueryDto,
   AdminBannerListQueryDto,
+  ReorderBannersDto,
 } from './dto';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
+import { reorderErrorToHttp } from '../common/reorder';
 
 /**
  * Response envelope for a banner list.
@@ -34,7 +37,10 @@ export class BannerService {
   constructor(
     private readonly bannerRepository: BannerRepository,
     private readonly revalidation: RevalidationNotifier,
-  ) {}
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(BannerService.name);
+  }
 
   /**
    * List published banners (public storefront), optionally filtered by placement.
@@ -195,6 +201,46 @@ export class BannerService {
     if (banner.status === PublishStatus.PUBLISHED) {
       await this.notifyRevalidation();
     }
+  }
+
+  /**
+   * Reorder ONE placement bucket (admin, TASK-295) and return the refreshed FULL admin
+   * banner list — all placements — so the panel resyncs in a single round-trip, exactly as
+   * the category reorder does.
+   *
+   * The repository's domain errors are mapped to HTTP here, so the wire body carries the
+   * stable `error` code the admin panel keys its UA announcements off.
+   */
+  async reorderPlacement(dto: ReorderBannersDto, actorId?: string): Promise<BannerListResponse> {
+    let banners;
+    try {
+      banners = await this.bannerRepository.reorderPlacement(dto.placement, dto.orderedIds);
+    } catch (error) {
+      throw reorderErrorToHttp(error);
+    }
+
+    // Revalidate ONLY when the reordered bucket actually contains something the shopper can
+    // see — a pure draft shuffle changes nothing public, and this service already gates its
+    // revalidation on visibility everywhere else (create / update / delete).
+    const bucketHasPublished = banners.some(
+      (banner) => banner.placement === dto.placement && banner.status === PublishStatus.PUBLISHED,
+    );
+    if (bucketHasPublished) {
+      await this.notifyRevalidation();
+    }
+
+    this.logger.info(
+      {
+        event: 'banner.reorder',
+        placement: dto.placement,
+        orderedIds: dto.orderedIds,
+        revalidated: bucketHasPublished,
+        actorId,
+      },
+      'Banners reordered',
+    );
+
+    return { data: banners.map((banner) => BannerEntity.fromPrisma(banner)) };
   }
 
   // ─── helpers ──────────────────────────────────────────────────────────────

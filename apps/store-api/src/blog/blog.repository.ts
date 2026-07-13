@@ -3,6 +3,17 @@ import { BlogCategory, BlogPost, Prisma, PublishStatus, SlugRedirectEntity } fro
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
 import type { PublishablePort, RevalidateTarget } from '../publishing';
+import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
+
+/**
+ * Advisory-lock namespace for blog categories (TASK-295). The prefix is MANDATORY — locks
+ * are DATABASE-GLOBAL and every flat resource has a `__root__` bucket, so without it a blog
+ * reorder would serialise against an unrelated resource's.
+ */
+const LOCK_RESOURCE = 'blog-categories';
+
+/** Blog categories are ONE global list — a single, null-keyed bucket. */
+const BUCKET_LOCK_KEY = lockKey(LOCK_RESOURCE, null);
 
 /**
  * Slugs of a rename being persisted by this update — when present, the write
@@ -279,10 +290,33 @@ export class BlogRepository implements PublishablePort {
 
   // ─── categories ─────────────────────────────────────────────────────────────
 
-  /** List all categories, ordered by sortOrder then name. */
-  findAllCategories(): Promise<BlogCategory[]> {
-    return this.prisma.blogCategory.findMany({
+  /**
+   * List all categories, ordered by sortOrder then name.
+   *
+   * Accepts a transaction client (TASK-295) so the reorder endpoint can re-read the
+   * refreshed list inside its own transaction.
+   */
+  findAllCategories(client: PrismaService | ReorderTx = this.prisma): Promise<BlogCategory[]> {
+    return client.blogCategory.findMany({
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+  }
+
+  /**
+   * Rewrite the complete ordering of the (single, global) blog-category list and return the
+   * refreshed list, read inside the same transaction (TASK-295) — same shape as the
+   * category tree's reorder, minus the tree.
+   *
+   * Throws the domain errors of `common/reorder/reorder.errors.ts`; the service maps them.
+   */
+  reorderCategories(orderedIds: readonly string[]): Promise<BlogCategory[]> {
+    return reorderBucket<BlogCategory[]>(this.prisma, {
+      resource: LOCK_RESOURCE,
+      bucket: null,
+      orderedIds,
+      snapshot: (tx) => tx.blogCategory.findMany({ select: { id: true } }),
+      delegate: (tx) => tx.blogCategory,
+      result: (tx) => this.findAllCategories(tx),
     });
   }
 
@@ -294,9 +328,30 @@ export class BlogRepository implements PublishablePort {
     return this.prisma.blogCategory.findUnique({ where: { slug } });
   }
 
+  /**
+   * Create a category, APPENDED to the end of the list (`sortOrder = max + 1`, `0` when the
+   * list is empty) — TASK-295.
+   *
+   * The old `data.sortOrder ?? 0` default lands every new category ON TOP OF the first one
+   * once the admin form stops sending a hand-typed `sortOrder` (which the reorder UI
+   * removes). Same shape as `CategoryRepository.create`: the `max + 1` read runs inside a
+   * transaction holding the bucket's advisory lock, so it cannot race a concurrent append or
+   * a concurrent `reorderCategories` and hand out a duplicate slot. An explicit
+   * `data.sortOrder` still wins — the append is only the default.
+   */
   createCategory(data: CreateBlogCategoryInput): Promise<BlogCategory> {
-    return this.prisma.blogCategory.create({
-      data: { slug: data.slug, name: data.name, sortOrder: data.sortOrder ?? 0 },
+    return this.prisma.$transaction(async (tx) => {
+      await acquireAdvisoryLocks(tx, [BUCKET_LOCK_KEY]);
+
+      let sortOrder = data.sortOrder;
+      if (sortOrder === undefined) {
+        const { _max } = await tx.blogCategory.aggregate({ _max: { sortOrder: true } });
+        sortOrder = _max.sortOrder === null ? 0 : _max.sortOrder + 1;
+      }
+
+      return tx.blogCategory.create({
+        data: { slug: data.slug, name: data.name, sortOrder },
+      });
     });
   }
 

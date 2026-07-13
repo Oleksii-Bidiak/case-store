@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { Prisma, PublishStatus } from '@prisma/client';
+import { PinoLogger } from 'nestjs-pino';
+import { ReorderNotFoundError } from '../common/reorder';
 import { BlogRepository } from './blog.repository';
 import { BlogService } from './blog.service';
 import { BlogPostEntity, BlogCategoryEntity } from './entities';
@@ -53,9 +55,17 @@ const repositoryMock = {
   updateCategory: jest.fn(),
   deleteCategory: jest.fn(),
   countPostsInCategory: jest.fn(),
+  reorderCategories: jest.fn(),
 };
 
 const revalidationMock = { revalidate: jest.fn() };
+
+const pinoLoggerMock = {
+  setContext: jest.fn(),
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+};
 
 describe('BlogService', () => {
   let service: BlogService;
@@ -69,6 +79,7 @@ describe('BlogService', () => {
         BlogService,
         { provide: BlogRepository, useValue: repositoryMock },
         { provide: RevalidationNotifier, useValue: revalidationMock },
+        { provide: PinoLogger, useValue: pinoLoggerMock },
       ],
     }).compile();
 
@@ -441,6 +452,47 @@ describe('BlogService', () => {
       await expect(service.createCategory({ name: 'Dup', slug: 'dup' })).rejects.toThrow(
         ConflictException,
       );
+    });
+  });
+
+  // ─── reorderCategories (TASK-295) ───────────────────────────────────────────
+
+  describe('reorderCategories', () => {
+    const a = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const b = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    const catRow = (id: string, sortOrder: number) => ({
+      id,
+      slug: `c-${sortOrder}`,
+      name: `C${sortOrder}`,
+      sortOrder,
+      createdAt: new Date('2026-06-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-01T00:00:00.000Z'),
+    });
+
+    it('returns the refreshed list and purges the blog collection tag', async () => {
+      repositoryMock.reorderCategories.mockResolvedValue([catRow(b, 0), catRow(a, 1)]);
+
+      const result = await service.reorderCategories({ orderedIds: [b, a] }, 'admin-1');
+
+      expect(repositoryMock.reorderCategories).toHaveBeenCalledWith([b, a]);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBeInstanceOf(BlogCategoryEntity);
+      expect(result[0].id).toBe(b);
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith({
+        tags: ['blog'],
+        paths: ['/blog'],
+      });
+    });
+
+    it('maps an unknown id onto a 404 and does not revalidate', async () => {
+      repositoryMock.reorderCategories.mockRejectedValue(new ReorderNotFoundError());
+
+      await expect(
+        service.reorderCategories({ orderedIds: [a] }, 'admin-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
     });
   });
 });

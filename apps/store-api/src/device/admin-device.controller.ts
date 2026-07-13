@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Put, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Param,
+  Body,
+  Query,
+  HttpCode,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -15,8 +26,12 @@ import {
   CreateDeviceModelDto,
   UpdateDeviceModelDto,
   DeviceModelListQueryDto,
+  ReorderDeviceBrandsDto,
 } from './dto';
 import { AdminGuard } from '../auth/guards';
+// Direct file import, NOT the `../auth` barrel: the barrel pulls the auth module in and the
+// resulting require cycle leaves `CurrentUser` undefined at decorator-evaluation time.
+import { CurrentUser } from '../auth/decorators';
 import { DeviceBrandEntity, DeviceModelEntity } from './entities';
 
 /** Envelope for a single device brand. */
@@ -93,6 +108,40 @@ export class AdminDeviceController {
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findBrands(): Promise<AdminDeviceBrandListResponse> {
     return this.deviceService.getBrandsWithCount();
+  }
+
+  /**
+   * PATCH /api/admin/devices/brands/reorder (TASK-295)
+   *
+   * Rewrites the COMPLETE ordering of the device-brand list — the array index becomes
+   * `sortOrder` — in one advisory-locked transaction, and returns the refreshed admin list.
+   *
+   * DECLARED BEFORE `brands/:id` — otherwise `reorder` is captured as an `:id`.
+   */
+  @Patch('brands/reorder')
+  @HttpCode(200)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Reorder device brands (admin)',
+    operationId: 'adminDeviceControllerReorderBrands',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The refreshed admin device-brand list',
+    type: AdminDeviceBrandListResponse,
+  })
+  @ApiResponse({ status: 400, description: 'Validation error, or REORDER_DUPLICATE_ID' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({ status: 404, description: 'REORDER_NOT_FOUND — an unknown device brand id' })
+  @ApiResponse({
+    status: 409,
+    description: 'REORDER_STALE — another admin changed the list first',
+  })
+  async reorderBrands(
+    @Body() dto: ReorderDeviceBrandsDto,
+    @CurrentUser('id') adminUserId: string,
+  ): Promise<AdminDeviceBrandListResponse> {
+    return this.deviceService.reorderBrands(dto, adminUserId);
   }
 
   @Get('brands/:id')

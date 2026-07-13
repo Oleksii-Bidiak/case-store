@@ -1,6 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma';
 import { DeviceBrand, DeviceModel, Prisma } from '@prisma/client';
+import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
+
+/**
+ * Advisory-lock namespace for device brands (TASK-295). The prefix is MANDATORY — locks are
+ * DATABASE-GLOBAL and every flat resource has a `__root__` bucket, so without it a brand
+ * reorder would serialise against an unrelated resource's.
+ */
+const LOCK_RESOURCE = 'device-brands';
+
+/** Device brands are ONE global list — a single, null-keyed bucket. */
+const BUCKET_LOCK_KEY = lockKey(LOCK_RESOURCE, null);
 
 /**
  * Parameters for querying device models with optional filtering + pagination.
@@ -86,9 +97,17 @@ export class DeviceRepository {
     });
   }
 
-  /** List device brands with their model counts (admin listing). */
-  async findBrandsWithCount(activeOnly: boolean): Promise<DeviceBrandWithCount[]> {
-    const brands = await this.prisma.deviceBrand.findMany({
+  /**
+   * List device brands with their model counts (admin listing).
+   *
+   * Accepts a transaction client (TASK-295) so the reorder endpoint can re-read the
+   * refreshed list inside its own transaction.
+   */
+  async findBrandsWithCount(
+    activeOnly: boolean,
+    client: PrismaService | ReorderTx = this.prisma,
+  ): Promise<DeviceBrandWithCount[]> {
+    const brands = await client.deviceBrand.findMany({
       where: activeOnly ? { isActive: true } : {},
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       include: { _count: { select: { models: true } } },
@@ -96,6 +115,23 @@ export class DeviceRepository {
     return brands.map((b) => {
       const { _count, ...brand } = b;
       return { brand, modelCount: _count.models };
+    });
+  }
+
+  /**
+   * Rewrite the complete ordering of the (single, global) device-brand list and return the
+   * refreshed ADMIN list — with model counts — read inside the same transaction (TASK-295).
+   *
+   * Throws the domain errors of `common/reorder/reorder.errors.ts`; the service maps them.
+   */
+  reorderBrands(orderedIds: readonly string[]): Promise<DeviceBrandWithCount[]> {
+    return reorderBucket<DeviceBrandWithCount[]>(this.prisma, {
+      resource: LOCK_RESOURCE,
+      bucket: null,
+      orderedIds,
+      snapshot: (tx) => tx.deviceBrand.findMany({ select: { id: true } }),
+      delegate: (tx) => tx.deviceBrand,
+      result: (tx) => this.findBrandsWithCount(false, tx),
     });
   }
 
@@ -107,14 +143,35 @@ export class DeviceRepository {
     return this.prisma.deviceBrand.findUnique({ where: { slug } });
   }
 
+  /**
+   * Create a brand, APPENDED to the end of the list (`sortOrder = max + 1`, `0` when the
+   * list is empty) — TASK-295.
+   *
+   * The old `data.sortOrder ?? 0` default lands every new brand ON TOP OF the first one once
+   * the admin form stops sending a hand-typed `sortOrder` (which the reorder UI removes).
+   * Same shape as `CategoryRepository.create`: the `max + 1` read runs inside a transaction
+   * holding the bucket's advisory lock, so it cannot race a concurrent append or a
+   * concurrent `reorderBrands` and hand out a duplicate slot. An explicit `data.sortOrder`
+   * still wins — the append is only the default.
+   */
   createBrand(data: CreateDeviceBrandInput & { slug: string }): Promise<DeviceBrand> {
-    return this.prisma.deviceBrand.create({
-      data: {
-        name: data.name,
-        slug: data.slug,
-        sortOrder: data.sortOrder ?? 0,
-        isActive: data.isActive ?? true,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await acquireAdvisoryLocks(tx, [BUCKET_LOCK_KEY]);
+
+      let sortOrder = data.sortOrder;
+      if (sortOrder === undefined) {
+        const { _max } = await tx.deviceBrand.aggregate({ _max: { sortOrder: true } });
+        sortOrder = _max.sortOrder === null ? 0 : _max.sortOrder + 1;
+      }
+
+      return tx.deviceBrand.create({
+        data: {
+          name: data.name,
+          slug: data.slug,
+          sortOrder,
+          isActive: data.isActive ?? true,
+        },
+      });
     });
   }
 

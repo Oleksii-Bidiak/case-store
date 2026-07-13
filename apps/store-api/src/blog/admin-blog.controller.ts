@@ -27,8 +27,12 @@ import {
   AdminBlogPostListQueryDto,
   CreateBlogCategoryDto,
   UpdateBlogCategoryDto,
+  ReorderBlogCategoriesDto,
 } from './dto';
 import { AdminGuard } from '../auth/guards';
+// Direct file import, NOT the `../auth` barrel: the barrel pulls the auth module in and the
+// resulting require cycle leaves `CurrentUser` undefined at decorator-evaluation time.
+import { CurrentUser } from '../auth/decorators';
 import { BlogPostEntity, BlogCategoryEntity } from './entities';
 
 /** Pagination metadata for paginated admin blog lists. */
@@ -104,6 +108,41 @@ export class AdminBlogController {
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findCategories(): Promise<BlogCategoryListResponse> {
     const data = await this.blogService.findAllCategories();
+    return { data };
+  }
+
+  /**
+   * PATCH /api/admin/blog/categories/reorder (TASK-295)
+   *
+   * Rewrites the COMPLETE ordering of the blog-category list — the array index becomes
+   * `sortOrder` — in one advisory-locked transaction, and returns the refreshed list.
+   *
+   * DECLARED BEFORE `categories/:id` — otherwise `reorder` is captured as an `:id`.
+   */
+  @Patch('categories/reorder')
+  @HttpCode(200)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Reorder blog categories (admin)',
+    operationId: 'adminBlogControllerReorderCategories',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The refreshed blog-category list',
+    type: BlogCategoryListResponse,
+  })
+  @ApiResponse({ status: 400, description: 'Validation error, or REORDER_DUPLICATE_ID' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({ status: 404, description: 'REORDER_NOT_FOUND — an unknown category id' })
+  @ApiResponse({
+    status: 409,
+    description: 'REORDER_STALE — another admin changed the list first',
+  })
+  async reorderCategories(
+    @Body() dto: ReorderBlogCategoriesDto,
+    @CurrentUser('id') adminUserId: string,
+  ): Promise<BlogCategoryListResponse> {
+    const data = await this.blogService.reorderCategories(dto, adminUserId);
     return { data };
   }
 
