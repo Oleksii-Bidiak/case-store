@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BannerPlacement, PublishStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { BannerRepository } from './banners.repository';
+import { ReorderStaleError } from '../common/reorder';
 
 const mockBanner = {
   id: 'banner-uuid-1',
@@ -21,15 +22,30 @@ const mockBanner = {
   updatedAt: new Date('2026-07-01T00:00:00.000Z'),
 };
 
+/**
+ * ONE banner delegate shared by the singleton client and the transaction client: the
+ * repository reads/writes through `tx.banner` inside a transaction (create + reorder) and
+ * through `this.prisma.banner` outside one, and the assertions do not care which.
+ */
+const bannerDelegate = {
+  findMany: jest.fn(),
+  findUnique: jest.fn(),
+  aggregate: jest.fn(),
+  create: jest.fn(),
+  update: jest.fn(),
+  updateMany: jest.fn(),
+  delete: jest.fn(),
+};
+
+const txMock = {
+  banner: bannerDelegate,
+  // `pg_advisory_xact_lock` — taken by `create` and by `reorderPlacement`.
+  $executeRaw: jest.fn(),
+};
+
 const prismaMock = {
-  banner: {
-    findMany: jest.fn(),
-    findUnique: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    updateMany: jest.fn(),
-    delete: jest.fn(),
-  },
+  banner: bannerDelegate,
+  $transaction: jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock)),
 };
 
 describe('BannerRepository', () => {
@@ -100,6 +116,20 @@ describe('BannerRepository', () => {
         }),
       );
     });
+
+    // TASK-295, trap B: the admin list must be WYSIWYG. Its tiebreaker used to be
+    // `createdAt: 'desc'` while the public list used `'asc'`, so while every sortOrder is
+    // still 0 the operator dragged rows in the exact REVERSE of the shopper's order.
+    it('tiebreaks by createdAt ASC — the same order the public list renders', async () => {
+      prismaMock.banner.findMany.mockResolvedValue([]);
+
+      await repository.findAllAdmin();
+
+      expect(prismaMock.banner.findMany).toHaveBeenCalledWith({
+        where: {},
+        orderBy: [{ placement: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
+      });
+    });
   });
 
   describe('findById', () => {
@@ -117,6 +147,7 @@ describe('BannerRepository', () => {
 
   describe('create', () => {
     it('persists the banner with resolved publish fields', async () => {
+      prismaMock.banner.aggregate.mockResolvedValue({ _max: { sortOrder: null } });
       prismaMock.banner.create.mockResolvedValue(mockBanner);
 
       await repository.create({
@@ -134,9 +165,98 @@ describe('BannerRepository', () => {
           status: PublishStatus.PUBLISHED,
           publishedAt: mockBanner.publishedAt,
           scheduledAt: null,
+          // First banner in an EMPTY bucket — slot 0.
           sortOrder: 0,
         }),
       });
+    });
+
+    // TASK-295, trap A: with the hand-typed `sortOrder` field gone from the admin form,
+    // the old `?? 0` default would stack every new banner ON TOP OF the first one.
+    it('APPENDS a new banner to the end of its placement bucket (max + 1)', async () => {
+      prismaMock.banner.aggregate.mockResolvedValue({ _max: { sortOrder: 4 } });
+      prismaMock.banner.create.mockResolvedValue(mockBanner);
+
+      await repository.create({
+        placement: BannerPlacement.HERO_SLIDE,
+        title: 'Autumn Sale',
+        status: PublishStatus.DRAFT,
+        publishedAt: null,
+        scheduledAt: null,
+      });
+
+      // The max is read per PLACEMENT, under that placement's advisory lock.
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(prismaMock.banner.aggregate).toHaveBeenCalledWith({
+        where: { placement: BannerPlacement.HERO_SLIDE },
+        _max: { sortOrder: true },
+      });
+      expect(prismaMock.banner.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ sortOrder: 5 }),
+      });
+    });
+
+    it('honours an EXPLICIT sortOrder without reading the bucket max', async () => {
+      prismaMock.banner.create.mockResolvedValue(mockBanner);
+
+      await repository.create({
+        placement: BannerPlacement.HERO_SLIDE,
+        title: 'Pinned',
+        sortOrder: 2,
+        status: PublishStatus.DRAFT,
+        publishedAt: null,
+        scheduledAt: null,
+      });
+
+      expect(prismaMock.banner.aggregate).not.toHaveBeenCalled();
+      expect(prismaMock.banner.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ sortOrder: 2 }),
+      });
+    });
+  });
+
+  // ─── reorderPlacement (TASK-295) ──────────────────────────────────────────
+
+  describe('reorderPlacement', () => {
+    const a = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const b = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    it('locks the placement, writes index → sortOrder scoped to it, returns the full list', async () => {
+      // 1st findMany = the in-tx snapshot; 2nd = the refreshed FULL admin list.
+      prismaMock.banner.findMany
+        .mockResolvedValueOnce([{ id: a }, { id: b }])
+        .mockResolvedValueOnce([mockBanner]);
+
+      const result = await repository.reorderPlacement(BannerPlacement.HERO_SLIDE, [b, a]);
+
+      expect(result).toEqual([mockBanner]);
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+
+      // `scope: { placement }` — an id forged from another placement updates nothing.
+      expect(prismaMock.banner.updateMany).toHaveBeenNthCalledWith(1, {
+        where: { id: b, placement: BannerPlacement.HERO_SLIDE },
+        data: { sortOrder: 0 },
+      });
+      expect(prismaMock.banner.updateMany).toHaveBeenNthCalledWith(2, {
+        where: { id: a, placement: BannerPlacement.HERO_SLIDE },
+        data: { sortOrder: 1 },
+      });
+
+      // The refreshed list is the FULL admin list (all placements), read in-transaction.
+      expect(prismaMock.banner.findMany).toHaveBeenLastCalledWith({
+        where: {},
+        orderBy: [{ placement: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
+      });
+    });
+
+    it('rejects a payload that does not cover the whole bucket (STALE) and writes nothing', async () => {
+      prismaMock.banner.findMany.mockResolvedValueOnce([{ id: a }, { id: b }]);
+
+      await expect(
+        repository.reorderPlacement(BannerPlacement.HERO_SLIDE, [a]),
+      ).rejects.toBeInstanceOf(ReorderStaleError);
+
+      expect(prismaMock.banner.updateMany).not.toHaveBeenCalled();
     });
   });
 

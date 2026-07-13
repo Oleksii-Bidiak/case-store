@@ -509,7 +509,8 @@ export const dict = {
     colSeries: "Серія",
     colYear: "Рік",
     colModels: "Моделі",
-    colSort: "Порядок",
+    // TASK-295: no `colSort` — the order column is gone; order IS the row order.
+    brandsGridLabel: "Бренди пристроїв — порядок",
     colStatus: "Статус",
     statusActive: "Активний",
     statusInactive: "Прихований",
@@ -537,7 +538,8 @@ export const dict = {
     name: "Назва бренду",
     slug: "Slug",
     slugPlaceholder: "Залиште порожнім для авто-генерації з назви",
-    sortOrder: "Порядок сортування",
+    // TASK-295: no `sortOrder` label — the order field is gone from this form
+    // (brand order lives in the sortable brands grid).
     active: "Активний (показувати в магазині)",
     submit: "Зберегти бренд",
     errors: {
@@ -545,7 +547,6 @@ export const dict = {
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
       slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
-      sortInt: "Порядок сортування має бути невід'ємним цілим числом",
     },
   },
 
@@ -914,7 +915,8 @@ export const dict = {
     empty: "Категорій ще немає. Створіть першу категорію.",
     colName: "Назва",
     colSlug: "Slug",
-    colSort: "Порядок",
+    // TASK-295: no `colSort` — the order column is gone; order IS the row order.
+    gridLabel: "Категорії блогу — порядок",
     deleteConfirm: (name: string) =>
       `Видалити категорію «${name}»? Цю дію не можна скасувати.`,
     back: "← Назад до категорій",
@@ -936,14 +938,14 @@ export const dict = {
     slug: "Slug",
     slugPlaceholder: "Залиште порожнім для авто-генерації із назви",
     slugPreview: (slug: string) => `Буде згенеровано: ${slug}`,
-    sortOrder: "Порядок сортування",
+    // TASK-295: no `sortOrder` label — the order field is gone from this form
+    // (category order lives in the sortable categories grid).
     submit: "Зберегти категорію",
     errors: {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 120 символів",
       slugMax: "Slug має містити не більше 255 символів",
       slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
-      sortInt: "Порядок сортування має бути невід'ємним цілим числом",
     },
   },
 
@@ -958,13 +960,15 @@ export const dict = {
     empty: "Банерів ще немає. Створіть свій перший банер.",
     colTitle: "Заголовок",
     colStatus: "Статус",
-    colSort: "Порядок",
+    // TASK-295: no `colSort` — the order column is gone; order IS the row order.
     placements: {
       HERO_SLIDE: "Головний слайдер",
       PROMO_TILE: "Промо-плитки",
       PROMO_BANNER: "Промо-банер",
       ANNOUNCEMENT_BAR: "Смуга оголошень",
     },
+    /** Each placement section is its own grid — and says so. */
+    gridLabel: (placement: string) => `Банери: ${placement} — порядок`,
     statusLabels: {
       DRAFT: "Чернетка",
       SCHEDULED: "Заплановано",
@@ -1008,7 +1012,8 @@ export const dict = {
     ctaHrefPlaceholder: "/catalog",
     theme: "Тема / акцент",
     themePlaceholder: "accent, default…",
-    sortOrder: "Порядок сортування",
+    // TASK-295: no `sortOrder` label — the order field is gone from this form
+    // (banner order lives in the sortable grid of its placement).
     status: "Статус публікації",
     statusDraft: "Чернетка",
     statusScheduled: "Заплановано",
@@ -1025,7 +1030,6 @@ export const dict = {
       ctaLabelMax: "Текст кнопки має містити не більше 100 символів",
       ctaHrefMax: "Посилання кнопки має містити не більше 2048 символів",
       themeMax: "Тема має містити не більше 50 символів",
-      sortInt: "Порядок сортування має бути невід'ємним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованого банера",
     },
   },
@@ -1991,6 +1995,78 @@ export const dict = {
     },
     rejectedUnknown: (name: string) =>
       `Не вдалося перемістити „${name}“. Дерево оновлено.`,
+    saveFailed: (name: string) =>
+      `Не вдалося зберегти переміщення „${name}“. Попередній порядок відновлено. Спробуйте ще раз.`,
+  },
+
+  // --- Generic drag-and-drop / keyboard reorder for FLAT lists (TASK-295) ------
+  // Banners, blog categories and device brands share these strings verbatim.
+  //
+  // NOUN-FREE ON PURPOSE. Ukrainian declines nouns by case, so a string cannot
+  // take the resource noun as a parameter and still be grammatical in every slot
+  // («Взято банер» / «позиція банера» / «у банері»). The strings therefore speak
+  // about the ROW, never about the thing in it — exactly as `reorderTree` avoids
+  // saying "category" outside its own, category-only sentences. The row's own
+  // name is quoted, and a quoted proper name does not decline.
+  reorderList: {
+    instructionsLong:
+      "Це список із упорядкуванням. Стрілки вгору й вниз — переходити між рядками. Щоб перемістити рядок, натисніть Пробіл: далі стрілки вгору й вниз змінюють позицію, Home і End — на початок і в кінець, Enter підтверджує, Escape скасовує. Рядки також можна перетягувати мишею за значок ліворуч.",
+    instructionsShort: "Пробіл — узяти рядок для переміщення.",
+    handleLabel: (name: string) => `Перемістити „${name}“`,
+    undo: "Скасувати останнє переміщення",
+    searchLabel: "Пошук у списку",
+    searchPlaceholder: "Пошук…",
+    searchLockedHint:
+      "Поки активний пошук, порядок змінювати не можна: видимий порядок не збігається зі справжнім. Очистіть пошук.",
+    emptyMatch: (query: string) => `Нічого не знайдено за запитом «${query}».`,
+
+    announce: {
+      grabbed: (name: string, pos: number, size: number) =>
+        `Рядок „${name}“ узято. Позиція ${pos} з ${size}. Стрілки вгору й вниз — змінити позицію, Enter — підтвердити, Escape — скасувати.`,
+      moved: (name: string, pos: number, size: number) =>
+        `„${name}“ — позиція ${pos} з ${size}.`,
+      atTop: "Це вже перша позиція.",
+      atBottom: "Це вже остання позиція.",
+      // Unreachable in a flat list (there is no depth to refuse), but the region
+      // must never go silent on a refusal.
+      cannotMove: "Перемістити сюди не можна.",
+      tabBlocked:
+        "Спершу завершіть переміщення: Enter — підтвердити, Escape — скасувати.",
+      saving: "Зберігаю зміни…",
+      busyRefused: "Зачекайте, попереднє переміщення ще зберігається.",
+      committed: (
+        name: string,
+        newPos: number,
+        newSize: number,
+        oldPos: number,
+        oldSize: number,
+      ) =>
+        `„${name}“ переміщено. Тепер: позиція ${newPos} з ${newSize}. Було: позиція ${oldPos} з ${oldSize}. Щоб повернути, скористайтеся кнопкою „Скасувати останнє переміщення“.`,
+      committedNoop: (name: string, pos: number, size: number) =>
+        `„${name}“ залишено на місці: позиція ${pos} з ${size}.`,
+      cancelled: (name: string, pos: number, size: number) =>
+        `Переміщення скасовано. „${name}“ повернуто на позицію ${pos} з ${size}.`,
+      searchLocked: "Пошук активний. Очистіть пошук, щоб змінювати порядок.",
+      undone: "Переміщення скасовано.",
+      listChangedDuringMove:
+        "Список змінився. Переміщення скасовано — почніть заново.",
+      positionAfterConflict: (name: string, pos: number, size: number) =>
+        `„${name}“ — позиція ${pos} з ${size}.`,
+    },
+
+    // Assertive region (rejections only) — one string per backend error code
+    // (`REORDER_*`, shared by all three flat endpoints). The client NEVER
+    // announces a raw backend message and NEVER leaves the region empty.
+    rejected: {
+      REORDER_DUPLICATE_ID: (name: string) =>
+        `Помилка запиту: рядок „${name}“ вказано двічі. Переміщення скасовано.`,
+      REORDER_NOT_FOUND: (name: string) =>
+        `Рядка „${name}“ більше немає у списку — можливо, його щойно видалив інший адміністратор. Список оновлено.`,
+      REORDER_STALE:
+        "Список змінив інший адміністратор. Список оновлено — повторіть переміщення.",
+    },
+    rejectedUnknown: (name: string) =>
+      `Не вдалося перемістити „${name}“. Список оновлено.`,
     saveFailed: (name: string) =>
       `Не вдалося зберегти переміщення „${name}“. Попередній порядок відновлено. Спробуйте ще раз.`,
   },

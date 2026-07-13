@@ -1,6 +1,5 @@
-import { IsString, IsOptional, IsInt, MaxLength, Min, Matches } from 'class-validator';
+import { IsString, IsOptional, MaxLength, Matches } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
 
 /**
  * DTO for creating a blog category (admin-only). Slug is auto-generated from the
@@ -26,15 +25,6 @@ export class CreateBlogCategoryDto {
   })
   slug?: string;
 
-  @ApiProperty({
-    description: 'Sort order for display (lower values appear first)',
-    example: 0,
-    required: false,
-    default: 0,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt({ message: 'Sort order must be an integer' })
-  @Min(0, { message: 'Sort order must be at least 0' })
-  sortOrder?: number;
+  // TASK-295: no `sortOrder` — a new row is appended by the repository (max + 1) and the
+  // order is edited only through the reorder endpoint, never through this form.
 }

@@ -15,7 +15,9 @@ export {
   useAdminDeviceControllerUpdateBrand,
   useAdminDeviceControllerActivateBrand,
   useAdminDeviceControllerDeactivateBrand,
+  useAdminDeviceControllerReorderBrands,
   getAdminDeviceControllerFindBrandsQueryKey,
+  getAdminDeviceControllerFindBrandsQueryOptions,
   getAdminDeviceControllerFindBrandByIdQueryKey,
   // Admin CRUD — device models.
   useAdminDeviceControllerFindModels,
@@ -38,6 +40,7 @@ export type {
   DeviceModelListResponse,
   AdminDeviceBrandListResponse,
   AdminDeviceModelListResponse,
+  ReorderDeviceBrandsDto,
   CreateDeviceBrandDto,
   UpdateDeviceBrandDto,
   CreateDeviceModelDto,

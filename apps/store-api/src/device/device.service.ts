@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
 import {
   DeviceRepository,
   CreateDeviceBrandInput,
@@ -8,8 +9,9 @@ import {
   FindModelsParams,
 } from './device.repository';
 import { DeviceBrandEntity, DeviceModelEntity } from './entities';
-import { DeviceModelListQueryDto } from './dto';
+import { DeviceModelListQueryDto, ReorderDeviceBrandsDto } from './dto';
 import { generateSlug } from '../common/utils';
+import { reorderErrorToHttp } from '../common/reorder';
 
 interface PaginationMeta {
   total: number;
@@ -39,7 +41,12 @@ interface PaginatedDeviceModelsResponse {
  */
 @Injectable()
 export class DeviceService {
-  constructor(private readonly deviceRepository: DeviceRepository) {}
+  constructor(
+    private readonly deviceRepository: DeviceRepository,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(DeviceService.name);
+  }
 
   // ─── Device brands ────────────────────────────────────────────────────────
 
@@ -86,6 +93,38 @@ export class DeviceService {
     }
     const updated = await this.deviceRepository.updateBrand(id, input);
     return DeviceBrandEntity.fromPrisma(updated);
+  }
+
+  /**
+   * Reorder the (single, global) device-brand list (admin, TASK-295) and return the
+   * refreshed ADMIN list — with model counts — so the panel resyncs in one round-trip,
+   * exactly as the category reorder does.
+   *
+   * NO REVALIDATION, deliberately: devices have NO storefront cache tag (unlike banners'
+   * `['banners']` or the blog's `['blog']`), and the storefront reads brands CLIENT-SIDE
+   * through the public `GET /api/devices/brands` — there is no cached server render of this
+   * list to purge. Calling `RevalidationNotifier` here would be a no-op at best and a
+   * misleading one at worst. Do not "fix" this by inventing a tag; if devices ever gain a
+   * server-rendered, cached surface, the tag goes in with it. The structured log line below
+   * is the audit trail.
+   */
+  async reorderBrands(
+    dto: ReorderDeviceBrandsDto,
+    actorId?: string,
+  ): Promise<DeviceBrandListResponse> {
+    let rows;
+    try {
+      rows = await this.deviceRepository.reorderBrands(dto.orderedIds);
+    } catch (error) {
+      throw reorderErrorToHttp(error);
+    }
+
+    this.logger.info(
+      { event: 'device-brand.reorder', orderedIds: dto.orderedIds, actorId },
+      'Device brands reordered',
+    );
+
+    return { data: rows.map((r) => DeviceBrandEntity.fromPrisma(r.brand, r.modelCount)) };
   }
 
   /** Toggle a brand's visibility (admin). */

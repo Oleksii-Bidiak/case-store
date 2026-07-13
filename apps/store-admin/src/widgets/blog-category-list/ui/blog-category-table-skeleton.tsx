@@ -9,7 +9,7 @@ import {
 import { dict } from "@/shared/config";
 
 const SKELETON_ROWS = 5;
-const COLUMN_COUNT = 4;
+const COLUMN_COUNT = 3;
 
 /** Loading placeholder matching the BlogCategoryTable column structure. */
 export function BlogCategoryTableSkeleton() {
@@ -20,7 +20,6 @@ export function BlogCategoryTableSkeleton() {
           <TableRow>
             <TableHead>{dict.blogCategories.colName}</TableHead>
             <TableHead>{dict.blogCategories.colSlug}</TableHead>
-            <TableHead>{dict.blogCategories.colSort}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
         </TableHeader>

@@ -1,5 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
+import { ReorderDuplicateIdError } from '../common/reorder';
 import { DeviceRepository } from './device.repository';
 import { DeviceService } from './device.service';
 import { DeviceModelListQueryDto } from './dto';
@@ -36,6 +38,14 @@ const deviceRepositoryMock = {
   findModelsByIds: jest.fn(),
   createModel: jest.fn(),
   updateModel: jest.fn(),
+  reorderBrands: jest.fn(),
+};
+
+const pinoLoggerMock = {
+  setContext: jest.fn(),
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
 };
 
 describe('DeviceService', () => {
@@ -44,7 +54,11 @@ describe('DeviceService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
-      providers: [DeviceService, { provide: DeviceRepository, useValue: deviceRepositoryMock }],
+      providers: [
+        DeviceService,
+        { provide: DeviceRepository, useValue: deviceRepositoryMock },
+        { provide: PinoLogger, useValue: pinoLoggerMock },
+      ],
     }).compile();
     service = module.get(DeviceService);
   });
@@ -131,6 +145,38 @@ describe('DeviceService', () => {
 
       await expect(service.setModelActive('ghost', false)).rejects.toBeInstanceOf(
         NotFoundException,
+      );
+    });
+  });
+
+  // ─── reorderBrands (TASK-295) ─────────────────────────────────────────────
+
+  describe('reorderBrands', () => {
+    const a = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const b = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    it('returns the refreshed ADMIN list (with model counts) and logs the write', async () => {
+      deviceRepositoryMock.reorderBrands.mockResolvedValue([
+        { brand: { ...mockBrand, id: b, name: 'Samsung', slug: 'samsung' }, modelCount: 4 },
+        { brand: { ...mockBrand, id: a }, modelCount: 7 },
+      ]);
+
+      const result = await service.reorderBrands({ orderedIds: [b, a] }, 'admin-1');
+
+      expect(deviceRepositoryMock.reorderBrands).toHaveBeenCalledWith([b, a]);
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0]).toMatchObject({ id: b, modelCount: 4 });
+      expect(pinoLoggerMock.info).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'device-brand.reorder', actorId: 'admin-1' }),
+        expect.any(String),
+      );
+    });
+
+    it('maps a duplicate id onto a 400 carrying the stable code', async () => {
+      deviceRepositoryMock.reorderBrands.mockRejectedValue(new ReorderDuplicateIdError());
+
+      await expect(service.reorderBrands({ orderedIds: [a, a] }, 'admin-1')).rejects.toBeInstanceOf(
+        BadRequestException,
       );
     });
   });

@@ -3,11 +3,30 @@ import { PublishStatus, SlugRedirectEntity } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
 import { BlogRepository } from './blog.repository';
+import { ReorderNotFoundError } from '../common/reorder';
+
+/**
+ * ONE blogCategory delegate shared by the singleton and the transaction client (TASK-295):
+ * `createCategory` and `reorderCategories` write through `tx.blogCategory`, the plain reads
+ * through `this.prisma.blogCategory`, and the assertions do not care which.
+ */
+const blogCategoryDelegate = {
+  findMany: jest.fn(),
+  findUnique: jest.fn(),
+  aggregate: jest.fn(),
+  create: jest.fn(),
+  update: jest.fn(),
+  updateMany: jest.fn(),
+  delete: jest.fn(),
+};
 
 const txMock = {
   blogPost: {
     update: jest.fn(),
   },
+  blogCategory: blogCategoryDelegate,
+  // `pg_advisory_xact_lock` — taken by `createCategory` and by `reorderCategories`.
+  $executeRaw: jest.fn(),
 };
 
 const prismaMock = {
@@ -21,13 +40,7 @@ const prismaMock = {
     updateMany: jest.fn(),
     delete: jest.fn(),
   },
-  blogCategory: {
-    findMany: jest.fn(),
-    findUnique: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-  },
+  blogCategory: blogCategoryDelegate,
   $transaction: jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock)),
 };
 
@@ -188,6 +201,81 @@ describe('BlogRepository', () => {
   describe('revalidateTarget', () => {
     it('targets the blog collection tag + hub path', () => {
       expect(repository.revalidateTarget).toEqual({ tags: ['blog'], paths: ['/blog'] });
+    });
+  });
+
+  // ─── categories: create + reorder (TASK-295) ────────────────────────────────
+
+  describe('createCategory', () => {
+    // Trap A: with the hand-typed `sortOrder` field gone from the admin form, the old
+    // `?? 0` default would stack every new category ON TOP OF the first one.
+    it('APPENDS a new category to the end of the list (max + 1), under the bucket lock', async () => {
+      blogCategoryDelegate.aggregate.mockResolvedValue({ _max: { sortOrder: 2 } });
+      blogCategoryDelegate.create.mockResolvedValue({ id: 'cat-1' });
+
+      await repository.createCategory({ slug: 'guides', name: 'Гайди' });
+
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(blogCategoryDelegate.create).toHaveBeenCalledWith({
+        data: { slug: 'guides', name: 'Гайди', sortOrder: 3 },
+      });
+    });
+
+    it('starts an EMPTY list at slot 0', async () => {
+      blogCategoryDelegate.aggregate.mockResolvedValue({ _max: { sortOrder: null } });
+      blogCategoryDelegate.create.mockResolvedValue({ id: 'cat-1' });
+
+      await repository.createCategory({ slug: 'news', name: 'Новини' });
+
+      expect(blogCategoryDelegate.create).toHaveBeenCalledWith({
+        data: { slug: 'news', name: 'Новини', sortOrder: 0 },
+      });
+    });
+
+    it('honours an EXPLICIT sortOrder without reading the list max', async () => {
+      blogCategoryDelegate.create.mockResolvedValue({ id: 'cat-1' });
+
+      await repository.createCategory({ slug: 'news', name: 'Новини', sortOrder: 7 });
+
+      expect(blogCategoryDelegate.aggregate).not.toHaveBeenCalled();
+      expect(blogCategoryDelegate.create).toHaveBeenCalledWith({
+        data: { slug: 'news', name: 'Новини', sortOrder: 7 },
+      });
+    });
+  });
+
+  describe('reorderCategories', () => {
+    const a = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const b = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    it('locks the list, writes index → sortOrder and returns the refreshed list', async () => {
+      // 1st findMany = the in-tx snapshot; 2nd = the refreshed list.
+      blogCategoryDelegate.findMany
+        .mockResolvedValueOnce([{ id: a }, { id: b }])
+        .mockResolvedValueOnce([{ id: b }, { id: a }]);
+
+      const result = await repository.reorderCategories([b, a]);
+
+      expect(result).toEqual([{ id: b }, { id: a }]);
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(blogCategoryDelegate.updateMany).toHaveBeenNthCalledWith(1, {
+        where: { id: b },
+        data: { sortOrder: 0 },
+      });
+      expect(blogCategoryDelegate.updateMany).toHaveBeenNthCalledWith(2, {
+        where: { id: a },
+        data: { sortOrder: 1 },
+      });
+    });
+
+    it('rejects an unknown id (NOT_FOUND) and writes nothing', async () => {
+      blogCategoryDelegate.findMany.mockResolvedValueOnce([{ id: a }]);
+
+      await expect(repository.reorderCategories([a, b])).rejects.toBeInstanceOf(
+        ReorderNotFoundError,
+      );
+
+      expect(blogCategoryDelegate.updateMany).not.toHaveBeenCalled();
     });
   });
 });

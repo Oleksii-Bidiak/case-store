@@ -83,7 +83,9 @@ export function useCategoryStatusToggle({
           // status toggle would leave the treegrid stale until a hard reload.
           // Suppressed while a reorder PATCH is in flight: refetching mid-move
           // pulls the PRE-move server tree in under the optimistic override.
-          if (!isReorderInFlight()) {
+          // Keyed by resource (TASK-295): a banner or brand reorder elsewhere in
+          // the app must NOT suppress the category tree's invalidation.
+          if (!isReorderInFlight("categories")) {
             void queryClient.invalidateQueries({
               queryKey: getCategoryControllerGetAdminTreeQueryKey(),
             });

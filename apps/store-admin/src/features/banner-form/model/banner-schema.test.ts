@@ -7,7 +7,8 @@ import {
 } from "./banner-schema";
 
 // Output-shaped values (post-parse) — used by the DTO mappers, which consume
-// `BannerFormValues` (sortOrder already a number).
+// `BannerFormValues`. TASK-295 removed the `sortOrder` field from the form: the
+// order lives in the sortable banner grid, never in a hand-typed number input.
 const baseValues: BannerFormValues = {
   placement: "HERO_SLIDE",
   title: "Summer Sale",
@@ -16,13 +17,11 @@ const baseValues: BannerFormValues = {
   ctaLabel: "",
   ctaHref: "",
   theme: "",
-  sortOrder: 0,
   status: "DRAFT",
   scheduledAt: "",
 };
 
-// Input-shaped values (pre-parse) — used with `bannerSchema.safeParse`, where
-// sortOrder is still bound to a text input (string).
+// Input-shaped values (pre-parse) — used with `bannerSchema.safeParse`.
 const baseInput: BannerFormInput = {
   placement: "HERO_SLIDE",
   title: "Summer Sale",
@@ -31,7 +30,6 @@ const baseInput: BannerFormInput = {
   ctaLabel: "",
   ctaHref: "",
   theme: "",
-  sortOrder: "0",
   status: "DRAFT",
   scheduledAt: "",
 };
@@ -58,7 +56,6 @@ describe("bannerFormValuesToCreateDto", () => {
       ctaLabel: "Shop now",
       ctaHref: "/catalog",
       theme: "accent",
-      sortOrder: 3,
       status: "PUBLISHED",
     });
 
@@ -69,7 +66,6 @@ describe("bannerFormValuesToCreateDto", () => {
       ctaLabel: "Shop now",
       ctaHref: "/catalog",
       theme: "accent",
-      sortOrder: 3,
       status: "PUBLISHED",
     });
   });
@@ -111,11 +107,6 @@ describe("bannerSchema validation", () => {
   it("accepts a valid banner", () => {
     const result = bannerSchema.safeParse(baseInput);
     expect(result.success).toBe(true);
-  });
-
-  it("rejects a non-numeric sort order", () => {
-    const result = bannerSchema.safeParse({ ...baseInput, sortOrder: "abc" });
-    expect(result.success).toBe(false);
   });
 
   it("requires scheduledAt when status is SCHEDULED", () => {

@@ -1,6 +1,6 @@
-import { IsString, IsOptional, IsEnum, IsInt, MaxLength, Min } from 'class-validator';
+import { IsString, IsOptional, IsEnum, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Type, Transform } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import { BannerPlacement } from '@prisma/client';
 import { PublishFieldsDto } from '../../publishing';
 
@@ -85,14 +85,6 @@ export class UpdateBannerDto extends PublishFieldsDto {
   @MaxLength(50, { message: 'Theme must be at most 50 characters' })
   theme?: string;
 
-  @ApiProperty({
-    description: 'Sort order within a placement (lower values appear first)',
-    example: 10,
-    required: false,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt({ message: 'Sort order must be an integer' })
-  @Min(0, { message: 'Sort order must be at least 0' })
-  sortOrder?: number;
+  // TASK-295: no `sortOrder` — a new row is appended by the repository (max + 1) and the
+  // order is edited only through the reorder endpoint, never through this form.
 }

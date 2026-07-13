@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { Prisma, PublishStatus } from '@prisma/client';
+import { PinoLogger } from 'nestjs-pino';
 import {
   BlogRepository,
   CreateBlogPostInput,
@@ -20,10 +21,12 @@ import {
   AdminBlogPostListQueryDto,
   CreateBlogCategoryDto,
   UpdateBlogCategoryDto,
+  ReorderBlogCategoriesDto,
 } from './dto';
 import { generateSlug } from '../common/utils';
 import { sanitizeRichText } from '../common/sanitize';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
+import { reorderErrorToHttp } from '../common/reorder';
 
 interface PaginationMeta {
   total: number;
@@ -42,7 +45,10 @@ export class BlogService {
   constructor(
     private readonly blogRepository: BlogRepository,
     private readonly revalidation: RevalidationNotifier,
-  ) {}
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(BlogService.name);
+  }
 
   // ─── posts: public ──────────────────────────────────────────────────────────
 
@@ -296,7 +302,6 @@ export class BlogService {
       const category = await this.blogRepository.createCategory({
         slug,
         name: dto.name,
-        sortOrder: dto.sortOrder,
       });
       return BlogCategoryEntity.fromPrisma(category);
     } catch (error) {
@@ -321,7 +326,6 @@ export class BlogService {
       const updated = await this.blogRepository.updateCategory(id, {
         slug: dto.slug,
         name: dto.name,
-        sortOrder: dto.sortOrder,
       });
       // A renamed/re-slugged category changes what the blog hub renders.
       await this.revalidation.revalidate(this.collectionRevalidateTarget());
@@ -329,6 +333,36 @@ export class BlogService {
     } catch (error) {
       this.rethrowUniqueConflict(error);
     }
+  }
+
+  /**
+   * Reorder the (single, global) blog-category list (admin, TASK-295) and return the
+   * refreshed list, so the panel resyncs in one round-trip — exactly as the category tree's
+   * reorder does.
+   *
+   * The category order is what the blog hub renders its filter strip from, so the
+   * collection target (`tags: ['blog']`) is purged after the write — the same target
+   * `updateCategory` / `deleteCategory` already use.
+   */
+  async reorderCategories(
+    dto: ReorderBlogCategoriesDto,
+    actorId?: string,
+  ): Promise<BlogCategoryEntity[]> {
+    let categories;
+    try {
+      categories = await this.blogRepository.reorderCategories(dto.orderedIds);
+    } catch (error) {
+      throw reorderErrorToHttp(error);
+    }
+
+    await this.revalidation.revalidate(this.collectionRevalidateTarget());
+
+    this.logger.info(
+      { event: 'blog-category.reorder', orderedIds: dto.orderedIds, actorId },
+      'Blog categories reordered',
+    );
+
+    return categories.map((category) => BlogCategoryEntity.fromPrisma(category));
   }
 
   async deleteCategory(id: string): Promise<void> {

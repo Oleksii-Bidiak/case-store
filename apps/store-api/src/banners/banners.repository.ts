@@ -2,6 +2,20 @@ import { Injectable } from '@nestjs/common';
 import { Banner, BannerPlacement, Prisma, PublishStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import type { PublishablePort, RevalidateTarget } from '../publishing';
+import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
+
+/**
+ * Advisory-lock namespace for banners (TASK-295). MANDATORY prefix: advisory locks are
+ * DATABASE-GLOBAL, so without it a banner reorder would serialise against an unrelated
+ * resource's bucket of the same name.
+ */
+const LOCK_RESOURCE = 'banners';
+
+/** Banners are bucketed by `placement` — each placement is its own independent list. */
+const placementLockKey = (placement: BannerPlacement): string => lockKey(LOCK_RESOURCE, placement);
+
+/** Any client the reads accept: the injected singleton or an interactive-transaction client. */
+type BannerDbClient = PrismaService | ReorderTx;
 
 /**
  * Filter params for the public (published-only) banner list.
@@ -93,16 +107,51 @@ export class BannerRepository implements PublishablePort {
   /**
    * Find all banners (any status) with optional placement and status filters.
    * Admin listing.
+   *
+   * The `createdAt: 'asc'` tiebreaker is LOAD-BEARING (TASK-295): it used to be `'desc'`,
+   * so while every `sortOrder` is still 0 (the pre-reorder state of every legacy row) the
+   * admin list was the exact REVERSE of `findAllPublished`'s — the operator dragged rows in
+   * one order and the shopper saw another. The admin list must be WYSIWYG, so both reads
+   * now tiebreak identically. Do not flip it back.
+   *
+   * Accepts a transaction client so the reorder endpoint can re-read the refreshed list
+   * inside its own transaction.
    */
-  findAllAdmin(params: FindAllAdminParams = {}): Promise<Banner[]> {
+  findAllAdmin(
+    params: FindAllAdminParams = {},
+    client: BannerDbClient = this.prisma,
+  ): Promise<Banner[]> {
     const where: Prisma.BannerWhereInput = {
       ...(params.placement !== undefined && { placement: params.placement }),
       ...(params.status !== undefined && { status: params.status }),
     };
 
-    return this.prisma.banner.findMany({
+    return client.banner.findMany({
       where,
-      orderBy: [{ placement: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'desc' }],
+      orderBy: [{ placement: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  /**
+   * Rewrite the complete ordering of ONE placement bucket and return the refreshed FULL
+   * admin banner list (all placements), read inside the same transaction (TASK-295).
+   *
+   * `scope: { placement }` is the safety net: every write is `WHERE id = … AND placement =
+   * …`, so an id forged from another placement silently updates nothing instead of being
+   * stolen into this bucket. Cross-placement moves are out of scope by design — they stay a
+   * form edit.
+   *
+   * Throws the domain errors of `common/reorder/reorder.errors.ts`; the service maps them.
+   */
+  reorderPlacement(placement: BannerPlacement, orderedIds: readonly string[]): Promise<Banner[]> {
+    return reorderBucket<Banner[]>(this.prisma, {
+      resource: LOCK_RESOURCE,
+      bucket: placement,
+      orderedIds,
+      scope: { placement },
+      snapshot: (tx) => tx.banner.findMany({ where: { placement }, select: { id: true } }),
+      delegate: (tx) => tx.banner,
+      result: (tx) => this.findAllAdmin({}, tx),
     });
   }
 
@@ -114,25 +163,51 @@ export class BannerRepository implements PublishablePort {
   }
 
   /**
-   * Create a new banner.
+   * Create a new banner, APPENDED to the end of its placement bucket
+   * (`sortOrder = max(bucket) + 1`, `0` for the first banner in it) — TASK-295.
+   *
+   * The old `data.sortOrder ?? 0` default put every new banner ON TOP OF the first one the
+   * moment the admin form stops sending a hand-typed `sortOrder` (which the reorder UI
+   * removes): the whole bucket would sit at slot 0 and its order would be DB-arbitrary.
+   * Same shape as `CategoryRepository.create` — the `max + 1` read runs inside a
+   * transaction holding the bucket's advisory lock, so it cannot race a concurrent append
+   * or a concurrent `reorderPlacement` and hand out a duplicate slot.
+   *
+   * An EXPLICIT `data.sortOrder` still wins (the create DTO still exposes the field until
+   * the admin panel drops it) — the append is only the default.
    */
   create(data: CreateBannerInput): Promise<Banner> {
-    return this.prisma.banner.create({
-      data: {
-        placement: data.placement,
-        title: data.title,
-        subtitle: data.subtitle ?? null,
-        imageUrl: data.imageUrl ?? null,
-        imageBlurDataUrl: data.imageBlurDataUrl ?? null,
-        ctaLabel: data.ctaLabel ?? null,
-        ctaHref: data.ctaHref ?? null,
-        theme: data.theme ?? null,
-        sortOrder: data.sortOrder ?? 0,
-        status: data.status,
-        publishedAt: data.publishedAt,
-        scheduledAt: data.scheduledAt,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await acquireAdvisoryLocks(tx, [placementLockKey(data.placement)]);
+
+      const sortOrder = data.sortOrder ?? (await this.nextSortOrder(tx, data.placement));
+
+      return tx.banner.create({
+        data: {
+          placement: data.placement,
+          title: data.title,
+          subtitle: data.subtitle ?? null,
+          imageUrl: data.imageUrl ?? null,
+          imageBlurDataUrl: data.imageBlurDataUrl ?? null,
+          ctaLabel: data.ctaLabel ?? null,
+          ctaHref: data.ctaHref ?? null,
+          theme: data.theme ?? null,
+          sortOrder,
+          status: data.status,
+          publishedAt: data.publishedAt,
+          scheduledAt: data.scheduledAt,
+        },
+      });
     });
+  }
+
+  /** The append slot of a placement bucket: `max(sortOrder) + 1`, or 0 when it is empty. */
+  private async nextSortOrder(tx: ReorderTx, placement: BannerPlacement): Promise<number> {
+    const { _max } = await tx.banner.aggregate({
+      where: { placement },
+      _max: { sortOrder: true },
+    });
+    return _max.sortOrder === null ? 0 : _max.sortOrder + 1;
   }
 
   /**

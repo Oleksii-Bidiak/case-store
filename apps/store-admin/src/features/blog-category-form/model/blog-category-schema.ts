@@ -10,8 +10,10 @@ const e = dict.blogCategoryForm.errors;
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
- * Validation schema for the admin blog-category form. `sortOrder` is a string on
- * the INPUT side (text input) transformed to a number on the OUTPUT side.
+ * Validation schema for the admin blog-category form.
+ *
+ * TASK-295: no `sortOrder` field — the order is set by dragging (or keyboard-moving)
+ * rows in the categories grid, and a new category is appended by the backend.
  */
 export const blogCategorySchema = z.object({
   name: z.string().trim().min(1, e.nameRequired).max(120, e.nameMax),
@@ -23,13 +25,6 @@ export const blogCategorySchema = z.object({
     .regex(SLUG_PATTERN, e.slugPattern)
     .optional()
     .or(z.literal("")),
-
-  sortOrder: z
-    .string()
-    .trim()
-    .optional()
-    .refine((v) => v === undefined || v === "" || /^\d+$/.test(v), e.sortInt)
-    .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
 });
 
 export type BlogCategoryFormInput = z.input<typeof blogCategorySchema>;
@@ -43,7 +38,6 @@ export function blogCategoryFormValuesToCreateDto(
   return {
     name: values.name,
     slug: slug ? slug : undefined,
-    sortOrder: values.sortOrder,
   };
 }
 

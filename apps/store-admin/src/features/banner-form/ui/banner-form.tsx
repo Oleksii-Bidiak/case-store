@@ -42,7 +42,6 @@ const EMPTY_VALUES: BannerFormInput = {
   ctaLabel: "",
   ctaHref: "",
   theme: "",
-  sortOrder: "0",
   status: "DRAFT",
   scheduledAt: "",
 };
@@ -220,23 +219,6 @@ export function BannerForm({
             {errors.theme && (
               <p role="alert" className="text-sm text-destructive">
                 {errors.theme.message}
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="banner-sort">{dict.bannerForm.sortOrder}</Label>
-            <Input
-              id="banner-sort"
-              type="number"
-              inputMode="numeric"
-              min="0"
-              step="1"
-              {...register("sortOrder")}
-            />
-            {errors.sortOrder && (
-              <p role="alert" className="text-sm text-destructive">
-                {errors.sortOrder.message}
               </p>
             )}
           </div>

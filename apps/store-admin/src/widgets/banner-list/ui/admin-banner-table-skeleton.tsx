@@ -9,7 +9,7 @@ import {
 import { dict } from "@/shared/config";
 
 const SKELETON_ROWS = 4;
-const COLUMN_COUNT = 4;
+const COLUMN_COUNT = 3;
 
 /**
  * Loading placeholder matching the AdminBannerTable column structure.
@@ -22,7 +22,6 @@ export function AdminBannerTableSkeleton() {
           <TableRow>
             <TableHead>{dict.banners.colTitle}</TableHead>
             <TableHead>{dict.banners.colStatus}</TableHead>
-            <TableHead>{dict.banners.colSort}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
         </TableHeader>

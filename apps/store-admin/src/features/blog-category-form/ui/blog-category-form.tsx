@@ -23,7 +23,6 @@ interface BlogCategoryFormProps {
 const EMPTY_VALUES: BlogCategoryFormInput = {
   name: "",
   slug: "",
-  sortOrder: "0",
 };
 
 /** Reusable create/edit blog-category form (name, slug, sort order). */
@@ -89,23 +88,6 @@ export function BlogCategoryForm({
         {errors.slug && (
           <p role="alert" className="text-sm text-destructive">
             {errors.slug.message}
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="category-sort">{dict.blogCategoryForm.sortOrder}</Label>
-        <Input
-          id="category-sort"
-          type="number"
-          inputMode="numeric"
-          min="0"
-          step="1"
-          {...register("sortOrder")}
-        />
-        {errors.sortOrder && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.sortOrder.message}
           </p>
         )}
       </div>

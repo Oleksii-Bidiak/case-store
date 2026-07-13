@@ -77,7 +77,6 @@ export function EditDeviceBrandView({ brandId }: EditDeviceBrandViewProps) {
   const defaultValues: Partial<DeviceBrandFormInput> = {
     name: brand.name,
     slug: brand.slug,
-    sortOrder: String(brand.sortOrder),
     isActive: brand.isActive,
   };
 

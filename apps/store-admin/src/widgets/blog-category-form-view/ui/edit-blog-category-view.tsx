@@ -112,6 +112,5 @@ function mapCategoryToFormValues(
   return {
     name: category.name,
     slug: category.slug,
-    sortOrder: String(category.sortOrder),
   };
 }

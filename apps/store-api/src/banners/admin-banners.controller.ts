@@ -21,8 +21,16 @@ import {
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { BannerService } from './banners.service';
-import { CreateBannerDto, UpdateBannerDto, AdminBannerListQueryDto } from './dto';
+import {
+  CreateBannerDto,
+  UpdateBannerDto,
+  AdminBannerListQueryDto,
+  ReorderBannersDto,
+} from './dto';
 import { AdminGuard } from '../auth/guards';
+// Direct file import, NOT the `../auth` barrel: the barrel pulls the auth module in and the
+// resulting require cycle leaves `CurrentUser` undefined at decorator-evaluation time.
+import { CurrentUser } from '../auth/decorators';
 import { BannerEntity } from './entities';
 
 /**
@@ -45,6 +53,7 @@ class BannerResponseEnvelope {
  * Controller for admin banner management (ADMIN role required).
  *
  *   GET    /api/admin/banners              — list all banners (all statuses)
+ *   PATCH  /api/admin/banners/reorder      — reorder one placement bucket
  *   GET    /api/admin/banners/:id          — banner by ID
  *   POST   /api/admin/banners              — create
  *   PUT    /api/admin/banners/:id          — full update
@@ -66,6 +75,44 @@ export class AdminBannerController {
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: AdminBannerListQueryDto): Promise<AdminBannerListResponse> {
     return this.bannerService.findAllAdmin(query);
+  }
+
+  /**
+   * PATCH /api/admin/banners/reorder (TASK-295)
+   *
+   * Rewrites the COMPLETE ordering of ONE placement bucket — the array index becomes
+   * `sortOrder` — in one advisory-locked transaction, and returns the full refreshed admin
+   * banner list (all placements).
+   *
+   * DECLARED BEFORE the `:id` routes — otherwise `reorder` is captured as an `:id`.
+   */
+  @Patch('reorder')
+  @HttpCode(200)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Reorder banners within one placement (admin)',
+    operationId: 'adminBannerControllerReorder',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The full refreshed admin banner list (all placements)',
+    type: AdminBannerListResponse,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error, an unknown placement, or REORDER_DUPLICATE_ID',
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({ status: 404, description: 'REORDER_NOT_FOUND — an id is not in this bucket' })
+  @ApiResponse({
+    status: 409,
+    description: 'REORDER_STALE — another admin changed this placement first',
+  })
+  async reorder(
+    @Body() dto: ReorderBannersDto,
+    @CurrentUser('id') adminUserId: string,
+  ): Promise<AdminBannerListResponse> {
+    return this.bannerService.reorderPlacement(dto, adminUserId);
   }
 
   @Get(':id')
