@@ -100,7 +100,6 @@ export class BannerService {
       ctaLabel: dto.ctaLabel,
       ctaHref: dto.ctaHref,
       theme: dto.theme,
-      sortOrder: dto.sortOrder,
       status: publishState.status,
       publishedAt: publishState.publishedAt,
       scheduledAt: publishState.scheduledAt,
@@ -136,7 +135,6 @@ export class BannerService {
       ctaLabel: dto.ctaLabel,
       ctaHref: dto.ctaHref,
       theme: dto.theme,
-      sortOrder: dto.sortOrder,
     };
 
     // Only touch publish fields when the admin actually sent a `status`.

@@ -302,7 +302,6 @@ export class BlogService {
       const category = await this.blogRepository.createCategory({
         slug,
         name: dto.name,
-        sortOrder: dto.sortOrder,
       });
       return BlogCategoryEntity.fromPrisma(category);
     } catch (error) {
@@ -327,7 +326,6 @@ export class BlogService {
       const updated = await this.blogRepository.updateCategory(id, {
         slug: dto.slug,
         name: dto.name,
-        sortOrder: dto.sortOrder,
       });
       // A renamed/re-slugged category changes what the blog hub renders.
       await this.revalidation.revalidate(this.collectionRevalidateTarget());

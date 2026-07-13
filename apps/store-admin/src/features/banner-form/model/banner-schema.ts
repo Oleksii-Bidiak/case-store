@@ -21,9 +21,11 @@ export type BannerStatusValue = (typeof BANNER_STATUS)[number];
  * Validation schema for the admin banner form.
  *
  * Banners are STRUCTURED content — plain title / subtitle / CTA strings, not
- * Tiptap HTML — so there is no rich-text field. As in the page/category forms,
- * the single numeric field (`sortOrder`) is modelled as a string on the INPUT
- * side (bound to a text input) and transformed to a number on the OUTPUT side.
+ * Tiptap HTML — so there is no rich-text field.
+ *
+ * TASK-295: no `sortOrder` field either — a banner's position inside its
+ * placement is set by dragging (or keyboard-moving) rows in that placement's
+ * grid, and a new banner is appended to the bucket by the backend.
  *
  * Publish control (TASK-187): `status` drives visibility; when it is
  * `SCHEDULED` a `scheduledAt` datetime is required (bound to a
@@ -64,13 +66,6 @@ export const bannerSchema = z
       .or(z.literal("")),
 
     theme: z.string().trim().max(50, e.themeMax).optional().or(z.literal("")),
-
-    sortOrder: z
-      .string()
-      .trim()
-      .optional()
-      .refine((v) => v === undefined || v === "" || /^\d+$/.test(v), e.sortInt)
-      .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
 
     status: z.enum(BANNER_STATUS),
 
@@ -117,7 +112,6 @@ export function bannerFormValuesToCreateDto(
     ctaLabel: ctaLabel ? ctaLabel : undefined,
     ctaHref: ctaHref ? ctaHref : undefined,
     theme: theme ? theme : undefined,
-    sortOrder: values.sortOrder,
     status: values.status,
     scheduledAt,
   };

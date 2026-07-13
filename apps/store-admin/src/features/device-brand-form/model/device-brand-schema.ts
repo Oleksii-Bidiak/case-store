@@ -9,9 +9,10 @@ const e = dict.deviceBrandForm.errors;
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
- * Validation schema for the admin device-brand form (TASK-190). The numeric
- * `sortOrder` is modelled as a string on the INPUT side (bound to a text input)
- * and transformed to a number on OUTPUT — same pattern as the category form.
+ * Validation schema for the admin device-brand form (TASK-190).
+ *
+ * TASK-295: no `sortOrder` field — the order is set by dragging (or keyboard-moving)
+ * rows in the brands grid, and a new brand is appended by the backend.
  */
 export const deviceBrandSchema = z.object({
   name: z.string().trim().min(1, e.nameRequired).max(255, e.nameMax),
@@ -22,12 +23,6 @@ export const deviceBrandSchema = z.object({
     .regex(SLUG_PATTERN, e.slugPattern)
     .optional()
     .or(z.literal("")),
-  sortOrder: z
-    .string()
-    .trim()
-    .optional()
-    .refine((v) => v === undefined || v === "" || /^\d+$/.test(v), e.sortInt)
-    .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
   isActive: z.boolean().optional(),
 });
 
@@ -49,7 +44,6 @@ export function deviceBrandValuesToDto(
   return {
     name: values.name,
     slug: slug ? slug : undefined,
-    sortOrder: values.sortOrder,
     isActive: values.isActive,
   };
 }

@@ -118,7 +118,6 @@ function mapBannerToFormValues(banner: BannerEntity): Partial<BannerFormInput> {
     ctaLabel: banner.ctaLabel ?? "",
     ctaHref: banner.ctaHref ?? "",
     theme: banner.theme ?? "",
-    sortOrder: String(banner.sortOrder),
     status: banner.status,
     // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant.
     scheduledAt: banner.scheduledAt ? toDateTimeLocal(banner.scheduledAt) : "",

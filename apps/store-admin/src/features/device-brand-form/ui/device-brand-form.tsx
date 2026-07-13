@@ -23,7 +23,6 @@ interface DeviceBrandFormProps {
 const EMPTY_VALUES: DeviceBrandFormInput = {
   name: "",
   slug: "",
-  sortOrder: "0",
   isActive: true,
 };
 
@@ -79,25 +78,6 @@ export function DeviceBrandForm({
         {errors.slug && (
           <p role="alert" className="text-sm text-destructive">
             {errors.slug.message}
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="device-brand-sort">
-          {dict.deviceBrandForm.sortOrder}
-        </Label>
-        <Input
-          id="device-brand-sort"
-          type="number"
-          inputMode="numeric"
-          min="0"
-          step="1"
-          {...register("sortOrder")}
-        />
-        {errors.sortOrder && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.sortOrder.message}
           </p>
         )}
       </div>

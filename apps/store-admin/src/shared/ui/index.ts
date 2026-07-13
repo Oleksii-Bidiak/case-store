@@ -76,6 +76,10 @@ export {
   TooltipProvider,
 } from "./tooltip";
 export { FormActionsBar } from "./form-actions-bar";
+export {
+  ReorderUndoButton,
+  type ReorderUndoButtonProps,
+} from "./reorder-undo-button";
 export { SortableColumnHeader } from "./sortable-column-header";
 export { Skeleton } from "./skeleton";
 export { AdminFormSkeleton } from "./admin-form-skeleton";

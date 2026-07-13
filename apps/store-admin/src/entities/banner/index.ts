@@ -11,7 +11,9 @@ export {
   useAdminBannerControllerPublish,
   useAdminBannerControllerUnpublish,
   useAdminBannerControllerDelete,
+  useAdminBannerControllerReorder,
   getAdminBannerControllerFindAllQueryKey,
+  getAdminBannerControllerFindAllQueryOptions,
   getAdminBannerControllerFindByIdQueryKey,
 } from "@/shared/api";
 
@@ -21,6 +23,7 @@ export type {
   UpdateBannerDto,
   AdminBannerControllerFindAllParams,
   AdminBannerListResponse,
+  ReorderBannersDto,
 } from "@/shared/api";
 
 export { BannerEntityPlacement } from "@/shared/api";
