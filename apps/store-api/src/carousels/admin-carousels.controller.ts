@@ -63,7 +63,8 @@ class CarouselItemListResponse {
 /**
  * Controller for admin carousel management (ADMIN role required).
  *
- *   GET    /api/admin/carousels                — list all carousels (all statuses)
+ *   GET    /api/admin/carousels                — list all carousels (all statuses,
+ *                                                optional ?placement= / ?status=)
  *   GET    /api/admin/carousels/:id            — carousel by ID
  *   POST   /api/admin/carousels                — create
  *   PUT    /api/admin/carousels/:id            — full update
@@ -89,7 +90,9 @@ export class AdminCarouselController {
 
   @Get()
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'List all carousels — all statuses (admin)' })
+  @ApiOperation({
+    summary: 'List all carousels — all statuses, optionally filtered by placement / status (admin)',
+  })
   @ApiResponse({ status: 200, description: 'List of carousels', type: AdminCarouselListResponse })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: AdminCarouselListQueryDto): Promise<AdminCarouselListResponse> {

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { CarouselSource, PublishStatus } from '@prisma/client';
+import { CarouselPlacement, CarouselSource, PublishStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { CarouselRepository } from './carousels.repository';
 
@@ -9,6 +9,7 @@ const mockCarousel = {
   source: CarouselSource.BESTSELLING,
   categoryId: null,
   itemLimit: 12,
+  placement: CarouselPlacement.HOME_RAILS,
   sortOrder: 0,
   status: PublishStatus.PUBLISHED,
   publishedAt: new Date('2026-07-01T00:00:00.000Z'),
@@ -61,6 +62,27 @@ describe('CarouselRepository', () => {
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       });
     });
+
+    it('applies the placement filter when provided (TASK-288)', async () => {
+      prismaMock.carousel.findMany.mockResolvedValue([]);
+
+      await repository.findAllPublished({ placement: CarouselPlacement.HOME_TABS });
+
+      expect(prismaMock.carousel.findMany).toHaveBeenCalledWith({
+        where: { status: PublishStatus.PUBLISHED, placement: CarouselPlacement.HOME_TABS },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      });
+    });
+
+    it('omits the placement filter when it is undefined (unscoped read stays intact)', async () => {
+      prismaMock.carousel.findMany.mockResolvedValue([]);
+
+      await repository.findAllPublished({ placement: undefined });
+
+      expect(prismaMock.carousel.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { status: PublishStatus.PUBLISHED } }),
+      );
+    });
   });
 
   describe('findAllAdmin', () => {
@@ -82,6 +104,24 @@ describe('CarouselRepository', () => {
 
       expect(prismaMock.carousel.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { status: PublishStatus.DRAFT } }),
+      );
+    });
+
+    it('applies placement and status filters together when provided', async () => {
+      prismaMock.carousel.findMany.mockResolvedValue([]);
+
+      await repository.findAllAdmin({
+        placement: CarouselPlacement.HOME_TABS,
+        status: PublishStatus.PUBLISHED,
+      });
+
+      expect(prismaMock.carousel.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            placement: CarouselPlacement.HOME_TABS,
+            status: PublishStatus.PUBLISHED,
+          },
+        }),
       );
     });
   });
@@ -117,11 +157,29 @@ describe('CarouselRepository', () => {
           source: CarouselSource.BESTSELLING,
           categoryId: null,
           itemLimit: 12,
+          placement: CarouselPlacement.HOME_RAILS,
           sortOrder: 0,
           status: PublishStatus.PUBLISHED,
           publishedAt: mockCarousel.publishedAt,
           scheduledAt: null,
         }),
+      });
+    });
+
+    it('persists an explicit placement (TASK-288)', async () => {
+      prismaMock.carousel.create.mockResolvedValue(mockCarousel);
+
+      await repository.create({
+        title: 'Хіти продажів',
+        source: CarouselSource.BESTSELLING,
+        placement: CarouselPlacement.HOME_TABS,
+        status: PublishStatus.PUBLISHED,
+        publishedAt: mockCarousel.publishedAt,
+        scheduledAt: null,
+      });
+
+      expect(prismaMock.carousel.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ placement: CarouselPlacement.HOME_TABS }),
       });
     });
   });
@@ -135,6 +193,20 @@ describe('CarouselRepository', () => {
       expect(prismaMock.carousel.update).toHaveBeenCalledWith({
         where: { id: 'carousel-uuid-1' },
         data: { title: 'Renamed' },
+      });
+    });
+
+    it('writes a new placement when provided', async () => {
+      prismaMock.carousel.update.mockResolvedValue({
+        ...mockCarousel,
+        placement: CarouselPlacement.HOME_TABS,
+      });
+
+      await repository.update('carousel-uuid-1', { placement: CarouselPlacement.HOME_TABS });
+
+      expect(prismaMock.carousel.update).toHaveBeenCalledWith({
+        where: { id: 'carousel-uuid-1' },
+        data: { placement: CarouselPlacement.HOME_TABS },
       });
     });
   });

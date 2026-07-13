@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
-import { CarouselSource, PublishStatus } from '@prisma/client';
+import { CarouselPlacement, CarouselSource, PublishStatus } from '@prisma/client';
 import { CarouselRepository } from './carousels.repository';
 import { CarouselService } from './carousels.service';
 import { CarouselEntity, CarouselItemEntity, PublicCarouselEntity } from './entities';
@@ -15,6 +15,7 @@ const baseCarousel = {
   source: CarouselSource.BESTSELLING,
   categoryId: null as string | null,
   itemLimit: 12,
+  placement: CarouselPlacement.HOME_RAILS,
   sortOrder: 0,
   status: PublishStatus.PUBLISHED,
   publishedAt: new Date('2026-07-01T00:00:00.000Z'),
@@ -221,6 +222,51 @@ describe('CarouselService', () => {
     });
   });
 
+  describe('findAllPublished — placement filter (TASK-288)', () => {
+    it('forwards the requested placement to the repository and echoes it on the entity', async () => {
+      carouselRepositoryMock.findAllPublished.mockResolvedValue([
+        { ...baseCarousel, placement: CarouselPlacement.HOME_TABS },
+      ]);
+      productServiceMock.findAll.mockResolvedValue({ data: [productCard], meta: {} });
+
+      const result = await service.findAllPublished({ placement: CarouselPlacement.HOME_TABS });
+
+      expect(carouselRepositoryMock.findAllPublished).toHaveBeenCalledWith({
+        placement: CarouselPlacement.HOME_TABS,
+      });
+      expect(result.data[0]).toBeInstanceOf(PublicCarouselEntity);
+      expect(result.data[0].placement).toBe(CarouselPlacement.HOME_TABS);
+    });
+
+    it('asks for every placement when the query omits it (pre-TASK-288 behaviour)', async () => {
+      carouselRepositoryMock.findAllPublished.mockResolvedValue([]);
+
+      await service.findAllPublished();
+
+      expect(carouselRepositoryMock.findAllPublished).toHaveBeenCalledWith({
+        placement: undefined,
+      });
+    });
+
+    it('resolves products identically whatever the placement (placement is render-only)', async () => {
+      carouselRepositoryMock.findAllPublished.mockResolvedValue([
+        { ...baseCarousel, placement: CarouselPlacement.HOME_TABS },
+      ]);
+      productServiceMock.findAll.mockResolvedValue({ data: [productCard], meta: {} });
+
+      await service.findAllPublished({ placement: CarouselPlacement.HOME_TABS });
+
+      const query = productServiceMock.findAll.mock.calls[0][0] as ProductListQueryDto;
+      expect(query).toMatchObject({
+        isActive: true,
+        sortBy: 'bestselling',
+        sortOrder: 'desc',
+        page: 1,
+        limit: 12,
+      });
+    });
+  });
+
   describe('findAllAdmin / findByIdAdmin', () => {
     it('forwards the status filter and maps to entities', async () => {
       carouselRepositoryMock.findAllAdmin.mockResolvedValue([baseCarousel, draftCarousel]);
@@ -229,7 +275,24 @@ describe('CarouselService', () => {
 
       expect(result.data).toHaveLength(2);
       expect(result.data[0]).toBeInstanceOf(CarouselEntity);
-      expect(carouselRepositoryMock.findAllAdmin).toHaveBeenCalledWith({ status: undefined });
+      expect(carouselRepositoryMock.findAllAdmin).toHaveBeenCalledWith({
+        placement: undefined,
+        status: undefined,
+      });
+    });
+
+    it('forwards the placement filter and exposes placement on the admin row', async () => {
+      carouselRepositoryMock.findAllAdmin.mockResolvedValue([
+        { ...baseCarousel, placement: CarouselPlacement.HOME_TABS },
+      ]);
+
+      const result = await service.findAllAdmin({ placement: CarouselPlacement.HOME_TABS });
+
+      expect(carouselRepositoryMock.findAllAdmin).toHaveBeenCalledWith({
+        placement: CarouselPlacement.HOME_TABS,
+        status: undefined,
+      });
+      expect(result.data[0].placement).toBe(CarouselPlacement.HOME_TABS);
     });
 
     it('findByIdAdmin throws NotFoundException when not found', async () => {
@@ -308,6 +371,36 @@ describe('CarouselService', () => {
       expect(carouselRepositoryMock.create).not.toHaveBeenCalled();
     });
 
+    it('passes the requested placement to the repository (TASK-288)', async () => {
+      carouselRepositoryMock.create.mockResolvedValue({
+        ...draftCarousel,
+        placement: CarouselPlacement.HOME_TABS,
+      });
+
+      const entity = await service.create({
+        title: 'Хіти',
+        source: CarouselSource.BESTSELLING,
+        placement: CarouselPlacement.HOME_TABS,
+      });
+
+      const passed = carouselRepositoryMock.create.mock.calls[0][0] as {
+        placement?: CarouselPlacement;
+      };
+      expect(passed.placement).toBe(CarouselPlacement.HOME_TABS);
+      expect(entity.placement).toBe(CarouselPlacement.HOME_TABS);
+    });
+
+    it('leaves placement undefined when omitted (repository applies the HOME_RAILS default)', async () => {
+      carouselRepositoryMock.create.mockResolvedValue(draftCarousel);
+
+      await service.create({ title: 'Хіти', source: CarouselSource.BESTSELLING });
+
+      const passed = carouselRepositoryMock.create.mock.calls[0][0] as {
+        placement?: CarouselPlacement;
+      };
+      expect(passed.placement).toBeUndefined();
+    });
+
     it('ignores a supplied categoryId for a non-CATEGORY source (stores null)', async () => {
       carouselRepositoryMock.create.mockResolvedValue(draftCarousel);
 
@@ -362,6 +455,37 @@ describe('CarouselService', () => {
       await service.update('carousel-uuid-2', { title: 'Renamed' });
 
       expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+
+    it('writes a new placement and revalidates the homepage for a live carousel (TASK-288)', async () => {
+      carouselRepositoryMock.findById.mockResolvedValue(baseCarousel);
+      carouselRepositoryMock.update.mockResolvedValue({
+        ...baseCarousel,
+        placement: CarouselPlacement.HOME_TABS,
+      });
+
+      const entity = await service.update('carousel-uuid-1', {
+        placement: CarouselPlacement.HOME_TABS,
+      });
+
+      const passed = carouselRepositoryMock.update.mock.calls[0][1] as {
+        placement?: CarouselPlacement;
+      };
+      expect(passed.placement).toBe(CarouselPlacement.HOME_TABS);
+      expect(entity.placement).toBe(CarouselPlacement.HOME_TABS);
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(carouselsTarget);
+    });
+
+    it('leaves placement untouched when the update omits it', async () => {
+      carouselRepositoryMock.findById.mockResolvedValue(baseCarousel);
+      carouselRepositoryMock.update.mockResolvedValue(baseCarousel);
+
+      await service.update('carousel-uuid-1', { title: 'Renamed' });
+
+      const passed = carouselRepositoryMock.update.mock.calls[0][1] as {
+        placement?: CarouselPlacement;
+      };
+      expect(passed.placement).toBeUndefined();
     });
 
     it('preserves the original publishedAt when re-saving an already-PUBLISHED carousel', async () => {

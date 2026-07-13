@@ -1,7 +1,7 @@
 import { IsString, IsOptional, IsEnum, IsInt, IsUUID, MaxLength, Max, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type, Transform } from 'class-transformer';
-import { CarouselSource } from '@prisma/client';
+import { CarouselPlacement, CarouselSource } from '@prisma/client';
 import { PublishFieldsDto } from '../../publishing';
 
 /** Trim leading/trailing whitespace from string inputs (leave non-strings as-is). */
@@ -47,6 +47,19 @@ export class UpdateCarouselDto extends PublishFieldsDto {
   @IsOptional()
   @IsUUID('4', { message: 'categoryId must be a valid UUID' })
   categoryId?: string;
+
+  @ApiProperty({
+    description:
+      'Where the carousel surfaces on the homepage — HOME_TABS feeds one tab of the "Популярне" section, HOME_RAILS is a standalone rail',
+    enum: CarouselPlacement,
+    example: CarouselPlacement.HOME_TABS,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(CarouselPlacement, {
+    message: `placement must be one of: ${Object.values(CarouselPlacement).join(', ')}`,
+  })
+  placement?: CarouselPlacement;
 
   @ApiProperty({
     description: 'Max products to show for a rule-based source (ignored for MANUAL)',
