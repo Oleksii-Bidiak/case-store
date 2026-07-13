@@ -83,6 +83,7 @@ const categoryRepositoryMock = {
   findChildren: jest.fn(),
   findDescendantIds: jest.fn(),
   applyTreeMoves: jest.fn(),
+  setActiveMany: jest.fn(),
 };
 
 const cacheMock = {
@@ -925,6 +926,87 @@ describe('CategoryService', () => {
 
       await expect(service.deactivate('nonexistent-id')).rejects.toThrow(NotFoundException);
       expect(categoryRepositoryMock.deactivate).not.toHaveBeenCalled();
+    });
+
+    // TASK-293: the per-row toggle used to write the row and stop there — no cache
+    // eviction, no re-index, no log line — so a deactivated category kept selling.
+    it('evicts the product-list cache, reindexes and logs (TASK-293)', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
+      categoryRepositoryMock.deactivate.mockResolvedValue(mockInactiveCategory);
+
+      await service.deactivate('cat-uuid-3', 'admin-1');
+
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledWith(['cat-uuid-3']);
+      expect(pinoLoggerMock.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'category.status',
+          ids: ['cat-uuid-3'],
+          isActive: false,
+          actorId: 'admin-1',
+        }),
+        expect.any(String),
+      );
+    });
+
+    it('does not touch the cache when the category does not exist', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.deactivate('nonexistent-id')).rejects.toThrow(NotFoundException);
+
+      expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+      expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── setStatusMany (admin, TASK-293) ─────────────────────────────────────────
+
+  describe('setStatusMany', () => {
+    const tree = [{ id: 'cat-uuid-1' }] as never[];
+
+    it('writes the ids, returns the refreshed tree and runs the side effects', async () => {
+      categoryRepositoryMock.setActiveMany.mockResolvedValue({ tree, updatedCount: 2 });
+
+      const result = await service.setStatusMany(['cat-uuid-1', 'cat-uuid-2'], false, 'admin-1');
+
+      expect(categoryRepositoryMock.setActiveMany).toHaveBeenCalledWith(
+        ['cat-uuid-1', 'cat-uuid-2'],
+        false,
+      );
+      expect(result).toEqual({ data: tree });
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledWith(['cat-uuid-1', 'cat-uuid-2']);
+      expect(pinoLoggerMock.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'category.status',
+          ids: ['cat-uuid-1', 'cat-uuid-2'],
+          isActive: false,
+          updatedCount: 2,
+          actorId: 'admin-1',
+        }),
+        expect.any(String),
+      );
+    });
+
+    it('maps an unknown id onto a 404 and skips the side effects', async () => {
+      categoryRepositoryMock.setActiveMany.mockRejectedValue(
+        new CategoryNotFoundError('Unknown category id(s): ghost'),
+      );
+
+      await expect(service.setStatusMany(['ghost'], true)).rejects.toThrow(NotFoundException);
+
+      expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+      expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
+    });
+
+    it('evicts the cache only AFTER the write commits', async () => {
+      categoryRepositoryMock.setActiveMany.mockResolvedValue({ tree, updatedCount: 1 });
+
+      await service.setStatusMany(['cat-uuid-1'], true);
+
+      expect(cacheMock.delByPrefix.mock.invocationCallOrder[0]).toBeGreaterThan(
+        categoryRepositoryMock.setActiveMany.mock.invocationCallOrder[0],
+      );
     });
   });
 

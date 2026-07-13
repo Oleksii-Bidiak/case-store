@@ -730,6 +730,14 @@ describe("AdminCategoryTree — row-internal Tab cycle (§7.1, §7.2)", () => {
     rowEl(A).focus();
     const row = within(rowEl(A));
 
+    // The selection checkbox is the row's first control in DOM order (TASK-293).
+    await userEvent.tab();
+    expect(
+      row.getByRole("checkbox", {
+        name: dict.categories.tree.bulk.selectRow("Аксесуари"),
+      }),
+    ).toHaveFocus();
+
     await userEvent.tab();
     expect(
       row.getByRole("button", {
@@ -954,5 +962,193 @@ describe("AdminCategoryTree — key-repeat suppression (§7.3)", () => {
       jest.useRealTimers();
     }
     assertAriaInvariants();
+  });
+});
+
+/* ───────────────── multi-select + bulk status (TASK-293) ───────────────── */
+
+const bulkBodies: unknown[] = [];
+
+/**
+ * The bulk endpoint returns the FULL refreshed tree, exactly as the real one does —
+ * so a successful PATCH must resync the grid from the response alone.
+ */
+function mockBulkStatus(
+  respond: () => Response | Promise<Response> = () =>
+    HttpResponse.json(treeResponse()),
+) {
+  server.use(
+    http.patch("*/api/admin/categories/status", async ({ request }) => {
+      bulkBodies.push(await request.json());
+      return respond();
+    }),
+  );
+}
+
+const bulkDict = dict.categories.tree.bulk;
+
+const checkboxOf = (id: string): HTMLElement =>
+  within(rowEl(id)).getByRole("checkbox", {
+    name: bulkDict.selectRow(NAMES[id]),
+  });
+
+describe("AdminCategoryTree — multi-select + bulk status (TASK-293)", () => {
+  beforeEach(() => {
+    bulkBodies.length = 0;
+  });
+
+  it("declares itself multi-selectable and marks every row's selection state", async () => {
+    mockReorder();
+    await renderTree();
+
+    expect(screen.getByRole("treegrid")).toHaveAttribute(
+      "aria-multiselectable",
+      "true",
+    );
+    expect(rowEl(A)).toHaveAttribute("aria-selected", "false");
+
+    await userEvent.click(checkboxOf(A));
+
+    expect(rowEl(A)).toHaveAttribute("aria-selected", "true");
+    expect(polite()).toBe(bulkDict.announce.selected("Аксесуари", 1));
+    assertAriaInvariants();
+  });
+
+  // The key-collision regression: bare `Space` is "pick the row up" and MUST stay
+  // that way — selection lives on `Ctrl+Space`.
+  it("selects on Ctrl+Space, and leaves bare Space as pick-up", async () => {
+    mockReorder();
+    await renderTree();
+
+    rowEl(B).focus();
+    await userEvent.keyboard("{Control>} {/Control}");
+
+    expect(rowEl(B)).toHaveAttribute("aria-selected", "true");
+    expect(rowEl(B)).toHaveAttribute("data-grabbed", "false");
+
+    await userEvent.keyboard(" ");
+    expect(rowEl(B)).toHaveAttribute("data-grabbed", "true");
+    expect(polite()).toContain(
+      dict.reorderTree.announce.grabbedRoot("Кабелі", 2, 3),
+    );
+  });
+
+  it("Shift+ArrowDown selects a contiguous range and moves focus with it", async () => {
+    mockReorder();
+    await renderTree();
+
+    // Visible: A, A1, A2, B, C (A1A is under a collapsed A1).
+    rowEl(A).focus();
+    await userEvent.keyboard("{Shift>}{ArrowDown}{ArrowDown}{/Shift}");
+
+    expect(rowEl(A)).toHaveAttribute("aria-selected", "true");
+    expect(rowEl(A1)).toHaveAttribute("aria-selected", "true");
+    expect(rowEl(A2)).toHaveAttribute("aria-selected", "true");
+    expect(rowEl(B)).toHaveAttribute("aria-selected", "false");
+    expect(rowEl(A2)).toHaveFocus();
+    assertAriaInvariants();
+  });
+
+  it("select-all is indeterminate on a partial selection and clears when already full", async () => {
+    mockReorder();
+    await renderTree();
+
+    const selectAll = screen.getByRole("checkbox", {
+      name: bulkDict.selectAll,
+    });
+    expect(selectAll).toHaveAttribute("data-state", "unchecked");
+
+    await userEvent.click(checkboxOf(A));
+    expect(selectAll).toHaveAttribute("data-state", "indeterminate");
+
+    await userEvent.click(selectAll);
+    expect(selectAll).toHaveAttribute("data-state", "checked");
+    expect(rowEl(C)).toHaveAttribute("aria-selected", "true");
+
+    await userEvent.click(selectAll);
+    expect(rowEl(A)).toHaveAttribute("aria-selected", "false");
+    expect(rowEl(C)).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("sends ONE PATCH with every selected id and clears the selection on success", async () => {
+    mockReorder();
+    mockBulkStatus();
+    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    await renderTree();
+
+    await userEvent.click(checkboxOf(A));
+    await userEvent.click(checkboxOf(B));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: bulkDict.deactivate(2) }),
+    );
+
+    await waitFor(() => expect(bulkBodies).toHaveLength(1));
+    expect(bulkBodies[0]).toEqual({ ids: [A, B], isActive: false });
+
+    await waitFor(() =>
+      expect(rowEl(A)).toHaveAttribute("aria-selected", "false"),
+    );
+    expect(
+      screen.queryByRole("button", { name: bulkDict.deactivate(2) }),
+    ).not.toBeInTheDocument();
+
+    confirmSpy.mockRestore();
+  });
+
+  it("cancelling the blast-radius confirmation fires ZERO mutations", async () => {
+    mockReorder();
+    mockBulkStatus();
+    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(false);
+    await renderTree();
+
+    await userEvent.click(checkboxOf(A));
+    await userEvent.click(
+      screen.getByRole("button", { name: bulkDict.deactivate(1) }),
+    );
+
+    expect(confirmSpy).toHaveBeenCalledWith(bulkDict.deactivateConfirm(1));
+    expect(bulkBodies).toHaveLength(0);
+    // The selection survives a cancel — the operator did not lose their work.
+    expect(rowEl(A)).toHaveAttribute("aria-selected", "true");
+
+    confirmSpy.mockRestore();
+  });
+
+  it("activating asks for no confirmation (nothing is hidden by it)", async () => {
+    mockReorder();
+    mockBulkStatus();
+    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    await renderTree();
+
+    await userEvent.click(checkboxOf(A));
+    await userEvent.click(
+      screen.getByRole("button", { name: bulkDict.activate(1) }),
+    );
+
+    await waitFor(() => expect(bulkBodies).toHaveLength(1));
+    expect(bulkBodies[0]).toEqual({ ids: [A], isActive: true });
+    expect(confirmSpy).not.toHaveBeenCalled();
+
+    confirmSpy.mockRestore();
+  });
+
+  it("announces a failed bulk write assertively and keeps the selection", async () => {
+    mockReorder();
+    mockBulkStatus(() =>
+      HttpResponse.json({ message: "boom" }, { status: 500 }),
+    );
+    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    await renderTree();
+
+    await userEvent.click(checkboxOf(A));
+    await userEvent.click(
+      screen.getByRole("button", { name: bulkDict.deactivate(1) }),
+    );
+
+    await waitFor(() => expect(assertive()).toBe(bulkDict.announce.failed));
+    expect(rowEl(A)).toHaveAttribute("aria-selected", "true");
+
+    confirmSpy.mockRestore();
   });
 });

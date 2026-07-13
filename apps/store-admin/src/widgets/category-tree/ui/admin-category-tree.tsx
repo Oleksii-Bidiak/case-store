@@ -44,6 +44,10 @@ import { CategoryTreeRowActions } from "@/features/category-tree-row-actions";
 import { CategoryMoveToDialog } from "@/features/category-move-to-dialog";
 import { useCategoryStatusToggle } from "@/features/category-status-toggle";
 import {
+  CategoryBulkActionsBar,
+  useCategoryBulkStatus,
+} from "@/features/category-bulk-status";
+import {
   MAX_TREE_LEVELS,
   applyIntent,
   applyMove,
@@ -57,6 +61,7 @@ import {
 import {
   Badge,
   Button,
+  Checkbox,
   Input,
   LiveAnnouncer,
   SortableTree,
@@ -74,6 +79,7 @@ import { dict } from "@/shared/config";
 import { AdminCategoryTreeSkeleton } from "./admin-category-tree-skeleton";
 
 const t = dict.categories.tree;
+const b = dict.categories.tree.bulk;
 const a = dict.reorderTree.announce;
 
 export const EXPANDED_STORAGE_KEY = "admin:category-tree:expanded";
@@ -269,6 +275,24 @@ function CategoryTreeView() {
     onFocusRow: focusRow,
   });
 
+  /* ── multi-select (TASK-293) ────────────────────────────────────────────── */
+
+  // Raw selection. It is filtered against the CURRENT tree below, so a row that
+  // another admin deleted (or that a refetch dropped) can never be PATCHed.
+  const [rawSelectedIds, setRawSelectedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  // The `Shift+↑/↓` range anchor — the row the range grows FROM, not the last
+  // row it reached.
+  const [anchorId, setAnchorId] = useState<string | null>(null);
+
+  const clearSelection = useCallback(() => {
+    setRawSelectedIds(new Set());
+    setAnchorId(null);
+  }, []);
+
+  const bulk = useCategoryBulkStatus({ onSuccess: clearSelection });
+
   // Focus follows the NODE, never the position (§7.5) — re-focus after any
   // render that moved the row (preview step, commit, refetch).
   useLayoutEffect(() => {
@@ -431,6 +455,96 @@ function CategoryTreeView() {
   }, [expandedIds, items, search, searchActive]);
 
   const { rows, visibleIds } = model;
+
+  /* ── selection derived against the live tree (TASK-293) ─────────────────── */
+
+  /**
+   * The selection as it can actually be acted on: ids that still exist in the
+   * tree. The raw set is kept as-is (a collapsed row stays selected — it is only
+   * hidden, not gone), but a row that vanished from the SERVER tree is dropped,
+   * so the bulk PATCH can never name an id the server would 404 on.
+   */
+  const selectedIds = useMemo(
+    () => new Set([...rawSelectedIds].filter((id) => metaById.has(id))),
+    [metaById, rawSelectedIds],
+  );
+
+  const toggleSelected = useCallback(
+    (id: string, name: string) => {
+      const next = new Set(selectedIds);
+      const selecting = !next.has(id);
+      if (selecting) next.add(id);
+      else next.delete(id);
+
+      setRawSelectedIds(next);
+      setAnchorId(id);
+      announcePolite(
+        selecting
+          ? b.announce.selected(name, next.size)
+          : b.announce.deselected(name, next.size),
+      );
+    },
+    [announcePolite, selectedIds],
+  );
+
+  /**
+   * `Shift+↑/↓` — grow (or shrink) a contiguous range of VISIBLE rows from the
+   * anchor, and move focus with it. Replaces the selection, as a grid does: the
+   * range IS the selection while the operator is sweeping it.
+   */
+  const extendSelection = useCallback(
+    (fromId: string, delta: 1 | -1) => {
+      const index = rows.findIndex((r) => r.item.id === fromId);
+      if (index === -1) return;
+      const targetIndex = index + delta;
+      const target = rows[targetIndex];
+      if (!target) return;
+
+      const anchor = anchorId ?? fromId;
+      const anchorIndex = rows.findIndex((r) => r.item.id === anchor);
+      const from = anchorIndex === -1 ? index : anchorIndex;
+      const [lo, hi] =
+        from <= targetIndex ? [from, targetIndex] : [targetIndex, from];
+
+      const range = rows.slice(lo, hi + 1).map((r) => r.item.id);
+      setRawSelectedIds(new Set(range));
+      setAnchorId(rows[from].item.id);
+      focusRow(target.item.id);
+      announcePolite(b.announce.selected(target.item.label, range.length));
+    },
+    [anchorId, announcePolite, focusRow, rows],
+  );
+
+  /** Header checkbox: all VISIBLE rows, tri-state. */
+  const visibleSelectedCount = rows.filter((r) =>
+    selectedIds.has(r.item.id),
+  ).length;
+  const headerChecked: boolean | "indeterminate" =
+    rows.length > 0 && visibleSelectedCount === rows.length
+      ? true
+      : visibleSelectedCount > 0
+        ? "indeterminate"
+        : false;
+
+  const toggleSelectAll = useCallback(() => {
+    const visibleRowIds = rows.map((r) => r.item.id);
+    const allSelected =
+      visibleRowIds.length > 0 &&
+      visibleRowIds.every((id) => selectedIds.has(id));
+
+    if (allSelected) {
+      const next = new Set(selectedIds);
+      for (const id of visibleRowIds) next.delete(id);
+      setRawSelectedIds(next);
+      announcePolite(b.announce.cleared);
+      return;
+    }
+
+    const next = new Set(selectedIds);
+    for (const id of visibleRowIds) next.add(id);
+    setRawSelectedIds(next);
+    announcePolite(b.announce.selected(t.label, next.size));
+  }, [announcePolite, rows, selectedIds]);
 
   /** Rows that cannot receive the grabbed node — its own subtree (§7.2). */
   const illegalIds = useMemo(
@@ -715,7 +829,7 @@ function CategoryTreeView() {
       if (event.target !== event.currentTarget) return;
 
       const state = moveState?.movingId === id ? moveState : null;
-      const { key, altKey, shiftKey } = event;
+      const { key, altKey, shiftKey, ctrlKey } = event;
 
       /* ── move mode ────────────────────────────────────────────────────── */
       if (state) {
@@ -753,6 +867,28 @@ function CategoryTreeView() {
       }
 
       /* ── navigation mode ──────────────────────────────────────────────── */
+
+      // Selection (TASK-293) BEFORE anything else that shares a key. Bare `Space`
+      // is already "pick the row up" for move mode, so selection takes
+      // `Ctrl+Space` — the grid convention — and range-select takes `Shift+↑/↓`,
+      // which nothing else binds (`Alt+Shift+arrow` are the move accelerators and
+      // are matched below).
+      if (ctrlKey && !altKey && key === " ") {
+        event.preventDefault();
+        const row = rows.find((r) => r.item.id === id);
+        if (row) toggleSelected(id, row.item.label);
+        return;
+      }
+      if (
+        shiftKey &&
+        !altKey &&
+        !ctrlKey &&
+        (key === "ArrowUp" || key === "ArrowDown")
+      ) {
+        event.preventDefault();
+        extendSelection(id, key === "ArrowDown" ? 1 : -1);
+        return;
+      }
 
       // Accelerators FIRST — `Alt+Shift+arrow` only. Bare `Alt+←`/`Alt+→` are the
       // browser's Back/Forward on Windows and MUST stay unbound (§7.2).
@@ -838,6 +974,7 @@ function CategoryTreeView() {
       cancelMove,
       collapseRow,
       commitMoveMode,
+      extendSelection,
       focusRow,
       focusVisible,
       moveState,
@@ -848,6 +985,7 @@ function CategoryTreeView() {
       runAccelerator,
       setExpandedFor,
       stepMove,
+      toggleSelected,
     ],
   );
 
@@ -901,6 +1039,9 @@ function CategoryTreeView() {
         locked={isLocked}
         items={items}
         reorder={reorder}
+        selected={selectedIds.has(row.item.id)}
+        selectDisabled={bulk.isPending}
+        onToggleSelect={() => toggleSelected(row.item.id, row.item.label)}
         onToggleExpand={() => toggleRow(row.item.id, row.ariaExpanded === true)}
         onKeyDown={(event) => onRowKeyDown(event, row.item.id)}
         onBlur={(event) => onRowBlur(event, row.item.id)}
@@ -948,6 +1089,17 @@ function CategoryTreeView() {
         <p className="text-sm text-muted-foreground">{t.searchLockedHint}</p>
       )}
 
+      <CategoryBulkActionsBar
+        selectedCount={selectedIds.size}
+        isPending={bulk.isPending}
+        onActivate={() => bulk.setStatus([...selectedIds], true)}
+        onDeactivate={() => bulk.setStatus([...selectedIds], false)}
+        onClear={() => {
+          clearSelection();
+          announcePolite(b.announce.cleared);
+        }}
+      />
+
       <div id={INSTRUCTIONS_LONG_ID} className="sr-only">
         {dict.reorderTree.instructionsLong}
       </div>
@@ -971,10 +1123,20 @@ function CategoryTreeView() {
             role="treegrid"
             aria-label={t.label}
             aria-describedby={INSTRUCTIONS_LONG_ID}
-            aria-busy={reorder.isPending}
+            aria-busy={reorder.isPending || bulk.isPending}
+            aria-multiselectable="true"
           >
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={headerChecked}
+                    onCheckedChange={toggleSelectAll}
+                    disabled={bulk.isPending}
+                    aria-label={b.selectAll}
+                  />
+                  <span className="sr-only">{b.colSelect}</span>
+                </TableHead>
                 <TableHead>{dict.categories.colName}</TableHead>
                 <TableHead hideOnMobile>{dict.categories.colSlug}</TableHead>
                 <TableHead>{dict.categories.colProducts}</TableHead>
@@ -1036,6 +1198,9 @@ interface CategoryTreeRowProps {
   locked: boolean;
   items: TreeItem[];
   reorder: CategoryTreeReorderApi;
+  selected: boolean;
+  selectDisabled: boolean;
+  onToggleSelect: () => void;
   onToggleExpand: () => void;
   onKeyDown: (event: ReactKeyboardEvent<HTMLTableRowElement>) => void;
   onBlur: (event: ReactFocusEvent<HTMLTableRowElement>) => void;
@@ -1066,6 +1231,9 @@ function CategoryTreeRow({
   locked,
   items,
   reorder,
+  selected,
+  selectDisabled,
+  onToggleSelect,
   onToggleExpand,
   onKeyDown,
   onBlur,
@@ -1106,6 +1274,7 @@ function CategoryTreeRow({
       aria-setsize={setsize}
       {...(ariaExpanded === undefined ? {} : { "aria-expanded": ariaExpanded })}
       {...(illegal ? { "aria-disabled": true } : {})}
+      aria-selected={selected}
       tabIndex={isOwner ? 0 : -1}
       data-grabbed={grabbed}
       data-conflict={conflict || undefined}
@@ -1123,6 +1292,18 @@ function CategoryTreeRow({
               : undefined
       }
     >
+      <TableCell role="gridcell" className="w-10">
+        {/* Owns its own `Space` (Radix), which the row's keydown handler ignores
+            because `event.target !== event.currentTarget` — so picking a row up
+            still works from the row itself. */}
+        <Checkbox
+          checked={selected}
+          onCheckedChange={onToggleSelect}
+          disabled={selectDisabled}
+          tabIndex={controlTabIndex}
+          aria-label={b.selectRow(name)}
+        />
+      </TableCell>
       <TableCell role="gridcell">
         <div
           className="flex items-center gap-1"

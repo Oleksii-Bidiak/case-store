@@ -26,6 +26,7 @@ import {
   UpdateCategoryDto,
   CategoryListQueryDto,
   ReorderCategoriesDto,
+  BulkCategoryStatusDto,
 } from './dto';
 import { AdminGuard } from '../auth/guards';
 // Direct file import, NOT the `../auth` barrel: the barrel pulls in `auth.module` →
@@ -166,6 +167,38 @@ export class AdminCategoryController {
   }
 
   /**
+   * PATCH /api/admin/categories/status
+   *
+   * Bulk activate / deactivate (TASK-293). Writes `isActive` on exactly the named ids —
+   * NO CASCADE to descendants — in one transaction, and returns the full refreshed admin
+   * tree so the panel resyncs in a single round-trip (as `reorder` does).
+   *
+   * DECLARED BEFORE the `:id` routes, for the same reason `reorder` is — otherwise
+   * `status` is captured as an `:id`.
+   */
+  @Patch('status')
+  @HttpCode(200)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Bulk activate / deactivate categories (admin)',
+    operationId: 'adminCategoryControllerSetStatusMany',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The full refreshed admin category tree',
+    schema: { $ref: getSchemaPath(AdminCategoryTreeResponse) },
+  })
+  @ApiResponse({ status: 400, description: 'Validation error — empty, oversized or non-UUID ids' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({ status: 404, description: 'Unknown category id' })
+  async setStatusMany(
+    @Body() dto: BulkCategoryStatusDto,
+    @CurrentUser('id') adminUserId: string,
+  ): Promise<AdminCategoryTreeResponse> {
+    return this.categoryService.setStatusMany(dto.ids, dto.isActive, adminUserId);
+  }
+
+  /**
    * GET /api/admin/categories
    *
    * Returns a paginated list of all categories with product counts.
@@ -259,8 +292,11 @@ export class AdminCategoryController {
   @ApiResponse({ status: 200, description: 'Category deactivated', type: CategoryResponseEnvelope })
   @ApiResponse({ status: 404, description: 'Category not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  async deactivate(@Param('id') id: string): Promise<CategoryResponseEnvelope> {
-    const category = await this.categoryService.deactivate(id);
+  async deactivate(
+    @Param('id') id: string,
+    @CurrentUser('id') adminUserId: string,
+  ): Promise<CategoryResponseEnvelope> {
+    const category = await this.categoryService.deactivate(id, adminUserId);
 
     return { data: category };
   }
@@ -277,8 +313,11 @@ export class AdminCategoryController {
   @ApiResponse({ status: 200, description: 'Category activated', type: CategoryResponseEnvelope })
   @ApiResponse({ status: 404, description: 'Category not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  async activate(@Param('id') id: string): Promise<CategoryResponseEnvelope> {
-    const category = await this.categoryService.activate(id);
+  async activate(
+    @Param('id') id: string,
+    @CurrentUser('id') adminUserId: string,
+  ): Promise<CategoryResponseEnvelope> {
+    const category = await this.categoryService.activate(id, adminUserId);
 
     return { data: category };
   }
