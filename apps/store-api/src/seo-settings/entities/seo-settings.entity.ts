@@ -55,6 +55,16 @@ export class SeoSettingsEntity {
 
   @ApiProperty({
     description:
+      'URL of the uploaded store logo; null when no logo is set (both storefront and admin fall back to the typographic monogram)',
+    example: 'http://localhost:3001/uploads/branding/9f1c2b7e-1f0a-4c2e-9c1a-2f3b4c5d6e7f.svg',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  logoUrl!: string | null;
+
+  @ApiProperty({
+    description:
       'Google Search Console ownership-verification token (HTML-tag method); null when not configured',
     example: 'AbCdEfGhIjKlMnOpQrStUvWxYz1234567890',
     type: String,
@@ -112,6 +122,7 @@ export class SeoSettingsEntity {
     entity.defaultMetaDescription = row.defaultMetaDescription;
     entity.titleTemplate = row.titleTemplate;
     entity.defaultOgImage = row.defaultOgImage;
+    entity.logoUrl = row.logoUrl;
     entity.googleSiteVerification = row.googleSiteVerification;
     entity.bingSiteVerification = row.bingSiteVerification;
     entity.noindexSite = row.noindexSite;
@@ -134,6 +145,7 @@ export class SeoSettingsEntity {
     entity.defaultMetaDescription = null;
     entity.titleTemplate = null;
     entity.defaultOgImage = null;
+    entity.logoUrl = null;
     entity.googleSiteVerification = null;
     entity.bingSiteVerification = null;
     entity.noindexSite = false;

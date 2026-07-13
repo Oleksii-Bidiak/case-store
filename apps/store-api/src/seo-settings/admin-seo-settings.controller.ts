@@ -1,16 +1,64 @@
-import { Controller, Get, Put, Body, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiExtraModels } from '@nestjs/swagger';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Post,
+  Put,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiExtraModels,
+} from '@nestjs/swagger';
+import { memoryStorage } from 'multer';
 import { SeoSettingsService } from './seo-settings.service';
+import { StoreLogoService } from './store-logo.service';
 import { UpdateSeoSettingsDto, SeoHealthResponseEnvelope } from './dto';
+import { ALLOWED_LOGO_MIME, LOGO_MULTER_MAX_BYTES } from './store-logo.constants';
 import { AdminGuard } from '../auth/guards';
 import { SeoSettingsEntity, SeoHealthEntity } from './entities';
 import { SeoSettingsResponseEnvelope } from './seo-settings.controller';
 
 /**
+ * Multer options for the logo upload. The file is buffered in memory (no temp
+ * files) so nothing untrusted ever touches the disk before it has been sanitized
+ * / re-encoded. This `fileFilter` is the first of two MIME gates; StoreLogoService
+ * re-checks the type and enforces the stricter 1 MB business limit (→ 413).
+ */
+const logoMulterOptions = {
+  storage: memoryStorage(),
+  limits: { fileSize: LOGO_MULTER_MAX_BYTES, files: 1 },
+  fileFilter: (
+    _req: unknown,
+    file: { mimetype: string },
+    cb: (error: Error | null, acceptFile: boolean) => void,
+  ): void => {
+    if (ALLOWED_LOGO_MIME.has(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new BadRequestException(`Unsupported file type: ${file.mimetype}`), false);
+    }
+  },
+};
+
+/**
  * Admin controller for managing the singleton SEO settings.
  *
- *   PUT /api/admin/seo-settings         — upsert the SEO settings (ADMIN)
- *   GET /api/admin/seo-settings/health  — SEO-health checklist counts (ADMIN)
+ *   PUT    /api/admin/seo-settings         — upsert the SEO settings (ADMIN)
+ *   GET    /api/admin/seo-settings/health  — SEO-health checklist counts (ADMIN)
+ *   POST   /api/admin/seo-settings/logo    — upload the store logo (ADMIN)
+ *   DELETE /api/admin/seo-settings/logo    — remove the store logo (ADMIN)
  */
 @ApiTags('SeoSettings')
 @ApiExtraModels(
@@ -22,7 +70,10 @@ import { SeoSettingsResponseEnvelope } from './seo-settings.controller';
 @Controller('admin/seo-settings')
 @UseGuards(AdminGuard)
 export class AdminSeoSettingsController {
-  constructor(private readonly service: SeoSettingsService) {}
+  constructor(
+    private readonly service: SeoSettingsService,
+    private readonly logoService: StoreLogoService,
+  ) {}
 
   /**
    * PUT /api/admin/seo-settings
@@ -70,6 +121,65 @@ export class AdminSeoSettingsController {
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async getHealth(): Promise<SeoHealthResponseEnvelope> {
     const data = await this.service.getHealth();
+
+    return { data };
+  }
+
+  /**
+   * POST /api/admin/seo-settings/logo
+   *
+   * Uploads the store logo (multipart/form-data, single field `file`). Accepts
+   * SVG + PNG/WebP/JPEG up to 1 MB; SVG is sanitized and raster is re-encoded
+   * before it is stored. Writes `logoUrl` on the singleton and returns the updated
+   * settings. Admin-only. (TASK-299)
+   */
+  @Post('logo')
+  @UseInterceptors(FileInterceptor('file', logoMulterOptions))
+  @ApiBearerAuth('access-token')
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Upload the store logo (admin)',
+    operationId: 'adminSeoSettingsControllerUploadLogo',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Logo uploaded', type: SeoSettingsResponseEnvelope })
+  @ApiResponse({ status: 400, description: 'Missing file, or unsafe/unrenderable SVG' })
+  @ApiResponse({ status: 401, description: 'Unauthorized — authentication required' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({ status: 413, description: 'File exceeds the 1 MB limit' })
+  @ApiResponse({ status: 415, description: 'Unsupported file type' })
+  async uploadLogo(
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<SeoSettingsResponseEnvelope> {
+    const data = await this.logoService.uploadLogo(file);
+
+    return { data };
+  }
+
+  /**
+   * DELETE /api/admin/seo-settings/logo
+   *
+   * Clears `logoUrl` and removes the stored file from disk. Returns the updated
+   * settings so the caller does not need a follow-up read. Admin-only. (TASK-299)
+   */
+  @Delete('logo')
+  @HttpCode(200)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Remove the store logo (admin)',
+    operationId: 'adminSeoSettingsControllerDeleteLogo',
+  })
+  @ApiResponse({ status: 200, description: 'Logo removed', type: SeoSettingsResponseEnvelope })
+  @ApiResponse({ status: 401, description: 'Unauthorized — authentication required' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async deleteLogo(): Promise<SeoSettingsResponseEnvelope> {
+    const data = await this.logoService.deleteLogo();
 
     return { data };
   }

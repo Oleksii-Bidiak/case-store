@@ -65,4 +65,22 @@ describe('ImageProcessor', () => {
 
     expect(lqip.byteLength).toBeLessThan(webp.byteLength);
   });
+
+  describe('detectFormat', () => {
+    it('reports the real format sniffed from the bytes', async () => {
+      await expect(processor.detectFormat(await makeFixture('png'))).resolves.toBe('png');
+      await expect(processor.detectFormat(await makeFixture('jpeg'))).resolves.toBe('jpeg');
+    });
+
+    it('returns null for a buffer that is not a decodable image', async () => {
+      // What a client would send while claiming `Content-Type: image/gif`.
+      await expect(processor.detectFormat(Buffer.from('<script>alert(1)</script>'))).resolves.toBe(
+        null,
+      );
+    });
+
+    it('returns null rather than throwing on an empty buffer', async () => {
+      await expect(processor.detectFormat(Buffer.alloc(0))).resolves.toBeNull();
+    });
+  });
 });

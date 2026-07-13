@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { ScheduleModule } from '@nestjs/schedule';
 import { resolve } from 'node:path';
+import { ServerResponse } from 'node:http';
 import { SentryModule } from '@sentry/nestjs/setup';
 import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
@@ -82,8 +83,15 @@ import { buildPinoHttpOptions } from './config/pino.config';
       useFactory: buildPinoHttpOptions,
     }),
 
-    // Static serving of uploaded product images (local-disk storage, TASK-073).
-    // Served at `/uploads` — outside the global `api` prefix, so no route clash.
+    // Static serving of uploaded files — product images (TASK-073) and the store
+    // logo (TASK-299). Served at `/uploads`, outside the global `api` prefix, so
+    // no route clash.
+    //
+    // The headers are a containment layer for user-uploaded content served from
+    // our own origin: `nosniff` stops a mislabelled file being re-interpreted as
+    // HTML/JS, and the CSP + `sandbox` mean that even an SVG that somehow slipped
+    // past sanitize-svg.ts cannot execute script, load anything remote, or act
+    // with our origin's authority when opened directly.
     ServeStaticModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -91,7 +99,17 @@ import { buildPinoHttpOptions } from './config/pino.config';
         {
           rootPath: resolve(config.get<string>('UPLOAD_DEST', './uploads')),
           serveRoot: '/uploads',
-          serveStaticOptions: { index: false, fallthrough: true },
+          serveStaticOptions: {
+            index: false,
+            fallthrough: true,
+            setHeaders: (res: ServerResponse) => {
+              res.setHeader('X-Content-Type-Options', 'nosniff');
+              res.setHeader(
+                'Content-Security-Policy',
+                "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+              );
+            },
+          },
         },
       ],
     }),

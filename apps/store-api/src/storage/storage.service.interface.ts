@@ -1,3 +1,5 @@
+import { StorageSubdir } from './storage-subdirs';
+
 /**
  * Storage abstraction boundary.
  *
@@ -9,11 +11,12 @@
  */
 export interface IStorageService {
   /**
-   * Persist a file buffer and return the storage-relative path
-   * (e.g. `products/<uuid>.jpg`). The public URL is assembled by the caller
-   * from this path + the configured public base URL.
+   * Persist a file buffer under a whitelisted sub-directory and return the
+   * storage-relative path (e.g. `products/<uuid>.webp`, `branding/<uuid>.svg`).
+   * The public URL is assembled by the caller from this path + the configured
+   * public base URL.
    */
-  save(buffer: Buffer, ext: string): Promise<string>;
+  save(buffer: Buffer, ext: string, subdir: StorageSubdir): Promise<string>;
 
   /**
    * Remove a previously-saved file by its storage-relative path. Implementations

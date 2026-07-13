@@ -21,6 +21,8 @@ export interface UpsertSeoSettingsInput {
   defaultMetaDescription?: string | null;
   titleTemplate?: string | null;
   defaultOgImage?: string | null;
+  /** Written only by the logo upload/delete endpoints — never by the update DTO. */
+  logoUrl?: string | null;
   googleSiteVerification?: string | null;
   bingSiteVerification?: string | null;
   noindexSite?: boolean;
