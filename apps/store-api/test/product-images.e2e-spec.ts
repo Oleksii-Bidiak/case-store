@@ -54,6 +54,7 @@ describe('ProductImageController (e2e)', () => {
   // which real `sharp` would reject. Unit specs cover the real encode path.
   const imageProcessorMock = {
     process: jest.fn(),
+    detectFormat: jest.fn(),
   };
 
   const prismaServiceMock = {
@@ -176,6 +177,7 @@ describe('ProductImageController (e2e)', () => {
       imageRepositoryMock.getMaxSortOrder.mockResolvedValue(-1);
       imageRepositoryMock.bulkCreate.mockResolvedValue(undefined);
       storageMock.save.mockResolvedValue('products/generated.gif');
+      imageProcessorMock.detectFormat.mockResolvedValue('gif');
 
       const response = await request(app.getHttpServer())
         .post(`/api/products/${PRODUCT_ID}/images`)
@@ -186,10 +188,30 @@ describe('ProductImageController (e2e)', () => {
         })
         .expect(201);
 
-      // GIFs bypass the processor entirely; the original ext is preserved.
+      // GIFs bypass the re-encode entirely; the original ext is preserved.
       expect(imageProcessorMock.process).not.toHaveBeenCalled();
       expect(storageMock.save.mock.calls[0][1]).toBe('gif');
+      expect(storageMock.save.mock.calls[0][2]).toBe('products');
       expect(response.body.data[0].blurDataUrl).toBeNull();
+    });
+
+    it('returns 415 for a non-GIF payload uploaded as image/gif', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      imageRepositoryMock.getMaxSortOrder.mockResolvedValue(-1);
+      // `sharp` cannot decode it → the declared Content-Type was a lie.
+      imageProcessorMock.detectFormat.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images`)
+        .set('Authorization', `Bearer ${token}`)
+        .attach('files', Buffer.from('<script>alert(1)</script>'), {
+          filename: 'a.gif',
+          contentType: 'image/gif',
+        })
+        .expect(415);
+
+      expect(storageMock.save).not.toHaveBeenCalled();
     });
 
     it('returns 413 for an oversized file', async () => {

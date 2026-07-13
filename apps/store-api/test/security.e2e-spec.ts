@@ -113,6 +113,7 @@ describe('Security hardening (e2e)', () => {
     const csrfService = app.get(CsrfService);
     app.use('/api/auth/refresh', csrfService.protect);
     app.use('/api/cart', csrfService.protect);
+    app.use('/api/wishlist', csrfService.protect);
 
     app.useGlobalPipes(
       new ValidationPipe({
@@ -193,6 +194,52 @@ describe('Security hardening (e2e)', () => {
         .post('/api/cart/items')
         .set('Authorization', 'Bearer invalid.jwt.token')
         .send({ productId: 'not-a-uuid', quantity: 1 });
+
+      expect(res.status).not.toBe(403);
+    });
+
+    // The wishlist is cookie-identified exactly like the guest cart
+    // (`wishlistToken`), so its mutating routes are equally CSRF-vulnerable and
+    // must be behind the same middleware.
+    it('rejects POST /api/wishlist/items without a CSRF token (403)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/wishlist/items')
+        .send({ productId: '550e8400-e29b-41d4-a716-446655440000' })
+        .expect(403);
+    });
+
+    it('rejects POST /api/wishlist/toggle without a CSRF token (403)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/wishlist/toggle')
+        .send({ productId: '550e8400-e29b-41d4-a716-446655440000' })
+        .expect(403);
+    });
+
+    it('rejects DELETE /api/wishlist/items/:productId without a CSRF token (403)', async () => {
+      await request(app.getHttpServer())
+        .delete('/api/wishlist/items/550e8400-e29b-41d4-a716-446655440000')
+        .expect(403);
+    });
+
+    it('allows POST /api/wishlist/items with a valid CSRF token (not 403)', async () => {
+      const tokenRes = await request(app.getHttpServer()).get('/api/csrf-token');
+      const csrfToken = tokenRes.body.data.csrfToken as string;
+
+      const res = await request(app.getHttpServer())
+        .post('/api/wishlist/items')
+        .set('Cookie', [`csrf=${csrfToken}`])
+        .set('x-csrf-token', csrfToken)
+        .send({ productId: 'not-a-uuid' }); // invalid body → 400
+
+      expect(res.status).not.toBe(403);
+      expect(res.status).toBe(400);
+    });
+
+    it('exempts Bearer-authenticated wishlist requests from the CSRF check', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/wishlist/items')
+        .set('Authorization', 'Bearer invalid.jwt.token')
+        .send({ productId: 'not-a-uuid' });
 
       expect(res.status).not.toBe(403);
     });
