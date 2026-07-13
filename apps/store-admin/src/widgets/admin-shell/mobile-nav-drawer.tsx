@@ -1,7 +1,7 @@
 "use client";
 
-import { Package } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/shared/ui";
+import { AdminBrandMark } from "./admin-brand-mark";
 import { AdminNavList } from "./admin-nav-list";
 
 interface MobileNavDrawerProps {
@@ -31,10 +31,12 @@ export function MobileNavDrawer({ open, onOpenChange }: MobileNavDrawerProps) {
         className="w-72 overflow-y-auto lg:hidden"
         aria-describedby={undefined}
       >
+        {/* The brand mark lives INSIDE SheetTitle: with a logo uploaded the
+            wordmark is an <img>, and Radix still needs the title to carry the
+            drawer's accessible name (the <img> alt supplies it). */}
         <SheetHeader className="h-16 flex-row items-center gap-2">
-          <Package className="size-6 text-primary" aria-hidden="true" />
-          <SheetTitle className="font-display text-lg font-bold tracking-tight text-foreground">
-            MobileStore
+          <SheetTitle className="flex flex-row items-center gap-2">
+            <AdminBrandMark />
           </SheetTitle>
         </SheetHeader>
 

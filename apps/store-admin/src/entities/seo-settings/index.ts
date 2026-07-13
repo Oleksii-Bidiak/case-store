@@ -7,6 +7,11 @@ export {
   useSeoSettingsControllerGetSettings,
   useAdminSeoSettingsControllerUpdate,
   useAdminSeoSettingsControllerGetHealth,
+  // Store-logo upload/delete (TASK-299). The operationIds come from
+  // `AdminSeoSettingsController`, hence the `useAdminSeoSettings…` prefix —
+  // there is no `useSeoSettingsControllerUploadLogo`.
+  useAdminSeoSettingsControllerUploadLogo,
+  useAdminSeoSettingsControllerDeleteLogo,
   getSeoSettingsControllerGetSettingsQueryKey,
 } from "@/shared/api";
 

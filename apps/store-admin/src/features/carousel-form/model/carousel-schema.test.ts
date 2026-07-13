@@ -11,6 +11,7 @@ const UUID = "550e8400-e29b-41d4-a716-446655440000";
 const baseInput: CarouselFormInput = {
   title: "Хіти продажів",
   source: "BESTSELLING",
+  placement: "HOME_RAILS",
   categoryId: "",
   itemLimit: "12",
   sortOrder: "0",
@@ -22,6 +23,7 @@ const baseInput: CarouselFormInput = {
 const baseValues: CarouselFormValues = {
   title: "Хіти продажів",
   source: "BESTSELLING",
+  placement: "HOME_RAILS",
   categoryId: "",
   itemLimit: 12,
   sortOrder: 0,
@@ -96,6 +98,18 @@ describe("carouselSchema", () => {
     }
   });
 
+  // TASK-288 — placement decides whether the carousel becomes a tab in the home
+  // "Популярне" section or its own rail below.
+  it.each([
+    ["HOME_TABS", true],
+    ["HOME_RAILS", true],
+    ["HOME_HERO", false],
+    ["", false],
+  ])("placement %s → valid: %s", (placement, valid) => {
+    const result = carouselSchema.safeParse({ ...baseInput, placement });
+    expect(result.success).toBe(valid);
+  });
+
   it("requires scheduledAt when status is SCHEDULED", () => {
     const result = carouselSchema.safeParse({
       ...baseInput,
@@ -152,5 +166,16 @@ describe("carouselFormValuesToCreateDto", () => {
     });
     expect(dto.itemLimit).toBe(6);
     expect(dto.sortOrder).toBe(2);
+  });
+
+  it("always sends the selected placement (TASK-288)", () => {
+    expect(
+      carouselFormValuesToCreateDto({ ...baseValues, placement: "HOME_TABS" })
+        .placement,
+    ).toBe("HOME_TABS");
+    expect(
+      carouselFormValuesToCreateDto({ ...baseValues, placement: "HOME_RAILS" })
+        .placement,
+    ).toBe("HOME_RAILS");
   });
 });

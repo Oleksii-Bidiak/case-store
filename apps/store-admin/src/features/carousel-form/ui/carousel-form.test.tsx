@@ -163,6 +163,26 @@ describe("CarouselForm — conditional fields per source", () => {
     });
   });
 
+  it("submits parsed values for a valid CATEGORY carousel with the default placement", async () => {
+    stubAdminTree();
+    const onSubmit = jest.fn();
+    renderWithProviders(<CarouselForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(
+      screen.getByLabelText(dict.carouselForm.title),
+      "Хіти",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.carouselForm.submit }),
+    );
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    // Mirrors the API's CreateCarouselDto default.
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      placement: "HOME_RAILS",
+    });
+  });
+
   it("renders the items slot with the LIVE source value", async () => {
     stubAdminTree();
     renderWithProviders(
@@ -183,5 +203,70 @@ describe("CarouselForm — conditional fields per source", () => {
     );
 
     expect(await screen.findByTestId("items-panel")).toBeInTheDocument();
+  });
+});
+
+describe("CarouselForm — placement (TASK-288)", () => {
+  it("offers both placements and explains that sortOrder drives the tab order", async () => {
+    stubAdminTree();
+    renderWithProviders(<CarouselForm onSubmit={noop} isPending={false} />);
+
+    const placementSelect = screen.getByLabelText(dict.carouselForm.placement);
+    expect(placementSelect).toHaveValue("HOME_RAILS");
+    expect(
+      screen.getByRole("option", {
+        name: dict.carouselForm.placementOptions.HOME_TABS,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", {
+        name: dict.carouselForm.placementOptions.HOME_RAILS,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.carouselForm.placementHint),
+    ).toBeInTheDocument();
+  });
+
+  it("submits HOME_TABS once the admin picks the tab placement", async () => {
+    stubAdminTree();
+    const onSubmit = jest.fn();
+    renderWithProviders(<CarouselForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(
+      screen.getByLabelText(dict.carouselForm.title),
+      "Новинки",
+    );
+    await userEvent.selectOptions(
+      screen.getByLabelText(dict.carouselForm.placement),
+      "HOME_TABS",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.carouselForm.submit }),
+    );
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      title: "Новинки",
+      placement: "HOME_TABS",
+    });
+  });
+
+  it("seeds the select from the edited carousel in edit mode", async () => {
+    stubAdminTree();
+    renderWithProviders(
+      <CarouselForm
+        id="carousel-1"
+        defaultValues={{ title: "Хіти", placement: "HOME_TABS" }}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(dict.carouselForm.placement)).toHaveValue(
+        "HOME_TABS",
+      ),
+    );
   });
 });

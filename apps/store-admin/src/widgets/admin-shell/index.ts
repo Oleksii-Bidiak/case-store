@@ -1,4 +1,5 @@
 export { AdminSidebar } from "./admin-sidebar";
+export { AdminBrandMark } from "./admin-brand-mark";
 export { AdminNavList } from "./admin-nav-list";
 export { MobileNavDrawer } from "./mobile-nav-drawer";
 export { AdminShell } from "./admin-shell";

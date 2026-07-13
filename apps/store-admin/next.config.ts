@@ -16,6 +16,25 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_ADMIN_URL: process.env.NEXT_PUBLIC_ADMIN_URL,
   },
+  // Security headers for every admin route. The admin panel is never legitimately
+  // embedded, so framing is denied outright: a clickjacked /login would let an
+  // attacker overlay an invisible admin form and harvest credentials or trick a
+  // signed-in admin into a destructive click.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          {
+            key: "Referrer-Policy",
+            value: "strict-origin-when-cross-origin",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 // Wrap with Sentry for source-map upload + auto-instrumentation. Build-time-inert

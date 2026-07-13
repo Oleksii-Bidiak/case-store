@@ -25,11 +25,11 @@ import { dict } from "@/shared/config";
 import { AdminCarouselTableSkeleton } from "./admin-carousel-table-skeleton";
 
 /**
- * Admin carousels view: one flat table of title, source badge, status badge,
- * sort order, and per-row actions (edit, publish/unpublish toggle keyed on
- * `status`, delete with confirm). Carousels are low-volume admin content, so
- * the whole set loads at once with no search/pagination — mirrors
- * `AdminBannerTable` minus the placement grouping (carousels have none).
+ * Admin carousels view: one flat table of title, source badge, placement badge
+ * (TASK-288), status badge, sort order, and per-row actions (edit,
+ * publish/unpublish toggle keyed on `status`, delete with confirm). Carousels
+ * are low-volume admin content, so the whole set loads at once with no
+ * search/pagination — mirrors `AdminBannerTable`.
  */
 export function AdminCarouselTable() {
   const queryClient = useQueryClient();
@@ -108,6 +108,7 @@ export function AdminCarouselTable() {
           <TableRow>
             <TableHead>{dict.carousels.colTitle}</TableHead>
             <TableHead>{dict.carousels.colSource}</TableHead>
+            <TableHead>{dict.carousels.colPlacement}</TableHead>
             <TableHead>{dict.carousels.colStatus}</TableHead>
             <TableHead hideOnMobile>{dict.carousels.colSort}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
@@ -157,6 +158,11 @@ function CarouselRow({
       <TableCell>
         <Badge variant="outline">
           {dict.carousels.sourceLabels[carousel.source]}
+        </Badge>
+      </TableCell>
+      <TableCell>
+        <Badge variant="secondary">
+          {dict.carousels.placementLabels[carousel.placement]}
         </Badge>
       </TableCell>
       <TableCell>

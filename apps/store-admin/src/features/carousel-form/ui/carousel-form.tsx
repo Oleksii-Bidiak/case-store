@@ -11,6 +11,7 @@ import { Button, Input, Label } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
   carouselSchema,
+  CAROUSEL_PLACEMENT,
   CAROUSEL_SOURCE,
   type CarouselFormInput,
   type CarouselFormValues,
@@ -68,6 +69,8 @@ interface CarouselFormProps {
 const EMPTY_VALUES: CarouselFormInput = {
   title: "",
   source: "BESTSELLING",
+  // Mirrors the API's create-time default (CreateCarouselDto.placement).
+  placement: "HOME_RAILS",
   categoryId: "",
   itemLimit: "12",
   sortOrder: "0",
@@ -76,9 +79,10 @@ const EMPTY_VALUES: CarouselFormInput = {
 };
 
 /**
- * Reusable create/edit carousel form: title, source select, a conditional
- * category select (visible only for `source = CATEGORY`, offering ALL tree
- * nodes — parents roll up their subtree), item limit (kept visible but
+ * Reusable create/edit carousel form: title, source select, placement select
+ * (TASK-288 — tab inside the home "Популярне" section vs. its own rail below),
+ * a conditional category select (visible only for `source = CATEGORY`, offering
+ * ALL tree nodes — parents roll up their subtree), item limit (kept visible but
  * labelled as ignored for MANUAL), sort order, plus the shared publish
  * controls (status / scheduledAt) — byte-for-byte the `BannerForm` block.
  */
@@ -174,6 +178,26 @@ export function CarouselForm({
             )}
           </div>
         )}
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="carousel-placement">
+            {dict.carouselForm.placement}
+          </Label>
+          <select
+            id="carousel-placement"
+            className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+            {...register("placement")}
+          >
+            {CAROUSEL_PLACEMENT.map((value) => (
+              <option key={value} value={value}>
+                {dict.carouselForm.placementOptions[value]}
+              </option>
+            ))}
+          </select>
+          <p className="text-sm text-muted-foreground">
+            {dict.carouselForm.placementHint}
+          </p>
+        </div>
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="carousel-item-limit">

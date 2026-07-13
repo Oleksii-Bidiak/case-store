@@ -9,7 +9,11 @@ import {
   type ReactNode,
 } from "react";
 import { isAxiosError } from "axios";
-import { api, setAccessToken, userControllerGetProfile } from "@/shared/api";
+import {
+  authControllerRefresh,
+  setAccessToken,
+  userControllerGetProfile,
+} from "@/shared/api";
 
 export interface AuthContextValue {
   accessToken: string | null;
@@ -42,10 +46,10 @@ export const AuthContext = createContext<AuthContextValue | null>(null);
 async function bootstrapRefresh(): Promise<string | null> {
   for (let attempt = 0; ; attempt++) {
     try {
-      const res = await api.post<{ data?: { accessToken?: string } }>(
-        "/api/auth/refresh",
-      );
-      return res.data?.data?.accessToken ?? null;
+      // `customInstance` already unwraps the Axios envelope, so `res` IS the
+      // API's `{ data }` body — one level of `.data`, not two.
+      const res = await authControllerRefresh();
+      return res.data?.accessToken ?? null;
     } catch (error) {
       const status = isAxiosError(error) ? error.response?.status : undefined;
       if (status === 401 || attempt >= 1) {
