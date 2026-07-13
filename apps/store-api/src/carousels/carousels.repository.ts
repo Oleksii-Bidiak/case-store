@@ -1,12 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { Carousel, CarouselSource, Prisma, PublishStatus } from '@prisma/client';
+import { Carousel, CarouselPlacement, CarouselSource, Prisma, PublishStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import type { PublishablePort, RevalidateTarget } from '../publishing';
+
+/**
+ * Filter params for the public carousel list (PUBLISHED only).
+ */
+export interface FindPublishedParams {
+  placement?: CarouselPlacement;
+}
 
 /**
  * Filter params for the admin carousel list (all statuses).
  */
 export interface FindAllAdminParams {
+  placement?: CarouselPlacement;
   status?: PublishStatus;
 }
 
@@ -19,6 +27,7 @@ export interface CreateCarouselInput {
   source: CarouselSource;
   categoryId?: string | null;
   itemLimit?: number;
+  placement?: CarouselPlacement;
   sortOrder?: number;
   status: PublishStatus;
   publishedAt: Date | null;
@@ -33,6 +42,7 @@ export interface UpdateCarouselInput {
   source?: CarouselSource;
   categoryId?: string | null;
   itemLimit?: number;
+  placement?: CarouselPlacement;
   sortOrder?: number;
   status?: PublishStatus;
   publishedAt?: Date | null;
@@ -93,21 +103,30 @@ export class CarouselRepository implements PublishablePort {
   };
 
   /**
-   * Find all PUBLISHED carousels ordered by sortOrder then createdAt ascending.
-   * `status = PUBLISHED` is the single public-visibility gate.
+   * Find all PUBLISHED carousels ordered by sortOrder then createdAt ascending,
+   * optionally narrowed to ONE placement. `status = PUBLISHED` is the single
+   * public-visibility gate; `placement` only scopes WHERE they render, so an
+   * omitted filter keeps returning every published carousel.
    */
-  findAllPublished(): Promise<Carousel[]> {
+  findAllPublished(params: FindPublishedParams = {}): Promise<Carousel[]> {
+    const where: Prisma.CarouselWhereInput = {
+      status: PublishStatus.PUBLISHED,
+      ...(params.placement !== undefined && { placement: params.placement }),
+    };
+
     return this.prisma.carousel.findMany({
-      where: { status: PublishStatus.PUBLISHED },
+      where,
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     });
   }
 
   /**
-   * Find all carousels (any status) with an optional status filter. Admin listing.
+   * Find all carousels (any status) with optional placement / status filters.
+   * Admin listing.
    */
   findAllAdmin(params: FindAllAdminParams = {}): Promise<Carousel[]> {
     const where: Prisma.CarouselWhereInput = {
+      ...(params.placement !== undefined && { placement: params.placement }),
       ...(params.status !== undefined && { status: params.status }),
     };
 
@@ -134,6 +153,7 @@ export class CarouselRepository implements PublishablePort {
         source: data.source,
         categoryId: data.categoryId ?? null,
         itemLimit: data.itemLimit ?? 12,
+        placement: data.placement ?? CarouselPlacement.HOME_RAILS,
         sortOrder: data.sortOrder ?? 0,
         status: data.status,
         publishedAt: data.publishedAt,

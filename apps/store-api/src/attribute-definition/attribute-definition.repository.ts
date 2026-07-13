@@ -2,6 +2,26 @@ import { Injectable } from '@nestjs/common';
 import { AttributeDefinition, AttributeType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { CategoryRepository } from '../category';
+import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
+
+/**
+ * Advisory-lock namespace for attribute definitions (TASK-298). The prefix is MANDATORY —
+ * locks are DATABASE-GLOBAL, so without it a definition reorder would serialise against an
+ * unrelated resource's.
+ */
+const LOCK_RESOURCE = 'attribute-definitions';
+
+/**
+ * A definition's sibling bucket is its OWNING CATEGORY: `sortOrder` is only ever compared
+ * within one category's own template list (inheritance merges ancestors' definitions at READ
+ * time, in `findEffectiveForCategory`, and re-sorts the merged set — it never makes two
+ * categories share a slot space). So the lock is per-category: two admins editing two
+ * different categories' templates do not queue behind each other.
+ */
+const bucketLockKey = (categoryId: string): string => lockKey(LOCK_RESOURCE, categoryId);
+
+/** Either the singleton client or an interactive-transaction one (TASK-298). */
+type AttributeDefinitionDbClient = PrismaService | ReorderTx;
 
 /**
  * Fields for creating a structured-spec template. `categoryId` is supplied by
@@ -45,9 +65,17 @@ export class AttributeDefinitionRepository {
     private readonly categoryRepository: CategoryRepository,
   ) {}
 
-  /** Own-category templates only, ordered by `sortOrder` then `label`. */
-  findByCategoryId(categoryId: string): Promise<AttributeDefinition[]> {
-    return this.prisma.attributeDefinition.findMany({
+  /**
+   * Own-category templates only, ordered by `sortOrder` then `label`.
+   *
+   * Accepts a transaction client (TASK-298) so the reorder endpoint can re-read the refreshed
+   * list inside its own transaction.
+   */
+  findByCategoryId(
+    categoryId: string,
+    client: AttributeDefinitionDbClient = this.prisma,
+  ): Promise<AttributeDefinition[]> {
+    return client.attributeDefinition.findMany({
       where: { categoryId },
       orderBy: [{ sortOrder: 'asc' }, { label: 'asc' }],
     });
@@ -116,19 +144,46 @@ export class AttributeDefinitionRepository {
       .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
   }
 
-  /** Create a template. `options` is persisted as a JSON string array (or null). */
+  /**
+   * Create a template, APPENDED to the end of its category's list (`sortOrder = max + 1`,
+   * `0` for the category's first template) — TASK-298.
+   *
+   * The old `data.sortOrder ?? 0` default stacked every new template ON TOP OF the first one:
+   * the admin editor does not send a hand-typed `sortOrder`, so the whole list would sit at
+   * slot 0 and its order would fall back to the `label` tiebreaker. Same shape as
+   * `DeviceRepository.createBrand`: the `max + 1` read runs inside a transaction holding the
+   * CATEGORY's advisory lock, so it cannot race a concurrent append or a concurrent
+   * {@link reorder} and hand out a duplicate slot.
+   *
+   * An EXPLICIT `data.sortOrder` still wins — the append is only the default.
+   *
+   * `options` is persisted as a JSON string array (or null).
+   */
   create(data: CreateAttributeDefinitionInput): Promise<AttributeDefinition> {
-    return this.prisma.attributeDefinition.create({
-      data: {
-        categoryId: data.categoryId,
-        key: data.key,
-        label: data.label,
-        type: data.type ?? AttributeType.TEXT,
-        unit: data.unit ?? null,
-        options: this.toOptionsJson(data.options),
-        isFilterable: data.isFilterable ?? false,
-        sortOrder: data.sortOrder ?? 0,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await acquireAdvisoryLocks(tx, [bucketLockKey(data.categoryId)]);
+
+      let sortOrder = data.sortOrder;
+      if (sortOrder === undefined) {
+        const { _max } = await tx.attributeDefinition.aggregate({
+          where: { categoryId: data.categoryId },
+          _max: { sortOrder: true },
+        });
+        sortOrder = _max.sortOrder === null ? 0 : _max.sortOrder + 1;
+      }
+
+      return tx.attributeDefinition.create({
+        data: {
+          categoryId: data.categoryId,
+          key: data.key,
+          label: data.label,
+          type: data.type ?? AttributeType.TEXT,
+          unit: data.unit ?? null,
+          options: this.toOptionsJson(data.options),
+          isFilterable: data.isFilterable ?? false,
+          sortOrder,
+        },
+      });
     });
   }
 
@@ -150,19 +205,34 @@ export class AttributeDefinitionRepository {
   }
 
   /**
-   * Rewrite `sortOrder` for a category's templates to match `orderedIds` — each
-   * definition's new order is its index in the array. Runs in one transaction;
-   * the `categoryId` guard keeps a stray id from another category untouched.
+   * Rewrite the COMPLETE ordering of ONE category's templates and return the refreshed list,
+   * read inside the same transaction (TASK-298).
+   *
+   * This used to be a naive `$transaction([...updateMany])`: no advisory lock and no
+   * staleness check, so two admins reordering the same category's templates silently
+   * interleaved — the last writer's partial payload won and rows it never named kept a stale,
+   * now-colliding `sortOrder`. It was the last `sortOrder` writer outside the shared recipe;
+   * it now goes through {@link reorderBucket} exactly like banners / blog categories / device
+   * brands (TASK-295).
+   *
+   * `scope: { categoryId }` is the safety net kept from the old implementation: every write is
+   * `WHERE id = … AND category_id = …`, so an id forged from another category silently
+   * updates nothing instead of being stolen into this one — and `assertFlatReorder` rejects it
+   * as NOT_FOUND before any write happens anyway.
+   *
+   * Throws the domain errors of `common/reorder/reorder.errors.ts`; the service maps them.
    */
-  async reorder(categoryId: string, orderedIds: string[]): Promise<void> {
-    await this.prisma.$transaction(
-      orderedIds.map((id, index) =>
-        this.prisma.attributeDefinition.updateMany({
-          where: { id, categoryId },
-          data: { sortOrder: index },
-        }),
-      ),
-    );
+  reorder(categoryId: string, orderedIds: readonly string[]): Promise<AttributeDefinition[]> {
+    return reorderBucket<AttributeDefinition[]>(this.prisma, {
+      resource: LOCK_RESOURCE,
+      bucket: categoryId,
+      orderedIds,
+      scope: { categoryId },
+      snapshot: (tx) =>
+        tx.attributeDefinition.findMany({ where: { categoryId }, select: { id: true } }),
+      delegate: (tx) => tx.attributeDefinition,
+      result: (tx) => this.findByCategoryId(categoryId, tx),
+    });
   }
 
   /**

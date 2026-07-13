@@ -322,21 +322,30 @@ describe('CartRepository', () => {
   // ─── findProductForCartValidation ────────────────────────────────────────────
 
   describe('findProductForCartValidation', () => {
-    it('should fetch only the validation fields for a product', async () => {
+    it('should fetch only the validation fields for a product, including its category status', async () => {
       const product = {
         id: 'product-uuid-1',
         name: 'iPhone 15 Pro Case',
         stock: 50,
         isActive: true,
+        category: { isActive: true },
       };
       prismaMock.product.findUnique.mockResolvedValue(product);
 
       const result = await repository.findProductForCartValidation('product-uuid-1');
 
       expect(result).toEqual(product);
+      // The category's own status rides along in the SAME query (TASK-297) — the
+      // add-to-cart guard needs it and must not pay for a second round trip.
       expect(prismaMock.product.findUnique).toHaveBeenCalledWith({
         where: { id: 'product-uuid-1' },
-        select: { id: true, name: true, stock: true, isActive: true },
+        select: {
+          id: true,
+          name: true,
+          stock: true,
+          isActive: true,
+          category: { select: { isActive: true } },
+        },
       });
     });
 

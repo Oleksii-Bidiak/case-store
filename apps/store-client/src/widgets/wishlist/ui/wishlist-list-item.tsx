@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { WishlistItemEntity } from "@/entities/wishlist";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
+import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { ProductCardImage } from "@/shared/ui";
 import { formatMoney, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
@@ -45,6 +46,15 @@ export function WishlistListItem({ item }: { item: WishlistItemEntity }) {
             −{discount}%
           </span>
         )}
+        {/* Quick-view — like the catalog list row (ProductListItem), the row
+            thumbnail has no hover-reveal slot, so the trigger is a small
+            persistent icon pinned to its top-right corner. */}
+        <div className="absolute top-2 right-2 z-10">
+          <ProductQuickViewTrigger
+            product={{ name: item.productName, slug: item.productSlug }}
+            className="size-8"
+          />
+        </div>
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">

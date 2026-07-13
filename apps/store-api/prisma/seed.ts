@@ -44,18 +44,18 @@ interface SeededUser {
 }
 
 async function seedUsers(prisma: PrismaClient) {
-  // Admin 1 credentials are configurable via env (ADMIN_SEED_EMAIL /
-  // ADMIN_SEED_PASSWORD) and fall back to the dev defaults below. The upsert is
-  // idempotent and re-asserts the ADMIN role + name on every run. To promote an
-  // already-registered user instead of seeding a new one, run:
+  // The seed creates exactly ONE admin. Its credentials are configurable via env
+  // (ADMIN_SEED_EMAIL / ADMIN_SEED_PASSWORD) and fall back to the dev defaults
+  // below — those defaults are published in the env example file, so they are
+  // public knowledge and `assertSeedAllowed()` refuses to use them outside dev.
+  // The upsert is idempotent and re-asserts the ADMIN role + name on every run.
+  // To grant a second admin, register the account normally and promote it:
   //   UPDATE users SET role='ADMIN' WHERE email='<email>';
   const adminEmail = process.env.ADMIN_SEED_EMAIL ?? 'admin@store.com';
   const adminPassword = process.env.ADMIN_SEED_PASSWORD ?? 'Admin123!';
   const adminPasswordHash = await argon2.hash(adminPassword);
-  const managerPasswordHash = await argon2.hash('Manager123!');
   const customerPasswordHash = await argon2.hash('Customer123!');
 
-  // ── Admin 1 (primary, env-overridable) ──
   const admin = await prisma.user.upsert({
     where: { email: adminEmail },
     update: { role: 'ADMIN', isActive: true, firstName: 'Олександр', lastName: 'Коваленко' },
@@ -64,21 +64,6 @@ async function seedUsers(prisma: PrismaClient) {
       passwordHash: adminPasswordHash,
       firstName: 'Олександр',
       lastName: 'Коваленко',
-      role: 'ADMIN',
-      isActive: true,
-    },
-  });
-
-  // ── Admin 2 (manager, fixed credentials) ──
-  const admin2 = await prisma.user.upsert({
-    where: { email: 'manager@store.com' },
-    update: { role: 'ADMIN', isActive: true, firstName: 'Ірина', lastName: 'Мельник' },
-    create: {
-      email: 'manager@store.com',
-      passwordHash: managerPasswordHash,
-      firstName: 'Ірина',
-      lastName: 'Мельник',
-      phone: '+380671110099',
       role: 'ADMIN',
       isActive: true,
     },
@@ -142,10 +127,8 @@ async function seedUsers(prisma: PrismaClient) {
   // customers[0] is the demo John Doe account (owns the fixed seed-address-1).
   const customer = customers[0];
 
-  console.log(
-    `  ✓ Users: 2 admins (${admin.email}, ${admin2.email}), ${customers.length} customers`,
-  );
-  return { admin, admin2, admins: [admin, admin2], customer, customers };
+  console.log(`  ✓ Users: 1 admin (${admin.email}), ${customers.length} customers`);
+  return { admin, admins: [admin], customer, customers };
 }
 
 /**
@@ -1826,13 +1809,24 @@ async function seedBanners(prisma: PrismaClient) {
 }
 
 /**
- * Seed a few published recommendation carousels — one per interesting source
- * shape (TASK-139): a BESTSELLING rule, a CATEGORY rule pointed at a seeded
- * parent category (exercises the subtree rollup), and a MANUAL carousel with a
- * handful of hand-picked seeded products. Idempotent via deterministic ids;
- * MANUAL items are replaced wholesale on re-run. The storefront renders
- * correctly with ZERO carousels, so this is a convenience, not a requirement.
- * Must run AFTER seedCategories/seedProducts.
+ * Seed the published homepage carousels (TASK-139, TASK-288). Two placements:
+ *
+ *   HOME_TABS  — the three tabs of the "Популярне" section, reproducing the
+ *                storefront's former hardcoded tabs 1:1 (titles copied from
+ *                `store-client/src/shared/config/dictionary.ts` → `home.popular.tabs`,
+ *                itemLimit 12 = the rail size the hardcoded fetch used). Tab
+ *                order = `sortOrder` (0/1/2).
+ *   HOME_RAILS — standalone rails below: a CATEGORY rule pointed at a seeded
+ *                parent category (exercises the subtree rollup) and a MANUAL
+ *                carousel with hand-picked products.
+ *
+ * `sortOrder` is scoped to the placement, so both buckets start at 0. The
+ * BESTSELLING carousel is a TAB, not a rail — an identical "Хіти продажів" rail
+ * underneath the tab it duplicates would just be broken-looking demo data.
+ *
+ * Idempotent via deterministic ids; MANUAL items are replaced wholesale on
+ * re-run. The storefront renders correctly with ZERO carousels, so this is a
+ * convenience, not a requirement. Must run AFTER seedCategories/seedProducts.
  */
 async function seedCarousels(prisma: PrismaClient) {
   const casesCategory = await prisma.category.findUnique({ where: { slug: 'cases' } });
@@ -1843,26 +1837,47 @@ async function seedCarousels(prisma: PrismaClient) {
     slug: string;
     title: string;
     source: 'BESTSELLING' | 'NEWEST' | 'ON_SALE' | 'CATEGORY' | 'MANUAL';
+    placement: 'HOME_TABS' | 'HOME_RAILS';
     categoryId?: string | null;
     itemLimit?: number;
     sortOrder: number;
   }[] = [
+    // ── "Популярне" tabs (TASK-288) ──
     {
       slug: 'bestsellers',
       title: 'Хіти продажів',
       source: 'BESTSELLING',
+      placement: 'HOME_TABS',
       itemLimit: 12,
       sortOrder: 0,
     },
+    {
+      slug: 'newest',
+      title: 'Новинки',
+      source: 'NEWEST',
+      placement: 'HOME_TABS',
+      itemLimit: 12,
+      sortOrder: 1,
+    },
+    {
+      slug: 'on-sale',
+      title: 'Акційні',
+      source: 'ON_SALE',
+      placement: 'HOME_TABS',
+      itemLimit: 12,
+      sortOrder: 2,
+    },
+    // ── Standalone rails ──
     ...(casesCategory
       ? [
           {
             slug: 'cases',
             title: 'Чохли для смартфонів',
             source: 'CATEGORY' as const,
+            placement: 'HOME_RAILS' as const,
             categoryId: casesCategory.id,
             itemLimit: 12,
-            sortOrder: 1,
+            sortOrder: 0,
           },
         ]
       : []),
@@ -1870,7 +1885,8 @@ async function seedCarousels(prisma: PrismaClient) {
       slug: 'editors-pick',
       title: 'Редакція обирає',
       source: 'MANUAL',
-      sortOrder: 2,
+      placement: 'HOME_RAILS',
+      sortOrder: 1,
     },
   ];
 
@@ -1879,6 +1895,7 @@ async function seedCarousels(prisma: PrismaClient) {
     const data = {
       title: c.title,
       source: c.source,
+      placement: c.placement,
       categoryId: c.categoryId ?? null,
       itemLimit: c.itemLimit ?? 12,
       sortOrder: c.sortOrder,
@@ -1919,8 +1936,9 @@ async function seedCarousels(prisma: PrismaClient) {
       : []),
   ]);
 
+  const tabCount = carousels.filter((c) => c.placement === 'HOME_TABS').length;
   console.log(
-    `  ✓ Carousels: ${carousels.length} published carousels upserted (${picks.length} manual items)`,
+    `  ✓ Carousels: ${carousels.length} published (${tabCount} HOME_TABS, ${carousels.length - tabCount} HOME_RAILS, ${picks.length} manual items)`,
   );
 }
 
@@ -3152,7 +3170,39 @@ async function seedAddonServices(prisma: PrismaClient, categories: Record<string
   );
 }
 
+/**
+ * Refuse to touch a production database unless the operator explicitly opts in.
+ * The seed writes demo accounts (customers, reviewers) whose passwords are
+ * published in `docs/seed-guide.md`, so an accidental production run is a
+ * credential-disclosure incident, not just noise. `ALLOW_PROD_SEED=true` is the
+ * deliberate escape hatch (bootstrapping a fresh staging/demo instance); under
+ * it the admin credentials must be supplied explicitly, because the dev
+ * fallbacks are public too.
+ *
+ * Runs BEFORE the connection pool is opened — a rejected seed writes nothing.
+ */
+function assertSeedAllowed(): void {
+  if (process.env.NODE_ENV !== 'production') return;
+
+  if (process.env.ALLOW_PROD_SEED !== 'true') {
+    throw new Error(
+      'Refusing to run the seed with NODE_ENV=production: it creates demo accounts with ' +
+        'publicly documented passwords. Set ALLOW_PROD_SEED=true to override — see ' +
+        'docs/seed-guide.md §"Production guard".',
+    );
+  }
+
+  if (!process.env.ADMIN_SEED_EMAIL || !process.env.ADMIN_SEED_PASSWORD) {
+    throw new Error(
+      'ALLOW_PROD_SEED=true requires explicit ADMIN_SEED_EMAIL and ADMIN_SEED_PASSWORD: ' +
+        'the fallback admin credentials are published in the env example file.',
+    );
+  }
+}
+
 async function main() {
+  assertSeedAllowed();
+
   console.log('\n🌱 Seeding database...\n');
 
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });

@@ -355,6 +355,7 @@ export function WishlistView() {
           <div className="p-4">
             <WishlistFilters
               idPrefix="wl-m"
+              collapsible
               items={items}
               value={filters}
               onChange={setFilters}

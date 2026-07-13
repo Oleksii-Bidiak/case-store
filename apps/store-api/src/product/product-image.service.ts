@@ -21,7 +21,7 @@ import {
   productDetailSlugKey,
   PRODUCT_LIST_PREFIX,
 } from '../cache';
-import { IStorageService, ImageProcessor, STORAGE_SERVICE } from '../storage';
+import { IStorageService, ImageProcessor, PRODUCTS_SUBDIR, STORAGE_SERVICE } from '../storage';
 
 /** Allowed image MIME types mapped to their canonical file extension. */
 const ALLOWED_MIME_EXT: Record<string, string> = {
@@ -111,7 +111,7 @@ export class ProductImageService {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const { buffer, ext, blurDataUrl } = await this.prepareFile(file);
-      const relativePath = await this.storage.save(buffer, ext);
+      const relativePath = await this.storage.save(buffer, ext, PRODUCTS_SUBDIR);
       inputs.push({
         id: randomUUID(),
         productId,
@@ -142,11 +142,20 @@ export class ProductImageService {
    * Pre-process one accepted upload for storage. JPEG/PNG/WebP are re-encoded to
    * WebP (smaller payload) with a base64 LQIP for blur-up; animated GIFs are
    * passed through untouched with no LQIP so the animation survives.
+   *
+   * The GIF branch is the only path that writes client bytes to disk verbatim, so
+   * it cannot trust the declared MIME type: the buffer is sniffed with `sharp`
+   * first. Without that, any file (an HTML/JS polyglot) uploaded as `image/gif`
+   * would be stored and then served from our own origin.
    */
   private async prepareFile(
     file: Express.Multer.File,
   ): Promise<{ buffer: Buffer; ext: string; blurDataUrl: string | null }> {
     if (file.mimetype === GIF_MIME) {
+      const format = await this.imageProcessor.detectFormat(file.buffer);
+      if (format !== 'gif') {
+        throw new UnsupportedMediaTypeException('File contents are not a valid GIF image');
+      }
       return { buffer: file.buffer, ext: ALLOWED_MIME_EXT[GIF_MIME], blurDataUrl: null };
     }
     const { webp, blurDataUrl } = await this.imageProcessor.process(file.buffer);

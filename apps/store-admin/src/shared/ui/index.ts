@@ -81,6 +81,11 @@ export {
   type ReorderUndoButtonProps,
 } from "./reorder-undo-button";
 export { SortableColumnHeader } from "./sortable-column-header";
+export {
+  SingleImageUpload,
+  type SingleImageUploadLabels,
+  type SingleImageUploadProps,
+} from "./single-image-upload";
 export { Skeleton } from "./skeleton";
 export { AdminFormSkeleton } from "./admin-form-skeleton";
 export { Textarea } from "./textarea";

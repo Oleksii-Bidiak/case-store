@@ -47,4 +47,21 @@ export class ImageProcessor {
       blurDataUrl: `data:image/webp;base64,${lqip.toString('base64')}`,
     };
   }
+
+  /**
+   * Sniff the real image format from the file's own bytes (`'gif'`, `'png'`,
+   * `'jpeg'`, `'webp'`, …), or null when the buffer is not a decodable image.
+   *
+   * Callers MUST use this on any path that writes an upload through untouched:
+   * the client-supplied Content-Type is a claim, not a fact, and a buffer that is
+   * never re-encoded would otherwise land on disk exactly as uploaded.
+   */
+  async detectFormat(buffer: Buffer): Promise<string | null> {
+    try {
+      const { format } = await sharp(buffer).metadata();
+      return format ?? null;
+    } catch {
+      return null;
+    }
+  }
 }

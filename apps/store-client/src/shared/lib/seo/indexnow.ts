@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { SITE_URL } from "@/shared/config";
 
 /**
@@ -64,7 +65,11 @@ export function buildIndexNowPayload(
  * api.indexnow.org. Also a no-op when `INDEXNOW_KEY` is unset (the default),
  * mirroring the REVALIDATE_SECRET dev/prod gate in `app/api/revalidate/route.ts`.
  * Failures (non-2xx or a rejected fetch) are logged via `console.warn` and
- * swallowed — an indexing ping must never surface to the admin write path.
+ * swallowed — an indexing ping must never surface to the admin write path — but
+ * they are also reported to Sentry: the caller runs inside `after()` and ignores
+ * the result, so console output in the Node runtime is the only other trace, and
+ * it never reaches the SDK on its own. A rejected fetch is a real error; a non-2xx
+ * answer from IndexNow is a message (there is no Error object to capture).
  */
 export async function submitToIndexNow(urls: string[]): Promise<void> {
   if (process.env.NODE_ENV !== "production") {
@@ -83,11 +88,12 @@ export async function submitToIndexNow(urls: string[]): Promise<void> {
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
-      console.warn(
-        `[indexnow] Submission rejected with status ${res.status} for ${payload.urlList.length} url(s)`,
-      );
+      const message = `[indexnow] Submission rejected with status ${res.status} for ${payload.urlList.length} url(s)`;
+      console.warn(message);
+      Sentry.captureMessage(message, "warning");
     }
   } catch (err) {
     console.warn("[indexnow] Submission failed:", err);
+    Sentry.captureException(err, { tags: { integration: "indexnow" } });
   }
 }

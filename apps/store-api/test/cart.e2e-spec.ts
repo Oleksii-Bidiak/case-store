@@ -114,6 +114,9 @@ describe('CartController (e2e)', () => {
     price: { toString: () => '29.99' },
     compareAtPrice: null,
     isActive: true,
+    // TASK-297: the line's availability now folds in the CATEGORY's status, so
+    // CART_ITEMS_INCLUDE joins it — the mock must supply it or fromPrisma throws.
+    category: { isActive: true },
     // CartItemEntity.fromPrisma reads product.images (CART_ITEMS_INCLUDE always
     // selects it in prod); the mock must supply it or `images[0]` throws → 500.
     images: [],
@@ -264,6 +267,29 @@ describe('CartController (e2e)', () => {
         uniqueItems: 0,
       });
     });
+
+    // A line already sitting in the cart when its category is withdrawn (TASK-297)
+    // must READ BACK as unavailable rather than vanish — the shopper needs to see
+    // what happened to it. It reuses the SAME `isActive: false` flag a deactivated
+    // product raises, so the storefront needs no second code path.
+    it('marks an existing line unavailable when its CATEGORY was deactivated', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      const withdrawnItem = {
+        ...testCartItem,
+        product: { ...testProduct, isActive: true, category: { isActive: false } },
+      };
+      cartRepositoryMock.findOrCreate.mockResolvedValue(
+        makeCartWithItems(userA.id, [withdrawnItem] as CartWithItems['items']),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/api/cart')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data.items).toHaveLength(1);
+      expect(response.body.data.items[0].isActive).toBe(false);
+    });
   });
 
   // ─── POST /api/cart/items ───────────────────────────────────────────────────
@@ -279,6 +305,7 @@ describe('CartController (e2e)', () => {
         name: 'iPhone 15 Pro Case — Clear MagSafe',
         stock: 50,
         isActive: true,
+        category: { isActive: true },
       });
       cartRepositoryMock.addItem.mockResolvedValue(makeCartWithItems(userA.id));
 
@@ -302,6 +329,7 @@ describe('CartController (e2e)', () => {
         name: 'iPhone 15 Pro Case — Clear MagSafe',
         stock: 50,
         isActive: true,
+        category: { isActive: true },
       });
       // Repository upsert has already incremented the quantity to 2
       cartRepositoryMock.addItem.mockResolvedValue(
@@ -329,6 +357,7 @@ describe('CartController (e2e)', () => {
         name: 'iPhone 15 Pro Case — Clear MagSafe',
         stock: 5,
         isActive: true,
+        category: { isActive: true },
       });
 
       await request(app.getHttpServer())
@@ -361,6 +390,33 @@ describe('CartController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .send({ productId: 'not-a-uuid', quantity: 1 })
         .expect(400);
+    });
+
+    // ─── a withdrawn category cannot be added to a cart (TASK-297) ───────────
+    //
+    // The product is active and in stock — only its CATEGORY was deactivated. The
+    // shopper must still be refused, and (as with every other guard here) nothing
+    // may be persisted: a 400 that leaves a ghost row is the bug this suite exists
+    // to prevent.
+    it('should return 400 and NOT persist when the product CATEGORY is deactivated', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      cartRepositoryMock.findOrCreate.mockResolvedValue(emptyCart(userA.id));
+      cartRepositoryMock.findProductForCartValidation.mockResolvedValue({
+        id: VALID_PRODUCT_UUID,
+        name: 'iPhone 15 Pro Case — Clear MagSafe',
+        stock: 50,
+        isActive: true,
+        category: { isActive: false },
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/cart/items')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ productId: VALID_PRODUCT_UUID, quantity: 1 })
+        .expect(400);
+
+      expect(response.body.message).toContain('no longer available');
+      expect(cartRepositoryMock.addItem).not.toHaveBeenCalled();
     });
   });
 

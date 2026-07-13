@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { Loader2 } from "lucide-react";
-import type { ProductImageEntity } from "@/entities/product";
+// Own slice — importing the `@/entities/product` barrel from inside it would be
+// a module cycle (barrel → ui → barrel), so the type comes straight from the
+// generated models the barrel itself re-exports.
+import type { ProductImageEntity } from "@/shared/api/generated/models";
 import { dict } from "@/shared/config";
 import { BLUR_PLACEHOLDER, ProductThumb } from "@/shared/ui";
 

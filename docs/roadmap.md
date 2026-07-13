@@ -1,5 +1,15 @@
 # Project Roadmap
 
+> ## ⚠️ HISTORICAL DOCUMENT — DO NOT PLAN AGAINST THIS FILE
+>
+> The Phase 1–5 breakdown below is the **original 2025 plan** and no longer reflects how work is
+> organized. The **actual, current program of work** lives in [`BACKLOG.md`](../BACKLOG.md)
+> (section _Roadmap_), structured as **Етапи 0–7** — that file is the single source of truth for
+> task status and for "what's next".
+>
+> This file is kept only as a record of the initial phasing. Phase names may still be referenced
+> by older `docs/plans/NNN-*.md` headers.
+
 ## Overview
 
 This roadmap outlines the phased development of the Mobile Accessories E-Commerce Store. Each phase builds on the previous one, delivering incremental value.
@@ -10,12 +20,12 @@ This roadmap outlines the phased development of the Mobile Accessories E-Commerc
 
 **Goal:** Set up the monorepo, database, and core backend APIs.
 
-| Area | Deliverables |
-|------|-------------|
-| **Infrastructure** | Monorepo setup (npm workspaces), Docker Compose (PostgreSQL, Redis), CI/CD pipeline |
-| **Database** | Prisma schema for core entities (User, Product, Category, Cart, Order), seed data |
-| **Backend Core** | Auth module (register, login, refresh tokens), User module, Product module (CRUD), Category module |
-| **API Contract** | Swagger/OpenAPI spec, Orval configuration, generated typed hooks |
+| Area                  | Deliverables                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------- |
+| **Infrastructure**    | Monorepo setup (npm workspaces), Docker Compose (PostgreSQL, Redis), CI/CD pipeline                   |
+| **Database**          | Prisma schema for core entities (User, Product, Category, Cart, Order), seed data                     |
+| **Backend Core**      | Auth module (register, login, refresh tokens), User module, Product module (CRUD), Category module    |
+| **API Contract**      | Swagger/OpenAPI spec, Orval configuration, generated typed hooks                                      |
 | **Frontend Scaffold** | Next.js App Router setup (store-client, store-admin), FSD folder structure, shared UI kit (shadcn/ui) |
 
 **Exit Criteria:** Can register/login, browse products via API, Swagger docs available.
@@ -26,13 +36,13 @@ This roadmap outlines the phased development of the Mobile Accessories E-Commerc
 
 **Goal:** Functional storefront where users can browse, add to cart, and prepare for checkout.
 
-| Area | Deliverables |
-|------|-------------|
-| **Cart Backend** | Cart module (add/remove/update items, calculate totals with discounts), CartRepository, CartService (TDD) |
-| **Storefront Pages** | Home page, product listing, product detail, cart page |
-| **Frontend Features** | AddToCart, CartWidget, ProductCard, CategoryNav |
-| **Search** | Basic product search (database-level), category filtering |
-| **State Management** | TanStack Query setup, cart state with optimistic updates |
+| Area                  | Deliverables                                                                                              |
+| --------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Cart Backend**      | Cart module (add/remove/update items, calculate totals with discounts), CartRepository, CartService (TDD) |
+| **Storefront Pages**  | Home page, product listing, product detail, cart page                                                     |
+| **Frontend Features** | AddToCart, CartWidget, ProductCard, CategoryNav                                                           |
+| **Search**            | Basic product search (database-level), category filtering                                                 |
+| **State Management**  | TanStack Query setup, cart state with optimistic updates                                                  |
 
 **Exit Criteria:** Users can browse products, add them to cart, see totals with discounts applied.
 
@@ -42,12 +52,12 @@ This roadmap outlines the phased development of the Mobile Accessories E-Commerc
 
 **Goal:** Complete purchase flow from cart to order confirmation.
 
-| Area | Deliverables |
-|------|-------------|
-| **Order Backend** | Order module (create from cart, status transitions), OrderRepository, OrderService (TDD) |
-| **Payment Integration** | Payment gateway stub (Stripe or similar), webhook handler |
-| **Checkout Frontend** | Checkout form (address, shipping, payment), order confirmation page |
-| **Email** | Order confirmation email (Nodemailer or similar service) |
+| Area                    | Deliverables                                                                             |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| **Order Backend**       | Order module (create from cart, status transitions), OrderRepository, OrderService (TDD) |
+| **Payment Integration** | Payment gateway stub (Stripe or similar), webhook handler                                |
+| **Checkout Frontend**   | Checkout form (address, shipping, payment), order confirmation page                      |
+| **Email**               | Order confirmation email (Nodemailer or similar service)                                 |
 
 **Exit Criteria:** User can complete a purchase, receive order confirmation.
 
@@ -57,13 +67,13 @@ This roadmap outlines the phased development of the Mobile Accessories E-Commerc
 
 **Goal:** Admin users can manage products, categories, orders, and users.
 
-| Area | Deliverables |
-|------|-------------|
-| **Admin Auth** | Admin login, role-based access control (RBAC) |
-| **Product Management** | CRUD for products, categories, image upload |
-| **Order Management** | View orders, update status (processing, shipped, delivered) |
-| **User Management** | View users, ban/unban accounts |
-| **Dashboard** | Revenue metrics, order counts, popular products |
+| Area                   | Deliverables                                                |
+| ---------------------- | ----------------------------------------------------------- |
+| **Admin Auth**         | Admin login, role-based access control (RBAC)               |
+| **Product Management** | CRUD for products, categories, image upload                 |
+| **Order Management**   | View orders, update status (processing, shipped, delivered) |
+| **User Management**    | View users, ban/unban accounts                              |
+| **Dashboard**          | Revenue metrics, order counts, popular products             |
 
 **Exit Criteria:** Admin can manage the entire catalog and order flow.
 
@@ -73,14 +83,14 @@ This roadmap outlines the phased development of the Mobile Accessories E-Commerc
 
 **Goal:** Production readiness — performance, security, SEO, monitoring.
 
-| Area | Deliverables |
-|------|-------------|
-| **Performance** | Redis caching for product listings, CDN for images, pagination optimization |
-| **SEO** | Dynamic sitemap.xml, Schema.org microdata, meta tags, SSR for product pages |
-| **Security** | Rate limiting, CSRF protection, input sanitization audit,Helmet headers |
-| **Monitoring** | Pino structured logging, Sentry error tracking, request duration logging |
-| **Abandoned Carts** | Detection + email follow-up (cron job) |
-| **Analytics** | Google Analytics 4 e-commerce events, Facebook Pixel integration |
+| Area                | Deliverables                                                                |
+| ------------------- | --------------------------------------------------------------------------- |
+| **Performance**     | Redis caching for product listings, CDN for images, pagination optimization |
+| **SEO**             | Dynamic sitemap.xml, Schema.org microdata, meta tags, SSR for product pages |
+| **Security**        | Rate limiting, CSRF protection, input sanitization audit,Helmet headers     |
+| **Monitoring**      | Pino structured logging, Sentry error tracking, request duration logging    |
+| **Abandoned Carts** | Detection + email follow-up (cron job)                                      |
+| **Analytics**       | Google Analytics 4 e-commerce events, Facebook Pixel integration            |
 
 **Exit Criteria:** Application passes security audit, loads fast, SEO-optimized, fully monitored.
 
@@ -88,7 +98,8 @@ This roadmap outlines the phased development of the Mobile Accessories E-Commerc
 
 ## How to Use This Roadmap
 
-1. **Start a phase:** Use `/plan Phase N: <description>` to generate a detailed plan.
+1. **Start a piece of work:** Use `/planer <feature>` to generate a detailed plan (the custom
+   command is `/planer`; `/plan` is Claude Code's built-in plan mode).
 2. **Track progress:** Check `BACKLOG.md` for current task status.
 3. **Continue work:** Say "What's next?" and the agent will read BACKLOG.md and suggest the next task.
 4. **Complete a phase:** All tasks in BACKLOG.md marked as ✅ before moving to the next phase.

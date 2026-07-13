@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { CarouselSource } from '@prisma/client';
+import { CarouselPlacement, CarouselSource } from '@prisma/client';
 import { PublicProductEntity } from '../../product/entities';
 import type { CarouselEntity } from './carousel.entity';
 
@@ -28,7 +28,15 @@ export class PublicCarouselEntity {
   source!: CarouselSource;
 
   @ApiProperty({
-    description: 'Homepage display order across all carousels (lower = first)',
+    description:
+      'Where the carousel surfaces on the homepage — HOME_TABS feeds one tab of the "Популярне" section (title = tab label), HOME_RAILS is a standalone rail',
+    enum: CarouselPlacement,
+    example: CarouselPlacement.HOME_RAILS,
+  })
+  placement!: CarouselPlacement;
+
+  @ApiProperty({
+    description: 'Display order WITHIN the placement (lower = first)',
     example: 0,
   })
   sortOrder!: number;
@@ -43,13 +51,14 @@ export class PublicCarouselEntity {
    * Assemble a PublicCarouselEntity from an admin entity + its resolved products.
    */
   static fromEntity(
-    carousel: Pick<CarouselEntity, 'id' | 'title' | 'source' | 'sortOrder'>,
+    carousel: Pick<CarouselEntity, 'id' | 'title' | 'source' | 'placement' | 'sortOrder'>,
     products: PublicProductEntity[],
   ): PublicCarouselEntity {
     const entity = new PublicCarouselEntity();
     entity.id = carousel.id;
     entity.title = carousel.title;
     entity.source = carousel.source;
+    entity.placement = carousel.placement;
     entity.sortOrder = carousel.sortOrder;
     entity.products = products;
     return entity;

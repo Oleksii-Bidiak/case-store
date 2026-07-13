@@ -226,10 +226,26 @@ export class CategoryRepository {
 
   /**
    * Find a category by slug.
-   * Returns the category record or null if not found.
+   *
+   * @param options.activeOnly - when `true` (the DEFAULT), a deactivated category
+   *   resolves to `null`, so the public category page 404s it (TASK-297: an
+   *   inactive category is WITHDRAWN FROM SALE, not merely hidden from the menu).
+   *   Mirrors `ProductRepository.findBySlugWithRelations` (TASK-145).
+   *
+   *   Callers doing a SLUG-UNIQUENESS check must pass `{ activeOnly: false }` —
+   *   an inactive category still occupies its slug, and a create/update that
+   *   could not see it would sail past the guard straight into the unique
+   *   constraint.
+   *
+   * `findFirst`, not `findUnique`: `isActive` is not part of the unique index.
    */
-  findBySlug(slug: string): Promise<Category | null> {
-    return this.prisma.category.findUnique({ where: { slug } });
+  findBySlug(slug: string, options?: { activeOnly?: boolean }): Promise<Category | null> {
+    return this.prisma.category.findFirst({
+      where: {
+        slug,
+        ...((options?.activeOnly ?? true) ? { isActive: true } : {}),
+      },
+    });
   }
 
   /**

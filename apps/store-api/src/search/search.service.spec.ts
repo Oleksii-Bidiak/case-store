@@ -218,6 +218,11 @@ describe('SearchService', () => {
       expect(docs[0].searchTerms).toEqual(['айфон', 'чохол', 'чохли']);
     });
 
+    // A null source means "not on sale" — missing, soft-deleted, deactivated, or
+    // (TASK-297) filed in a DEACTIVATED CATEGORY. This delete is therefore the ONLY
+    // de-indexing path a category withdrawal needs: `afterStatusChange` pushes the
+    // subtree's products back through `indexProduct`, each resolves to null here, and
+    // its document is evicted. Re-activating the category re-indexes them the same way.
     it('removes the product when it is not indexable (source is null)', async () => {
       repo.findOneForIndex.mockResolvedValue(null);
 
@@ -305,8 +310,17 @@ describe('SearchService', () => {
 
       const result = await service.search('case', 1, 20);
 
+      // `categoryActiveOnly` is what keeps the fallback honest (TASK-297): the Meili
+      // index has no documents for a withdrawn category's products, so the Postgres
+      // path must not resurrect them the moment the engine goes down.
       expect(repo.findAll).toHaveBeenCalledWith(
-        expect.objectContaining({ search: 'case', isActive: true, page: 1, limit: 20 }),
+        expect.objectContaining({
+          search: 'case',
+          isActive: true,
+          categoryActiveOnly: true,
+          page: 1,
+          limit: 20,
+        }),
       );
       expect(result.data).toHaveLength(1);
       expect(result.data[0]).toBeInstanceOf(PublicProductEntity);
@@ -327,20 +341,23 @@ describe('SearchService', () => {
   // ─── suggest ─────────────────────────────────────────────────────────────────
 
   describe('suggest', () => {
-    it('returns lightweight hits from the Meili index', async () => {
+    it('re-hydrates Meili hit ids through the active-category-gated card read, preserving order', async () => {
+      // suggest no longer trusts the raw index rows: it re-reads the hit ids via
+      // findByIdsForCards (which filters category:{isActive:true}) so a stale doc
+      // for a withdrawn category never reaches the dropdown (TASK-297).
       meili.search.mockResolvedValue({
-        hits: [
-          {
-            id: 'product-1',
-            name: 'iPhone 15 Case',
-            slug: 'iphone-15-case',
-            price: 29.99,
-            compareAtPrice: 39.99,
-            primaryImageUrl: 'http://img/1.jpg',
-          },
-        ] as never,
-        estimatedTotalHits: 1,
+        hits: [{ id: 'product-2' }, { id: 'product-1' }] as never,
+        estimatedTotalHits: 2,
       });
+      repo.findByIdsForCards.mockResolvedValue([
+        makeProduct({ id: 'product-1', name: 'iPhone 15 Case', slug: 'iphone-15-case' }),
+        makeProduct({
+          id: 'product-2',
+          name: 'Screen Protector',
+          slug: 'screen-protector',
+          compareAtPrice: { toString: () => '39.99' },
+        }),
+      ] as never);
 
       const res = await service.suggest('iphone');
 
@@ -348,16 +365,34 @@ describe('SearchService', () => {
         limit: SUGGEST_LIMIT,
         filter: ['isActive = true'],
       });
-      expect(res).toEqual([
-        {
-          id: 'product-1',
-          name: 'iPhone 15 Case',
-          slug: 'iphone-15-case',
-          price: '29.99',
-          compareAtPrice: '39.99',
-          primaryImageUrl: 'http://img/1.jpg',
-        },
-      ]);
+      expect(repo.findByIdsForCards).toHaveBeenCalledWith(['product-2', 'product-1']);
+      // Order follows Meili relevance (product-2 first), not the repo order.
+      expect(res.map((s) => s.id)).toEqual(['product-2', 'product-1']);
+      expect(res[0]).toEqual({
+        id: 'product-2',
+        name: 'Screen Protector',
+        slug: 'screen-protector',
+        price: '29.99',
+        compareAtPrice: '39.99',
+        primaryImageUrl: 'http://img/1.jpg',
+      });
+    });
+
+    it('drops a stale index hit whose product is no longer card-visible (withdrawn category, TASK-297)', async () => {
+      // Meili still ranks a product whose category was pulled from sale (the
+      // fire-and-forget de-index never landed); findByIdsForCards does not return
+      // it, so it vanishes from the dropdown instead of surfacing a dead PDP link.
+      meili.search.mockResolvedValue({
+        hits: [{ id: 'live-product' }, { id: 'withdrawn-product' }] as never,
+        estimatedTotalHits: 2,
+      });
+      repo.findByIdsForCards.mockResolvedValue([
+        makeProduct({ id: 'live-product', slug: 'live' }),
+      ] as never);
+
+      const res = await service.suggest('case');
+
+      expect(res.map((s) => s.id)).toEqual(['live-product']);
     });
 
     it('returns an empty array for a blank query without hitting the engine', async () => {
@@ -374,7 +409,13 @@ describe('SearchService', () => {
       const res = await service.suggest('iphone');
 
       expect(repo.findAll).toHaveBeenCalledWith(
-        expect.objectContaining({ search: 'iphone', isActive: true, limit: SUGGEST_LIMIT }),
+        expect.objectContaining({
+          search: 'iphone',
+          isActive: true,
+          // Same on-sale rule as the results page (TASK-297).
+          categoryActiveOnly: true,
+          limit: SUGGEST_LIMIT,
+        }),
       );
       expect(res[0]).toEqual(
         expect.objectContaining({ id: 'product-1', slug: 'iphone-15-case', price: '29.99' }),

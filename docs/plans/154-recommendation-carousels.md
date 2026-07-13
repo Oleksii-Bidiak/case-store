@@ -1,6 +1,6 @@
 # Plan 154 — Admin-managed recommendation carousels (TASK-139)
 
-> **Status:** ⬜ To Do
+> **Status:** ✅ Done (TASK-139 shipped 2026-07-12; live smoke → manual QA)
 > **Phase:** Roadmap — «Пізніша хвиля» (post-Етап-7 backlog)
 > **Created:** 2026-07-11
 > **BACKLOG task:** TASK-139 (single task, no BACKLOG split — internal work breakdown
@@ -529,7 +529,7 @@ imageSizes={RAIL_IMAGE_SIZES} />` items `PopularRail`/`RecentlyViewed` already u
       `schema.prisma`; `Category.carousels`/`Product.carouselItems` back-relation fields added
       (the only two non-append edits, isolated to single lines)
 - [ ] `npx prisma generate` succeeds (inline dummy `DATABASE_URL` in-worktree); `npx prisma db
-    push` applied to the dev DB and `store_test` once on `develop` after merge (not required
+push` applied to the dev DB and `store_test` once on `develop` after merge (not required
       in-worktree per the no-e2e/no-live-DB constraint)
 - [ ] `npm run typecheck -w apps/store-api` clean
 
@@ -687,13 +687,13 @@ component tests required) · **Depends on:** TASK-139-C
       §Frontend; renders nothing when the filtered (`products.length > 0`) carousel list is empty;
       renders one section per surviving carousel using `carousel.title` directly as the heading
 - [ ] `app/page.tsx` — `fetchPublishedCarousels()` call added, `<RecommendationCarousels
-    carousels={carousels} />` inserted immediately after `<PopularRail />` and before
+carousels={carousels} />` inserted immediately after `<PopularRail />` and before
       `<PromoBanner ... />` (the ONLY edit to this file across the whole wave, per hotspot
       ownership)
 - [ ] New minimal `dict.carousels` namespace (`prevAria`/`nextAria` only) appended at the end of
       `dictionary.ts`
 - [ ] `widgets/index.ts` — append `export { RecommendationCarousels } from
-    "./recommendation-carousels";`
+"./recommendation-carousels";`
 - [ ] RTL specs for `CarouselRail` (renders products, scroll buttons work, no crash on a
       single-item carousel) and `RecommendationCarousels` (empty-carousels-array → renders
       nothing; mixed empty/non-empty carousels → only non-empty ones render)

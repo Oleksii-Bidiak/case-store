@@ -26,6 +26,12 @@ export interface WishlistWithItems {
       compareAtPrice: { toString(): string } | null;
       stock: number;
       isActive: boolean;
+      /**
+       * The owning category's own status (TASK-297). A saved product whose
+       * category was deactivated is withdrawn from sale just as surely as one
+       * whose product was, so `WishlistItemEntity` folds this into `isActive`.
+       */
+      category: { isActive: boolean };
       images: Array<{ url: string }>;
     };
   }>;
@@ -54,6 +60,10 @@ const WISHLIST_ITEMS_INCLUDE = {
           compareAtPrice: true,
           stock: true,
           isActive: true,
+          // Whether the category is still on sale (TASK-297) — pulled in the SAME
+          // query as the cart does, so marking a withdrawn saved product
+          // unavailable costs no extra round trip. Mirrors CART_ITEMS_INCLUDE.
+          category: { select: { isActive: true } },
           images: {
             orderBy: [{ isPrimary: 'desc' as const }, { sortOrder: 'asc' as const }],
             take: 1,

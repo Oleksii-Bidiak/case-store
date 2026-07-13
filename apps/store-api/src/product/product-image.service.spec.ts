@@ -42,7 +42,7 @@ describe('ProductImageService', () => {
     updateMany: jest.Mock;
   };
   let storage: { save: jest.Mock; delete: jest.Mock };
-  let imageProcessor: { process: jest.Mock };
+  let imageProcessor: { process: jest.Mock; detectFormat: jest.Mock };
   let cache: { del: jest.Mock; delByPrefix: jest.Mock };
 
   beforeEach(async () => {
@@ -65,6 +65,7 @@ describe('ProductImageService', () => {
         webp: Buffer.from('optimized-webp'),
         blurDataUrl: 'data:image/webp;base64,BLUR',
       }),
+      detectFormat: jest.fn().mockResolvedValue('gif'),
     };
     cache = {
       del: jest.fn().mockResolvedValue(undefined),
@@ -134,9 +135,10 @@ describe('ProductImageService', () => {
       // Each accepted image goes through the processor before storage.
       expect(imageProcessor.process).toHaveBeenCalledTimes(1);
       // The WebP buffer (not the original) is stored, with a `webp` extension.
-      const [savedBuffer, savedExt] = storage.save.mock.calls[0];
+      const [savedBuffer, savedExt, savedSubdir] = storage.save.mock.calls[0];
       expect(savedBuffer).toEqual(Buffer.from('optimized-webp'));
       expect(savedExt).toBe('webp');
+      expect(savedSubdir).toBe('products');
 
       const rows = imageRepository.bulkCreate.mock.calls[0][0];
       expect(rows[0].blurDataUrl).toBe('data:image/webp;base64,BLUR');
@@ -149,7 +151,7 @@ describe('ProductImageService', () => {
 
       const result = await service.uploadImages(PRODUCT_ID, [gif]);
 
-      // GIFs skip the processor entirely to preserve animation.
+      // GIFs skip the re-encode entirely to preserve animation.
       expect(imageProcessor.process).not.toHaveBeenCalled();
       const [savedBuffer, savedExt] = storage.save.mock.calls[0];
       expect(savedBuffer).toEqual(Buffer.from('gif-bytes'));
@@ -158,6 +160,23 @@ describe('ProductImageService', () => {
       const rows = imageRepository.bulkCreate.mock.calls[0][0];
       expect(rows[0].blurDataUrl).toBeNull();
       expect(result[0].blurDataUrl).toBeNull();
+    });
+
+    it('rejects a non-GIF file uploaded as image/gif instead of writing it to disk', async () => {
+      // The GIF branch is the only one that stores client bytes verbatim, so it
+      // must sniff the buffer rather than trust the declared Content-Type — a
+      // script polyglot would otherwise be served from our own origin.
+      imageProcessor.detectFormat.mockResolvedValue(null);
+      const polyglot = makeFile({
+        mimetype: 'image/gif',
+        buffer: Buffer.from('<script>alert(1)</script>'),
+      });
+
+      await expect(service.uploadImages(PRODUCT_ID, [polyglot])).rejects.toThrow(
+        UnsupportedMediaTypeException,
+      );
+      expect(storage.save).not.toHaveBeenCalled();
+      expect(imageRepository.bulkCreate).not.toHaveBeenCalled();
     });
 
     it('does not mark a new image primary when the product already has images', async () => {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { WishlistItemEntity } from "@/entities/wishlist";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
+import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { ProductCardImage } from "@/shared/ui";
 import { formatMoney, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
@@ -54,6 +55,17 @@ export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
           <WishlistToggleButton
             productId={item.productId}
             productName={item.productName}
+          />
+        </div>
+
+        {/* Quick-view — the same hover-reveal overlay the catalog ProductCard
+            injects into its `hoverAction` slot: hidden (and non-interactive to
+            pointers) until the card is hovered or receives keyboard focus, then
+            slides up. Above the stretched link (z-20) so it opens without
+            navigating. The trigger only needs the item's name + slug. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 translate-y-2 p-2.5 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100 motion-reduce:transition-none">
+          <ProductQuickViewTrigger
+            product={{ name: item.productName, slug: item.productSlug }}
           />
         </div>
       </div>

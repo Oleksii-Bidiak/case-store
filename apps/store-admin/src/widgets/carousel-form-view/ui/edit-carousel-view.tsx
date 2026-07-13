@@ -125,6 +125,7 @@ function mapCarouselToFormValues(
   return {
     title: carousel.title,
     source: carousel.source,
+    placement: carousel.placement,
     categoryId: carousel.categoryId ?? "",
     itemLimit: String(carousel.itemLimit),
     sortOrder: String(carousel.sortOrder),

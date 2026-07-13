@@ -4,6 +4,11 @@ import { AttributeType } from '@prisma/client';
 import { AttributeDefinitionService } from './attribute-definition.service';
 import { AttributeDefinitionRepository } from './attribute-definition.repository';
 import { CategoryRepository } from '../category';
+import {
+  ReorderDuplicateIdError,
+  ReorderNotFoundError,
+  ReorderStaleError,
+} from '../common/reorder';
 
 describe('AttributeDefinitionService', () => {
   let service: AttributeDefinitionService;
@@ -136,6 +141,71 @@ describe('AttributeDefinitionService', () => {
       repo.delete.mockResolvedValue({ id: 'd1' });
 
       expect(await service.delete('d1')).toEqual({ id: 'd1' });
+    });
+  });
+
+  // ─── reorder (TASK-298) ───────────────────────────────────────────────────
+
+  describe('reorder', () => {
+    const a = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const b = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    const makeDef = (id: string, sortOrder: number) => ({
+      id,
+      categoryId: 'cat',
+      key: `k-${id}`,
+      label: `L-${id}`,
+      type: AttributeType.TEXT,
+      unit: null,
+      options: null,
+      isFilterable: false,
+      sortOrder,
+    });
+
+    it('returns the refreshed list read INSIDE the reorder transaction (no second read)', async () => {
+      repo.reorder.mockResolvedValue([makeDef(b, 0), makeDef(a, 1)]);
+
+      const result = await service.reorder('cat', { orderedIds: [b, a] });
+
+      expect(repo.reorder).toHaveBeenCalledWith('cat', [b, a]);
+      expect(result.map((d) => d.id)).toEqual([b, a]);
+      // The refreshed list comes back from the reorder transaction itself.
+      expect(repo.findByCategoryId).not.toHaveBeenCalled();
+    });
+
+    it('404s when the category does not exist, without touching the repository', async () => {
+      categoryRepository.findById.mockResolvedValue(null);
+
+      await expect(service.reorder('ghost', { orderedIds: [a] })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(repo.reorder).not.toHaveBeenCalled();
+    });
+
+    it('maps a STALE (partial) payload onto a 409 carrying the stable code', async () => {
+      repo.reorder.mockRejectedValue(new ReorderStaleError());
+
+      await expect(service.reorder('cat', { orderedIds: [a] })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+
+    it('maps a duplicate id onto a 400 and an unknown id onto a 404', async () => {
+      repo.reorder.mockRejectedValueOnce(new ReorderDuplicateIdError());
+      await expect(service.reorder('cat', { orderedIds: [a, a] })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      repo.reorder.mockRejectedValueOnce(new ReorderNotFoundError());
+      await expect(service.reorder('cat', { orderedIds: [a, b] })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('lets a non-domain failure through untouched (a 500, never a misleading 4xx)', async () => {
+      repo.reorder.mockRejectedValue(new Error('connection reset'));
+
+      await expect(service.reorder('cat', { orderedIds: [a] })).rejects.toThrow('connection reset');
     });
   });
 });

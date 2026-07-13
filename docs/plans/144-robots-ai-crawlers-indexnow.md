@@ -1,6 +1,6 @@
 # Plan 144 — Robots AI-Crawler Stanza + IndexNow
 
-> **Status:** 🔄 In Progress
+> **Status:** ✅ Done (TASK-282 shipped; owner supplies the real `INDEXNOW_KEY`)
 > **Phase:** Roadmap Етап 7 — SEO/GEO (BACKLOG.md; source `docs/handoff-seo.md` §SEO-6)
 > **Created:** 2026-07-11
 > **Last Updated:** 2026-07-11

@@ -2,13 +2,16 @@
 
 import { useState } from "react";
 import { Eye } from "lucide-react";
-import type { PublicProductEntity } from "@/shared/api/generated/models";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
-import { ProductQuickView } from "./product-quick-view";
+import {
+  ProductQuickView,
+  type QuickViewProductRef,
+} from "./product-quick-view";
 
 interface ProductQuickViewTriggerProps {
-  product: PublicProductEntity;
+  /** Any list-card summary carrying a name + slug (full product or wishlist item). */
+  product: QuickViewProductRef;
   /** Extra classes for the trigger button (e.g. corner pinning on the list row). */
   className?: string;
 }

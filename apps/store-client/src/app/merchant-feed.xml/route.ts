@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { SITE_URL, SITE_NAME, CURRENCY, dict } from "@/shared/config";
 import { fetchAllActiveProducts } from "@/shared/lib/schema";
 import {
@@ -34,6 +35,10 @@ export async function GET(): Promise<Response> {
     }));
   } catch (err) {
     console.error("[merchant-feed] Failed to fetch products:", err);
+    // The empty feed is served with a 200 on purpose (see above), so nothing else
+    // signals the failure — without an explicit capture (console.* does not reach
+    // Sentry from the Node runtime) an emptied Merchant feed would go unnoticed.
+    Sentry.captureException(err, { tags: { route: "merchant-feed" } });
     // fall through with products = [] — a valid, empty-channel feed beats a 500
   }
 

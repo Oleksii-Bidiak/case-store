@@ -145,7 +145,13 @@ export default async function RootLayout({
   // ANNOUNCEMENT_BAR banner is global (lives above the header on every route),
   // so it is fetched here via the ISR-tagged helper. The same `banners` tag +
   // URL is reused by the homepage, so Next dedupes it to a single request.
-  const banners = await fetchPublishedBanners();
+  // The SEO singleton carries the admin-uploaded store logo (TASK-299); it is the
+  // same tagged URL `generateMetadata` above already read, so this costs no extra
+  // request. The Header is a Client Component, hence the plain serializable prop.
+  const [banners, seo] = await Promise.all([
+    fetchPublishedBanners(),
+    fetchSeoSettings(),
+  ]);
   const announcement = banners.ANNOUNCEMENT_BAR[0];
 
   return (
@@ -161,7 +167,7 @@ export default async function RootLayout({
           >
             {dict.nav.skipToContent}
           </a>
-          <Header announcement={announcement} />
+          <Header announcement={announcement} logoUrl={seo?.logoUrl} />
           <main id="main-content" className="flex-1">
             {children}
           </main>

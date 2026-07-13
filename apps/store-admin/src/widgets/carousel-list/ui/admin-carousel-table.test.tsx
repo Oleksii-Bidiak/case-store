@@ -11,17 +11,20 @@ import { AdminCarouselTable } from "./admin-carousel-table";
 
 type Source = "BESTSELLING" | "NEWEST" | "ON_SALE" | "CATEGORY" | "MANUAL";
 type Status = "DRAFT" | "SCHEDULED" | "PUBLISHED";
+type Placement = "HOME_TABS" | "HOME_RAILS";
 
 function makeCarouselRow(
   id: string,
   title: string,
   source: Source,
   status: Status,
+  placement: Placement = "HOME_RAILS",
 ) {
   return {
     id,
     title,
     source,
+    placement,
     categoryId: null,
     itemLimit: 12,
     sortOrder: 0,
@@ -61,6 +64,40 @@ describe("AdminCarouselTable", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(dict.carousels.statusLabels.DRAFT),
+    ).toBeInTheDocument();
+  });
+
+  // TASK-288: the operator must be able to tell a home tab from a rail at a glance.
+  it("renders a placement badge per row", async () => {
+    stubCarousels([
+      makeCarouselRow(
+        "carousel-1",
+        "Хіти тижня",
+        "BESTSELLING",
+        "PUBLISHED",
+        "HOME_TABS",
+      ),
+      makeCarouselRow(
+        "carousel-2",
+        "Редакція обирає",
+        "MANUAL",
+        "DRAFT",
+        "HOME_RAILS",
+      ),
+    ]);
+
+    renderWithProviders(<AdminCarouselTable />);
+
+    expect(
+      await screen.findByText(dict.carousels.placementLabels.HOME_TABS),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.carousels.placementLabels.HOME_RAILS),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", {
+        name: dict.carousels.colPlacement,
+      }),
     ).toBeInTheDocument();
   });
 

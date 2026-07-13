@@ -3,17 +3,14 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { useProductControllerFindBySlug } from "@/entities/product";
+import {
+  ProductImageGallery,
+  ProductStockIndicator,
+  useProductControllerFindBySlug,
+} from "@/entities/product";
 import type { PublicProductEntity } from "@/shared/api/generated/models";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
-// Imported from their leaf files rather than the widget barrel: the barrel also
-// re-exports ProductDetailView's whole subtree (specs tabs, reviews, sibling
-// navigator…), which would bloat every product-card chunk and form a folder
-// cycle (product-detail → product-quick-view → product-detail). The primitives
-// are also exported from the barrel (plan 156) for other consumers.
-import { ProductImageGallery } from "@/widgets/product-detail/ui/product-image-gallery";
-import { ProductStockIndicator } from "@/widgets/product-detail/ui/product-stock-indicator";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import {
@@ -28,9 +25,17 @@ import {
 } from "@/shared/ui";
 import { ProductQuickViewSkeleton } from "./product-quick-view-skeleton";
 
+/**
+ * The minimal list-card identity the quick-view needs up front: the name (dialog
+ * title + aria) and slug (the by-slug detail fetch + PDP link). Everything else
+ * hydrates from the detail response, so any card summary — a full
+ * `PublicProductEntity` or the trimmed wishlist item — can open the same preview.
+ */
+export type QuickViewProductRef = Pick<PublicProductEntity, "name" | "slug">;
+
 interface ProductQuickViewProps {
   /** The list-card entity the trigger was rendered for — supplies name/slug up front. */
-  product: PublicProductEntity;
+  product: QuickViewProductRef;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }

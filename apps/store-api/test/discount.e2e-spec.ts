@@ -51,7 +51,7 @@ describe('Discount (e2e)', () => {
     update: jest.fn(),
     softDeactivate: jest.fn(),
     countUserRedemptions: jest.fn(),
-    incrementRedeemed: jest.fn(),
+    tryIncrementRedeemed: jest.fn(),
     createRedemption: jest.fn(),
   };
 

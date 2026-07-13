@@ -62,6 +62,8 @@ const cartWithItems: CartWithItems = {
         compareAtPrice: null,
         stock: 50,
         isActive: true,
+        // TASK-297: checkout re-checks the owning category's status too.
+        category: { isActive: true },
         slug: 'test-product',
         images: [],
       },
@@ -79,6 +81,7 @@ const cartWithItems: CartWithItems = {
         compareAtPrice: null,
         stock: 30,
         isActive: true,
+        category: { isActive: true },
         slug: 'test-product',
         images: [],
       },
@@ -405,6 +408,49 @@ describe('OrderService', () => {
 
     it('should throw BadRequestException when a position has insufficient stock', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithLowStock);
+
+      await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(BadRequestException);
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    // ─── TASK-297: on-sale re-check at checkout ───────────────────────────────
+    // A line withdrawn from sale AFTER it entered the cart must not convert into
+    // an order. The add-to-cart / GET /cart gates never re-run for an existing
+    // line, so createOrder is the authoritative backstop — no order, no stock
+    // decrement, no confirmation email.
+
+    it('should throw BadRequestException when a line product has been deactivated (TASK-297)', async () => {
+      const cartWithInactiveProduct: CartWithItems = {
+        ...cartWithItems,
+        items: [
+          {
+            ...cartWithItems.items[0],
+            product: { ...cartWithItems.items[0].product, isActive: false },
+          },
+        ],
+      };
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithInactiveProduct);
+
+      await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(BadRequestException);
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when a line category has been withdrawn from sale (TASK-297)', async () => {
+      // The product itself is still active — only its category was deactivated.
+      const cartWithWithdrawnCategory: CartWithItems = {
+        ...cartWithItems,
+        items: [
+          {
+            ...cartWithItems.items[0],
+            product: {
+              ...cartWithItems.items[0].product,
+              isActive: true,
+              category: { isActive: false },
+            },
+          },
+        ],
+      };
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithWithdrawnCategory);
 
       await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(BadRequestException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();

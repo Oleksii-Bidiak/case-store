@@ -10,6 +10,8 @@ function buildPrismaCartItem(
     slug: string;
     images: Array<{ url: string }>;
     stock: number;
+    isActive: boolean;
+    category: { isActive: boolean };
   }> = {},
 ) {
   return {
@@ -26,6 +28,7 @@ function buildPrismaCartItem(
       compareAtPrice: { toString: () => '39.99' },
       stock: 50,
       isActive: true,
+      category: { isActive: true },
       images: [{ url: 'https://cdn.example.com/primary.jpg' }],
       ...productOverrides,
     },
@@ -76,5 +79,34 @@ describe('CartItemEntity.fromPrisma', () => {
     const entity = CartItemEntity.fromPrisma(buildPrismaCartItem({ stock: 500 }));
 
     expect(entity).not.toHaveProperty('stock');
+  });
+
+  // ─── withdrawn-from-sale lines (TASK-297) ─────────────────────────────────
+  //
+  // A line already sitting in someone's cart when its category is deactivated must
+  // read back as unavailable through the SAME `isActive` flag a deactivated product
+  // has always used — the storefront has exactly one "no longer available" branch.
+  it('marks the line inactive when the product is active but its CATEGORY was deactivated', () => {
+    const entity = CartItemEntity.fromPrisma(
+      buildPrismaCartItem({ isActive: true, category: { isActive: false } }),
+    );
+
+    expect(entity.isActive).toBe(false);
+  });
+
+  it('marks the line inactive when the product itself was deactivated', () => {
+    const entity = CartItemEntity.fromPrisma(
+      buildPrismaCartItem({ isActive: false, category: { isActive: true } }),
+    );
+
+    expect(entity.isActive).toBe(false);
+  });
+
+  it('keeps the line active only when BOTH the product and its category are active', () => {
+    const entity = CartItemEntity.fromPrisma(
+      buildPrismaCartItem({ isActive: true, category: { isActive: true } }),
+    );
+
+    expect(entity.isActive).toBe(true);
   });
 });

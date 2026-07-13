@@ -1,6 +1,6 @@
 # Plan 142 — Category Landing Pages `/categories/[slug]`
 
-> **Status:** 🔄 In Progress
+> **Status:** ✅ Done (TASK-277 shipped)
 > **Phase:** Roadmap Етап 7 — SEO/GEO (`docs/handoff-seo.md`, develop @ 847a1fb, 2026-07-07)
 > **Created:** 2026-07-11
 > **Last Updated:** 2026-07-11
@@ -330,7 +330,7 @@ fields on this entity).
 - [ ] `CategoryTreeNodeEntity.fromPrisma()` maps `category.updatedAt` at every nesting level
       (root + recursive `children`), extending the existing `fromPrisma` input type shape
 - [ ] `category.repository.spec.ts`: extend the existing `findCategoryTree — SEO meta
-    columns` describe block (or a sibling one) with an assertion that `updatedAt` round-trips
+columns` describe block (or a sibling one) with an assertion that `updatedAt` round-trips
       at both root and nested-child level (same fixture shape as the existing metaTitle test)
 - [ ] `category.service.spec.ts`: extend the existing `getCategoryTree` describe block with an
       assertion that `updatedAt` is surfaced unchanged (same pattern as the existing
@@ -363,17 +363,17 @@ below.
 **Acceptance Criteria:**
 
 - [ ] `findCategoryPathBySlug(nodes: CategoryTreeNodeEntity[], slug: string):
-    CategoryTreeNodeEntity[] | null` added to `widgets/product-list/model/catalog-header.ts`
+CategoryTreeNodeEntity[] | null` added to `widgets/product-list/model/catalog-header.ts`
       — DFS returning `[root, ...ancestors, matched]` in root-to-leaf order; `null` when the
       slug is not found anywhere in the tree
 - [ ] `catalog-header.test.ts`: new cases — root-level match returns a single-element array;
       a 2-and-3-level-deep match returns the full ancestor chain in order; an unknown slug
       returns `null`
 - [ ] `buildItemListSchema(items: { name: string; url: string; image?: string }[]):
-    Record<string, unknown>` added to `shared/lib/schema/buildItemListSchema.ts` — emits
+Record<string, unknown>` added to `shared/lib/schema/buildItemListSchema.ts` — emits
       `{ "@context": "https://schema.org", "@type": "ItemList", itemListElement: [...] }` with
       1-based `position`, each element `{ "@type": "ListItem", position, item: { "@type":
-    "Product", name, url, image? } }` (image omitted per-item when absent); exported from
+"Product", name, url, image? } }` (image omitted per-item when absent); exported from
       `shared/lib/schema/index.ts`
 - [ ] `schema.test.ts`: new `describe("buildItemListSchema")` — positions are 1-based and in
       input order; an item without `image` omits the field rather than emitting `undefined`;
@@ -476,8 +476,8 @@ Server Components; their extracted logic is what carries the test coverage).
       `notFound()` call is what actually produces the 404, not `generateMetadata`
       (Next convention: a 404 route still needs _a_ metadata object)
 - [ ] On a resolved node: title/description via `resolveSeo({ entityTitle: node.metaTitle,
-    entityDescription: node.metaDescription, settings: seo, content: { name: node.name,
-    description: node.description } })` + `toMetadataTitle(...)`; description fallback is
+entityDescription: node.metaDescription, settings: seo, content: { name: node.name,
+description: node.description } })` + `toMetadataTitle(...)`; description fallback is
       `dict.catalog.categorySubtitle(node.name)` when `resolveSeo` yields no description
       (reuses the existing string — no new dictionary key needed for this)
 - [ ] `alternates: { canonical: \`${SITE_URL}/categories/${node.slug}\` }` (no query params —
@@ -495,7 +495,7 @@ Server Components; their extracted logic is what carries the test coverage).
       `<SubcategoryChips children={node.children} />` (only rendered when non-empty — the
       component's own empty-guard makes the call site unconditional), and
       `<Suspense fallback={<ProductListSkeleton />}><ProductListView initialParams={{
-    categoryId: node.id, ...restOfSearchParams }} lockedCategoryId={node.id} /></Suspense>`
+categoryId: node.id, ...restOfSearchParams }} lockedCategoryId={node.id} /></Suspense>`
       — `restOfSearchParams` parses `search`/`sortBy`/`sortOrder`/`minPrice`/`maxPrice`/
       `specs`/`page` exactly as `/products/page.tsx` does today (same `first()` helper,
       copy-pasted or extracted — implementer's call, no functional difference required)
@@ -584,7 +584,7 @@ the acceptance criteria below.
       crumb `item` URL → `\`${SITE_URL}/categories/${category.slug}\`` (JSON-LD, server-side —
       kept in sync with the visible breadcrumb above)
 - [ ] `app/products/page.tsx`: `generateMetadata`'s category-node branch adds `alternates: {
-    canonical: \`${SITE_URL}/categories/${node.slug}\` }` alongside the existing
+canonical: \`${SITE_URL}/categories/${node.slug}\` }` alongside the existing
       title/description resolution (Decision 6) — the unfiltered/keyword-search branch is
       untouched (no canonical added there; that is TASK-278's remit)
 - [ ] `CategoryChips`'s own in-page category switcher on `/products` is untouched — it still

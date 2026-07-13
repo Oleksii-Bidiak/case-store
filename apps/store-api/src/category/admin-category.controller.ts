@@ -274,8 +274,9 @@ export class AdminCategoryController {
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateCategoryDto,
+    @CurrentUser('id') adminUserId: string,
   ): Promise<CategoryResponseEnvelope> {
-    const category = await this.categoryService.update(id, dto);
+    const category = await this.categoryService.update(id, dto, adminUserId);
 
     return { data: category };
   }

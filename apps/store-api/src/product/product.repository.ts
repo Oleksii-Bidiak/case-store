@@ -43,6 +43,18 @@ export interface FindAllParams {
    */
   deviceModelId?: string;
   isActive?: boolean;
+  /**
+   * Withdraw the products of DEACTIVATED categories from the result set
+   * (TASK-297). `isActive: false` on a category means "removed from sale", so
+   * every PUBLIC read passes `true` here; the admin listing leaves it unset and
+   * keeps seeing the full catalogue (it is how an operator finds the products
+   * stranded by the deactivation in the first place).
+   *
+   * Scope is the product's OWN category, not its ancestor chain — deactivation
+   * deliberately does NOT cascade to descendant categories (the `setActiveMany`
+   * owner decision), so neither does this filter.
+   */
+  categoryActiveOnly?: boolean;
   minPrice?: number;
   maxPrice?: number;
   search?: string;
@@ -332,11 +344,12 @@ export class ProductRepository {
    * (TASK-142).
    *
    * @param slug - the product slug to look up.
-   * @param options.activeOnly - when `true` (the default), only active products
-   *   are returned; a deactivated product resolves to `null` so the public PDP
-   *   surfaces a 404 (TASK-145). Pass `false` to bypass the `isActive` filter for
-   *   staff preview of deactivated products (reserved for TASK-155); soft-deleted
-   *   rows remain excluded regardless.
+   * @param options.activeOnly - when `true` (the default), only products that are
+   *   ON SALE are returned — the product itself must be active AND so must its
+   *   category (TASK-297), since deactivating a category withdraws its products.
+   *   Either way the public PDP surfaces a 404 (TASK-145). Pass `false` to bypass
+   *   both filters for staff preview of withdrawn products (TASK-155);
+   *   soft-deleted rows remain excluded regardless.
    */
   async findBySlugWithRelations(
     slug: string,
@@ -346,7 +359,7 @@ export class ProductRepository {
       where: {
         slug,
         deletedAt: null,
-        ...((options?.activeOnly ?? true) ? { isActive: true } : {}),
+        ...((options?.activeOnly ?? true) ? { isActive: true, category: { isActive: true } } : {}),
       },
       include: {
         category: {
@@ -437,6 +450,7 @@ export class ProductRepository {
       brandId,
       deviceModelId,
       isActive,
+      categoryActiveOnly,
       minPrice,
       maxPrice,
       search,
@@ -472,6 +486,14 @@ export class ProductRepository {
 
     if (isActive !== undefined) {
       where.isActive = isActive;
+    }
+
+    // Withdraw the products of deactivated categories (TASK-297). A relation
+    // filter, so it composes with the `categoryIds` subtree rollup above rather
+    // than replacing it: a parent-category rollup still returns only the
+    // products whose own category is on sale.
+    if (categoryActiveOnly) {
+      where.category = { isActive: true };
     }
 
     if (minPrice !== undefined || maxPrice !== undefined) {
@@ -769,13 +791,23 @@ export class ProductRepository {
    * loads the full active, non-deleted products with the same rating / primary
    * image / variant-sibling enrichment as {@link findAll}. Order is NOT
    * preserved here — the caller reorders by the Meili hit order.
+   *
+   * PUBLIC-ONLY (search results, the «Ви переглядали» rail), so products of a
+   * DEACTIVATED category are dropped (TASK-297). This is also the backstop that
+   * keeps a stale Meilisearch document — one whose category was withdrawn while
+   * the engine was down — from ever rendering as a card.
    */
   async findByIdsForCards(ids: string[]): Promise<PaginatedProductsResult['products']> {
     if (ids.length === 0) {
       return [];
     }
     const products = await this.prisma.product.findMany({
-      where: { id: { in: ids }, isActive: true, deletedAt: null },
+      where: {
+        id: { in: ids },
+        isActive: true,
+        deletedAt: null,
+        category: { isActive: true },
+      },
       include: { brand: { select: BRAND_SUMMARY_SELECT } },
     });
 
@@ -808,6 +840,12 @@ export class ProductRepository {
    *
    * Inactive / soft-deleted products are excluded: they are not in the search index,
    * so re-indexing them would only issue a redundant delete.
+   *
+   * NOTE (TASK-297): the CATEGORY's own `isActive` is deliberately NOT filtered here.
+   * These ids are the re-index WORK LIST, not a visibility query — when a category is
+   * deactivated, it is precisely its still-active products that must be pushed through
+   * `indexProduct` so `findOneForIndex` can resolve them to null and evict their
+   * documents. Filtering them out here would leave them indexed forever.
    */
   async findIdsByCategoryIds(categoryIds: string[]): Promise<string[]> {
     if (categoryIds.length === 0) {
@@ -825,12 +863,19 @@ export class ProductRepository {
   /**
    * Load a single active, non-deleted product as a search-index source
    * (TASK-075). Joins the category name + primary image so the built document is
-   * self-contained. Returns null when the product is missing, soft-deleted, or
-   * deactivated — the search service then removes it from the index instead.
+   * self-contained. Returns null when the product is missing, soft-deleted,
+   * deactivated, or filed in a DEACTIVATED category (TASK-297) — the search
+   * service then removes it from the index instead.
+   *
+   * That null return IS the category-deactivation de-indexing mechanism: the
+   * category status change re-indexes its subtree's products (`afterStatusChange`
+   * → `CategorySubtreeIndexer`), each of which lands here, resolves to null, and
+   * is deleted from the index. Re-activating the category re-indexes them the
+   * same way. No separate de-index path exists — do not add one.
    */
   async findOneForIndex(id: string): Promise<ProductIndexSource | null> {
     const product = await this.prisma.product.findFirst({
-      where: { id, isActive: true, deletedAt: null },
+      where: { id, isActive: true, deletedAt: null, category: { isActive: true } },
       include: {
         category: { select: { name: true } },
         brand: { select: { name: true } },
@@ -848,10 +893,14 @@ export class ProductRepository {
   /**
    * Batch-pull active, non-deleted products as search-index sources (TASK-075
    * `reindexAll`). Ordered by `createdAt` for a stable pagination cursor.
+   * Products of a deactivated category are excluded, so a full reindex rebuilds
+   * exactly the on-sale catalogue (TASK-297) — same predicate as
+   * {@link findOneForIndex}, which is what keeps incremental and full indexing
+   * from disagreeing.
    */
   async findManyForIndex(skip: number, take: number): Promise<{ items: ProductIndexSource[] }> {
     const rows = await this.prisma.product.findMany({
-      where: { isActive: true, deletedAt: null },
+      where: { isActive: true, deletedAt: null, category: { isActive: true } },
       orderBy: { createdAt: 'asc' },
       skip,
       take,

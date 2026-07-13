@@ -31,4 +31,4 @@ export type {
   CarouselItemListResponse,
 } from "@/shared/api";
 
-export { CarouselEntitySource } from "@/shared/api";
+export { CarouselEntitySource, CarouselEntityPlacement } from "@/shared/api";

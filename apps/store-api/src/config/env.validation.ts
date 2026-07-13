@@ -8,6 +8,7 @@ import {
   Max,
   Min,
   MinLength,
+  ValidateIf,
   validateSync,
 } from 'class-validator';
 
@@ -125,14 +126,21 @@ export class EnvironmentVariables {
   REDIS_CACHE_TTL_SECONDS?: number;
 
   // ─── CSRF ─────────────────────────────────────────────────────────────────
-  // Optional so the app boots in development with a weak built-in default.
-  // REQUIRED in production: bootstrap() logs a warning when NODE_ENV is
-  // production and this is unset. When set it must be at least 32 characters —
-  // the secret is the HMAC key that signs the double-submit CSRF token.
+  // The HMAC key that signs the double-submit CSRF token.
+  //
+  // REQUIRED in production (and at least 32 characters): the development
+  // fallback secret is committed to this repository, so booting production with
+  // it would let anyone forge a valid CSRF token. Startup therefore fails here
+  // instead of degrading silently — CsrfService throws on the same condition.
+  // Outside production it stays optional (the fallback applies), but a value
+  // that IS set must still meet the length floor.
 
-  @IsOptional()
-  @IsString()
-  @MinLength(32, { message: 'CSRF_SECRET must be at least 32 characters when set' })
+  @ValidateIf(
+    (env: EnvironmentVariables) =>
+      env.NODE_ENV === Environment.Production || env.CSRF_SECRET !== undefined,
+  )
+  @IsString({ message: 'CSRF_SECRET is required in production' })
+  @MinLength(32, { message: 'CSRF_SECRET must be at least 32 characters' })
   CSRF_SECRET?: string;
 
   // ─── Logging ──────────────────────────────────────────────────────────────
@@ -298,6 +306,18 @@ export function validateEnv(config: Record<string, unknown>): EnvironmentVariabl
       .map((error) => Object.values(error.constraints ?? {}).join(', '))
       .join('; ');
     throw new Error(`Invalid environment configuration: ${messages}`);
+  }
+
+  // Cross-field rule the decorators cannot express: the access- and
+  // refresh-token signing keys MUST differ. With one shared key an access token
+  // verifies as a refresh token, so a leaked (long-lived in the browser) access
+  // token could be replayed against POST /api/auth/refresh to mint fresh
+  // sessions — collapsing the whole point of the split. `.env.production.example`
+  // already demands distinct values; this makes it enforceable.
+  if (validatedConfig.JWT_SECRET === validatedConfig.JWT_REFRESH_SECRET) {
+    throw new Error(
+      'Invalid environment configuration: JWT_SECRET and JWT_REFRESH_SECRET must be different values',
+    );
   }
 
   return validatedConfig;

@@ -1,6 +1,6 @@
 # Plan 155 — Category Nav Group: Deep Mega-Menu (TASK-082) + Category Tile Images (TASK-083)
 
-> **Status:** ⬜ To Do
+> **Status:** ✅ Done (TASK-082 + TASK-083 shipped 2026-07-12; visual smoke → manual QA)
 > **Phase:** Roadmap — «Пізніша хвиля» (post-Етап-7 backlog), Group C of `docs/plans/152-late-wave-2-orchestration.md`
 > **Created:** 2026-07-11
 > **Last Updated:** 2026-07-11
@@ -583,7 +583,7 @@ fresh worktree regardless of whether this plan changes it).
 **Acceptance Criteria:**
 
 - [ ] New `widgets/header/ui/header-mobile-categories.tsx` exports `HeaderMobileCategories({
-    onNavigate })`, fetching `useCategoryControllerGetCategoryTree()` itself (not a prop from
+onNavigate })`, fetching `useCategoryControllerGetCategoryTree()` itself (not a prop from
       `header.tsx`) — mirrors how `HeaderCartBadge`/`HeaderWishlistBadge` each own their own fetch
 - [ ] Renders the same "Каталог" section heading + `<hr>` the inline block used to (unchanged
       copy/position); hidden entirely when the tree is empty (`return null`, matching the existing
@@ -626,7 +626,7 @@ fresh worktree regardless of whether this plan changes it).
 **Acceptance Criteria:**
 
 - [ ] New `shared/ui/category-tile-image.tsx` exports `CategoryTileImage({ src, alt, className,
-    fallback })`: renders a plain `<img>` (per §Design decision, not `next/image`) with
+fallback })`: renders a plain `<img>` (per §Design decision, not `next/image`) with
       `loading="lazy"` when `src` is present and hasn't errored; renders `fallback` when `src` is
       falsy or after `onError` fires; failure state is local to each mounted instance (no leakage
       across sibling tiles)

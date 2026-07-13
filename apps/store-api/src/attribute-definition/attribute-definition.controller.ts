@@ -113,7 +113,15 @@ export class AttributeDefinitionController {
     return { data: await this.service.create(categoryId, dto) };
   }
 
-  /** PATCH /api/categories/:categoryId/attribute-definitions/reorder — reorder templates. */
+  /**
+   * PATCH /api/categories/:categoryId/attribute-definitions/reorder (TASK-298)
+   *
+   * Rewrites the COMPLETE ordering of ONE category's templates — the array index becomes
+   * `sortOrder` — in one advisory-locked transaction, and returns the refreshed list.
+   *
+   * `orderedIds` must name EVERY template of the category: a partial payload means another
+   * admin added one since the client loaded the list, and is rejected with a 409.
+   */
   @Patch('categories/:categoryId/attribute-definitions/reorder')
   @ApiOperation({
     summary: "Reorder a category's characteristic templates (admin)",
@@ -121,7 +129,16 @@ export class AttributeDefinitionController {
   })
   @ApiParam({ name: 'categoryId', description: 'Category UUID' })
   @ApiResponse({ status: 200, type: AttributeDefinitionListResponse })
+  @ApiResponse({ status: 400, description: 'Validation error or REORDER_DUPLICATE_ID' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({
+    status: 404,
+    description: 'Category not found, or REORDER_NOT_FOUND — an id is not in this category',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'REORDER_STALE — another admin added a template to this category first',
+  })
   async reorder(
     @Param('categoryId') categoryId: string,
     @Body() dto: ReorderAttributeDefinitionsDto,

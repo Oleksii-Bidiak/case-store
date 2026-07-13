@@ -118,9 +118,11 @@ export class ProductService {
 
   /**
    * Get a paginated list of products with optional filtering.
-   * Public endpoint — ALWAYS restricted to active products (TASK-230): the
-   * query's `isActive` is deliberately overridden, so deactivated positions
-   * can never be listed publicly (the PDP already 404s them per TASK-145).
+   * Public endpoint — ALWAYS restricted to products that are ON SALE: the
+   * position itself must be active (TASK-230 — the query's `isActive` is
+   * deliberately overridden) AND its category must be active (TASK-297), since
+   * deactivating a category withdraws its products from sale. Neither can be
+   * listed publicly (the PDP 404s both per TASK-145 / TASK-297).
    * The admin table uses {@link adminFindAll} instead.
    * Cache-aside: a cache hit skips the database entirely.
    */
@@ -152,6 +154,10 @@ export class ProductService {
     const params: FindAllParams = {
       ...listParams,
       isActive: true,
+      // Withdrawn categories take their products off the public list (TASK-297).
+      // Not part of the cache key: it is a CONSTANT on this path (and absent on
+      // the uncached admin path), so it can never fragment or collide keys.
+      categoryActiveOnly: true,
       categoryIds: await this.resolveSubtreeIds(query.categoryId),
     };
     const response = await this.listFromDb(params);
@@ -169,6 +175,10 @@ export class ProductService {
    * as sent (undefined = ALL products, including deactivated) and WITHOUT the
    * cache layer: the admin table must reflect activate/deactivate toggles
    * immediately, and admin traffic is too low to be worth caching (TASK-230).
+   *
+   * `categoryActiveOnly` is deliberately left unset (TASK-297): the operator must
+   * still see — and be able to re-file — the products stranded by a category
+   * deactivation, which is exactly the list they would vanish from.
    */
   async adminFindAll(query: ProductListQueryDto): Promise<AdminPaginatedProductsResponse> {
     const params: FindAllParams = {
@@ -288,7 +298,8 @@ export class ProductService {
    * Cache-aside; throws NotFoundException if the product is not found.
    *
    * Uses the repository's default `activeOnly: true` filter, so a deactivated
-   * product is indistinguishable from a missing slug and returns 404 (TASK-145).
+   * product — or one whose CATEGORY was deactivated (TASK-297) — is
+   * indistinguishable from a missing slug and returns 404 (TASK-145).
    */
   async findBySlug(slug: string): Promise<ProductDetailResponse> {
     const cacheKey = productDetailSlugKey(slug);

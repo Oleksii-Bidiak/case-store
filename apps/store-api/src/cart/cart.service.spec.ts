@@ -39,6 +39,7 @@ const mockCartWithVariantItem: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
+        category: { isActive: true },
         images: [],
       },
     },
@@ -68,6 +69,7 @@ const mockCartWithNoVariantItem: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
+        category: { isActive: true },
         images: [],
       },
     },
@@ -97,6 +99,7 @@ const mockCartWithMultipleItems: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
+        category: { isActive: true },
         images: [],
       },
     },
@@ -116,6 +119,7 @@ const mockCartWithMultipleItems: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
+        category: { isActive: true },
         images: [],
       },
     },
@@ -154,6 +158,7 @@ const mockCartWithLowStockItem: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
+        category: { isActive: true },
         images: [],
       },
     },
@@ -184,6 +189,7 @@ const mockGuestCart: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
+        category: { isActive: true },
         images: [],
       },
     },
@@ -203,6 +209,7 @@ const mockGuestCart: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
+        category: { isActive: true },
         images: [],
       },
     },
@@ -357,6 +364,7 @@ describe('CartService', () => {
       name: 'iPhone 15 Pro Case',
       stock: 50,
       isActive: true,
+      category: { isActive: true },
     };
 
     it('should validate, add the item, and return the updated cart', async () => {
@@ -409,6 +417,7 @@ describe('CartService', () => {
         name: 'Out of Stock Case',
         stock: 0,
         isActive: true,
+        category: { isActive: true },
       });
 
       await expect(
@@ -424,6 +433,7 @@ describe('CartService', () => {
         name: 'Limited Edition Case — Gold',
         stock: 2,
         isActive: true,
+        category: { isActive: true },
       });
 
       await expect(
@@ -454,6 +464,7 @@ describe('CartService', () => {
               isActive: true,
               slug: 'test-product',
               categoryId: 'cat-1',
+              category: { isActive: true },
               images: [],
             },
           },
@@ -475,10 +486,68 @@ describe('CartService', () => {
         name: 'Discontinued Case',
         stock: 10,
         isActive: false,
+        category: { isActive: true },
       });
 
       await expect(
         service.addToCart(userIdentity, { productId: 'product-uuid-4', quantity: 1 }),
+      ).rejects.toThrow(BadRequestException);
+      expect(cartRepositoryMock.addItem).not.toHaveBeenCalled();
+    });
+
+    // ─── withdrawn category blocks the add (TASK-297) ───────────────────────
+    //
+    // Deactivating a category takes its products OFF SALE, so an active, in-stock
+    // product filed there must be as un-addable as a deactivated one — and, like
+    // every other guard here, must fail BEFORE the write (no ghost line).
+    it('should throw BadRequestException and NOT persist when the product CATEGORY is inactive', async () => {
+      cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
+      cartRepositoryMock.findProductForCartValidation.mockResolvedValue({
+        id: 'product-uuid-5',
+        name: 'Case From A Withdrawn Category',
+        stock: 10,
+        isActive: true,
+        category: { isActive: false },
+      });
+
+      await expect(
+        service.addToCart(userIdentity, { productId: 'product-uuid-5', quantity: 1 }),
+      ).rejects.toThrow(BadRequestException);
+      expect(cartRepositoryMock.addItem).not.toHaveBeenCalled();
+    });
+
+    it('should refuse to TOP UP an existing line whose category was deactivated meanwhile', async () => {
+      // The product details come from the already-loaded cart line here, so this
+      // covers the branch that never calls findProductForCartValidation.
+      const cartWithWithdrawnLine: CartWithItems = {
+        ...mockEmptyCart,
+        items: [
+          {
+            id: 'item-withdrawn',
+            productId: 'product-uuid-1',
+            quantity: 1,
+            createdAt: now,
+            updatedAt: now,
+            addons: [],
+            product: {
+              id: 'product-uuid-1',
+              name: 'iPhone 15 Pro Case',
+              price: { toString: () => '29.99' } as any,
+              compareAtPrice: null,
+              stock: 200,
+              isActive: true,
+              slug: 'test-product',
+              categoryId: 'cat-1',
+              category: { isActive: false },
+              images: [],
+            },
+          },
+        ],
+      };
+      cartRepositoryMock.findOrCreate.mockResolvedValue(cartWithWithdrawnLine);
+
+      await expect(
+        service.addToCart(userIdentity, { productId: 'product-uuid-1', quantity: 1 }),
       ).rejects.toThrow(BadRequestException);
       expect(cartRepositoryMock.addItem).not.toHaveBeenCalled();
     });
@@ -500,6 +569,7 @@ describe('CartService', () => {
         name: 'Screen Protector',
         stock: 30,
         isActive: true,
+        category: { isActive: true },
       });
       cartRepositoryMock.addItem.mockResolvedValue(mockCartWithNoVariantItem);
 
@@ -1139,6 +1209,7 @@ describe('CartService', () => {
               isActive: true,
               slug: 'test-product',
               categoryId: 'cat-1',
+              category: { isActive: true },
               images: [],
             },
           },
@@ -1186,6 +1257,7 @@ describe('CartService', () => {
               isActive: true,
               slug: 'test-product',
               categoryId: 'cat-1',
+              category: { isActive: true },
               images: [],
             },
           },

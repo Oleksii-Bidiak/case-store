@@ -82,6 +82,8 @@ export const handlers = [
         defaultMetaDescription: null,
         titleTemplate: null,
         defaultOgImage: null,
+        // TASK-299: the admin shell's brand mark reads this on every page.
+        logoUrl: null,
         noindexSite: false,
         llmsTxtSummary: null,
         additionalSameAsLinks: [],

@@ -88,7 +88,9 @@ export function Button({ className, variant, size, asChild = false, ...props }: 
 ```
 
 **Important:** Use shadcn/ui CLI to add components: `npx shadcn-ui@latest add button`
-Use semantic design tokens from `tailwind.config.ts` — never raw hex values.
+Use semantic design tokens — never raw hex values. Tailwind v4 is CSS-first: tokens are
+declared in `@theme inline` inside `apps/store-client/src/app/globals.css` (storefront) and
+`apps/store-admin/src/app/globals.css` (admin); there is no `tailwind.config.ts`.
 
 ### 2. Entities Layer (`entities/`)
 
@@ -222,7 +224,7 @@ Every component MUST include:
 
 - NEVER import from a layer above the current one.
 - ALWAYS use Orval-generated hooks for API calls — never write manual `fetch`/`axios`.
-- ALWAYS use semantic design tokens from `tailwind.config.ts` — never raw hex values.
+- ALWAYS use semantic design tokens from `@theme inline` in `apps/store-client/src/app/globals.css` (storefront) / `apps/store-admin/src/app/globals.css` (admin) — never raw hex values, and never look for a `tailwind.config.ts` (Tailwind v4 is CSS-first; the file does not exist).
 - ALWAYS use shadcn/ui components as the base for `shared/ui`.
 - ALWAYS add `'use client'` directive to client components that use hooks/state.
 - ALWAYS include accessibility attributes in interactive elements.

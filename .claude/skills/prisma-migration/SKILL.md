@@ -54,14 +54,18 @@ npx prisma <command> --schema=apps/store-api/prisma/schema.prisma
 
 ### Deactivation / Soft Delete
 
-- **Current convention:** this project uses an **`isActive Boolean @default(true)`** flag on
-  user-facing models (`User`, `Product`, `Category`, `ProductVariant`, `Review`) for
-  hide/deactivate, plus **hard deletes** for real removal. There is **no `deletedAt`** column
-  anywhere in the schema today — do not assume one exists.
-- **Roadmap (not yet implemented):** `deletedAt DateTime?` soft deletes are a planned
-  improvement (backlog TASK-104). If/when adopted, add `@@unique` constraints that include
-  `deletedAt` so uniqueness applies only to active records. Until then, match the existing
-  `isActive` pattern.
+Both flags exist in the schema today and they are **independent** — they coexist and mean
+different things. Never collapse one into the other.
+
+- **`isActive Boolean @default(true)`** — a **reversible visibility toggle**, admin-only. Present
+  on user-facing models (`User`, `Product`, `Category`, `ProductVariant`, `Review`) to
+  hide/deactivate a record from the storefront. It can be flipped back on at any time.
+- **`deletedAt DateTime?`** — an **audit tombstone** that replaces hard deletes on `User`,
+  `Product` and `Order` (each with a supporting index). It is set **once** and **never cleared**;
+  a tombstoned record is gone for good. Read paths must filter `deletedAt: null`.
+
+When adding `deletedAt` to a further model, also make any `@@unique` constraint include
+`deletedAt` so uniqueness applies only to live records.
 
 ### Enum Fields
 
@@ -100,8 +104,21 @@ model Product {
 }
 ```
 
-> Note: this mirrors the live schema's `isActive`-based deactivation (no `deletedAt`). The
-> real `Product` model uses `slug String @unique` directly.
+> Note: the real `Product` model also carries `deletedAt DateTime?` (audit tombstone, indexed)
+> alongside `isActive`, and uses `slug String @unique` directly.
+
+## Migration History Is Not in Git
+
+`apps/store-api/prisma/migrations/*_*/` is **git-ignored** (see `.gitignore`); only
+`migrations/migration_lock.toml` is committed. Consequences you must plan around:
+
+- **`schema.prisma` is the single source of truth.** There is no migration history in the
+  repository to read, diff, or reason about — never try to reconstruct past schema states from it.
+- A fresh clone has **no local migration folder**. Bring a database up with `npx prisma migrate dev`
+  (which generates the SQL locally) or `npx prisma db push`, then `npm run db:seed`.
+- Do **not** hand-author migration SQL expecting teammates or CI to receive it — they won't.
+  Ship the schema change; each environment generates its own SQL.
+- The DB connection string for Prisma CLI invocations lives in `apps/store-api/prisma.config.ts`.
 
 ## Migration Workflow
 
@@ -216,7 +233,7 @@ Run: `npx prisma db seed`
 - ALWAYS add `@@map` to use snake_case table names in the database.
 - ALWAYS include `createdAt` and `updatedAt` timestamps on every model.
 - NEVER use `@db.Decimal` without specifying precision (use `@db.Decimal(10, 2)` for prices).
-- MATCH the existing **`isActive Boolean`** deactivation pattern on user-facing models; the schema has **no `deletedAt`** today (soft deletes are roadmap TASK-104, not current).
+- MATCH the existing flag semantics: **`isActive Boolean`** = reversible visibility toggle; **`deletedAt DateTime?`** = write-once audit tombstone replacing hard deletes (`User`, `Product`, `Order`). Never clear a `deletedAt`, and never use `isActive` to fake a delete.
 - NEVER use `onDelete: Cascade` on relationships that cross aggregate boundaries.
 - ALWAYS name migrations descriptively in kebab-case.
 - NEVER use `prisma db push` in production — always use `prisma migrate deploy`.

@@ -43,6 +43,13 @@ function tileImg(): HTMLImageElement | null {
   return document.querySelector("img");
 }
 
+/**
+ * `Category.image` is a free-text admin URL, but since TASK-289 the tile renders
+ * it through next/image — only hosts in `images.remotePatterns` are drawn at all
+ * (anything else takes the icon fallback). Use an allowlisted host here.
+ */
+const TILE_IMAGE = "https://picsum.photos/seed/cases/800/800";
+
 describe("CategoryNav — tile images (TASK-083)", () => {
   it("renders the icon fallback (no <img>) when image is null", async () => {
     setupHandlers([makeCategory()]);
@@ -56,22 +63,19 @@ describe("CategoryNav — tile images (TASK-083)", () => {
   });
 
   it("renders the image when image is set", async () => {
-    setupHandlers([
-      makeCategory({ image: "https://cdn.example.com/cases.jpg" }),
-    ]);
+    setupHandlers([makeCategory({ image: TILE_IMAGE })]);
     renderWithProviders(<CategoryNav />);
 
     await screen.findByRole("link", { name: /Чохли/ });
-    expect(tileImg()).toHaveAttribute(
-      "src",
-      "https://cdn.example.com/cases.jpg",
+    // TASK-289: the tile goes through next/image, so `src` is the optimizer
+    // route with the original URL encoded in `?url=`.
+    expect(tileImg()?.getAttribute("src")).toContain(
+      encodeURIComponent(TILE_IMAGE),
     );
   });
 
   it("falls back to the icon after the image fails to load", async () => {
-    setupHandlers([
-      makeCategory({ image: "https://cdn.example.com/broken.jpg" }),
-    ]);
+    setupHandlers([makeCategory({ image: TILE_IMAGE })]);
     renderWithProviders(<CategoryNav />);
 
     await screen.findByRole("link", { name: /Чохли/ });

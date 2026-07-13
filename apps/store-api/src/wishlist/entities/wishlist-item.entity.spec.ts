@@ -10,6 +10,8 @@ function buildPrismaWishlistItem(
     slug: string;
     images: Array<{ url: string }>;
     stock: number;
+    isActive: boolean;
+    category: { isActive: boolean };
   }> = {},
 ) {
   return {
@@ -24,6 +26,7 @@ function buildPrismaWishlistItem(
       compareAtPrice: { toString: () => '39.99' },
       stock: 50,
       isActive: true,
+      category: { isActive: true },
       images: [{ url: 'https://cdn.example.com/primary.jpg' }],
       ...productOverrides,
     },
@@ -77,5 +80,26 @@ describe('WishlistItemEntity.fromPrisma', () => {
     const entity = WishlistItemEntity.fromPrisma(buildPrismaWishlistItem({ stock: 500 }));
 
     expect(entity).not.toHaveProperty('stock');
+  });
+
+  // ─── isActive folds in the owning category's status (TASK-297) ─────────────
+  it('isActive is true when both the product and its category are active', () => {
+    const entity = WishlistItemEntity.fromPrisma(buildPrismaWishlistItem());
+
+    expect(entity.isActive).toBe(true);
+  });
+
+  it('isActive is false when the product is deactivated', () => {
+    const entity = WishlistItemEntity.fromPrisma(buildPrismaWishlistItem({ isActive: false }));
+
+    expect(entity.isActive).toBe(false);
+  });
+
+  it('isActive is false when the category was withdrawn from sale (product still active)', () => {
+    const entity = WishlistItemEntity.fromPrisma(
+      buildPrismaWishlistItem({ isActive: true, category: { isActive: false } }),
+    );
+
+    expect(entity.isActive).toBe(false);
   });
 });

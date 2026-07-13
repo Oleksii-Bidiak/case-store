@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import * as Sentry from "@sentry/nextjs";
 import { SITE_URL } from "@/shared/config";
 import {
   fetchAllActiveCategories,
@@ -85,6 +86,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 }
 
+/**
+ * A silently dropped source is real damage (those URLs fall out of the index),
+ * and `console.error` alone never reaches Sentry from the Node runtime — only an
+ * explicit capture does. The log stays for local/`docker logs` debugging.
+ */
+function reportSourceFailure(source: string, err: unknown): void {
+  console.error(`[sitemap] Failed to fetch ${source}:`, err);
+  Sentry.captureException(err, { tags: { route: "sitemap", source } });
+}
+
 async function fetchProductRoutes(): Promise<MetadataRoute.Sitemap> {
   try {
     const products = await fetchAllActiveProducts();
@@ -95,7 +106,7 @@ async function fetchProductRoutes(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     }));
   } catch (err) {
-    console.error("[sitemap] Failed to fetch products:", err);
+    reportSourceFailure("products", err);
     return [];
   }
 }
@@ -112,7 +123,7 @@ async function fetchCategoryRoutes(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     }));
   } catch (err) {
-    console.error("[sitemap] Failed to fetch categories:", err);
+    reportSourceFailure("categories", err);
     return [];
   }
 }
@@ -128,7 +139,7 @@ async function fetchBlogRoutes(now: Date): Promise<MetadataRoute.Sitemap> {
       priority: 0.6,
     }));
   } catch (err) {
-    console.error("[sitemap] Failed to fetch blog posts:", err);
+    reportSourceFailure("blog posts", err);
     return [];
   }
 }
@@ -143,7 +154,7 @@ async function fetchPageRoutes(): Promise<MetadataRoute.Sitemap> {
       priority: 0.5,
     }));
   } catch (err) {
-    console.error("[sitemap] Failed to fetch pages:", err);
+    reportSourceFailure("pages", err);
     return [];
   }
 }

@@ -1,6 +1,7 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiProperty, ApiExtraModels } from '@nestjs/swagger';
 import { CarouselService } from './carousels.service';
+import { CarouselListQueryDto } from './dto';
 import { PublicCarouselEntity } from './entities';
 
 /**
@@ -18,6 +19,7 @@ class PublicCarouselListResponse {
  * Controller for public (storefront) carousel endpoints.
  *
  *   GET /api/carousels — list published carousels with resolved products
+ *                        (optional ?placement=)
  */
 @ApiTags('Carousels')
 @ApiExtraModels(PublicCarouselEntity, PublicCarouselListResponse)
@@ -26,14 +28,17 @@ export class CarouselController {
   constructor(private readonly carouselService: CarouselService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List published recommendation carousels with resolved products' })
+  @ApiOperation({
+    summary:
+      'List published recommendation carousels with resolved products, optionally filtered by placement',
+  })
   @ApiResponse({
     status: 200,
     description:
-      'Published carousels ordered by sort order; each carries its resolved, ordered product list (possibly empty — the storefront hides empty sections)',
+      'Published carousels of the requested placement (all placements when omitted) ordered by sort order; each carries its resolved, ordered product list (possibly empty — the storefront hides empty sections)',
     type: PublicCarouselListResponse,
   })
-  async findAll(): Promise<PublicCarouselListResponse> {
-    return this.carouselService.findAllPublished();
+  async findAll(@Query() query: CarouselListQueryDto): Promise<PublicCarouselListResponse> {
+    return this.carouselService.findAllPublished(query);
   }
 }

@@ -64,7 +64,7 @@ describe('OrderController (e2e)', () => {
     update: jest.fn(),
     softDeactivate: jest.fn(),
     countUserRedemptions: jest.fn(),
-    incrementRedeemed: jest.fn(),
+    tryIncrementRedeemed: jest.fn(),
     createRedemption: jest.fn(),
   };
 
@@ -165,6 +165,9 @@ describe('OrderController (e2e)', () => {
       price: { toString: () => '29.99' },
       compareAtPrice: null,
       isActive: true,
+      // TASK-297: checkout re-checks the owning category's status, so the cart
+      // fixture must carry it (mirrors CART_ITEMS_INCLUDE's category select).
+      category: { isActive: true },
       // Match the CartWithItems contract: CART_ITEMS_INCLUDE always selects
       // product.images, so the cart fixture must carry it too.
       images: [],

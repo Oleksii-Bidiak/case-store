@@ -1,7 +1,9 @@
 import { HttpException } from '@nestjs/common';
 import { Prisma, Discount, DiscountType } from '@prisma/client';
 import { DiscountService } from './discount.service';
+import { DiscountRepository } from './discount.repository';
 import { DiscountErrorCode } from './discount.errors';
+import { PrismaService } from '../prisma';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -14,7 +16,7 @@ const repositoryMock = {
   update: jest.fn(),
   softDeactivate: jest.fn(),
   countUserRedemptions: jest.fn(),
-  incrementRedeemed: jest.fn(),
+  tryIncrementRedeemed: jest.fn(),
   createRedemption: jest.fn(),
 };
 
@@ -302,62 +304,178 @@ describe('DiscountService.findActivePublic (TASK-179)', () => {
 
 describe('DiscountService.redeem', () => {
   let service: DiscountService;
-  let tx: {
-    discount: { findUnique: jest.Mock };
-    discountRedemption: { count: jest.Mock };
-  };
+  const tx = {} as never; // opaque: the service must reach the DB via the repository
 
   beforeEach(() => {
     jest.clearAllMocks();
     service = new DiscountService(repositoryMock as never, cartServiceMock as never);
-    tx = {
-      discount: { findUnique: jest.fn() },
-      discountRedemption: { count: jest.fn() },
-    };
+    repositoryMock.tryIncrementRedeemed.mockResolvedValue(1); // slot claimed
+    repositoryMock.countUserRedemptions.mockResolvedValue(0);
   });
 
-  it('increments the global counter and inserts a redemption inside the tx', async () => {
-    tx.discount.findUnique.mockResolvedValue(makeDiscount());
+  it('claims a slot atomically and inserts a redemption inside the tx', async () => {
+    repositoryMock.findById.mockResolvedValue(makeDiscount());
 
-    await service.redeem('d1', 'u1', 'o1', tx as never);
+    await service.redeem('d1', 'u1', 'o1', tx);
 
-    expect(repositoryMock.incrementRedeemed).toHaveBeenCalledWith('d1', tx);
+    expect(repositoryMock.findById).toHaveBeenCalledWith('d1', tx);
+    expect(repositoryMock.tryIncrementRedeemed).toHaveBeenCalledWith('d1', tx);
     expect(repositoryMock.createRedemption).toHaveBeenCalledWith(
       { discountId: 'd1', userId: 'u1', orderId: 'o1' },
       tx,
     );
   });
 
-  it('re-checks the global cap against the live row and throws if exhausted', async () => {
-    tx.discount.findUnique.mockResolvedValue(makeDiscount({ maxRedemptions: 5, redeemedCount: 5 }));
-
-    await expectDiscountError(
-      () => service.redeem('d1', 'u1', 'o1', tx as never),
-      DiscountErrorCode.MAX_REDEMPTIONS_REACHED,
-      409,
+  it('throws MAX_REDEMPTIONS_REACHED when the conditional claim updates no row', async () => {
+    // The live row still LOOKS redeemable to a plain read (4 < 5) — a racing
+    // transaction exhausted the cap in between. Only the conditional UPDATE can
+    // see that, and it reports 0 rows changed.
+    repositoryMock.findById.mockResolvedValue(
+      makeDiscount({ maxRedemptions: 5, redeemedCount: 4 }),
     );
-    expect(repositoryMock.incrementRedeemed).not.toHaveBeenCalled();
-  });
-
-  it('re-checks the per-user cap against the live count and throws if exhausted', async () => {
-    tx.discount.findUnique.mockResolvedValue(makeDiscount({ perUserLimit: 1 }));
-    tx.discountRedemption.count.mockResolvedValue(1);
+    repositoryMock.tryIncrementRedeemed.mockResolvedValue(0);
 
     await expectDiscountError(
-      () => service.redeem('d1', 'u1', 'o1', tx as never),
-      DiscountErrorCode.USER_LIMIT_REACHED,
+      () => service.redeem('d1', 'u1', 'o1', tx),
+      DiscountErrorCode.MAX_REDEMPTIONS_REACHED,
       409,
     );
     expect(repositoryMock.createRedemption).not.toHaveBeenCalled();
   });
 
-  it('throws when the discount was deactivated between preview and redeem', async () => {
-    tx.discount.findUnique.mockResolvedValue(makeDiscount({ isActive: false }));
+  it('claims the global slot BEFORE counting per-user redemptions (row lock ordering)', async () => {
+    // The conditional UPDATE row-locks the discount for the rest of the
+    // transaction, which is what serializes the per-user count below. If the
+    // count ran first, two concurrent redemptions could both read 0.
+    repositoryMock.findById.mockResolvedValue(makeDiscount({ perUserLimit: 2 }));
+
+    await service.redeem('d1', 'u1', 'o1', tx);
+
+    const claimOrder = repositoryMock.tryIncrementRedeemed.mock.invocationCallOrder[0];
+    const countOrder = repositoryMock.countUserRedemptions.mock.invocationCallOrder[0];
+    expect(claimOrder).toBeLessThan(countOrder);
+  });
+
+  it('re-checks the per-user cap against the live count and throws if exhausted', async () => {
+    repositoryMock.findById.mockResolvedValue(makeDiscount({ perUserLimit: 1 }));
+    repositoryMock.countUserRedemptions.mockResolvedValue(1);
 
     await expectDiscountError(
-      () => service.redeem('d1', 'u1', 'o1', tx as never),
+      () => service.redeem('d1', 'u1', 'o1', tx),
+      DiscountErrorCode.USER_LIMIT_REACHED,
+      409,
+    );
+    expect(repositoryMock.countUserRedemptions).toHaveBeenCalledWith('d1', 'u1', tx);
+    expect(repositoryMock.createRedemption).not.toHaveBeenCalled();
+  });
+
+  it('does not count per-user redemptions when there is no per-user limit', async () => {
+    repositoryMock.findById.mockResolvedValue(makeDiscount({ perUserLimit: null }));
+
+    await service.redeem('d1', 'u1', 'o1', tx);
+
+    expect(repositoryMock.countUserRedemptions).not.toHaveBeenCalled();
+  });
+
+  it('throws when the discount was deactivated between preview and redeem', async () => {
+    repositoryMock.findById.mockResolvedValue(makeDiscount({ isActive: false }));
+
+    await expectDiscountError(
+      () => service.redeem('d1', 'u1', 'o1', tx),
       DiscountErrorCode.INACTIVE,
       409,
     );
+    expect(repositoryMock.tryIncrementRedeemed).not.toHaveBeenCalled();
+  });
+});
+
+describe('DiscountService.redeem — concurrent redemptions (TOCTOU)', () => {
+  /**
+   * Fake transaction client modelling the ONE Postgres semantic this race turns
+   * on: `UPDATE … WHERE redeemed_count < max_redemptions` evaluates its
+   * predicate and applies the increment as a single indivisible step, and
+   * reports how many rows it changed. Under a read-then-increment
+   * implementation two interleaved redeem() calls both read a redeemable row
+   * and both increment — overshooting the cap. Under the conditional update the
+   * loser gets `count: 0`.
+   */
+  function makeFakeTx(row: Discount) {
+    const redemptions: { discountId: string; userId: string; orderId: string }[] = [];
+    const tx = {
+      discount: {
+        findUnique: ({ where }: { where: { id: string } }) =>
+          Promise.resolve(where.id === row.id ? { ...row } : null),
+        updateMany: ({ where }: { where: { id: string } }) => {
+          if (where.id !== row.id) return Promise.resolve({ count: 0 });
+          if (row.maxRedemptions !== null && row.redeemedCount >= row.maxRedemptions) {
+            return Promise.resolve({ count: 0 });
+          }
+          row.redeemedCount += 1;
+          return Promise.resolve({ count: 1 });
+        },
+        // Unconditional increment — what a read-then-write implementation would
+        // reach for. Kept faithful so this suite fails loudly if the service
+        // regresses to it.
+        update: () => {
+          row.redeemedCount += 1;
+          return Promise.resolve({ ...row });
+        },
+      },
+      discountRedemption: {
+        count: ({ where }: { where: { discountId: string; userId: string } }) =>
+          Promise.resolve(
+            redemptions.filter(
+              (r) => r.discountId === where.discountId && r.userId === where.userId,
+            ).length,
+          ),
+        create: ({ data }: { data: { discountId: string; userId: string; orderId: string } }) => {
+          redemptions.push(data);
+          return Promise.resolve(data);
+        },
+      },
+    };
+    return { tx, redemptions, row };
+  }
+
+  /** Service wired to the REAL repository so the conditional update is exercised. */
+  function makeService(): DiscountService {
+    const prismaStub = {
+      discount: { fields: { maxRedemptions: { name: 'maxRedemptions' } } },
+    } as unknown as PrismaService;
+    return new DiscountService(new DiscountRepository(prismaStub), cartServiceMock as never);
+  }
+
+  it('never lets two concurrent redemptions overshoot the global cap', async () => {
+    const service = makeService();
+    const { tx, row, redemptions } = makeFakeTx(makeDiscount({ maxRedemptions: 1 }));
+
+    const results = await Promise.allSettled([
+      service.redeem('d1', 'u1', 'o1', tx as never),
+      service.redeem('d1', 'u2', 'o2', tx as never),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(
+      ((rejected[0] as PromiseRejectedResult).reason as HttpException).getResponse(),
+    ).toMatchObject({ error: DiscountErrorCode.MAX_REDEMPTIONS_REACHED });
+    expect(row.redeemedCount).toBe(1);
+    expect(redemptions).toHaveLength(1);
+  });
+
+  it('lets both concurrent redemptions through when the cap is unlimited', async () => {
+    const service = makeService();
+    const { tx, row, redemptions } = makeFakeTx(makeDiscount({ maxRedemptions: null }));
+
+    const results = await Promise.allSettled([
+      service.redeem('d1', 'u1', 'o1', tx as never),
+      service.redeem('d1', 'u2', 'o2', tx as never),
+    ]);
+
+    expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+    expect(row.redeemedCount).toBe(2);
+    expect(redemptions).toHaveLength(2);
   });
 });

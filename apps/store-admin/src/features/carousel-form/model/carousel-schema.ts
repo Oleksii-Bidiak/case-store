@@ -19,6 +19,16 @@ export const CAROUSEL_STATUS = ["DRAFT", "SCHEDULED", "PUBLISHED"] as const;
 export type CarouselStatusValue = (typeof CAROUSEL_STATUS)[number];
 
 /**
+ * Where the carousel renders on the storefront home page (TASK-288) — mirror of
+ * the API's CarouselPlacement enum. Declared locally rather than imported from
+ * the generated models because Orval emits a SEPARATE enum per schema
+ * (`CreateCarouselDtoPlacement`, `CarouselEntityPlacement`, …) with no shared
+ * union — the same reason `CAROUSEL_SOURCE`/`CAROUSEL_STATUS` are local consts.
+ */
+export const CAROUSEL_PLACEMENT = ["HOME_TABS", "HOME_RAILS"] as const;
+export type CarouselPlacementValue = (typeof CAROUSEL_PLACEMENT)[number];
+
+/**
  * Validation schema for the admin carousel form.
  *
  * Mirrors `bannerSchema`'s conventions: numeric fields (`itemLimit`,
@@ -33,6 +43,8 @@ export const carouselSchema = z
     title: z.string().trim().min(1, e.titleRequired).max(255, e.titleMax),
 
     source: z.enum(CAROUSEL_SOURCE),
+
+    placement: z.enum(CAROUSEL_PLACEMENT),
 
     // Selected category UUID, or empty string when unset. Only meaningful (and
     // required — see superRefine) when `source` is CATEGORY.
@@ -100,6 +112,7 @@ export function carouselFormValuesToCreateDto(
   return {
     title: values.title,
     source: values.source,
+    placement: values.placement,
     categoryId:
       values.source === "CATEGORY" && values.categoryId
         ? values.categoryId

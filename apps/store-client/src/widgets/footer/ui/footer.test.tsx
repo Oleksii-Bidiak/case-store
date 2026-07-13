@@ -27,11 +27,15 @@ function makePage(overrides: Partial<PageEntity> = {}): PageEntity {
   };
 }
 
-/** Stub the two endpoints Footer() reads. Pages default to an empty list. */
-function mockFooterData(pages: PageEntity[] = []) {
+/** Stub the three endpoints Footer() reads. Pages default to an empty list. */
+function mockFooterData(
+  pages: PageEntity[] = [],
+  seo: { logoUrl?: string | null } | null = null,
+) {
   server.use(
     http.get("*/api/site-contact", () => HttpResponse.json({ data: null })),
     http.get("*/api/pages", () => HttpResponse.json({ data: pages, meta: {} })),
+    http.get("*/api/seo-settings", () => HttpResponse.json({ data: seo })),
   );
 }
 
@@ -104,5 +108,35 @@ describe("Footer — «Інформація» column (TASK-184)", () => {
     ).not.toHaveAttribute("href", "/products");
     // Only the Каталог "Усі товари" link should remain on bare /products.
     expect(productsLinks).toHaveLength(1);
+  });
+});
+
+describe("Footer — store logo (TASK-299)", () => {
+  it("renders the typographic wordmark when no logo is uploaded", async () => {
+    mockFooterData([], { logoUrl: null });
+
+    render(await Footer());
+
+    // The brand link is the wordmark — unchanged from before the Logo component.
+    expect(screen.getByRole("link", { name: "MobileStore" })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    expect(document.querySelector("footer img")).not.toBeInTheDocument();
+  });
+
+  it("renders the uploaded logo (alt = brand name) inside the home link", async () => {
+    const logoUrl = "http://localhost:3001/uploads/branding/logo.svg";
+    mockFooterData([], { logoUrl });
+
+    render(await Footer());
+
+    const img = screen.getByRole("img", { name: "MobileStore" });
+    expect(img).toHaveAttribute("src", logoUrl);
+    // The link's accessible name still resolves to the brand, via the alt text.
+    expect(screen.getByRole("link", { name: "MobileStore" })).toHaveAttribute(
+      "href",
+      "/",
+    );
   });
 });

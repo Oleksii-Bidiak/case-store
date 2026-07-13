@@ -139,12 +139,14 @@ export class CategoryController {
   /**
    * GET /api/categories
    *
-   * Returns a paginated list of root categories (parentId = null).
-   * Supports filtering by active status and sorting.
-   * Public endpoint — no authentication required.
+   * Returns a paginated list of ACTIVE root categories (parentId = null).
+   * Public endpoint — no authentication required. The `isActive` query param is
+   * NOT honoured here (TASK-297): an inactive category is withdrawn from sale, so
+   * the public list is always active-only. Admin listing lives at
+   * `GET /api/admin/categories`.
    */
   @Get()
-  @ApiOperation({ summary: 'List root categories' })
+  @ApiOperation({ summary: 'List active root categories' })
   @ApiResponse({
     status: 200,
     description: 'Paginated list of root categories',
@@ -158,7 +160,8 @@ export class CategoryController {
    * GET /api/categories/:slug
    *
    * Returns a category by slug with its product count.
-   * Public endpoint — no authentication required.
+   * Public endpoint — no authentication required. A DEACTIVATED category 404s
+   * here (TASK-297), exactly as a deactivated product does on the PDP.
    */
   @Get(':slug')
   @ApiOperation({ summary: 'Get category by slug' })
@@ -168,7 +171,7 @@ export class CategoryController {
     description: 'Category with product count',
     type: CategoryWithCountResponse,
   })
-  @ApiResponse({ status: 404, description: 'Category not found' })
+  @ApiResponse({ status: 404, description: 'Category not found or deactivated' })
   async findBySlug(@Param('slug') slug: string): Promise<CategoryWithCountResponse> {
     return this.categoryService.findBySlug(slug);
   }

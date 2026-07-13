@@ -12,6 +12,7 @@ Architecture), two Next.js App Router frontends (Feature-Sliced Design).
 | [`CLAUDE.md`](CLAUDE.md)                                 | Claude Code setup — agents, skills, commands                                              |
 | [`docs/design-system.md`](docs/design-system.md)         | Storefront design tokens & UI conventions                                                 |
 | [`docs/conventions/forms.md`](docs/conventions/forms.md) | Form state-sync rules                                                                     |
+| [`docs/seed-guide.md`](docs/seed-guide.md)               | Seeding the dev DB — reset, admin credentials, what gets seeded                           |
 
 ## Tech Stack
 

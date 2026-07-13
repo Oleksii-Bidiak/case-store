@@ -4,12 +4,14 @@ import {
   CarouselRepository,
   CreateCarouselInput,
   UpdateCarouselInput,
+  FindPublishedParams,
   FindAllAdminParams,
 } from './carousels.repository';
 import { CarouselEntity, CarouselItemEntity, PublicCarouselEntity } from './entities';
 import {
   CreateCarouselDto,
   UpdateCarouselDto,
+  CarouselListQueryDto,
   AdminCarouselListQueryDto,
   SetCarouselItemsDto,
 } from './dto';
@@ -50,12 +52,16 @@ export class CarouselService {
 
   /**
    * List published carousels (public storefront) with their RESOLVED product
-   * lists. Carousels whose resolution comes back empty are INCLUDED (honest
-   * "what's published" list — the storefront hides empty sections client-side,
-   * §Empty-carousel behavior, plan 154).
+   * lists, optionally narrowed to ONE placement (TASK-288 — the homepage asks
+   * for HOME_TABS and HOME_RAILS separately). Placement scopes only WHICH
+   * carousels come back, never HOW each one resolves its products. Carousels
+   * whose resolution comes back empty are INCLUDED (honest "what's published"
+   * list — the storefront hides empty sections client-side, §Empty-carousel
+   * behavior, plan 154).
    */
-  async findAllPublished(): Promise<PublicCarouselListResponse> {
-    const carousels = await this.carouselRepository.findAllPublished();
+  async findAllPublished(query: CarouselListQueryDto = {}): Promise<PublicCarouselListResponse> {
+    const params: FindPublishedParams = { placement: query.placement };
+    const carousels = await this.carouselRepository.findAllPublished(params);
 
     const data: PublicCarouselEntity[] = [];
     for (const carousel of carousels) {
@@ -67,10 +73,11 @@ export class CarouselService {
   }
 
   /**
-   * List all carousels including drafts (admin), optionally filtered by status.
+   * List all carousels including drafts (admin), optionally filtered by
+   * placement and/or status.
    */
   async findAllAdmin(query: AdminCarouselListQueryDto): Promise<CarouselListResponse> {
-    const params: FindAllAdminParams = { status: query.status };
+    const params: FindAllAdminParams = { placement: query.placement, status: query.status };
     const carousels = await this.carouselRepository.findAllAdmin(params);
 
     return { data: carousels.map((carousel) => CarouselEntity.fromPrisma(carousel)) };
@@ -110,6 +117,7 @@ export class CarouselService {
       source: dto.source,
       categoryId,
       itemLimit: dto.itemLimit,
+      placement: dto.placement,
       sortOrder: dto.sortOrder,
       status: publishState.status,
       publishedAt: publishState.publishedAt,
@@ -129,7 +137,8 @@ export class CarouselService {
    * are resolved only when `status` is supplied. When the EFFECTIVE source is
    * CATEGORY the effective categoryId (incoming or existing) must resolve to a
    * real category. Revalidates the homepage whenever public visibility could
-   * have changed.
+   * have changed — a `placement` move of a live carousel counts (it relocates
+   * the carousel between homepage sections) and is covered by the same rule.
    */
   async update(id: string, dto: UpdateCarouselDto): Promise<CarouselEntity> {
     const carousel = await this.carouselRepository.findById(id);
@@ -143,6 +152,7 @@ export class CarouselService {
       title: dto.title,
       source: dto.source,
       itemLimit: dto.itemLimit,
+      placement: dto.placement,
       sortOrder: dto.sortOrder,
     };
 

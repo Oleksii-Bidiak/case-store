@@ -1,10 +1,13 @@
 import { QueryClient } from "@tanstack/react-query";
+import { http, HttpResponse } from "msw";
 import {
   renderWithProviders,
   screen,
+  waitFor,
   within,
   userEvent,
 } from "@/shared/test/render";
+import { server } from "@/shared/test/msw-server";
 import {
   getGetWishlistQueryKey,
   type WishlistItemEntity,
@@ -155,5 +158,90 @@ describe("WishlistView (TASK-076)", () => {
     });
     expect(applyButton).toBeEnabled();
     expect(applyButton).toHaveTextContent("Показати 1 товар");
+  });
+});
+
+describe("WishlistView quick-view triggers (TASK-290)", () => {
+  it("renders a quick-view trigger on each grid card", () => {
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([buildItem()]),
+    });
+
+    // Grid is the default view: the eye-icon trigger sits in the card's
+    // hover-reveal overlay (present in the DOM, revealed on hover/keyboard focus),
+    // mirroring how the catalog ProductCard injects it into its `hoverAction` slot.
+    expect(
+      screen.getByRole("button", {
+        name: dict.quickView.trigger("iPhone 15 Pro Case"),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders a quick-view trigger on each list row", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([buildItem()]),
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: dict.filters.viewList }),
+    );
+
+    // List row: the trigger is pinned to the thumbnail's top-right corner, the
+    // same placement as the catalog list row (ProductListItem).
+    expect(
+      screen.getByRole("button", {
+        name: dict.quickView.trigger("iPhone 15 Pro Case"),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the quick-view dialog for the saved product, fetching it by slug", async () => {
+    const detailRequests: string[] = [];
+    server.use(
+      http.get("*/api/products/:slug", ({ params }) => {
+        detailRequests.push(params.slug as string);
+        return HttpResponse.json({
+          data: {
+            id: "p1",
+            name: "iPhone 15 Pro Case",
+            slug: "iphone-15-pro-case",
+            price: "29.99",
+            compareAtPrice: null,
+            sku: "IP15-CASE",
+            inStock: true,
+            lowStock: false,
+            ratingAverage: null,
+            ratingCount: 0,
+            variantSummary: { colors: [] },
+          },
+          category: null,
+          group: null,
+          images: [],
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([buildItem()]),
+    });
+
+    // Nothing is fetched until the trigger is actually clicked.
+    expect(detailRequests).toHaveLength(0);
+    await user.click(
+      screen.getByRole("button", {
+        name: dict.quickView.trigger("iPhone 15 Pro Case"),
+      }),
+    );
+
+    // The dialog opens, titled from the item's name up front, and the body
+    // hydrates from GET /api/products/:slug — proving both name and slug are
+    // wired through from the wishlist item.
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByRole("heading", { name: "iPhone 15 Pro Case" }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(detailRequests).toEqual(["iphone-15-pro-case"]));
   });
 });

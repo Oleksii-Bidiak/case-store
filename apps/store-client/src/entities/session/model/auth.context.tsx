@@ -10,7 +10,8 @@ import {
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { api, setAccessToken } from "@/shared/api";
+import { setAccessToken } from "@/shared/api";
+import { authControllerRefresh } from "@/shared/api/generated/auth/auth";
 import { getGetCartQueryKey } from "@/shared/api/generated/cart/cart";
 import { getGetWishlistQueryKey } from "@/shared/api/generated/wishlist/wishlist";
 
@@ -33,14 +34,17 @@ export const AuthContext = createContext<AuthContextValue | null>(null);
  * Bootstrap refresh: only a 401 means "no session". Anything else (429 from the
  * rate limiter, 5xx, network blip) is transient — retry once after a short
  * pause instead of silently signing the user out (fix/196).
+ *
+ * Calls the Orval-generated operation imperatively (it is a plain function, not a
+ * hook — this runs from an effect, outside React Query). `customInstance` already
+ * unwraps the Axios response, so the value here IS the `{ data }` envelope: one
+ * level of unwrapping, not two.
  */
 async function bootstrapRefresh(): Promise<string | null> {
   for (let attempt = 0; ; attempt++) {
     try {
-      const res = await api.post<{ data?: { accessToken?: string } }>(
-        "/api/auth/refresh",
-      );
-      return res.data?.data?.accessToken ?? null;
+      const envelope = await authControllerRefresh();
+      return envelope.data?.accessToken ?? null;
     } catch (error) {
       const status = isAxiosError(error) ? error.response?.status : undefined;
       if (status === 401 || attempt >= 1) {

@@ -35,6 +35,7 @@ const reviewRepositoryMock = {
   approve: jest.fn(),
   delete: jest.fn(),
   isVerifiedPurchase: jest.fn(),
+  findVerifiedPurchaserIds: jest.fn(),
   findExisting: jest.fn(),
 };
 
@@ -141,7 +142,7 @@ describe('ReviewService', () => {
         total: 1,
       });
       reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 5, ratingCount: 1 });
-      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.findVerifiedPurchaserIds.mockResolvedValue(new Set<string>());
 
       const result = await service.getApprovedReviews(PRODUCT_ID, {});
 
@@ -151,6 +152,46 @@ describe('ReviewService', () => {
       expect(result.aggregate.ratingAverage).toBe(5);
       expect(result.aggregate.ratingCount).toBe(1);
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 10, totalPages: 1 });
+    });
+
+    // TASK-298: the badge used to be resolved with one `isVerifiedPurchase` call PER review
+    // (an N+1). It is now one batched lookup for the page — the badge itself must not change.
+    it('badges a MIXED page correctly from a single batched lookup (no per-review query)', async () => {
+      const buyer = 'user-buyer';
+      const nonBuyer = 'user-non-buyer';
+      reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
+        reviews: [
+          makeReview({ id: 'r-buyer', userId: buyer, isActive: true }),
+          makeReview({ id: 'r-non-buyer', userId: nonBuyer, isActive: true }),
+        ],
+        total: 2,
+      });
+      reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 5, ratingCount: 2 });
+      reviewRepositoryMock.findVerifiedPurchaserIds.mockResolvedValue(new Set([buyer]));
+
+      const result = await service.getApprovedReviews(PRODUCT_ID, {});
+
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0]).toMatchObject({ id: 'r-buyer', verifiedPurchase: true });
+      expect(result.data[1]).toMatchObject({ id: 'r-non-buyer', verifiedPurchase: false });
+
+      expect(reviewRepositoryMock.findVerifiedPurchaserIds).toHaveBeenCalledTimes(1);
+      expect(reviewRepositoryMock.findVerifiedPurchaserIds).toHaveBeenCalledWith(PRODUCT_ID, [
+        buyer,
+        nonBuyer,
+      ]);
+      expect(reviewRepositoryMock.isVerifiedPurchase).not.toHaveBeenCalled();
+    });
+
+    it('asks about no authors at all for an empty page', async () => {
+      reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({ reviews: [], total: 0 });
+      reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: null, ratingCount: 0 });
+      reviewRepositoryMock.findVerifiedPurchaserIds.mockResolvedValue(new Set<string>());
+
+      const result = await service.getApprovedReviews(PRODUCT_ID, {});
+
+      expect(result.data).toEqual([]);
+      expect(reviewRepositoryMock.findVerifiedPurchaserIds).toHaveBeenCalledWith(PRODUCT_ID, []);
     });
   });
 

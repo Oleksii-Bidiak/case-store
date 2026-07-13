@@ -21,6 +21,14 @@ export type {
 // Runtime enum for spec value type (BOOLEAN formatting on the PDP).
 export { ProductSpecEntityType } from "@/shared/api/generated/models";
 
+// Presentational product primitives (entities/ui). They carry no cart/checkout
+// logic — only the product's own shape — and both the PDP (widgets/product-detail)
+// and the quick-view modal (widgets/product-quick-view) render them. Two widgets
+// are FSD peers and may not import each other, so the shared blocks live one
+// layer down; that is what breaks the product-detail ⇄ product-quick-view cycle.
+export { ProductImageGallery } from "./ui/product-image-gallery";
+export { ProductStockIndicator } from "./ui/product-stock-indicator";
+
 export {
   useProductControllerFindAll,
   getProductControllerFindAllQueryKey,
