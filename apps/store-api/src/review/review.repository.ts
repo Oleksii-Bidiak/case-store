@@ -178,6 +178,8 @@ export class ReviewRepository {
   /**
    * Whether the user has at least one order line item for the given product —
    * powers the "verified purchase" badge. Truthy result → verified.
+   *
+   * Single-review path (submission). Lists use {@link findVerifiedPurchaserIds}.
    */
   async isVerifiedPurchase(userId: string, productId: string): Promise<boolean> {
     const orderItem = await this.prisma.orderItem.findFirst({
@@ -185,6 +187,30 @@ export class ReviewRepository {
       select: { id: true },
     });
     return orderItem !== null;
+  }
+
+  /**
+   * Which of `userIds` have at least one order line item for `productId` — the BATCHED twin
+   * of {@link isVerifiedPurchase}, resolving the verified-purchase badge for a WHOLE review
+   * page in one query instead of one per review (the N+1 the public product-reviews endpoint
+   * used to fan out; same shape as `ProductRepository.getRatingsByProductId`).
+   *
+   * The predicate is deliberately IDENTICAL to `isVerifiedPurchase`'s — an order of the user's
+   * containing the product, whatever its status and including soft-deleted ones. The badge
+   * must not change, only the query count. Users absent from the returned set are unverified.
+   */
+  async findVerifiedPurchaserIds(productId: string, userIds: string[]): Promise<Set<string>> {
+    if (userIds.length === 0) {
+      return new Set();
+    }
+    // Grouped from the ORDER side: `distinct` needs a scalar, and `Order.userId` is one —
+    // `OrderItem` only reaches the user through its relation.
+    const orders = await this.prisma.order.findMany({
+      where: { userId: { in: userIds }, items: { some: { productId } } },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+    return new Set(orders.map((order) => order.userId));
   }
 
   /**

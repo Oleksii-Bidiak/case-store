@@ -46,6 +46,7 @@ describe('ReviewController (e2e)', () => {
     approve: jest.fn(),
     delete: jest.fn(),
     isVerifiedPurchase: jest.fn(),
+    findVerifiedPurchaserIds: jest.fn(),
     findExisting: jest.fn(),
   };
 
@@ -231,7 +232,7 @@ describe('ReviewController (e2e)', () => {
         total: 1,
       });
       reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 5, ratingCount: 1 });
-      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.findVerifiedPurchaserIds.mockResolvedValue(new Set<string>());
 
       const response = await request(app.getHttpServer())
         .get(`/api/products/${PRODUCT_ID}/reviews`)

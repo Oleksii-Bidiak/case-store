@@ -119,16 +119,16 @@ export class ReviewService {
       this.reviewRepository.aggregate(productId),
     ]);
 
-    // Resolve the verified-purchase badge per review author. The page size is
-    // bounded (≤ 50), so this is a small, bounded fan-out.
-    const data = await Promise.all(
-      reviews.map(async (review) => {
-        const verifiedPurchase = await this.reviewRepository.isVerifiedPurchase(
-          review.userId,
-          review.productId,
-        );
-        return ReviewEntity.fromPrisma(review, verifiedPurchase);
-      }),
+    // The verified-purchase badge for the WHOLE page in ONE query. This used to be one
+    // `isVerifiedPurchase` call per review inside a `Promise.all` — an N+1 that grew with the
+    // page size (≤ 50) on a PUBLIC, uncached endpoint. The badge rule is unchanged: an author
+    // is verified iff they have an order line item for this product.
+    const verifiedUserIds = await this.reviewRepository.findVerifiedPurchaserIds(productId, [
+      ...new Set(reviews.map((review) => review.userId)),
+    ]);
+
+    const data = reviews.map((review) =>
+      ReviewEntity.fromPrisma(review, verifiedUserIds.has(review.userId)),
     );
 
     return {
