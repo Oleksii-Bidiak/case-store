@@ -57,4 +57,29 @@ describe('RedisThrottlerStorage', () => {
     expect(record.totalHits).toBe(0);
     expect(record.timeToExpire).toBe(60);
   });
+
+  // ─── Shutdown (TASK-296) ───────────────────────────────────────────────────
+
+  describe('onModuleDestroy', () => {
+    it('quits the connection so it does not outlive the app', async () => {
+      const quit = jest.fn().mockResolvedValue('OK');
+      const disconnect = jest.fn();
+      const storage = new RedisThrottlerStorage({ quit, disconnect } as unknown as Redis);
+
+      await storage.onModuleDestroy();
+
+      expect(quit).toHaveBeenCalledTimes(1);
+      expect(disconnect).not.toHaveBeenCalled();
+    });
+
+    it('falls back to disconnect when quit throws (never-connected client)', async () => {
+      const quit = jest.fn().mockRejectedValue(new Error('Connection is closed.'));
+      const disconnect = jest.fn();
+      const storage = new RedisThrottlerStorage({ quit, disconnect } as unknown as Redis);
+
+      await expect(storage.onModuleDestroy()).resolves.toBeUndefined();
+
+      expect(disconnect).toHaveBeenCalledTimes(1);
+    });
+  });
 });

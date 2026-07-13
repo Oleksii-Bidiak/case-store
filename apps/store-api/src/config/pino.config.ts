@@ -53,7 +53,9 @@ interface SerializedRes {
 export function buildPinoHttpOptions(configService: ConfigService): Params {
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
   const isProduction = nodeEnv === 'production';
-  const level = configService.get<string>('LOG_LEVEL') ?? (isProduction ? 'info' : 'debug');
+  const isTest = nodeEnv === 'test';
+  const level =
+    configService.get<string>('LOG_LEVEL') ?? (isTest ? 'silent' : isProduction ? 'info' : 'debug');
 
   return {
     pinoHttp: {
@@ -107,13 +109,19 @@ export function buildPinoHttpOptions(configService: ConfigService): Params {
         ignore: (req: IncomingMessage) => req.url === '/health',
       },
 
-      // ── pino-pretty in non-production; raw JSON to stdout in production ───
-      transport: isProduction
-        ? undefined
-        : {
-            target: 'pino-pretty',
-            options: { colorize: true, singleLine: true },
-          },
+      // ── pino-pretty for humans; raw JSON to stdout otherwise ─────────────
+      // Never under test (TASK-296): a transport is a `worker_threads.Worker`,
+      // and `nestjs-pino` registers no shutdown hook that ends it, so the worker
+      // outlives `app.close()`. A test run boots one app per spec file, so the
+      // workers pile up — one leaked thread and pretty-print buffer per app,
+      // for output nobody reads.
+      transport:
+        isProduction || isTest
+          ? undefined
+          : {
+              target: 'pino-pretty',
+              options: { colorize: true, singleLine: true },
+            },
     },
   };
 }

@@ -32,6 +32,14 @@ describe('buildPinoHttpOptions', () => {
     it('defaults to info in production', () => {
       expect(pinoHttp({ NODE_ENV: 'production' }).level).toBe('info');
     });
+
+    it('defaults to silent under test (log noise buys nothing in a suite)', () => {
+      expect(pinoHttp({ NODE_ENV: 'test' }).level).toBe('silent');
+    });
+
+    it('still honours an explicit LOG_LEVEL under test', () => {
+      expect(pinoHttp({ NODE_ENV: 'test', LOG_LEVEL: 'debug' }).level).toBe('debug');
+    });
   });
 
   // ── Secret redaction (TASK-047-B) ────────────────────────────────────────────
@@ -146,6 +154,15 @@ describe('buildPinoHttpOptions', () => {
 
     it('is undefined in production (raw JSON to stdout)', () => {
       expect(pinoHttp({ NODE_ENV: 'production' }).transport).toBeUndefined();
+    });
+
+    // TASK-296. `pino-pretty` as a transport is a `worker_threads.Worker`, and
+    // `nestjs-pino` has no shutdown hook that ends it — `app.close()` leaves it
+    // running. The e2e suite boots 22 apps in ONE process, so the workers pile
+    // up and write into buffers whose Jest context is already torn down, which
+    // aborts the process natively (0xC0000409) with no failing test.
+    it('is undefined under test (a transport worker outlives app.close())', () => {
+      expect(pinoHttp({ NODE_ENV: 'test' }).transport).toBeUndefined();
     });
   });
 });

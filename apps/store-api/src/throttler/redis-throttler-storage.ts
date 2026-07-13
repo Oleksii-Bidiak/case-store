@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { Logger, type OnModuleDestroy } from '@nestjs/common';
 import type { ThrottlerStorage } from '@nestjs/throttler';
 import type Redis from 'ioredis';
 
@@ -29,7 +29,7 @@ interface ThrottlerStorageRecord {
  * as the Redis cache layer. When `REDIS_HOST` is unset the module never
  * constructs this class and the in-memory store is used instead.
  */
-export class RedisThrottlerStorage implements ThrottlerStorage {
+export class RedisThrottlerStorage implements ThrottlerStorage, OnModuleDestroy {
   private readonly logger = new Logger(RedisThrottlerStorage.name);
 
   // KEYS[1]=hit counter, KEYS[2]=block flag.
@@ -72,6 +72,24 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
   `;
 
   constructor(private readonly redis: Redis) {}
+
+  /**
+   * Close the connection when the app shuts down (TASK-296).
+   *
+   * `ThrottlerModule` registers this instance through a `useFactory` provider,
+   * so Nest owns its lifecycle and calls this on `app.close()`. Without it the
+   * ioredis client — and its reconnect timer — outlives the app: harmless for a
+   * process that exits straight after, a handle leak for a test run that boots
+   * one app per spec file in a single process.
+   */
+  async onModuleDestroy(): Promise<void> {
+    try {
+      await this.redis.quit();
+    } catch {
+      // A never-connected (lazyConnect) or already-closed client throws here.
+      this.redis.disconnect();
+    }
+  }
 
   async increment(
     key: string,
