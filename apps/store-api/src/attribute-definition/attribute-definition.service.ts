@@ -10,6 +10,7 @@ import {
   CreateAttributeDefinitionInput,
 } from './attribute-definition.repository';
 import { CategoryRepository } from '../category';
+import { reorderErrorToHttp } from '../common/reorder';
 import { AttributeDefinitionEntity, FilterableSpecEntity } from './entities';
 import {
   CreateAttributeDefinitionDto,
@@ -149,14 +150,29 @@ export class AttributeDefinitionService {
     return { id };
   }
 
-  /** Reorder a category's templates (admin-only). */
+  /**
+   * Reorder a category's templates (admin-only) and return the refreshed list — re-read
+   * INSIDE the reorder transaction (TASK-298), so the admin panel resyncs to server truth in
+   * one round-trip exactly as the other reorder endpoints do.
+   *
+   * The repository throws the pure domain errors of `common/reorder`; they become the stable
+   * 400 / 404 / 409 codes here (409 = another admin added a template to this category since
+   * the client read it, so `orderedIds` is only a PARTIAL ordering — reload and retry).
+   */
   async reorder(
     categoryId: string,
     dto: ReorderAttributeDefinitionsDto,
   ): Promise<AttributeDefinitionEntity[]> {
     await this.assertCategoryExists(categoryId);
-    await this.repository.reorder(categoryId, dto.orderedIds);
-    return this.findByCategory(categoryId);
+
+    let defs;
+    try {
+      defs = await this.repository.reorder(categoryId, dto.orderedIds);
+    } catch (error) {
+      throw reorderErrorToHttp(error);
+    }
+
+    return defs.map((def) => AttributeDefinitionEntity.fromPrisma(def));
   }
 
   /** SELECT definitions must ship a non-empty options list. */

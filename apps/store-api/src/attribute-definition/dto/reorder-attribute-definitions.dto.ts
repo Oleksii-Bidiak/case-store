@@ -1,19 +1,20 @@
-import { IsArray, IsUUID, ArrayNotEmpty } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ReorderFlatDto } from '../../common/dto';
 
 /**
- * DTO for reordering a category's structured-spec templates (admin-only). The
- * body carries the definition ids in their new display order; the service
- * rewrites each definition's `sortOrder` to its index in this array.
+ * Body of `PATCH /api/categories/:categoryId/attribute-definitions/reorder` (TASK-298).
+ *
+ * A named, definition-bound alias of the shared {@link ReorderFlatDto} — the contract is now
+ * identical to banners / blog categories / device brands (that is the point of hoisting it),
+ * but the endpoint keeps its own DTO class so Swagger/Orval name the generated model after
+ * the resource (precedent: `ReorderBlogCategoriesDto`).
+ *
+ * The bucket key is NOT carried in the body: a definition's `sortOrder` is only meaningful
+ * inside its OWNING CATEGORY, and that category is already the route param — it is both the
+ * advisory-lock bucket and the WHERE scope of every write. A definition never moves between
+ * categories (`UpdateAttributeDefinitionInput` deliberately omits `categoryId`).
+ *
+ * `@ArrayNotEmpty` is deliberately GONE (it was here before TASK-298): an empty `orderedIds`
+ * is legal exactly when the bucket is empty too, and the authoritative in-transaction check
+ * (`assertFlatReorder`) is what enforces that — a partial payload is a 409, not a 400.
  */
-export class ReorderAttributeDefinitionsDto {
-  @ApiProperty({
-    description: 'Definition ids in the desired display order',
-    example: ['550e8400-e29b-41d4-a716-446655440000', '550e8400-e29b-41d4-a716-446655440001'],
-    type: [String],
-  })
-  @IsArray()
-  @ArrayNotEmpty({ message: 'orderedIds must not be empty' })
-  @IsUUID(4, { each: true, message: 'Each id must be a valid UUID' })
-  orderedIds!: string[];
-}
+export class ReorderAttributeDefinitionsDto extends ReorderFlatDto {}
