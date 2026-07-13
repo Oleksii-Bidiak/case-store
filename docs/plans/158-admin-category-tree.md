@@ -800,6 +800,13 @@ commits — never inside the tx, never per move:
    (following `faq-server.ts`) and touches the public read path. Recorded in
    `docs/manual-qa-pending.md` and BACKLOG, not silently skipped.
 
+   > **Correction (2026-07-13, TASK-294 — closed as invalid).** The reasoning above stops one step
+   > short. There is no `categories` tag to purge because **nothing caches category order**: every
+   > storefront surface that renders it is a client component on react-query, and the two server
+   > readers (`/categories/[slug]`, `/products`) `await searchParams` — which makes them dynamic —
+   > and fetch through axios, which does not participate in Next's fetch cache. So the storefront
+   > was never stale, and the follow-up had nothing to build. See §12.
+
 **Rationale.** Firing per move would mean N Redis round-trips and N HTTP pings inside one admin
 request. The Redis eviction is a one-line, precedented fix. Meilisearch is the one pre-existing
 hole that must not be waved through: the feature being shipped is precisely what makes it fire
@@ -896,7 +903,7 @@ separate BACKLOG rows (mirrors the plan-154 convention for a single large task).
       `src/discount/discount.errors.ts`
 - [ ] `category-reorder.rules.ts`: `MAX_CATEGORY_TREE_LEVELS = 4` (1-based levels, root = level 1
       — §3.7), `CategorySnapshotRow` type, `validateAndResolveReorder(snapshot, groups):
-  ResolvedWrite[]` — no Prisma import, no Nest DI import
+ResolvedWrite[]` — no Prisma import, no Nest DI import
 - [ ] Unit spec `category-reorder.rules.spec.ts` (RED before implementation) covers: duplicate id
       (across/within groups); unknown id/parent; self-parent (`parentId ∈` its own `orderedIds`);
       single-move cycle; **multi-move cycle** (A→under B and B→under A in one payload, each
@@ -957,13 +964,13 @@ not shipped code) · **Depends on:** —
 
 - [ ] `CategoryRepository.findCategoryTreeForAdmin()` rewritten as a single flat `findMany`
       (`select: id, name, slug, parentId, isActive, sortOrder, updatedAt` + `_count.products
-  (isActive: true)`, `orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }]`), assembled into a tree
+(isActive: true)`, `orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }]`), assembled into a tree
       in-repository; new `AdminCategoryTreeNodeEntity` (`parentId`, `productCount`, `depth` added
       to the existing tree-node fields)
 - [ ] `findCategoryTree`'s sibling `orderBy` gains the `{ id: 'asc' }` tiebreaker at every nesting
       level (§3.9) — public entity/route untouched otherwise
 - [ ] `findDescendantIds(categoryId, client: Prisma.TransactionClient | PrismaService =
-  this.prisma)` — signature widened, raw CTE body byte-identical; existing callers (
+this.prisma)` — signature widened, raw CTE body byte-identical; existing callers (
       `category.service.ts` non-tx path) unaffected; TASK-238's int-spec still passes unmodified
 - [ ] `CategoryRepository.applyTreeMoves(groups: ReorderGroupDto[]): Promise<AdminCategoryTreeNodeEntity[]>`
       implemented per §3.6/§3.7/§3.8: one interactive `$transaction`, sorted-key advisory locks
@@ -990,7 +997,7 @@ not shipped code) · **Depends on:** —
       the same parent with different orderings → no crash, final order equals exactly ONE submitted
       ordering, `sortOrder` exactly 0..n-1, no duplicates/gaps, no 409 (equal member sets = pure
       last-writer-wins, §3.7); **concurrent INVERSE reparents** — `Promise.all([applyTreeMoves(X
-  under Y), applyTreeMoves(Y under X)])` → exactly one succeeds, the other throws
+under Y), applyTreeMoves(Y under X)])` → exactly one succeeds, the other throws
       `CategoryCycleError`, and the committed table contains NO cycle (this test FAILS with
       per-bucket locks and passes only with the tree-scoped lock); concurrent reparent+reorder of
       the same node → never writer-A's `parentId` with writer-B's slot, and the reorder loser gets
@@ -1020,7 +1027,7 @@ not shipped code) · **Depends on:** —
 **Acceptance Criteria:**
 
 - [ ] `CategoryService.reorderTree(dto: ReorderTreeDto): Promise<{ data:
-  AdminCategoryTreeNodeEntity[] }>` — calls `applyTreeMoves`, catches each domain error class
+AdminCategoryTreeNodeEntity[] }>` — calls `applyTreeMoves`, catches each domain error class
       and maps to the matching HTTP helper from `category.errors.ts`, then runs post-commit side
       effects (§3.13): `cache.delByPrefix(PRODUCT_LIST_PREFIX)` exactly once; a single best-effort,
       non-blocking `categorySubtreeIndexer.reindexSubtrees(movedRootIds)` (log-and-continue on
@@ -1058,7 +1065,7 @@ not shipped code) · **Depends on:** —
     generated Orval `CreateCategoryDto`/`UpdateCategoryDto`, and `store-admin`'s
     `features/category-form/model/category-schema.ts` still sends `sortOrder` until
     TASK-291-F/G delete that input. Between the two slices `npm run typecheck -w
-    apps/store-admin` FAILS (`TS2353 … 'sortOrder' does not exist`). Do NOT merge the
+apps/store-admin` FAILS (`TS2353 … 'sortOrder' does not exist`). Do NOT merge the
     backend-only slice into `develop` on its own.
 - [ ] Unit tests (`category.service.spec.ts`): domain error → correct HTTP class AND the code
       lands in the envelope's `error` field; repository called EXACTLY ONCE per `reorderTree` call
@@ -1094,7 +1101,7 @@ not shipped code) · **Depends on:** —
 - [ ] `src/common/dto/reorder.dto.ts` created: `ReorderGroupDto`, `ReorderTreeDto`,
       `ReorderFlatDto` per §3.4 (shared, hoisted for future flat-resource reuse — §4)
 - [ ] `src/common/reorder/sibling-order.util.ts` created: `writeSiblingOrder(delegate, orderedIds,
-  scope)` + the namespaced advisory-lock helper (`lockKey(resource, parentId)`), extracted
+scope)` + the namespaced advisory-lock helper (`lockKey(resource, parentId)`), extracted
       from `applyTreeMoves`'s lock logic so it's genuinely shared (§4)
 - [ ] `apps/store-api/src/category/dto/reorder-categories.dto.ts` extends `ReorderTreeDto`
 - [ ] `AdminCategoryController` gains `PATCH /admin/categories/reorder`, declared BEFORE the
@@ -1107,7 +1114,7 @@ not shipped code) · **Depends on:** —
       EMPTY `orderedIds` group is ACCEPTED (regression guard against re-adding
       `@ArrayNotEmpty()` at the group level); the 400 body's `error` field carries
       `CATEGORY_CYCLE` as it reaches the wire through `HttpExceptionFilter`; 200 → `{ data:
-  AdminCategoryTreeNodeEntity[] }`
+AdminCategoryTreeNodeEntity[] }`
 - [ ] Tests pass: `npm run test:e2e -w apps/store-api -- --runInBand`
 - [ ] `npm run lint -w apps/store-api` / `npm run typecheck -w apps/store-api` clean
 
@@ -1158,7 +1165,7 @@ unit tests required, not formal TDD) · **Depends on:** —
       `removeChildrenOf` (MIT header retained verbatim). **`sortableTreeKeyboardCoordinates` is
       deliberately NOT vendored and no `KeyboardSensor` is registered** (§3.2 — dnd-kit is
       pointer-only). Plus our own measurement-free `applyMove(items, movingId, { targetParentId,
-  targetIndex })` reducer (the single path shared by keyboard/pointer/menu/dialog, §7),
+targetIndex })` reducer (the single path shared by keyboard/pointer/menu/dialog, §7),
       `projectionToInsertionPoint(projection, over)` (the pointer adapter), and
       `toReorderGroups(prev, next)` (diff → `ReorderGroupDto[]`)
 - [ ] Pure unit tests (jsdom project, no DOM needed for these): `flattenTree`/`buildTree`
@@ -1169,13 +1176,13 @@ unit tests required, not formal TDD) · **Depends on:** —
       boundary no-ops and the `level + height − 1 ≤ 4` refusal; `toReorderGroups` produces 1 group
       for a same-parent reorder and 2 groups (source + destination) for a reparent
 - [ ] `shared/ui/sortable-tree/` — entity-agnostic primitive: `{ items: {id, parentId, label,
-  disabled?}[], maxDepth, renderRow, onMove(groups), announcements?, disabled? }`;
+disabled?}[], maxDepth, renderRow, onMove(groups), announcements?, disabled? }`;
       `maxDepth: 1` collapses it to the flat sortable-list case (§4) — a unit test asserts
       `getProjection` never returns depth > 1 and `restrictToVerticalAxis` is applied when
       `maxDepth === 1`
 - [ ] `shared/ui/live-announcer/` — two permanently-mounted, empty-on-mount `sr-only` regions
       (`role="status" aria-live="polite" data-testid="tree-live-polite"`, `role="alert"
-  aria-live="assertive" data-testid="tree-live-assertive"`, both `aria-atomic="true"`,
+aria-live="assertive" data-testid="tree-live-assertive"`, both `aria-atomic="true"`,
       clip-based `sr-only`, never `display:none`) + `useAnnouncer()` hook returning
       `{ announcePolite(msg), announceAssertive(msg) }`. **Announcement timing (precise):** emit
       IMMEDIATELY (leading edge) when `event.repeat === false`; when `event.repeat === true`,
@@ -1866,9 +1873,13 @@ cannot reach:
 - **Meilisearch re-index timing** — reparent a subtree with several products, confirm
   category-filtered storefront search reflects the new membership within a reasonable window
   (best-effort, non-blocking per §3.13).
-- **Storefront staleness note** (informational, not a defect to "fix" here) — confirm the
-  storefront category tree/nav does NOT immediately reflect an admin reorder (no ISR tag exists
-  yet — see the ISR-revalidation follow-up in §12) — record as expected until that follow-up ships.
+- **Storefront staleness note** — ~~confirm the storefront category tree/nav does NOT immediately
+  reflect an admin reorder (no ISR tag exists yet)~~. **Wrong, corrected 2026-07-13 (TASK-294):**
+  the storefront reflects a reorder immediately. Nothing there caches category order — every
+  surface that renders it (`CategoryNav`, mega-menu, `/categories`, the catalog sidebar) is a
+  client component on react-query, and the two server readers `await searchParams` (dynamic) and
+  fetch through axios, which never enters Next's fetch cache. Verify the new order appears at
+  once instead.
 
 ## 12. Open Questions / Follow-ups
 
@@ -1884,10 +1895,11 @@ cannot reach:
   категорій: множинний вибір + масова активація/деактивація» — needs a selection model
   (checkbox column, `aria-multiselectable`, Shift-range, bulk-actions bar), its own endpoint, and
   an owner decision on cascade-on-reactivation semantics before it can be scoped.
-- **Storefront ISR revalidation** (deferred per §3.13, working title «Storefront ISR-ревалідація
-  для категорій») — categories need a `categories-server.ts` shim + cache tag in `store-client`
-  (mirrors `faq-server.ts`) before an admin reorder can ping `/api/revalidate`; genuinely separate
-  from this plan's backend/admin scope. Filed at implementation time from the next free BACKLOG id.
+- **Storefront ISR revalidation** (deferred per §3.13, filed as **TASK-294**) — **closed as invalid
+  on 2026-07-13, no code.** The premise was wrong: this plan assumed the storefront would serve a
+  stale order until an ISR window elapsed, but no storefront surface caches category order at all,
+  so there is nothing to revalidate and no `categories` tag to add. The shim + tag only become
+  necessary if a category read ever moves onto a cached server `fetch`.
 - **JAWS manual QA verdict** (§11) is the actual decision point for whether Plan B
   (`role="tree"` + one menu per node) is ever needed — do not build Plan B preemptively.
 - **`@dnd-kit` 6.x line is frozen** (last publish 2024-12-05) — no upstream fix if a React 19
