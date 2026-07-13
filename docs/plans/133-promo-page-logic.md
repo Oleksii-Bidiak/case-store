@@ -1,6 +1,6 @@
 # Plan 133 — Promo Page Logic (Server `onSale` Filter + Public Active-Discounts Feed)
 
-> **Status:** 🔄 In Progress
+> **Status:** ✅ Done (TASK-179 shipped)
 > **Phase:** Roadmap Етап 6 — Доробки після Етапу 5 (CRM, аналітика, контент/SEO-зручність,
 > адаптив, CI/CD) — **Хвиля 4** (Передзапускові фічі + решта CRM), Block C
 > **Created:** 2026-07-08
@@ -330,9 +330,9 @@ transform test).
 - [ ] `ProductListKeyParams`/`KEY_FIELDS` in `cache-key.util.ts` include `onSale`
 - [ ] `ProductService.toListParams()` maps `query.onSale` through; the `buildProductListKey(...)`
       call inside `findAll()` includes `listParams.onSale` (public list still forces `isActive:
-    true` unconditionally — unchanged)
+true` unconditionally — unchanged)
 - [ ] New unit test file/suite `product-list-query.dto.spec.ts` — new `describe('onSale transform
-    (TASK-179)')` mirroring `user-list-query.dto.spec.ts` exactly: `'true'`→`true`, `'false'`→
+(TASK-179)')` mirroring `user-list-query.dto.spec.ts` exactly: `'true'`→`true`, `'false'`→
       `false` (NOT the truthy-string trap), absent→`undefined`, garbage string→`undefined`, and a
       `class-validator` pass for all three recognized states
 - [ ] `cache-key.util.spec.ts`: extend the "serializes all params in a fixed order" case and the
@@ -366,7 +366,7 @@ per the acceptance criteria below.
 - [ ] New private `ProductRepository.getOnSaleProductIds(): Promise<string[]>` runs
       `this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql\`SELECT id FROM products WHERE
       compare_at_price IS NOT NULL AND compare_at_price > price\`)` against the real snake_case
-    table/columns (`products`/`compare_at_price`/`price`, per `schema.prisma`) — mapped column
+table/columns (`products`/`compare_at_price`/`price`, per `schema.prisma`) — mapped column
       names, not Prisma model names
 - [ ] `findAll()` composes `where.id = { in: onSaleIds }` only when `onSale` is truthy, inserted
       before the `sortBy === 'bestselling'` branch so it applies identically to both the column-sort
@@ -410,7 +410,7 @@ per the acceptance criteria below.
       `prisma.discount.findMany`
 - [ ] `DiscountService.findActivePublic(): Promise<{ data: PublicDiscountEntity[] }>` — calls the
       repository with `new Date()`, filters to `maxRedemptions === null || redeemedCount <
-    maxRedemptions`, maps survivors through `PublicDiscountEntity.fromPrisma`; unit tests: an
+maxRedemptions`, maps survivors through `PublicDiscountEntity.fromPrisma`; unit tests: an
       exhausted-cap discount is excluded, a null-cap discount is included, an unbounded/no-window
       discount is included
 - [ ] `PublicDiscountEntity` exposes exactly `code`, `type`, `value` (string), `minSpend` (string |

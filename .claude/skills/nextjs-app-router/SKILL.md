@@ -324,4 +324,4 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
 - NEVER use `useEffect` for data fetching — use TanStack Query hooks instead.
 - NEVER expose API secrets in Client Components — keep them in Server Components or Server Actions.
 - ALWAYS use route groups `(shop)`, `(auth)`, `(admin)` to organize layouts.
-- ALWAYS use semantic design tokens from `tailwind.config.ts` — never raw hex values.
+- ALWAYS use semantic design tokens from `@theme inline` in `apps/store-client/src/app/globals.css` (storefront) / `apps/store-admin/src/app/globals.css` (admin) — never raw hex values, and never look for a `tailwind.config.ts` (Tailwind v4 is CSS-first; the file does not exist).

@@ -1,6 +1,6 @@
 # Plan: Password Reset
 
-> **Status:** 🔄 In Progress
+> **Status:** ✅ Done (TASK-169 shipped; hardening follow-up TASK-273 ✅, plan 136)
 > **Phase:** Roadmap Етап 6 (Wave 4 — pre-launch features), plan `docs/roadmap.md` Phase 1 Auth module extension
 > **Created:** 2026-07-08
 > **Last Updated:** 2026-07-08

@@ -1,6 +1,6 @@
 # Plan 145 — Brand Title, OG-Image Fallback & Favicon Package
 
-> **Status:** ⬜ To Do
+> **Status:** ✅ Done (TASK-279 shipped)
 > **Phase:** Roadmap Етап 7 — SEO/GEO (`docs/handoff-seo.md`) — доріжка B, task 1 of 3
 > (SEO-3 → SEO-4/TASK-280 → SEO-10/TASK-285)
 > **Created:** 2026-07-11

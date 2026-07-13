@@ -1,6 +1,6 @@
 # Plan 143 — Listing Canonical Policy + Noindex on Service Pages
 
-> **Status:** 🔄 In Progress
+> **Status:** ✅ Done (TASK-278 shipped)
 > **Phase:** Roadmap Етап 7 — SEO/GEO (BACKLOG.md; source `docs/handoff-seo.md`)
 > **Created:** 2026-07-11
 > **Last Updated:** 2026-07-11

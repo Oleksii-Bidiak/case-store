@@ -1,6 +1,6 @@
 # Plan 148 — Google Merchant Center Feed (`merchant-feed.xml`)
 
-> **Status:** 🔄 In Progress
+> **Status:** ✅ Done (TASK-281 shipped; live curl + Merchant Center submission → manual QA)
 > **Phase:** Roadmap Етап 7 — SEO/GEO (BACKLOG.md; source `docs/handoff-seo.md` §SEO-5)
 > **Created:** 2026-07-11
 > **Last Updated:** 2026-07-11

@@ -100,7 +100,7 @@ src/
 2. **shared/ui** contains "dumb" components with no business logic. Use shadcn/ui as the base.
 3. **features/** components use Orval-generated hooks (`useMutation`, `useQuery`).
 4. **widgets/** compose features and entities into standalone blocks.
-5. Use Tailwind CSS with semantic design tokens defined in `tailwind.config.ts` (never raw hex values in markup).
+5. Use Tailwind CSS with semantic design tokens. Tailwind v4 is CSS-first — there is **no `tailwind.config.ts`**; tokens are declared in `@theme inline` inside `apps/store-client/src/app/globals.css` (storefront) and `apps/store-admin/src/app/globals.css` (admin). Never use raw hex values in markup.
 6. Ensure accessibility (a11y): keyboard navigation, ARIA attributes, screen-reader support.
 
 ## Testing Strategy (TDD)
@@ -230,6 +230,7 @@ When working on this project, read these files for additional context:
 - `BACKLOG.md` — Task status and roadmap (one-line rows; details in `docs/plans/NNN-*.md`)
 - `docs/design-system.md` — Storefront design tokens & UI conventions
 - `docs/conventions/forms.md` — Form state-sync rules (async-seeded forms)
+- `docs/seed-guide.md` — Seeding the dev database: reset, admin credentials, what gets seeded
 - `docs/manual-qa-pending.md` — Outstanding manual checks on a running stack
 - `docs/admin-guide.md` — Admin-panel onboarding guide (UA, for non-technical operators)
 - `docs/deploy.md` — Staging deploy runbook (UA, for non-technical operators): logs, restart, rollback, server prep

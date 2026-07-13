@@ -1,6 +1,6 @@
 # Plan 146 — Search Console Verification (`googleSiteVerification` / `bingSiteVerification`)
 
-> **Status:** ⬜ Not started
+> **Status:** ✅ Done (TASK-280 shipped)
 > **Phase:** Roadmap Етап 7 — SEO/GEO (`docs/handoff-seo.md`) — доріжка B, task 2 of 3
 > (SEO-3/TASK-279 → **SEO-4/TASK-280** → SEO-10/TASK-285)
 > **Created:** 2026-07-11
@@ -262,10 +262,10 @@ covered by the unit-test additions below (not full Red→Green→Refactor).
       above), applied via `npx prisma db push` to both the dev DB and `store_test`, followed by
       `npx prisma generate`.
 - [ ] `UpdateSeoSettingsDto`: two new optional fields, `@IsOptional() @IsString()
-    @MaxLength(255)`, each with the shared local `normalizeVerification` `@Transform` (Design
+@MaxLength(255)`, each with the shared local `normalizeVerification` `@Transform` (Design
       Decision 1), `@ApiPropertyOptional` with the examples from §API Contract.
 - [ ] `SeoSettingsEntity`: two new `string | null` fields (`@ApiProperty({ nullable: true,
-    required: false })`, mirroring `defaultOgImage`), mapped in both `fromPrisma()` and
+required: false })`, mirroring `defaultOgImage`), mapped in both `fromPrisma()` and
       `empty()`.
 - [ ] `UpsertSeoSettingsInput` (repository): two new optional fields — no other repository code
       change (the existing `upsert({ ...data })` pass-through already forwards any key present
@@ -278,10 +278,10 @@ covered by the unit-test additions below (not full Red→Green→Refactor).
       which is the intended forcing function).
 - [ ] New unit tests: DTO normalizer (`update-seo-settings.dto.ts` or a co-located
       `.spec.ts`) — bare token passes through unchanged; a full `<meta name="google-site-
-    verification" content="XYZ">` tag normalizes to `"XYZ"`; single- and double-quoted
+verification" content="XYZ">` tag normalizes to `"XYZ"`; single- and double-quoted
       `content=` both handled; whitespace trimmed either way. `SeoSettingsEntity.fromPrisma`/
       `.empty()` — both new fields map through / default to `null`. `SeoSettingsService
-    .updateSettings` — payload containing the two new fields passes through to
+.updateSettings` — payload containing the two new fields passes through to
       `repository.upsertSettings` unchanged (repository already generically tested for
       arbitrary-field pass-through in TASK-239's spec).
 - [ ] Tests pass: `npm run test -w apps/store-api` (seo-settings suite green, no regressions

@@ -1,6 +1,6 @@
 # Plan 158 — Admin category tree (TASK-291)
 
-> **Status:** ⬜ To Do
+> **Status:** ✅ Done (TASK-291 shipped 2026-07-12; follow-ups TASK-293/294/295 ✅ — live drag/drop, keyboard reorder and screen-reader audit → manual QA)
 > **Phase:** Roadmap — «Пізніша хвиля» (post-Етап-7 backlog)
 > **Created:** 2026-07-12
 > **BACKLOG task:** TASK-291 (single task, internal work breakdown TASK-291-A…M below, mirrors

@@ -16,7 +16,8 @@ Use me when:
 - Needing a structured plan before implementation
 - Onboarding a new developer who needs context
 
-Use the `/plan` command or `@task-planner` agent to invoke me.
+Use the `/planer` command or `@task-planner` agent to invoke me. (The custom command is
+`/planer` — `/plan` is Claude Code's built-in plan mode and is deliberately not overridden.)
 
 ## Plan Document Template
 

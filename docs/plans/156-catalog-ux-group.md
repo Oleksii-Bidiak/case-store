@@ -1,6 +1,6 @@
 # Plan 156 — Catalog UX Group D: Mobile Filter Drawer Polish + Product Quick-View (TASK-084 + TASK-086)
 
-> **Status:** ⬜ To Do
+> **Status:** ✅ Done (TASK-084 + TASK-086 shipped 2026-07-12; mobile-viewport + a11y focus-return smoke → manual QA)
 > **Phase:** Roadmap — «Пізніша хвиля» (post-Етап-7 backlog), Group D of the late-wave-2
 > orchestration (`docs/plans/152-late-wave-2-orchestration.md`)
 > **Created:** 2026-07-11
@@ -442,7 +442,7 @@ RTL coverage required) · **Depends on:** —
       lazy pattern mirroring `ProductCardActions`'s `CartSheet`), `ProductQuickView` (the `Dialog`),
       `ProductQuickViewSkeleton`
 - [ ] `ProductQuickView` fetches `useProductControllerFindBySlug(product.slug, { query: { enabled:
-    open } })`; renders the skeleton while pending; on error shows `dict.quickView.loadError`
+open } })`; renders the skeleton while pending; on error shows `dict.quickView.loadError`
       inline (dialog stays open, no crash) with a retry affordance (`refetch()`)
 - [ ] Dialog content: gallery (images sorted by `sortOrder`, mirrors the PDP), name as `DialogTitle`,
       sr-only `DialogDescription`, rating, SKU, price/compare-at-price with the same
@@ -483,7 +483,7 @@ RTL coverage required) · **Depends on:** —
 **Acceptance Criteria:**
 
 - [ ] `widgets/product-list/ui/product-list.tsx` — grid `<ProductCard hoverAction={<ProductQuickViewTrigger
-    product={product} />} .../>`
+product={product} />} .../>`
 - [ ] `widgets/product-list/ui/product-list-item.tsx` — persistent icon-button trigger pinned at the
       thumbnail's top-right corner (list-row layout has no `hoverAction` slot to plug into)
 - [ ] `widgets/product-grid/ui/product-grid.tsx`, `widgets/promo/ui/promo-deals.tsx`,

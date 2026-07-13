@@ -1,6 +1,6 @@
 # Plan 147 — Slug-Redirect Guard for Admin-Managed Pages, Posts, Products & Categories
 
-> **Status:** ⬜ Not started
+> **Status:** ✅ Done (TASK-285 shipped; live 308-smoke → manual QA)
 > **Phase:** Roadmap Етап 7 — SEO/GEO (`docs/handoff-seo.md`) — доріжка B, task 3 of 3
 > (SEO-3/TASK-279 → SEO-4/TASK-280 → **SEO-10/TASK-285**)
 > **Created:** 2026-07-11
@@ -529,7 +529,7 @@ the same 9-case table).
 **Acceptance Criteria:**
 
 - [ ] `SlugRedirectRepository.findRedirect(entity, oldSlug)` and `.recordRename(tx, entity, from,
-  to)` implemented exactly per §Backend.
+to)` implemented exactly per §Backend.
 - [ ] `slug-redirect.repository.spec.ts` (mocked `tx`) asserts `recordRename` issues exactly the
       3 calls (`upsert`, `updateMany`, `deleteMany`) with the documented `where`/`data` shapes,
       in order.
@@ -608,8 +608,8 @@ the same 9-case table).
       example; behavior/SQL unchanged when omitted (regression-tested by the existing spec suite
       still passing unmodified for the no-rename cases).
 - [ ] `PageService.update()` computes `wasPublished` (already exists) and passes `slugRename =
-  { oldSlug: page.slug, newSlug: dto.slug }` to the repository only when `wasPublished &&
-  dto.slug !== undefined && dto.slug !== page.slug`.
+{ oldSlug: page.slug, newSlug: dto.slug }` to the repository only when `wasPublished &&
+dto.slug !== undefined && dto.slug !== page.slug`.
 - [ ] **Revalidation fix**: `PageService.update()`'s post-write revalidation call purges **both**
       the old and the new slug's cache tags/paths when the slug changed (mirrors
       `BlogService.update()`'s existing `notifyRevalidationForSlugs([post.slug, entity.slug])`
@@ -648,7 +648,7 @@ already correct)
 - [ ] `BlogRepository.update()` gains the optional `slugRename` param; unchanged behavior when
       omitted.
 - [ ] `BlogService.update()` passes `slugRename` only when `wasPublished && dto.slug !==
-  undefined && dto.slug !== post.slug`.
+undefined && dto.slug !== post.slug`.
 - [ ] New unit tests mirroring TASK-285-E's three cases (published+renamed records a redirect;
       draft+renamed does not; published+unchanged-slug does not).
 - [ ] Tests pass: `npm run test -w apps/store-api`.
@@ -681,7 +681,7 @@ already correct)
 - [ ] `ProductService.update()` captures `wasActive = product.isActive` **before** building the
       update input (per §Design Decision 3 — the pre-write snapshot, independent of whether this
       same call also flips `isActive`), and passes `slugRename` only when `wasActive &&
-  input.slug !== undefined && input.slug !== product.slug`.
+input.slug !== undefined && input.slug !== product.slug`.
 - [ ] Explicitly verified: `ProductService.delete()` (the audit-tombstone soft-delete, which
       mangles the slug via `deleted:<id>:<slug>` and never calls `repository.update()`) does
       **not** go through this path and never records a redirect to a mangled slug — confirmed by
@@ -718,7 +718,7 @@ already correct)
       when omitted.
 - [ ] `CategoryService.update()` captures `wasActive = category.isActive` before building the
       update input, passes `slugRename` only when `wasActive && input.slug !== undefined &&
-  input.slug !== category.slug`.
+input.slug !== category.slug`.
 - [ ] New unit tests mirroring TASK-285-E's three cases, plus the same simultaneous
       rename+deactivate case as TASK-285-G.
 - [ ] Tests pass: `npm run test -w apps/store-api`.
@@ -760,7 +760,7 @@ in this plan for that reason, not a hard technical dependency.)
       §Frontend — Admin, calling `window.confirm(...)` and returning early (no mutation fired) on
       cancel.
 - [ ] `dict.pages.deleteConfirm` / `dict.blogPosts.deleteConfirm` gain a second `isPublished:
-  boolean` parameter; when `true`, append: " Сторінка опублікована і може бути в
+boolean` parameter; when `true`, append: " Сторінка опублікована і може бути в
       пошуковому індексі Google — після видалення адреса поверне помилку 404 без переадресації."
       (analogous copy for `blogPosts`, "стаття"/"опублікована").
 - [ ] `admin-page-table.tsx`'s `handleDelete` passes `page.isActive` as the new arg;
@@ -803,17 +803,17 @@ among the backend tasks purely to keep the PR/review focused).
 **Acceptance Criteria:**
 
 - [ ] `ContentSeoCounts` gains `pagesMissingMetaDescription: number` and `pagesThinContent:
-  number`.
+number`.
 - [ ] `SeoSettingsRepository.getContentSeoCounts()`: `pagesMissingMetaDescription` = `prisma.page
-  .count({ where: { status: PUBLISHED, metaDescription: null } })` (mirrors the existing
+.count({ where: { status: PUBLISHED, metaDescription: null } })` (mirrors the existing
       `metaTitle: null` check's null-only convention — no `OR [null, '']` broadening, staying
       consistent with the sibling counts already in this method).
 - [ ] `pagesThinContent` computed via a raw query (Prisma has no string-length filter operator):
       `sql
-  SELECT COUNT(*)::bigint AS count FROM pages
-  WHERE status = 'PUBLISHED'
-    AND length(regexp_replace(content, '<[^>]*>', '', 'g')) < 300
-  `
+SELECT COUNT(*)::bigint AS count FROM pages
+WHERE status = 'PUBLISHED'
+  AND length(regexp_replace(content, '<[^>]*>', '', 'g')) < 300
+`
       via `this.prisma.$queryRaw` tagged template (no interpolated values — constant query, no
       injection surface), cast `bigint` → `number`.
 - [ ] `SeoHealthEntity` gains the two new fields (`@ApiProperty`), mapped in `fromCounts()`.

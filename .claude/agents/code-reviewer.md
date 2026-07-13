@@ -34,7 +34,7 @@ You are a senior code reviewer specializing in e-commerce applications built wit
 - [ ] `shared/ui` contains dumb components with no business logic
 - [ ] `features/` components use Orval-generated hooks, never raw fetch/axios
 - [ ] `widgets/` compose features and entities into standalone blocks
-- [ ] No raw hex colors in markup — use semantic design tokens from `tailwind.config.ts`
+- [ ] No raw hex colors in markup — use semantic design tokens. Tailwind v4 is CSS-first: tokens are declared in `@theme inline` in `apps/store-client/src/app/globals.css` (storefront) / `apps/store-admin/src/app/globals.css` (admin); there is no `tailwind.config.ts`
 - [ ] Accessibility: keyboard navigation, ARIA attributes, screen-reader support
 
 ### 4. Testing

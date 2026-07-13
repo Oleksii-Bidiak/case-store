@@ -1,6 +1,6 @@
 # Plan 153 — Google OAuth Sign-In (TASK-168)
 
-> **Status:** ⬜ Not started
+> **Status:** ✅ Done (TASK-168 shipped 2026-07-12; live flow with real Google credentials → manual QA)
 > **Phase:** Roadmap — «Пізніша хвиля» (post-Етап-7 backlog)
 > **Origin:** Auth slide-out social-login stubs (plan 129, stub audit row "social login") +
 > owner decision 2026-07-11 (see `docs/plans/152-late-wave-2-orchestration.md`)

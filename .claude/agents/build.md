@@ -33,7 +33,7 @@ envelope, validation, security) live in **AGENTS.md** — follow it; do not rest
 ## Rules
 
 - ALWAYS use Orval-generated hooks for API calls — never manual fetch/axios.
-- ALWAYS use semantic design tokens from `tailwind.config.ts` — never raw hex values.
+- ALWAYS use semantic design tokens — never raw hex values. Tailwind v4 is CSS-first: tokens live in `@theme inline` in `apps/store-client/src/app/globals.css` (storefront) / `apps/store-admin/src/app/globals.css` (admin); there is no `tailwind.config.ts`.
 - ALWAYS add `'use client'` to client components that use hooks/state.
 - ALWAYS handle loading, error, and empty states in data-fetching components.
 - ALWAYS write tests for critical business logic (cart, discounts, auth, orders).
