@@ -340,17 +340,20 @@ export class CartService {
 
   /**
    * Validate an add-to-cart request against the resulting line quantity, BEFORE
-   * any DB write. Checks active status, stock availability, and the per-item
-   * maximum.
+   * any DB write. Checks active status (the product's AND its category's), stock
+   * availability, and the per-item maximum.
    *
    * @throws BadRequestException if any rule fails
    */
   private validateAddition(
-    product: { name: string; stock: number; isActive: boolean },
+    product: { name: string; stock: number; isActive: boolean; category: { isActive: boolean } },
     resultingQuantity: number,
   ): void {
-    // Check if the product position is active
-    if (!product.isActive) {
+    // Deactivating a category WITHDRAWS its products from sale (TASK-297), so it
+    // blocks an add exactly as a deactivated position does — and reports the same
+    // message, because the distinction ("we pulled the whole category" vs "we
+    // pulled this item") is internal and of no use to the shopper.
+    if (!product.isActive || !product.category.isActive) {
       throw new BadRequestException(`Product "${product.name}" is no longer available`);
     }
 

@@ -26,6 +26,8 @@ function buildItem(productId: string, id = `item-${productId}`) {
       compareAtPrice: null,
       stock: 50,
       isActive: true,
+      // TASK-297: WishlistItemEntity folds the category's status into isActive.
+      category: { isActive: true },
       images: [] as Array<{ url: string }>,
     },
   };
@@ -92,6 +94,27 @@ describe('WishlistService', () => {
       expect(result.items).toHaveLength(2);
       // The guest token must never leak into the JSON entity.
       expect(result.token).toBeUndefined();
+    });
+
+    it('marks a saved product unavailable when its category was withdrawn from sale (TASK-297)', async () => {
+      // The product itself is still active — only its category was deactivated.
+      // The wishlist row must report the SAME `isActive: false` a deactivated
+      // product raises, matching the cart line contract.
+      const activeItem = buildItem('product-active');
+      const withdrawnBase = buildItem('product-withdrawn');
+      const withdrawnItem = {
+        ...withdrawnBase,
+        product: { ...withdrawnBase.product, isActive: true, category: { isActive: false } },
+      };
+      wishlistRepositoryMock.findOrCreate.mockResolvedValue({
+        ...emptyUserWishlist,
+        items: [activeItem, withdrawnItem],
+      });
+
+      const result = await service.getWishlist(userIdentity);
+
+      expect(result.items.find((i) => i.productId === 'product-active')?.isActive).toBe(true);
+      expect(result.items.find((i) => i.productId === 'product-withdrawn')?.isActive).toBe(false);
     });
   });
 

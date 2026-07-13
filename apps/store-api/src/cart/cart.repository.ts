@@ -68,6 +68,12 @@ export interface CartWithItems {
       isActive: boolean;
       /** Drives add-on template resolution (TASK-174). */
       categoryId: string;
+      /**
+       * The owning category's own status (TASK-297). A line whose category was
+       * deactivated is withdrawn from sale just as surely as one whose product
+       * was, so `CartItemEntity` folds this into the line's `isActive` flag.
+       */
+      category: { isActive: boolean };
       images: Array<{ url: string }>;
     };
   }>;
@@ -105,6 +111,9 @@ const CART_ITEMS_INCLUDE = {
           // The resolver walks this category's ancestor chain for the line's
           // applicable add-on template (TASK-174).
           categoryId: true,
+          // Whether the category is still on sale (TASK-297) — pulled in the SAME
+          // query, so marking a withdrawn line unavailable costs no extra round trip.
+          category: { select: { isActive: true } },
           images: {
             orderBy: [{ isPrimary: 'desc' as const }, { sortOrder: 'asc' as const }],
             take: 1,
@@ -346,16 +355,31 @@ export class CartRepository {
    * not exist.
    *
    * Cart-internal use only — `CartService` calls this to validate stock /
-   * `isActive` / max-quantity BEFORE writing a new cart line. It is NOT a
-   * general product-access API and must not grow into one; the cart already
-   * reads these product columns via `CART_ITEMS_INCLUDE` for existing lines.
+   * `isActive` / the CATEGORY's `isActive` (TASK-297) / max-quantity BEFORE
+   * writing a new cart line. It is NOT a general product-access API and must not
+   * grow into one; the cart already reads these product columns via
+   * `CART_ITEMS_INCLUDE` for existing lines.
+   *
+   * The selected shape is deliberately a SUBSET of the `CART_ITEMS_INCLUDE`
+   * product shape (same nested `category.isActive`), so `CartService.addToCart`
+   * can hand either source to the same validator.
    */
-  findProductForCartValidation(
-    productId: string,
-  ): Promise<{ id: string; name: string; stock: number; isActive: boolean } | null> {
+  findProductForCartValidation(productId: string): Promise<{
+    id: string;
+    name: string;
+    stock: number;
+    isActive: boolean;
+    category: { isActive: boolean };
+  } | null> {
     return this.prisma.product.findUnique({
       where: { id: productId },
-      select: { id: true, name: true, stock: true, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        stock: true,
+        isActive: true,
+        category: { select: { isActive: true } },
+      },
     });
   }
 

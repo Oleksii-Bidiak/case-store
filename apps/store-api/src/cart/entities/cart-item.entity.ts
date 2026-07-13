@@ -80,7 +80,8 @@ export class CartItemEntity {
   maxQty!: number;
 
   @ApiProperty({
-    description: 'Whether the product position is active',
+    description:
+      'Whether this line is still buyable — the product position is active AND its category is (TASK-297). `false` means the item has been withdrawn from sale and the storefront must mark the line unavailable; it is the SAME flag a deactivated product has always raised, so no second "unavailable" mechanism exists.',
     example: true,
   })
   isActive!: boolean;
@@ -140,6 +141,7 @@ export class CartItemEntity {
         compareAtPrice: { toString(): string } | null;
         stock: number;
         isActive: boolean;
+        category: { isActive: boolean };
         images: Array<{ url: string }>;
       };
     },
@@ -161,7 +163,10 @@ export class CartItemEntity {
     entity.price = unitPriceStr;
     // Public cap, never the raw stock: the stepper only needs min(cap, stock).
     entity.maxQty = Math.min(MAX_QUANTITY, item.product.stock);
-    entity.isActive = item.product.isActive;
+    // Withdrawing the CATEGORY withdraws the line (TASK-297) — folded into the
+    // existing flag rather than exposed as a second one, so every reader that
+    // already handles a deactivated product handles this for free.
+    entity.isActive = item.product.isActive && item.product.category.isActive;
 
     // Calculate line total using cents arithmetic to avoid float errors
     const priceCents = Math.round(parseFloat(unitPriceStr) * 100);

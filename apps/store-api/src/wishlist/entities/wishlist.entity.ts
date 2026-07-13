@@ -69,6 +69,7 @@ export class WishlistEntity {
         compareAtPrice: { toString(): string } | null;
         stock: number;
         isActive: boolean;
+        category: { isActive: boolean };
         images: Array<{ url: string }>;
       };
     }>;

@@ -24,7 +24,7 @@ import {
 } from './category.errors';
 import { ReorderGroupInput } from './category-reorder.rules';
 import { generateSlug } from '../common/utils';
-import { CacheService, PRODUCT_LIST_PREFIX } from '../cache';
+import { CacheService, PRODUCT_CACHE_PREFIX, PRODUCT_LIST_PREFIX } from '../cache';
 import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
 
 /**
@@ -97,13 +97,19 @@ export class CategoryService {
 
   /**
    * Get a paginated list of root categories (parentId = null).
-   * Public endpoint — used for storefront category browsing.
+   *
+   * Public endpoint — ALWAYS restricted to active categories (TASK-297): the
+   * query's `isActive` is deliberately overridden, exactly as the public product
+   * list does (TASK-230). Before this, the filter was simply absent when the
+   * param was omitted, so `GET /api/categories` listed withdrawn categories —
+   * and `?isActive=false` would have listed ONLY them. The admin list
+   * ({@link findAllWithProductCount}) is where `isActive` is honoured as sent.
    */
   async getRootCategories(query: CategoryListQueryDto): Promise<PaginatedCategoriesResponse> {
     const params: FindRootParams = {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
-      isActive: query.isActive,
+      isActive: true,
       sortBy: query.sortBy ?? 'sortOrder',
       sortOrder: query.sortOrder ?? 'asc',
     };
@@ -151,7 +157,10 @@ export class CategoryService {
   /**
    * Get a category by slug with its product count.
    * Public endpoint — used for category detail pages.
-   * Throws NotFoundException if the category is not found.
+   *
+   * Uses the repository's default `activeOnly: true` filter, so a deactivated
+   * category is indistinguishable from a missing slug and returns 404 (TASK-297)
+   * — the same contract the public PDP has had since TASK-145.
    */
   async findBySlug(slug: string): Promise<CategoryWithCountResponse> {
     const category = await this.categoryRepository.findBySlug(slug);
@@ -197,8 +206,10 @@ export class CategoryService {
     // Auto-generate slug from name if not provided
     const slug = input.slug ?? generateSlug(input.name);
 
-    // Check slug uniqueness
-    const existingBySlug = await this.categoryRepository.findBySlug(slug);
+    // Check slug uniqueness — `activeOnly: false` is REQUIRED here (TASK-297):
+    // a deactivated category still owns its slug, and the repository's public
+    // default would hide it, turning this guard into a 500 at the DB constraint.
+    const existingBySlug = await this.categoryRepository.findBySlug(slug, { activeOnly: false });
     if (existingBySlug) {
       throw new ConflictException('A category with this slug already exists');
     }
@@ -228,7 +239,7 @@ export class CategoryService {
    * Throws ConflictException if the new slug is already taken.
    * Throws BadRequestException if setting parent to a descendant (cycle).
    */
-  async update(id: string, input: UpdateCategoryInput): Promise<CategoryEntity> {
+  async update(id: string, input: UpdateCategoryInput, actorId?: string): Promise<CategoryEntity> {
     // Verify the category exists
     const category = await this.categoryRepository.findById(id);
 
@@ -236,9 +247,13 @@ export class CategoryService {
       throw new NotFoundException('Category not found');
     }
 
-    // If slug is being changed, check uniqueness
+    // If slug is being changed, check uniqueness — `activeOnly: false` for the
+    // same reason as in `create` (TASK-297): an inactive category still holds
+    // its slug.
     if (input.slug !== undefined && input.slug !== category.slug) {
-      const existingBySlug = await this.categoryRepository.findBySlug(input.slug);
+      const existingBySlug = await this.categoryRepository.findBySlug(input.slug, {
+        activeOnly: false,
+      });
       if (existingBySlug && existingBySlug.id !== id) {
         throw new ConflictException('A category with this slug already exists');
       }
@@ -295,7 +310,16 @@ export class CategoryService {
       throw this.toHttp(error);
     }
 
-    if (result.reparented) {
+    // A PUT that flips `isActive` is a WITHDRAWAL FROM SALE (TASK-297) and must fire
+    // exactly the side effects the dedicated toggles do — the admin edit form carries
+    // the «Активна» switch, so this is a first-class path to deactivation, not an
+    // afterthought. `afterStatusChange` already covers the cache + re-index a reparent
+    // needs, so the two branches are mutually exclusive rather than additive.
+    const statusChanged = input.isActive !== undefined && input.isActive !== category.isActive;
+
+    if (statusChanged) {
+      await this.afterStatusChange([id], input.isActive!, actorId, 1);
+    } else if (result.reparented) {
       // Same post-commit side effects as the batch endpoint (plan §3.13) — a reparent
       // changes subtree membership, which is baked into BOTH the category-filtered
       // product-list cache key rollup and the products' indexed ancestor chains. Both
@@ -451,6 +475,12 @@ export class CategoryService {
    * cached product lists advertising it, left its products indexed under it in Meili, and
    * left no trace in the log. `reorderTree` already did all three; a status change is just
    * as visible to shoppers, so it now does the same.
+   *
+   * The eviction is the WHOLE product namespace, not just `PRODUCT_LIST_PREFIX`
+   * (TASK-297): since an inactive category withdraws its products from sale, their PDPs
+   * now 404 — and a cached `product:detail:*` entry would keep serving the withdrawn page
+   * for the rest of its TTL. A status flip is a rare admin action, so dropping the whole
+   * `product:` namespace is far cheaper than tracking down every affected product key.
    */
   private async afterStatusChange(
     ids: string[],
@@ -458,7 +488,7 @@ export class CategoryService {
     actorId: string | undefined,
     updatedCount: number,
   ): Promise<void> {
-    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.cache.delByPrefix(PRODUCT_CACHE_PREFIX);
     this.reindexSubtreesInBackground(ids);
 
     this.logger.info(

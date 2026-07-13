@@ -24,7 +24,7 @@ import {
   CategorySelfParentError,
   CategoryTreeStaleError,
 } from './category.errors';
-import { CacheService, PRODUCT_LIST_PREFIX } from '../cache';
+import { CacheService, PRODUCT_CACHE_PREFIX, PRODUCT_LIST_PREFIX } from '../cache';
 import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
@@ -154,7 +154,8 @@ describe('CategoryService', () => {
       expect(categoryRepositoryMock.findRootCategories).toHaveBeenCalledWith({
         page: 1,
         limit: 20,
-        isActive: undefined,
+        // TASK-297: the public list is unconditionally active-only.
+        isActive: true,
         sortBy: 'sortOrder',
         sortOrder: 'asc',
       });
@@ -175,6 +176,29 @@ describe('CategoryService', () => {
       categoryRepositoryMock.findRootCategories.mockResolvedValue(paginatedResult);
 
       await service.getRootCategories({ page: 1, limit: 20, isActive: true });
+
+      expect(categoryRepositoryMock.findRootCategories).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: true }),
+      );
+    });
+
+    // TASK-297: the public list used to send `isActive: undefined` (= NO filter) when
+    // the param was omitted, so withdrawn categories were listed — and a hostile
+    // `?isActive=false` would have listed ONLY them. Both are now impossible.
+    it('forces the active-only filter when the query omits isActive', async () => {
+      categoryRepositoryMock.findRootCategories.mockResolvedValue(paginatedResult);
+
+      await service.getRootCategories({ page: 1, limit: 20 });
+
+      expect(categoryRepositoryMock.findRootCategories).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: true }),
+      );
+    });
+
+    it('overrides an explicit isActive=false from a public caller with true', async () => {
+      categoryRepositoryMock.findRootCategories.mockResolvedValue(paginatedResult);
+
+      await service.getRootCategories({ page: 1, limit: 20, isActive: false });
 
       expect(categoryRepositoryMock.findRootCategories).toHaveBeenCalledWith(
         expect.objectContaining({ isActive: true }),
@@ -337,6 +361,10 @@ describe('CategoryService', () => {
       expect(result.data).toBeInstanceOf(CategoryWithCountEntity);
       expect(result.data.name).toBe('Phone Cases');
       expect(result.productCount).toBe(5);
+      // No `activeOnly` override: the PUBLIC read leans on the repository's
+      // active-only DEFAULT (TASK-297), which is what makes a withdrawn category
+      // 404 here. Passing `{ activeOnly: false }` — as the uniqueness checks in
+      // create/update must — would silently re-expose it.
       expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('phone-cases');
     });
 
@@ -427,7 +455,9 @@ describe('CategoryService', () => {
 
       const result = await service.create(inputWithoutSlug);
 
-      expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('phone-cases');
+      expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('phone-cases', {
+        activeOnly: false,
+      });
       expect(categoryRepositoryMock.create).toHaveBeenCalled();
       expect(result).toBeInstanceOf(CategoryEntity);
     });
@@ -478,6 +508,62 @@ describe('CategoryService', () => {
     const updateInput: UpdateCategoryInput = {
       name: 'Updated Category Name',
     };
+
+    // ─── a PUT that flips isActive is a withdrawal (TASK-297) ────────────────
+    //
+    // The admin edit form carries the «Активна» switch, so PUT is a first-class
+    // route to deactivation — yet it used to fire NONE of the side effects the
+    // dedicated toggle endpoints do, leaving the withdrawn category's products
+    // cached and still indexed in Meilisearch.
+    it('runs the full status-change side effects when the PUT deactivates the category', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory); // isActive: true
+      categoryRepositoryMock.update.mockResolvedValue({
+        category: { ...mockCategory, isActive: false },
+        reparented: false,
+      });
+
+      await service.update('cat-uuid-1', { isActive: false }, 'admin-1');
+
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_CACHE_PREFIX);
+      expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledWith(['cat-uuid-1']);
+      expect(pinoLoggerMock.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'category.status',
+          ids: ['cat-uuid-1'],
+          isActive: false,
+          actorId: 'admin-1',
+        }),
+        expect.any(String),
+      );
+    });
+
+    it('runs them again on re-activation, so the products return to the index', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockInactiveCategory); // isActive: false
+      categoryRepositoryMock.update.mockResolvedValue({
+        category: { ...mockInactiveCategory, isActive: true },
+        reparented: false,
+      });
+
+      await service.update('cat-uuid-3', { isActive: true }, 'admin-1');
+
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_CACHE_PREFIX);
+      expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledWith(['cat-uuid-3']);
+    });
+
+    it('does NOT fire the status side effects when the PUT re-sends the unchanged isActive', async () => {
+      // A full-object PUT from the edit form always carries `isActive` — resending
+      // the current value must stay as cheap as any other rename.
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory); // isActive: true
+      categoryRepositoryMock.update.mockResolvedValue({
+        category: mockCategory,
+        reparented: false,
+      });
+
+      await service.update('cat-uuid-1', { name: 'Renamed', isActive: true }, 'admin-1');
+
+      expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+      expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
+    });
 
     it('should update a category and return CategoryEntity', async () => {
       const updatedCategory = {
@@ -930,13 +1016,16 @@ describe('CategoryService', () => {
 
     // TASK-293: the per-row toggle used to write the row and stop there — no cache
     // eviction, no re-index, no log line — so a deactivated category kept selling.
-    it('evicts the product-list cache, reindexes and logs (TASK-293)', async () => {
+    // TASK-297 widened the eviction from the list prefix to the WHOLE product
+    // namespace: the products' PDPs now 404, so their cached detail entries must go
+    // too — otherwise the withdrawn pages keep serving for the rest of their TTL.
+    it('evicts the whole product cache namespace, reindexes and logs (TASK-293/297)', async () => {
       categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
       categoryRepositoryMock.deactivate.mockResolvedValue(mockInactiveCategory);
 
       await service.deactivate('cat-uuid-3', 'admin-1');
 
-      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_CACHE_PREFIX);
       expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledWith(['cat-uuid-3']);
       expect(pinoLoggerMock.info).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -974,7 +1063,7 @@ describe('CategoryService', () => {
         false,
       );
       expect(result).toEqual({ data: tree });
-      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_CACHE_PREFIX);
       expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledWith(['cat-uuid-1', 'cat-uuid-2']);
       expect(pinoLoggerMock.info).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1105,7 +1194,9 @@ describe('CategoryService', () => {
 
       await service.create({ name: 'Premium Phone Cases' });
 
-      expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('premium-phone-cases');
+      expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('premium-phone-cases', {
+        activeOnly: false,
+      });
     });
 
     it('should handle special characters in name', async () => {
@@ -1117,7 +1208,9 @@ describe('CategoryService', () => {
 
       await service.create({ name: 'iPhone 15 Pro — Case!' });
 
-      expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('iphone-15-pro-case');
+      expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('iphone-15-pro-case', {
+        activeOnly: false,
+      });
     });
 
     it('should collapse multiple hyphens in generated slug', async () => {
@@ -1129,7 +1222,9 @@ describe('CategoryService', () => {
 
       await service.create({ name: 'Best   Phone   Cases' });
 
-      expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('best-phone-cases');
+      expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('best-phone-cases', {
+        activeOnly: false,
+      });
     });
   });
 });

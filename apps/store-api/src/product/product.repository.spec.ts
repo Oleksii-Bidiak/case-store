@@ -142,7 +142,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
   // future staff preview, TASK-155) drops that filter.
 
   describe('findBySlugWithRelations', () => {
-    it('should include isActive: true in the where clause by default', async () => {
+    it('should require BOTH the product and its category to be active by default (TASK-297)', async () => {
       prismaMock.product.findFirst.mockResolvedValue(null);
 
       await repository.findBySlugWithRelations('clear-case');
@@ -151,11 +151,12 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       expect(findFirstArgs.where).toEqual({
         slug: 'clear-case',
         isActive: true,
+        category: { isActive: true },
         deletedAt: null,
       });
     });
 
-    it('should omit the isActive filter when activeOnly is false', async () => {
+    it('should omit BOTH active filters when activeOnly is false (admin preview)', async () => {
       prismaMock.product.findFirst.mockResolvedValue(null);
 
       await repository.findBySlugWithRelations('clear-case', { activeOnly: false });
@@ -191,6 +192,54 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
       expect(findManyArgs.where).toEqual(
         expect.objectContaining({ deletedAt: null, categoryId: { in: ['cat-1'] }, isActive: true }),
+      );
+    });
+
+    // ─── withdrawn categories (TASK-297) ────────────────────────────────────
+
+    it('joins on category.isActive when categoryActiveOnly is set (public list)', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20, isActive: true, categoryActiveOnly: true });
+
+      const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
+      expect(findManyArgs.where).toEqual(
+        expect.objectContaining({ isActive: true, category: { isActive: true } }),
+      );
+      // The count must carry the SAME predicate, or pagination `total` would
+      // advertise pages of products the list itself refuses to return.
+      const countArgs = prismaMock.product.count.mock.calls[0][0];
+      expect(countArgs.where).toEqual(expect.objectContaining({ category: { isActive: true } }));
+    });
+
+    it('leaves the category join off when categoryActiveOnly is unset (admin list)', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20 });
+
+      const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
+      expect(findManyArgs.where).not.toHaveProperty('category');
+    });
+
+    it('composes the category join with the subtree rollup, not instead of it', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({
+        page: 1,
+        limit: 20,
+        categoryIds: ['root', 'child'],
+        categoryActiveOnly: true,
+      });
+
+      const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
+      expect(findManyArgs.where).toEqual(
+        expect.objectContaining({
+          categoryId: { in: ['root', 'child'] },
+          category: { isActive: true },
+        }),
       );
     });
 
@@ -412,6 +461,76 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       expect(result.get('a')).toBe(3);
       expect(result.get('b')).toBe(0); // defensive `?? 0`
       expect(result.has('c')).toBe(false); // absent from rows → absent from map
+    });
+  });
+
+  // ─── search-index sources + card hydration exclude withdrawn categories ─────
+  //
+  // The whole category de-indexing story hangs on `findOneForIndex` returning null:
+  // `SearchService.indexProduct` reads that null as "not indexable" and DELETES the
+  // document. If the category predicate ever falls out of this `where`, deactivating
+  // a category silently leaves its products searchable — with no other symptom.
+
+  describe('search-index reads (TASK-297)', () => {
+    it('findOneForIndex refuses a product whose category is deactivated', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+
+      const result = await repository.findOneForIndex('product-1');
+
+      expect(result).toBeNull();
+      const findFirstArgs = prismaMock.product.findFirst.mock.calls[0][0];
+      expect(findFirstArgs.where).toEqual({
+        id: 'product-1',
+        isActive: true,
+        deletedAt: null,
+        category: { isActive: true },
+      });
+    });
+
+    it('findManyForIndex rebuilds only the on-sale catalogue', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+
+      await repository.findManyForIndex(0, 100);
+
+      const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
+      expect(findManyArgs.where).toEqual({
+        isActive: true,
+        deletedAt: null,
+        category: { isActive: true },
+      });
+    });
+
+    it('findIdsByCategoryIds still returns the ACTIVE products of a deactivated category', async () => {
+      // These ids are the re-index work list, not a visibility query: they are
+      // exactly the documents that must be pushed through `indexProduct` so they
+      // get evicted. Filtering on category.isActive here would strand them.
+      prismaMock.product.findMany.mockResolvedValue([{ id: 'p1' }, { id: 'p2' }]);
+
+      const ids = await repository.findIdsByCategoryIds(['cat-off']);
+
+      expect(ids).toEqual(['p1', 'p2']);
+      const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
+      expect(findManyArgs.where).toEqual({
+        categoryId: { in: ['cat-off'] },
+        isActive: true,
+        deletedAt: null,
+      });
+    });
+
+    it('findByIdsForCards drops products of a deactivated category', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.review.groupBy.mockResolvedValue([]);
+      prismaMock.productImage.findMany.mockResolvedValue([]);
+
+      await repository.findByIdsForCards(['p1']);
+
+      const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
+      expect(findManyArgs.where).toEqual({
+        id: { in: ['p1'] },
+        isActive: true,
+        deletedAt: null,
+        category: { isActive: true },
+      });
     });
   });
 

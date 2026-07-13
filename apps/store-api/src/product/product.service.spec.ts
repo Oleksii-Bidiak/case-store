@@ -219,6 +219,8 @@ describe('ProductService', () => {
         categoryIds: undefined,
         // TASK-230: the public listing always forces the active-only filter.
         isActive: true,
+        // TASK-297: …and always drops the products of withdrawn categories.
+        categoryActiveOnly: true,
         minPrice: undefined,
         maxPrice: undefined,
         search: undefined,
@@ -262,6 +264,7 @@ describe('ProductService', () => {
         // Single categoryId resolved to its subtree before hitting the repo.
         categoryIds: ['cat-uuid-1'],
         isActive: true,
+        categoryActiveOnly: true,
         minPrice: 10,
         maxPrice: 50,
         search: 'iphone',
@@ -302,6 +305,18 @@ describe('ProductService', () => {
         expect.objectContaining({ isActive: true }),
       );
     });
+
+    // TASK-297: the public list must also hide the products of a WITHDRAWN
+    // category — a filter no query param can switch off.
+    it('always asks the repository for on-sale categories only', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.findAll({ ...query, isActive: false });
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ categoryActiveOnly: true }),
+      );
+    });
   });
 
   // ─── adminFindAll (admin, TASK-230) ─────────────────────────────────────────
@@ -320,6 +335,17 @@ describe('ProductService', () => {
       // No cache interaction: the admin table must always be fresh.
       expect(cacheServiceMock.get).not.toHaveBeenCalled();
       expect(cacheServiceMock.set).not.toHaveBeenCalled();
+    });
+
+    // TASK-297: the operator must still SEE the products a category deactivation
+    // stranded — they are the ones they have to re-file.
+    it('never applies the on-sale-category filter to the admin listing', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.adminFindAll({ page: 1, limit: 20 });
+
+      const params = productRepositoryMock.findAll.mock.calls[0][0];
+      expect(params.categoryActiveOnly).toBeUndefined();
     });
 
     it('rolls up the category subtree on the admin path too (TASK-236)', async () => {

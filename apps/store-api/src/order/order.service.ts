@@ -102,9 +102,21 @@ export class OrderService {
       throw new BadRequestException('Cart is empty — add items before placing an order');
     }
 
-    // Re-validate stock at order-creation time (it may have changed since
-    // add-to-cart). Each position tracks its own stock.
+    // Re-validate every line at order-creation time — state may have changed
+    // since add-to-cart. A line must still be ON SALE (its product AND its
+    // category active, TASK-297) and hold enough stock; both gates mirror
+    // CartService.validateAddition. This is the authoritative checkout backstop:
+    // the add-to-cart and GET /cart gates never re-run for a line withdrawn
+    // AFTER it entered the cart, so without this a deactivated product — or one
+    // whose category was pulled from sale — would still convert into an order,
+    // decrement stock, and trigger a confirmation email. Checkout is where
+    // "withdrawn from sale" is finally enforced. The active check runs before the
+    // stock check so a withdrawn item reports "no longer available", not a stock
+    // figure the shopper can never act on.
     for (const item of cart.items) {
+      if (!item.product.isActive || !item.product.category.isActive) {
+        throw new BadRequestException(`Product "${item.product.name}" is no longer available`);
+      }
       if (item.quantity > item.product.stock) {
         throw new BadRequestException(
           `Insufficient stock for "${item.product.name}" — ${item.product.stock} available`,

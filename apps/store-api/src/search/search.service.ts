@@ -174,9 +174,11 @@ export class SearchService implements OnModuleInit {
   }
 
   /**
-   * Lightweight autocomplete suggestions. Meilisearch first (from the index,
-   * no DB hit), else a small Postgres `contains` scan. Returns `[]` for a blank
-   * query.
+   * Lightweight autocomplete suggestions. Meilisearch ranks the hits, then their
+   * ids are re-hydrated through the active-category-gated card read (so a stale
+   * index row for a withdrawn category's product never reaches the dropdown,
+   * TASK-297); with no engine it falls back to a small Postgres `contains` scan.
+   * Returns `[]` for a blank query.
    */
   async suggest(rawQuery: string): Promise<SearchSuggestionEntity[]> {
     const query = (rawQuery ?? '').trim();
@@ -188,14 +190,30 @@ export class SearchService implements OnModuleInit {
         filter: ['isActive = true'],
       });
       if (result) {
-        return result.hits.map((hit) => ({
-          id: hit.id,
-          name: hit.name,
-          slug: hit.slug,
-          price: String(hit.price),
-          compareAtPrice: hit.compareAtPrice != null ? String(hit.compareAtPrice) : null,
-          primaryImageUrl: hit.primaryImageUrl,
-        }));
+        // Re-hydrate the hit ids through the SAME active-category-gated read the
+        // results page uses (findByIdsForCards filters category:{isActive:true}),
+        // instead of trusting the raw index rows. De-indexing on category
+        // withdrawal is best-effort and fire-and-forget (afterStatusChange →
+        // reindexSubtreesInBackground swallows errors), so a document for a
+        // withdrawn category's product can linger — e.g. Meilisearch was
+        // unreachable at the moment the category was pulled — until a manual
+        // reindexAll. This backstop drops such a stale hit from the dropdown
+        // rather than surfacing a dead PDP link (TASK-297), and preserves
+        // Meilisearch's relevance ordering exactly like `search`.
+        const ids = result.hits.map((hit) => hit.id);
+        const products = await this.productRepository.findByIdsForCards(ids);
+        const byId = new Map(products.map((p) => [p.id, p]));
+        return ids
+          .map((id) => byId.get(id))
+          .filter((p): p is NonNullable<typeof p> => p != null)
+          .map((p) => ({
+            id: p.id,
+            name: p.name,
+            slug: p.slug,
+            price: p.price.toString(),
+            compareAtPrice: p.compareAtPrice ? p.compareAtPrice.toString() : null,
+            primaryImageUrl: p.primaryImage?.url ?? null,
+          }));
       }
     }
 
@@ -203,6 +221,10 @@ export class SearchService implements OnModuleInit {
       page: 1,
       limit: SUGGEST_LIMIT,
       isActive: true,
+      // The Postgres fallback must apply the same on-sale rule the index does —
+      // a withdrawn category's products are absent from Meilisearch, so they must
+      // be absent here too, or search silently resurrects them (TASK-297).
+      categoryActiveOnly: true,
       search: query,
       sortBy: 'createdAt',
       sortOrder: 'desc',
@@ -223,6 +245,8 @@ export class SearchService implements OnModuleInit {
       page,
       limit,
       isActive: true,
+      // Same on-sale rule as the index (TASK-297) — see `suggest`.
+      categoryActiveOnly: true,
       search: query || undefined,
       sortBy: 'createdAt',
       sortOrder: 'desc',

@@ -173,20 +173,15 @@ describe('Search (e2e)', () => {
   });
 
   describe('GET /api/search/suggest', () => {
-    it('returns lightweight suggestions from the Meili index', async () => {
+    it('re-hydrates Meili suggestion hits through the active-category-gated card read', async () => {
+      // suggest now re-reads the ranked hit ids via findByIdsForCards (which
+      // filters category:{isActive:true}) rather than trusting the raw index row,
+      // so a stale hit for a withdrawn category never reaches the dropdown (TASK-297).
       meiliClientMock.search.mockResolvedValue({
-        hits: [
-          {
-            id: 'product-1',
-            name: 'iPhone 15 Pro Case',
-            slug: 'iphone-15-pro-case',
-            price: 29.99,
-            compareAtPrice: null,
-            primaryImageUrl: null,
-          },
-        ],
+        hits: [{ id: 'product-1' }],
         estimatedTotalHits: 1,
       });
+      prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
 
       const res = await request(app.getHttpServer())
         .get('/api/search/suggest')
@@ -203,6 +198,24 @@ describe('Search (e2e)', () => {
           primaryImageUrl: null,
         },
       ]);
+    });
+
+    it('drops a suggestion whose product is no longer card-visible (withdrawn category, TASK-297)', async () => {
+      // Meili still ranks two ids, but findByIdsForCards (mocked here as the
+      // active-category-gated read) returns only the live one — the stale one
+      // vanishes from the suggestions instead of linking to a dead PDP.
+      meiliClientMock.search.mockResolvedValue({
+        hits: [{ id: 'product-1' }, { id: 'withdrawn-product' }],
+        estimatedTotalHits: 2,
+      });
+      prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow({ id: 'product-1' })]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/search/suggest')
+        .query({ q: 'айф' })
+        .expect(200);
+
+      expect(res.body.data.map((s: { id: string }) => s.id)).toEqual(['product-1']);
     });
 
     it('rejects a missing q with 400', async () => {

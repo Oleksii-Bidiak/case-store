@@ -344,6 +344,32 @@ describe('CategoryController (e2e)', () => {
         }),
       );
     });
+
+    // ─── withdrawn categories are never publicly listed (TASK-297) ───────────
+
+    it('filters to active categories even when the query sends no isActive at all', async () => {
+      categoryRepositoryMock.findRootCategories.mockResolvedValue({ categories: [], total: 0 });
+
+      await request(app.getHttpServer()).get('/api/categories').expect(200);
+
+      expect(categoryRepositoryMock.findRootCategories).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: true }),
+      );
+    });
+
+    it('refuses to list withdrawn categories for a public caller sending ?isActive=false', async () => {
+      // Two bugs met on this line: the DTO's `@Transform` read the ALREADY-COERCED
+      // value (so `'false'` arrived as `true`), and the service forwarded whatever it
+      // got. Even with the transform fixed, the public list must pin the filter to
+      // `true` — otherwise this request enumerates exactly the withdrawn categories.
+      categoryRepositoryMock.findRootCategories.mockResolvedValue({ categories: [], total: 0 });
+
+      await request(app.getHttpServer()).get('/api/categories?isActive=false').expect(200);
+
+      expect(categoryRepositoryMock.findRootCategories).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: true }),
+      );
+    });
   });
 
   // ─── GET /api/categories/:slug (public) ─────────────────────────────────────
@@ -371,6 +397,26 @@ describe('CategoryController (e2e)', () => {
       categoryRepositoryMock.findBySlug.mockResolvedValue(null);
 
       await request(app.getHttpServer()).get('/api/categories/nonexistent-slug').expect(404);
+    });
+
+    // ─── a withdrawn category has no public page (TASK-297) ─────────────────
+    //
+    // The repository is mocked here, so the mock IMPLEMENTS its contract (active-only
+    // unless told otherwise) — that is what lets this assert the HTTP outcome. The
+    // Prisma `where` that produces the null is proven in `category.repository.spec.ts`.
+    it('should return 404 for a DEACTIVATED category slug', async () => {
+      const inactiveCategory = { ...testCategory, isActive: false };
+      categoryRepositoryMock.findBySlug.mockImplementation(
+        (_slug: string, options?: { activeOnly?: boolean }) =>
+          Promise.resolve((options?.activeOnly ?? true) ? null : inactiveCategory),
+      );
+
+      await request(app.getHttpServer()).get('/api/categories/phone-cases').expect(404);
+
+      // …and the 404 is earned by the public default, not by a missing row: the
+      // service must NOT have opted out of the active-only filter.
+      expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('phone-cases');
+      expect(categoryRepositoryMock.findWithProductCount).not.toHaveBeenCalled();
     });
   });
 

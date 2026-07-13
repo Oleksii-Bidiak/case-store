@@ -33,6 +33,7 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
   const findMany = jest.fn();
   const update = jest.fn();
   const findUnique = jest.fn();
+  const findFirst = jest.fn();
   const $transaction = jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock));
 
   beforeEach(async () => {
@@ -44,7 +45,7 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
           provide: PrismaService,
           useValue: {
             $queryRaw: queryRaw,
-            category: { findMany, update, findUnique },
+            category: { findMany, update, findUnique, findFirst },
             $transaction,
           },
         },
@@ -123,6 +124,36 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
         'new-slug',
       );
       expect(update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── findBySlug: active-only by DEFAULT (TASK-297) ─────────────────────────
+  //
+  // The public category page reads through this, so the default decides whether a
+  // withdrawn category still has a live URL. `findFirst`, not `findUnique` — the
+  // `isActive` guard is not part of the unique index.
+  describe('findBySlug', () => {
+    it('filters to active categories by default (public read → 404 for a withdrawn one)', async () => {
+      findFirst.mockResolvedValue(null);
+
+      const result = await repo.findBySlug('phone-cases');
+
+      expect(result).toBeNull();
+      expect(findFirst).toHaveBeenCalledWith({
+        where: { slug: 'phone-cases', isActive: true },
+      });
+    });
+
+    it('sees INACTIVE categories when activeOnly is false (slug-uniqueness check)', async () => {
+      // A deactivated category still owns its slug. If this guard could not see it,
+      // create/update would sail past the ConflictException into a raw DB unique
+      // violation (a 500 instead of a 409).
+      findFirst.mockResolvedValue({ id: 'cat-off', slug: 'phone-cases', isActive: false });
+
+      const result = await repo.findBySlug('phone-cases', { activeOnly: false });
+
+      expect(result).not.toBeNull();
+      expect(findFirst).toHaveBeenCalledWith({ where: { slug: 'phone-cases' } });
     });
   });
 

@@ -71,7 +71,8 @@ export class WishlistItemEntity {
   maxQty!: number;
 
   @ApiProperty({
-    description: 'Whether the product position is active',
+    description:
+      'Whether this saved product is still buyable — the product position is active AND its category is (TASK-297). `false` means it has been withdrawn from sale and the storefront must mark it unavailable; it is the SAME flag a deactivated product has always raised, mirroring the cart line contract.',
     example: true,
   })
   isActive!: boolean;
@@ -95,6 +96,7 @@ export class WishlistItemEntity {
       compareAtPrice: { toString(): string } | null;
       stock: number;
       isActive: boolean;
+      category: { isActive: boolean };
       images: Array<{ url: string }>;
     };
   }): WishlistItemEntity {
@@ -110,7 +112,10 @@ export class WishlistItemEntity {
       : null;
     // Public cap, never the raw stock: the client only needs min(cap, stock).
     entity.maxQty = Math.min(MAX_QUANTITY, item.product.stock);
-    entity.isActive = item.product.isActive;
+    // Withdrawing the CATEGORY withdraws the saved product (TASK-297) — folded
+    // into the existing flag exactly as the cart line does, so no second
+    // "unavailable" mechanism exists and every reader handles it for free.
+    entity.isActive = item.product.isActive && item.product.category.isActive;
     entity.createdAt = item.createdAt;
     return entity;
   }
