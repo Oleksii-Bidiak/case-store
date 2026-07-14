@@ -1,0 +1,92 @@
+# Dependabot — free on private repositories, unlike CodeQL (which needs paid
+# GitHub Advanced Security), so it is the highest-signal scanner available here
+# at zero cost.
+#
+# Grouping is deliberate: an ungrouped monorepo of this size produces enough
+# individual PRs each week that the owner would start ignoring them, which is
+# strictly worse than fewer, reviewable ones. Security updates are NOT grouped —
+# they should arrive alone and be obvious.
+version: 2
+
+updates:
+  # ── npm workspaces ────────────────────────────────────────────────────────
+  # A single entry at the root covers every workspace: npm resolves the whole
+  # tree from the root lockfile, so per-app entries would just duplicate PRs.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    groups:
+      # Patch/minor bumps of things that cannot change behaviour on their own.
+      dev-tooling:
+        patterns:
+          - "@types/*"
+          - "eslint*"
+          - "prettier"
+          - "jest*"
+          - "ts-jest"
+          - "@testing-library/*"
+          - "msw"
+          - "playwright*"
+          - "@playwright/*"
+        update-types:
+          - minor
+          - patch
+      # Framework majors are breaking often enough that they must be reviewed
+      # one at a time — hence minor/patch only in the group.
+      backend:
+        patterns:
+          - "@nestjs/*"
+          - "prisma"
+          - "@prisma/*"
+          - "class-validator"
+          - "class-transformer"
+        update-types:
+          - minor
+          - patch
+      frontend:
+        patterns:
+          - "next"
+          - "react"
+          - "react-dom"
+          - "@tanstack/*"
+          - "tailwindcss"
+          - "@sentry/*"
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: chore
+      include: scope
+
+  # ── GitHub Actions ────────────────────────────────────────────────────────
+  # Third-party actions run with access to the deploy secrets (SSH key, env
+  # blob). A compromised or abandoned action is a direct path to the server, so
+  # these are worth keeping current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: ci
+
+  # ── Docker base images ────────────────────────────────────────────────────
+  # node:20-alpine (api) and node:22-slim (frontends) accumulate OS-level CVEs
+  # between releases; nothing else in the pipeline updates them.
+  - package-ecosystem: docker
+    directories:
+      - /apps/store-api
+      - /apps/store-client
+      - /apps/store-admin
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: chore
+      include: scope

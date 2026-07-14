@@ -1,0 +1,107 @@
+name: Security
+
+# Kept out of ci.yml on purpose: these checks are slower and mostly independent
+# of a given change, and a weekly cron matters as much as the per-PR run — a CVE
+# is disclosed against code you have not touched.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Mondays 06:00 UTC, alongside the Dependabot run.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Secret scanning ────────────────────────────────────────────────────────
+  # The history is clean today (only .env.example files were ever committed).
+  # The point of this job is to keep it that way: a secret pushed once is
+  # compromised forever, because rewriting history does not un-publish it.
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Whole history, not just the tip: a key added and later "removed" in a
+          # follow-up commit is still sitting in the objects, still valid, and is
+          # exactly what this job must catch.
+          fetch-depth: 0
+
+      # Run the binary via its own image rather than gitleaks-action, which asks
+      # organisations for a licence key. Same scanner, no licensing surface.
+      - name: Run gitleaks
+        run: |
+          docker run --rm -v "${PWD}:/repo" zricethezav/gitleaks:latest \
+            detect --source=/repo --redact --verbose --exit-code=1
+
+  # ── Dependency vulnerabilities ─────────────────────────────────────────────
+  audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # BLOCKING. These are the packages installed into the runtime images and
+      # serving customer traffic, so a high/critical advisory here is a live
+      # exposure. The gate fails on any NEW one, while letting through a short,
+      # dated, task-linked allowlist (today: the six advisories discharged by the
+      # NestJS 10 → 11 upgrade, TASK-304). A plain `--audit-level=high` would be
+      # red on every PR until that lands, and a permanently red gate is one
+      # everyone learns to ignore. Exemptions expire; see scripts/audit-gate.js.
+      - name: Audit production dependencies (blocking)
+        run: node scripts/audit-gate.js
+
+      # NON-BLOCKING, on purpose. Dev/test tooling never ships: a vulnerable
+      # jest transitive dependency cannot be reached by an attacker over the
+      # internet. Failing the build on those trains everyone to ignore a red
+      # security job, which costs more than it buys. Reported, not enforced.
+      - name: Audit all dependencies (report only)
+        if: always()
+        continue-on-error: true
+        run: |
+          echo '### npm audit — all dependencies (dev included, informational)' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          npm audit --audit-level=moderate 2>&1 | tail -40 >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Container / IaC misconfiguration ───────────────────────────────────────
+  # Scans the Dockerfiles and compose files for hardening mistakes (running as
+  # root, writable filesystems, exposed ports, missing healthchecks) and the
+  # lockfile for known-vulnerable packages.
+  trivy:
+    name: Trivy (config + dependencies)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan Dockerfiles and compose config
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          # Config findings are advisory here: several are deliberate (e.g. the
+          # dev compose file binds ports to the host on purpose). Read them in
+          # the job log rather than letting them gate the pipeline.
+          exit-code: "0"
+          severity: HIGH,CRITICAL
+
+      - name: Scan dependencies for known CVEs
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          exit-code: "0"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
