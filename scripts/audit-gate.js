@@ -22,7 +22,7 @@
  * Usage: node scripts/audit-gate.js
  */
 
-const { execFileSync } = require('child_process');
+const { execSync } = require('child_process');
 
 /**
  * Known, accepted-for-now advisories, keyed by the vulnerable package name.
@@ -46,12 +46,14 @@ function readAudit() {
   try {
     // `npm audit` exits non-zero when it finds anything, so a throw here is the
     // normal path — the JSON we want is still on stdout.
-    // `npm.cmd` rather than `shell: true`: passing args through a shell would
-    // leave them unescaped (DEP0190).
-    const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-    const out = execFileSync(npm, ['audit', '--omit=dev', '--json'], {
+    // execSync (a fixed command string, no interpolation) rather than execFileSync:
+    // on Windows, npm is a `.cmd` shim, and Node >=22 refuses to execFile a `.cmd`
+    // without a shell (EINVAL). There is no user input in this string, so a shell
+    // costs nothing here.
+    const out = execSync('npm audit --omit=dev --json', {
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
     });
     return JSON.parse(out);
   } catch (err) {
