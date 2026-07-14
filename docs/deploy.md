@@ -193,29 +193,121 @@ Environments → `staging`**:
 
 ## 7. Перша підготовка сервера (одноразово, руками власника)
 
-Це роблять **один раз**, поки staging ще не існує. Далі все автоматично.
+### 7.0 Домен — купуйте ОДИН
 
-1. **Орендуй VPS** (Ubuntu 22.04+), 2 vCPU / 4 ГБ RAM — вистачить для staging.
-2. **Встанови Docker** (з офіційного скрипта):
-   ```bash
-   curl -fsSL https://get.docker.com | sh
-   ```
-   Перевір: `docker --version` і `docker compose version`.
-3. **Створи теку стека:** `sudo mkdir -p /opt/store-ai && sudo chown $USER /opt/store-ai`.
-   Файли `docker-compose.prod.yml`, `docker-compose.staging.yml`, `Caddyfile` і
-   теку `docker/` пайплайн **сам копіює** сюди на кожному деплої — вручну класти
-   не треба (за бажання можна покласти для першого ручного запуску).
-4. **Додай SSH-ключ:** згенеруй пару (`ssh-keygen -t ed25519`), публічний поклади
-   у `~/.ssh/authorized_keys` на сервері, приватний — у секрет `SSH_PRIVATE_KEY`.
-5. **Налаштуй DNS.** Три A-записи на IP сервера:
-   - `<домен>` → вітрина
-   - `admin.<домен>` → адмінка
-   - `api.<домен>` → API
-     (`<домен>` = значення `STAGING_DOMAIN`.) Порти **80** і **443** мають бути
-     відкриті — Caddy сам випустить HTTPS-сертифікати Let's Encrypt.
-6. **Заповни секрети/змінні** в Environment `staging` (розділ 6).
-7. **Готово.** Наступний push у `develop` задеплоїть staging сам. Хочеш перевірити
-   негайно — GitHub → Actions → CI → **Re-run** останнього запуску `develop`.
+Вам **не потрібні два домени**. Купіть прод-домен (напр. `myshop.com.ua`), а staging живе
+на його піддомені — піддомени безкоштовні й необмежені:
+
+| Середовище | Адреси                                                      |
+| ---------- | ----------------------------------------------------------- |
+| Прод       | `myshop.com.ua`, `admin.myshop.com.ua`, `api.myshop.com.ua` |
+| Staging    | `staging.myshop.com.ua`, `admin.staging.…`, `api.staging.…` |
+
+Це не лише економія — це **технічна вимога**. Бекенд ставить куки з `sameSite=strict`, тож
+фронтенд і API **мусять бути піддоменами одного домену**. Інакше браузер просто викине куку
+і логін «злітатиме» при кожному перезавантаженні сторінки.
+
+> Безкоштовні варіанти (DuckDNS, nip.io) ділять кореневий домен із тисячами чужих сайтів —
+> це ламає модель безпеки same-site і послаблює ваш CSRF-захист. Freenom з 2023 року
+> безкоштовних доменів більше не видає. Купіть справжній: ~10–15 $/рік.
+
+### 7.1 Скільки серверів — два
+
+Один VPS для staging, один для прода. Причина не в потужності (обидва невеликі), а в тому,
+що на staging ви будете **навмисно ламати й скидати** — репетиція відновлення бекапу,
+репетиція відкату, повне стирання бази. Окремий сервер робить відповідь на питання
+«в якому я середовищі?» **фізичною**, а не питанням уважності о другій ночі.
+
+Рекомендація: **Hetzner CX22** (2 vCPU / 4 ГБ / 40 ГБ), ~€3.79/міс кожен. DigitalOcean —
+рівноцінна заміна, решта інструкції від хостера не залежить.
+
+### 7.2 Підготовка сервера (робіть спершу на staging — це і є репетиція)
+
+```bash
+# 1. Створити непривілейованого користувача (root для щоденної роботи — погана ідея)
+adduser deploy
+usermod -aG sudo deploy
+```
+
+**На своєму ноутбуці**, не на сервері:
+
+```bash
+ssh-keygen -t ed25519 -C "store-ai deploy"
+ssh-copy-id -i ~/.ssh/id_ed25519.pub deploy@<IP-сервера>
+```
+
+> ⚠ **Перш ніж закрити root-сесію** — відкрийте **другий термінал** і переконайтесь, що
+> `ssh deploy@<IP>` працює. Інакше можна замкнути себе зовні власного сервера.
+
+Тепер на сервері:
+
+```bash
+# 2. Вимкнути вхід паролем і root-логін
+sudo nano /etc/ssh/sshd_config      # PasswordAuthentication no / PermitRootLogin no
+sudo systemctl restart sshd
+
+# 3. Фаєрвол + автооновлення безпеки + fail2ban
+sudo apt update && sudo apt install -y ufw unattended-upgrades fail2ban age rclone
+sudo ufw allow OpenSSH && sudo ufw allow 80 && sudo ufw allow 443 && sudo ufw enable
+sudo dpkg-reconfigure -plow unattended-upgrades
+
+# 4. Docker
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker deploy
+
+# 5. Тека стека
+sudo mkdir -p /opt/store-ai && sudo chown deploy /opt/store-ai
+```
+
+Файли (`docker-compose*.yml`, `Caddyfile*`, `scripts/`, `docker/`) пайплайн **копіює сам**
+на кожному деплої — вручну класти не треба.
+
+### 7.3 DNS
+
+A-записи на IP відповідного сервера. **Без проксі** (у Cloudflare — сіра хмарка): Caddy сам
+випускає HTTPS-сертифікати Let's Encrypt, і для цього має бачити з'єднання напряму.
+Порти **80** і **443** мають бути відкриті.
+
+### 7.4 Пароль на staging
+
+Staging закритий Basic Auth, щоб його не проіндексував Google і не побачили сторонні.
+
+```bash
+# згенерувати хеш пароля
+docker run --rm caddy caddy hash-password --plaintext 'ваш-пароль'
+```
+
+- У `STAGING_ENV_FILE`: `STAGING_BASIC_AUTH=<хеш $2a$...>` (хеш **як є**, `$` не подвоювати)
+- У секретах Environment `staging`: `STAGING_BASIC_AUTH_PASSWORD=<той самий пароль, відкритим текстом>`
+  — потрібен лише для того, щоб smoke-check у CI міг достукатись до сайту. Без нього деплой
+  впаде з 401 і скаже вам про це прямо.
+
+Логін: `staging`. `/health` навмисно **не** під паролем — щоб працювали smoke-check і
+uptime-моніторинг.
+
+### 7.5 Заповнити Environment
+
+**`staging`** (розділ 6) — і, коли дійде до прода, **`production`**:
+
+| Тип      | Ім'я                                        | Що це                                |
+| -------- | ------------------------------------------- | ------------------------------------ |
+| Secret   | `SSH_HOST` / `SSH_USER` / `SSH_PRIVATE_KEY` | доступ до **прод**-сервера           |
+| Secret   | `PROD_ENV_FILE`                             | увесь `.env.production` одним блоком |
+| Variable | `PROD_DOMAIN`                               | `myshop.com.ua` (без `staging.`)     |
+
+> ⚠ **Обов'язково ввімкніть ручне затвердження** для прода:
+> GitHub → Settings → Environments → `production` → **Required reviewers** → додайте себе.
+>
+> **Це єдиний запобіжник.** У самому workflow його немає й бути не може — прод-деплой
+> зупиниться й чекатиме, поки ви натиснете «Approve» в GitHub Actions.
+
+### 7.6 Готово
+
+Наступний push у `develop` сам задеплоїть staging. Прод деплоїться з `main` — і чекатиме
+вашого підтвердження.
+
+**Далі обов'язково:** `docs/operations.md`, розділ 7 — чек-лист того, що треба закрити
+**до першого реального клієнта** (2FA, бекапи, репетиції, Sentry, SMTP, ключ Нової пошти).
 
 ---
 
