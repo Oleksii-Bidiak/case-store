@@ -331,9 +331,14 @@ model CartItem {
 }
 
 model Order {
-  id              String        @id @default(uuid())
-  userId          String        @map("user_id")
-  user            User          @relation(fields: [userId], references: [id])
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+  // onDelete: Restrict is EXPLICIT, not left to Prisma's default. An order is the
+  // record of money taken; it must outlive anything it references. Spelling the
+  // rule out here means a future "tidy up the relations" edit that adds Cascade
+  // has to consciously delete this line, rather than silently changing behaviour
+  // by adding one. Users are soft-deleted (deletedAt) for exactly this reason.
+  user            User          @relation(fields: [userId], references: [id], onDelete: Restrict)
   status          OrderStatus   @default(PENDING)
   paymentStatus   PaymentStatus @default(PENDING) @map("payment_status")
   subtotal        Decimal       @db.Decimal(10, 2)
@@ -371,6 +376,11 @@ model Order {
 
   @@index([userId])
   @@index([status])
+  // The admin dashboard filters revenue/aggregate queries by paymentStatus on
+  // every load. Unindexed, that is a sequential scan of the whole orders table on
+  // the busiest admin page — fine at launch, a slow-motion outage once the table
+  // grows.
+  @@index([paymentStatus])
   @@index([createdAt(sort: Desc)])
   @@index([deletedAt])
   @@map("orders")
@@ -410,8 +420,11 @@ model OrderItem {
   id        String   @id @default(uuid())
   orderId   String   @map("order_id")
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId String   @map("product_id")
-  product   Product  @relation(fields: [productId], references: [id])
+  productId String @map("product_id")
+  // Explicit Restrict for the same reason as Order.user: an order line is a
+  // financial record and must survive its product being removed from the catalogue.
+  // Products are soft-deleted (deletedAt + isActive:false), never hard-deleted.
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
   quantity  Int
   price     Decimal  @db.Decimal(10, 2) // Price at time of purchase
   createdAt DateTime @default(now()) @map("created_at")

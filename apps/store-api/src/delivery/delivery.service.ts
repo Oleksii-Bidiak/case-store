@@ -93,9 +93,26 @@ export class DeliveryService {
   /**
    * Estimate the shipping cost + ETA to a recipient city. Never throws: on any
    * NP failure it returns a zero-cost, no-ETA estimate so callers (including
-   * order creation) degrade gracefully.
+   * order creation) degrade gracefully — an order must never be blocked by a
+   * courier API having a bad minute.
+   *
+   * The graceful degradation is right; being QUIET about it was not. A zero here
+   * becomes `shippingCost = 0` on a real order, i.e. the shop ships at its own
+   * expense — and with NP_API_KEY unset that is not an edge case, it is EVERY
+   * order, silently, forever. So an unconfigured integration is logged at error
+   * level (and therefore reaches Sentry), while a transient API failure stays a
+   * warning. The difference matters: one is a bug in the deployment that someone
+   * has to fix, the other is the system working as designed.
    */
   async estimateShipping(recipientCityRef: string): Promise<NpEstimateDto> {
+    if (!this.client.isConfigured()) {
+      this.logger.error(
+        { event: 'delivery.notConfigured', recipientCityRef },
+        'NP_API_KEY is not set — shipping is being charged at 0. Every order ships at the shop’s expense until this is configured.',
+      );
+      return { cost: '0.00', etaDays: null };
+    }
+
     const key = `np:estimate:${this.senderCityRef}:${recipientCityRef}`;
     const cached = await this.cache.get<NpEstimateDto>(key);
     if (cached) return cached;

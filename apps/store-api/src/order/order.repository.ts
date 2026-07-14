@@ -440,6 +440,25 @@ export class OrderRepository {
    *
    * Until Stripe (TASK-034) lands this is the manual counterpart to the admin
    * payment-status action: marking paid keeps the stock, cancel releases it.
+   *
+   * CONCURRENCY (TASK-315). The cancellation is decided by the conditional
+   * `updateMany` BELOW, not by the caller's earlier status read. Both callers
+   * (`OrderService.cancelOrder` and the admin `updateStatus` auto-restock branch)
+   * read the order first and check it is cancellable — but that read is outside
+   * this transaction, so two concurrent cancels of the same order (a double
+   * click, a client retry on a flaky connection, two open tabs) would both pass
+   * that check, both reach here, and both credit the stock back. One decrement,
+   * two increments: phantom inventory, which is then oversold to a customer who
+   * will never receive it.
+   *
+   * `restockedAt IS NULL` is the invariant "this order's reservation has not been
+   * given back yet" (createFromCart never sets it; reviveAndReserve clears it), so
+   * making the stamp itself the guard is exactly the check we need. Under READ
+   * COMMITTED the second transaction blocks on the winner's row lock, re-evaluates
+   * the WHERE after it commits, matches zero rows, and aborts before touching any
+   * product. The loser never increments anything.
+   *
+   * @throws ConflictException when the stock was already returned.
    */
   async cancelAndRestock(orderId: string, changedBy: string | null): Promise<OrderWithItems> {
     const updated = (await this.prisma.$transaction(async (tx) => {
@@ -447,6 +466,18 @@ export class OrderRepository {
         where: { id: orderId },
         include: ORDERS_INCLUDE,
       });
+
+      // The arbiter. Runs BEFORE any stock write, so a losing concurrent cancel
+      // cannot credit inventory on its way out. TASK-228: restockedAt also tells a
+      // later revive that this order's stock was given back and must be re-reserved.
+      const { count } = await tx.order.updateMany({
+        where: { id: orderId, restockedAt: null },
+        data: { status: OrderStatus.CANCELLED, restockedAt: new Date() },
+      });
+
+      if (count === 0) {
+        throw new ConflictException('This order’s stock has already been returned to inventory');
+      }
 
       for (const item of order.items) {
         await tx.product.update({
@@ -467,11 +498,8 @@ export class OrderRepository {
         },
       });
 
-      // TASK-228: stamp restockedAt so a later revive knows this order's stock
-      // was credited back and must be re-reserved (reviveAndReserve).
-      return tx.order.update({
+      return tx.order.findUniqueOrThrow({
         where: { id: orderId },
-        data: { status: OrderStatus.CANCELLED, restockedAt: new Date() },
         include: ORDERS_INCLUDE,
       });
     })) as OrderWithItems;

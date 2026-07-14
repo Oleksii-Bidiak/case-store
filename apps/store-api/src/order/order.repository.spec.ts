@@ -26,6 +26,7 @@ const makeTx = () => ({
   order: {
     create: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
     findUniqueOrThrow: jest.fn(),
   },
   cartItem: {
@@ -412,21 +413,29 @@ describe('OrderRepository', () => {
   // ─── cancelAndRestock — release reserved stock (WARNING / TASK-054) ────────
 
   describe('cancelAndRestock', () => {
-    const seedCancelTx = () => {
+    /**
+     * `won` = whether this transaction's conditional cancel claimed the order.
+     * TASK-315 made that conditional updateMany the arbiter between two racing
+     * cancels; a loser must return without incrementing any stock.
+     */
+    const seedCancelTx = ({ won = true }: { won?: boolean } = {}) => {
       const tx = makeTx();
-      tx.order.findUniqueOrThrow.mockResolvedValue({
-        id: 'order-1',
-        status: OrderStatus.PROCESSING,
-        items: [
-          { productId: 'product-uuid-1', quantity: 2 },
-          { productId: 'product-uuid-2', quantity: 1 },
-        ],
-      });
-      tx.order.update.mockResolvedValue({
-        id: 'order-1',
-        status: OrderStatus.CANCELLED,
-        items: [],
-      });
+      tx.order.findUniqueOrThrow
+        .mockResolvedValueOnce({
+          id: 'order-1',
+          status: OrderStatus.PROCESSING,
+          items: [
+            { productId: 'product-uuid-1', quantity: 2 },
+            { productId: 'product-uuid-2', quantity: 1 },
+          ],
+        })
+        // Re-read after the flip, to return the updated order with its includes.
+        .mockResolvedValue({
+          id: 'order-1',
+          status: OrderStatus.CANCELLED,
+          items: [],
+        });
+      tx.order.updateMany.mockResolvedValue({ count: won ? 1 : 0 });
       prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
       return tx;
     };
@@ -443,11 +452,25 @@ describe('OrderRepository', () => {
         data: { stock: { increment: 2 } },
       });
       // TASK-228: the restock is stamped so a later revive re-reserves.
-      expect(tx.order.update).toHaveBeenCalledWith({
-        where: { id: 'order-1' },
+      // TASK-315: guarded on restockedAt IS NULL, so it can only ever fire once.
+      expect(tx.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'order-1', restockedAt: null },
         data: { status: OrderStatus.CANCELLED, restockedAt: expect.any(Date) },
-        include: expect.any(Object),
       });
+    });
+
+    // The regression this guard exists for: a losing concurrent cancel must not
+    // credit stock back a second time. The integration suite proves it against a
+    // real Postgres; this proves the code path takes the early exit.
+    it('touches no stock when a concurrent cancel already claimed the order', async () => {
+      const tx = seedCancelTx({ won: false });
+
+      await expect(repository.cancelAndRestock('order-1', 'admin-uuid-1')).rejects.toThrow(
+        ConflictException,
+      );
+
+      expect(tx.product.update).not.toHaveBeenCalled();
+      expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
     });
 
     // ── TASK-251: history row uses the pre-cancel status as fromStatus ──
@@ -810,16 +833,19 @@ describe('OrderRepository', () => {
 
     it('cancelAndRestock evicts list pages and per-product detail caches after commit', async () => {
       const tx = makeTx();
-      tx.order.findUniqueOrThrow.mockResolvedValue({
-        id: 'order-1',
-        status: OrderStatus.PROCESSING,
-        items: [{ productId: 'product-uuid-1', quantity: 2 }],
-      });
-      tx.order.update.mockResolvedValue({
-        id: 'order-1',
-        status: OrderStatus.CANCELLED,
-        items: [{ productId: 'product-uuid-1', product: { slug: 'iphone-15-pro-case' } }],
-      });
+      tx.order.findUniqueOrThrow
+        .mockResolvedValueOnce({
+          id: 'order-1',
+          status: OrderStatus.PROCESSING,
+          items: [{ productId: 'product-uuid-1', quantity: 2 }],
+        })
+        // Re-read after the conditional flip (TASK-315).
+        .mockResolvedValue({
+          id: 'order-1',
+          status: OrderStatus.CANCELLED,
+          items: [{ productId: 'product-uuid-1', product: { slug: 'iphone-15-pro-case' } }],
+        });
+      tx.order.updateMany.mockResolvedValue({ count: 1 });
       prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
 
       await repository.cancelAndRestock('order-1', null);
