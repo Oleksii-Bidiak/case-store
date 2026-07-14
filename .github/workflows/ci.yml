@@ -5,6 +5,10 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  # Lets a production deploy be re-run without a new commit — e.g. after fixing a
+  # secret, or to roll back by re-running an older commit's workflow. Without this
+  # the `workflow_dispatch` condition on deploy-production could never be true.
+  workflow_dispatch:
 
 jobs:
   typecheck:
@@ -428,18 +432,36 @@ jobs:
       # Exercises DNS + Caddy TLS + each app end-to-end. Retries because Caddy
       # can take a moment to provision Let's Encrypt certs and containers to
       # become ready. Fails the job loudly if any app is not 2xx/3xx in time.
+      #
+      # Staging sits behind basic auth (TASK-307), so the storefront and admin
+      # need credentials — WITHOUT them every check would come back 401 and the
+      # smoke test would tell you nothing about whether the apps actually work.
+      # `/health` is exempt from the password precisely so it stays reachable.
       - name: Smoke check the three apps
         env:
           DOMAIN: ${{ vars.STAGING_DOMAIN }}
+          BASIC_AUTH_PASSWORD: ${{ secrets.STAGING_BASIC_AUTH_PASSWORD }}
         run: |
           set -u
+          auth=""
+          if [ -n "${BASIC_AUTH_PASSWORD}" ]; then
+            auth="--user staging:${BASIC_AUTH_PASSWORD}"
+          fi
+
           urls="https://api.${DOMAIN}/health https://${DOMAIN}/ https://admin.${DOMAIN}/"
           for url in $urls; do
             ok=0
             for i in $(seq 1 15); do
-              code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" || true)"
+              # shellcheck disable=SC2086
+              code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 $auth "$url" || true)"
               if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
                 echo "OK   ${url}  (HTTP ${code})"; ok=1; break
+              fi
+              if [ "$code" = "401" ]; then
+                echo "SMOKE FAILED: ${url} returned 401."
+                echo "Staging is password-protected. Add the plaintext password as the"
+                echo "STAGING_BASIC_AUTH_PASSWORD secret so this check can reach the apps."
+                exit 1
               fi
               echo "wait ${url}  (attempt ${i}, HTTP ${code})"; sleep 10
             done
@@ -457,4 +479,297 @@ jobs:
             echo "- Storefront: https://${{ vars.STAGING_DOMAIN }}/"
             echo "- Admin: https://admin.${{ vars.STAGING_DOMAIN }}/"
             echo "- API health: https://api.${{ vars.STAGING_DOMAIN }}/health"
+            echo ""
+            echo "Staging is behind basic auth — user \`staging\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # deploy-production (TASK-310)
+  #
+  # Mirrors deploy-staging, with four deliberate differences:
+  #
+  #   1. MANUAL APPROVAL. The `production` Environment carries a required-reviewer
+  #      protection rule, so this job PAUSES and waits for a human to click
+  #      Approve in the Actions UI. Nothing else in the workflow enforces that —
+  #      the gate is the Environment setting, and it must be configured once in
+  #      the repo settings (see docs/deploy.md).
+  #
+  #   2. A BACKUP IS TAKEN FIRST, AND IT IS BLOCKING. If the backup fails, the
+  #      deploy stops. A schema migration you cannot undo, run against a database
+  #      you have no fresh copy of, is the one mistake with no way back.
+  #
+  #   3. `prisma migrate deploy` ONLY. Never `db push --accept-data-loss`, which
+  #      staging used to use — it silently drops whatever is in the way.
+  #
+  #   4. SELECTIVE BUILDS. Each image is tagged with the SHA of the last commit
+  #      that touched ITS OWN inputs, so an unchanged app keeps its previous tag,
+  #      compose sees the same image reference, and the container is not recreated
+  #      at all. A storefront-only change therefore leaves the API and admin
+  #      running untouched — no restart, no dropped requests. (The old scheme
+  #      tagged all three with the pushed commit's SHA, so every deploy looked like
+  #      a change to all three, and all three restarted.)
+  # ──────────────────────────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build, test-unit, test-e2e, test-int]
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push')
+      || github.event_name == 'workflow_dispatch'
+    environment:
+      name: production
+      url: https://${{ vars.PROD_DOMAIN }}
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: store_swagger
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the per-app tags below are computed from `git log`, and
+          # a shallow clone would silently resolve them all to the tip commit —
+          # turning selective deploys back into "rebuild everything".
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # swagger.json is gitignored but the frontend images run Orval against it
+      # during their build — regenerate it before any docker build (same as staging).
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=apps/store-api/prisma/schema.prisma
+      - name: Export OpenAPI spec into the build context
+        run: npm run swagger:export -w apps/store-api
+        env:
+          NODE_ENV: production
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/store_swagger?schema=public
+          JWT_SECRET: ci-dummy-jwt-secret-min-32-chars-000000
+          JWT_REFRESH_SECRET: ci-dummy-jwt-refresh-secret-min-32-000
+          CORS_ORIGINS: http://localhost:3000
+
+      # ── per-app image tags ───────────────────────────────────────────────
+      # Each tag is the SHA of the last commit that touched that app's inputs, so
+      # it is a pure function of the code — no state, no bookkeeping, and the same
+      # commit always produces the same tag.
+      #
+      # The frontends list apps/store-api/src among their inputs on purpose: they
+      # bake Orval-generated hooks from store-api's Swagger surface at build time,
+      # so an API DTO change genuinely does invalidate them. Erring the other way
+      # would ship a frontend whose client no longer matches the API it calls.
+      - name: Compute image coordinates
+        id: img
+        run: |
+          owner_lc="$(printf '%s' "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          echo "prefix=ghcr.io/${owner_lc}" >> "$GITHUB_OUTPUT"
+
+          shared="packages package-lock.json package.json"
+          api_inputs="apps/store-api ${shared}"
+          client_inputs="apps/store-client apps/store-api/src ${shared}"
+          admin_inputs="apps/store-admin apps/store-api/src ${shared}"
+
+          # shellcheck disable=SC2086
+          {
+            echo "tag_api=prod-$(git log -1 --format=%H -- ${api_inputs})"
+            echo "tag_client=prod-$(git log -1 --format=%H -- ${client_inputs})"
+            echo "tag_admin=prod-$(git log -1 --format=%H -- ${admin_inputs})"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # An image whose tag already exists in the registry is byte-for-byte the one
+      # we would rebuild, so skip it. This is what makes the deploy selective.
+      - name: Decide which images need building
+        id: need
+        run: |
+          for app in api client admin; do
+            case "$app" in
+              api)    tag="${{ steps.img.outputs.tag_api }}" ;;
+              client) tag="${{ steps.img.outputs.tag_client }}" ;;
+              admin)  tag="${{ steps.img.outputs.tag_admin }}" ;;
+            esac
+            image="${{ steps.img.outputs.prefix }}/store-${app}:${tag}"
+            if docker manifest inspect "$image" >/dev/null 2>&1; then
+              echo "${app}=false" >> "$GITHUB_OUTPUT"
+              echo "store-${app}: unchanged — reusing ${tag}"
+            else
+              echo "${app}=true" >> "$GITHUB_OUTPUT"
+              echo "store-${app}: CHANGED — will build ${tag}"
+            fi
+          done
+
+      - name: Build & push store-api
+        if: steps.need.outputs.api == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/store-api/Dockerfile
+          push: true
+          tags: ${{ steps.img.outputs.prefix }}/store-api:${{ steps.img.outputs.tag_api }}
+          cache-from: type=gha,scope=store-api
+          cache-to: type=gha,mode=max,scope=store-api
+
+      - name: Build & push store-client
+        if: steps.need.outputs.client == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/store-client/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://api.${{ vars.PROD_DOMAIN }}
+            NEXT_PUBLIC_APP_URL=https://${{ vars.PROD_DOMAIN }}
+            NEXT_PUBLIC_SITE_URL=https://${{ vars.PROD_DOMAIN }}
+            NEXT_PUBLIC_CURRENCY=${{ vars.NEXT_PUBLIC_CURRENCY || 'UAH' }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
+            NEXT_PUBLIC_SENTRY_ENVIRONMENT=production
+            NEXT_PUBLIC_UMAMI_SRC=${{ vars.NEXT_PUBLIC_UMAMI_SRC }}
+            NEXT_PUBLIC_UMAMI_WEBSITE_ID=${{ vars.NEXT_PUBLIC_UMAMI_WEBSITE_ID }}
+          tags: ${{ steps.img.outputs.prefix }}/store-client:${{ steps.img.outputs.tag_client }}
+          cache-from: type=gha,scope=store-client
+          cache-to: type=gha,mode=max,scope=store-client
+
+      - name: Build & push store-admin
+        if: steps.need.outputs.admin == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/store-admin/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://api.${{ vars.PROD_DOMAIN }}
+            NEXT_PUBLIC_APP_URL=https://${{ vars.PROD_DOMAIN }}
+            NEXT_PUBLIC_ADMIN_URL=https://admin.${{ vars.PROD_DOMAIN }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
+            NEXT_PUBLIC_SENTRY_ENVIRONMENT=production
+          tags: ${{ steps.img.outputs.prefix }}/store-admin:${{ steps.img.outputs.tag_admin }}
+          cache-from: type=gha,scope=store-admin
+          cache-to: type=gha,mode=max,scope=store-admin
+
+      - name: Copy deploy files to production
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "docker-compose.prod.yml,Caddyfile,docker,scripts"
+          target: /opt/store-ai
+          overwrite: true
+
+      - name: Deploy on production
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          TAG_API: ${{ steps.img.outputs.tag_api }}
+          TAG_CLIENT: ${{ steps.img.outputs.tag_client }}
+          TAG_ADMIN: ${{ steps.img.outputs.tag_admin }}
+          IMAGE_PREFIX: ${{ steps.img.outputs.prefix }}
+          GHCR_ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: TAG_API,TAG_CLIENT,TAG_ADMIN,IMAGE_PREFIX,GHCR_ACTOR,GHCR_TOKEN,PROD_ENV_FILE
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd /opt/store-ai
+
+            umask 077
+            printf '%s' "$PROD_ENV_FILE" > .env.production
+
+            # Pin each service to its own tag. An app whose code did not change
+            # keeps the tag it is already running, so `up -d` leaves its container
+            # completely alone — it is not restarted and serves throughout.
+            cat > docker-compose.images.yml <<YAML
+            services:
+              store-api:
+                image: ${IMAGE_PREFIX}/store-api:${TAG_API}
+              store-client:
+                image: ${IMAGE_PREFIX}/store-client:${TAG_CLIENT}
+              store-admin:
+                image: ${IMAGE_PREFIX}/store-admin:${TAG_ADMIN}
+            YAML
+
+            COMPOSE="docker compose -f docker-compose.prod.yml -f docker-compose.images.yml --env-file .env.production"
+
+            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
+
+            # BACKUP FIRST, AND IT BLOCKS. `set -e` plus this script's own non-zero
+            # exit on failure means a failed backup stops the deploy here, before a
+            # single migration runs. Migrating a database you have no fresh copy of
+            # is the one mistake that has no way back.
+            ./scripts/backup.sh --db-only
+
+            $COMPOSE pull
+            $COMPOSE up -d
+
+            # migrate deploy ONLY — never `db push --accept-data-loss`. It refuses
+            # to run against a database whose history diverged rather than reshaping
+            # it, so a bad state fails the deploy instead of destroying data.
+            $COMPOSE exec -T store-api npx prisma migrate deploy --config prisma.config.ts
+
+            docker image prune -f
+            docker logout ghcr.io || true
+
+      - name: Smoke check the three apps
+        env:
+          DOMAIN: ${{ vars.PROD_DOMAIN }}
+        run: |
+          set -u
+          urls="https://api.${DOMAIN}/health https://${DOMAIN}/ https://admin.${DOMAIN}/"
+          for url in $urls; do
+            ok=0
+            for i in $(seq 1 15); do
+              code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" || true)"
+              if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
+                echo "OK   ${url}  (HTTP ${code})"; ok=1; break
+              fi
+              echo "wait ${url}  (attempt ${i}, HTTP ${code})"; sleep 10
+            done
+            [ "$ok" = 1 ] || {
+              echo "SMOKE FAILED: ${url}"
+              echo "Roll back now — do not retry blindly. See docs/rollback.md."
+              exit 1
+            }
+          done
+
+      - name: Deploy summary
+        if: always()
+        run: |
+          {
+            echo "### Production deploy"
+            echo ""
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- store-api: \`${{ steps.img.outputs.tag_api }}\` (built: ${{ steps.need.outputs.api }})"
+            echo "- store-client: \`${{ steps.img.outputs.tag_client }}\` (built: ${{ steps.need.outputs.client }})"
+            echo "- store-admin: \`${{ steps.img.outputs.tag_admin }}\` (built: ${{ steps.need.outputs.admin }})"
+            echo ""
+            echo "\`built: false\` means that app was unchanged and its container was never restarted."
+            echo ""
+            echo "To roll back, re-run with the previous tags — see docs/rollback.md."
           } >> "$GITHUB_STEP_SUMMARY"
