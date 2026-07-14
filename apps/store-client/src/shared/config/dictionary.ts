@@ -489,11 +489,11 @@ export const dict = {
     paymentIntro: "Обирайте зручний спосіб — онлайн або при отриманні.",
     warrantyHeading: "Гарантія та сервіс",
     warrantyIntro:
-      "Уся техніка — офіційна, з гарантією виробника. Власний сервісний центр у Києві.",
+      "Уся техніка — офіційна, з гарантією виробника. Сервісне обслуговування — [сервісний центр / партнер].",
     servicesHeading: "Додаткові сервіси захисту",
     aboutHeading: "Ми — MobileStore",
     aboutIntro:
-      "Інтернет-магазин електроніки, який з 2018 року допомагає українцям обирати техніку без зайвого клопоту. Тільки оригінальні пристрої, офіційна гарантія та чесні ціни.",
+      "Інтернет-магазин електроніки, який з [рік заснування] року допомагає українцям обирати техніку без зайвого клопоту. Тільки оригінальні пристрої, офіційна гарантія та чесні ціни.",
     valuesHeading: "Чому обирають нас",
     contactsHeading: "Звʼяжіться з нами",
     contactPhoneLabel: "Телефон",
@@ -521,21 +521,24 @@ export const dict = {
     breadcrumb: "Звʼязатися з нами",
     heading: "Звʼязатися з нами",
     intro:
-      "Маєте питання про замовлення, доставку чи товар? Оберіть зручний спосіб — і ми відповімо якнайшвидше. Середній час відповіді — до 15 хвилин у робочі години.",
+      "Маєте питання про замовлення, доставку чи товар? Оберіть зручний спосіб — і ми відповімо якнайшвидше.",
+    // TASK-311: no invented company metrics here (a "15 хв середня відповідь"
+    // badge is an unverifiable claim). These two are the shop's published
+    // policies, mirrored from the legal pages.
     stats: [
-      { value: "15 хв", label: "середня відповідь" },
-      { value: "9–21", label: "щодня без вихідних" },
+      { value: "14 днів", label: "на повернення" },
+      { value: "12–24 міс.", label: "гарантія виробника" },
     ],
     channels: {
       phoneLabel: "Гаряча лінія",
-      phoneNote: "Безкоштовно по Україні",
+      phoneNote: "Дзвінки за тарифами вашого оператора",
       emailLabel: "Пошта",
-      emailNote: "Відповідь до 1 дня",
+      emailNote: "Відповідь до 1 робочого дня",
       chatLabel: "Онлайн-чат",
       chatValue: "Написати зараз",
       chatNote: "Швидка відповідь у месенджерах",
       hoursLabel: "Графік роботи",
-      hoursNote: "Без вихідних",
+      hoursNote: "За київським часом",
     },
     formHeading: "Напишіть нам",
     formIntro:
@@ -580,32 +583,34 @@ export const dict = {
     sentAgain: "Надіслати ще одне",
     departmentsHeading: "Відділи",
     departments: [
+      // TASK-311: department mailboxes are a company fact — placeholders until
+      // the owner confirms which addresses actually exist.
       {
         key: "sales",
         title: "Відділ продажів",
         desc: "Допомога з вибором і замовленням",
-        email: "sales@mobilestore.ua",
+        email: "[email відділу продажів]",
       },
       {
         key: "service",
         title: "Сервіс і гарантія",
         desc: "Ремонт, обмін, повернення",
-        email: "service@mobilestore.ua",
+        email: "[email сервісу]",
       },
       {
         key: "b2b",
         title: "Співпраця",
         desc: "Опт, партнерство, реклама",
-        email: "b2b@mobilestore.ua",
+        email: "[email для співпраці]",
       },
     ],
     messengersHeading: "Ми у месенджерах",
     messengersIntro: "Швидка відповідь у зручному для вас чаті.",
     messengersEmpty: "Зателефонуйте нам — ми на звʼязку щодня.",
-    officeHeading: "Головний офіс і шоурум",
-    officeAddress: "м. Київ, вул. Хрещатик, 22",
-    officeAddressNote: "2 поверх, ТЦ «Central»",
-    officeHours: "Пн–Нд · 10:00–20:00",
+    officeHeading: "Офіс",
+    officeAddress: "[адреса офісу]",
+    officeAddressNote: "[уточнення адреси — поверх, орієнтир]",
+    officeHours: "[графік роботи офісу]",
     officeRoute: "Прокласти маршрут",
     officeMapAria: "Розташування офісу",
     faqHeading: "Можливо, відповідь уже є",
