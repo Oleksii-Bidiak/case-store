@@ -309,19 +309,26 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
         )}
       </div>
 
-      {/* Site-wide noindex */}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-2">
-          <input
-            id="seo-noindex"
-            type="checkbox"
-            className="size-4 rounded border-border accent-primary"
-            {...register("noindexSite")}
-          />
-          <Label htmlFor="seo-noindex">{f.noindexSite}</Label>
-        </div>
-        <p className="text-sm text-muted-foreground">{f.noindexSiteHint}</p>
-      </div>
+      {/*
+        The site-wide "hide from search engines" checkbox used to live here and
+        was REMOVED (TASK-307). It was a loaded gun pointed at the live store: one
+        misclick took the whole shop out of Google, the damage took weeks to undo,
+        and the form's own hint text had to warn about it in red — a sure sign the
+        control should not have existed. It also did not work well enough to be
+        worth the risk, since it only emitted a `robots.txt` disallow, which asks
+        well-behaved crawlers not to look and cannot un-index URLs Google already
+        holds.
+
+        Keeping a test deployment out of search is a property of the ENVIRONMENT,
+        not something an operator should toggle at runtime, so it now lives in the
+        proxy: Caddyfile.staging puts staging behind basic auth and sends
+        `X-Robots-Tag: noindex`. A password stops everyone, including crawlers.
+
+        The `noindexSite` column and the storefront's robots.ts handling remain as
+        a deliberate emergency kill switch — flipping it now needs a database
+        write, which is the right amount of friction for an action this
+        destructive. See docs/operations.md.
+      */}
 
       <FormActionsBar>
         <Button type="submit" disabled={update.isPending}>

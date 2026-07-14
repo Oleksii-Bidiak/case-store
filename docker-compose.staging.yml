@@ -48,3 +48,23 @@ services:
 
   store-admin:
     image: ghcr.io/oleksii-bidiak/store-admin:${IMAGE_TAG:-staging-latest}
+
+  # ── Password-protect the whole staging deployment (TASK-307) ──────────────
+  # Swaps in Caddyfile.staging, which wraps all three sites in basic auth and
+  # sends `X-Robots-Tag: noindex`. This is what keeps the test store out of
+  # Google — not a checkbox in the admin panel, and not robots.txt (which is a
+  # polite request, not a fence, and cannot un-index URLs a crawler already has).
+  #
+  # It lives here rather than as an env toggle in the shared Caddyfile because
+  # Caddy adapts its config BEFORE any request matcher runs: a `basic_auth` block
+  # with an empty password fails to parse at start-up, so it cannot be disabled
+  # from the environment. Hence two files.
+  #
+  # `/health` stays public so the deploy smoke check and uptime monitor still work.
+  caddy:
+    environment:
+      STAGING_BASIC_AUTH: ${STAGING_BASIC_AUTH:?STAGING_BASIC_AUTH must be set — run `docker run --rm caddy caddy hash-password --plaintext '<password>'` and put the $$2a$$... hash in the staging env file}
+    volumes:
+      - ./Caddyfile.staging:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config

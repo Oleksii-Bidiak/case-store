@@ -14,6 +14,10 @@ import {
   setAccessToken,
   userControllerGetProfile,
 } from "@/shared/api";
+import {
+  ADMIN_UI_SESSION_COOKIE,
+  ADMIN_UI_SESSION_MAX_AGE_SECONDS,
+} from "@/shared/config/admin-ui-session";
 
 export interface AuthContextValue {
   accessToken: string | null;
@@ -60,6 +64,26 @@ async function bootstrapRefresh(): Promise<string | null> {
   }
 }
 
+/**
+ * Write (or expire) the `admin_ui_session` marker cookie.
+ *
+ * Deliberately NOT HttpOnly — this is client-side state, and it is not a secret:
+ * it carries no token and proves nothing. Its only job is to let `proxy.ts`
+ * (which cannot see the API's HttpOnly refresh cookie, that being scoped to a
+ * different host) skip serving the dashboard shell to a browser with no session
+ * at all. See shared/config/admin-ui-session.ts for the full reasoning.
+ */
+function writeAdminUiSessionMarker(present: boolean): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  const secure = window.location.protocol === "https:" ? "; secure" : "";
+  const maxAge = present ? ADMIN_UI_SESSION_MAX_AGE_SECONDS : 0;
+
+  document.cookie = `${ADMIN_UI_SESSION_COOKIE}=${present ? "1" : ""}; path=/; max-age=${maxAge}; samesite=strict${secure}`;
+}
+
 /** Decode a JWT payload (no verification — informational/UI use only). */
 function decodeJwt(token: string): { sub?: string; role?: string } | null {
   try {
@@ -95,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserId(null);
     setRole(null);
     setEmail(null);
+    writeAdminUiSessionMarker(false);
   }, []);
 
   const setTokens = useCallback(
@@ -111,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(token);
       setUserId(claims?.sub ?? null);
       setRole(claims.role);
+      writeAdminUiSessionMarker(true);
     },
     [clearTokens],
   );
@@ -125,7 +151,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setTokens(token);
       }
       // token === null → no valid refresh cookie (or refresh kept failing):
-      // remain signed out.
+      // remain signed out, and expire the `admin_ui_session` marker. Without
+      // this a marker left over from a revoked or expired session would keep
+      // letting the dashboard shell through the proxy for its full 7 days —
+      // harmless (the API still 401s) but pointlessly so.
+      if (active && !token) {
+        clearTokens();
+      }
       if (active) {
         setIsInitializing(false);
       }
@@ -134,7 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [setTokens]);
+  }, [setTokens, clearTokens]);
 
   // TASK-255: light profile fetch for the header identity. Keyed on
   // `accessToken` so it re-runs on bootstrap restore, login, and every

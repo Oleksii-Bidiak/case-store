@@ -11,6 +11,7 @@ import {
   ValidateIf,
   validateSync,
 } from 'class-validator';
+import { IsOriginList } from '../common/validators/is-origin-list.decorator';
 
 /**
  * Supported runtime environments.
@@ -61,8 +62,18 @@ export class EnvironmentVariables {
   @IsString()
   JWT_REFRESH_EXPIRATION?: string;
 
-  @IsOptional()
-  @IsString()
+  // REQUIRED in production, and its format is checked. Previously optional and
+  // unvalidated, which failed in the worst possible way: main.ts falls back to
+  // `http://localhost:3000` when it is unset, and a typo'd entry (trailing slash,
+  // missing scheme) simply never matches the browser's Origin header. Either way
+  // the API boots and reports itself healthy, while every request from the real
+  // storefront dies in the customer's browser with an opaque CORS error. Fail at
+  // start-up instead, where the cause is written on the tin.
+  @ValidateIf(
+    (env: EnvironmentVariables) =>
+      env.NODE_ENV === Environment.Production || env.CORS_ORIGINS !== undefined,
+  )
+  @IsOriginList()
   CORS_ORIGINS?: string;
 
   // Rate limit for the locked-account owner notice (TASK-287): the minimum gap,

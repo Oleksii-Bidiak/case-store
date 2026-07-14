@@ -101,7 +101,12 @@ describe('validateEnv — CSRF_SECRET is required in production', () => {
 
   it('accepts a 32+ character CSRF_SECRET in production', () => {
     expect(() =>
-      validateEnv({ ...base, NODE_ENV: 'production', CSRF_SECRET: 'c'.repeat(32) }),
+      validateEnv({
+        ...base,
+        NODE_ENV: 'production',
+        CSRF_SECRET: 'c'.repeat(32),
+        CORS_ORIGINS: 'https://shop.example.com',
+      }),
     ).not.toThrow();
   });
 
@@ -109,5 +114,61 @@ describe('validateEnv — CSRF_SECRET is required in production', () => {
     expect(() => validateEnv({ ...base, NODE_ENV: 'development', CSRF_SECRET: 'short' })).toThrow(
       /CSRF_SECRET/i,
     );
+  });
+});
+
+describe('validateEnv — CORS_ORIGINS must be a well-formed origin list', () => {
+  const prod = {
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+    JWT_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+    CSRF_SECRET: 'c'.repeat(32),
+    NODE_ENV: 'production',
+  };
+
+  it('boots in development without CORS_ORIGINS', () => {
+    expect(() => validateEnv({ ...prod, NODE_ENV: 'development' })).not.toThrow();
+  });
+
+  // Unset in production used to fall back to http://localhost:3000 in main.ts —
+  // the API booted "healthy" and every request from the real storefront failed in
+  // the customer's browser with an opaque CORS error.
+  it('fails fast in production when CORS_ORIGINS is missing', () => {
+    expect(() => validateEnv(prod)).toThrow(/CORS_ORIGINS/i);
+  });
+
+  it('accepts a comma-separated list of exact origins', () => {
+    expect(() =>
+      validateEnv({
+        ...prod,
+        CORS_ORIGINS: 'https://shop.example.com,https://admin.shop.example.com',
+      }),
+    ).not.toThrow();
+  });
+
+  it('accepts an origin with an explicit port', () => {
+    expect(() => validateEnv({ ...prod, CORS_ORIGINS: 'http://localhost:3000' })).not.toThrow();
+  });
+
+  // A browser matches the Origin header byte-for-byte, so a single trailing
+  // slash makes the entry match nothing at all — and it does so silently.
+  it.each([
+    ['a trailing slash', 'https://shop.example.com/'],
+    ['a path', 'https://shop.example.com/store'],
+    ['a missing scheme', 'shop.example.com'],
+    ['an empty list', ''],
+    ['one bad entry among good ones', 'https://shop.example.com,https://admin.example.com/'],
+  ])('rejects %s', (_label, value) => {
+    expect(() => validateEnv({ ...prod, CORS_ORIGINS: value })).toThrow(/CORS_ORIGINS/i);
+  });
+
+  it('rejects a malformed value outside production too', () => {
+    expect(() =>
+      validateEnv({
+        ...prod,
+        NODE_ENV: 'development',
+        CORS_ORIGINS: 'https://shop.example.com/',
+      }),
+    ).toThrow(/CORS_ORIGINS/i);
   });
 });

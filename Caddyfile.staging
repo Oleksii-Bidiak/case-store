@@ -1,0 +1,68 @@
+# Caddyfile.staging — STAGING reverse proxy (TASK-307).
+#
+# Identical to the production Caddyfile, plus one thing: the whole deployment
+# sits behind a password and tells crawlers to stay away.
+#
+# ─── Why keeping staging out of Google is done here, not in the apps ────────
+#   1. It belongs to the ENVIRONMENT, not to the build. The Next images bake
+#      NEXT_PUBLIC_* at build time, and a robots.txt computed inside the app can
+#      get baked with it — leaving either an image that is "noindex" forever, or
+#      a staging image that quietly says "index me". Caddy is configured per host
+#      at start-up, so the SAME image is correct in both environments.
+#   2. There used to be a site-wide `noindexSite` checkbox in the admin panel
+#      (SeoSettings). One misclick on the real store would have removed it from
+#      Google, and all it produced was a `robots.txt` disallow — which is a
+#      request, not a fence: it asks well-behaved crawlers not to look, does
+#      nothing about anyone else, and does not remove URLs already indexed. A
+#      password stops everyone; `X-Robots-Tag` de-indexes even known URLs.
+#
+# ─── Why a separate file rather than a toggle in the production Caddyfile ───
+# Caddy adapts the config BEFORE any request matcher runs, so a `basic_auth`
+# block with an empty password fails to parse at start-up. It cannot be switched
+# off from the environment — hence two files. Keep the site blocks in sync.
+#
+# ─── Setting the password ──────────────────────────────────────────────────
+# Generate the hash on the server:
+#     docker run --rm caddy caddy hash-password --plaintext 'your-password'
+# then add to the STAGING env file:
+#     STAGING_BASIC_AUTH=<the $2a$... hash>
+# Username is `staging`. Use the hash verbatim — do NOT double the `$` signs
+# (that is only needed for a hash written inline in a compose file; compose reads
+# this one from the env file and passes it through untouched).
+
+# ─── Storefront (root domain) ───────────────────────────────────────────────
+{$DOMAIN} {
+	basic_auth {
+		staging {$STAGING_BASIC_AUTH}
+	}
+	header X-Robots-Tag "noindex, nofollow, noarchive"
+
+	encode zstd gzip
+	reverse_proxy store-client:3000
+}
+
+# ─── Admin panel (admin. subdomain) ─────────────────────────────────────────
+admin.{$DOMAIN} {
+	basic_auth {
+		staging {$STAGING_BASIC_AUTH}
+	}
+	header X-Robots-Tag "noindex, nofollow, noarchive"
+
+	encode zstd gzip
+	reverse_proxy store-admin:3002
+}
+
+# ─── API + uploaded images (api. subdomain) ─────────────────────────────────
+api.{$DOMAIN} {
+	# /health is deliberately EXEMPT from the password: the deploy smoke check
+	# and the uptime monitor must reach it, and it exposes nothing but
+	# up/down + whether the database answers.
+	@protected not path /health
+	basic_auth @protected {
+		staging {$STAGING_BASIC_AUTH}
+	}
+	header X-Robots-Tag "noindex, nofollow, noarchive"
+
+	encode zstd gzip
+	reverse_proxy store-api:{$PORT}
+}

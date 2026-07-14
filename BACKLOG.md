@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-302**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-315**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -313,6 +313,29 @@
 | TASK-300 | Backend/security code-review fixes (batch, ref `docs/reviews/2026-07-13-full-project-review.md`) — shipped 2026-07-13: CSRF on `/api/wishlist` (W1); atomic discount `tryIncrementRedeemed` closing the redeem TOCTOU incl. per-user cap via row-lock ordering (W4, TDD+int); discount boolean DTO (W5); prod-seed guard `ALLOW_PROD_SEED` + removed hardcoded 2nd admin (W2); `CSRF_SECRET` fail-fast + `JWT_SECRET!==JWT_REFRESH_SECRET` (W3); GIF magic-byte sniff (415); reviews verified-badge N+1 batched | ✅ | 159 |
 | TASK-301 | Frontend code-review fixes (batch, ref `docs/reviews/2026-07-13-full-project-review.md`) — shipped 2026-07-13: security headers on both `next.config.ts` (nosniff/Referrer-Policy/X-Frame-Options; CSP deferred — needs nonce) (W8); broke the real `product-detail`⇄`product-quick-view` cycle by moving `ProductImageGallery`/`ProductStockIndicator` to `entities/product` (W6); refresh via Orval `authControllerRefresh()` in both apps (W7); Sentry capture in sitemap/merchant-feed/indexnow server routes | ✅ | 159 |
 
+## Етап 7 — Запуск у прод: інфраструктура, безпека, експлуатація
+
+> Аудит 2026-07-14 (перед деплоєм) показав: **код майже готовий, магазин — ні**. Три речі
+> звітували про успіх, якого не було (`/health` не перевіряв БД → smoke-check зеленів на
+> зламаному деплої; чекаут показував фіктивну «Картку онлайн»; аутбокс позначав листи
+> надісланими при вимкненому SMTP), історія міграцій фактично не була в git, бекапів не
+> існувало взагалі. Деталі та порядок робіт — `docs/plans/160-prod-launch-hardening.md`.
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-303 | Історія Prisma-міграцій у git + деплой через `migrate deploy` — shipped 2026-07-14. `.gitignore` ховав усі датовані папки з першого коміту (в git була 1 з 15), тому staging синхронізував схему через `db push --accept-data-loss`. Перевірка на живому Postgres виявила **дрейф у 108 операцій**: 24 таблиці (add-on-сервіси, атрибути товарів, oauth, каруселі, блог, банери, seo-settings…) існували лише в `schema.prisma` — доба `db push` не згенерувала жодної міграції. Закриваюча міграція `close_schema_drift_db_push_era` (суто додавальна, без DROP TABLE/COLUMN); повторний `migrate diff` порожній. Заодно: крок `migrate deploy` у CI **ніколи не міг спрацювати** — запускався з кореня через `--schema`, а URL БД лежить у `prisma.config.ts` → падав із «datasource.url is required». Разова дія на сервері: старий staging-том без `_prisma_migrations` треба стерти | ✅ | 160 |
+| TASK-305 | Чесні `/health`, чекаут і пошта — shipped 2026-07-14. `/health` пінгує БД (таймаут 3с) і віддає 503, коли вона недоступна (код ставиться на відповідь, а не кидається винятком — інакше фільтр слав би 5xx у Sentry на кожну пробу кожні 30с). Чекаут більше не пропонує неіснуючий вибір оплати. Аутбокс у продакшені лишає рядки `PENDING` + ERROR-лог замість тихого `SENT` — `claimDue` це чисте читання, тож листи реально відправляться, коли з'явиться SMTP | ✅ | 160 |
+| TASK-306 | Сканери безпеки + захисні хуки — shipped 2026-07-14. Dependabot (npm/actions/docker), workflow Security (gitleaks по всій історії — вона чиста, і задача в тому, щоб такою лишалась; Trivy по Dockerfile/lock). `scripts/audit-gate.js` падає на **нову** high/critical у прод-залежностях, пропускаючи короткий allowlist із обов'язковими task-id та датою протермінування (постійно червоний гейт — це гейт, який навчаються ігнорувати). Хук `guard-destructive.js` блокує знищення БД, схемо-мутуючі команди на нелокальний хост, видалення volume'ів і force-push у main/develop. Виправлено semver-safe: form-data, hono, linkify-it, Next 16.2.4→16.2.10 (обхід middleware в App Router — передумова для edge-гарда адмінки) | ✅ | 160 |
+| TASK-304 | [H/H] **NestJS 10 → 11 + nodemailer 8 → 9** — 6 high-CVE у прод-залежностях мають один корінь: multer (DoS), path-to-regexp (ReDoS), lodash (prototype pollution через `@nestjs/swagger` 7), nodemailer (довільне читання файлів + SSRF). Це міграція фреймворку, не бамп. Allowlist в `audit-gate.js` протермінується **2026-09-30** — після цієї дати CI стане червоним | ⬜ | 160 |
+| TASK-307 | Захист staging від індексації + edge-гард адмінки + валідація `CORS_ORIGINS` — глобальний DB-чекбокс `noindexSite` (один клік адміна прибирає прод із Google, а захист лише через `robots.txt`) замінюється на Basic Auth у Caddy + env `SEO_NOINDEX` (`X-Robots-Tag`); `middleware.ts` в адмінці (маркерна кука — refresh-кука прив'язана до `api.<домен>` і `path=/api/auth/refresh`, тож middleware на `admin.<домен>` її не бачить) | ⬜ | 160 |
+| TASK-308 | Бекапи БД **і завантажених зображень** + перевірене відновлення — `pg_dump` + volume `uploads_data` (без нього при втраті VPS база відновиться, а всі фото товарів зникнуть), шифрування `age`, off-site у Backblaze B2; `create-admin.ts` (вузьке відновлення адміна — `db:seed` з `ALLOW_PROD_SEED` для цього непридатний, він заливає весь демо-каталог); `docs/backup-restore.md` із drill відновлення (звірка `count(*)`, переіндексація Meili) і drill повної втрати сервера | ⬜ | 160 |
+| TASK-309 | Ліміти й ротація в `docker-compose.prod.yml` — ротація логів (найчастіша причина падіння дешевого VPS: логи місяцями з'їдають диск), `mem_limit` на сервіси, `connection_limit` для Prisma (зараз пул необмежений — на 4 ГБ VPS це вичерпання конектів Postgres) | ⬜ | 160 |
+| TASK-310 | Прод-деплой + вибірковий деплой + відкат — `deploy-production` (push у `main` + `workflow_dispatch`, `production` Environment з обов'язковим ручним затвердженням, обов'язковий бекап перед деплоєм, лише `migrate deploy`, теги `prod-<sha>`); `dorny/paths-filter` → перезбираються лише змінені образи, незмінені контейнери навіть не перезапускаються; `docs/rollback.md` | ⬜ | 160 |
+| TASK-311 | Український seed для staging + юридичні чернетки — реалістичний контент, але **реквізити компанії явними плейсхолдерами**, не вигадкою (правдоподібна вигадка тихо переїде на прод — саме так з'явились «з 2018 року» і «власний сервісний центр у Києві»); `docs/legal-checklist.md` (оферта, реквізити ФОП, ЗУ «Про захист персональних даних», 14-денне повернення, cookie-банер) | ⬜ | 160 |
+| TASK-312 | `docs/operations.md` — ранбук експлуатації для не-інженера: моніторинг (Sentry, uptime, місце на диску), щоденні дії оператора, безпечна ротація секретів, playbook інциденту. Плюс у `docs/deploy.md`: VPS/домен/DNS, hardening сервера, 2FA на GitHub/Hetzner/реєстраторі, branch protection на `main` (зараз коміти в `main` блокує лише локальний хук — на GitHub нічого не заважає запушити напряму й запустити прод-деплой в обхід тестів) | ⬜ | 160 |
+| TASK-313 | Повний аудит безпеки коду та схеми БД (багатоагентний, з adversarial-перевіркою знахідок) — `/security-review` і `/code-review ultra` **diff-scoped**, тому попередній review охопив не все | ⬜ | 160 |
+| TASK-314 | [M] 2FA для адмін-панелі + блокування акаунта після N невдалих спроб (зараз лише глобальний rate-limit) — рішення власника | ⬜ | — |
+
 ### Parked
 
 | Task ID | Description | Reason |
@@ -333,6 +356,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-302**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-315**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.

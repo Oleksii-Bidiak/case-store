@@ -1,4 +1,4 @@
-# Caddyfile — production reverse proxy for the store-ai stack (TASK-270).
+# Caddyfile — PRODUCTION reverse proxy for the store-ai stack (TASK-270).
 #
 # Caddy provisions and renews Let's Encrypt (or ZeroSSL) certificates
 # automatically for all three sites, provided the domains' A/AAAA records point
@@ -11,6 +11,13 @@
 #
 # To receive certificate-expiry notices, add a global options block with your
 # email:  {  email you@example.com  }
+#
+# STAGING USES A DIFFERENT FILE: Caddyfile.staging, mounted over this one by
+# docker-compose.staging.yml (TASK-307). It is a separate file rather than an
+# env-var toggle in this one because Caddy adapts the config BEFORE any request
+# matcher runs, so a `basic_auth` block with an empty password fails to parse at
+# start-up — it cannot be conditionally disabled from the environment. Keep the
+# three site blocks below in sync with that file.
 
 # ─── Storefront (root domain) ───────────────────────────────────────────────
 {$DOMAIN} {
@@ -19,7 +26,10 @@
 }
 
 # ─── Admin panel (admin. subdomain) ─────────────────────────────────────────
+# An admin login page has no business in a search index, even on the real store.
 admin.{$DOMAIN} {
+	header X-Robots-Tag "noindex, nofollow, noarchive"
+
 	encode zstd gzip
 	reverse_proxy store-admin:3002
 }
@@ -28,6 +38,8 @@ admin.{$DOMAIN} {
 # store-api serves /api/*, the unprefixed /health probe, and static product
 # images at /uploads/* — all proxied through here on the app's configured PORT.
 api.{$DOMAIN} {
+	header X-Robots-Tag "noindex, nofollow"
+
 	encode zstd gzip
 	reverse_proxy store-api:{$PORT}
 }

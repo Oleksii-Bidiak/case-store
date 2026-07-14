@@ -346,7 +346,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "docker-compose.prod.yml,docker-compose.staging.yml,Caddyfile,docker"
+          source: "docker-compose.prod.yml,docker-compose.staging.yml,Caddyfile,Caddyfile.staging,docker"
           target: /opt/store-ai
           overwrite: true
 
