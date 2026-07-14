@@ -38,6 +38,7 @@ export class MailOutboxService {
   private readonly backoffBaseMs: number;
   private readonly backoffMaxMs: number;
   private readonly batchSize: number;
+  private readonly isProduction: boolean;
 
   constructor(
     private readonly repository: MailOutboxRepository,
@@ -56,6 +57,7 @@ export class MailOutboxService {
       DEFAULT_BACKOFF_MAX_MS,
     );
     this.batchSize = this.config.get<number>('MAIL_OUTBOX_BATCH_SIZE', DEFAULT_BATCH_SIZE);
+    this.isProduction = this.config.get<string>('NODE_ENV') === 'production';
   }
 
   /**
@@ -142,9 +144,26 @@ export class MailOutboxService {
       return result;
     }
 
-    // Disabled-mail no-op drain: when SMTP is off (dev/CI), mark rows SENT
-    // without a transport call so the table does not grow unboundedly.
     if (!this.mailService.isEnabled()) {
+      if (this.isProduction) {
+        // NEVER no-op-drain in production. Marking rows SENT without a transport
+        // call is indistinguishable, from the outside, from actually delivering
+        // them: the order looks confirmed, the outbox looks clean, and the
+        // customer receives nothing — with no failure anywhere to notice.
+        // Leaving them PENDING is both the honest state and the recoverable one:
+        // `claimDue` is a pure read, so once SMTP is configured these very rows
+        // are picked up and genuinely delivered. Logged at error level because a
+        // production store that cannot email its customers is an incident, not a
+        // configuration preference.
+        this.logger.error(
+          { event: 'mailOutbox.dispatch.blocked', pending: due.length },
+          `MAIL_ENABLED is false in production — ${due.length} outbox row(s) left PENDING and NOT delivered. Configure SMTP.`,
+        );
+        return result;
+      }
+
+      // Dev/CI only: drain as a no-op so the table does not grow unboundedly on
+      // a machine that has no SMTP transport and never will.
       for (const row of due) {
         await this.repository.markSent(row.id, now);
         result.sent += 1;

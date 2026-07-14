@@ -80,24 +80,25 @@ const loggerMock = {
 
 const clock: Clock = { now: () => NOW };
 
-function makeConfig(): ConfigService {
+function makeConfig(nodeEnv = 'test'): ConfigService {
   return {
     get: jest.fn((key: string, def?: unknown) => {
       const values: Record<string, unknown> = {
         MAIL_OUTBOX_BACKOFF_BASE_MS: BASE_MS,
         MAIL_OUTBOX_BACKOFF_MAX_MS: MAX_MS,
         MAIL_OUTBOX_BATCH_SIZE: 25,
+        NODE_ENV: nodeEnv,
       };
       return key in values ? values[key] : def;
     }),
   } as unknown as ConfigService;
 }
 
-function buildService(): MailOutboxService {
+function buildService(nodeEnv = 'test'): MailOutboxService {
   return new MailOutboxService(
     repositoryMock as unknown as MailOutboxRepository,
     mailServiceMock as unknown as MailService,
-    makeConfig(),
+    makeConfig(nodeEnv),
     loggerMock as unknown as PinoLogger,
     clock,
   );
@@ -373,7 +374,7 @@ describe('MailOutboxService', () => {
   // ─── dispatchDue — disabled-mail no-op drain ──────────────────────────────────
 
   describe('dispatchDue — mail disabled', () => {
-    it('drains due rows as no-op SENT without ever calling the transport', async () => {
+    it('drains due rows as no-op SENT outside production, without calling the transport', async () => {
       mailServiceMock.isEnabled.mockReturnValue(false);
       repositoryMock.claimDue.mockResolvedValue([makeRow({ id: 'a' }), makeRow({ id: 'b' })]);
 
@@ -383,6 +384,25 @@ describe('MailOutboxService', () => {
       expect(repositoryMock.markSent).toHaveBeenCalledWith('a', NOW);
       expect(repositoryMock.markSent).toHaveBeenCalledWith('b', NOW);
       expect(result).toEqual({ sent: 2, retried: 0, failed: 0 });
+    });
+
+    // The no-op drain is a dev convenience that becomes silent data loss in
+    // production: rows marked SENT look delivered, so a misconfigured SMTP would
+    // swallow every order confirmation with nothing anywhere reporting a failure.
+    it('in production leaves rows PENDING instead of marking them SENT', async () => {
+      const prodService = buildService('production');
+      mailServiceMock.isEnabled.mockReturnValue(false);
+      repositoryMock.claimDue.mockResolvedValue([makeRow({ id: 'a' }), makeRow({ id: 'b' })]);
+
+      const result = await prodService.dispatchDue();
+
+      expect(repositoryMock.markSent).not.toHaveBeenCalled();
+      expect(mailServiceMock.sendOrderConfirmationPayload).not.toHaveBeenCalled();
+      expect(result).toEqual({ sent: 0, retried: 0, failed: 0 });
+      expect(loggerMock.error).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'mailOutbox.dispatch.blocked', pending: 2 }),
+        expect.stringContaining('MAIL_ENABLED is false in production'),
+      );
     });
   });
 

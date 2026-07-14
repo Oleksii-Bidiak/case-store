@@ -1084,30 +1084,19 @@ export const dict = {
     countShort: (n: number) => `${n} тов.`,
     discountLine: "Знижка",
     totalLine: "До сплати",
-    secureNote: "Безпечна оплата · Дані захищені",
-    // Payment method — a stub (no online-payment backend yet; the order is
-    // created and settled per the admin flow — TASK-034).
+    secureNote: "З'єднання захищене · Ваші дані у безпеці",
+    // Payment. There is no online-payment provider yet (TASK-034), so the
+    // storefront offers exactly one method and says so plainly. It previously
+    // rendered a "Картка онлайн — Visa / Mastercard · Apple Pay, Google Pay"
+    // radio option that was never sent to the API (CreateOrderDto has no payment
+    // field): the customer believed they had paid by card while the order was
+    // actually created as PENDING for a manager to settle by phone. Do not
+    // reintroduce a payment choice until a provider is genuinely wired up.
     paymentHeading: "Оплата",
-    paymentMethodAria: "Спосіб оплати",
-    paymentStubNote:
-      "Онлайн-оплату буде підключено — спосіб оплати узгоджуємо при підтвердженні замовлення.",
-    paymentMethods: [
-      {
-        key: "card",
-        title: "Картка онлайн",
-        note: "Visa / Mastercard · Apple Pay, Google Pay",
-      },
-      {
-        key: "cod",
-        title: "Оплата при отриманні",
-        note: "Готівкою або карткою у відділенні",
-      },
-      {
-        key: "invoice",
-        title: "Безготівковий рахунок",
-        note: "Для юридичних осіб, з ПДВ",
-      },
-    ],
+    paymentMethodTitle: "Оплата при отриманні",
+    paymentMethodNote: "Готівкою або карткою у відділенні перевізника.",
+    paymentManagerNote:
+      "Менеджер зателефонує, щоб підтвердити замовлення. Оплату карткою онлайн буде додано згодом.",
     // Loyalty bonuses — stub (no loyalty backend — TASK-175).
     bonusesStub: "Списати бонуси (програма лояльності — незабаром)",
   },

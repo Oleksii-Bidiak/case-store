@@ -20,7 +20,7 @@ import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import { trackEvent } from "@/shared/lib";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { CheckoutStepIndicator } from "./checkout-step-indicator";
-import { CheckoutPaymentStub } from "./checkout-payment-stub";
+import { CheckoutPayment } from "./checkout-payment";
 
 /**
  * CheckoutView — client orchestrator for the `/checkout` route.
@@ -192,7 +192,7 @@ export function CheckoutView() {
                 </div>
               </section>
 
-              <CheckoutPaymentStub />
+              <CheckoutPayment />
 
               <Button
                 type="button"

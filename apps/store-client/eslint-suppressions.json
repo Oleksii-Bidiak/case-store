@@ -284,9 +284,9 @@
       "count": 14
     }
   },
-  "src/widgets/checkout/ui/checkout-payment-stub.tsx": {
+  "src/widgets/checkout/ui/checkout-payment.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 8
+      "count": 6
     }
   },
   "src/widgets/checkout/ui/checkout-step-indicator.tsx": {
