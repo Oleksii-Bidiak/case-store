@@ -93,9 +93,10 @@ services:
       - "3003:3000"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/umami
-      # Signs Umami session/JWT cookies. Must be set — generate with:
+      # Signs Umami session/JWT cookies. Dev default below is fine for local use;
+      # override in .env for anything shared — generate with:
       #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-      APP_SECRET: ${UMAMI_APP_SECRET:?UMAMI_APP_SECRET must be set}
+      APP_SECRET: ${UMAMI_APP_SECRET:-umamiAppSecretForLocalDevOnly32chars}
       # Opt out of Umami's OWN anonymous usage telemetry (unrelated to the
       # visitor data Umami collects for us).
       DISABLE_TELEMETRY: "1"
@@ -104,6 +105,8 @@ services:
         condition: service_healthy
     networks:
       - store_network
+    profiles:
+      - analytics
 
   pgadmin:
     image: dpage/pgadmin4:latest

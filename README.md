@@ -50,6 +50,10 @@ cp .env.example apps/store-api/.env    # fill in values
 
 # 3. Infrastructure (PostgreSQL, Redis, Meilisearch)
 docker compose up -d
+# Umami (analytics) and pgAdmin are opt-in — they don't autostart, to keep local
+# dev lighter on RAM/CPU:
+#   docker compose --profile analytics up -d umami
+#   docker compose --profile tools up -d pgadmin
 
 # 4. Database
 npm run db:generate      # Prisma client
@@ -89,6 +93,12 @@ conventional-commit format all live in [`AGENTS.md`](AGENTS.md) — read it befo
   re-commit (don't `--no-verify`).
 - **Search returns Postgres-fallback results** — start Meilisearch
   (`docker compose up -d meilisearch`) and set `MEILI_HOST`/`MEILI_MASTER_KEY` in the API `.env`.
+- **Laptop chokes (RAM/CPU maxed) running Docker + all 3 dev servers + browsers** — on
+  Windows, cap the WSL2 VM Docker Desktop runs on via `%UserProfile%\.wslconfig`
+  (`[wsl2]` with `memory=`/`processors=`/`swap=`), then `wsl --shutdown` and restart Docker
+  Desktop; without a cap, the VM can balloon and never release RAM back to Windows. Also
+  stop containers you're not using (`docker compose stop meilisearch`) and skip dev servers
+  you're not testing (e.g. don't run `store-admin` if you're only testing the storefront).
 
 ## License
 
