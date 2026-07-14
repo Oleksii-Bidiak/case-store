@@ -346,7 +346,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "docker-compose.prod.yml,docker-compose.staging.yml,Caddyfile,Caddyfile.staging,docker"
+          source: "docker-compose.prod.yml,docker-compose.staging.yml,Caddyfile,Caddyfile.staging,docker,scripts"
           target: /opt/store-ai
           overwrite: true
 
@@ -380,12 +380,24 @@ jobs:
             #    workflow's GITHUB_TOKEN is valid for the life of this run.
             printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
 
-            # 3. Pull the exact SHA-tagged images and roll the stack.
+            # 3. Back up the database BEFORE touching anything (TASK-308).
+            #    On staging this is a REHEARSAL, so it must not block the first
+            #    deploy on having B2 and an age key set up — the point of staging
+            #    is to be able to look at the site. But it runs on every deploy so
+            #    that by the time production depends on this script, it has already
+            #    proven itself dozens of times. In the production job the same step
+            #    is BLOCKING: no fresh backup, no migration.
+            if [ -x ./scripts/backup.sh ]; then
+              ./scripts/backup.sh --db-only || \
+                echo "WARNING: staging backup failed. Harmless here (staging data is disposable) — but FIX IT before production relies on it. See docs/backup-restore.md."
+            fi
+
+            # 4. Pull the exact SHA-tagged images and roll the stack.
             export IMAGE_TAG
             $COMPOSE pull
             $COMPOSE up -d
 
-            # 4. Apply the schema by replaying the committed migration history
+            # 5. Apply the schema by replaying the committed migration history
             #    (TASK-303). This is the SAME command production runs, which is
             #    the point: staging is only a rehearsal if it rehearses the real
             #    thing. `migrate deploy` never drops data and refuses to run on a
@@ -407,7 +419,7 @@ jobs:
             $COMPOSE exec -T store-api npx prisma migrate deploy \
               --config prisma.config.ts
 
-            # 5. Drop dangling images from previous deploys (keeps tagged
+            # 6. Drop dangling images from previous deploys (keeps tagged
             #    staging-<sha> images for rollback) and log out of GHCR.
             docker image prune -f
             docker logout ghcr.io || true

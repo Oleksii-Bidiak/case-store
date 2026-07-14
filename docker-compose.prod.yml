@@ -14,8 +14,33 @@
 # built from the monorepo root as context (npm workspaces). NEXT_PUBLIC_* values
 # are baked at BUILD time — see the build.args blocks and .env.production.example.
 #
-# This file runs NO database migration. Applying the schema (`prisma db push` /
-# `migrate deploy`) is a deploy-time step owned by TASK-271, not packaging.
+# This file runs NO database migration. Applying the schema (`prisma migrate
+# deploy`) is a deploy-time step owned by the deploy pipeline, not packaging.
+# ============================================================================
+
+# ─── Log rotation (TASK-309) ────────────────────────────────────────────────
+# Docker's default json-file driver keeps logs FOREVER. On a small VPS that is
+# the single most common way the box dies: nothing crashes, nothing alerts, the
+# disk just fills up over months until Postgres cannot write and everything
+# stops at once. 10 MB × 3 files × 8 services caps the whole stack at ~240 MB.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# ─── Memory limits (TASK-309) ───────────────────────────────────────────────
+# Sized for a 4 GB VPS (e.g. Hetzner CX22), leaving ~800 MB for the host.
+#
+# The point is not to save memory — it is to decide WHO DIES. With no limits, a
+# leaking Node process grows until the kernel's OOM killer fires, and the kernel
+# picks its victim by size: usually Postgres, the biggest and most important
+# process on the box. A leak in the storefront would take out the database. With
+# limits, the container that misbehaves is the one that gets killed, and
+# `restart: unless-stopped` brings it back while everything else keeps serving.
+#
+# Every value is overridable, so resizing the VPS does not mean editing this
+# file: set e.g. MEM_STORE_API=1g in the env file.
 # ============================================================================
 
 services:
@@ -24,6 +49,8 @@ services:
     image: postgres:17-alpine
     container_name: store_prod_postgres
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${MEM_POSTGRES:-768m}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
@@ -49,6 +76,8 @@ services:
     image: redis:7-alpine
     container_name: store_prod_redis
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${MEM_REDIS:-192m}
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     # A password is REQUIRED in production (unlike dev). `$$` defers expansion to
@@ -71,6 +100,8 @@ services:
     image: getmeili/meilisearch:v1.10
     container_name: store_prod_meilisearch
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${MEM_MEILI:-384m}
     environment:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?MEILI_MASTER_KEY must be set (>=16 chars)}
       MEILI_ENV: ${MEILI_ENV:-production}
@@ -96,6 +127,8 @@ services:
     image: docker.umami.is/umami-software/umami:postgresql-latest
     container_name: store_prod_umami
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${MEM_UMAMI:-256m}
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/umami
       APP_SECRET: ${UMAMI_APP_SECRET:?UMAMI_APP_SECRET must be set}
@@ -129,12 +162,23 @@ services:
     image: store-api
     container_name: store_prod_api
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${MEM_STORE_API:-640m}
     environment:
       NODE_ENV: production
       PORT: ${PORT:-3001}
       # `postgres` is the service DNS name on store_network. URL-encode any
       # special chars in POSTGRES_PASSWORD.
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      #
+      # connection_limit (TASK-309): Prisma's pool was UNBOUNDED. Postgres allows
+      # 100 connections by default, and Umami shares this server — so under load
+      # the API could open enough of them to lock everyone (including itself) out
+      # with "too many clients already", which looks exactly like a database
+      # outage and is not one. 10 is ample for a single API container; raise it
+      # with PRISMA_CONNECTION_LIMIT if a second one is ever added, keeping the
+      # total well under 100. pool_timeout makes a saturated pool fail in 20s
+      # instead of hanging a request forever.
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public&connection_limit=${PRISMA_CONNECTION_LIMIT:-10}&pool_timeout=20
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set (>=32 chars)}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set (>=32 chars)}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-15m}
@@ -212,6 +256,8 @@ services:
     image: store-client
     container_name: store_prod_client
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${MEM_STORE_CLIENT:-512m}
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -253,6 +299,8 @@ services:
     image: store-admin
     container_name: store_prod_admin
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${MEM_STORE_ADMIN:-384m}
     environment:
       NODE_ENV: production
       PORT: "3002"
@@ -279,6 +327,8 @@ services:
     image: caddy:2-alpine
     container_name: store_prod_caddy
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${MEM_CADDY:-96m}
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN must be set (e.g. mystore.ua or localhost)}
       PORT: ${PORT:-3001}
