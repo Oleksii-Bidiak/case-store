@@ -43,7 +43,7 @@ cd /opt/store-ai
 3. Якщо CI зелений — запускається задача **Deploy to Staging**, яка:
    - збирає три образи й кладе їх у GHCR із тегами `staging-<SHA>` та `staging-latest`;
    - заходить на сервер по SSH, завантажує свіжі образи (`pull`) і перезапускає стек (`up -d`);
-   - застосовує схему бази (`prisma db push`);
+   - застосовує схему бази, накочуючи міграції (`prisma migrate deploy`);
    - робить **smoke-перевірку** — стукає у три адреси й переконується, що все відповідає.
 4. Через кілька хвилин зміни видно на staging. **Продакшен при цьому не чіпається.**
 
@@ -153,9 +153,10 @@ docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml images
 ```
 
 > ⚠ **Про базу даних.** Відкат образів **не відкочує** зміни схеми БД, які встиг
-> зробити `prisma db push`. На staging це не проблема — дані одноразові; за потреби
-> базу завжди можна перезалити з нуля (`down -v`, розділ 8). На продакшені (майбутнє
-> TASK-272) відкат робиться інакше, з бекапом — тут його НЕ повторюй.
+> накотити `prisma migrate deploy`: у Prisma немає автоматичних «down»-міграцій.
+> На staging це не проблема — дані одноразові; за потреби базу завжди можна перезалити
+> з нуля (`down -v`, розділ 8). На продакшені відкат схеми робиться відновленням із
+> бекапу, який знімається **перед** кожним деплоєм — тут цього НЕ повторюй.
 
 ---
 
@@ -230,11 +231,11 @@ docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml --env-fi
 docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml --env-file .env.production up -d
 ```
 
-Схему БД потім наллє наступний деплой (`prisma db push`), або вручну:
+Схему БД потім наллє наступний деплой (`prisma migrate deploy`), або вручну:
 
 ```bash
 docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml --env-file .env.production \
-  exec -T store-api npx prisma db push --schema=prisma/schema.prisma --skip-generate --accept-data-loss
+  exec -T store-api npx prisma migrate deploy --schema=prisma/schema.prisma
 ```
 
 ---
@@ -247,16 +248,27 @@ docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml --env-fi
   (`npm ci` → `prisma generate` → `npm run swagger:export -w apps/store-api` з
   тимчасовим Postgres і dummy-секретами JWT). Без цього кроку `docker build`
   вітрини/адмінки впав би на `generate:api`.
-- **Чому `db push`, а не `migrate deploy`.** Свідоме рішення власника: у git
-  версіонується лише одна міграція, `schema.prisma` — джерело правди. `migrate
-deploy` на чистій staging-базі впав би. Squash-baseline + перехід на `migrate
-deploy` — це вже задача продакшену (TASK-272).
-- **`db push` і CLI `prisma`.** Рантайм-образ `store-api` містить CLI `prisma`:
+- **Чому `migrate deploy`, а не `db push` (TASK-303).** Раніше тут було `db push
+--accept-data-loss`, бо історія міграцій **не потрапляла в git** (`.gitignore`
+  ігнорував усі датовані папки). Це виправлено: усі 15 міграцій закомічені, і staging
+  тепер накочує схему **тією самою командою, що й прод**. Це принципово — staging є
+  репетицією лише тоді, коли репетирує справжню процедуру.
+  Різниця критична: `migrate deploy` **ніколи не видаляє дані** і **відмовляється**
+  працювати на базі з розбіжною історією — він завалює деплой замість того, щоб мовчки
+  перекроїти схему, як це радо робив `db push --accept-data-loss`.
+- **Разова дія при переході.** Старий staging-том створювався через `db push`, тож у
+  ньому немає службової таблиці `_prisma_migrations`. Перший `migrate deploy` на ньому
+  впаде з «relation already exists». Це очікувано: один раз свідомо стерти том
+  (`down -v`, розділ 8) — staging-дані одноразові.
+- **CLI `prisma` в образі.** Рантайм-образ `store-api` містить CLI `prisma`:
   його внесено у прод-залежності (`dependencies`, версія 7.8), тож він переживає
-  `npm prune --omit=dev` і «запікається» в образ. Тому `db push` запускає локальний
-  бінарник — без завантаження з мережі й від імені звичайного (non-root) користувача.
-  Якщо колись побачиш «prisma: not found» — переконайся, що `prisma` лишається у
-  `dependencies` (а не `devDependencies`) у `apps/store-api/package.json`.
+  `npm prune --omit=dev` і «запікається» в образ. Тому `migrate deploy` запускає
+  локальний бінарник — без завантаження з мережі й від імені звичайного (non-root)
+  користувача. Якщо колись побачиш «prisma: not found» — переконайся, що `prisma`
+  лишається у `dependencies` (а не `devDependencies`) у `apps/store-api/package.json`.
+- **Ніколи не запускай `prisma migrate dev` проти staging/прод.** `migrate dev` —
+  команда для локальної розробки: побачивши розбіжність, вона пропонує **скинути базу**.
+  На сервері використовується виключно `migrate deploy`.
 - **Одноразові образи staging.** `NEXT_PUBLIC_*` «запікаються» у бандл на етапі
   збірки, тож образ прив'язаний до домену staging і **не** може бути промоутнутий
   у прод — прод збирає свої образи (TASK-272).

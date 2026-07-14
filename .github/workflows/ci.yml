@@ -92,7 +92,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate --schema=apps/store-api/prisma/schema.prisma
-      - run: npx prisma migrate deploy --schema=apps/store-api/prisma/schema.prisma
+      # `--config`, not `--schema`: schema.prisma's datasource block carries no url
+      # (it comes from prisma.config.ts), so a root-cwd `--schema` invocation fails
+      # with "datasource.url property is required" before applying anything (TASK-303).
+      - run: npx prisma migrate deploy --config apps/store-api/prisma.config.ts
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/store_test
       - run: npm run test:e2e
@@ -131,7 +134,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate --schema=apps/store-api/prisma/schema.prisma
-      - run: npx prisma migrate deploy --schema=apps/store-api/prisma/schema.prisma
+      # `--config`, not `--schema`: schema.prisma's datasource block carries no url
+      # (it comes from prisma.config.ts), so a root-cwd `--schema` invocation fails
+      # with "datasource.url property is required" before applying anything (TASK-303).
+      - run: npx prisma migrate deploy --config apps/store-api/prisma.config.ts
       - run: npx playwright install --with-deps chromium
       # playwright.config.ts boots the API + storefront (webServer) and seeds the
       # DB via globalSetup before running the specs.
@@ -163,7 +169,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate --schema=apps/store-api/prisma/schema.prisma
-      - run: npx prisma migrate deploy --schema=apps/store-api/prisma/schema.prisma
+      # `--config`, not `--schema`: schema.prisma's datasource block carries no url
+      # (it comes from prisma.config.ts), so a root-cwd `--schema` invocation fails
+      # with "datasource.url property is required" before applying anything (TASK-303).
+      - run: npx prisma migrate deploy --config apps/store-api/prisma.config.ts
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/store_test
       - run: npm run test:int -w apps/store-api
@@ -376,14 +385,27 @@ jobs:
             $COMPOSE pull
             $COMPOSE up -d
 
-            # 4. Apply the schema. STAGING uses `prisma db push` (NOT
-            #    migrate deploy) — a locked owner decision; staging data is
-            #    disposable, so --accept-data-loss is acceptable here (and MUST
-            #    NOT be copied into the production pipeline). The store-api image
-            #    ships the pinned prisma CLI (a runtime dependency), so this runs
-            #    the in-image binary directly — no network download, non-root.
-            $COMPOSE exec -T store-api npx prisma db push \
-              --schema=prisma/schema.prisma --skip-generate --accept-data-loss
+            # 4. Apply the schema by replaying the committed migration history
+            #    (TASK-303). This is the SAME command production runs, which is
+            #    the point: staging is only a rehearsal if it rehearses the real
+            #    thing. `migrate deploy` never drops data and refuses to run on a
+            #    database whose history diverges — it fails the deploy instead of
+            #    silently reshaping the schema, which `db push --accept-data-loss`
+            #    (used here before) would happily do. The store-api image ships the
+            #    pinned prisma CLI as a runtime dependency, so this runs the
+            #    in-image binary — no network download, non-root.
+            #
+            #    ONE-TIME: the pre-TASK-303 staging volume was built by `db push`,
+            #    so it has no `_prisma_migrations` bookkeeping table and this step
+            #    will fail against it with "relation already exists". Wipe it once,
+            #    deliberately, before the first deploy after this change:
+            #      $COMPOSE down -v && $COMPOSE up -d
+            #    Staging data is disposable; see docs/deploy.md.
+            #    `--config`, not `--schema`: the datasource url lives in
+            #    prisma.config.ts, not in schema.prisma. The image's WORKDIR is
+            #    /app/apps/store-api, where that config sits.
+            $COMPOSE exec -T store-api npx prisma migrate deploy \
+              --config prisma.config.ts
 
             # 5. Drop dangling images from previous deploys (keeps tagged
             #    staging-<sha> images for rollback) and log out of GHCR.

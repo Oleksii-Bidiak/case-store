@@ -84,8 +84,10 @@ COPY --from=build /app/apps/store-api/node_modules ./node_modules
 # Compiled output + runtime manifest.
 COPY --from=build /app/apps/store-api/dist ./dist
 COPY --from=build /app/apps/store-api/package.json ./package.json
-# Prisma schema + config kept so a deploy-time `prisma db push` (TASK-271) can
-# run inside this same image, not just the already-generated client.
+# Prisma schema + migration history + config kept so a deploy-time
+# `prisma migrate deploy` (TASK-303) can run inside this same image, not just the
+# already-generated client. The migrations directory is what makes that possible —
+# without it the image could only `db push`, which reshapes the schema in place.
 COPY --from=build /app/apps/store-api/prisma ./prisma
 COPY --from=build /app/apps/store-api/prisma.config.ts ./prisma.config.ts
 

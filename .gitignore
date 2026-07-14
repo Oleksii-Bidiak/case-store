@@ -23,8 +23,9 @@ out/
 !.env.production.example
 
 # Prisma
-apps/store-api/prisma/migrations/*_*/
-!apps/store-api/prisma/migrations/migration_lock.toml
+# Migrations ARE tracked (TASK-303). They used to be ignored, which forced staging
+# to sync the schema with `db push --accept-data-loss`; production needs the real,
+# ordered history that `prisma migrate deploy` replays. Do not re-ignore them.
 
 # Uploaded files (product images — local-disk storage, TASK-073)
 apps/store-api/uploads/
