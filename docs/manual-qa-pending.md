@@ -920,7 +920,7 @@ docker-compose.prod.yml config` валідний; Umami-фасад покрит�
 ### TASK-271 — реальний staging-деплой
 
 - [ ] **TASK-271 — перша підготовка сервера + перший авто-деплой.** **Зроби:** пройди
-      `docs/deploy.md` §7 (орендуй VPS, встанови Docker, `/opt/store-ai`, SSH-ключ,
+      `docs/deploy/03-server.md` (орендуй VPS, встанови Docker, `/opt/store-ai`, SSH-ключ,
       **DNS** на `<домен>`/`admin.`/`api.`, порти 80/443), заповни в GitHub Environment
       `staging` 4 секрети (`SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `STAGING_ENV_FILE` —
       **повний** `.env.production`) і змінну `STAGING_DOMAIN`; потім зроби push у `develop`
@@ -931,7 +931,7 @@ docker-compose.prod.yml config` валідний; Umami-фасад покрит�
       кроку **Deploy on staging**. **Має бути:** `db push` відпрацював без помилок — образ
       `store-api` містить CLI `prisma` (він у прод-залежностях, версія запечена в образ), тож
       запускається локальний бінарник без завантаження з мережі й від non-root користувача.
-- [ ] **TASK-271 — навчальний відкат.** **Зроби:** пройди `docs/deploy.md` §5 —
+- [ ] **TASK-271 — навчальний відкат.** **Зроби:** пройди `docs/deploy/07-rollback.md` —
       залогінься у GHCR персональним токеном (`read:packages`), підніми **попередній**
       `staging-<SHA>`, звір `docker compose … images`. **Має бути:** стек піднявся на
       старому образі; smoke-адреси знову віддають 200. (Разова навчальна репетиція відкату.)

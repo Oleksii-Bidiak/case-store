@@ -4,15 +4,18 @@ A B2C e-commerce platform (storefront + admin panel) for multi-brand accessories
 tech, built as an npm-workspaces monorepo: NestJS + Prisma/PostgreSQL backend (Clean
 Architecture), two Next.js App Router frontends (Feature-Sliced Design).
 
-| Doc                                                      | What's in it                                                                              |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| [`AGENTS.md`](AGENTS.md)                                 | **The rules** — architecture, conventions, testing, git workflow (single source of truth) |
-| [`requirements.md`](requirements.md)                     | Product vision & niche (UA)                                                               |
-| [`BACKLOG.md`](BACKLOG.md)                               | Task status & roadmap (single source of truth for "what's next")                          |
-| [`CLAUDE.md`](CLAUDE.md)                                 | Claude Code setup — agents, skills, commands                                              |
-| [`docs/design-system.md`](docs/design-system.md)         | Storefront design tokens & UI conventions                                                 |
-| [`docs/conventions/forms.md`](docs/conventions/forms.md) | Form state-sync rules                                                                     |
-| [`docs/seed-guide.md`](docs/seed-guide.md)               | Seeding the dev DB — reset, admin credentials, what gets seeded                           |
+| Doc                                                            | What's in it                                                                              |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| [`docs/README.md`](docs/README.md)                             | **Map of all docs** — start here when you don't know what to open                         |
+| [`docs/deploy/00-start-here.md`](docs/deploy/00-start-here.md) | **Deploying?** Numbered, in order: accounts → domain → server → CI → deploy → operations  |
+| [`AGENTS.md`](AGENTS.md)                                       | **The rules** — architecture, conventions, testing, git workflow (single source of truth) |
+| [`requirements.md`](requirements.md)                           | Product vision & niche (UA)                                                               |
+| [`BACKLOG.md`](BACKLOG.md)                                     | Task status & roadmap (single source of truth for "what's next")                          |
+| [`CLAUDE.md`](CLAUDE.md)                                       | Claude Code setup — agents, skills, commands                                              |
+| [`docs/admin-guide.md`](docs/admin-guide.md)                   | Admin-panel guide for the shop operator (UA, non-technical)                               |
+| [`docs/design-system.md`](docs/design-system.md)               | Storefront design tokens & UI conventions                                                 |
+| [`docs/conventions/forms.md`](docs/conventions/forms.md)       | Form state-sync rules                                                                     |
+| [`docs/seed-guide.md`](docs/seed-guide.md)                     | Seeding the dev DB — reset, admin credentials, what gets seeded                           |
 
 ## Tech Stack
 
@@ -34,7 +37,11 @@ apps/
   store-admin/      — Next.js admin panel (FSD)
 packages/
   eslint-config/    — Shared ESLint configuration
-docs/               — Design system, conventions, plans (docs/plans/NNN-*.md), QA lists
+docs/
+  deploy/           — Deploy & operations runbooks, numbered in order (start at 00)
+  plans/            — Implementation plans (NNN-*.md); historical records
+  archive/          — Superseded docs, kept for reference
+  ...               — Design system, conventions, QA lists, admin guide
 ```
 
 ## Getting Started
@@ -45,8 +52,12 @@ Prerequisites: Node.js ≥ 18, npm ≥ 9, Docker + Docker Compose.
 # 1. Install
 npm install
 
-# 2. Environment
-cp .env.example apps/store-api/.env    # fill in values
+# 2. Environment — TWO files, they are not interchangeable
+cp .env.example .env                                 # docker compose: Postgres/Redis/pgAdmin/Umami
+cp apps/store-api/.env.example apps/store-api/.env   # the API itself
+# Then fill in the blanks. The API refuses to boot without JWT_SECRET and
+# JWT_REFRESH_SECRET (≥32 chars each, and they must differ):
+#   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 # 3. Infrastructure (PostgreSQL, Redis, Meilisearch)
 docker compose up -d

@@ -96,7 +96,7 @@ async function bootstrap() {
   // The interactive Swagger UI stays development-only, but the raw OpenAPI JSON
   // is exposed in EVERY environment at /api/docs-json — the storefront/admin
   // Vercel builds fetch it to generate their typed API client (Orval), so it
-  // must be reachable on the deployed API (see docs/deploy-vercel.md).
+  // must be reachable on the deployed API (see docs/deploy/02-domain-dns.md).
   {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Mobile Accessories Store API')

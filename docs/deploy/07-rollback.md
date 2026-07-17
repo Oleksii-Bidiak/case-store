@@ -42,7 +42,20 @@ GitHub → **Actions** → попередній зелений **Deploy to Produ
 > `built: false` означає, що цей застосунок не змінювався і його контейнер навіть не
 > перезапускався. Відкочувати треба тільки ті, де `built: true`.
 
-### Крок 2. Запустити попередні образи
+### Крок 2. Один раз залогінитись у GHCR
+
+Поза CI сервер не має доступу до сховища образів — треба залогінитись руками. **Зробіть це
+заздалегідь, не в момент аварії.**
+
+Потрібен персональний токен GitHub із правом **`read:packages`** (GitHub → Settings →
+Developer settings → Personal access tokens → classic-токен із галочкою `read:packages`).
+Покладіть його в менеджер паролів ([01-accounts-access.md](01-accounts-access.md) §2).
+
+```bash
+echo '<ваш-GHCR-токен>' | docker login ghcr.io -u <ваш-github-логін> --password-stdin
+```
+
+### Крок 3. Запустити попередні образи
 
 На сервері:
 
@@ -65,7 +78,13 @@ $COMPOSE pull
 $COMPOSE up -d
 ```
 
-### Крок 3. Перевірити
+**Перевірити, який образ зараз запущений** (щоб не переплутати збірки):
+
+```bash
+$COMPOSE images
+```
+
+### Крок 4. Перевірити
 
 ```bash
 curl -i https://api.<домен>/health    # має бути HTTP 200 і "database":"up"
@@ -73,6 +92,22 @@ curl -i https://<домен>/              # вітрина
 ```
 
 Якщо `/health` віддає **503** — база недоступна. Це вже не про код: дивіться розділ 2.
+
+### Те саме на staging — простіше
+
+На staging усі три образи мають **спільний** тег, тож окремий файл не потрібен:
+
+```bash
+cd /opt/store-ai
+export IMAGE_TAG=staging-<попередній-SHA>
+COMPOSE="docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml --env-file .env.production"
+$COMPOSE pull
+$COMPOSE up -d
+```
+
+> **На staging схему бази відкочувати не треба** — дані там одноразові. Якщо стан
+> заплутався, простіше перезалити з нуля
+> ([05-first-deploy.md](05-first-deploy.md) §6). **На проді так не можна.**
 
 ---
 
@@ -91,7 +126,7 @@ curl -i https://<домен>/              # вітрина
 
 ### Крок 2. Відновіть базу з передеплойного бекапу
 
-Повна процедура — `docs/backup-restore.md`, розділ 4.3. Коротко:
+Повна процедура — [08-backup-restore.md](08-backup-restore.md), розділ 4.3. Коротко:
 
 ```bash
 cd /opt/store-ai

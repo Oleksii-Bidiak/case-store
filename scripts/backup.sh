@@ -71,7 +71,7 @@ log() { echo "backup: $*"; }
 # Check everything BEFORE producing anything. A backup script that half-works is
 # worse than one that refuses to start: it leaves a file that looks like a backup.
 command -v age >/dev/null 2>&1 || die "\`age\` is not installed (apt install age)"
-[[ -n "${AGE_PUBLIC_KEY:-}" ]] || die "AGE_PUBLIC_KEY is not set — see docs/backup-restore.md"
+[[ -n "${AGE_PUBLIC_KEY:-}" ]] || die "AGE_PUBLIC_KEY is not set — see docs/deploy/08-backup-restore.md"
 [[ "$AGE_PUBLIC_KEY" == age1* ]] || die "AGE_PUBLIC_KEY must be the PUBLIC key (age1...), not the private one"
 [[ -n "${POSTGRES_USER:-}" && -n "${POSTGRES_DB:-}" ]] || die "POSTGRES_USER / POSTGRES_DB are not set"
 

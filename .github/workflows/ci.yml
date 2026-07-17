@@ -194,7 +194,7 @@ jobs:
   #
   # FIRST REAL DEPLOY IS MANUAL: this job cannot run until the owner provisions
   # the VPS, points DNS, and fills the `staging` GitHub Environment (4 secrets +
-  # STAGING_DOMAIN). See docs/deploy.md and docs/manual-qa-pending.md §16.
+  # STAGING_DOMAIN). See docs/deploy/04-secrets-ci.md and docs/manual-qa-pending.md §16.
   # ──────────────────────────────────────────────────────────────────────────
   deploy-staging:
     name: Deploy to Staging
@@ -393,7 +393,7 @@ jobs:
             #    is BLOCKING: no fresh backup, no migration.
             if [ -x ./scripts/backup.sh ]; then
               ./scripts/backup.sh --db-only || \
-                echo "WARNING: staging backup failed. Harmless here (staging data is disposable) — but FIX IT before production relies on it. See docs/backup-restore.md."
+                echo "WARNING: staging backup failed. Harmless here (staging data is disposable) — but FIX IT before production relies on it. See docs/deploy/08-backup-restore.md."
             fi
 
             # 4. Pull the exact SHA-tagged images and roll the stack.
@@ -416,7 +416,7 @@ jobs:
             #    will fail against it with "relation already exists". Wipe it once,
             #    deliberately, before the first deploy after this change:
             #      $COMPOSE down -v && $COMPOSE up -d
-            #    Staging data is disposable; see docs/deploy.md.
+            #    Staging data is disposable; see docs/deploy/05-first-deploy.md.
             #    `--config`, not `--schema`: the datasource url lives in
             #    prisma.config.ts, not in schema.prisma. The image's WORKDIR is
             #    /app/apps/store-api, where that config sits.
@@ -492,7 +492,7 @@ jobs:
   #      protection rule, so this job PAUSES and waits for a human to click
   #      Approve in the Actions UI. Nothing else in the workflow enforces that —
   #      the gate is the Environment setting, and it must be configured once in
-  #      the repo settings (see docs/deploy.md).
+  #      the repo settings (see docs/deploy/04-secrets-ci.md).
   #
   #   2. A BACKUP IS TAKEN FIRST, AND IT IS BLOCKING. If the backup fails, the
   #      deploy stops. A schema migration you cannot undo, run against a database
@@ -753,7 +753,7 @@ jobs:
             done
             [ "$ok" = 1 ] || {
               echo "SMOKE FAILED: ${url}"
-              echo "Roll back now — do not retry blindly. See docs/rollback.md."
+              echo "Roll back now — do not retry blindly. See docs/deploy/07-rollback.md."
               exit 1
             }
           done
@@ -771,5 +771,5 @@ jobs:
             echo ""
             echo "\`built: false\` means that app was unchanged and its container was never restarted."
             echo ""
-            echo "To roll back, re-run with the previous tags — see docs/rollback.md."
+            echo "To roll back, re-run with the previous tags — see docs/deploy/07-rollback.md."
           } >> "$GITHUB_STEP_SUMMARY"

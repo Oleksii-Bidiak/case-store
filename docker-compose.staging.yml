@@ -23,7 +23,7 @@
 # `IMAGE_TAG` selects which pushed build to run. The deploy job exports
 # `IMAGE_TAG=staging-<commit-sha>` (immutable → used for rollback). Unset, it
 # falls back to the floating `staging-latest` tag. To ROLL BACK, re-run `pull` +
-# `up -d` with IMAGE_TAG set to a previous `staging-<sha>` (see docs/deploy.md).
+# `up -d` with IMAGE_TAG set to a previous `staging-<sha>` (see docs/deploy/07-rollback.md).
 #
 # The base file's `build:` blocks remain but are never triggered here because we
 # never pass `--build`; `up -d` uses the freshly pulled image. The base

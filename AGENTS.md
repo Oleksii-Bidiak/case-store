@@ -233,9 +233,9 @@ When working on this project, read these files for additional context:
 - `docs/seed-guide.md` — Seeding the dev database: reset, admin credentials, what gets seeded
 - `docs/manual-qa-pending.md` — Outstanding manual checks on a running stack
 - `docs/admin-guide.md` — Admin-panel onboarding guide (UA, for non-technical operators)
-- `docs/deploy.md` — Deploy runbook (UA, for non-technical operators): VPS + domain + DNS setup, staging & production pipelines, secrets, manual-approval gate
-- `docs/operations.md` — Running the shop day to day (UA): monitoring, incident playbook, secret rotation, the pre-launch checklist
-- `docs/backup-restore.md` — Backups of the database **and** the uploads volume, and the restore drill (UA)
-- `docs/rollback.md` — Rolling back a bad deploy; when restoring a backup becomes the _wrong_ answer (UA)
+- `docs/README.md` — Map of all documentation; start here when you don't know what to open
+- `docs/deploy/` — **Deploy & operations, in order** (UA, for non-technical operators). Numbered: the number is the step, not a chapter. Entry point `docs/deploy/00-start-here.md`. The canonical path is self-hosted VPS + Docker + Caddy; the old Vercel/Railway runbook is superseded and parked in `docs/archive/`
+  - `01-accounts-access.md` — who owns which account (developer vs business client), password manager, 2FA + recovery codes, who holds the `age`/SSH keys, access recovery, handover. Read before spending money
+  - `02-domain-dns.md` — the client's domain: three hostnames on one registrable domain (`sameSite=strict` + `__Host-` make this non-negotiable), A records, mail DNS. Sends from a subdomain so the client's root SPF is never touched
+  - `03-server.md` … `09-pre-launch.md` — servers, secrets/CI, first deploy, day-to-day + incident playbook, rollback, backup/restore, the single pre-launch checklist
 - `docs/legal-checklist.md` — What Ukrainian e-commerce law requires of the storefront (UA; a checklist for a lawyer, not legal advice)
-- `docs/deploy-vercel.md` — Beginner test-server runbook (UA): frontends on Vercel + API/Postgres/Redis on Railway (cross-site cookie + swagger.json caveats)

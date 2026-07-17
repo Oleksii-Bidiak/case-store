@@ -1,11 +1,23 @@
+> # ⛔ АРХІВ — це НЕ ваш шлях
+>
+> **Не користуйтесь цим документом.** Він описує **інший, несумісний** стек (Vercel +
+> Railway) і суперечить решті проєкту: staging тут — це Railway, а не VPS за паролем.
+>
+> **Канонічний шлях — [`../deploy/00-start-here.md`](../deploy/00-start-here.md)**
+> (власний VPS + Docker + Caddy). Саме під нього зроблено все інше: CI/CD, бекапи, відкат,
+> моніторинг, `docker-compose.prod.yml`, `Caddyfile`. Тут вони не працюють.
+>
+> Лишається як довідка: §1.1 добре пояснює, **чому** фронтенд і API мусять бути піддоменами
+> одного домену. Те саме, але актуальне —
+> [`../deploy/02-domain-dns.md`](../deploy/02-domain-dns.md).
+
+---
+
 # Деплой тестового сервера: Vercel + Railway (для новачка)
 
 > Покрокова інструкція, як підняти гілку **develop** на публічному тестовому сервері.
 > Розрахована на людину, яка **ніколи цього не робила**. Кожен крок — з поясненням
 > «навіщо» і командами, які можна копіювати як є.
->
-> Це **тестовий** (staging) сервер, а не продакшн. Для повного Docker/VPS-продакшну
-> дивіться [`deploy.md`](deploy.md) — там інша, самостійна інструкція.
 
 ---
 
@@ -142,7 +154,7 @@ Railway-API** під час білду (`curl … -o apps/store-api/swagger.json
    `prisma db push` при старті — окрема команда міграції не потрібна).
 
 **3.3. Прописати змінні оточення** (**Variables** у сервісі store-api). Значення беріть
-за зразком з [`.env.production.example`](../.env.production.example):
+за зразком з [`.env.production.example`](../../.env.production.example):
 
 | Змінна                | Що вписати                                                                   |
 | --------------------- | ---------------------------------------------------------------------------- |
@@ -195,7 +207,7 @@ railway run --service store-api \
 ```
 
 Створить усі демо-дані: 2 адміни, покупці, вкладені категорії з iPhone, замовлення в усіх
-статусах, знижки, тех-сторінки, статті тощо (див. [`seed-guide.md`](seed-guide.md)).
+статусах, знижки, тех-сторінки, статті тощо (див. [`seed-guide.md`](../seed-guide.md)).
 
 **3.6. Перевірити, що бекенд живий:**
 Відкрийте в браузері `https://api.ВАШ-ДОМЕН.com/health` → має відповісти `ok`.
@@ -324,9 +336,9 @@ railway run --service store-api \
 
 ## Додаток: звідки взяті назви змінних
 
-- Бекенд: [`.env.production.example`](../.env.production.example) і
-  [`apps/store-api/.env.example`](../apps/store-api/.env.example).
-- Фронтенди: [`apps/store-client/.env.example`](../apps/store-client/.env.example),
-  [`apps/store-admin/.env.example`](../apps/store-admin/.env.example).
-- Демо-дані та облікові записи: [`seed-guide.md`](seed-guide.md).
-- Повний Docker/VPS-продакшн (альтернатива Vercel): [`deploy.md`](deploy.md).
+- Бекенд: [`.env.production.example`](../../.env.production.example) і
+  [`apps/store-api/.env.example`](../../apps/store-api/.env.example).
+- Фронтенди: [`apps/store-client/.env.example`](../../apps/store-client/.env.example),
+  [`apps/store-admin/.env.example`](../../apps/store-admin/.env.example).
+- Демо-дані та облікові записи: [`seed-guide.md`](../seed-guide.md).
+- **Канонічний шлях (замість цього документа):** [`../deploy/00-start-here.md`](../deploy/00-start-here.md).

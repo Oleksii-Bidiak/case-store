@@ -79,7 +79,7 @@ process.stdin.on('end', () => {
     block(
       '`docker compose down -v` deletes the named volumes — the Postgres data directory and uploads_data ' +
         '(every uploaded product image). Drop the `-v` to stop containers while keeping the data. ' +
-        'The one-time staging wipe documented in docs/deploy.md is run by the owner on the server, not from here.',
+        'The one-time staging wipe documented in docs/deploy/05-first-deploy.md is run by the owner on the server, not from here.',
     );
   }
 
