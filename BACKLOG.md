@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-320**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-321**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -339,6 +339,7 @@
 | TASK-317 | [M] UI керування користувачами в адмінці — зараз **немає** створення адміна, зміни ролі, скидання чужого пароля й **навіть зміни власного пароля**; єдиний шлях — `create-admin.js`/SQL на сервері, тобто для кадрової операції замовник мусить звертатись до розробника (вічне вузьке місце). Виявлено TASK-316; замовник має погодитись свідомо або замовити функцію | ⬜ | — |
 | TASK-318 | [M] Аудит дій адміна — `deletedAt` пише *коли*, ніколи *хто*; ролі лише `CUSTOMER`/`ADMIN`, будь-який адмін може все; `actorId` є лише в Pino-логах (ефемерних), у БД — тільки `OrderStatusHistory.changedBy`. Поки адмін один — терпимо; **стає блокером із другим співробітником замовника**: якщо хтось знесе каталог, з'ясувати хто буде неможливо. Виявлено TASK-316 | ⬜ | — |
 | TASK-319 | Перейменування робочої назви `store-ai` → `case-store` (повний логічний рескоуп; локальну теку `D:\projects\store-ai` НЕ чіпали — це зламало б робочу директорію, а історичні plans/reviews лишились із старою назвою): бренд/коментарі, серверний шлях `/opt/case-store` у `ci.yml`+доках, `name: case-store` закріплено в prod/staging compose (dev лишено на імені теки, щоб не осиротити локальні томи), localStorage-ключ, бекап-бакет, npm root name (`store-test-ai`→`case-store`). Оскільки нічого не задеплоєно — нульова вартість. **+ новий `docs/deploy/03b-test-deploy-no-domain.md`** — викидне демо на `nip.io` без домену (для показу/фінансування): Hetzner **Cloud** (не Webhosting — там немає Docker), ручний `docker compose --build` в обхід GHCR-образів і блокуючого age-бекапа; демо-сід із ноута через SSH-тунель, бо прод-образ **навмисно** без `tsx`/`src/` (сідер не залежить від Meili); `noindexSite` глушить вітрину (Caddy глушить лише admin./api.); перехід на реальний домен = **перезбірка**, бо `NEXT_PUBLIC_*` запечені в образ. Виявлено при підготовці тестового деплою | ✅ | — |
+| TASK-320 | `01-accounts-access.md` §1 — підсекція «GitHub: зараз на вас, організація — потім». Репо поки на особистому акаунті розробника (норм для демо/до-фінансування); перенос (Transfer) в організацію замовника робити **ДО** налаштування прод-CI/CD, бо Secrets/Environments/branch protection **не переносяться** з репо → інакше робота двічі. Чек-лист: `ci.yml` сам підлаштується (рахує GHCR-неймспейс із `github.repository_owner`), а `docker-compose.staging.yml` **хардкодить** `oleksii-bidiak` (рядки 46/49/52) → правити руками; `git remote` на серверах оновити. Перенос (рано) ≠ зняття доступу при переданні (§8). Уточнення до TASK-316 | ✅ | — |
 
 ### Parked
 
@@ -360,6 +361,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-320**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-321**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
