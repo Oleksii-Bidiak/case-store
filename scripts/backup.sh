@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # backup.sh — encrypted, off-site backup of everything that cannot be rebuilt
-# from git (TASK-308). Run on the SERVER, from /opt/store-ai.
+# from git (TASK-308). Run on the SERVER, from /opt/case-store.
 #
 # Two things are irreplaceable, and both are backed up here:
 #
@@ -29,10 +29,10 @@
 #
 # ─── Configuration (from .env.production, or the environment) ───────────────
 #   AGE_PUBLIC_KEY    required   age1... — the PUBLIC half. Never the private one.
-#   RCLONE_REMOTE     optional   e.g. b2:store-ai-backups — off-site copy target.
+#   RCLONE_REMOTE     optional   e.g. b2:case-store-backups — off-site copy target.
 #                                Without it backups stay on the server, which is
 #                                no protection against losing the server.
-#   BACKUP_DIR        optional   default /opt/store-ai/backups
+#   BACKUP_DIR        optional   default /opt/case-store/backups
 #   BACKUP_KEEP_DAYS  optional   default 7 (local only; set the long retention as
 #                                a lifecycle rule on the remote bucket)
 #   COMPOSE_FILES     optional   default "-f docker-compose.prod.yml"

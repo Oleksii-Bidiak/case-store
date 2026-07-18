@@ -11,7 +11,7 @@ describe('LocalDiskStorageService', () => {
   let service: LocalDiskStorageService;
 
   beforeEach(async () => {
-    uploadRoot = await mkdtemp(join(tmpdir(), 'store-ai-uploads-'));
+    uploadRoot = await mkdtemp(join(tmpdir(), 'case-store-uploads-'));
     service = new LocalDiskStorageService({
       get: () => uploadRoot,
     } as unknown as ConfigService);

@@ -42,7 +42,7 @@ usermod -aG sudo deploy
 **На своєму ноутбуці**, не на сервері:
 
 ```bash
-ssh-keygen -t ed25519 -C "store-ai deploy"
+ssh-keygen -t ed25519 -C "case-store deploy"
 ssh-copy-id -i ~/.ssh/id_ed25519.pub deploy@<IP-сервера>
 ```
 
@@ -56,11 +56,11 @@ Secrets** — звідки його **не прочитати назад** ні�
 
 ```bash
 # другий ключ, окремий
-ssh-keygen -t ed25519 -C "store-ai backup key" -f ~/.ssh/store-ai-backup
-ssh-copy-id -i ~/.ssh/store-ai-backup.pub deploy@<IP-сервера>
+ssh-keygen -t ed25519 -C "case-store backup key" -f ~/.ssh/case-store-backup
+ssh-copy-id -i ~/.ssh/case-store-backup.pub deploy@<IP-сервера>
 ```
 
-Приватну частину (`~/.ssh/store-ai-backup`) покладіть **у менеджер паролів** — і видаліть
+Приватну частину (`~/.ssh/case-store-backup`) покладіть **у менеджер паролів** — і видаліть
 з ноута. Сенс саме в тому, щоб вона не лежала поруч із основним ключем.
 
 > ⚠ **Перш ніж закрити root-сесію** — відкрийте **другий термінал** і переконайтесь, що
@@ -85,7 +85,7 @@ curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker deploy
 
 # 4. Тека стека
-sudo mkdir -p /opt/store-ai && sudo chown deploy /opt/store-ai
+sudo mkdir -p /opt/case-store && sudo chown deploy /opt/case-store
 ```
 
 **Порти 80 і 443 мають бути відкриті** — без них Caddy не отримає HTTPS-сертифікат
@@ -126,7 +126,7 @@ no` їй не заважає.
 
 ```bash
 ssh deploy@<IP>                     # заходить без пароля
-ssh -i ~/.ssh/store-ai-backup deploy@<IP>   # резервний ключ теж працює
+ssh -i ~/.ssh/case-store-backup deploy@<IP>   # резервний ключ теж працює
 docker --version                    # Docker є
 sudo ufw status                     # 80, 443, OpenSSH — allow
 ```

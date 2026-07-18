@@ -920,7 +920,7 @@ docker-compose.prod.yml config` валідний; Umami-фасад покрит�
 ### TASK-271 — реальний staging-деплой
 
 - [ ] **TASK-271 — перша підготовка сервера + перший авто-деплой.** **Зроби:** пройди
-      `docs/deploy/03-server.md` (орендуй VPS, встанови Docker, `/opt/store-ai`, SSH-ключ,
+      `docs/deploy/03-server.md` (орендуй VPS, встанови Docker, `/opt/case-store`, SSH-ключ,
       **DNS** на `<домен>`/`admin.`/`api.`, порти 80/443), заповни в GitHub Environment
       `staging` 4 секрети (`SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `STAGING_ENV_FILE` —
       **повний** `.env.production`) і змінну `STAGING_DOMAIN`; потім зроби push у `develop`

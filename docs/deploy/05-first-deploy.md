@@ -109,7 +109,7 @@ curl -i https://admin.<домен>/         # адмінка
 > `-v` видаляє томи: базу і **всі фото товарів**.
 
 ```bash
-cd /opt/store-ai
+cd /opt/case-store
 COMPOSE="docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml --env-file .env.production"
 
 $COMPOSE down -v

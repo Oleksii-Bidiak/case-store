@@ -9,7 +9,7 @@ import {
   clearRecentlyViewed,
 } from "./recently-viewed-storage";
 
-const STORAGE_KEY = "store-ai:recently-viewed";
+const STORAGE_KEY = "case-store:recently-viewed";
 
 function storedRaw(): unknown {
   return JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null");

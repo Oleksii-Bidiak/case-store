@@ -340,7 +340,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=store-admin
 
       # ── sync the deploy files to the server ──────────────────────────────
-      # The server keeps only what `docker compose` needs at /opt/store-ai
+      # The server keeps only what `docker compose` needs at /opt/case-store
       # (both compose files + Caddyfile + the postgres init dir). Copying them
       # on every deploy guarantees the running stack matches THIS commit — no
       # git checkout or registry auth is required on the server for the sync.
@@ -351,7 +351,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "docker-compose.prod.yml,docker-compose.staging.yml,Caddyfile,Caddyfile.staging,docker,scripts"
-          target: /opt/store-ai
+          target: /opt/case-store
           overwrite: true
 
       # ── deploy on the server: env → pull → up → db push ──────────────────
@@ -370,7 +370,7 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            cd /opt/store-ai
+            cd /opt/case-store
 
             # 1. Materialise the runtime env file from the single Environment
             #    secret (a complete, filled-in .env.production as one blob).
@@ -676,7 +676,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "docker-compose.prod.yml,Caddyfile,docker,scripts"
-          target: /opt/store-ai
+          target: /opt/case-store
           overwrite: true
 
       - name: Deploy on production
@@ -697,7 +697,7 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            cd /opt/store-ai
+            cd /opt/case-store
 
             umask 077
             printf '%s' "$PROD_ENV_FILE" > .env.production

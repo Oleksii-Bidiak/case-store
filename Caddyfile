@@ -1,4 +1,4 @@
-# Caddyfile — PRODUCTION reverse proxy for the store-ai stack (TASK-270).
+# Caddyfile — PRODUCTION reverse proxy for the case-store stack (TASK-270).
 #
 # Caddy provisions and renews Let's Encrypt (or ZeroSSL) certificates
 # automatically for all three sites, provided the domains' A/AAAA records point

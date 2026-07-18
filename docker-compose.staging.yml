@@ -39,6 +39,8 @@
 # Keep this in sync with the `deploy-staging` job's computed prefix.
 # ============================================================================
 
+name: case-store
+
 services:
   store-api:
     image: ghcr.io/oleksii-bidiak/store-api:${IMAGE_TAG:-staging-latest}

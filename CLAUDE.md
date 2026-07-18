@@ -1,4 +1,4 @@
-# store-ai — Claude Code guide
+# case-store — Claude Code guide
 
 Multi-brand accessories + Apple-tech e-commerce monorepo (npm workspaces):
 `apps/store-api` (NestJS, Clean Architecture, Prisma/PostgreSQL), `apps/store-client` &

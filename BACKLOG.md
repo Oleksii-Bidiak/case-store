@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-316**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-320**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -338,6 +338,7 @@
 | TASK-316 | Реструктуризація доків під деплой + домен замовника + акаунти/доступи — shipped 2026-07-17. Причина: були **дві взаємовиключні інструкції деплою без розвилки** (VPS проти Vercel/Railway, що суперечили одна одній щодо staging), **жодної точки входу** (README не згадував деплой — 0 вхідних посилань на 7 ops-доків), `deploy.md` впорядкований задом наперед (створення сервера на 54% файлу, після rollback'а), дублі (rollback ×3, бекап ×3) і **4 конкурентні чек-лісти «перед запуском», що не знали один про одного** — тобто пройти «всі» було фізично неможливо. Тепер: `docs/README.md` + нумерована `docs/deploy/00..09`, Vercel в `docs/archive/`. **Нове:** `01-accounts-access.md` — доки не розрізняли розробника й замовника, тож не існувало ні інвентаризації акаунтів, ні вказівки, хто на що реєструє, ні другого тримача `age`/SSH-ключа, ні згадки резервних кодів 2FA (тобто порада «увімкніть 2FA» створювала ризик блокування); `02-domain-dns.md` — сценарію «домен у замовника» не було ніде (усе в імперативі «Купіть»), плюс пошта шлеться з піддомену, бо SPF-запис може бути лише ОДИН на домен і другий на корені зламав би замовнику пошту. **Виправлені дефекти:** `deploy.md:337` радив `migrate deploy --schema` (єдиний залишок у репо; впав би з «datasource.url is required» — і саме в аварійному розділі); `.env.production.example` не містив `AGE_PUBLIC_KEY`/`RCLONE_REMOTE`/`STAGING_BASIC_AUTH`, хоча `backup.sh:75` без першого падає, а прод-деплой без бекапу зупиняється; `admin-guide.md` §18/§21 велів власнику перемкнути чекбокс noindex, **прибраний ще в TASK-307** — крок, який неможливо виконати, названий «найважливішим» | ✅ | 161 |
 | TASK-317 | [M] UI керування користувачами в адмінці — зараз **немає** створення адміна, зміни ролі, скидання чужого пароля й **навіть зміни власного пароля**; єдиний шлях — `create-admin.js`/SQL на сервері, тобто для кадрової операції замовник мусить звертатись до розробника (вічне вузьке місце). Виявлено TASK-316; замовник має погодитись свідомо або замовити функцію | ⬜ | — |
 | TASK-318 | [M] Аудит дій адміна — `deletedAt` пише *коли*, ніколи *хто*; ролі лише `CUSTOMER`/`ADMIN`, будь-який адмін може все; `actorId` є лише в Pino-логах (ефемерних), у БД — тільки `OrderStatusHistory.changedBy`. Поки адмін один — терпимо; **стає блокером із другим співробітником замовника**: якщо хтось знесе каталог, з'ясувати хто буде неможливо. Виявлено TASK-316 | ⬜ | — |
+| TASK-319 | Перейменування робочої назви `store-ai` → `case-store` (повний логічний рескоуп; локальну теку `D:\projects\store-ai` НЕ чіпали — це зламало б робочу директорію, а історичні plans/reviews лишились із старою назвою): бренд/коментарі, серверний шлях `/opt/case-store` у `ci.yml`+доках, `name: case-store` закріплено в prod/staging compose (dev лишено на імені теки, щоб не осиротити локальні томи), localStorage-ключ, бекап-бакет, npm root name (`store-test-ai`→`case-store`). Оскільки нічого не задеплоєно — нульова вартість. **+ новий `docs/deploy/03b-test-deploy-no-domain.md`** — викидне демо на `nip.io` без домену (для показу/фінансування): Hetzner **Cloud** (не Webhosting — там немає Docker), ручний `docker compose --build` в обхід GHCR-образів і блокуючого age-бекапа; демо-сід із ноута через SSH-тунель, бо прод-образ **навмисно** без `tsx`/`src/` (сідер не залежить від Meili); `noindexSite` глушить вітрину (Caddy глушить лише admin./api.); перехід на реальний домен = **перезбірка**, бо `NEXT_PUBLIC_*` запечені в образ. Виявлено при підготовці тестового деплою | ✅ | — |
 
 ### Parked
 
@@ -359,6 +360,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-316**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-320**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.

@@ -74,13 +74,13 @@ AGE_PUBLIC_KEY=age1qy8f...
 шифрувальника. Тому копія має їхати геть із сервера.
 
 1. Зареєструйтесь на [Backblaze B2](https://www.backblaze.com/b2) (перші 10 ГБ безкоштовно).
-2. Створіть bucket, напр. `store-ai-backups`, **private**.
+2. Створіть bucket, напр. `case-store-backups`, **private**.
 3. Створіть Application Key з доступом лише до цього bucket.
 4. У самому B2 налаштуйте **Lifecycle rule** — видаляти файли старші за 90 днів.
    Робіть це **на боці bucket, а не на сервері**: зламаний сервер не зможе стерти вашу
    історію бекапів.
 5. На сервері: `rclone config` → новий remote типу `b2` з іменем `b2`.
-6. У `.env.production`: `RCLONE_REMOTE=b2:store-ai-backups`
+6. У `.env.production`: `RCLONE_REMOTE=b2:case-store-backups`
 
 ### 1.3 Щонічний запуск
 
@@ -94,7 +94,7 @@ crontab -e
 Додайте рядок (бекап о 03:30 щоночі, лог у файл):
 
 ```
-30 3 * * * cd /opt/store-ai && ./scripts/backup.sh >> /var/log/store-backup.log 2>&1
+30 3 * * * cd /opt/case-store && ./scripts/backup.sh >> /var/log/store-backup.log 2>&1
 ```
 
 ---
@@ -102,7 +102,7 @@ crontab -e
 ## 2. Зробити бекап прямо зараз
 
 ```bash
-cd /opt/store-ai
+cd /opt/case-store
 ./scripts/backup.sh
 ```
 
@@ -115,8 +115,8 @@ cd /opt/store-ai
 
 ```bash
 tail -20 /var/log/store-backup.log     # має закінчуватись "backup: done — <дата>"
-ls -lh /opt/store-ai/backups/          # свіжі .age файли
-rclone ls b2:store-ai-backups | tail   # і вони доїхали в хмару
+ls -lh /opt/case-store/backups/          # свіжі .age файли
+rclone ls b2:case-store-backups | tail   # і вони доїхали в хмару
 ```
 
 ---
@@ -125,7 +125,7 @@ rclone ls b2:store-ai-backups | tail   # і вони доїхали в хмар�
 
 ```bash
 # з сервера на ноутбук
-scp deploy@<сервер>:/opt/store-ai/backups/db-<дата>.dump.age .
+scp deploy@<сервер>:/opt/case-store/backups/db-<дата>.dump.age .
 
 # розшифрувати (приватним ключем, який лежить у вас)
 age -d -i backup-key.txt -o db.dump db-<дата>.dump.age
@@ -143,7 +143,7 @@ age -d -i backup-key.txt -o db.dump db-<дата>.dump.age
 Найчастіший і найменш страшний випадок. **Не треба нічого відновлювати з бекапу.**
 
 ```bash
-cd /opt/store-ai
+cd /opt/case-store
 docker compose -f docker-compose.prod.yml exec store-api \
   node dist/scripts/create-admin.js --email ваша@пошта.com
 ```
@@ -191,7 +191,7 @@ docker stop scratch
    кожним деплоєм**:
 
 ```bash
-cd /opt/store-ai
+cd /opt/case-store
 docker compose -f docker-compose.prod.yml stop store-api store-client store-admin
 
 age -d -i backup-key.txt -o db.dump backups/db-<дата-перед-деплоєм>.dump.age
@@ -220,7 +220,7 @@ curl -X POST https://api.<домен>/api/admin/search/reindex -H "Authorization
 
 ```bash
 # на НОВОМУ сервері: базовий setup (03-server.md), потім:
-cd /opt/store-ai
+cd /opt/case-store
 
 # 1. підняти інфраструктуру
 docker compose -f docker-compose.prod.yml up -d postgres redis meilisearch

@@ -58,7 +58,7 @@ Sentry не побачить, якщо сервер **зовсім** не від
 
 ```bash
 # crontab на сервері, перевірка щогодини
-0 * * * * df -h / | awk 'NR==2 && int($5) > 80 {print "УВАГА: диск заповнений на "$5}' | mail -s "store-ai: диск" ваша@пошта.com
+0 * * * * df -h / | awk 'NR==2 && int($5) > 80 {print "УВАГА: диск заповнений на "$5}' | mail -s "case-store: диск" ваша@пошта.com
 ```
 
 Якщо `mail` не налаштований — перевіряйте руками раз на тиждень: `df -h`.
@@ -69,7 +69,7 @@ Sentry не побачить, якщо сервер **зовсім** не від
 
 ```bash
 ssh deploy@<сервер>
-cd /opt/store-ai
+cd /opt/case-store
 COMPOSE="docker compose -f docker-compose.prod.yml"   # на staging: + -f docker-compose.staging.yml
 ```
 
@@ -108,8 +108,8 @@ $COMPOSE restart store-api
 
 ```bash
 tail -5 /var/log/store-backup.log        # має закінчуватись "backup: done — <дата>"
-ls -lht /opt/store-ai/backups/ | head -3 # свіжі файли
-rclone ls b2:store-ai-backups | tail -3  # і вони доїхали в хмару
+ls -lht /opt/case-store/backups/ | head -3 # свіжі файли
+rclone ls b2:case-store-backups | tail -3  # і вони доїхали в хмару
 ```
 
 ### Місце на диску
@@ -154,7 +154,7 @@ docker image prune -f      # прибрати старі образи (безп�
 │            Не розслідуйте зараз. Спершу підніміть магазин.     │
 │      НІ  → далі                                                │
 │                                                                │
-│ 2. ssh deploy@<сервер> && cd /opt/store-ai                      │
+│ 2. ssh deploy@<сервер> && cd /opt/case-store                      │
 │    docker compose -f docker-compose.prod.yml ps                 │
 │                                                                │
 │    Хтось "Exited" / "Restarting"?                              │
@@ -195,7 +195,7 @@ docker image prune -f      # прибрати старі образи (безп�
 ```bash
 # --- ДОСТУП ---
 ssh deploy@<сервер>
-cd /opt/store-ai
+cd /opt/case-store
 COMPOSE="docker compose -f docker-compose.prod.yml"
 
 # --- ДІАГНОСТИКА ---

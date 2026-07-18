@@ -1,5 +1,5 @@
 # ============================================================================
-# docker-compose.prod.yml — production stack for the store-ai monorepo (TASK-270)
+# docker-compose.prod.yml — production stack for the case-store monorepo (TASK-270)
 #
 # Brings up the three application images + their supporting infrastructure +
 # Umami analytics + a Caddy reverse proxy (automatic HTTPS) behind three
@@ -42,6 +42,11 @@ x-logging: &default-logging
 # Every value is overridable, so resizing the VPS does not mean editing this
 # file: set e.g. MEM_STORE_API=1g in the env file.
 # ============================================================================
+
+# Compose project name — pinned so it no longer derives from the host directory
+# basename (the server deploys from /opt/case-store). Keep prod and staging in
+# sync; both run on their own host, so sharing the name across them is fine.
+name: case-store
 
 services:
   # ─── PostgreSQL ────────────────────────────────────────────────────────────

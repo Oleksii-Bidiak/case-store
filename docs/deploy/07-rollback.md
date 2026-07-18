@@ -60,7 +60,7 @@ echo '<ваш-GHCR-токен>' | docker login ghcr.io -u <ваш-github-лог�
 На сервері:
 
 ```bash
-cd /opt/store-ai
+cd /opt/case-store
 
 # впишіть теги з попереднього успішного деплою
 cat > docker-compose.images.yml <<'YAML'
@@ -98,7 +98,7 @@ curl -i https://<домен>/              # вітрина
 На staging усі три образи мають **спільний** тег, тож окремий файл не потрібен:
 
 ```bash
-cd /opt/store-ai
+cd /opt/case-store
 export IMAGE_TAG=staging-<попередній-SHA>
 COMPOSE="docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml --env-file .env.production"
 $COMPOSE pull
@@ -129,7 +129,7 @@ $COMPOSE up -d
 Повна процедура — [08-backup-restore.md](08-backup-restore.md), розділ 4.3. Коротко:
 
 ```bash
-cd /opt/store-ai
+cd /opt/case-store
 docker compose -f docker-compose.prod.yml stop store-api store-client store-admin
 
 # бекап, знятий автоматично ПЕРЕД цим деплоєм

@@ -9,7 +9,7 @@ import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { RecentlyViewed } from "./recently-viewed";
 
-const STORAGE_KEY = "store-ai:recently-viewed";
+const STORAGE_KEY = "case-store:recently-viewed";
 
 function variantSummary(id: string, overrides: Record<string, unknown> = {}) {
   return {

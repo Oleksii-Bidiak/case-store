@@ -9,7 +9,7 @@
 // a full price snapshot still parse — only `id` is required — and their ids
 // hydrate the same way.
 
-const STORAGE_KEY = "store-ai:recently-viewed";
+const STORAGE_KEY = "case-store:recently-viewed";
 const MAX_ITEMS = 12;
 
 export interface RecentlyViewedItem {
