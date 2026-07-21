@@ -28,8 +28,13 @@ GitHub.** Інакше через пів року ви не знатимете �
 Надійний секрет:
 
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+openssl rand -hex 32
 ```
+
+> **На сервері працює лише перша команда.** Деплой-сервер має Docker, але **не має Node**, тож
+> `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` там впаде з
+> `command not found` — вона для ноута. Hex зручний ще й тим, що не містить символів, які
+> довелося б URL-кодувати всередині `DATABASE_URL`.
 
 Вимоги, які реально перевіряються при старті (інакше застосунок не підніметься):
 
