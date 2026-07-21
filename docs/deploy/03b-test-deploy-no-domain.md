@@ -317,18 +317,55 @@ scp apps/store-api/swagger.json root@203.0.113.10:/opt/case-store/apps/store-api
 > Для довідки: у CI цього кроку робити не треба — `ci.yml` піднімає одноразовий Postgres і
 > сам виконує `swagger:export` перед кожною збіркою образів.
 
-### 6.1. Збірка
+### 6.1. Додати swap — інакше збірка не влізе в пам'ять
+
+CX22 має **4 ГБ RAM і жодного swap** (образи Hetzner Cloud його не створюють). Продакшн-білд
+Next 16 з Turbopack сам по собі важкий, а `up --build` запускає збірку трьох образів
+**паралельно** — два фронти опиняються в `npm run build` одночасно й не влазять. Ядро вбиває
+buildkit, і ви бачите:
+
+```
+failed to execute bake: signal: killed
+```
+
+Це не помилка коду — це OOM. Перевірити можна через `dmesg -T | grep -i "killed process"`.
+
+```bash
+df -h /        # у колонці Avail має бути помітно більше за 4 ГБ (образи вже з'їли своє)
+fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+free -h        # має з'явитись рядок Swap
+```
+
+Тека, з якої ви це запускаєте, значення не має: `/swapfile` — абсолютний шлях, а swap —
+налаштування всієї системи. Якщо місця обмаль, вистачить і 2 ГБ (`fallocate -l 2G`). Після
+перезавантаження swap зникне; щоб лишався — `echo '/swapfile none swap sw 0 0' >> /etc/fstab`.
+
+### 6.2. Збірка — по одному образу за раз
 
 ```bash
 cd /opt/case-store
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.production"
+$COMPOSE build store-api
+$COMPOSE build store-client
+$COMPOSE build store-admin
+$COMPOSE up -d
 ```
 
-Перша збірка — кілька хвилин. `--build` **обов'язковий**: `NEXT_PUBLIC_*` запікаються в
-образ, тож фронт треба зібрати саме під nip.io-адресу (готові GHCR-образи прив'язані до
-іншого домену й не підійдуть).
+Swap рятує від вбивства процесу, послідовна збірка — від того, щоб узагалі впертись у стелю;
+разом надійно. Кілька хвилин на образ. Останній `up -d` — **без `--build`**: образи вже
+зібрані, він лише піднімає стек.
 
-Накотіть схему бази:
+Збирати **обов'язково локально** (а не брати готові з GHCR): `NEXT_PUBLIC_*` запікаються в
+образ, тож фронт має бути зібраний саме під вашу nip.io-адресу — образи з GHCR прив'язані до
+іншого домену й не підійдуть.
+
+> У штатному шляху цієї проблеми немає: при деплої через CI образи збираються **на раннерах
+> GitHub**, а сервер лише робить `pull`. Пам'ять на збірку йому не потрібна взагалі.
+
+### 6.3. Схема бази та перевірка
+
+Накотіть схему (змінна `$COMPOSE` — з кроку 6.2; якщо відкрили новий термінал, задайте
+її знову):
 
 ```bash
 COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.production"
