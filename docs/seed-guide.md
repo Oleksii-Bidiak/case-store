@@ -144,6 +144,31 @@ NODE_ENV=production ALLOW_PROD_SEED=true ADMIN_SEED_EMAIL=you@example.com \
   ADMIN_SEED_PASSWORD='<strong-unique-password>' npm run db:seed
 ```
 
+### Seeding a REMOTE environment (staging, demo, any server)
+
+The command above needs a machine that can actually run it — and **that is never the server**.
+
+- **The image cannot seed itself.** `package.json` declares `"seed": "tsx prisma/seed.ts"`, and
+  `tsx` is a devDependency stripped by `npm prune --omit=dev` (`apps/store-api/Dockerfile:63`).
+  The `prisma/` directory _is_ copied into the runner, so `seed.ts` sits there — with nothing
+  able to execute it. That is deliberate: a production image has no business creating accounts
+  whose passwords are published in this file.
+- **The compose file makes no difference.** `docker-compose.staging.yml` only swaps the image
+  source to GHCR (`ghcr.io/<owner>/store-api:staging-latest`) — the same images, from the same
+  Dockerfile. Staging and production are identical in this respect.
+- **CI does not seed.** Neither `deploy-staging` nor `deploy-production` in `ci.yml` has a seed
+  step. Nothing will do this for you.
+
+So there is exactly one procedure, and it is the same for every remote environment: temporarily
+publish Postgres on the **server's** `127.0.0.1`, open an SSH tunnel from a machine with the full
+toolchain, and run the command above against `localhost`. Step-by-step commands live in
+[`deploy/03b-test-deploy-no-domain.md`](deploy/03b-test-deploy-no-domain.md) §7 — written for the
+demo, but only the address and credentials change for staging.
+
+> Port clash to expect: your own dev Postgres already holds `5432`. Either stop it, or forward to
+> a different local port — `ssh -N -L 55432:localhost:5432 …` with `…@localhost:55432/…` in
+> `DATABASE_URL`.
+
 ---
 
 ## 7. Admin credential override
