@@ -4,7 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PinoLogger } from 'nestjs-pino';
 import { randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
-import { OAuthProvider, User } from '@prisma/client';
+import { OAuthProvider, User, UserRole } from '@prisma/client';
 import { AuthRepository, CreateUserInput } from './auth.repository';
 import { AuthTokens } from './entities';
 import { RegisterDto } from './dto';
@@ -171,6 +171,8 @@ export class AuthService {
    *    {@link INVALID_CREDENTIALS_MESSAGE} + {@link notifyLockedAccountOwner}
    *    treatment as a password login (TASK-274/287), and never accumulates a
    *    working OAuth link (no silent-reactivation side channel).
+   * 5. The role gate ({@link assertStorefrontRole}) runs strictly AFTER the lock
+   *    check and strictly BEFORE linking or token issuance (TASK-314).
    */
   async loginWithGoogleProfile(profile: GoogleOAuthProfile): Promise<AuthTokens> {
     if (!profile.email || !profile.emailVerified) {
@@ -201,6 +203,12 @@ export class AuthService {
           providerId: profile.providerId,
         });
 
+        // Defence in depth (TASK-314): createUserFromOAuth pins CUSTOMER, but
+        // the rule is re-checked on the row that actually came back, so a future
+        // change there cannot reopen the hole through the signup branch. Checked
+        // before the "registered" log — a refused login is not a registration.
+        this.assertStorefrontRole(created.user);
+
         this.logger.info(
           { event: 'user.registeredViaGoogle', userId: created.user.id },
           'User registered via Google',
@@ -225,6 +233,14 @@ export class AuthService {
       await this.notifyLockedAccountOwner(user.id, user.email);
       throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
+
+    // TASK-314. Deliberately AFTER the lock check: run first, it would make
+    // "there is an ADMIN with this email" and "there is a locked account with
+    // this email" distinguishable by their side effects (the TASK-287 owner
+    // notice fires for one and not the other) — a fresh oracle. Deliberately
+    // BEFORE `needsLink`: a refused login must leave no link behind, the same
+    // rule the lock check follows.
+    this.assertStorefrontRole(user);
 
     if (needsLink) {
       await this.authRepository.linkOAuthAccount(
@@ -407,6 +423,39 @@ export class AuthService {
     tokens.accessToken = accessToken;
     tokens.refreshToken = refreshToken;
     return tokens;
+  }
+
+  /**
+   * Enforce the storefront-Google role policy (TASK-314): the storefront's
+   * "Sign in with Google" button may only ever mint a token for a CUSTOMER.
+   *
+   * Staff — ADMIN today, any future MANAGER — sign in with a password (plus 2FA
+   * once it lands). Without this gate, any privileged row whose email happens to
+   * be a Gmail address turns Google's consent screen into a full admin login:
+   * the store's password policy, `is-strong-app-password` and the login lockout
+   * are all bypassed, and the entire trust boundary silently moves onto that
+   * Google account.
+   *
+   * The refusal is the same generic {@link INVALID_CREDENTIALS_MESSAGE} used
+   * everywhere else in this file (TASK-274/287) — never "you are an admin, use
+   * the admin login", which would confirm both that the account exists and that
+   * it is privileged. The truth is recorded server-side only, at `warn` so an
+   * operator can alert on it: a hit here is either a misconfigured admin or
+   * someone who has learned an admin's Gmail address.
+   *
+   * There is intentionally NO env toggle to relax this — such a flag only ever
+   * gets switched on "temporarily".
+   */
+  private assertStorefrontRole(user: Pick<User, 'id' | 'role'>): void {
+    if (user.role === UserRole.CUSTOMER) {
+      return;
+    }
+
+    this.logger.warn(
+      { event: 'auth.googleAdminBlocked', userId: user.id },
+      'Storefront Google sign-in refused for a privileged role',
+    );
+    throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
   }
 
   /**

@@ -525,12 +525,16 @@ describe('AuthRepository', () => {
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
 
       // The user row is created WITHOUT any passwordHash — a Google-only
-      // account has genuinely no password (schema allows null since TASK-168).
+      // account has genuinely no password (schema allows null since TASK-168) —
+      // and with the role pinned explicitly to CUSTOMER (TASK-314). The schema
+      // default is already CUSTOMER; stating it at the call site means an OAuth
+      // signup can never inherit a different default if that default changes.
       expect(txMock.user.create).toHaveBeenCalledWith({
         data: {
           email: 'test@example.com',
           firstName: 'John',
           lastName: 'Doe',
+          role: 'CUSTOMER',
         },
       });
 

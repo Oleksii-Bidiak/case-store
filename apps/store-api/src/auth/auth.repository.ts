@@ -7,6 +7,7 @@ import {
   PasswordResetToken,
   OAuthAccount,
   OAuthProvider,
+  UserRole,
 } from '@prisma/client';
 
 export interface CreateUserInput {
@@ -249,6 +250,10 @@ export class AuthRepository {
    * yet. Creates the User (no passwordHash — a Google-only account genuinely
    * has no password) and its OAuthAccount link atomically in one transaction:
    * two tables must succeed together here.
+   *
+   * The role is pinned explicitly to CUSTOMER (TASK-314) rather than left to the
+   * schema default: an account created by whoever controls a Google inbox must
+   * never be able to arrive privileged, whatever that default becomes later.
    */
   createUserFromOAuth(
     input: CreateOAuthUserInput,
@@ -259,6 +264,7 @@ export class AuthRepository {
           email: input.email,
           firstName: input.firstName,
           lastName: input.lastName,
+          role: UserRole.CUSTOMER,
         },
       });
 

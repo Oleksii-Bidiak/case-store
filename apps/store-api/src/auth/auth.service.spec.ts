@@ -527,24 +527,25 @@ describe('AuthService', () => {
       expect(generateTokenPairSpy).not.toHaveBeenCalled();
     });
 
-    it('links an existing active password account by verified email, preserving its role', async () => {
-      // ADMIN makes the "role preserved unchanged" regression guard meaningful
-      // (plan 153 §Risks — no silent downgrade, no silent upgrade).
-      const adminUser = { ...mockUser, role: 'ADMIN' as const };
+    it('links an existing active CUSTOMER account by verified email, preserving its role', async () => {
+      // The role must survive the link untouched — no silent downgrade, no
+      // silent upgrade (plan 153 §Risks). Since TASK-314 this guard can only be
+      // written with a CUSTOMER: a privileged role is refused outright (see the
+      // TASK-314 block below), so "preserved" and "CUSTOMER" now coincide.
       authRepository.findOAuthAccount.mockResolvedValue(null);
-      authRepository.findByEmail.mockResolvedValue(adminUser);
+      authRepository.findByEmail.mockResolvedValue(mockUser);
 
       const result = await service.loginWithGoogleProfile(googleProfile);
 
       expect(result.accessToken).toBe('access-token-value');
       expect(authRepository.linkOAuthAccount).toHaveBeenCalledTimes(1);
       expect(authRepository.linkOAuthAccount).toHaveBeenCalledWith(
-        adminUser.id,
+        mockUser.id,
         OAuthProvider.GOOGLE,
         'google-sub-123',
         googleProfile.email,
       );
-      expect(generateTokenPairSpy).toHaveBeenCalledWith(adminUser.id, 'ADMIN');
+      expect(generateTokenPairSpy).toHaveBeenCalledWith(mockUser.id, 'CUSTOMER');
     });
 
     it('never links a locked account resolved by email — no silent reactivation side channel', async () => {
@@ -585,6 +586,106 @@ describe('AuthService', () => {
       // The transaction inside createUserFromOAuth already created the link.
       expect(authRepository.linkOAuthAccount).not.toHaveBeenCalled();
       expect(mailOutboxService.enqueueAccountLockedNotice).not.toHaveBeenCalled();
+    });
+
+    // ─── TASK-314: the storefront's Google button is CUSTOMER-only ────────────
+    //
+    // Owner decision, 2026-07-27: storefront Google sign-in may NEVER mint a
+    // token for a role other than CUSTOMER. Staff sign in with a password (plus
+    // 2FA later). Without this gate, any ADMIN row whose email happens to be a
+    // Gmail address turns Google's consent screen into a full admin login —
+    // bypassing the store's password policy, is-strong-app-password and any
+    // future lockout, and moving the whole trust boundary onto that Google
+    // account. There is deliberately no env toggle: the rule is hardcoded.
+
+    /** The single server-side event that records a blocked privileged login. */
+    const blockedEvents = (): Array<Record<string, unknown>> =>
+      loggerMock.warn.mock.calls
+        .map((call) => call[0] as Record<string, unknown>)
+        .filter((payload) => payload?.event === 'auth.googleAdminBlocked');
+
+    it('refuses a linked ADMIN account with the generic message and issues no token', async () => {
+      authRepository.findOAuthAccount.mockResolvedValue({
+        ...mockOAuthLink,
+        user: { ...mockUser, role: 'ADMIN' as const },
+      });
+
+      // Indistinguishable from every other refusal in this file — never
+      // "you are an admin, use the admin login", which would confirm both the
+      // account's existence and its privilege level.
+      await expect(service.loginWithGoogleProfile(googleProfile)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      expect(generateTokenPairSpy).not.toHaveBeenCalled();
+
+      // The truth stays on the server, where the operator can alert on it.
+      expect(blockedEvents()).toHaveLength(1);
+      expect(blockedEvents()[0].userId).toBe(mockUser.id);
+    });
+
+    it('refuses an ADMIN matched by verified email and never links the OAuth identity', async () => {
+      authRepository.findOAuthAccount.mockResolvedValue(null);
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, role: 'ADMIN' as const });
+
+      await expect(service.loginWithGoogleProfile(googleProfile)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      // A refused login must leave no trace that would make the next attempt
+      // succeed — the same "reject before any side effect" rule the lock check
+      // follows (TASK-168, plan 153 §Locked-account resolution).
+      expect(authRepository.linkOAuthAccount).not.toHaveBeenCalled();
+      expect(generateTokenPairSpy).not.toHaveBeenCalled();
+      expect(blockedEvents()).toHaveLength(1);
+    });
+
+    it('checks the account lock BEFORE the role gate — a deactivated ADMIN is refused as locked', async () => {
+      authRepository.findOAuthAccount.mockResolvedValue({
+        ...mockOAuthLink,
+        user: { ...mockUser, role: 'ADMIN' as const, isActive: false },
+      });
+
+      await expect(service.loginWithGoogleProfile(googleProfile)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      // Order is load-bearing. If the role gate ran first, the two states
+      // ("there is an ADMIN with this email" vs "there is a locked account
+      // with this email") would produce different side effects — the owner
+      // notice fires for one and not the other — recreating exactly the kind
+      // of oracle TASK-274/287 exists to remove.
+      expect(mailOutboxService.enqueueAccountLockedNotice).toHaveBeenCalledTimes(1);
+      expect(blockedEvents()).toHaveLength(0);
+      expect(generateTokenPairSpy).not.toHaveBeenCalled();
+    });
+
+    it('never issues a token when auto-provisioning returns a non-CUSTOMER row', async () => {
+      // Defence in depth: the rule is enforced at the single token-issuance
+      // choke point, so a future change to createUserFromOAuth (or a seed that
+      // pre-creates the row) cannot reopen the hole through the signup branch.
+      authRepository.findOAuthAccount.mockResolvedValue(null);
+      authRepository.findByEmail.mockResolvedValue(null);
+      authRepository.createUserFromOAuth.mockResolvedValue({
+        user: { ...mockUser, id: 'user-uuid-new', passwordHash: null, role: 'ADMIN' as const },
+        oauthAccount: { ...mockOAuthLink, userId: 'user-uuid-new' },
+      });
+
+      await expect(service.loginWithGoogleProfile(googleProfile)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      expect(generateTokenPairSpy).not.toHaveBeenCalled();
+      expect(blockedEvents()).toHaveLength(1);
+    });
+
+    it('does not log the block event on a normal CUSTOMER sign-in', async () => {
+      authRepository.findOAuthAccount.mockResolvedValue(mockOAuthLink);
+
+      await service.loginWithGoogleProfile(googleProfile);
+
+      expect(blockedEvents()).toHaveLength(0);
+      expect(generateTokenPairSpy).toHaveBeenCalledWith(mockUser.id, 'CUSTOMER');
     });
   });
 
