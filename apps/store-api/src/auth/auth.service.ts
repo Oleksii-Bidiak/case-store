@@ -39,6 +39,26 @@ const GOOGLE_EMAIL_UNVERIFIED_MESSAGE = "Google account's email is not verified"
  * one mail per address per 24h, however many times the login is retried. */
 const DEFAULT_ACCOUNT_LOCKED_NOTICE_WINDOW_HOURS = 24;
 
+/** Failed password attempts tolerated before the account's password login is
+ * temporarily locked (TASK-314).
+ *
+ * Five deliberately matches the per-IP throttle on POST /api/auth/login
+ * (`@Throttle({ limit: 5, ttl: 60000 })`): the throttle already stops five
+ * guesses per minute from ONE address, but a distributed attacker sidesteps it
+ * by rotating source IPs, and `User.isActive` is a MANUAL admin ban switch, not
+ * an automatic lockout. This counter follows the ACCOUNT, so rotating IPs buys
+ * nothing. */
+const MAX_FAILED_LOGIN_ATTEMPTS = 5;
+
+/** How long the lock holds once tripped (TASK-314).
+ *
+ * 15 minutes caps an online brute force at 20 guesses/hour — useless against
+ * any password the store's own policy accepts — while keeping a self-inflicted
+ * lockout short enough that the real owner just makes coffee instead of filing
+ * a support ticket. The password-reset path is deliberately NOT gated by the
+ * lock, so a genuinely stuck owner always has a way back in. */
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000;
+
 @Injectable()
 export class AuthService {
   private readonly jwtSecret: string;
@@ -146,15 +166,76 @@ export class AuthService {
       await this.notifyLockedAccountOwner(user.id, user.email);
     }
 
-    // Deactivated (banned) and soft-deleted (tombstoned) accounts must never
-    // obtain tokens. Folded in with the password check so all three rejections
-    // are indistinguishable to the client — and each has already paid the
-    // argon2.verify cost, so no branch here is a timing outlier.
-    if (!isPasswordValid || isLocked) {
+    // TASK-314 lockout. Checked AFTER argon2.verify on purpose: returning here
+    // before paying the hashing cost would make the locked branch measurably
+    // faster than every other branch — a timing oracle that answers "is this
+    // account currently locked", hence "does this email exist". No mail is sent
+    // for an automatic lockout (unlike the manual ban above): anyone can drive a
+    // stranger's account into lockout with wrong passwords, so mailing on it
+    // would turn the login form into a mail sprayer. The counter is not touched
+    // either — an attacker hammering a locked account must not be able to extend
+    // its deadline into a permanent denial of service for the real owner.
+    if (this.isTemporarilyLocked(user)) {
       throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
 
+    if (!isPasswordValid) {
+      await this.registerFailedLogin(user);
+      throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
+    }
+
+    // Deactivated (banned) and soft-deleted (tombstoned) accounts must never
+    // obtain tokens. Same message as the wrong-password branch above so the two
+    // are indistinguishable to the client — and each has already paid the
+    // argon2.verify cost, so no branch here is a timing outlier.
+    if (isLocked) {
+      throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
+    }
+
+    // The owner just proved themselves — wipe the slate, so a counter built up
+    // from occasional typos over months can never lock out someone who never
+    // had MAX_FAILED_LOGIN_ATTEMPTS failures in a row. Skipped when there is
+    // nothing to clear: the common path stays a pure read.
+    if (user.failedLoginAttempts > 0 || user.lockedUntil) {
+      await this.authRepository.clearFailedLogins(user.id);
+    }
+
     return this.generateTokenPair(user.id, user.role);
+  }
+
+  /** Is this account's password login currently held shut by TASK-314's
+   * automatic lockout? A `lockedUntil` in the past is a spent lock, not a
+   * live one. */
+  private isTemporarilyLocked(user: Pick<User, 'lockedUntil'>): boolean {
+    return Boolean(user.lockedUntil && user.lockedUntil.getTime() > Date.now());
+  }
+
+  /**
+   * Count one failed password attempt against the account and trip the lock
+   * once the threshold is reached (TASK-314).
+   *
+   * A non-null `lockedUntil` at this point can only be a lock that has already
+   * expired (a live one throws before we get here), so the window restarts.
+   */
+  private async registerFailedLogin(user: Pick<User, 'id' | 'lockedUntil'>): Promise<void> {
+    const attempts = await this.authRepository.recordFailedLogin(
+      user.id,
+      Boolean(user.lockedUntil),
+    );
+
+    if (attempts < MAX_FAILED_LOGIN_ATTEMPTS) {
+      return;
+    }
+
+    const lockedUntil = new Date(Date.now() + LOGIN_LOCKOUT_MS);
+    await this.authRepository.lockLoginUntil(user.id, lockedUntil);
+
+    // The client is told nothing (same generic 401 as attempt #1) — the record
+    // of the lock lives here, where an operator can alert on it.
+    this.logger.warn(
+      { event: 'auth.loginLockedOut', userId: user.id, attempts, lockedUntil },
+      'Password login locked out after repeated failures',
+    );
   }
 
   /**

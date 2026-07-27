@@ -97,6 +97,12 @@ describe('AuthController (e2e)', () => {
     findOAuthAccount: jest.fn(),
     linkOAuthAccount: jest.fn(),
     createUserFromOAuth: jest.fn(),
+    // TASK-314 failed-login lockout. `recordFailedLogin` resolves 1 (first
+    // failure of a fresh window), so the wrong-password cases below exercise
+    // the counter without ever tripping the lock on a shared mock.
+    recordFailedLogin: jest.fn().mockResolvedValue(1),
+    lockLoginUntil: jest.fn(),
+    clearFailedLogins: jest.fn(),
   };
 
   // Mock PrismaService — prevents database connection errors

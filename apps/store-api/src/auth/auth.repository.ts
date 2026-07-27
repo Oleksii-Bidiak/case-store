@@ -178,6 +178,50 @@ export class AuthRepository {
   }
 
   /**
+   * Record one failed password login and return the resulting attempt counter
+   * (TASK-314). The caller decides what the number means — this method only
+   * moves it.
+   *
+   * The normal path uses Prisma's atomic `increment` rather than a
+   * read-modify-write, so two simultaneous failed logins cannot lose an attempt
+   * to a stale read. `restartWindow` is for the case where a previous lock has
+   * already been served: the counter starts over at 1 and the spent deadline is
+   * cleared, otherwise the counter would stay parked at the threshold and the
+   * very next typo would re-lock the account instantly, forever.
+   */
+  async recordFailedLogin(userId: string, restartWindow: boolean): Promise<number> {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: restartWindow
+        ? { failedLoginAttempts: 1, lockedUntil: null }
+        : { failedLoginAttempts: { increment: 1 } },
+    });
+
+    return user.failedLoginAttempts;
+  }
+
+  /**
+   * Hold password login for this user shut until the given instant (TASK-314).
+   */
+  async lockLoginUntil(userId: string, until: Date): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { lockedUntil: until },
+    });
+  }
+
+  /**
+   * Clear the failed-login counter and any lock — a successful login proves the
+   * caller is the owner, so the account starts from a clean slate (TASK-314).
+   */
+  async clearFailedLogins(userId: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { failedLoginAttempts: 0, lockedUntil: null },
+    });
+  }
+
+  /**
    * Update a user's password hash by user id.
    */
   async updatePasswordHash(userId: string, passwordHash: string): Promise<void> {
