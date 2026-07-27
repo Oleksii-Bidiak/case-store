@@ -3,6 +3,7 @@ import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
 import { ContactView } from "@/widgets/contact";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
+import { serverFetch } from "@/shared/api/server-fetch";
 import { SITE_URL, dict } from "@/shared/config";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -19,7 +20,7 @@ export const metadata: Metadata = {
  */
 async function getContactSettings(): Promise<SiteContactSettingsEntity | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/site-contact`, {
+    const res = await serverFetch(`${API_BASE_URL}/api/site-contact`, {
       next: { revalidate: 3600 },
     });
     if (!res.ok) return null;

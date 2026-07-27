@@ -2,6 +2,7 @@ import type {
   BannerEntity,
   BannerListResponse,
 } from "@/shared/api/generated/models";
+import { serverFetch } from "@/shared/api/server-fetch";
 
 /**
  * Server-only, ISR-tagged fetcher for published homepage banners (TASK-186).
@@ -50,7 +51,7 @@ export async function fetchPublishedBanners(): Promise<BannersByPlacement> {
   const groups = emptyGroups();
 
   try {
-    const res = await fetch(`${API_BASE_URL}/api/banners`, {
+    const res = await serverFetch(`${API_BASE_URL}/api/banners`, {
       next: { tags: [BANNERS_COLLECTION_TAG] },
     });
     if (!res.ok) return groups;

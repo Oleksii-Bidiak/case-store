@@ -2,6 +2,7 @@ import type {
   PublicCarouselEntity,
   PublicCarouselListResponse,
 } from "@/shared/api/generated/models";
+import { serverFetch } from "@/shared/api/server-fetch";
 
 /**
  * Server-only, ISR-tagged fetcher for published recommendation carousels
@@ -42,7 +43,7 @@ export async function fetchPublishedCarousels(): Promise<
   PublicCarouselEntity[]
 > {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/carousels`, {
+    const res = await serverFetch(`${API_BASE_URL}/api/carousels`, {
       next: { tags: [CAROUSELS_COLLECTION_TAG] },
     });
     if (!res.ok) return [];

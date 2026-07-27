@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { serverFetch } from "@/shared/api/server-fetch";
 import { SITE_URL } from "@/shared/config";
 
 /**
@@ -15,6 +16,22 @@ import { SITE_URL } from "@/shared/config";
  */
 
 const INDEXNOW_ENDPOINT = "https://api.indexnow.org/indexnow";
+
+/**
+ * Own timeout budget, separate from the storefront default (TASK-327).
+ *
+ * This is the one call that leaves our network: TLS handshake + POST to a
+ * third-party host over the public internet, so it gets its own knob rather
+ * than inheriting the intra-cluster default tuned for the store-api hop.
+ *
+ * It is deliberately still a *hard* bound. The call runs inside `after()`, i.e.
+ * after the admin's response has already been sent, so nothing user-visible
+ * waits on it — but "nobody is waiting" is not "it may hang": an unanswered
+ * socket pins a Node handle and a serverless/standalone invocation for as long
+ * as it stays open. A ping that has not landed in 3 s has failed; the next admin
+ * write will ping again anyway.
+ */
+const INDEXNOW_TIMEOUT_MS = 3000;
 
 export interface IndexNowPayload {
   host: string;
@@ -82,10 +99,11 @@ export async function submitToIndexNow(urls: string[]): Promise<void> {
   }
 
   try {
-    const res = await fetch(INDEXNOW_ENDPOINT, {
+    const res = await serverFetch(INDEXNOW_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify(payload),
+      timeoutMs: INDEXNOW_TIMEOUT_MS,
     });
     if (!res.ok) {
       const message = `[indexnow] Submission rejected with status ${res.status} for ${payload.urlList.length} url(s)`;

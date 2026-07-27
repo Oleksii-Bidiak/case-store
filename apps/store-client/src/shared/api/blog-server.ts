@@ -6,6 +6,7 @@ import type {
   BlogCategoryListResponse,
   BlogPaginationMeta,
 } from "@/shared/api/generated/models";
+import { serverFetch } from "@/shared/api/server-fetch";
 
 /**
  * Server-only, ISR-tagged fetchers for the published blog (TASK-173).
@@ -62,9 +63,10 @@ export async function fetchPublishedPosts(
   search.set("limit", String(params.limit ?? 9));
 
   try {
-    const res = await fetch(`${API_BASE_URL}/api/blog?${search.toString()}`, {
-      next: { tags: [BLOG_COLLECTION_TAG] },
-    });
+    const res = await serverFetch(
+      `${API_BASE_URL}/api/blog?${search.toString()}`,
+      { next: { tags: [BLOG_COLLECTION_TAG] } },
+    );
     if (!res.ok) return { posts: [], meta: EMPTY_META };
     const body = (await res.json()) as BlogPostListResponse;
     return { posts: body.data ?? [], meta: body.meta ?? EMPTY_META };
@@ -82,7 +84,7 @@ export async function fetchPublishedPost(
   slug: string,
 ): Promise<BlogPostEntity | null> {
   try {
-    const res = await fetch(
+    const res = await serverFetch(
       `${API_BASE_URL}/api/blog/${encodeURIComponent(slug)}`,
       { next: { tags: [BLOG_COLLECTION_TAG, blogDetailTag(slug)] } },
     );
@@ -100,7 +102,7 @@ export async function fetchPublishedPost(
  */
 export async function fetchBlogCategories(): Promise<BlogCategoryEntity[]> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/blog/categories`, {
+    const res = await serverFetch(`${API_BASE_URL}/api/blog/categories`, {
       next: { tags: [BLOG_COLLECTION_TAG] },
     });
     if (!res.ok) return [];

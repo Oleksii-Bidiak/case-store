@@ -3,6 +3,7 @@ import type {
   PageListResponse,
   PageResponseEnvelope,
 } from "@/shared/api/generated/models";
+import { serverFetch } from "@/shared/api/server-fetch";
 
 /**
  * Server-only, ISR-tagged fetchers for published static pages (TASK-187).
@@ -38,7 +39,7 @@ export async function fetchPublishedPage(
   slug: string,
 ): Promise<PageEntity | null> {
   try {
-    const res = await fetch(
+    const res = await serverFetch(
       `${API_BASE_URL}/api/pages/${encodeURIComponent(slug)}`,
       { next: { tags: [PAGES_COLLECTION_TAG, pageDetailTag(slug)] } },
     );
@@ -56,7 +57,7 @@ export async function fetchPublishedPage(
  */
 export async function fetchPublishedPages(): Promise<PageEntity[]> {
   try {
-    const res = await fetch(
+    const res = await serverFetch(
       `${API_BASE_URL}/api/pages?page=1&limit=${PAGE_SIZE}`,
       { next: { tags: [PAGES_COLLECTION_TAG] } },
     );
