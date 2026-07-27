@@ -8,11 +8,16 @@
     "packages/*"
   ],
   "scripts": {
+    "codegen": "npx prisma generate --schema=apps/store-api/prisma/schema.prisma && npm run generate:api",
+    "prebuild": "npm run codegen",
     "build": "npm run build -w apps/store-api -w apps/store-client -w apps/store-admin",
+    "prelint": "npm run codegen",
     "lint": "npm run lint -w apps/store-api -w apps/store-client -w apps/store-admin",
+    "pretest": "npm run codegen",
     "test": "npm run test -w apps/store-api -w apps/store-client -w apps/store-admin",
     "test:e2e": "npm run test:e2e -w apps/store-api",
     "test:e2e:pw": "playwright test",
+    "pretypecheck": "npm run codegen",
     "typecheck": "npm run typecheck -w apps/store-api -w apps/store-client -w apps/store-admin",
     "db:generate": "npm run prisma:generate -w apps/store-api",
     "db:push": "npm run prisma:push -w apps/store-api",

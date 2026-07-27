@@ -10,6 +10,41 @@ on:
   # the `workflow_dispatch` condition on deploy-production could never be true.
   workflow_dispatch:
 
+# ────────────────────────────────────────────────────────────────────────────
+# API CONTRACT & CODEGEN (TASK-325) — why these jobs look the way they do.
+#
+# ~116 frontend source files import Orval-generated hooks from
+# `**/shared/api/generated/`, which is codegen output and stays untracked. The
+# input it is generated from — `apps/store-api/swagger.json` — IS tracked, so a
+# bare `npm ci` checkout has everything needed to produce the hooks offline.
+# (It used to be gitignored too; that combination made typecheck/lint/build/
+# test-unit impossible to pass on a clean checkout, and they were red from
+# 2026-06-30 until this was fixed.)
+#
+# TWO codegens have to happen before any of these commands, not one:
+#   1. `prisma generate` — @prisma/client is generated, and nothing installs it
+#      for you here (the schema's datasource url lives in prisma.config.ts, so
+#      Prisma's own postinstall does not fire). Without it `npm run typecheck`
+#      fails with ~595 errors like "Module '@prisma/client' has no exported
+#      member 'Prisma'". Only the `build` job ever ran it; typecheck/lint/
+#      test-unit did not, so fixing the spec alone would have left them red.
+#   2. `npm run generate:api` — orval, reading the committed spec.
+#
+# Neither is a step here. Root `pretypecheck` / `prelint` / `prebuild` /
+# `pretest` in package.json both run `npm run codegen`, which does the pair
+# (~0.3s + ~8-10s). Single-sourcing it this way means the guarantee holds for a
+# fresh local clone too, and no future job can forget half of it. A failure
+# shows up inside the `npm run <script>` step with the tool's own error.
+#
+# `npm run codegen` invokes prisma from the REPO ROOT
+# (`--schema=apps/store-api/prisma/schema.prisma`) on purpose: run from
+# apps/store-api instead, prisma picks up prisma.config.ts and dies with
+# "Cannot resolve environment variable: DATABASE_URL" — which is why the
+# workspace's own `db:generate` script cannot be used here.
+#
+# node-version is 22 (not 20) on every job that ends up running orval:
+# orval@8.21 declares `engines.node >= 22.18` and refuses to start on 20.
+# ────────────────────────────────────────────────────────────────────────────
 jobs:
   typecheck:
     name: Type Check
@@ -18,9 +53,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
+      # `pretypecheck` runs `npm run codegen` (prisma generate + orval) first.
       - run: npm run typecheck
 
   lint:
@@ -30,9 +66,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
+      # `prelint` runs `npm run codegen` (prisma generate + orval) first.
       - run: npm run lint
 
   build:
@@ -43,10 +80,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
+      # Redundant since `prebuild` now does it too, but harmless (242ms) and it
+      # keeps the Prisma step visible in the log of the job most likely to be
+      # read when a build breaks.
       - run: npx prisma generate --schema=apps/store-api/prisma/schema.prisma
+      # `prebuild` runs `npm run codegen` (prisma generate + orval) first.
       - run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:3001
@@ -63,11 +104,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       # Root `test` delegates to all three workspaces — store-api (Jest),
       # store-client (Jest unit + RTL/MSW component projects), store-admin (Jest).
+      # `pretest` runs `npm run codegen` (prisma generate + orval) first.
       - run: npm run test
 
   test-e2e:
@@ -184,6 +226,93 @@ jobs:
           DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/store_test
 
   # ──────────────────────────────────────────────────────────────────────────
+  # contract-freshness (TASK-325) — the committed OpenAPI spec must match the
+  # code that produces it.
+  #
+  # `apps/store-api/swagger.json` is tracked, and the frontends' typed hooks are
+  # generated from it. That buys a green clean checkout, but it introduces one
+  # new failure mode: change a DTO or a controller, forget to re-export, and the
+  # frontends keep compiling happily against a contract the API no longer serves.
+  # Nothing else catches that — the hooks would be internally consistent, just
+  # wrong. This job re-exports the spec and fails if the result differs from what
+  # is committed.
+  #
+  # Standalone (no `needs:`) so it reports independently and early. It is
+  # deliberately NOT in the deploy jobs' `needs:` — those export the spec
+  # themselves before building images, so a stale committed spec cannot reach an
+  # image. The risk this covers is drift in the repo, not in a deployment.
+  #
+  # node 20 is fine here: this job never runs orval (which needs >= 22.18), only
+  # ts-node + Nest, exactly like the deploy jobs' export step.
+  # ──────────────────────────────────────────────────────────────────────────
+  contract-freshness:
+    name: OpenAPI Contract Freshness
+    runs-on: ubuntu-latest
+    services:
+      # Throwaway Postgres — ONLY so `swagger:export` can boot AppModule
+      # (PrismaService.$connect() opens a real connection). No schema or tables
+      # are needed: the export connects, then reads Swagger decorator metadata,
+      # and SearchService.onModuleInit returns early when Meili is unconfigured,
+      # so nothing queries a table at boot. Mirrors the deploy jobs' env.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: store_swagger
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate --schema=apps/store-api/prisma/schema.prisma
+      # The dummy secrets are throwaway build-time inputs for env validation —
+      # never used at runtime, and the app never listens on a port here.
+      #
+      # ⚠️ CSRF_SECRET is REQUIRED for this to boot with NODE_ENV=production
+      # (env.validation.ts: required, min 32 chars). Verified by running the
+      # export locally: without it the process dies with
+      #   "Invalid environment configuration: CSRF_SECRET must be at least 32
+      #    characters, CSRF_SECRET is required in production"
+      # The deploy-staging / deploy-production export steps below do NOT set it
+      # and would fail the same way — see docs/manual-qa-pending.md §TASK-325.
+      # Do not "align" this job by copying their env; align theirs with this one.
+      - name: Re-export the OpenAPI spec
+        run: npm run swagger:export -w apps/store-api
+        env:
+          NODE_ENV: production
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/store_swagger?schema=public
+          JWT_SECRET: ci-dummy-jwt-secret-min-32-chars-000000
+          JWT_REFRESH_SECRET: ci-dummy-jwt-refresh-secret-min-32-000
+          CSRF_SECRET: ci-dummy-csrf-secret-min-32-chars-0000
+          CORS_ORIGINS: http://localhost:3000
+      - name: Committed spec must match the re-export
+        run: |
+          if ! git diff --exit-code -- apps/store-api/swagger.json; then
+            echo ""
+            echo "::error::apps/store-api/swagger.json is STALE — it does not match the API code."
+            echo "The API surface changed but the committed OpenAPI contract was not updated,"
+            echo "so the frontends are generating hooks against an API that no longer exists."
+            echo ""
+            echo "Fix it locally:"
+            echo "  docker compose up -d postgres"
+            echo "  npm run swagger:export -w apps/store-api"
+            echo "  npm run generate:api      # refresh the hooks against the new spec"
+            echo "  git add apps/store-api/swagger.json && git commit"
+            exit 1
+          fi
+          echo "OpenAPI contract is in sync with the API code."
+
+  # ──────────────────────────────────────────────────────────────────────────
   # deploy-staging (TASK-271) — build the three app images, push to GHCR, then
   # SSH into the staging VPS and roll the stack.
   #
@@ -240,17 +369,23 @@ jobs:
           cache: npm
       - run: npm ci
 
-      # ── swagger.json gotcha (MUST run before any docker build) ────────────
-      # apps/store-api/swagger.json is GITIGNORED, so a clean checkout does not
-      # contain it — yet the store-client / store-admin Dockerfiles run
-      # `npm run generate:api` INSIDE the image, and Orval reads that exact file
-      # from the build context (../store-api/swagger.json). We therefore
-      # regenerate it on the runner FIRST, the same way a local build would.
-      # The existing `build` job does NOT do this (a pre-existing gap noted in
-      # the TASK-271 handoff); we mirror the test jobs' env pattern instead:
-      # `prisma generate` + a reachable Postgres + the two JWT secrets that env
-      # validation requires. The dummy secrets below are throwaway build-time
-      # inputs — never used at runtime.
+      # ── swagger.json re-export (runs before any docker build) ─────────────
+      # apps/store-api/swagger.json is now COMMITTED (TASK-325), so a clean
+      # checkout already contains a valid spec and this step is no longer load-
+      # bearing — the store-client / store-admin Dockerfiles run
+      # `npm run generate:api` INSIDE the image against the file in the build
+      # context, and that file is present either way.
+      #
+      # It is kept anyway, on purpose. Re-exporting here makes the images a pure
+      # function of the API SOURCE rather than of whatever spec happened to be
+      # committed, so even a stale commit cannot ship mismatched hooks. The
+      # `contract-freshness` job is what stops the two from drifting in the repo;
+      # this step is the belt to that pair of braces on the one path where being
+      # wrong is expensive.
+      #
+      # Mirrors the test jobs' env: `prisma generate` + a reachable Postgres +
+      # the JWT secrets env validation requires. The dummy secrets below are
+      # throwaway build-time inputs — never used at runtime.
       - name: Generate Prisma client
         run: npx prisma generate --schema=apps/store-api/prisma/schema.prisma
       - name: Export OpenAPI spec into the build context
@@ -552,8 +687,9 @@ jobs:
           cache: npm
       - run: npm ci
 
-      # swagger.json is gitignored but the frontend images run Orval against it
-      # during their build — regenerate it before any docker build (same as staging).
+      # swagger.json is committed (TASK-325), but re-export it anyway so the
+      # images are a function of the API source rather than of the committed
+      # spec — see the longer rationale on the staging job's equivalent step.
       - name: Generate Prisma client
         run: npx prisma generate --schema=apps/store-api/prisma/schema.prisma
       - name: Export OpenAPI spec into the build context

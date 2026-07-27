@@ -1,0 +1,6 @@
+# The OpenAPI contract (TASK-325) is compared byte-for-byte by the
+# `contract-freshness` CI job against a fresh `swagger:export`, which always
+# writes LF (`JSON.stringify`). Pin it to LF so a Windows working tree cannot
+# introduce CRLF and make that comparison — or the diff a reviewer reads —
+# depend on which OS last touched the file.
+apps/store-api/swagger.json text eol=lf

@@ -18,10 +18,12 @@
 # addons above are napi (node-ABI-stable), so the bump is safe for them.
 #
 # API CONTRACT — the Orval hooks under src/shared/api/generated are gitignored
-# codegen output. This image regenerates them from apps/store-api/swagger.json
-# (the OpenAPI contract produced by `npm run swagger:export -w apps/store-api`,
-# which needs a DB and so is a pipeline/pre-build step) — that file MUST be
-# present in the build context.
+# codegen output; this image regenerates them during the build. Their input,
+# apps/store-api/swagger.json, IS committed (TASK-325), so any checkout — and
+# therefore any build context — already carries it. Producing that spec needs a
+# booted AppModule and a live database, which is why it is committed rather than
+# generated here; `npm run swagger:export -w apps/store-api` refreshes it, and
+# the `contract-freshness` CI job fails if it drifts from the API source.
 #
 # NEXT_PUBLIC_* vars are baked into the JS bundle at `next build` time (NOT read
 # at container start), so they are passed as build-args. NEXT_PUBLIC_API_URL

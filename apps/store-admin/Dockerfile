@@ -8,11 +8,13 @@
 #     --build-arg NEXT_PUBLIC_API_URL=https://api.example.com ... -t store-admin .
 #
 # Same base-image, API-contract, and standalone/monorepo rationale as
-# store-client (see that Dockerfile's header). glibc `node:22-slim` matches CI's
-# platform (and satisfies orval's node >=22 requirement); the Orval hooks are
-# regenerated from apps/store-api/swagger.json (which must be in the build
-# context). Smaller app: no next/image remote-pattern nuance. Runs on port 3002
-# to match the `start -p 3002` script and the admin. Caddy routing.
+# store-client (see that Dockerfile's header for the full version). glibc
+# `node:22-slim`, not alpine, because the lockfile pins the `*-linux-x64-gnu`
+# native addons and not the musl ones; node 22, not 20, because orval requires
+# >= 22.18. The Orval hooks are regenerated during the build from the COMMITTED
+# apps/store-api/swagger.json (TASK-325), so it is always in the build context.
+# Smaller app: no next/image remote-pattern nuance. Runs on port 3002 to match
+# the `start -p 3002` script. Caddy routing.
 # ============================================================================
 
 # ─── deps ────────────────────────────────────────────────────────────────────
