@@ -392,51 +392,186 @@ curl -sI https://api.203-0-113-10.nip.io/health   # 200
 Тому сідимо **зі свого ноута** (там повне оточення) проти серверної бази через SSH-тунель.
 Сідер БД самодостатній — Meilisearch йому не потрібен.
 
-**7.1. На сервері** — тимчасово відкрийте Postgres лише на localhost. Створіть
-`docker-compose.demo.yml`:
+Вам знадобляться **два вікна на ноуті** (одне назавжди займе тунель) і одне на сервері.
 
-```yaml
+### 7.0. На сервері — дізнатись пароль бази
+
+Він знадобиться на ноуті у кроках 7.3–7.4:
+
+```bash
+grep '^POSTGRES_PASSWORD=' /opt/case-store/.env.production
+```
+
+> Це єдина команда всього ранбука, яка друкує секрет на екран. **Не виконуйте її під час
+> демонстрації екрана** і не лишайте у видимій історії термінала.
+
+### 7.1. На сервері — відкрити Postgres на localhost
+
+Створіть `docker-compose.demo.yml`:
+
+```bash
+cd /opt/case-store
+cat > docker-compose.demo.yml <<'YAML'
 services:
   postgres:
     ports:
       - "127.0.0.1:5432:5432"
+YAML
 ```
 
-і перезапустіть із ним:
+і перезапустіть Postgres із цим файлом:
 
 ```bash
 docker compose -f docker-compose.prod.yml -f docker-compose.demo.yml \
   --env-file .env.production up -d postgres
 ```
 
-Порт `127.0.0.1` — назовні НЕ видно, лише через SSH-тунель.
+Префікс `127.0.0.1` означає «слухати лише локальну петлю» — назовні порт НЕ видно, дістатись
+можна винятково через SSH-тунель. Контейнер Postgres при цьому **перестворюється** (дані в
+томі лишаються), а `store-api` на кілька секунд втратить з'єднання й перепідключиться — це
+нормально.
 
-**7.2. На ноуті** — відкрийте тунель (лишіть цей термінал працювати):
+**Перевірте результат, а не код виходу** — порт має бути реально опублікований:
 
 ```bash
-ssh -N -L 5432:localhost:5432 root@203.0.113.10
+docker compose -f docker-compose.prod.yml -f docker-compose.demo.yml \
+  --env-file .env.production ps postgres
 ```
 
-**7.3. На ноуті, в теці репозиторію** (інший термінал) — запустіть документований
-демо-сід ([seed-guide.md](../seed-guide.md) §6), задавши свій пароль адміна:
+У колонці PORTS має стояти `127.0.0.1:5432->5432/tcp`. Якщо там порожньо або просто
+`5432/tcp` — overlay не підхопився (найчастіше: забули другий `-f`), і тунель на кроці 7.2
+впаде з `connection refused`.
+
+### 7.2. На ноуті, вікно №1 — тунель
 
 ```bash
+ssh -N -o ExitOnForwardFailure=yes -L 55432:localhost:5432 root@203.0.113.10
+```
+
+> ⚠️ **Порт `55432`, а не `5432`.** Ваш власний dev-Postgres майже напевно вже тримає 5432,
+> і тунель на тому ж номері впаде з `bind: Address already in use`. Ліве число — порт **на
+> вашому ноуті**, праве — на сервері; збігатись вони не зобов'язані.
+
+> ⚠️ **`localhost` у цьому рядку резолвиться НА СЕРВЕРІ.** Це той самий `127.0.0.1:5432`,
+> який ви щойно відкрили на кроці 7.1, — а не щось на вашому ноуті.
+
+> **Після вводу пароля команда «зависає» — так і має бути.** `-N` означає «не виконувати
+> жодної команди на сервері, лише тримати тунель», тому запрошення командного рядка ви не
+> отримаєте: сесія просто стоїть відкрита. Доки вікно висить — тунель живий. Закриєте
+> (**Ctrl+C**) — тунель зникне. **Не закривайте його до кінця кроку 7.5.**
+
+> `-o ExitOnForwardFailure=yes` доданий навмисно: без нього ssh, не змігши зайняти локальний
+> порт, лише друкує попередження й **лишається висіти** — тобто виглядає точно так само, як
+> робочий тунель, а сід тим часом піде не туди. З цим прапорцем невдале прокидання одразу
+> обриває з'єднання.
+
+### 7.3. На ноуті, вікно №2 — переконатись, що ціль правильна
+
+**Найважливіша перевірка кроку.** Якщо тунель не піднявся або змінна не підхопилась, сідер
+мовчки заллє демо-каталог у **ваш локальний dev-Postgres**, і ви цього не помітите: команда
+відпрацює успішно, а вітрина на сервері лишиться порожньою.
+
+У теці репозиторію (Git Bash або PowerShell — рядок однаковий, крім задання змінної):
+
+```powershell
+$env:DATABASE_URL="postgresql://store:<POSTGRES_PASSWORD>@localhost:55432/store"
+```
+
+```bash
+# Git Bash — те саме:
+export DATABASE_URL='postgresql://store:<POSTGRES_PASSWORD>@localhost:55432/store'
+```
+
+```bash
+node -e "const{Pool}=require('pg');const p=new Pool({connectionString:process.env.DATABASE_URL});p.query('select current_database() as db, (select count(*) from products) as products, (select count(*) from users) as users').then(r=>console.table(r.rows)).catch(e=>console.error('ERR',e.message)).finally(()=>p.end())"
+```
+
+| Що бачите                                  | Що це означає                                                          |
+| ------------------------------------------ | ---------------------------------------------------------------------- |
+| `db: store`, `products: 0`, `users: 0`     | ✅ це серверна база після міграцій — вперед                            |
+| `products: 40`, `users: 30`                | 🛑 ви на **власному dev-Postgres**. Порт 5432 замість 55432. **Стоп.** |
+| `ERR … ECONNREFUSED`                       | тунель не працює — поверніться до 7.1 / 7.2                            |
+| `ERR … relation "products" does not exist` | достукались, але міграції не накочені — крок 6.3                       |
+
+### 7.4. На ноуті, вікно №2 — сід
+
+Документований демо-сід ([seed-guide.md](../seed-guide.md) §6). `DATABASE_URL` уже заданий на
+кроці 7.3 — вдруге не задавайте.
+
+```powershell
+# PowerShell
+$env:NODE_ENV="production"
+$env:ALLOW_PROD_SEED="true"
+$env:ADMIN_SEED_EMAIL="admin@ваш-магазин.demo"
+$env:ADMIN_SEED_PASSWORD="<надійний-унікальний-пароль>"
+npm run db:seed
+```
+
+```bash
+# Git Bash
 NODE_ENV=production ALLOW_PROD_SEED=true \
   ADMIN_SEED_EMAIL='admin@ваш-магазин.demo' \
   ADMIN_SEED_PASSWORD='<надійний-унікальний-пароль>' \
-  DATABASE_URL='postgresql://store:<POSTGRES_PASSWORD>@localhost:5432/store' \
   npm run db:seed
 ```
 
-> **Windows.** Синтаксис `VAR=value … команда` — це **bash**, у **PowerShell він не працює**.
-> Запускайте цю команду в **Git Bash** (ставиться разом із Git), або в PowerShell задайте
-> змінні окремо — `$env:ALLOW_PROD_SEED="true"` (і так кожну: `NODE_ENV`, `ADMIN_SEED_EMAIL`,
-> `ADMIN_SEED_PASSWORD`, `DATABASE_URL`), а тоді окремим рядком `npm run db:seed`.
+> **Windows.** Синтаксис `VAR=value … команда` — це **bash**, у PowerShell він не працює.
+> Тому вище два варіанти; змішувати їх не треба.
 
 > Дефолтний `admin@store.com` / `Admin123!` у цьому режимі **не пройде** — `ALLOW_PROD_SEED`
 > вимагає задати власні `ADMIN_SEED_*`. Це і є ваш логін в адмінку.
 
-Після сіду тунель можна закрити (Ctrl-C).
+> ⚠️ **Вікно PowerShell тепер має `NODE_ENV=production`.** Ніколи не запускайте в ньому
+> `npm install` — він викине devDependencies. Закрийте це вікно після кроку 7.5.
+
+### 7.5. Перевірити, що каталог справді з'явився
+
+**1. База** — той самий one-liner, що й на 7.3:
+
+```bash
+node -e "const{Pool}=require('pg');const p=new Pool({connectionString:process.env.DATABASE_URL});p.query('select (select count(*) from products) as products, (select count(*) from users) as users, (select count(*) from categories) as categories').then(r=>console.table(r.rows)).catch(e=>console.error('ERR',e.message)).finally(()=>p.end())"
+```
+
+Очікується `products: 40`, `users: 30`, `categories: 15` ([seed-guide.md](../seed-guide.md) §8).
+
+**2. Перезапустіть API на сервері** — це не косметика:
+
+```bash
+cd /opt/case-store
+COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.production"
+$COMPOSE restart store-api
+```
+
+Сідер писав **прямо в Postgres, повз застосунок**, тому Redis може тримати закешовані
+_порожні_ відповіді, а Meilisearch — порожній індекс. Рестарт лагодить обидва разом:
+пошуковий сервіс робить best-effort реіндекс на старті. Якщо каталог видно, а пошук порожній —
+добийте з адмінки (`POST /api/admin/search/reindex`).
+
+**3. Очима, з ноута:**
+
+```powershell
+curl.exe -s "https://api.203-0-113-10.nip.io/api/products?limit=1"
+```
+
+І відкрийте в браузері `https://203-0-113-10.nip.io` — має бути каталог, головна з каруселями
+й банерами.
+
+### 7.6. Закрити двері
+
+1. У вікні №1 (тунель) — **Ctrl+C**.
+2. На сервері підняти Postgres **без** demo-overlay, щоб прибрати публікацію порту:
+
+   ```bash
+   cd /opt/case-store
+   docker compose -f docker-compose.prod.yml --env-file .env.production up -d postgres
+   docker compose -f docker-compose.prod.yml --env-file .env.production ps postgres
+   ```
+
+   У колонці PORTS не має лишитись `127.0.0.1:5432->5432/tcp`. Назовні порт не був видний і
+   так, але лишати відкриті двері без потреби нема сенсу.
+
+Файл `docker-compose.demo.yml` не видаляйте — він не під git, переживе `git reset --hard`
+(крок 10) і знадобиться, якщо колись доведеться сідити повторно.
 
 ---
 
@@ -495,10 +630,18 @@ NODE_ENV=production ALLOW_PROD_SEED=true \
 
 ```
 Вітрина: https://203-0-113-10.nip.io
-Адмінка: https://admin.203-0-113-10.nip.io   (логін із кроку 7.3)
+Адмінка: https://admin.203-0-113-10.nip.io   (логін із кроку 7.4)
 ```
 
 Basic-auth навмисно немає — щоб глядач відкрив без тертя.
+
+> 🔓 **Що ви при цьому свідомо публікуєте.** Сідер створює демо-акаунти з паролями,
+> **надрукованими в [seed-guide.md](../seed-guide.md) §7**: `customer@store.com` /
+> `Customer123!`, `reviewer1…20@store.com` / `Reviewer123!`. Разом із відсутністю basic-auth
+> це означає: будь-хто, хто дізнається адресу, зайде як покупець і побачить демо-замовлення.
+> Для викидного демо без реальних даних це прийнятний розмін — але саме розмін, а не
+> «нічого страшного». Ваш власний пароль має лише адмін-акаунт із кроку 7.4. Тому
+> **знесіть сервер одразу після показу** (крок 11), а не «колись потім».
 
 ---
 
