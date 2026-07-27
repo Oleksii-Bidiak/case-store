@@ -27,9 +27,31 @@ const { execSync } = require('child_process');
 /**
  * Known, accepted-for-now advisories, keyed by the vulnerable package name.
  *
- * All six below are discharged by the same piece of work: NestJS 10 → 11 (which
+ * The first six are discharged by the same piece of work: NestJS 10 → 11 (which
  * pulls fixed platform-express/multer/serve-static/path-to-regexp/swagger→lodash)
  * plus nodemailer 8 → 9.
+ *
+ * THE ESLINT CHAIN (eslint, @eslint/config-array, @eslint/eslintrc, minimatch,
+ * brace-expansion) is a separate, newly published advisory — a DoS in
+ * `brace-expansion` reachable only by feeding a malicious glob to minimatch,
+ * i.e. by running ESLint. It is not reachable from the deployed API or either
+ * frontend: no runtime image contains ESLint (the Dockerfiles install
+ * --omit=dev). This is a NEW entry with its own deadline, not a renewal.
+ *
+ * It surfaces under `--omit=dev` only because of an npm quirk: npm links every
+ * workspace at the root as if it were a production dependency, so
+ * `packages/eslint-config` — a devDependency of the three apps — is walked as
+ * prod, dragging typescript-eslint → @typescript-eslint/utils →
+ * @eslint-community/eslint-utils → its peer `eslint` into the "production"
+ * tree. `npm explain eslint` prints the path.
+ *
+ * WHY IT IS NOT SIMPLY FIXED: the only fix npm offers is eslint 10, and
+ * `eslint-plugin-import` — including the latest 2.32.0 — still declares
+ * `peerDependencies.eslint: "^2 || … || ^9"`. That plugin enforces this repo's
+ * FSD import-direction rules (AGENTS.md), so it cannot just be dropped: the real
+ * fix is migrating to the maintained `eslint-plugin-import-x` fork and then
+ * taking eslint 10. That is a lint-config change with its own blast radius and
+ * is deliberately not bundled with a framework major.
  */
 const ALLOWLIST = {
   '@nestjs/platform-express': { task: 'TASK-304', expires: '2026-09-30' },
@@ -38,6 +60,13 @@ const ALLOWLIST = {
   'path-to-regexp': { task: 'TASK-304', expires: '2026-09-30' },
   lodash: { task: 'TASK-304', expires: '2026-09-30' },
   nodemailer: { task: 'TASK-304', expires: '2026-09-30' },
+
+  // Dev-only lint toolchain — see the note above. Needs eslint-plugin-import-x.
+  eslint: { task: 'TASK-343', expires: '2026-10-31' },
+  '@eslint/config-array': { task: 'TASK-343', expires: '2026-10-31' },
+  '@eslint/eslintrc': { task: 'TASK-343', expires: '2026-10-31' },
+  minimatch: { task: 'TASK-343', expires: '2026-10-31' },
+  'brace-expansion': { task: 'TASK-343', expires: '2026-10-31' },
 };
 
 const BLOCKING_SEVERITIES = new Set(['high', 'critical']);

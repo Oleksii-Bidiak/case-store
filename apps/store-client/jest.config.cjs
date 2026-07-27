@@ -18,17 +18,31 @@ const moduleNameMapper = {
 };
 
 /**
+ * Resolve a package to the exact copy THIS workspace would load at runtime, as
+ * an absolute POSIX path.
+ *
+ * Deliberately `require.resolve` rather than a hard-coded
+ * `<rootDir>/../node_modules/...`: whether a dependency lands in the app's own
+ * node_modules or is hoisted to the monorepo root is an npm decision that
+ * changes whenever the lockfile is re-resolved. The old hard-coded path silently
+ * became invalid the moment react hoisted to the root, and every component suite
+ * failed with "Could not locate module react/jsx-runtime". `require.resolve`
+ * follows Node's own lookup (app node_modules → root node_modules), so it keeps
+ * pointing at the single real copy either way.
+ */
+const resolveSingleCopy = (id) => require.resolve(id).replace(/\\/g, "/");
+
+/**
  * Component-project module mapper. Pins react/react-dom (and the JSX runtimes)
- * to the single store-client copy so the app code under test and react-dom used
- * by RTL share one React instance — otherwise hooks see a null dispatcher
- * (multiple react copies exist across the workspace + per-app node_modules).
+ * to ONE copy so the app code under test and the react-dom used by RTL share a
+ * single React instance — otherwise hooks see a null dispatcher.
  */
 const componentModuleNameMapper = {
-  "^react$": "<rootDir>/../node_modules/react",
-  "^react-dom$": "<rootDir>/../node_modules/react-dom",
-  "^react-dom/client$": "<rootDir>/../node_modules/react-dom/client",
-  "^react/jsx-runtime$": "<rootDir>/../node_modules/react/jsx-runtime",
-  "^react/jsx-dev-runtime$": "<rootDir>/../node_modules/react/jsx-dev-runtime",
+  "^react$": resolveSingleCopy("react"),
+  "^react-dom$": resolveSingleCopy("react-dom"),
+  "^react-dom/client$": resolveSingleCopy("react-dom/client"),
+  "^react/jsx-runtime$": resolveSingleCopy("react/jsx-runtime"),
+  "^react/jsx-dev-runtime$": resolveSingleCopy("react/jsx-dev-runtime"),
   ...moduleNameMapper,
 };
 

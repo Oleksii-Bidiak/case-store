@@ -10,8 +10,7 @@ import type { CookieOptions } from 'express';
  * refactor can extract a shared `guest-identity` primitive).
  */
 export type ResolvedWishlistIdentity =
-  | { type: 'user'; userId: string }
-  | { type: 'token'; token: string };
+  { type: 'user'; userId: string } | { type: 'token'; token: string };
 
 /** Name of the HttpOnly cookie that carries the guest wishlist token. */
 export const WISHLIST_TOKEN_COOKIE = 'wishlistToken';

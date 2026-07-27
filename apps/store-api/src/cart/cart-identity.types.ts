@@ -6,8 +6,7 @@ import type { CookieOptions } from 'express';
  * by the `@CartIdentity()` param decorator.
  */
 export type ResolvedCartIdentity =
-  | { type: 'user'; userId: string }
-  | { type: 'token'; token: string };
+  { type: 'user'; userId: string } | { type: 'token'; token: string };
 
 /** Name of the HttpOnly cookie that carries the guest cart token. */
 export const CART_TOKEN_COOKIE = 'cartToken';
