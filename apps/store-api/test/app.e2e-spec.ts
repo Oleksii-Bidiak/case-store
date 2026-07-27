@@ -8,10 +8,16 @@ import { PrismaService } from '../src/prisma';
 describe('AppController (e2e)', () => {
   let app: INestApplication;
 
-  // Mock PrismaService to prevent database connection errors in test environment
+  // Mock PrismaService to prevent database connection errors in test environment.
+  // `$queryRaw` is load-bearing: since TASK-305 /health pings the database and
+  // reports `error` + 503 when the ping fails. A mock without it made the endpoint
+  // report a down database, so this suite had been red — the check that was supposed
+  // to prove /health tells the truth was itself failing unnoticed while CI was red
+  // for other reasons (TASK-325/326).
   const prismaServiceMock = {
     $connect: jest.fn(),
     $disconnect: jest.fn(),
+    $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
   };
 
   beforeAll(async () => {
@@ -58,6 +64,22 @@ describe('AppController (e2e)', () => {
           expect(res.body.status).toBe('ok');
           expect(res.body).toHaveProperty('timestamp');
           expect(res.body).toHaveProperty('uptime');
+          expect(res.body.checks).toEqual({ database: 'up' });
+        });
+    });
+
+    // The point of TASK-305: a deploy with a broken database must NOT get a green
+    // smoke check. Without this case, /health could regress to a static "ok" and
+    // the suite above would still pass.
+    it('reports 503 and an error status when the database ping fails', async () => {
+      prismaServiceMock.$queryRaw.mockRejectedValueOnce(new Error('connection refused'));
+
+      await request(app.getHttpServer())
+        .get('/health')
+        .expect(503)
+        .expect((res) => {
+          expect(res.body.status).toBe('error');
+          expect(res.body.checks).toEqual({ database: 'down' });
         });
     });
   });
