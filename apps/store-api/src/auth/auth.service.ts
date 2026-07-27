@@ -22,6 +22,20 @@ const INVALID_RESET_TOKEN_MESSAGE = 'Invalid or expired reset token';
  * check failed (unknown email / wrong password / deactivated / soft-deleted). */
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid credentials';
 
+/** Generic error message for a refresh attempt that fails on a fact about OUR
+ * account rather than about the credential presented: no such token, or a token
+ * whose owner is banned / tombstoned (TASK-314).
+ *
+ * The other two refresh rejections stay distinct on purpose — "expired" and
+ * "token reuse detected" are facts about the token the caller just handed us,
+ * which the caller already holds; that is the same line
+ * {@link GOOGLE_EMAIL_UNVERIFIED_MESSAGE} draws. Account state sits on the far
+ * side of it: whoever holds a stolen refresh cookie must not learn from us that
+ * the account was banned or deleted — that the theft was noticed and acted on —
+ * nor which of the two it was, a difference `login()` already refuses to
+ * reveal about the same row. */
+const INVALID_REFRESH_TOKEN_MESSAGE = 'Invalid refresh token';
+
 /** Not a secret — a fixed input whose only purpose is to drive argon2's cost
  * function on the argon2-free rejection branches of `requestPasswordReset`
  * (TASK-273) and `login` (TASK-274). See {@link AuthService.burnTimingCost}. */
@@ -346,12 +360,15 @@ export class AuthService {
    * Security: If a revoked token is reused, this indicates a potential token theft.
    * Per RFC 6819 §5.2.2, we revoke ALL tokens for the user to terminate all sessions,
    * forcing re-authentication and preventing the attacker from continuing to use stolen tokens.
+   *
+   * The account check mirrors `login()` exactly (TASK-314): a session must never
+   * outlive the account it belongs to.
    */
   async refreshToken(oldToken: string): Promise<AuthTokens> {
     // Find the refresh token in the database
     const storedToken = await this.authRepository.findRefreshToken(oldToken);
     if (!storedToken) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException(INVALID_REFRESH_TOKEN_MESSAGE);
     }
 
     // Check if token is revoked — reuse detection
@@ -367,10 +384,19 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token has expired');
     }
 
-    // Reject deactivated (banned) accounts — a valid refresh token must not let
-    // a banned user keep rotating into fresh access tokens.
-    if (!storedToken.user.isActive) {
-      throw new UnauthorizedException('Account is deactivated');
+    // Reject deactivated (banned) AND soft-deleted (tombstoned) owners — the
+    // same pair of conditions login() and loginWithGoogleProfile() reject
+    // (TASK-314). Checking only `isActive` here let a tombstoned account keep
+    // rotating for the full refresh lifetime (7 days), where the access token
+    // alone would have expired in 15 minutes.
+    //
+    // deactivateUser/deleteUser do revoke every token, but this check must not
+    // lean on that: a token minted in the race window, a row flipped by
+    // SQL/seed/import, or a future flow that forgets the revoke would each
+    // reopen the gap. Rejection comes BEFORE revokeToken, so a refused attempt
+    // leaves the row untouched.
+    if (!storedToken.user.isActive || storedToken.user.deletedAt) {
+      throw new UnauthorizedException(INVALID_REFRESH_TOKEN_MESSAGE);
     }
 
     // Revoke the old refresh token (rotation)

@@ -937,18 +937,77 @@ describe('AuthService', () => {
       expect(authRepository.saveRefreshToken).toHaveBeenCalled();
     });
 
-    it('should throw UnauthorizedException when the token owner is deactivated', async () => {
+    // ─── TASK-314: the session must not outlive the account ──────────────────
+    //
+    // The audit of 2026-07-24 recorded "the session survives deactivation" as
+    // part of TASK-314. An access token buys 15 minutes; the refresh cycle
+    // bought a full 7 days, because this method checked `isActive` only —
+    // while `login()` and `loginWithGoogleProfile()` have always rejected BOTH
+    // a ban and a `deletedAt` tombstone. For an ADMIN row, that gap is the
+    // whole point of banning them.
+    //
+    // deactivateUser/deleteUser do call revokeAllUserTokens, but this method
+    // must not depend on another service having remembered to: a token issued
+    // in the race window, a row flipped by SQL/seed/import, or a future
+    // TASK-334 flow that skips that call would each reopen the hole.
+
+    it('refuses to rotate for a deactivated owner, with the generic message', async () => {
       authRepository.findRefreshToken.mockResolvedValue({
         ...mockRefreshTokenRecord,
         user: { ...mockUser, isActive: false },
       });
 
       await expect(service.refreshToken('refresh-token-value')).rejects.toThrow(
-        new UnauthorizedException('Account is deactivated'),
+        new UnauthorizedException('Invalid refresh token'),
       );
 
       // No rotation / new token issuance for a banned user.
       expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
+      expect(authRepository.revokeToken).not.toHaveBeenCalled();
+    });
+
+    it('refuses to rotate for a soft-deleted (tombstoned) owner', async () => {
+      authRepository.findRefreshToken.mockResolvedValue({
+        ...mockRefreshTokenRecord,
+        user: { ...mockUser, deletedAt: new Date() },
+      });
+
+      await expect(service.refreshToken('refresh-token-value')).rejects.toThrow(
+        new UnauthorizedException('Invalid refresh token'),
+      );
+
+      expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
+      expect(authRepository.revokeToken).not.toHaveBeenCalled();
+    });
+
+    it('answers a locked owner exactly as it answers an unknown token', async () => {
+      authRepository.findRefreshToken.mockResolvedValue(null);
+      const unknownTokenMessage = await service
+        .refreshToken('no-such-token')
+        .catch((err: Error) => err.message);
+
+      authRepository.findRefreshToken.mockResolvedValue({
+        ...mockRefreshTokenRecord,
+        user: { ...mockUser, isActive: false },
+      });
+      const bannedMessage = await service
+        .refreshToken('refresh-token-value')
+        .catch((err: Error) => err.message);
+
+      authRepository.findRefreshToken.mockResolvedValue({
+        ...mockRefreshTokenRecord,
+        user: { ...mockUser, deletedAt: new Date() },
+      });
+      const tombstonedMessage = await service
+        .refreshToken('refresh-token-value')
+        .catch((err: Error) => err.message);
+
+      // Whoever holds a stolen refresh cookie must not learn whether the
+      // account was banned or deleted — i.e. whether the theft was noticed and
+      // remediated. "Banned" must also stay indistinguishable from "deleted":
+      // login() refuses to reveal that difference, so this path cannot either.
+      expect(bannedMessage).toBe(unknownTokenMessage);
+      expect(tombstonedMessage).toBe(unknownTokenMessage);
     });
   });
 

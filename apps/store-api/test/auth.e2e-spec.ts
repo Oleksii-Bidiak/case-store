@@ -405,7 +405,12 @@ describe('AuthController (e2e)', () => {
         .set('Cookie', `refreshToken=${refreshJwt}`)
         .expect(401);
 
-      expect(response.body.message).toBe('Account is deactivated');
+      // TASK-314: the same generic message as an unknown token. A distinct
+      // "Account is deactivated" reply told whoever holds the cookie — the
+      // owner or a thief — that the account had been banned.
+      expect(response.body.message).toBe('Invalid refresh token');
+      expect(authRepositoryMock.revokeToken).not.toHaveBeenCalled();
+      expect(authRepositoryMock.saveRefreshToken).not.toHaveBeenCalled();
     });
   });
 
