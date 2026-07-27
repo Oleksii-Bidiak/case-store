@@ -8,11 +8,16 @@
     "packages/*"
   ],
   "scripts": {
+    "codegen": "npx prisma generate --schema=apps/store-api/prisma/schema.prisma && npm run generate:api",
+    "prebuild": "npm run codegen",
     "build": "npm run build -w apps/store-api -w apps/store-client -w apps/store-admin",
+    "prelint": "npm run codegen",
     "lint": "npm run lint -w apps/store-api -w apps/store-client -w apps/store-admin",
+    "pretest": "npm run codegen",
     "test": "npm run test -w apps/store-api -w apps/store-client -w apps/store-admin",
     "test:e2e": "npm run test:e2e -w apps/store-api",
     "test:e2e:pw": "playwright test",
+    "pretypecheck": "npm run codegen",
     "typecheck": "npm run typecheck -w apps/store-api -w apps/store-client -w apps/store-admin",
     "db:generate": "npm run prisma:generate -w apps/store-api",
     "db:push": "npm run prisma:push -w apps/store-api",
@@ -28,6 +33,39 @@
     "husky": "^9.1.7",
     "lint-staged": "^15.2.10",
     "typescript": "^6.0.3"
+  },
+  "//optionalDependencies": [
+    "TASK-326. These are NOT dependencies of any app — they are the Linux native",
+    "addons of lightningcss and @tailwindcss/oxide, pinned here so they survive in",
+    "package-lock.json no matter which OS ran `npm install`.",
+    "",
+    "WHY: both packages ship their addon as per-platform optional packages and pick",
+    "one at require() time. npm records only the ones installable on the resolving",
+    "machine. This lockfile is maintained on Windows, so it held only the",
+    "*-win32-x64-msvc entries; `npm ci` on ubuntu (which installs exactly what the",
+    "lockfile lists) then installed no addon at all and `next build` died with",
+    "'Cannot find module ../lightningcss.linux-x64-gnu.node'. Both frontend images",
+    "failed to build.",
+    "",
+    "optionalDependencies, NOT devDependencies: a devDependency whose `os` field",
+    "excludes the host aborts `npm install` on Windows with EBADPLATFORM. Optional",
+    "deps are allowed to be uninstallable and are simply skipped.",
+    "",
+    "VERSIONS MUST EQUAL THE PARENT'S EXACTLY (lightningcss@1.32.0,",
+    "@tailwindcss/oxide@4.2.4) — the addon is version-locked to its parent. When you",
+    "bump Tailwind or lightningcss, bump these in the same commit.",
+    "`scripts/check-lockfile-platforms.js` (CI job `lockfile-platform`) enforces both",
+    "the presence and the version match, because the one-off lockfile edit is not",
+    "durable: the next `npm install` on Windows would otherwise prune it silently.",
+    "",
+    "LIMITATION — only linux-x64-gnu is covered. NOT musl (alpine) and NOT arm64.",
+    "An ARM server (Hetzner CAX / Ampere, Apple Silicon) fails exactly the same way.",
+    "Deploy targets must stay x86-64 glibc until these are pinned too; the frontend",
+    "images use node:22-slim (Debian/glibc) for this reason. See docs/deploy/05-first-deploy.md."
+  ],
+  "optionalDependencies": {
+    "lightningcss-linux-x64-gnu": "1.32.0",
+    "@tailwindcss/oxide-linux-x64-gnu": "4.2.4"
   },
   "lint-staged": {
     "*.{json,md,yml,yaml}": [

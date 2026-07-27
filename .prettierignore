@@ -3,3 +3,11 @@
 # render them as 2, so its auto-padding misaligns every status row. Keep it
 # out of Prettier so the compact, drift-free table format stays put.
 BACKLOG.md
+
+# The OpenAPI contract is machine-written by `npm run swagger:export -w
+# apps/store-api` as `JSON.stringify(document, null, 2)` — no trailing newline.
+# lint-staged's `*.json` rule would reformat it on every commit, after which the
+# committed file could never again equal a fresh export, and the
+# `contract-freshness` CI job (which compares them byte-for-byte) would be red
+# forever. Never format this file by hand or by tool; regenerate it.
+apps/store-api/swagger.json

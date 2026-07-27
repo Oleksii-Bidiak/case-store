@@ -1,4 +1,16 @@
-# Auto-generated OpenAPI spec (produced by `npm run swagger:export`).
-# Consumed by Orval in store-client/store-admin; regenerate, do not commit.
-swagger.json
+# swagger.json is DELIBERATELY TRACKED (TASK-325) — do not re-ignore it.
+#
+# It is the OpenAPI contract Orval turns into the frontends' typed hooks, and
+# ~116 source files import that generated output. While the spec was ignored, a
+# clean checkout contained neither the spec nor the hooks, so the `typecheck` /
+# `lint` / `build` / `test-unit` CI jobs — which run a bare `npm ci` — could not
+# physically pass. They had been red since 2026-06-30.
+#
+# Regenerating it needs a booted AppModule and a live database, so it cannot be
+# rebuilt from a bare checkout either. Committing it also makes the contract a
+# reviewable artifact: an API change shows up as a spec diff in the PR.
+#
+# Regenerate with `npm run swagger:export -w apps/store-api` and commit the
+# result. The `contract-freshness` CI job fails the build if you forget.
+
 .env

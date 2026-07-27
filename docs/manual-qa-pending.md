@@ -1107,6 +1107,54 @@ blackhole-репро `next build` проти TCP-лісенера, що прий
 - [ ] **Тумбстоун обриває ротацію.** **Зроби:** те саме, але `deleted_at = now()` при
       `is_active = true`. **Має бути:** так само 401 `Invalid refresh token`. До TASK-314 цей
       випадок **пропускався** і видавав нову пару — для адмінського рядка це і був блокер.
+### TASK-325 — контракт OpenAPI у git; джоба `contract-freshness` (4)
+
+Локально перевірено: чистий `git archive` → `npm ci` → `npm run typecheck` / `lint` дають
+exit 0; `swagger:export` без змін коду дає нульовий diff; штучна правка DTO дає diff (тобто
+джоба почервоніла б). Нижче — те, що видно лише на живому CI.
+
+- [ ] **CI на develop нарешті зелений.** **Зроби:** дочекайся першого прогону `ci.yml` після
+      мержу. **Має бути:** `Type Check`, `Lint`, `Build`, `Unit Tests` — зелені. Вони були
+      червоні з 2026-06-30; це і є головний критерій приймання TASK-325.
+- [ ] **Node 22 не зламав тести.** **Зроби:** подивись логи тих самих чотирьох джоб.
+      **Має бути:** жодних падінь чи нових попереджень через стрибок 20 → 22 (решта джоб
+      лишилась на 20 навмисно). Особливо глянь `Unit Tests`.
+- [ ] **`contract-freshness` реально зелена на раннері.** **Зроби:** відкрий джобу
+      `OpenAPI Contract Freshness`. **Має бути:** `swagger:export` піднявся з одноразовим
+      Postgres, а крок порівняння вивів «OpenAPI contract is in sync…». Локально spec
+      побайтово збігся, але на ubuntu це перша перевірка.
+- [ ] 🔴 **ДЕПЛОЙНІ ДЖОБИ ЗЛАМАНІ — бракує `CSRF_SECRET`.** **Зроби:** прочитай кроки
+      `Export OpenAPI spec into the build context` у `deploy-staging` і `deploy-production`
+      (`ci.yml`). **Проблема:** `env.validation.ts` вимагає `CSRF_SECRET` (обов'язковий у
+      production, мін. 32 символи), а обидва кроки задають лише `JWT_SECRET` /
+      `JWT_REFRESH_SECRET` / `CORS_ORIGINS` при `NODE_ENV=production`. Відтворено локально:
+      `Invalid environment configuration: CSRF_SECRET must be at least 32 characters,
+    CSRF_SECRET is required in production` → крок падає → **падає весь деплой**.
+      **Треба:** додати `CSRF_SECRET` до env обох кроків (у новій джобі `contract-freshness`
+      це вже зроблено — беріть її за зразок). Свідомо не чіпав деплойні джоби в межах
+      TASK-325: вони поза скоупом задачі й найнебезпечніші у файлі.
+
+### TASK-326 — linux-бінарники в локфайлі; джоба `lockfile-platform` (4)
+
+Локально перевірено: `docker build --target build` обох фронт-образів із чистого
+`git archive`-контексту — до фікса падав із `Cannot find module
+'../lightningcss.linux-x64-gnu.node'`, після фікса обидва зібралися (exit 0). Нижче — те, що
+видно лише на живому CI/сервері.
+
+- [ ] **`lockfile-platform` зелена на раннері.** **Зроби:** відкрий джобу
+      `Lockfile Platform Coverage`. **Має бути:** два рядки `OK` і exit 0. Це чистий node без
+      залежностей, тож єдиний реальний ризик — шлях до скрипта.
+- [ ] **Образи фронтендів збираються в GHCR.** **Зроби:** перший `deploy-staging` після
+      мержу. **Має бути:** `Build & push store-client` і `store-admin` проходять. На раннері
+      `npm ci` виконується з тим самим локфайлом, але вперше — не на цій машині.
+- [ ] **Сервер саме x86-64.** **Зроби:** на VPS виконай `uname -m`. **Має бути:** `x86_64`.
+      Якщо `aarch64` — образи фронтендів **не зберуться** (припнуто лише `linux-x64-gnu`);
+      див. попередження в `docs/deploy/03-server.md` §1.
+- [ ] **Після наступного бампу Tailwind/lightningcss.** **Зроби:** коли оновлюватимеш
+      `tailwindcss` або `lightningcss`, виконай `npm install` і подивись
+      `node scripts/check-lockfile-platforms.js`. **Має бути:** або `OK`, або зрозумілий
+      `DRIFT`, який лагодиться синхронним бампом пінів у кореневих `optionalDependencies`.
+      Саме цей сценарій — тиха розсинхронізація версій — гейт і має ловити.
 
 ---
 

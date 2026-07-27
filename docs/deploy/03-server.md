@@ -20,6 +20,18 @@
 **Рекомендація:** Hetzner CX22 (2 vCPU / 4 ГБ / 40 ГБ), ~€4/міс кожен. DigitalOcean —
 рівноцінна заміна; решта інструкції від хостера не залежить. Ціни звіряйте на сайті.
 
+> ⚠️ **Тільки x86-64 (Intel/AMD). НЕ беріть ARM-тарифи** — Hetzner CAX11/CAX21 (Ampere),
+> AWS Graviton тощо. Вони дешевші й виглядають привабливо, але образи фронтендів там
+> **не зберуться**: у `package-lock.json` закріплені linux-бінарники
+> `lightningcss-linux-x64-gnu` і `@tailwindcss/oxide-linux-x64-gnu` (TASK-326) — саме
+> `x64` і саме `gnu` (glibc). На ARM `next build` упаде з
+> `Cannot find module '../lightningcss.linux-arm64-gnu.node'`.
+>
+> З тієї ж причини образи зібрані на `node:22-slim` (Debian/glibc), а не на Alpine (musl).
+> Хочете ARM або Alpine — спершу додайте відповідні пакети в `optionalDependencies`
+> кореневого `package.json` **і** в `scripts/check-lockfile-platforms.js`, інакше поломка
+> повернеться тихо. CX22 (x86-64) цієї проблеми не має.
+
 > Акаунт хостера — **на замовника** ([01-accounts-access.md](01-accounts-access.md) §1).
 > Це не формальність: панель хостера — майстер-ключ до сервера (§5).
 

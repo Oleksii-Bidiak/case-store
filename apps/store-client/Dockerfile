@@ -7,21 +7,44 @@
 #   docker build -f apps/store-client/Dockerfile \
 #     --build-arg NEXT_PUBLIC_API_URL=https://api.example.com ... -t store-client .
 #
-# BASE IMAGE — node:22-slim (Debian/glibc), NOT alpine. The committed
-# package-lock.json is generated on a glibc platform (CI runs ubuntu), so it
-# resolves the `*-linux-x64-gnu` native optional deps the Next build needs
-# (lightningcss, @tailwindcss/oxide, @next/swc). The matching `*-linux-musl`
-# binaries are NOT in the lockfile, so an alpine (musl) `npm ci` fails at
-# `next build` with "Cannot find module '../lightningcss.linux-x64-musl.node'".
-# glibc matches CI's platform and sidesteps that gap. Node 22 (not 20) because
-# the in-build codegen tool orval@8.9.1 requires node >=22.18.0; the native
-# addons above are napi (node-ABI-stable), so the bump is safe for them.
+# BASE IMAGE — node:22-slim (Debian/glibc), NOT alpine.
+#
+# NATIVE ADDONS — read this before changing the base image or the lockfile.
+# lightningcss and @tailwindcss/oxide ship their native addon as a set of
+# per-platform optional packages and choose one at require() time. npm records
+# in package-lock.json ONLY the ones that were installable on the machine that
+# resolved the tree. This lockfile is maintained on Windows.
+#
+# An earlier version of this comment claimed the lockfile "is generated on a
+# glibc platform (CI runs ubuntu)". That was never true, and the assumption is
+# exactly what hid the bug: the lockfile held only `*-win32-x64-msvc`, `npm ci`
+# here installed no addon at all, and this image could not be built —
+# `next build` failed with "Cannot find module
+# '../lightningcss.linux-x64-gnu.node'" (TASK-326).
+#
+# What actually makes it work now: root `optionalDependencies` in package.json
+# pin `lightningcss-linux-x64-gnu` and `@tailwindcss/oxide-linux-x64-gnu` to
+# their parents' exact versions, so those entries are in the lockfile regardless
+# of who ran `npm install`; and the `lockfile-platform` CI job
+# (scripts/check-lockfile-platforms.js) fails the build if they are ever pruned
+# or drift out of version sync. (@next/swc, @swc/core and sharp need no pin —
+# they already record every platform.)
+#
+# glibc, not musl: only the `-linux-x64-gnu` addons are pinned, so an alpine
+# `npm ci` would fail the same way looking for `…linux-x64-musl.node`. x86-64,
+# not arm64, for the same reason — an ARM host is NOT supported.
+#
+# Node 22 (not 20) because the in-build codegen tool orval requires
+# node >= 22.18.0; the addons above are napi (node-ABI-stable), so the bump is
+# safe for them.
 #
 # API CONTRACT — the Orval hooks under src/shared/api/generated are gitignored
-# codegen output. This image regenerates them from apps/store-api/swagger.json
-# (the OpenAPI contract produced by `npm run swagger:export -w apps/store-api`,
-# which needs a DB and so is a pipeline/pre-build step) — that file MUST be
-# present in the build context.
+# codegen output; this image regenerates them during the build. Their input,
+# apps/store-api/swagger.json, IS committed (TASK-325), so any checkout — and
+# therefore any build context — already carries it. Producing that spec needs a
+# booted AppModule and a live database, which is why it is committed rather than
+# generated here; `npm run swagger:export -w apps/store-api` refreshes it, and
+# the `contract-freshness` CI job fails if it drifts from the API source.
 #
 # NEXT_PUBLIC_* vars are baked into the JS bundle at `next build` time (NOT read
 # at container start), so they are passed as build-args. NEXT_PUBLIC_API_URL
