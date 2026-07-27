@@ -25,6 +25,7 @@
     "db:seed": "npm run prisma:seed -w apps/store-api",
     "db:studio": "npm run prisma:studio -w apps/store-api",
     "generate:api": "npm run generate:api -w apps/store-client -w apps/store-admin",
+    "env:check": "node scripts/env-check.js --audit",
     "prepare": "husky"
   },
   "devDependencies": {

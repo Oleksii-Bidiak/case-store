@@ -88,6 +88,21 @@ jobs:
           node-version: 22
       - run: node scripts/check-lockfile-platforms.js
 
+  # Four sources of truth describe the same environment variables — both compose
+  # files, .env.production.example, and env.validation.ts — and nothing used to
+  # compare them. That is how STORE_CLIENT_URL, REVALIDATE_SECRET and GOOGLE_* all
+  # ended up read by code but never delivered in production (TASK-324). Zero deps,
+  # so no `npm ci`.
+  env-drift:
+    name: Env Drift Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/env-check.js --audit
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
