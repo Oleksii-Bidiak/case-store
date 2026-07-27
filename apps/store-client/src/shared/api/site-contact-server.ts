@@ -1,4 +1,5 @@
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
+import { serverFetch } from "@/shared/api/server-fetch";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -18,7 +19,7 @@ export const SITE_CONTACT_TAG = "site-contact";
  */
 export async function fetchSiteContactSettings(): Promise<SiteContactSettingsEntity | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/site-contact`, {
+    const res = await serverFetch(`${API_BASE_URL}/api/site-contact`, {
       next: { revalidate: 3600, tags: [SITE_CONTACT_TAG] },
     });
     if (!res.ok) {

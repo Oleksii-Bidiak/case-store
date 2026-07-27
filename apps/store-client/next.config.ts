@@ -59,6 +59,29 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Per-page budget for static generation, in seconds (TASK-327).
+  //
+  // This is a SAFETY NET, NOT THE FIX. The real bound is on the requests
+  // themselves: every server-side call goes through `shared/api/server-fetch.ts`,
+  // which always attaches `AbortSignal.timeout(...)` (5 s by default). No page
+  // chains more than ~3 sequential server fetches, so a page whose API is dead
+  // or — worse — silent now finishes in ~15 s worst case and renders its
+  // fallback content, instead of hanging forever on a `fetch` with no deadline.
+  //
+  // Why the net still matters: this value only ever bounds the *rest* of
+  // rendering — cold Next.js startup, first-page compile, React work — on a
+  // small VPS where CPU is scarce and the 60 s default can be genuinely tight.
+  // 90 s buys that headroom while staying far above the ~15 s fetch ceiling, so
+  // an exceeded budget here means "the box is slow", never "an API hung".
+  //
+  // Why an over-run is so expensive, and where `after 3 attempts` comes from:
+  // on a timeout Next restarts the page's worker and retries it 3 times
+  // (hardcoded in next/dist/export/worker.js), then, with `prerenderEarlyExit`,
+  // kills the whole build — `Failed to build /<page> after 3 attempts`. With the
+  // root layout fetching SEO settings, one hanging API therefore took down
+  // *every* prerendered page, which is exactly how the storefront image stopped
+  // building.
+  staticPageGenerationTimeout: 90,
   // Produce a self-contained `.next/standalone` server for Docker (TASK-270).
   // `outputFileTracingRoot` points at the monorepo root (two levels up) so the
   // dependency trace reaches the hoisted root node_modules + packages/*; in a

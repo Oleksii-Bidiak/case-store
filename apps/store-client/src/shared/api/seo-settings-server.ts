@@ -1,4 +1,5 @@
 import type { SeoSettingsEntity } from "@/shared/api/generated/models";
+import { serverFetch } from "@/shared/api/server-fetch";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -18,7 +19,7 @@ export const SEO_SETTINGS_TAG = "seo-settings";
  */
 export async function fetchSeoSettings(): Promise<SeoSettingsEntity | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/seo-settings`, {
+    const res = await serverFetch(`${API_BASE_URL}/api/seo-settings`, {
       next: { tags: [SEO_SETTINGS_TAG] },
     });
     if (!res.ok) {

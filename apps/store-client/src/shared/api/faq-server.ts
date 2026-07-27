@@ -1,4 +1,5 @@
 import type { FaqItemEntity } from "@/shared/api/generated/models";
+import { serverFetch } from "@/shared/api/server-fetch";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -18,7 +19,7 @@ export const FAQ_TAG = "faq";
  */
 export async function fetchFaqItems(): Promise<FaqItemEntity[] | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/faq`, {
+    const res = await serverFetch(`${API_BASE_URL}/api/faq`, {
       next: { tags: [FAQ_TAG] },
     });
     if (!res.ok) {

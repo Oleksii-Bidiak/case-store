@@ -132,12 +132,63 @@ const tailwindTokenGuard = [
   },
 ];
 
+/**
+ * Raw-`fetch` guard (TASK-327).
+ *
+ * A build-time `fetch` without a deadline is not a style problem — it is a
+ * build-breaker. `fetch` has no default timeout, so an API that accepts the TCP
+ * connection and then goes silent (half-started container, paused VPS, API
+ * booting in parallel in CI) hangs the request forever. The root layout fetches
+ * SEO settings, so that hang propagates to every prerendered page: each one
+ * burns `staticPageGenerationTimeout`, is retried 3 times, and `next build` dies
+ * with `Failed to build /<page> after 3 attempts`. TASK-327 fixed 13 such call
+ * sites at once; this rule is what stops the 14th from being written.
+ *
+ * Scope: ALL of `src/**`, not just server files. That is deliberate rather than
+ * lazy — the storefront has no legitimate raw `fetch` anywhere:
+ *   - server code must use `serverFetch`, which attaches the deadline;
+ *   - browser code must use the Orval-generated hooks (AGENTS.md §API Contract:
+ *     "never write manual fetch/axios calls"), which carry auth refresh, the
+ *     response envelope and React Query caching.
+ * So one rule enforces both existing project rules, and there is no
+ * server/client heuristic (`'use client'`, file path) that could get it wrong.
+ * If a genuinely browser-only `fetch` is ever needed, narrow this by adding a
+ * `files`-scoped override — do not weaken the selector.
+ *
+ * Exceptions: `shared/api/server-fetch.ts` (the wrapper itself) and
+ * `shared/api/generated/**` (Orval output, never hand-edited).
+ */
+const rawFetchGuard = [
+  {
+    name: 'no-raw-fetch',
+    files: ['src/**/*.{ts,tsx,js,jsx,mjs,mts,cts}'],
+    ignores: ['src/shared/api/server-fetch.ts', 'src/shared/api/generated/**'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.name='fetch']",
+          message:
+            'Заборонений «голий» fetch: він не має таймауту за замовчуванням, тому мовчазний API вішає збірку (кожна сторінка вигорає staticPageGenerationTimeout, Next ретраїть її 3 рази і build падає з «Failed to build … after 3 attempts»). На сервері використовуй serverFetch з @/shared/api/server-fetch (він завжди накладає AbortSignal.timeout). У браузері — згенеровані Orval-хуки, а не ручний fetch.',
+        },
+        {
+          selector:
+            "CallExpression[callee.object.name=/^(globalThis|global|window|self)$/][callee.property.name='fetch']",
+          message:
+            'Заборонений «голий» fetch (через globalThis/window/global/self) — обхід того самого правила. На сервері використовуй serverFetch з @/shared/api/server-fetch, у браузері — згенеровані Orval-хуки.',
+        },
+      ],
+    },
+  },
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   ...fsdBoundaryRules,
   ...testOverrides,
   ...tailwindTokenGuard,
+  ...rawFetchGuard,
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
