@@ -123,7 +123,13 @@ export class CreateProductDto {
     description: 'Attribute values for this position, keyed by group axis name',
     example: { color: 'blue', pack: 'single' },
     required: false,
-    type: 'object',
+    // TASK-304: @nestjs/swagger 11 dropped the 'object' string literal from
+
+    // ApiPropertyOptions['type']; the Object constructor emits the identical
+
+    // "type": "object" in the OpenAPI schema.
+
+    type: Object,
     additionalProperties: { type: 'string' },
   })
   @IsOptional()

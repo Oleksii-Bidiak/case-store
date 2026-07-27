@@ -112,7 +112,13 @@ export class ProductEntity {
   @ApiProperty({
     description: 'Attribute values for this position within its group (keyed by group axis names)',
     example: { color: 'blue', pack: 'single' },
-    type: 'object',
+    // TASK-304: @nestjs/swagger 11 dropped the 'object' string literal from
+
+    // ApiPropertyOptions['type']; the Object constructor emits the identical
+
+    // "type": "object" in the OpenAPI schema.
+
+    type: Object,
     additionalProperties: true,
     required: false,
   })

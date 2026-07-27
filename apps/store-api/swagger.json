@@ -4,7 +4,6 @@
     "/health": {
       "get": {
         "operationId": "AppController_health",
-        "summary": "Health check (verifies the database is reachable)",
         "parameters": [],
         "responses": {
           "200": {
@@ -14,6 +13,7 @@
             "description": "The database is unreachable"
           }
         },
+        "summary": "Health check (verifies the database is reachable)",
         "tags": [
           "Health"
         ]
@@ -22,7 +22,6 @@
     "/api/auth/register": {
       "post": {
         "operationId": "AuthController_register",
-        "summary": "Register a new user (merges guest cart if cartToken cookie present)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -63,6 +62,7 @@
             "description": "Email already exists"
           }
         },
+        "summary": "Register a new user (merges guest cart if cartToken cookie present)",
         "tags": [
           "Auth"
         ]
@@ -71,7 +71,6 @@
     "/api/auth/login": {
       "post": {
         "operationId": "AuthController_login",
-        "summary": "Authenticate user (merges guest cart if cartToken cookie present)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -109,6 +108,7 @@
             "description": "Invalid credentials"
           }
         },
+        "summary": "Authenticate user (merges guest cart if cartToken cookie present)",
         "tags": [
           "Auth"
         ]
@@ -117,7 +117,6 @@
     "/api/auth/password-reset/request": {
       "post": {
         "operationId": "AuthController_requestPasswordReset",
-        "summary": "Request a password-reset link (existence-hiding, always 200)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -144,6 +143,7 @@
             "description": "Invalid email"
           }
         },
+        "summary": "Request a password-reset link (existence-hiding, always 200)",
         "tags": [
           "Auth"
         ]
@@ -152,7 +152,6 @@
     "/api/auth/password-reset/confirm": {
       "post": {
         "operationId": "AuthController_confirmPasswordReset",
-        "summary": "Confirm a password reset with a single-use token",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -182,6 +181,7 @@
             "description": "Invalid or expired reset token"
           }
         },
+        "summary": "Confirm a password reset with a single-use token",
         "tags": [
           "Auth"
         ]
@@ -190,7 +190,6 @@
     "/api/auth/refresh": {
       "post": {
         "operationId": "AuthController_refresh",
-        "summary": "Refresh access token",
         "parameters": [],
         "responses": {
           "200": {
@@ -218,20 +217,20 @@
             "description": "Invalid or expired refresh token"
           }
         },
-        "tags": [
-          "Auth"
-        ],
         "security": [
           {
             "refresh-token": []
           }
+        ],
+        "summary": "Refresh access token",
+        "tags": [
+          "Auth"
         ]
       }
     },
     "/api/auth/logout": {
       "post": {
         "operationId": "AuthController_logout",
-        "summary": "Logout user",
         "parameters": [],
         "responses": {
           "200": {
@@ -248,20 +247,20 @@
             "description": "Unauthorized"
           }
         },
-        "tags": [
-          "Auth"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Logout user",
+        "tags": [
+          "Auth"
         ]
       }
     },
     "/api/cart": {
       "get": {
         "operationId": "getCart",
-        "summary": "Get current cart (guest or user)",
         "parameters": [],
         "responses": {
           "200": {
@@ -286,18 +285,18 @@
             }
           }
         },
-        "tags": [
-          "Cart"
-        ],
         "security": [
           {
             "cart-token": []
           }
+        ],
+        "summary": "Get current cart (guest or user)",
+        "tags": [
+          "Cart"
         ]
       },
       "delete": {
         "operationId": "clearCart",
-        "summary": "Clear cart",
         "parameters": [],
         "responses": {
           "200": {
@@ -325,20 +324,20 @@
             "description": "Cart not found"
           }
         },
-        "tags": [
-          "Cart"
-        ],
         "security": [
           {
             "cart-token": []
           }
+        ],
+        "summary": "Clear cart",
+        "tags": [
+          "Cart"
         ]
       }
     },
     "/api/cart/items": {
       "post": {
         "operationId": "addToCart",
-        "summary": "Add item to cart",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -376,20 +375,20 @@
             "description": "Invalid input, out of stock, or inactive product"
           }
         },
-        "tags": [
-          "Cart"
-        ],
         "security": [
           {
             "cart-token": []
           }
+        ],
+        "summary": "Add item to cart",
+        "tags": [
+          "Cart"
         ]
       }
     },
     "/api/cart/items/{itemId}": {
       "patch": {
         "operationId": "updateCartItem",
-        "summary": "Update cart item quantity",
         "parameters": [
           {
             "name": "itemId",
@@ -440,18 +439,18 @@
             "description": "Cart item not found"
           }
         },
-        "tags": [
-          "Cart"
-        ],
         "security": [
           {
             "cart-token": []
           }
+        ],
+        "summary": "Update cart item quantity",
+        "tags": [
+          "Cart"
         ]
       },
       "delete": {
         "operationId": "removeCartItem",
-        "summary": "Remove item from cart",
         "parameters": [
           {
             "name": "itemId",
@@ -489,20 +488,20 @@
             "description": "Cart item not found"
           }
         },
-        "tags": [
-          "Cart"
-        ],
         "security": [
           {
             "cart-token": []
           }
+        ],
+        "summary": "Remove item from cart",
+        "tags": [
+          "Cart"
         ]
       }
     },
     "/api/cart/items/{itemId}/addons/{addonServiceId}": {
       "post": {
         "operationId": "selectCartItemAddon",
-        "summary": "Select an add-on service on a cart line",
         "parameters": [
           {
             "name": "itemId",
@@ -552,18 +551,18 @@
             "description": "Cart item not found"
           }
         },
-        "tags": [
-          "Cart"
-        ],
         "security": [
           {
             "cart-token": []
           }
+        ],
+        "summary": "Select an add-on service on a cart line",
+        "tags": [
+          "Cart"
         ]
       },
       "delete": {
         "operationId": "deselectCartItemAddon",
-        "summary": "Deselect an add-on service on a cart line",
         "parameters": [
           {
             "name": "itemId",
@@ -610,20 +609,20 @@
             "description": "Cart item not found"
           }
         },
-        "tags": [
-          "Cart"
-        ],
         "security": [
           {
             "cart-token": []
           }
+        ],
+        "summary": "Deselect an add-on service on a cart line",
+        "tags": [
+          "Cart"
         ]
       }
     },
     "/api/addon-services/resolved-for-product/{productId}": {
       "get": {
         "operationId": "addonServiceControllerResolveForProduct",
-        "summary": "Resolve the add-on services applicable to a product",
         "parameters": [
           {
             "name": "productId",
@@ -650,6 +649,7 @@
             "description": "Product not found"
           }
         },
+        "summary": "Resolve the add-on services applicable to a product",
         "tags": [
           "AddonServices"
         ]
@@ -658,7 +658,6 @@
     "/api/addon-services/admin/list": {
       "get": {
         "operationId": "addonServiceControllerAdminFindAll",
-        "summary": "List all add-on services including inactive (admin)",
         "parameters": [
           {
             "name": "page",
@@ -718,20 +717,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "AddonServices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List all add-on services including inactive (admin)",
+        "tags": [
+          "AddonServices"
         ]
       }
     },
     "/api/addon-services/admin/active": {
       "get": {
         "operationId": "addonServiceControllerAdminFindActive",
-        "summary": "List active add-on services for the admin pickers (admin)",
         "parameters": [],
         "responses": {
           "200": {
@@ -748,20 +747,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "AddonServices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List active add-on services for the admin pickers (admin)",
+        "tags": [
+          "AddonServices"
         ]
       }
     },
     "/api/addon-services/admin/{id}": {
       "get": {
         "operationId": "addonServiceControllerFindById",
-        "summary": "Get add-on service by ID (admin)",
         "parameters": [
           {
             "name": "id",
@@ -788,20 +787,20 @@
             "description": "Add-on service not found"
           }
         },
-        "tags": [
-          "AddonServices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get add-on service by ID (admin)",
+        "tags": [
+          "AddonServices"
         ]
       }
     },
     "/api/addon-services": {
       "post": {
         "operationId": "AdminAddonServiceController_create",
-        "summary": "Create an add-on service (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -831,20 +830,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "AddonServices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create an add-on service (admin)",
+        "tags": [
+          "AddonServices"
         ]
       }
     },
     "/api/addon-services/{id}": {
       "patch": {
         "operationId": "AdminAddonServiceController_update",
-        "summary": "Update an add-on service (admin)",
         "parameters": [
           {
             "name": "id",
@@ -881,20 +880,20 @@
             "description": "Add-on service not found"
           }
         },
-        "tags": [
-          "AddonServices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update an add-on service (admin)",
+        "tags": [
+          "AddonServices"
         ]
       }
     },
     "/api/addon-services/{id}/status": {
       "patch": {
         "operationId": "AdminAddonServiceController_setStatus",
-        "summary": "Toggle add-on service active status (admin)",
         "parameters": [
           {
             "name": "id",
@@ -931,20 +930,20 @@
             "description": "Add-on service not found"
           }
         },
-        "tags": [
-          "AddonServices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Toggle add-on service active status (admin)",
+        "tags": [
+          "AddonServices"
         ]
       }
     },
     "/api/addon-services/templates/category/{categoryId}": {
       "get": {
         "operationId": "addonServiceControllerGetCategoryTemplate",
-        "summary": "Get a category's OWN add-on template (no inheritance) (admin)",
         "parameters": [
           {
             "name": "categoryId",
@@ -971,18 +970,18 @@
             "description": "Category not found"
           }
         },
-        "tags": [
-          "AddonServices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get a category's OWN add-on template (no inheritance) (admin)",
+        "tags": [
+          "AddonServices"
         ]
       },
       "patch": {
         "operationId": "addonServiceControllerSetCategoryTemplate",
-        "summary": "Full-replace a category's own add-on template (admin)",
         "parameters": [
           {
             "name": "categoryId",
@@ -1022,20 +1021,20 @@
             "description": "Category not found"
           }
         },
-        "tags": [
-          "AddonServices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Full-replace a category's own add-on template (admin)",
+        "tags": [
+          "AddonServices"
         ]
       }
     },
     "/api/addon-services/templates/category/{categoryId}/resolved": {
       "get": {
         "operationId": "addonServiceControllerResolveCategoryTemplate",
-        "summary": "Resolve a category's effective template (own / inherited / none) (admin)",
         "parameters": [
           {
             "name": "categoryId",
@@ -1062,20 +1061,20 @@
             "description": "Category not found"
           }
         },
-        "tags": [
-          "AddonServices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Resolve a category's effective template (own / inherited / none) (admin)",
+        "tags": [
+          "AddonServices"
         ]
       }
     },
     "/api/addon-services/deltas/product/{productId}": {
       "get": {
         "operationId": "addonServiceControllerGetProductDeltas",
-        "summary": "List the add-on deltas declared on a product (admin)",
         "parameters": [
           {
             "name": "productId",
@@ -1102,20 +1101,20 @@
             "description": "Product not found"
           }
         },
-        "tags": [
-          "AddonServices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List the add-on deltas declared on a product (admin)",
+        "tags": [
+          "AddonServices"
         ]
       }
     },
     "/api/addon-services/deltas/product/{productId}/{addonServiceId}": {
       "put": {
         "operationId": "addonServiceControllerSetProductDelta",
-        "summary": "Upsert one add-on delta on a product (admin)",
         "parameters": [
           {
             "name": "productId",
@@ -1164,18 +1163,18 @@
             "description": "Product or add-on service not found"
           }
         },
-        "tags": [
-          "AddonServices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Upsert one add-on delta on a product (admin)",
+        "tags": [
+          "AddonServices"
         ]
       },
       "delete": {
         "operationId": "addonServiceControllerClearProductDelta",
-        "summary": "Clear one add-on delta, reverting the product to pure inheritance (admin)",
         "parameters": [
           {
             "name": "productId",
@@ -1204,20 +1203,20 @@
             "description": "Product not found"
           }
         },
-        "tags": [
-          "AddonServices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Clear one add-on delta, reverting the product to pure inheritance (admin)",
+        "tags": [
+          "AddonServices"
         ]
       }
     },
     "/api/categories/tree": {
       "get": {
         "operationId": "CategoryController_getCategoryTree",
-        "summary": "Get category tree",
         "parameters": [],
         "responses": {
           "200": {
@@ -1231,6 +1230,7 @@
             }
           }
         },
+        "summary": "Get category tree",
         "tags": [
           "Categories"
         ]
@@ -1239,7 +1239,6 @@
     "/api/categories/admin/tree": {
       "get": {
         "operationId": "categoryControllerGetAdminTree",
-        "summary": "Get full category tree including inactive (admin)",
         "parameters": [],
         "responses": {
           "200": {
@@ -1256,20 +1255,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Categories"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get full category tree including inactive (admin)",
+        "tags": [
+          "Categories"
         ]
       }
     },
     "/api/categories": {
       "get": {
         "operationId": "CategoryController_getRootCategories",
-        "summary": "List active root categories",
         "parameters": [
           {
             "name": "page",
@@ -1358,6 +1357,7 @@
             }
           }
         },
+        "summary": "List active root categories",
         "tags": [
           "Categories"
         ]
@@ -1366,7 +1366,6 @@
     "/api/categories/{slug}": {
       "get": {
         "operationId": "CategoryController_findBySlug",
-        "summary": "Get category by slug",
         "parameters": [
           {
             "name": "slug",
@@ -1393,6 +1392,7 @@
             "description": "Category not found or deactivated"
           }
         },
+        "summary": "Get category by slug",
         "tags": [
           "Categories"
         ]
@@ -1401,7 +1401,6 @@
     "/api/admin/categories/reorder": {
       "patch": {
         "operationId": "adminCategoryControllerReorder",
-        "summary": "Batch reorder / reparent categories (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -1437,20 +1436,20 @@
             "description": "CATEGORY_TREE_STALE — another admin changed the tree first"
           }
         },
-        "tags": [
-          "Categories"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Batch reorder / reparent categories (admin)",
+        "tags": [
+          "Categories"
         ]
       }
     },
     "/api/admin/categories/status": {
       "patch": {
         "operationId": "adminCategoryControllerSetStatusMany",
-        "summary": "Bulk activate / deactivate categories (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -1483,20 +1482,20 @@
             "description": "Unknown category id"
           }
         },
-        "tags": [
-          "Categories"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Bulk activate / deactivate categories (admin)",
+        "tags": [
+          "Categories"
         ]
       }
     },
     "/api/admin/categories": {
       "get": {
         "operationId": "AdminCategoryController_findAllWithProductCount",
-        "summary": "List all categories with product counts (admin)",
         "parameters": [
           {
             "name": "page",
@@ -1588,18 +1587,18 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Categories"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List all categories with product counts (admin)",
+        "tags": [
+          "Categories"
         ]
       },
       "post": {
         "operationId": "AdminCategoryController_create",
-        "summary": "Create a category (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -1629,20 +1628,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Categories"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create a category (admin)",
+        "tags": [
+          "Categories"
         ]
       }
     },
     "/api/admin/categories/{id}": {
       "get": {
         "operationId": "AdminCategoryController_findById",
-        "summary": "Get category by ID (admin)",
         "parameters": [
           {
             "name": "id",
@@ -1672,18 +1671,18 @@
             "description": "Category not found"
           }
         },
-        "tags": [
-          "Categories"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get category by ID (admin)",
+        "tags": [
+          "Categories"
         ]
       },
       "put": {
         "operationId": "AdminCategoryController_update",
-        "summary": "Update a category (admin)",
         "parameters": [
           {
             "name": "id",
@@ -1726,20 +1725,20 @@
             "description": "Category not found"
           }
         },
-        "tags": [
-          "Categories"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a category (admin)",
+        "tags": [
+          "Categories"
         ]
       }
     },
     "/api/admin/categories/{id}/deactivate": {
       "patch": {
         "operationId": "AdminCategoryController_deactivate",
-        "summary": "Deactivate a category (admin)",
         "parameters": [
           {
             "name": "id",
@@ -1769,20 +1768,20 @@
             "description": "Category not found"
           }
         },
-        "tags": [
-          "Categories"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Deactivate a category (admin)",
+        "tags": [
+          "Categories"
         ]
       }
     },
     "/api/admin/categories/{id}/activate": {
       "patch": {
         "operationId": "AdminCategoryController_activate",
-        "summary": "Activate a category (admin)",
         "parameters": [
           {
             "name": "id",
@@ -1812,20 +1811,20 @@
             "description": "Category not found"
           }
         },
-        "tags": [
-          "Categories"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Activate a category (admin)",
+        "tags": [
+          "Categories"
         ]
       }
     },
     "/api/slug-redirect": {
       "get": {
         "operationId": "SlugRedirectController_lookup",
-        "summary": "Resolve a renamed (dead) slug to its current live slug",
         "parameters": [
           {
             "name": "entity",
@@ -1834,13 +1833,13 @@
             "description": "Content model the dead slug belongs to",
             "schema": {
               "example": "PAGE",
+              "type": "string",
               "enum": [
                 "PAGE",
                 "BLOG_POST",
                 "PRODUCT",
                 "CATEGORY"
-              ],
-              "type": "string"
+              ]
             }
           },
           {
@@ -1873,6 +1872,7 @@
             "description": "No redirect recorded for this slug"
           }
         },
+        "summary": "Resolve a renamed (dead) slug to its current live slug",
         "tags": [
           "Slug Redirect"
         ]
@@ -1881,7 +1881,6 @@
     "/api/search": {
       "get": {
         "operationId": "search",
-        "summary": "Search products (paginated, typo-tolerant)",
         "parameters": [
           {
             "name": "q",
@@ -1928,6 +1927,7 @@
             }
           }
         },
+        "summary": "Search products (paginated, typo-tolerant)",
         "tags": [
           "Search"
         ]
@@ -1936,7 +1936,6 @@
     "/api/search/suggest": {
       "get": {
         "operationId": "searchSuggest",
-        "summary": "Autocomplete product suggestions",
         "parameters": [
           {
             "name": "q",
@@ -1961,6 +1960,7 @@
             }
           }
         },
+        "summary": "Autocomplete product suggestions",
         "tags": [
           "Search"
         ]
@@ -1969,7 +1969,6 @@
     "/api/admin/search/reindex": {
       "post": {
         "operationId": "reindexSearch",
-        "summary": "Rebuild the product search index (admin)",
         "parameters": [],
         "responses": {
           "200": {
@@ -1989,20 +1988,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Search"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Rebuild the product search index (admin)",
+        "tags": [
+          "Search"
         ]
       }
     },
     "/api/products": {
       "get": {
         "operationId": "ProductController_findAll",
-        "summary": "List products (active only)",
         "parameters": [
           {
             "name": "page",
@@ -2151,13 +2150,13 @@
             }
           }
         },
+        "summary": "List products (active only)",
         "tags": [
           "Products"
         ]
       },
       "post": {
         "operationId": "ProductController_create",
-        "summary": "Create a product (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -2187,20 +2186,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create a product (admin)",
+        "tags": [
+          "Products"
         ]
       }
     },
     "/api/products/admin/list": {
       "get": {
         "operationId": "productControllerAdminFindAll",
-        "summary": "List products including deactivated (admin)",
         "parameters": [
           {
             "name": "page",
@@ -2352,20 +2351,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List products including deactivated (admin)",
+        "tags": [
+          "Products"
         ]
       }
     },
     "/api/products/cards": {
       "get": {
         "operationId": "productControllerGetCards",
-        "summary": "Hydrate product cards by ids",
         "parameters": [
           {
             "name": "ids",
@@ -2390,6 +2389,7 @@
             }
           }
         },
+        "summary": "Hydrate product cards by ids",
         "tags": [
           "Products"
         ]
@@ -2398,7 +2398,6 @@
     "/api/products/{slug}": {
       "get": {
         "operationId": "ProductController_findBySlug",
-        "summary": "Get product by slug",
         "parameters": [
           {
             "name": "slug",
@@ -2425,6 +2424,7 @@
             "description": "Product not found"
           }
         },
+        "summary": "Get product by slug",
         "tags": [
           "Products"
         ]
@@ -2433,7 +2433,6 @@
     "/api/products/admin/preview/{slug}": {
       "get": {
         "operationId": "productControllerPreviewProductBySlug",
-        "summary": "Preview a product by slug, including deactivated (admin)",
         "parameters": [
           {
             "name": "slug",
@@ -2466,20 +2465,20 @@
             "description": "Product not found"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Preview a product by slug, including deactivated (admin)",
+        "tags": [
+          "Products"
         ]
       }
     },
     "/api/products/admin/{id}": {
       "get": {
         "operationId": "productControllerFindById",
-        "summary": "Get product by ID (admin)",
         "parameters": [
           {
             "name": "id",
@@ -2509,20 +2508,20 @@
             "description": "Product not found"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get product by ID (admin)",
+        "tags": [
+          "Products"
         ]
       }
     },
     "/api/products/{id}": {
       "put": {
         "operationId": "ProductController_update",
-        "summary": "Update a product (admin)",
         "parameters": [
           {
             "name": "id",
@@ -2565,18 +2564,18 @@
             "description": "Product not found"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a product (admin)",
+        "tags": [
+          "Products"
         ]
       },
       "delete": {
         "operationId": "deleteProduct",
-        "summary": "Delete a product (admin, soft-delete)",
         "parameters": [
           {
             "name": "id",
@@ -2599,20 +2598,20 @@
             "description": "Product not found"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Delete a product (admin, soft-delete)",
+        "tags": [
+          "Products"
         ]
       }
     },
     "/api/products/group/{groupId}/device-compat": {
       "put": {
         "operationId": "productControllerUpdateGroupDeviceCompat",
-        "summary": "Apply device compatibility to a whole group (admin)",
         "parameters": [
           {
             "name": "groupId",
@@ -2655,20 +2654,20 @@
             "description": "Product group not found or has no positions"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Apply device compatibility to a whole group (admin)",
+        "tags": [
+          "Products"
         ]
       }
     },
     "/api/products/{id}/device-compat": {
       "put": {
         "operationId": "productControllerUpdateDeviceCompat",
-        "summary": "Set device compatibility for a product (admin)",
         "parameters": [
           {
             "name": "id",
@@ -2711,20 +2710,20 @@
             "description": "Product not found"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Set device compatibility for a product (admin)",
+        "tags": [
+          "Products"
         ]
       }
     },
     "/api/products/{id}/specs": {
       "put": {
         "operationId": "updateProductSpecs",
-        "summary": "Replace a product's structured specs (admin)",
         "parameters": [
           {
             "name": "id",
@@ -2767,20 +2766,20 @@
             "description": "Product not found"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Replace a product's structured specs (admin)",
+        "tags": [
+          "Products"
         ]
       }
     },
     "/api/products/{id}/deactivate": {
       "patch": {
         "operationId": "ProductController_deactivate",
-        "summary": "Deactivate a product (admin)",
         "parameters": [
           {
             "name": "id",
@@ -2810,20 +2809,20 @@
             "description": "Product not found"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Deactivate a product (admin)",
+        "tags": [
+          "Products"
         ]
       }
     },
     "/api/products/{id}/activate": {
       "patch": {
         "operationId": "ProductController_activate",
-        "summary": "Activate a product (admin)",
         "parameters": [
           {
             "name": "id",
@@ -2853,20 +2852,20 @@
             "description": "Product not found"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Activate a product (admin)",
+        "tags": [
+          "Products"
         ]
       }
     },
     "/api/products/{productId}/images": {
       "get": {
         "operationId": "productImageControllerList",
-        "summary": "List product images (admin)",
         "parameters": [
           {
             "name": "productId",
@@ -2899,18 +2898,18 @@
             "description": "Product not found"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List product images (admin)",
+        "tags": [
+          "Products"
         ]
       },
       "post": {
         "operationId": "productImageControllerUpload",
-        "summary": "Upload product images (admin)",
         "parameters": [
           {
             "name": "productId",
@@ -2974,20 +2973,20 @@
             "description": "File too large"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Upload product images (admin)",
+        "tags": [
+          "Products"
         ]
       }
     },
     "/api/products/{productId}/images/reorder": {
       "patch": {
         "operationId": "productImageControllerReorder",
-        "summary": "Reorder product images (admin)",
         "parameters": [
           {
             "name": "productId",
@@ -3026,20 +3025,20 @@
             "description": "Product not found"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Reorder product images (admin)",
+        "tags": [
+          "Products"
         ]
       }
     },
     "/api/products/{productId}/images/{imageId}": {
       "delete": {
         "operationId": "productImageControllerDelete",
-        "summary": "Delete a product image (admin)",
         "parameters": [
           {
             "name": "productId",
@@ -3074,20 +3073,20 @@
             "description": "Image or product not found"
           }
         },
-        "tags": [
-          "Products"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Delete a product image (admin)",
+        "tags": [
+          "Products"
         ]
       }
     },
     "/api/brands": {
       "get": {
         "operationId": "BrandController_findAll",
-        "summary": "List active brands",
         "parameters": [],
         "responses": {
           "200": {
@@ -3101,13 +3100,13 @@
             }
           }
         },
+        "summary": "List active brands",
         "tags": [
           "Brands"
         ]
       },
       "post": {
         "operationId": "AdminBrandController_create",
-        "summary": "Create a brand (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -3140,20 +3139,20 @@
             "description": "A brand with this slug already exists"
           }
         },
-        "tags": [
-          "Brands"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create a brand (admin)",
+        "tags": [
+          "Brands"
         ]
       }
     },
     "/api/brands/admin/list": {
       "get": {
         "operationId": "brandControllerAdminFindAll",
-        "summary": "List all brands including inactive (admin)",
         "parameters": [
           {
             "name": "page",
@@ -3213,20 +3212,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Brands"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List all brands including inactive (admin)",
+        "tags": [
+          "Brands"
         ]
       }
     },
     "/api/brands/admin/{id}": {
       "get": {
         "operationId": "brandControllerFindById",
-        "summary": "Get brand by ID (admin)",
         "parameters": [
           {
             "name": "id",
@@ -3256,20 +3255,20 @@
             "description": "Brand not found"
           }
         },
-        "tags": [
-          "Brands"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get brand by ID (admin)",
+        "tags": [
+          "Brands"
         ]
       }
     },
     "/api/brands/{id}": {
       "patch": {
         "operationId": "AdminBrandController_update",
-        "summary": "Update a brand (admin)",
         "parameters": [
           {
             "name": "id",
@@ -3315,20 +3314,20 @@
             "description": "A brand with this slug already exists"
           }
         },
-        "tags": [
-          "Brands"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a brand (admin)",
+        "tags": [
+          "Brands"
         ]
       }
     },
     "/api/brands/{id}/status": {
       "patch": {
         "operationId": "AdminBrandController_setStatus",
-        "summary": "Toggle brand active status (admin)",
         "parameters": [
           {
             "name": "id",
@@ -3368,20 +3367,20 @@
             "description": "Brand not found"
           }
         },
-        "tags": [
-          "Brands"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Toggle brand active status (admin)",
+        "tags": [
+          "Brands"
         ]
       }
     },
     "/api/device-brands": {
       "get": {
         "operationId": "deviceControllerFindBrands",
-        "summary": "List active device brands",
         "parameters": [],
         "responses": {
           "200": {
@@ -3395,6 +3394,7 @@
             }
           }
         },
+        "summary": "List active device brands",
         "tags": [
           "Devices"
         ]
@@ -3403,7 +3403,6 @@
     "/api/device-models": {
       "get": {
         "operationId": "deviceControllerFindModels",
-        "summary": "List active device models",
         "parameters": [
           {
             "name": "page",
@@ -3470,6 +3469,7 @@
             }
           }
         },
+        "summary": "List active device models",
         "tags": [
           "Devices"
         ]
@@ -3478,7 +3478,6 @@
     "/api/admin/devices/brands": {
       "get": {
         "operationId": "adminDeviceControllerFindBrands",
-        "summary": "List device brands with model counts (admin)",
         "parameters": [],
         "responses": {
           "200": {
@@ -3495,18 +3494,18 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Devices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List device brands with model counts (admin)",
+        "tags": [
+          "Devices"
         ]
       },
       "post": {
         "operationId": "AdminDeviceController_createBrand",
-        "summary": "Create a device brand (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -3533,20 +3532,20 @@
             "description": "Invalid input data"
           }
         },
-        "tags": [
-          "Devices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create a device brand (admin)",
+        "tags": [
+          "Devices"
         ]
       }
     },
     "/api/admin/devices/brands/reorder": {
       "patch": {
         "operationId": "adminDeviceControllerReorderBrands",
-        "summary": "Reorder device brands (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -3582,9 +3581,6 @@
             "description": "REORDER_STALE — another admin changed the list first"
           }
         },
-        "tags": [
-          "Devices"
-        ],
         "security": [
           {
             "access-token": []
@@ -3592,13 +3588,16 @@
           {
             "access-token": []
           }
+        ],
+        "summary": "Reorder device brands (admin)",
+        "tags": [
+          "Devices"
         ]
       }
     },
     "/api/admin/devices/brands/{id}": {
       "get": {
         "operationId": "AdminDeviceController_findBrandById",
-        "summary": "Get device brand by ID (admin)",
         "parameters": [
           {
             "name": "id",
@@ -3625,18 +3624,18 @@
             "description": "Device brand not found"
           }
         },
-        "tags": [
-          "Devices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get device brand by ID (admin)",
+        "tags": [
+          "Devices"
         ]
       },
       "put": {
         "operationId": "AdminDeviceController_updateBrand",
-        "summary": "Update a device brand (admin)",
         "parameters": [
           {
             "name": "id",
@@ -3673,20 +3672,20 @@
             "description": "Device brand not found"
           }
         },
-        "tags": [
-          "Devices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a device brand (admin)",
+        "tags": [
+          "Devices"
         ]
       }
     },
     "/api/admin/devices/brands/{id}/activate": {
       "patch": {
         "operationId": "AdminDeviceController_activateBrand",
-        "summary": "Activate a device brand (admin)",
         "parameters": [
           {
             "name": "id",
@@ -3713,20 +3712,20 @@
             "description": "Device brand not found"
           }
         },
-        "tags": [
-          "Devices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Activate a device brand (admin)",
+        "tags": [
+          "Devices"
         ]
       }
     },
     "/api/admin/devices/brands/{id}/deactivate": {
       "patch": {
         "operationId": "AdminDeviceController_deactivateBrand",
-        "summary": "Deactivate a device brand (admin)",
         "parameters": [
           {
             "name": "id",
@@ -3753,20 +3752,20 @@
             "description": "Device brand not found"
           }
         },
-        "tags": [
-          "Devices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Deactivate a device brand (admin)",
+        "tags": [
+          "Devices"
         ]
       }
     },
     "/api/admin/devices/models": {
       "get": {
         "operationId": "adminDeviceControllerFindModels",
-        "summary": "List device models (admin, paginated)",
         "parameters": [
           {
             "name": "page",
@@ -3836,18 +3835,18 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Devices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List device models (admin, paginated)",
+        "tags": [
+          "Devices"
         ]
       },
       "post": {
         "operationId": "AdminDeviceController_createModel",
-        "summary": "Create a device model (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -3877,20 +3876,20 @@
             "description": "Device brand not found"
           }
         },
-        "tags": [
-          "Devices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create a device model (admin)",
+        "tags": [
+          "Devices"
         ]
       }
     },
     "/api/admin/devices/models/{id}": {
       "get": {
         "operationId": "AdminDeviceController_findModelById",
-        "summary": "Get device model by ID (admin)",
         "parameters": [
           {
             "name": "id",
@@ -3917,18 +3916,18 @@
             "description": "Device model not found"
           }
         },
-        "tags": [
-          "Devices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get device model by ID (admin)",
+        "tags": [
+          "Devices"
         ]
       },
       "put": {
         "operationId": "AdminDeviceController_updateModel",
-        "summary": "Update a device model (admin)",
         "parameters": [
           {
             "name": "id",
@@ -3965,20 +3964,20 @@
             "description": "Device model not found"
           }
         },
-        "tags": [
-          "Devices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a device model (admin)",
+        "tags": [
+          "Devices"
         ]
       }
     },
     "/api/admin/devices/models/{id}/activate": {
       "patch": {
         "operationId": "AdminDeviceController_activateModel",
-        "summary": "Activate a device model (admin)",
         "parameters": [
           {
             "name": "id",
@@ -4005,20 +4004,20 @@
             "description": "Device model not found"
           }
         },
-        "tags": [
-          "Devices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Activate a device model (admin)",
+        "tags": [
+          "Devices"
         ]
       }
     },
     "/api/admin/devices/models/{id}/deactivate": {
       "patch": {
         "operationId": "AdminDeviceController_deactivateModel",
-        "summary": "Deactivate a device model (admin)",
         "parameters": [
           {
             "name": "id",
@@ -4045,20 +4044,20 @@
             "description": "Device model not found"
           }
         },
-        "tags": [
-          "Devices"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Deactivate a device model (admin)",
+        "tags": [
+          "Devices"
         ]
       }
     },
     "/api/categories/{categoryId}/attribute-definitions": {
       "get": {
         "operationId": "attributeDefinitionControllerFindByCategory",
-        "summary": "List a category's own characteristic templates (admin)",
         "parameters": [
           {
             "name": "categoryId",
@@ -4088,18 +4087,18 @@
             "description": "Category not found"
           }
         },
-        "tags": [
-          "Attribute Definitions"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List a category's own characteristic templates (admin)",
+        "tags": [
+          "Attribute Definitions"
         ]
       },
       "post": {
         "operationId": "attributeDefinitionControllerCreate",
-        "summary": "Create a characteristic template on a category (admin)",
         "parameters": [
           {
             "name": "categoryId",
@@ -4142,20 +4141,20 @@
             "description": "Duplicate key for this category"
           }
         },
-        "tags": [
-          "Attribute Definitions"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create a characteristic template on a category (admin)",
+        "tags": [
+          "Attribute Definitions"
         ]
       }
     },
     "/api/categories/{categoryId}/effective-attribute-definitions": {
       "get": {
         "operationId": "attributeDefinitionControllerFindEffective",
-        "summary": "List a category's effective (own + inherited) templates (admin)",
         "parameters": [
           {
             "name": "categoryId",
@@ -4182,20 +4181,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Attribute Definitions"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List a category's effective (own + inherited) templates (admin)",
+        "tags": [
+          "Attribute Definitions"
         ]
       }
     },
     "/api/categories/{categoryId}/attribute-definitions/reorder": {
       "patch": {
         "operationId": "attributeDefinitionControllerReorder",
-        "summary": "Reorder a category's characteristic templates (admin)",
         "parameters": [
           {
             "name": "categoryId",
@@ -4241,20 +4240,20 @@
             "description": "REORDER_STALE — another admin added a template to this category first"
           }
         },
-        "tags": [
-          "Attribute Definitions"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Reorder a category's characteristic templates (admin)",
+        "tags": [
+          "Attribute Definitions"
         ]
       }
     },
     "/api/attribute-definitions/{id}": {
       "patch": {
         "operationId": "attributeDefinitionControllerUpdate",
-        "summary": "Update a characteristic template (admin)",
         "parameters": [
           {
             "name": "id",
@@ -4300,18 +4299,18 @@
             "description": "Duplicate key for this category"
           }
         },
-        "tags": [
-          "Attribute Definitions"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a characteristic template (admin)",
+        "tags": [
+          "Attribute Definitions"
         ]
       },
       "delete": {
         "operationId": "attributeDefinitionControllerDelete",
-        "summary": "Delete a characteristic template (admin)",
         "parameters": [
           {
             "name": "id",
@@ -4341,20 +4340,20 @@
             "description": "Characteristic not found"
           }
         },
-        "tags": [
-          "Attribute Definitions"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Delete a characteristic template (admin)",
+        "tags": [
+          "Attribute Definitions"
         ]
       }
     },
     "/api/categories/{id}/filterable-specs": {
       "get": {
         "operationId": "categoryControllerGetFilterableSpecs",
-        "summary": "List a category's filterable spec facets",
         "parameters": [
           {
             "name": "id",
@@ -4378,6 +4377,7 @@
             }
           }
         },
+        "summary": "List a category's filterable spec facets",
         "tags": [
           "Categories"
         ]
@@ -4386,7 +4386,6 @@
     "/api/wishlist": {
       "get": {
         "operationId": "getWishlist",
-        "summary": "Get current wishlist (guest or user)",
         "parameters": [],
         "responses": {
           "200": {
@@ -4411,20 +4410,20 @@
             }
           }
         },
-        "tags": [
-          "Wishlist"
-        ],
         "security": [
           {
             "wishlist-token": []
           }
+        ],
+        "summary": "Get current wishlist (guest or user)",
+        "tags": [
+          "Wishlist"
         ]
       }
     },
     "/api/wishlist/items": {
       "post": {
         "operationId": "addToWishlist",
-        "summary": "Add product to wishlist",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -4465,20 +4464,20 @@
             "description": "Product not found"
           }
         },
-        "tags": [
-          "Wishlist"
-        ],
         "security": [
           {
             "wishlist-token": []
           }
+        ],
+        "summary": "Add product to wishlist",
+        "tags": [
+          "Wishlist"
         ]
       }
     },
     "/api/wishlist/toggle": {
       "post": {
         "operationId": "toggleWishlist",
-        "summary": "Toggle product in wishlist",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -4519,20 +4518,20 @@
             "description": "Product not found"
           }
         },
-        "tags": [
-          "Wishlist"
-        ],
         "security": [
           {
             "wishlist-token": []
           }
+        ],
+        "summary": "Toggle product in wishlist",
+        "tags": [
+          "Wishlist"
         ]
       }
     },
     "/api/wishlist/items/{productId}": {
       "delete": {
         "operationId": "removeFromWishlist",
-        "summary": "Remove product from wishlist",
         "parameters": [
           {
             "name": "productId",
@@ -4567,20 +4566,20 @@
             }
           }
         },
-        "tags": [
-          "Wishlist"
-        ],
         "security": [
           {
             "wishlist-token": []
           }
+        ],
+        "summary": "Remove product from wishlist",
+        "tags": [
+          "Wishlist"
         ]
       }
     },
     "/api/users/me": {
       "get": {
         "operationId": "UserController_getProfile",
-        "summary": "Get current user profile",
         "parameters": [],
         "responses": {
           "200": {
@@ -4597,18 +4596,18 @@
             "description": "Unauthorized"
           }
         },
-        "tags": [
-          "Users"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get current user profile",
+        "tags": [
+          "Users"
         ]
       },
       "put": {
         "operationId": "UserController_updateProfile",
-        "summary": "Update current user profile",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -4638,20 +4637,20 @@
             "description": "Unauthorized"
           }
         },
-        "tags": [
-          "Users"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update current user profile",
+        "tags": [
+          "Users"
         ]
       }
     },
     "/api/users": {
       "get": {
         "operationId": "UserController_findAll",
-        "summary": "List all users (admin)",
         "parameters": [
           {
             "name": "page",
@@ -4682,11 +4681,11 @@
             "description": "Filter by user role",
             "schema": {
               "example": "CUSTOMER",
+              "type": "string",
               "enum": [
                 "CUSTOMER",
                 "ADMIN"
-              ],
-              "type": "string"
+              ]
             }
           },
           {
@@ -4750,20 +4749,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Users"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List all users (admin)",
+        "tags": [
+          "Users"
         ]
       }
     },
     "/api/users/{id}": {
       "get": {
         "operationId": "UserController_findById",
-        "summary": "Get user by ID (admin)",
         "parameters": [
           {
             "name": "id",
@@ -4793,18 +4792,18 @@
             "description": "User not found"
           }
         },
-        "tags": [
-          "Users"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get user by ID (admin)",
+        "tags": [
+          "Users"
         ]
       },
       "delete": {
         "operationId": "deleteUser",
-        "summary": "Delete user (admin, soft-delete)",
         "parameters": [
           {
             "name": "id",
@@ -4827,20 +4826,20 @@
             "description": "User not found"
           }
         },
-        "tags": [
-          "Users"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Delete user (admin, soft-delete)",
+        "tags": [
+          "Users"
         ]
       }
     },
     "/api/users/{id}/admin-card": {
       "get": {
         "operationId": "getUserAdminCard",
-        "summary": "Get enriched customer card (LTV, orders, reviews, coupons, contact messages)",
         "parameters": [
           {
             "name": "id",
@@ -4870,20 +4869,20 @@
             "description": "User not found"
           }
         },
-        "tags": [
-          "Users"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get enriched customer card (LTV, orders, reviews, coupons, contact messages)",
+        "tags": [
+          "Users"
         ]
       }
     },
     "/api/users/{id}/deactivate": {
       "patch": {
         "operationId": "UserController_deactivateUser",
-        "summary": "Deactivate user (admin)",
         "parameters": [
           {
             "name": "id",
@@ -4913,20 +4912,20 @@
             "description": "User not found"
           }
         },
-        "tags": [
-          "Users"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Deactivate user (admin)",
+        "tags": [
+          "Users"
         ]
       }
     },
     "/api/users/{id}/activate": {
       "patch": {
         "operationId": "UserController_activateUser",
-        "summary": "Activate user (admin)",
         "parameters": [
           {
             "name": "id",
@@ -4956,20 +4955,20 @@
             "description": "User not found"
           }
         },
-        "tags": [
-          "Users"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Activate user (admin)",
+        "tags": [
+          "Users"
         ]
       }
     },
     "/api/product-groups": {
       "get": {
         "operationId": "ProductGroupController_findAll",
-        "summary": "List all product groups (admin)",
         "parameters": [],
         "responses": {
           "200": {
@@ -4986,18 +4985,18 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Product Groups"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List all product groups (admin)",
+        "tags": [
+          "Product Groups"
         ]
       },
       "post": {
         "operationId": "ProductGroupController_create",
-        "summary": "Create a product group (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -5027,20 +5026,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Product Groups"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create a product group (admin)",
+        "tags": [
+          "Product Groups"
         ]
       }
     },
     "/api/product-groups/{id}": {
       "get": {
         "operationId": "ProductGroupController_findById",
-        "summary": "Get a product group with axes and positions (admin)",
         "parameters": [
           {
             "name": "id",
@@ -5070,18 +5069,18 @@
             "description": "Product group not found"
           }
         },
-        "tags": [
-          "Product Groups"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get a product group with axes and positions (admin)",
+        "tags": [
+          "Product Groups"
         ]
       },
       "patch": {
         "operationId": "ProductGroupController_update",
-        "summary": "Update a product group (admin)",
         "parameters": [
           {
             "name": "id",
@@ -5124,20 +5123,20 @@
             "description": "Product group not found"
           }
         },
-        "tags": [
-          "Product Groups"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a product group (admin)",
+        "tags": [
+          "Product Groups"
         ]
       }
     },
     "/api/pages": {
       "get": {
         "operationId": "PageController_findAll",
-        "summary": "List published pages",
         "parameters": [
           {
             "name": "page",
@@ -5174,6 +5173,7 @@
             }
           }
         },
+        "summary": "List published pages",
         "tags": [
           "Pages"
         ]
@@ -5182,7 +5182,6 @@
     "/api/pages/{slug}": {
       "get": {
         "operationId": "PageController_findBySlug",
-        "summary": "Get a published page by slug",
         "parameters": [
           {
             "name": "slug",
@@ -5209,6 +5208,7 @@
             "description": "Page not found or not published"
           }
         },
+        "summary": "Get a published page by slug",
         "tags": [
           "Pages"
         ]
@@ -5217,7 +5217,6 @@
     "/api/admin/pages": {
       "get": {
         "operationId": "AdminPageController_findAll",
-        "summary": "List all pages — published + drafts (admin)",
         "parameters": [
           {
             "name": "page",
@@ -5248,12 +5247,12 @@
             "description": "Filter by publish status (DRAFT, SCHEDULED, PUBLISHED)",
             "schema": {
               "example": "PUBLISHED",
+              "type": "string",
               "enum": [
                 "DRAFT",
                 "SCHEDULED",
                 "PUBLISHED"
-              ],
-              "type": "string"
+              ]
             }
           }
         ],
@@ -5272,18 +5271,18 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Pages"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List all pages — published + drafts (admin)",
+        "tags": [
+          "Pages"
         ]
       },
       "post": {
         "operationId": "AdminPageController_create",
-        "summary": "Create a page (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -5316,20 +5315,20 @@
             "description": "Slug is already taken"
           }
         },
-        "tags": [
-          "Pages"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create a page (admin)",
+        "tags": [
+          "Pages"
         ]
       }
     },
     "/api/admin/pages/{id}": {
       "get": {
         "operationId": "AdminPageController_findById",
-        "summary": "Get a page by ID (admin)",
         "parameters": [
           {
             "name": "id",
@@ -5359,18 +5358,18 @@
             "description": "Page not found"
           }
         },
-        "tags": [
-          "Pages"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get a page by ID (admin)",
+        "tags": [
+          "Pages"
         ]
       },
       "put": {
         "operationId": "AdminPageController_update",
-        "summary": "Update a page (admin)",
         "parameters": [
           {
             "name": "id",
@@ -5416,18 +5415,18 @@
             "description": "Slug is already taken"
           }
         },
-        "tags": [
-          "Pages"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a page (admin)",
+        "tags": [
+          "Pages"
         ]
       },
       "delete": {
         "operationId": "AdminPageController_delete",
-        "summary": "Delete a page (admin)",
         "parameters": [
           {
             "name": "id",
@@ -5450,20 +5449,20 @@
             "description": "Page not found"
           }
         },
-        "tags": [
-          "Pages"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Delete a page (admin)",
+        "tags": [
+          "Pages"
         ]
       }
     },
     "/api/admin/pages/{id}/publish": {
       "patch": {
         "operationId": "AdminPageController_publish",
-        "summary": "Publish a page (admin)",
         "parameters": [
           {
             "name": "id",
@@ -5493,20 +5492,20 @@
             "description": "Page not found"
           }
         },
-        "tags": [
-          "Pages"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Publish a page (admin)",
+        "tags": [
+          "Pages"
         ]
       }
     },
     "/api/admin/pages/{id}/unpublish": {
       "patch": {
         "operationId": "AdminPageController_unpublish",
-        "summary": "Unpublish a page (admin)",
         "parameters": [
           {
             "name": "id",
@@ -5536,20 +5535,20 @@
             "description": "Page not found"
           }
         },
-        "tags": [
-          "Pages"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Unpublish a page (admin)",
+        "tags": [
+          "Pages"
         ]
       }
     },
     "/api/blog": {
       "get": {
         "operationId": "BlogController_findAll",
-        "summary": "List published blog posts",
         "parameters": [
           {
             "name": "category",
@@ -5606,6 +5605,7 @@
             }
           }
         },
+        "summary": "List published blog posts",
         "tags": [
           "Blog"
         ]
@@ -5614,7 +5614,6 @@
     "/api/blog/categories": {
       "get": {
         "operationId": "BlogController_findCategories",
-        "summary": "List blog categories",
         "parameters": [],
         "responses": {
           "200": {
@@ -5628,6 +5627,7 @@
             }
           }
         },
+        "summary": "List blog categories",
         "tags": [
           "Blog"
         ]
@@ -5636,7 +5636,6 @@
     "/api/blog/{slug}": {
       "get": {
         "operationId": "BlogController_findBySlug",
-        "summary": "Get a published blog post by slug",
         "parameters": [
           {
             "name": "slug",
@@ -5663,6 +5662,7 @@
             "description": "Post not found or not published"
           }
         },
+        "summary": "Get a published blog post by slug",
         "tags": [
           "Blog"
         ]
@@ -5671,7 +5671,6 @@
     "/api/admin/blog/categories": {
       "get": {
         "operationId": "AdminBlogController_findCategories",
-        "summary": "List all blog categories (admin)",
         "parameters": [],
         "responses": {
           "200": {
@@ -5688,18 +5687,18 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Blog"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List all blog categories (admin)",
+        "tags": [
+          "Blog"
         ]
       },
       "post": {
         "operationId": "AdminBlogController_createCategory",
-        "summary": "Create a blog category (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -5726,20 +5725,20 @@
             "description": "Slug is already taken"
           }
         },
-        "tags": [
-          "Blog"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create a blog category (admin)",
+        "tags": [
+          "Blog"
         ]
       }
     },
     "/api/admin/blog/categories/reorder": {
       "patch": {
         "operationId": "adminBlogControllerReorderCategories",
-        "summary": "Reorder blog categories (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -5775,20 +5774,20 @@
             "description": "REORDER_STALE — another admin changed the list first"
           }
         },
-        "tags": [
-          "Blog"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Reorder blog categories (admin)",
+        "tags": [
+          "Blog"
         ]
       }
     },
     "/api/admin/blog/categories/{id}": {
       "get": {
         "operationId": "AdminBlogController_findCategory",
-        "summary": "Get a blog category by ID (admin)",
         "parameters": [
           {
             "name": "id",
@@ -5815,18 +5814,18 @@
             "description": "Category not found"
           }
         },
-        "tags": [
-          "Blog"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get a blog category by ID (admin)",
+        "tags": [
+          "Blog"
         ]
       },
       "put": {
         "operationId": "AdminBlogController_updateCategory",
-        "summary": "Update a blog category (admin)",
         "parameters": [
           {
             "name": "id",
@@ -5866,18 +5865,18 @@
             "description": "Slug is already taken"
           }
         },
-        "tags": [
-          "Blog"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a blog category (admin)",
+        "tags": [
+          "Blog"
         ]
       },
       "delete": {
         "operationId": "AdminBlogController_deleteCategory",
-        "summary": "Delete a blog category (admin)",
         "parameters": [
           {
             "name": "id",
@@ -5900,20 +5899,20 @@
             "description": "Category has posts and cannot be deleted"
           }
         },
-        "tags": [
-          "Blog"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Delete a blog category (admin)",
+        "tags": [
+          "Blog"
         ]
       }
     },
     "/api/admin/blog/posts": {
       "get": {
         "operationId": "AdminBlogController_findAll",
-        "summary": "List all posts — any status (admin)",
         "parameters": [
           {
             "name": "category",
@@ -5964,12 +5963,12 @@
             "description": "Filter by publish status (DRAFT, SCHEDULED, PUBLISHED)",
             "schema": {
               "example": "PUBLISHED",
+              "type": "string",
               "enum": [
                 "DRAFT",
                 "SCHEDULED",
                 "PUBLISHED"
-              ],
-              "type": "string"
+              ]
             }
           }
         ],
@@ -5988,18 +5987,18 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Blog"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List all posts — any status (admin)",
+        "tags": [
+          "Blog"
         ]
       },
       "post": {
         "operationId": "AdminBlogController_create",
-        "summary": "Create a post (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -6029,20 +6028,20 @@
             "description": "Slug is already taken"
           }
         },
-        "tags": [
-          "Blog"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create a post (admin)",
+        "tags": [
+          "Blog"
         ]
       }
     },
     "/api/admin/blog/posts/{id}": {
       "get": {
         "operationId": "AdminBlogController_findById",
-        "summary": "Get a post by ID (admin)",
         "parameters": [
           {
             "name": "id",
@@ -6069,18 +6068,18 @@
             "description": "Post not found"
           }
         },
-        "tags": [
-          "Blog"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get a post by ID (admin)",
+        "tags": [
+          "Blog"
         ]
       },
       "put": {
         "operationId": "AdminBlogController_update",
-        "summary": "Update a post (admin)",
         "parameters": [
           {
             "name": "id",
@@ -6123,18 +6122,18 @@
             "description": "Slug is already taken"
           }
         },
-        "tags": [
-          "Blog"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a post (admin)",
+        "tags": [
+          "Blog"
         ]
       },
       "delete": {
         "operationId": "AdminBlogController_delete",
-        "summary": "Delete a post (admin)",
         "parameters": [
           {
             "name": "id",
@@ -6154,20 +6153,20 @@
             "description": "Post not found"
           }
         },
-        "tags": [
-          "Blog"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Delete a post (admin)",
+        "tags": [
+          "Blog"
         ]
       }
     },
     "/api/admin/blog/posts/{id}/publish": {
       "patch": {
         "operationId": "AdminBlogController_publish",
-        "summary": "Publish a post (admin)",
         "parameters": [
           {
             "name": "id",
@@ -6194,20 +6193,20 @@
             "description": "Post not found"
           }
         },
-        "tags": [
-          "Blog"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Publish a post (admin)",
+        "tags": [
+          "Blog"
         ]
       }
     },
     "/api/admin/blog/posts/{id}/unpublish": {
       "patch": {
         "operationId": "AdminBlogController_unpublish",
-        "summary": "Unpublish a post (admin)",
         "parameters": [
           {
             "name": "id",
@@ -6234,20 +6233,20 @@
             "description": "Post not found"
           }
         },
-        "tags": [
-          "Blog"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Unpublish a post (admin)",
+        "tags": [
+          "Blog"
         ]
       }
     },
     "/api/banners": {
       "get": {
         "operationId": "BannerController_findAll",
-        "summary": "List published banners, optionally filtered by placement",
         "parameters": [
           {
             "name": "placement",
@@ -6256,13 +6255,13 @@
             "description": "Filter by placement slot",
             "schema": {
               "example": "HERO_SLIDE",
+              "type": "string",
               "enum": [
                 "HERO_SLIDE",
                 "PROMO_TILE",
                 "PROMO_BANNER",
                 "ANNOUNCEMENT_BAR"
-              ],
-              "type": "string"
+              ]
             }
           }
         ],
@@ -6278,6 +6277,7 @@
             }
           }
         },
+        "summary": "List published banners, optionally filtered by placement",
         "tags": [
           "Banners"
         ]
@@ -6286,7 +6286,6 @@
     "/api/admin/banners": {
       "get": {
         "operationId": "AdminBannerController_findAll",
-        "summary": "List all banners — all statuses (admin)",
         "parameters": [
           {
             "name": "placement",
@@ -6295,13 +6294,13 @@
             "description": "Filter by placement slot",
             "schema": {
               "example": "HERO_SLIDE",
+              "type": "string",
               "enum": [
                 "HERO_SLIDE",
                 "PROMO_TILE",
                 "PROMO_BANNER",
                 "ANNOUNCEMENT_BAR"
-              ],
-              "type": "string"
+              ]
             }
           },
           {
@@ -6311,12 +6310,12 @@
             "description": "Filter by publish status (DRAFT, SCHEDULED, PUBLISHED)",
             "schema": {
               "example": "PUBLISHED",
+              "type": "string",
               "enum": [
                 "DRAFT",
                 "SCHEDULED",
                 "PUBLISHED"
-              ],
-              "type": "string"
+              ]
             }
           }
         ],
@@ -6335,18 +6334,18 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Banners"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List all banners — all statuses (admin)",
+        "tags": [
+          "Banners"
         ]
       },
       "post": {
         "operationId": "AdminBannerController_create",
-        "summary": "Create a banner (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -6376,20 +6375,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Banners"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create a banner (admin)",
+        "tags": [
+          "Banners"
         ]
       }
     },
     "/api/admin/banners/reorder": {
       "patch": {
         "operationId": "adminBannerControllerReorder",
-        "summary": "Reorder banners within one placement (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -6425,20 +6424,20 @@
             "description": "REORDER_STALE — another admin changed this placement first"
           }
         },
-        "tags": [
-          "Banners"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Reorder banners within one placement (admin)",
+        "tags": [
+          "Banners"
         ]
       }
     },
     "/api/admin/banners/{id}": {
       "get": {
         "operationId": "AdminBannerController_findById",
-        "summary": "Get a banner by ID (admin)",
         "parameters": [
           {
             "name": "id",
@@ -6468,18 +6467,18 @@
             "description": "Banner not found"
           }
         },
-        "tags": [
-          "Banners"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get a banner by ID (admin)",
+        "tags": [
+          "Banners"
         ]
       },
       "put": {
         "operationId": "AdminBannerController_update",
-        "summary": "Update a banner (admin)",
         "parameters": [
           {
             "name": "id",
@@ -6522,18 +6521,18 @@
             "description": "Banner not found"
           }
         },
-        "tags": [
-          "Banners"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a banner (admin)",
+        "tags": [
+          "Banners"
         ]
       },
       "delete": {
         "operationId": "AdminBannerController_delete",
-        "summary": "Delete a banner (admin)",
         "parameters": [
           {
             "name": "id",
@@ -6556,20 +6555,20 @@
             "description": "Banner not found"
           }
         },
-        "tags": [
-          "Banners"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Delete a banner (admin)",
+        "tags": [
+          "Banners"
         ]
       }
     },
     "/api/admin/banners/{id}/publish": {
       "patch": {
         "operationId": "AdminBannerController_publish",
-        "summary": "Publish a banner (admin)",
         "parameters": [
           {
             "name": "id",
@@ -6599,20 +6598,20 @@
             "description": "Banner not found"
           }
         },
-        "tags": [
-          "Banners"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Publish a banner (admin)",
+        "tags": [
+          "Banners"
         ]
       }
     },
     "/api/admin/banners/{id}/unpublish": {
       "patch": {
         "operationId": "AdminBannerController_unpublish",
-        "summary": "Unpublish a banner (admin)",
         "parameters": [
           {
             "name": "id",
@@ -6642,20 +6641,20 @@
             "description": "Banner not found"
           }
         },
-        "tags": [
-          "Banners"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Unpublish a banner (admin)",
+        "tags": [
+          "Banners"
         ]
       }
     },
     "/api/carousels": {
       "get": {
         "operationId": "CarouselController_findAll",
-        "summary": "List published recommendation carousels with resolved products, optionally filtered by placement",
         "parameters": [
           {
             "name": "placement",
@@ -6664,11 +6663,11 @@
             "description": "Filter by homepage placement (HOME_TABS = \"Популярне\" tabs, HOME_RAILS = rails)",
             "schema": {
               "example": "HOME_TABS",
+              "type": "string",
               "enum": [
                 "HOME_TABS",
                 "HOME_RAILS"
-              ],
-              "type": "string"
+              ]
             }
           }
         ],
@@ -6684,6 +6683,7 @@
             }
           }
         },
+        "summary": "List published recommendation carousels with resolved products, optionally filtered by placement",
         "tags": [
           "Carousels"
         ]
@@ -6692,7 +6692,6 @@
     "/api/admin/carousels": {
       "get": {
         "operationId": "AdminCarouselController_findAll",
-        "summary": "List all carousels — all statuses, optionally filtered by placement / status (admin)",
         "parameters": [
           {
             "name": "placement",
@@ -6701,11 +6700,11 @@
             "description": "Filter by homepage placement (HOME_TABS = \"Популярне\" tabs, HOME_RAILS = rails)",
             "schema": {
               "example": "HOME_TABS",
+              "type": "string",
               "enum": [
                 "HOME_TABS",
                 "HOME_RAILS"
-              ],
-              "type": "string"
+              ]
             }
           },
           {
@@ -6715,12 +6714,12 @@
             "description": "Filter by publish status (DRAFT, SCHEDULED, PUBLISHED)",
             "schema": {
               "example": "PUBLISHED",
+              "type": "string",
               "enum": [
                 "DRAFT",
                 "SCHEDULED",
                 "PUBLISHED"
-              ],
-              "type": "string"
+              ]
             }
           }
         ],
@@ -6739,18 +6738,18 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Carousels"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List all carousels — all statuses, optionally filtered by placement / status (admin)",
+        "tags": [
+          "Carousels"
         ]
       },
       "post": {
         "operationId": "AdminCarouselController_create",
-        "summary": "Create a carousel (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -6783,20 +6782,20 @@
             "description": "Category not found (source = CATEGORY)"
           }
         },
-        "tags": [
-          "Carousels"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create a carousel (admin)",
+        "tags": [
+          "Carousels"
         ]
       }
     },
     "/api/admin/carousels/{id}": {
       "get": {
         "operationId": "AdminCarouselController_findById",
-        "summary": "Get a carousel by ID (admin)",
         "parameters": [
           {
             "name": "id",
@@ -6826,18 +6825,18 @@
             "description": "Carousel not found"
           }
         },
-        "tags": [
-          "Carousels"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get a carousel by ID (admin)",
+        "tags": [
+          "Carousels"
         ]
       },
       "put": {
         "operationId": "AdminCarouselController_update",
-        "summary": "Update a carousel (admin)",
         "parameters": [
           {
             "name": "id",
@@ -6880,18 +6879,18 @@
             "description": "Carousel (or target category) not found"
           }
         },
-        "tags": [
-          "Carousels"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a carousel (admin)",
+        "tags": [
+          "Carousels"
         ]
       },
       "delete": {
         "operationId": "AdminCarouselController_delete",
-        "summary": "Delete a carousel (admin)",
         "parameters": [
           {
             "name": "id",
@@ -6914,20 +6913,20 @@
             "description": "Carousel not found"
           }
         },
-        "tags": [
-          "Carousels"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Delete a carousel (admin)",
+        "tags": [
+          "Carousels"
         ]
       }
     },
     "/api/admin/carousels/{id}/publish": {
       "patch": {
         "operationId": "AdminCarouselController_publish",
-        "summary": "Publish a carousel (admin)",
         "parameters": [
           {
             "name": "id",
@@ -6957,20 +6956,20 @@
             "description": "Carousel not found"
           }
         },
-        "tags": [
-          "Carousels"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Publish a carousel (admin)",
+        "tags": [
+          "Carousels"
         ]
       }
     },
     "/api/admin/carousels/{id}/unpublish": {
       "patch": {
         "operationId": "AdminCarouselController_unpublish",
-        "summary": "Unpublish a carousel (admin)",
         "parameters": [
           {
             "name": "id",
@@ -7000,20 +6999,20 @@
             "description": "Carousel not found"
           }
         },
-        "tags": [
-          "Carousels"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Unpublish a carousel (admin)",
+        "tags": [
+          "Carousels"
         ]
       }
     },
     "/api/admin/carousels/{id}/items": {
       "get": {
         "operationId": "AdminCarouselController_getItems",
-        "summary": "Get a carousel's hand-picked items (admin)",
         "parameters": [
           {
             "name": "id",
@@ -7043,18 +7042,18 @@
             "description": "Carousel not found"
           }
         },
-        "tags": [
-          "Carousels"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get a carousel's hand-picked items (admin)",
+        "tags": [
+          "Carousels"
         ]
       },
       "put": {
         "operationId": "AdminCarouselController_setItems",
-        "summary": "Full-replace a carousel's hand-picked items (admin)",
         "parameters": [
           {
             "name": "id",
@@ -7097,20 +7096,20 @@
             "description": "Carousel not found"
           }
         },
-        "tags": [
-          "Carousels"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Full-replace a carousel's hand-picked items (admin)",
+        "tags": [
+          "Carousels"
         ]
       }
     },
     "/api/site-contact": {
       "get": {
         "operationId": "SiteContactController_getSettings",
-        "summary": "Get site contact settings",
         "parameters": [],
         "responses": {
           "200": {
@@ -7124,6 +7123,7 @@
             }
           }
         },
+        "summary": "Get site contact settings",
         "tags": [
           "SiteContact"
         ]
@@ -7132,7 +7132,6 @@
     "/api/admin/site-contact": {
       "put": {
         "operationId": "AdminSiteContactController_update",
-        "summary": "Update site contact settings (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -7165,20 +7164,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "SiteContact"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update site contact settings (admin)",
+        "tags": [
+          "SiteContact"
         ]
       }
     },
     "/api/seo-settings": {
       "get": {
         "operationId": "SeoSettingsController_getSettings",
-        "summary": "Get SEO settings",
         "parameters": [],
         "responses": {
           "200": {
@@ -7192,6 +7191,7 @@
             }
           }
         },
+        "summary": "Get SEO settings",
         "tags": [
           "SeoSettings"
         ]
@@ -7200,7 +7200,6 @@
     "/api/admin/seo-settings": {
       "put": {
         "operationId": "AdminSeoSettingsController_update",
-        "summary": "Update SEO settings (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -7233,20 +7232,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "SeoSettings"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update SEO settings (admin)",
+        "tags": [
+          "SeoSettings"
         ]
       }
     },
     "/api/admin/seo-settings/health": {
       "get": {
         "operationId": "adminSeoSettingsControllerGetHealth",
-        "summary": "Get SEO health checklist (admin)",
         "parameters": [],
         "responses": {
           "200": {
@@ -7266,20 +7265,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "SeoSettings"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get SEO health checklist (admin)",
+        "tags": [
+          "SeoSettings"
         ]
       }
     },
     "/api/admin/seo-settings/logo": {
       "post": {
         "operationId": "adminSeoSettingsControllerUploadLogo",
-        "summary": "Upload the store logo (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -7327,18 +7326,18 @@
             "description": "Unsupported file type"
           }
         },
-        "tags": [
-          "SeoSettings"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Upload the store logo (admin)",
+        "tags": [
+          "SeoSettings"
         ]
       },
       "delete": {
         "operationId": "adminSeoSettingsControllerDeleteLogo",
-        "summary": "Remove the store logo (admin)",
         "parameters": [],
         "responses": {
           "200": {
@@ -7358,20 +7357,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "SeoSettings"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Remove the store logo (admin)",
+        "tags": [
+          "SeoSettings"
         ]
       }
     },
     "/api/faq": {
       "get": {
         "operationId": "FaqController_findAll",
-        "summary": "List active FAQ items",
         "parameters": [],
         "responses": {
           "200": {
@@ -7385,6 +7384,7 @@
             }
           }
         },
+        "summary": "List active FAQ items",
         "tags": [
           "FAQ"
         ]
@@ -7393,7 +7393,6 @@
     "/api/admin/faq": {
       "get": {
         "operationId": "AdminFaqController_findAll",
-        "summary": "List all FAQ items including inactive (admin)",
         "parameters": [],
         "responses": {
           "200": {
@@ -7410,18 +7409,18 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "FAQ"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List all FAQ items including inactive (admin)",
+        "tags": [
+          "FAQ"
         ]
       },
       "post": {
         "operationId": "AdminFaqController_create",
-        "summary": "Create a FAQ item (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -7451,20 +7450,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "FAQ"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create a FAQ item (admin)",
+        "tags": [
+          "FAQ"
         ]
       }
     },
     "/api/admin/faq/{id}": {
       "get": {
         "operationId": "AdminFaqController_findById",
-        "summary": "Get FAQ item by ID (admin)",
         "parameters": [
           {
             "name": "id",
@@ -7494,18 +7493,18 @@
             "description": "FAQ item not found"
           }
         },
-        "tags": [
-          "FAQ"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get FAQ item by ID (admin)",
+        "tags": [
+          "FAQ"
         ]
       },
       "put": {
         "operationId": "AdminFaqController_update",
-        "summary": "Update a FAQ item (admin)",
         "parameters": [
           {
             "name": "id",
@@ -7548,18 +7547,18 @@
             "description": "FAQ item not found"
           }
         },
-        "tags": [
-          "FAQ"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a FAQ item (admin)",
+        "tags": [
+          "FAQ"
         ]
       },
       "delete": {
         "operationId": "AdminFaqController_remove",
-        "summary": "Delete a FAQ item (admin)",
         "parameters": [
           {
             "name": "id",
@@ -7589,20 +7588,20 @@
             "description": "FAQ item not found"
           }
         },
-        "tags": [
-          "FAQ"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Delete a FAQ item (admin)",
+        "tags": [
+          "FAQ"
         ]
       }
     },
     "/api/contact": {
       "post": {
         "operationId": "contactControllerSubmit",
-        "summary": "Submit a contact message",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -7632,6 +7631,7 @@
             "description": "Too many requests — rate limit exceeded"
           }
         },
+        "summary": "Submit a contact message",
         "tags": [
           "Contact"
         ]
@@ -7640,7 +7640,6 @@
     "/api/contact/admin": {
       "get": {
         "operationId": "adminContactList",
-        "summary": "List contact messages (admin)",
         "parameters": [
           {
             "name": "page",
@@ -7671,13 +7670,13 @@
             "description": "Filter: NEW | IN_PROGRESS | READ | ARCHIVED",
             "schema": {
               "example": "NEW",
+              "type": "string",
               "enum": [
                 "NEW",
                 "IN_PROGRESS",
                 "READ",
                 "ARCHIVED"
-              ],
-              "type": "string"
+              ]
             }
           }
         ],
@@ -7699,20 +7698,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Contact"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List contact messages (admin)",
+        "tags": [
+          "Contact"
         ]
       }
     },
     "/api/contact/admin/unread-count": {
       "get": {
         "operationId": "adminContactUnreadCount",
-        "summary": "Unread (NEW) message count (admin)",
         "parameters": [],
         "responses": {
           "200": {
@@ -7729,20 +7728,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Contact"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Unread (NEW) message count (admin)",
+        "tags": [
+          "Contact"
         ]
       }
     },
     "/api/contact/admin/{id}": {
       "get": {
         "operationId": "adminContactGet",
-        "summary": "Get a contact message by id (admin)",
         "parameters": [
           {
             "name": "id",
@@ -7772,18 +7771,18 @@
             "description": "Message not found"
           }
         },
-        "tags": [
-          "Contact"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get a contact message by id (admin)",
+        "tags": [
+          "Contact"
         ]
       },
       "patch": {
         "operationId": "adminContactUpdate",
-        "summary": "Update a contact message — status / admin note (admin)",
         "parameters": [
           {
             "name": "id",
@@ -7826,20 +7825,20 @@
             "description": "Message not found"
           }
         },
-        "tags": [
-          "Contact"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a contact message — status / admin note (admin)",
+        "tags": [
+          "Contact"
         ]
       }
     },
     "/api/orders": {
       "post": {
         "operationId": "createOrder",
-        "summary": "Create order from cart",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -7880,18 +7879,18 @@
             "description": "Cart not found"
           }
         },
-        "tags": [
-          "Orders"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create order from cart",
+        "tags": [
+          "Orders"
         ]
       },
       "get": {
         "operationId": "getOrders",
-        "summary": "List current user orders",
         "parameters": [
           {
             "name": "status",
@@ -7899,6 +7898,7 @@
             "in": "query",
             "description": "Filter by order status",
             "schema": {
+              "type": "string",
               "enum": [
                 "PENDING",
                 "CONFIRMED",
@@ -7907,8 +7907,7 @@
                 "DELIVERED",
                 "CANCELLED",
                 "REFUNDED"
-              ],
-              "type": "string"
+              ]
             }
           },
           {
@@ -7947,20 +7946,20 @@
             }
           }
         },
-        "tags": [
-          "Orders"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List current user orders",
+        "tags": [
+          "Orders"
         ]
       }
     },
     "/api/orders/{orderId}": {
       "get": {
         "operationId": "getOrder",
-        "summary": "Get order by ID",
         "parameters": [
           {
             "name": "orderId",
@@ -7998,20 +7997,20 @@
             "description": "Order not found"
           }
         },
-        "tags": [
-          "Orders"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get order by ID",
+        "tags": [
+          "Orders"
         ]
       }
     },
     "/api/orders/{orderId}/cancel": {
       "patch": {
         "operationId": "cancelOrder",
-        "summary": "Cancel a pending order",
         "parameters": [
           {
             "name": "orderId",
@@ -8052,20 +8051,20 @@
             "description": "Order cannot be cancelled in its current status"
           }
         },
-        "tags": [
-          "Orders"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Cancel a pending order",
+        "tags": [
+          "Orders"
         ]
       }
     },
     "/api/admin/orders": {
       "get": {
         "operationId": "adminOrderControllerFindAll",
-        "summary": "List all orders (admin)",
         "parameters": [
           {
             "name": "page",
@@ -8178,20 +8177,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Admin Orders"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List all orders (admin)",
+        "tags": [
+          "Admin Orders"
         ]
       }
     },
     "/api/admin/orders/{orderId}": {
       "get": {
         "operationId": "adminOrderControllerFindById",
-        "summary": "Get order by ID (admin)",
         "parameters": [
           {
             "name": "orderId",
@@ -8221,20 +8220,20 @@
             "description": "Order not found"
           }
         },
-        "tags": [
-          "Admin Orders"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get order by ID (admin)",
+        "tags": [
+          "Admin Orders"
         ]
       }
     },
     "/api/admin/orders/{orderId}/history": {
       "get": {
         "operationId": "adminOrderControllerGetHistory",
-        "summary": "Get order status history (admin)",
         "parameters": [
           {
             "name": "orderId",
@@ -8264,20 +8263,20 @@
             "description": "Order not found"
           }
         },
-        "tags": [
-          "Admin Orders"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get order status history (admin)",
+        "tags": [
+          "Admin Orders"
         ]
       }
     },
     "/api/admin/orders/{orderId}/status": {
       "patch": {
         "operationId": "adminOrderControllerUpdateStatus",
-        "summary": "Update order status (admin)",
         "parameters": [
           {
             "name": "orderId",
@@ -8317,20 +8316,20 @@
             "description": "Order not found"
           }
         },
-        "tags": [
-          "Admin Orders"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update order status (admin)",
+        "tags": [
+          "Admin Orders"
         ]
       }
     },
     "/api/admin/orders/{orderId}/payment-status": {
       "patch": {
         "operationId": "adminOrderControllerUpdatePaymentStatus",
-        "summary": "Update order payment status (admin)",
         "parameters": [
           {
             "name": "orderId",
@@ -8370,20 +8369,20 @@
             "description": "Order not found"
           }
         },
-        "tags": [
-          "Admin Orders"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update order payment status (admin)",
+        "tags": [
+          "Admin Orders"
         ]
       }
     },
     "/api/delivery/cities": {
       "get": {
         "operationId": "searchDeliveryCities",
-        "summary": "Search Nova Poshta settlements",
         "parameters": [
           {
             "name": "q",
@@ -8411,6 +8410,7 @@
             "description": "Nova Poshta is not configured or unavailable"
           }
         },
+        "summary": "Search Nova Poshta settlements",
         "tags": [
           "Delivery"
         ]
@@ -8419,7 +8419,6 @@
     "/api/delivery/warehouses": {
       "get": {
         "operationId": "searchDeliveryWarehouses",
-        "summary": "List Nova Poshta warehouses in a city",
         "parameters": [
           {
             "name": "cityRef",
@@ -8457,6 +8456,7 @@
             "description": "Nova Poshta is not configured or unavailable"
           }
         },
+        "summary": "List Nova Poshta warehouses in a city",
         "tags": [
           "Delivery"
         ]
@@ -8465,7 +8465,6 @@
     "/api/delivery/estimate": {
       "get": {
         "operationId": "estimateDelivery",
-        "summary": "Estimate shipping cost + ETA to a city",
         "parameters": [
           {
             "name": "cityRef",
@@ -8490,6 +8489,7 @@
             }
           }
         },
+        "summary": "Estimate shipping cost + ETA to a city",
         "tags": [
           "Delivery"
         ]
@@ -8498,7 +8498,6 @@
     "/api/cart/discount/preview": {
       "post": {
         "operationId": "previewDiscount",
-        "summary": "Preview a promo code against the current cart",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -8528,20 +8527,20 @@
             "description": "Code redemption cap reached (global or per-user)"
           }
         },
-        "tags": [
-          "Discounts"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Preview a promo code against the current cart",
+        "tags": [
+          "Discounts"
         ]
       }
     },
     "/api/admin/discounts": {
       "get": {
         "operationId": "adminListDiscounts",
-        "summary": "List discounts (admin)",
         "parameters": [
           {
             "name": "page",
@@ -8623,18 +8622,18 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Discounts"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List discounts (admin)",
+        "tags": [
+          "Discounts"
         ]
       },
       "post": {
         "operationId": "adminCreateDiscount",
-        "summary": "Create a discount (admin)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -8664,20 +8663,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Discounts"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Create a discount (admin)",
+        "tags": [
+          "Discounts"
         ]
       }
     },
     "/api/admin/discounts/{id}": {
       "get": {
         "operationId": "adminGetDiscount",
-        "summary": "Get a discount by id (admin)",
         "parameters": [
           {
             "name": "id",
@@ -8707,18 +8706,18 @@
             "description": "Discount not found"
           }
         },
-        "tags": [
-          "Discounts"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get a discount by id (admin)",
+        "tags": [
+          "Discounts"
         ]
       },
       "patch": {
         "operationId": "adminUpdateDiscount",
-        "summary": "Update a discount (admin)",
         "parameters": [
           {
             "name": "id",
@@ -8761,18 +8760,18 @@
             "description": "Discount not found"
           }
         },
-        "tags": [
-          "Discounts"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Update a discount (admin)",
+        "tags": [
+          "Discounts"
         ]
       },
       "delete": {
         "operationId": "adminDeactivateDiscount",
-        "summary": "Deactivate a discount (admin)",
         "parameters": [
           {
             "name": "id",
@@ -8802,20 +8801,20 @@
             "description": "Discount not found"
           }
         },
-        "tags": [
-          "Discounts"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Deactivate a discount (admin)",
+        "tags": [
+          "Discounts"
         ]
       }
     },
     "/api/discounts/active": {
       "get": {
         "operationId": "listActiveDiscounts",
-        "summary": "List currently active, redeemable discounts",
         "parameters": [],
         "responses": {
           "200": {
@@ -8829,6 +8828,7 @@
             }
           }
         },
+        "summary": "List currently active, redeemable discounts",
         "tags": [
           "Discounts"
         ]
@@ -8837,7 +8837,6 @@
     "/api/products/{productId}/reviews": {
       "post": {
         "operationId": "reviewControllerSubmit",
-        "summary": "Submit a product review",
         "parameters": [
           {
             "name": "productId",
@@ -8880,18 +8879,18 @@
             "description": "You have already reviewed this product"
           }
         },
-        "tags": [
-          "Reviews"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Submit a product review",
+        "tags": [
+          "Reviews"
         ]
       },
       "get": {
         "operationId": "reviewControllerList",
-        "summary": "List approved product reviews",
         "parameters": [
           {
             "name": "productId",
@@ -8938,6 +8937,7 @@
             }
           }
         },
+        "summary": "List approved product reviews",
         "tags": [
           "Reviews"
         ]
@@ -8946,7 +8946,6 @@
     "/api/admin/reviews": {
       "get": {
         "operationId": "adminReviewControllerList",
-        "summary": "List reviews for moderation (admin)",
         "parameters": [
           {
             "name": "status",
@@ -8955,11 +8954,11 @@
             "description": "Filter: pending | approved",
             "schema": {
               "default": "pending",
+              "type": "string",
               "enum": [
                 "pending",
                 "approved"
-              ],
-              "type": "string"
+              ]
             }
           },
           {
@@ -9004,20 +9003,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Reviews"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List reviews for moderation (admin)",
+        "tags": [
+          "Reviews"
         ]
       }
     },
     "/api/admin/reviews/{id}/approve": {
       "patch": {
         "operationId": "adminReviewControllerApprove",
-        "summary": "Approve a review (admin)",
         "parameters": [
           {
             "name": "id",
@@ -9047,20 +9046,20 @@
             "description": "Review not found"
           }
         },
-        "tags": [
-          "Reviews"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Approve a review (admin)",
+        "tags": [
+          "Reviews"
         ]
       }
     },
     "/api/admin/reviews/{id}": {
       "delete": {
         "operationId": "adminReviewControllerReject",
-        "summary": "Reject a review (admin)",
         "parameters": [
           {
             "name": "id",
@@ -9083,20 +9082,20 @@
             "description": "Review not found"
           }
         },
-        "tags": [
-          "Reviews"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Reject a review (admin)",
+        "tags": [
+          "Reviews"
         ]
       }
     },
     "/api/admin/dashboard/summary": {
       "get": {
         "operationId": "adminDashboardControllerGetSummary",
-        "summary": "Get dashboard summary metrics (admin)",
         "parameters": [],
         "responses": {
           "200": {
@@ -9116,20 +9115,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Admin Dashboard"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get dashboard summary metrics (admin)",
+        "tags": [
+          "Admin Dashboard"
         ]
       }
     },
     "/api/admin/dashboard/needs-action": {
       "get": {
         "operationId": "adminDashboardControllerGetNeedsAction",
-        "summary": "Get needs-action counters (admin)",
         "parameters": [],
         "responses": {
           "200": {
@@ -9149,20 +9148,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Admin Dashboard"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Get needs-action counters (admin)",
+        "tags": [
+          "Admin Dashboard"
         ]
       }
     },
     "/api/csrf-token": {
       "get": {
         "operationId": "CsrfController_getToken",
-        "summary": "Issue a CSRF token (sets cookie + returns token)",
         "parameters": [],
         "responses": {
           "200": {
@@ -9176,6 +9175,7 @@
             }
           }
         },
+        "summary": "Issue a CSRF token (sets cookie + returns token)",
         "tags": [
           "Security"
         ]
@@ -9184,7 +9184,6 @@
     "/api/newsletter/subscribe": {
       "post": {
         "operationId": "NewsletterController_subscribe",
-        "summary": "Subscribe an email to the newsletter (idempotent)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -9214,6 +9213,7 @@
             "description": "Too many requests"
           }
         },
+        "summary": "Subscribe an email to the newsletter (idempotent)",
         "tags": [
           "Newsletter"
         ]
@@ -9222,7 +9222,6 @@
     "/api/newsletter/unsubscribe": {
       "post": {
         "operationId": "NewsletterController_unsubscribe",
-        "summary": "Unsubscribe an email from the newsletter (idempotent)",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -9252,6 +9251,7 @@
             "description": "Too many requests"
           }
         },
+        "summary": "Unsubscribe an email from the newsletter (idempotent)",
         "tags": [
           "Newsletter"
         ]
@@ -9260,7 +9260,6 @@
     "/api/newsletter/admin": {
       "get": {
         "operationId": "AdminNewsletterController_findAll",
-        "summary": "List newsletter subscribers (admin)",
         "parameters": [
           {
             "name": "page",
@@ -9291,11 +9290,11 @@
             "description": "Filter by subscription status",
             "schema": {
               "example": "SUBSCRIBED",
+              "type": "string",
               "enum": [
                 "SUBSCRIBED",
                 "UNSUBSCRIBED"
-              ],
-              "type": "string"
+              ]
             }
           },
           {
@@ -9325,20 +9324,20 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Newsletter"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "List newsletter subscribers (admin)",
+        "tags": [
+          "Newsletter"
         ]
       }
     },
     "/api/newsletter/admin/export": {
       "get": {
         "operationId": "AdminNewsletterController_export",
-        "summary": "Export newsletter subscribers as CSV (admin)",
         "parameters": [
           {
             "name": "status",
@@ -9347,11 +9346,11 @@
             "description": "Filter by subscription status",
             "schema": {
               "example": "SUBSCRIBED",
+              "type": "string",
               "enum": [
                 "SUBSCRIBED",
                 "UNSUBSCRIBED"
-              ],
-              "type": "string"
+              ]
             }
           },
           {
@@ -9381,13 +9380,14 @@
             "description": "Forbidden — admin access required"
           }
         },
-        "tags": [
-          "Newsletter"
-        ],
         "security": [
           {
             "access-token": []
           }
+        ],
+        "summary": "Export newsletter subscribers as CSV (admin)",
+        "tags": [
+          "Newsletter"
         ]
       }
     }
@@ -11249,6 +11249,7 @@
           "brand": {
             "description": "Manufacturer / brand summary, or null when the product has no brand",
             "nullable": true,
+            "type": "object",
             "allOf": [
               {
                 "$ref": "#/components/schemas/ProductBrandEntity"
@@ -11312,6 +11313,7 @@
           "primaryImage": {
             "description": "Primary (cover) image for list/card rendering, or null when the product has no images",
             "nullable": true,
+            "type": "object",
             "allOf": [
               {
                 "$ref": "#/components/schemas/ProductImageEntity"
@@ -11571,6 +11573,7 @@
           "brand": {
             "description": "Manufacturer / brand summary, or null when the product has no brand",
             "nullable": true,
+            "type": "object",
             "allOf": [
               {
                 "$ref": "#/components/schemas/ProductBrandEntity"
@@ -11634,6 +11637,7 @@
           "primaryImage": {
             "description": "Primary (cover) image for list/card rendering, or null when the product has no images",
             "nullable": true,
+            "type": "object",
             "allOf": [
               {
                 "$ref": "#/components/schemas/ProductImageEntity"
@@ -11920,6 +11924,7 @@
           },
           "group": {
             "nullable": true,
+            "type": "object",
             "allOf": [
               {
                 "$ref": "#/components/schemas/ProductGroupEntity"
@@ -11951,6 +11956,7 @@
           },
           "group": {
             "nullable": true,
+            "type": "object",
             "allOf": [
               {
                 "$ref": "#/components/schemas/ProductGroupEntity"
@@ -16402,6 +16408,7 @@
           "customer": {
             "description": "Customer account data — present only on admin order responses",
             "nullable": true,
+            "type": "object",
             "allOf": [
               {
                 "$ref": "#/components/schemas/OrderCustomerData"

@@ -27,9 +27,10 @@ const { execSync } = require('child_process');
 /**
  * Known, accepted-for-now advisories, keyed by the vulnerable package name.
  *
- * The first six are discharged by the same piece of work: NestJS 10 → 11 (which
- * pulls fixed platform-express/multer/serve-static/path-to-regexp/swagger→lodash)
- * plus nodemailer 8 → 9.
+ * The six NestJS-10 entries that used to live here are GONE: TASK-304 shipped
+ * NestJS 11 + nodemailer 9, which discharged @nestjs/platform-express,
+ * @nestjs/serve-static, multer, path-to-regexp, lodash (via @nestjs/swagger 11)
+ * and nodemailer in a single move, ahead of their 2026-09-30 deadline.
  *
  * THE ESLINT CHAIN (eslint, @eslint/config-array, @eslint/eslintrc, minimatch,
  * brace-expansion) is a separate, newly published advisory — a DoS in
@@ -54,13 +55,6 @@ const { execSync } = require('child_process');
  * is deliberately not bundled with a framework major.
  */
 const ALLOWLIST = {
-  '@nestjs/platform-express': { task: 'TASK-304', expires: '2026-09-30' },
-  '@nestjs/serve-static': { task: 'TASK-304', expires: '2026-09-30' },
-  multer: { task: 'TASK-304', expires: '2026-09-30' },
-  'path-to-regexp': { task: 'TASK-304', expires: '2026-09-30' },
-  lodash: { task: 'TASK-304', expires: '2026-09-30' },
-  nodemailer: { task: 'TASK-304', expires: '2026-09-30' },
-
   // Dev-only lint toolchain — see the note above. Needs eslint-plugin-import-x.
   eslint: { task: 'TASK-343', expires: '2026-10-31' },
   '@eslint/config-array': { task: 'TASK-343', expires: '2026-10-31' },

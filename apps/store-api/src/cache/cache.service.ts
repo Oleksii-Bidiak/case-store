@@ -4,20 +4,27 @@ import { PinoLogger } from 'nestjs-pino';
 import type { Cache } from 'cache-manager';
 
 /**
- * Minimal shape of an ioredis-style client used for non-blocking prefix
- * deletion. `cache-manager-ioredis-yet` exposes its ioredis instance as
- * `store.client`; the in-memory store has no such client (we fall back to
- * `store.keys()` there).
+ * Minimal shape of the node-redis client used for non-blocking prefix deletion.
+ *
+ * TASK-304: `@keyv/redis` is backed by node-redis (`@redis/client`), not
+ * ioredis, and the two SCAN APIs differ — node-redis takes an options object
+ * and resolves to `{ cursor, keys }`, where ioredis took positional
+ * MATCH/COUNT tokens and resolved to a `[cursor, keys]` tuple. `del` likewise
+ * takes an array rather than varargs. The in-memory store has no client at all
+ * (we fall back to iterating the Keyv store there).
  */
 interface ScanCapableClient {
   scan(
-    cursor: string | number,
-    matchToken: 'MATCH',
-    pattern: string,
-    countToken: 'COUNT',
-    count: number,
-  ): Promise<[string, string[]]>;
-  del(...keys: string[]): Promise<number>;
+    cursor: number,
+    options: { MATCH: string; COUNT: number },
+  ): Promise<{ cursor: number; keys: string[] }>;
+  del(keys: string[]): Promise<number>;
+}
+
+/** Minimal shape of a Keyv store entry exposed by `cache-manager`'s `stores`. */
+interface IterableKeyvStore {
+  iterator?: (namespace?: string) => AsyncGenerator<[string, unknown], void, unknown>;
+  store?: { client?: unknown };
 }
 
 /**
@@ -30,9 +37,16 @@ interface ScanCapableClient {
  * `CACHE_MANAGER` or handles cache degradation — consumers depend on this
  * service, never on cache-manager directly.
  *
- * NOTE on TTL units: cache-manager v5 measures TTL in **milliseconds**. This
+ * NOTE on TTL units: cache-manager measures TTL in **milliseconds**. This
  * wrapper accepts TTL in **seconds** (matching `REDIS_CACHE_TTL_SECONDS`) and
  * converts internally, so callers never juggle units.
+ *
+ * NOTE on the stored value format (TASK-304): Keyv wraps every entry as
+ * `{ value, expires }`, which is NOT how cache-manager v5 wrote them. Entries
+ * written by the previous release are therefore unreadable after deploy. That
+ * is safe — an unreadable entry is just a miss and the caller falls through to
+ * the database — but the cache starts cold, so expect one burst of DB reads on
+ * the first deploy that carries this change.
  */
 @Injectable()
 export class CacheService implements OnModuleDestroy {
@@ -101,63 +115,71 @@ export class CacheService implements OnModuleDestroy {
 
   /** Non-blocking SCAN + DEL loop over a real Redis backend. */
   private async scanAndDelete(client: ScanCapableClient, prefix: string): Promise<void> {
-    let cursor = '0';
+    let cursor = 0;
     do {
-      const [next, keys] = await client.scan(cursor, 'MATCH', `${prefix}*`, 'COUNT', 100);
+      const { cursor: next, keys } = await client.scan(cursor, {
+        MATCH: `${prefix}*`,
+        COUNT: 100,
+      });
       cursor = next;
       if (keys.length > 0) {
-        await client.del(...keys);
+        await client.del(keys);
       }
-    } while (cursor !== '0');
+    } while (cursor !== 0);
   }
 
-  /** In-memory fallback: enumerate keys and delete the matching ones. */
+  /**
+   * In-memory fallback: enumerate keys and delete the matching ones.
+   *
+   * cache-manager v7 no longer exposes a `store.keys()`; the equivalent is the
+   * Keyv async `iterator()`, which yields `[key, value]` pairs.
+   */
   private async memoryDeleteByPrefix(prefix: string): Promise<void> {
-    const store = this.getStore();
-    const keys = (await store?.keys?.()) ?? [];
-    await Promise.all(
-      keys.filter((k) => k.startsWith(prefix)).map((k) => this.cacheManager.del(k)),
-    );
+    const store = this.getKeyvStore();
+    if (!store?.iterator) return;
+
+    const matching: string[] = [];
+    for await (const [key] of store.iterator()) {
+      if (key.startsWith(prefix)) matching.push(key);
+    }
+    await Promise.all(matching.map((k) => this.cacheManager.del(k)));
   }
 
   /**
    * Close the Redis connection on shutdown (TASK-296).
    *
-   * `cache-manager-ioredis-yet` never ends its ioredis client, so without this
-   * the connection (and its reconnect timer) outlives `app.close()` — a handle
-   * leak in any process that boots more than one app, i.e. every test run. The
-   * in-memory store has no client and is skipped.
+   * Without this the connection (and its reconnect timer) outlives
+   * `app.close()` — a handle leak in any process that boots more than one app,
+   * i.e. every test run. cache-manager v7 exposes a single `disconnect()` that
+   * tears down every configured store, which replaces the old reach into the
+   * ioredis client's `quit()`. The in-memory store makes it a no-op.
    */
   async onModuleDestroy(): Promise<void> {
-    const client = this.getQuitClient();
-    if (!client) return;
     try {
-      await client.quit();
+      await this.cacheManager.disconnect();
     } catch {
       // Already closed, or never connected — nothing left to release.
     }
   }
 
-  /** The ioredis client when the active store is Redis-backed, else `undefined`. */
-  private getQuitClient(): { quit: () => Promise<unknown> } | undefined {
-    const client = (this.cacheManager as unknown as { store?: { client?: unknown } }).store?.client;
-    return client && typeof (client as { quit?: unknown }).quit === 'function'
-      ? (client as { quit: () => Promise<unknown> })
-      : undefined;
-  }
-
-  /** The underlying cache-manager store, if reachable. */
-  private getStore(): { keys?: () => Promise<string[]> } | undefined {
-    return (this.cacheManager as unknown as { store?: { keys?: () => Promise<string[]> } }).store;
+  /**
+   * The first configured Keyv store, if any.
+   *
+   * cache-manager v7 replaced the single `cache.store` with a `cache.stores`
+   * array (one Keyv per configured backend). We only ever configure one.
+   */
+  private getKeyvStore(): IterableKeyvStore | undefined {
+    const stores = (this.cacheManager as unknown as { stores?: IterableKeyvStore[] }).stores;
+    return Array.isArray(stores) ? stores[0] : undefined;
   }
 
   /**
-   * Return the ioredis client when the active store is Redis-backed, else
+   * Return the node-redis client when the active store is Redis-backed, else
    * `undefined`. Detected structurally so the in-memory store is handled
    * transparently.
    */
   private getScanClient(): ScanCapableClient | undefined {
-    const client = (this.cacheManager as unknown as { store?: { client?: unknown } }).store?.client;
+    const client = this.getKeyvStore()?.store?.client;
     if (
       client &&
       typeof (client as ScanCapableClient).scan === 'function' &&

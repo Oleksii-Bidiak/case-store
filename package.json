@@ -81,12 +81,30 @@
     "sharp: `next` lists `sharp: '^0.34.5'` as an optional dependency, which",
     "excludes the fix for the inherited libvips CVEs (0.35.3, semver-major). Without",
     "the override, store-api gets 0.35.3 while next keeps a nested vulnerable 0.34.x",
-    "for its Image Optimization API — the copy that actually decodes remote images."
+    "for its Image Optimization API — the copy that actually decodes remote images.",
+    "",
+    "js-yaml (TASK-304): `@nestjs/swagger@11.4.6` declares `js-yaml: '5.2.1'`",
+    "EXACTLY, and 5.2.1 carries GHSA (exponential parsing time in flow",
+    "collections), fixed in 5.2.2. Note this is a DIFFERENT advisory from the",
+    "4.x prototype-pollution one that the swagger 7 -> 11 upgrade did clear; npm",
+    "reports the only 'fix' as downgrading swagger to 11.4.5, which is wrong.",
+    "",
+    "NOTE ON APPLYING THESE: npm only evaluates `overrides` while building a fresh",
+    "ideal tree. Editing this block and re-running `npm install` over an existing",
+    "node_modules silently changes nothing — the entries land only after a clean",
+    "resolve (delete node_modules + package-lock.json, then install). The lockfile",
+    "in git already has them baked in, so `npm ci` reproduces them correctly.",
+    "Scoped per-parent rather than global on purpose: a bare top-level `sharp`",
+    "entry collides with store-api's own direct dependency on sharp, and npm then",
+    "ignores the override instead of erroring."
   ],
   "overrides": {
     "next": {
       "postcss": "^8.5.23",
       "sharp": "^0.35.3"
+    },
+    "@nestjs/swagger": {
+      "js-yaml": "^5.2.2"
     }
   },
   "lint-staged": {

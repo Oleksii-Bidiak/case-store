@@ -1,6 +1,6 @@
 import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
+import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { PinoLogger } from 'nestjs-pino';
 import { randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
@@ -507,7 +507,9 @@ export class AuthService {
       { sub: userId, role },
       {
         secret: this.jwtSecret,
-        expiresIn: this.jwtExpiration,
+        // See auth.module.ts: `expiresIn` is a template-literal union since
+        // @nestjs/jwt 11, so a runtime config string needs the cast (TASK-304).
+        expiresIn: this.jwtExpiration as JwtSignOptions['expiresIn'],
       },
     );
 
@@ -516,7 +518,7 @@ export class AuthService {
       { sub: userId, role, type: 'refresh' },
       {
         secret: this.jwtRefreshSecret,
-        expiresIn: this.jwtRefreshExpiration,
+        expiresIn: this.jwtRefreshExpiration as JwtSignOptions['expiresIn'],
       },
     );
 
