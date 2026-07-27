@@ -191,6 +191,14 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
       CSRF_SECRET: ${CSRF_SECRET:?CSRF_SECRET must be set (>=32 chars)}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL must be set (api public origin)}
+      # Public origin of the STOREFRONT — where the API sends a person back to:
+      # the Google-OAuth callback and the "reset your password" link in the email.
+      # Deliberately NOT a variable of its own: it is the same origin as
+      # NEXT_PUBLIC_APP_URL, and two independent variables for one origin drift
+      # apart with certainty. Until TASK-324 nothing set it at all, so both
+      # journeys silently used the code default `http://localhost:3000` — dead
+      # links in production that no health check can see.
+      STORE_CLIENT_URL: ${NEXT_PUBLIC_APP_URL:?NEXT_PUBLIC_APP_URL must be set}
       UPLOAD_DEST: ${UPLOAD_DEST:-./uploads}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
@@ -212,6 +220,29 @@ services:
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
       UMAMI_ORIGIN: ${UMAMI_ORIGIN:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # ─── ISR revalidation (TASK-187) ──────────────────────────────────────
+      # After an admin publishes/edits content the API POSTs to the storefront's
+      # /api/revalidate so the affected pages are purged from the ISR cache. Both
+      # sides must carry the SAME secret. Neither var was in this file until
+      # TASK-324, which meant revalidation was DEAD in production: the route
+      # answered 503 and every content change sat invisible behind the cache
+      # until it expired on its own. Required (`:?`) rather than soft, because a
+      # store whose admin panel does not visibly change the shop is broken in a
+      # way nobody reports as an outage.
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:?REVALIDATE_SECRET must be set (>=32 chars, identical for store-api and store-client)}
+      # Internal compose-network address: there is no reason to leave the bridge
+      # network, terminate TLS at Caddy and come back in for a cache purge.
+      STOREFRONT_REVALIDATE_URL: ${STOREFRONT_REVALIDATE_URL:-http://store-client:3000/api/revalidate}
+      # ─── Google sign-in (TASK-168) ────────────────────────────────────────
+      # SOFT on purpose (`:-`): the app boots without them and GoogleAuthGuard
+      # answers 503, so an unfinished OAuth setup can never block a deploy. They
+      # were declared in env.validation.ts and passed by nothing until TASK-324 —
+      # i.e. Google sign-in was not configurable in production at all.
+      # GOOGLE_CALLBACK_URL must match the "Authorized redirect URI" in Google
+      # Cloud Console byte for byte, or Google refuses with redirect_uri_mismatch.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-}
     volumes:
       # Uploaded product images (TASK-093 image pipeline) — must survive redeploys.
       - uploads_data:/app/apps/store-api/uploads
@@ -267,6 +298,25 @@ services:
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
+      # RUNTIME vars — not NEXT_PUBLIC_*, so they are read by the server on each
+      # request and are NOT baked into the browser bundle. That is why they live
+      # here and not in build.args above.
+      #
+      # The shared secret the /api/revalidate route compares against; must be the
+      # exact same value store-api sends (see its REVALIDATE_SECRET). Required,
+      # because unset means the route fails closed with 503 in production and the
+      # admin panel stops being able to update the shop.
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:?REVALIDATE_SECRET must be set (>=32 chars, identical for store-api and store-client)}
+      # Optional: without it IndexNow pings are skipped, so Bing/Seznam pick up
+      # new products on their own crawl schedule instead of within minutes.
+      # Google ignores the protocol entirely. Nothing breaks when it is empty.
+      INDEXNOW_KEY: ${INDEXNOW_KEY:-}
+      # How long a server-side fetch to the API may take before the page renders
+      # its degraded state instead of hanging (TASK-327). The default lives in
+      # the code; it is repeated here so the value is visible and tunable without
+      # a rebuild. Build-time fetches are NOT covered — those would need a
+      # Dockerfile ARG.
+      SERVER_FETCH_TIMEOUT_MS: ${SERVER_FETCH_TIMEOUT_MS:-5000}
     ports:
       - "127.0.0.1:3000:3000"
     # Not health-gated: the storefront should still boot and degrade gracefully

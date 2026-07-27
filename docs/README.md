@@ -25,6 +25,7 @@
 | [02-domain-dns.md](deploy/02-domain-dns.md)           | домен замовника, DNS, пошта (SPF/DKIM/DMARC)                             |
 | [03-server.md](deploy/03-server.md)                   | оренда й налаштування VPS, відновлення доступу                           |
 | [04-secrets-ci.md](deploy/04-secrets-ci.md)           | секрети GitHub, ручне затвердження прода, branch protection              |
+| [04a-env-matrix.md](deploy/04a-env-matrix.md)         | довідник змінних: що буде, якщо не задати, і звідки взяти значення       |
 | [05-first-deploy.md](deploy/05-first-deploy.md)       | перший деплой, як зрозуміти, що він пройшов                              |
 | [06-day-to-day.md](deploy/06-day-to-day.md)           | моніторинг, логи, playbook аварії, шпаргалка                             |
 | [07-rollback.md](deploy/07-rollback.md)               | відкат образу й поганої міграції                                         |

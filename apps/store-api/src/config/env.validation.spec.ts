@@ -106,6 +106,7 @@ describe('validateEnv — CSRF_SECRET is required in production', () => {
         NODE_ENV: 'production',
         CSRF_SECRET: 'c'.repeat(32),
         CORS_ORIGINS: 'https://shop.example.com',
+        STORE_CLIENT_URL: 'https://shop.example.com',
       }),
     ).not.toThrow();
   });
@@ -123,6 +124,7 @@ describe('validateEnv — CORS_ORIGINS must be a well-formed origin list', () =>
     JWT_SECRET: 'a'.repeat(32),
     JWT_REFRESH_SECRET: 'b'.repeat(32),
     CSRF_SECRET: 'c'.repeat(32),
+    STORE_CLIENT_URL: 'https://shop.example.com',
     NODE_ENV: 'production',
   };
 
@@ -170,5 +172,74 @@ describe('validateEnv — CORS_ORIGINS must be a well-formed origin list', () =>
         CORS_ORIGINS: 'https://shop.example.com/',
       }),
     ).toThrow(/CORS_ORIGINS/i);
+  });
+});
+
+/**
+ * STORE_CLIENT_URL is the storefront origin the API redirects people back to:
+ * the Google-OAuth callback, and the "reset your password" link in the email.
+ *
+ * It was read with a `http://localhost:3000` default and set by NOTHING — not
+ * docker-compose.prod.yml, not `.env.production.example`, not this class. In
+ * production that meant both journeys pointed at a machine that does not exist,
+ * while the API booted, answered /health and looked entirely healthy. A default
+ * is what makes that invisible; requiring the value in production is what makes
+ * it impossible (TASK-324).
+ */
+describe('validateEnv — STORE_CLIENT_URL is required in production', () => {
+  const base = {
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+    JWT_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+    CSRF_SECRET: 'c'.repeat(32),
+    CORS_ORIGINS: 'https://shop.example.com',
+  };
+
+  it('boots in development without STORE_CLIENT_URL', () => {
+    expect(() => validateEnv({ ...base, NODE_ENV: 'development' })).not.toThrow();
+  });
+
+  it('fails fast in production when STORE_CLIENT_URL is missing', () => {
+    expect(() => validateEnv({ ...base, NODE_ENV: 'production' })).toThrow(/STORE_CLIENT_URL/i);
+  });
+
+  it('accepts an exact origin in production', () => {
+    const result = validateEnv({
+      ...base,
+      NODE_ENV: 'production',
+      STORE_CLIENT_URL: 'https://shop.example.com',
+    });
+    expect(result.STORE_CLIENT_URL).toBe('https://shop.example.com');
+  });
+
+  it('accepts an origin with an explicit port', () => {
+    expect(() =>
+      validateEnv({ ...base, NODE_ENV: 'development', STORE_CLIENT_URL: 'http://localhost:3000' }),
+    ).not.toThrow();
+  });
+
+  // The value is concatenated with a path (`${origin}/login?oauthError=1`), so a
+  // trailing slash yields `//login` and a path prefix yields a URL nobody serves.
+  it.each([
+    ['a trailing slash', 'https://shop.example.com/'],
+    ['a path', 'https://shop.example.com/store'],
+    ['a missing scheme', 'shop.example.com'],
+    ['a comma-separated list', 'https://shop.example.com,https://admin.example.com'],
+  ])('rejects %s', (_label, value) => {
+    expect(() => validateEnv({ ...base, NODE_ENV: 'production', STORE_CLIENT_URL: value })).toThrow(
+      /STORE_CLIENT_URL/i,
+    );
+  });
+
+  // Outside production it stays optional, but a value that IS set must be valid —
+  // otherwise a typo would only be discovered on the production deploy.
+  it('rejects a malformed value outside production too', () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        NODE_ENV: 'development',
+        STORE_CLIENT_URL: 'https://shop.example.com/',
+      }),
+    ).toThrow(/STORE_CLIENT_URL/i);
   });
 });

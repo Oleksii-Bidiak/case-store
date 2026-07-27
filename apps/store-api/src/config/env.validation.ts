@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   Max,
   Min,
   MinLength,
@@ -12,6 +13,13 @@ import {
   validateSync,
 } from 'class-validator';
 import { IsOriginList } from '../common/validators/is-origin-list.decorator';
+
+/**
+ * An exact origin: scheme + host + optional port. No path, no trailing slash —
+ * these values are concatenated with a path (`${origin}/login?…`), so one stray
+ * slash produces `//login`, and a path prefix produces a URL nobody serves.
+ */
+const ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i;
 
 /**
  * Supported runtime environments.
@@ -62,6 +70,12 @@ export class EnvironmentVariables {
   @IsString()
   JWT_REFRESH_EXPIRATION?: string;
 
+  // How long a password-reset link stays usable. Optional — defaults to 1h in
+  // AuthService.
+  @IsOptional()
+  @IsString()
+  PASSWORD_RESET_TOKEN_EXPIRATION?: string;
+
   // REQUIRED in production, and its format is checked. Previously optional and
   // unvalidated, which failed in the worst possible way: main.ts falls back to
   // `http://localhost:3000` when it is unset, and a typo'd entry (trailing slash,
@@ -75,6 +89,55 @@ export class EnvironmentVariables {
   )
   @IsOriginList()
   CORS_ORIGINS?: string;
+
+  // ─── Storefront origin (TASK-324) ─────────────────────────────────────────
+  // Where the API sends a person back to: the Google-OAuth callback redirect and
+  // the "reset your password" link in the email.
+  //
+  // REQUIRED in production. It used to be read with a `http://localhost:3000`
+  // default and set by nothing — not by compose, not by the example env file —
+  // so in production both journeys pointed at a machine that does not exist,
+  // and the API booted, passed its health check and reported itself perfectly
+  // fine. A default is exactly what makes this class of bug invisible: there is
+  // no error to see. Failing at startup is the only way it surfaces at all.
+  //
+  // Compose sets it from NEXT_PUBLIC_APP_URL rather than as a variable of its
+  // own: it is the same storefront origin, and two independent variables for one
+  // origin drift apart with certainty.
+  @ValidateIf(
+    (env: EnvironmentVariables) =>
+      env.NODE_ENV === Environment.Production || env.STORE_CLIENT_URL !== undefined,
+  )
+  @IsString({ message: 'STORE_CLIENT_URL is required in production' })
+  @Matches(ORIGIN, {
+    message:
+      'STORE_CLIENT_URL must be an exact origin — scheme + host + optional port, ' +
+      'no path and no trailing slash. e.g. "https://shop.example.com"',
+  })
+  STORE_CLIENT_URL?: string;
+
+  // ─── ISR revalidation (TASK-187) ──────────────────────────────────────────
+  // The shared secret and the storefront endpoint RevalidationNotifier POSTs to
+  // after published content changes. Both optional: when either is absent the
+  // notifier is a silent no-op, which is what dev and CI want. In production
+  // both are set by docker-compose.prod.yml — and were not, until TASK-324,
+  // which is why on-demand revalidation was dead there.
+  @IsOptional()
+  @IsString()
+  REVALIDATE_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  STOREFRONT_REVALIDATE_URL?: string;
+
+  // ─── Umami CSP origin (TASK-261) ──────────────────────────────────────────
+  // Optional. When set, Helmet's CSP allows the Umami script/connect origin.
+  // Declared here so the invariant holds with no exceptions: everything
+  // docker-compose.prod.yml hands to store-api is described in this class, and
+  // `scripts/env-check.js` enforces that.
+  @IsOptional()
+  @IsString()
+  UMAMI_ORIGIN?: string;
 
   // Rate limit for the locked-account owner notice (TASK-287): the minimum gap,
   // in hours, between two such emails to the same address no matter how often the
@@ -115,6 +178,37 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   MAIL_FROM?: string;
+
+  // ─── Outbound-mail queue + scheduled publishing ────────────────────────────
+  // All optional tuning knobs with defaults in their services. They are declared
+  // here anyway, because "read through ConfigService but declared nowhere" is the
+  // exact shape of the STORE_CLIENT_URL bug: a value with a default is a value
+  // that keeps its default silently. Declaring them also means a garbled number
+  // (MAIL_OUTBOX_BATCH_SIZE=ten) fails at startup instead of turning into NaN
+  // and stalling the queue with no error at all.
+
+  @IsOptional()
+  @IsString()
+  MAIL_OUTBOX_CRON?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  MAIL_OUTBOX_BATCH_SIZE?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  MAIL_OUTBOX_BACKOFF_BASE_MS?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  MAIL_OUTBOX_BACKOFF_MAX_MS?: number;
+
+  @IsOptional()
+  @IsString()
+  PUBLISHING_CRON?: string;
 
   // ─── Redis / Cache ──────────────────────────────────────────────────────────
   // All optional: when REDIS_HOST is absent the cache falls back to an in-memory
