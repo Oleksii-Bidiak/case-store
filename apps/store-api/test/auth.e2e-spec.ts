@@ -97,6 +97,12 @@ describe('AuthController (e2e)', () => {
     findOAuthAccount: jest.fn(),
     linkOAuthAccount: jest.fn(),
     createUserFromOAuth: jest.fn(),
+    // TASK-314 failed-login lockout. `recordFailedLogin` resolves 1 (first
+    // failure of a fresh window), so the wrong-password cases below exercise
+    // the counter without ever tripping the lock on a shared mock.
+    recordFailedLogin: jest.fn().mockResolvedValue(1),
+    lockLoginUntil: jest.fn(),
+    clearFailedLogins: jest.fn(),
   };
 
   // Mock PrismaService — prevents database connection errors
@@ -399,7 +405,12 @@ describe('AuthController (e2e)', () => {
         .set('Cookie', `refreshToken=${refreshJwt}`)
         .expect(401);
 
-      expect(response.body.message).toBe('Account is deactivated');
+      // TASK-314: the same generic message as an unknown token. A distinct
+      // "Account is deactivated" reply told whoever holds the cookie — the
+      // owner or a thief — that the account had been banned.
+      expect(response.body.message).toBe('Invalid refresh token');
+      expect(authRepositoryMock.revokeToken).not.toHaveBeenCalled();
+      expect(authRepositoryMock.saveRefreshToken).not.toHaveBeenCalled();
     });
   });
 

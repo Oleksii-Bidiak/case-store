@@ -525,12 +525,16 @@ describe('AuthRepository', () => {
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
 
       // The user row is created WITHOUT any passwordHash — a Google-only
-      // account has genuinely no password (schema allows null since TASK-168).
+      // account has genuinely no password (schema allows null since TASK-168) —
+      // and with the role pinned explicitly to CUSTOMER (TASK-314). The schema
+      // default is already CUSTOMER; stating it at the call site means an OAuth
+      // signup can never inherit a different default if that default changes.
       expect(txMock.user.create).toHaveBeenCalledWith({
         data: {
           email: 'test@example.com',
           firstName: 'John',
           lastName: 'Doe',
+          role: 'CUSTOMER',
         },
       });
 
@@ -543,6 +547,65 @@ describe('AuthRepository', () => {
           providerId: 'google-sub-123',
           email: 'test@example.com',
         },
+      });
+    });
+  });
+
+  // ─── failed-login lockout (TASK-314) ────────────────────────────────────────
+
+  describe('recordFailedLogin', () => {
+    it('increments the counter atomically and returns the new value', async () => {
+      prismaMock.user.update.mockResolvedValue({ ...mockUser, failedLoginAttempts: 3 });
+
+      const attempts = await repository.recordFailedLogin('user-uuid-1', false);
+
+      expect(attempts).toBe(3);
+      // `increment` (not read-then-write): two simultaneous failed logins must
+      // not lose an attempt to a stale read.
+      expect(prismaMock.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-uuid-1' },
+        data: { failedLoginAttempts: { increment: 1 } },
+      });
+    });
+
+    it('restarts the window at 1 and clears the stale lock when asked', async () => {
+      prismaMock.user.update.mockResolvedValue({ ...mockUser, failedLoginAttempts: 1 });
+
+      const attempts = await repository.recordFailedLogin('user-uuid-1', true);
+
+      expect(attempts).toBe(1);
+      // An expired lock must not leave the counter parked at the threshold —
+      // otherwise the very next mistyped password re-locks instantly, forever.
+      expect(prismaMock.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-uuid-1' },
+        data: { failedLoginAttempts: 1, lockedUntil: null },
+      });
+    });
+  });
+
+  describe('lockLoginUntil', () => {
+    it('stores the lock deadline', async () => {
+      const until = new Date(Date.now() + 15 * 60 * 1000);
+      prismaMock.user.update.mockResolvedValue({ ...mockUser, lockedUntil: until });
+
+      await repository.lockLoginUntil('user-uuid-1', until);
+
+      expect(prismaMock.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-uuid-1' },
+        data: { lockedUntil: until },
+      });
+    });
+  });
+
+  describe('clearFailedLogins', () => {
+    it('resets the counter and drops the lock', async () => {
+      prismaMock.user.update.mockResolvedValue(mockUser);
+
+      await repository.clearFailedLogins('user-uuid-1');
+
+      expect(prismaMock.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-uuid-1' },
+        data: { failedLoginAttempts: 0, lockedUntil: null },
       });
     });
   });

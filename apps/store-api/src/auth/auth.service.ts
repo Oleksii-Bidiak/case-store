@@ -4,7 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PinoLogger } from 'nestjs-pino';
 import { randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
-import { OAuthProvider, User } from '@prisma/client';
+import { OAuthProvider, User, UserRole } from '@prisma/client';
 import { AuthRepository, CreateUserInput } from './auth.repository';
 import { AuthTokens } from './entities';
 import { RegisterDto } from './dto';
@@ -22,6 +22,20 @@ const INVALID_RESET_TOKEN_MESSAGE = 'Invalid or expired reset token';
  * check failed (unknown email / wrong password / deactivated / soft-deleted). */
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid credentials';
 
+/** Generic error message for a refresh attempt that fails on a fact about OUR
+ * account rather than about the credential presented: no such token, or a token
+ * whose owner is banned / tombstoned (TASK-314).
+ *
+ * The other two refresh rejections stay distinct on purpose — "expired" and
+ * "token reuse detected" are facts about the token the caller just handed us,
+ * which the caller already holds; that is the same line
+ * {@link GOOGLE_EMAIL_UNVERIFIED_MESSAGE} draws. Account state sits on the far
+ * side of it: whoever holds a stolen refresh cookie must not learn from us that
+ * the account was banned or deleted — that the theft was noticed and acted on —
+ * nor which of the two it was, a difference `login()` already refuses to
+ * reveal about the same row. */
+const INVALID_REFRESH_TOKEN_MESSAGE = 'Invalid refresh token';
+
 /** Not a secret — a fixed input whose only purpose is to drive argon2's cost
  * function on the argon2-free rejection branches of `requestPasswordReset`
  * (TASK-273) and `login` (TASK-274). See {@link AuthService.burnTimingCost}. */
@@ -38,6 +52,26 @@ const GOOGLE_EMAIL_UNVERIFIED_MESSAGE = "Google account's email is not verified"
 /** Default rate limit for the locked-account owner notice (TASK-287): at most
  * one mail per address per 24h, however many times the login is retried. */
 const DEFAULT_ACCOUNT_LOCKED_NOTICE_WINDOW_HOURS = 24;
+
+/** Failed password attempts tolerated before the account's password login is
+ * temporarily locked (TASK-314).
+ *
+ * Five deliberately matches the per-IP throttle on POST /api/auth/login
+ * (`@Throttle({ limit: 5, ttl: 60000 })`): the throttle already stops five
+ * guesses per minute from ONE address, but a distributed attacker sidesteps it
+ * by rotating source IPs, and `User.isActive` is a MANUAL admin ban switch, not
+ * an automatic lockout. This counter follows the ACCOUNT, so rotating IPs buys
+ * nothing. */
+const MAX_FAILED_LOGIN_ATTEMPTS = 5;
+
+/** How long the lock holds once tripped (TASK-314).
+ *
+ * 15 minutes caps an online brute force at 20 guesses/hour — useless against
+ * any password the store's own policy accepts — while keeping a self-inflicted
+ * lockout short enough that the real owner just makes coffee instead of filing
+ * a support ticket. The password-reset path is deliberately NOT gated by the
+ * lock, so a genuinely stuck owner always has a way back in. */
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000;
 
 @Injectable()
 export class AuthService {
@@ -146,15 +180,76 @@ export class AuthService {
       await this.notifyLockedAccountOwner(user.id, user.email);
     }
 
-    // Deactivated (banned) and soft-deleted (tombstoned) accounts must never
-    // obtain tokens. Folded in with the password check so all three rejections
-    // are indistinguishable to the client — and each has already paid the
-    // argon2.verify cost, so no branch here is a timing outlier.
-    if (!isPasswordValid || isLocked) {
+    // TASK-314 lockout. Checked AFTER argon2.verify on purpose: returning here
+    // before paying the hashing cost would make the locked branch measurably
+    // faster than every other branch — a timing oracle that answers "is this
+    // account currently locked", hence "does this email exist". No mail is sent
+    // for an automatic lockout (unlike the manual ban above): anyone can drive a
+    // stranger's account into lockout with wrong passwords, so mailing on it
+    // would turn the login form into a mail sprayer. The counter is not touched
+    // either — an attacker hammering a locked account must not be able to extend
+    // its deadline into a permanent denial of service for the real owner.
+    if (this.isTemporarilyLocked(user)) {
       throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
 
+    if (!isPasswordValid) {
+      await this.registerFailedLogin(user);
+      throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
+    }
+
+    // Deactivated (banned) and soft-deleted (tombstoned) accounts must never
+    // obtain tokens. Same message as the wrong-password branch above so the two
+    // are indistinguishable to the client — and each has already paid the
+    // argon2.verify cost, so no branch here is a timing outlier.
+    if (isLocked) {
+      throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
+    }
+
+    // The owner just proved themselves — wipe the slate, so a counter built up
+    // from occasional typos over months can never lock out someone who never
+    // had MAX_FAILED_LOGIN_ATTEMPTS failures in a row. Skipped when there is
+    // nothing to clear: the common path stays a pure read.
+    if (user.failedLoginAttempts > 0 || user.lockedUntil) {
+      await this.authRepository.clearFailedLogins(user.id);
+    }
+
     return this.generateTokenPair(user.id, user.role);
+  }
+
+  /** Is this account's password login currently held shut by TASK-314's
+   * automatic lockout? A `lockedUntil` in the past is a spent lock, not a
+   * live one. */
+  private isTemporarilyLocked(user: Pick<User, 'lockedUntil'>): boolean {
+    return Boolean(user.lockedUntil && user.lockedUntil.getTime() > Date.now());
+  }
+
+  /**
+   * Count one failed password attempt against the account and trip the lock
+   * once the threshold is reached (TASK-314).
+   *
+   * A non-null `lockedUntil` at this point can only be a lock that has already
+   * expired (a live one throws before we get here), so the window restarts.
+   */
+  private async registerFailedLogin(user: Pick<User, 'id' | 'lockedUntil'>): Promise<void> {
+    const attempts = await this.authRepository.recordFailedLogin(
+      user.id,
+      Boolean(user.lockedUntil),
+    );
+
+    if (attempts < MAX_FAILED_LOGIN_ATTEMPTS) {
+      return;
+    }
+
+    const lockedUntil = new Date(Date.now() + LOGIN_LOCKOUT_MS);
+    await this.authRepository.lockLoginUntil(user.id, lockedUntil);
+
+    // The client is told nothing (same generic 401 as attempt #1) — the record
+    // of the lock lives here, where an operator can alert on it.
+    this.logger.warn(
+      { event: 'auth.loginLockedOut', userId: user.id, attempts, lockedUntil },
+      'Password login locked out after repeated failures',
+    );
   }
 
   /**
@@ -171,6 +266,8 @@ export class AuthService {
    *    {@link INVALID_CREDENTIALS_MESSAGE} + {@link notifyLockedAccountOwner}
    *    treatment as a password login (TASK-274/287), and never accumulates a
    *    working OAuth link (no silent-reactivation side channel).
+   * 5. The role gate ({@link assertStorefrontRole}) runs strictly AFTER the lock
+   *    check and strictly BEFORE linking or token issuance (TASK-314).
    */
   async loginWithGoogleProfile(profile: GoogleOAuthProfile): Promise<AuthTokens> {
     if (!profile.email || !profile.emailVerified) {
@@ -201,6 +298,12 @@ export class AuthService {
           providerId: profile.providerId,
         });
 
+        // Defence in depth (TASK-314): createUserFromOAuth pins CUSTOMER, but
+        // the rule is re-checked on the row that actually came back, so a future
+        // change there cannot reopen the hole through the signup branch. Checked
+        // before the "registered" log — a refused login is not a registration.
+        this.assertStorefrontRole(created.user);
+
         this.logger.info(
           { event: 'user.registeredViaGoogle', userId: created.user.id },
           'User registered via Google',
@@ -226,6 +329,14 @@ export class AuthService {
       throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
 
+    // TASK-314. Deliberately AFTER the lock check: run first, it would make
+    // "there is an ADMIN with this email" and "there is a locked account with
+    // this email" distinguishable by their side effects (the TASK-287 owner
+    // notice fires for one and not the other) — a fresh oracle. Deliberately
+    // BEFORE `needsLink`: a refused login must leave no link behind, the same
+    // rule the lock check follows.
+    this.assertStorefrontRole(user);
+
     if (needsLink) {
       await this.authRepository.linkOAuthAccount(
         user.id,
@@ -249,12 +360,15 @@ export class AuthService {
    * Security: If a revoked token is reused, this indicates a potential token theft.
    * Per RFC 6819 §5.2.2, we revoke ALL tokens for the user to terminate all sessions,
    * forcing re-authentication and preventing the attacker from continuing to use stolen tokens.
+   *
+   * The account check mirrors `login()` exactly (TASK-314): a session must never
+   * outlive the account it belongs to.
    */
   async refreshToken(oldToken: string): Promise<AuthTokens> {
     // Find the refresh token in the database
     const storedToken = await this.authRepository.findRefreshToken(oldToken);
     if (!storedToken) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException(INVALID_REFRESH_TOKEN_MESSAGE);
     }
 
     // Check if token is revoked — reuse detection
@@ -270,10 +384,19 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token has expired');
     }
 
-    // Reject deactivated (banned) accounts — a valid refresh token must not let
-    // a banned user keep rotating into fresh access tokens.
-    if (!storedToken.user.isActive) {
-      throw new UnauthorizedException('Account is deactivated');
+    // Reject deactivated (banned) AND soft-deleted (tombstoned) owners — the
+    // same pair of conditions login() and loginWithGoogleProfile() reject
+    // (TASK-314). Checking only `isActive` here let a tombstoned account keep
+    // rotating for the full refresh lifetime (7 days), where the access token
+    // alone would have expired in 15 minutes.
+    //
+    // deactivateUser/deleteUser do revoke every token, but this check must not
+    // lean on that: a token minted in the race window, a row flipped by
+    // SQL/seed/import, or a future flow that forgets the revoke would each
+    // reopen the gap. Rejection comes BEFORE revokeToken, so a refused attempt
+    // leaves the row untouched.
+    if (!storedToken.user.isActive || storedToken.user.deletedAt) {
+      throw new UnauthorizedException(INVALID_REFRESH_TOKEN_MESSAGE);
     }
 
     // Revoke the old refresh token (rotation)
@@ -407,6 +530,39 @@ export class AuthService {
     tokens.accessToken = accessToken;
     tokens.refreshToken = refreshToken;
     return tokens;
+  }
+
+  /**
+   * Enforce the storefront-Google role policy (TASK-314): the storefront's
+   * "Sign in with Google" button may only ever mint a token for a CUSTOMER.
+   *
+   * Staff — ADMIN today, any future MANAGER — sign in with a password (plus 2FA
+   * once it lands). Without this gate, any privileged row whose email happens to
+   * be a Gmail address turns Google's consent screen into a full admin login:
+   * the store's password policy, `is-strong-app-password` and the login lockout
+   * are all bypassed, and the entire trust boundary silently moves onto that
+   * Google account.
+   *
+   * The refusal is the same generic {@link INVALID_CREDENTIALS_MESSAGE} used
+   * everywhere else in this file (TASK-274/287) — never "you are an admin, use
+   * the admin login", which would confirm both that the account exists and that
+   * it is privileged. The truth is recorded server-side only, at `warn` so an
+   * operator can alert on it: a hit here is either a misconfigured admin or
+   * someone who has learned an admin's Gmail address.
+   *
+   * There is intentionally NO env toggle to relax this — such a flag only ever
+   * gets switched on "temporarily".
+   */
+  private assertStorefrontRole(user: Pick<User, 'id' | 'role'>): void {
+    if (user.role === UserRole.CUSTOMER) {
+      return;
+    }
+
+    this.logger.warn(
+      { event: 'auth.googleAdminBlocked', userId: user.id },
+      'Storefront Google sign-in refused for a privileged role',
+    );
+    throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
   }
 
   /**

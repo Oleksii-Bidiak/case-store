@@ -32,6 +32,8 @@ const mockUser = {
   phone: null,
   role: 'CUSTOMER' as const,
   isActive: true,
+  failedLoginAttempts: 0,
+  lockedUntil: null as Date | null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -91,6 +93,9 @@ describe('AuthService', () => {
 
     // Create a mock AuthRepository
     const authRepositoryMock = {
+      recordFailedLogin: jest.fn().mockResolvedValue(1),
+      lockLoginUntil: jest.fn(),
+      clearFailedLogins: jest.fn(),
       findByEmail: jest.fn(),
       findById: jest.fn(),
       createUser: jest.fn(),
@@ -422,6 +427,190 @@ describe('AuthService', () => {
     });
   });
 
+  // ─── login → failed-attempt lockout (TASK-314) ──────────────────────────────
+  //
+  // The only prior defence on POST /api/auth/login was the per-IP throttle
+  // (5/60s), which a distributed attacker sidesteps by rotating source IPs, and
+  // `User.isActive`, which is a MANUAL admin ban switch — not an automatic
+  // lockout. This is the per-ACCOUNT counter: it follows the account, not the
+  // connection.
+  //
+  // Invariants that must hold together: the refusal stays byte-identical to
+  // every other login refusal (no "account locked" oracle), the argon2 cost is
+  // still paid on the locked branch (no timing oracle), and NO email is ever
+  // sent for an automatic lockout (that would be a mail-spray vector: anyone
+  // can drive a stranger's account into lockout with wrong passwords).
+
+  describe('login — failed-attempt lockout', () => {
+    const loginEmail = 'test@example.com';
+    const loginPassword = 'StrongP@ss123';
+
+    /** A user whose lock is currently in force (attempts already at threshold). */
+    const lockedOutUser = {
+      ...mockUser,
+      failedLoginAttempts: 5,
+      lockedUntil: new Date(Date.now() + 10 * 60 * 1000),
+    };
+
+    it('counts a failed attempt against the account', async () => {
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, failedLoginAttempts: 2 });
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+      authRepository.recordFailedLogin.mockResolvedValue(3);
+
+      await expect(service.login(loginEmail, 'WrongPassword123')).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      expect(authRepository.recordFailedLogin).toHaveBeenCalledWith(mockUser.id, false);
+      // Below the threshold — nothing is locked yet.
+      expect(authRepository.lockLoginUntil).not.toHaveBeenCalled();
+    });
+
+    it('locks the account for 15 minutes once the 5th attempt fails', async () => {
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, failedLoginAttempts: 4 });
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+      authRepository.recordFailedLogin.mockResolvedValue(5);
+
+      const before = Date.now();
+      await expect(service.login(loginEmail, 'WrongPassword123')).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      expect(authRepository.lockLoginUntil).toHaveBeenCalledTimes(1);
+      const [userId, until] = authRepository.lockLoginUntil.mock.calls[0];
+      expect(userId).toBe(mockUser.id);
+      const windowMs = (until as Date).getTime() - before;
+      expect(windowMs).toBeGreaterThanOrEqual(15 * 60 * 1000 - 1000);
+      expect(windowMs).toBeLessThanOrEqual(15 * 60 * 1000 + 1000);
+
+      // The 5th failure still answers exactly like the 1st — the client is
+      // never told that this attempt was the one that tripped the lock.
+      expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
+    });
+
+    it('refuses the 6th attempt while the lock holds, indistinguishably from an unknown email', async () => {
+      // Baseline: the message an anonymous prober gets for an email that does
+      // not exist at all.
+      authRepository.findByEmail.mockResolvedValue(null);
+      const unknownEmailMessage = await service
+        .login('nobody@example.com', loginPassword)
+        .catch((err: Error) => err.message);
+
+      authRepository.findByEmail.mockResolvedValue(lockedOutUser);
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+      const lockedMessage = await service
+        .login(loginEmail, 'WrongPassword123')
+        .catch((err: Error) => err.message);
+
+      expect(lockedMessage).toBe(unknownEmailMessage);
+      expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
+      // A locked account must not keep inflating its own counter — the lock
+      // deadline is fixed at the moment it is set, not extended by an attacker
+      // hammering the endpoint (which would make it a permanent DoS).
+      expect(authRepository.recordFailedLogin).not.toHaveBeenCalled();
+    });
+
+    it('refuses the correct password while the lock holds, still paying the argon2 cost', async () => {
+      authRepository.findByEmail.mockResolvedValue(lockedOutUser);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      // Returning before argon2.verify would make the locked branch measurably
+      // faster than every other branch — a timing oracle announcing "this
+      // account is currently locked", i.e. "this email exists".
+      expect(argon2.verify).toHaveBeenCalledTimes(1);
+      expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
+    });
+
+    it('never emails the owner about an automatic lockout', async () => {
+      authRepository.findByEmail.mockResolvedValue(lockedOutUser);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      await expect(service.login(loginEmail, loginPassword)).rejects.toThrow(UnauthorizedException);
+
+      // TASK-287's notice stays bound to the MANUAL isActive/deletedAt ban. An
+      // automatic lockout is a different thing: anyone can trigger it with
+      // wrong passwords, so mailing on it turns the login form into a mail
+      // sprayer aimed at a stranger's inbox.
+      expect(mailOutboxService.enqueueAccountLockedNotice).not.toHaveBeenCalled();
+      expect(mailOutboxService.hasRecentAccountLockedNotice).not.toHaveBeenCalled();
+    });
+
+    it('restarts the window after an expired lock instead of re-locking on the first miss', async () => {
+      authRepository.findByEmail.mockResolvedValue({
+        ...mockUser,
+        failedLoginAttempts: 5,
+        lockedUntil: new Date(Date.now() - 1000),
+      });
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+      authRepository.recordFailedLogin.mockResolvedValue(1);
+
+      await expect(service.login(loginEmail, 'WrongPassword123')).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      // restartWindow = true: the served lock is spent, counting starts over.
+      expect(authRepository.recordFailedLogin).toHaveBeenCalledWith(mockUser.id, true);
+      expect(authRepository.lockLoginUntil).not.toHaveBeenCalled();
+    });
+
+    it('lets the owner back in once the lock has expired and clears the counter', async () => {
+      authRepository.findByEmail.mockResolvedValue({
+        ...mockUser,
+        failedLoginAttempts: 5,
+        lockedUntil: new Date(Date.now() - 1000),
+      });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      jwtService.sign.mockReturnValueOnce('access-token-value');
+      jwtService.sign.mockReturnValueOnce('refresh-token-value');
+      authRepository.saveRefreshToken.mockResolvedValue(mockRefreshTokenRecord);
+
+      const result = await service.login(loginEmail, loginPassword);
+
+      expect(result.accessToken).toBe('access-token-value');
+      expect(authRepository.clearFailedLogins).toHaveBeenCalledWith(mockUser.id);
+    });
+
+    it('clears a partial counter on a successful login', async () => {
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, failedLoginAttempts: 3 });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      authRepository.saveRefreshToken.mockResolvedValue(mockRefreshTokenRecord);
+
+      await service.login(loginEmail, loginPassword);
+
+      // Otherwise the counter creeps up over months of typos and locks out a
+      // user who never had five failures in a row.
+      expect(authRepository.clearFailedLogins).toHaveBeenCalledWith(mockUser.id);
+    });
+
+    it('does not write on a clean successful login', async () => {
+      authRepository.findByEmail.mockResolvedValue(mockUser);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      authRepository.saveRefreshToken.mockResolvedValue(mockRefreshTokenRecord);
+
+      await service.login(loginEmail, loginPassword);
+
+      // Counter already 0, no lock — the common path stays a pure read.
+      expect(authRepository.clearFailedLogins).not.toHaveBeenCalled();
+    });
+
+    it('does not count attempts against an email that has no account', async () => {
+      authRepository.findByEmail.mockResolvedValue(null);
+
+      await expect(service.login('nobody@example.com', loginPassword)).rejects.toThrow(
+        UnauthorizedException,
+      );
+
+      // There is no row to count against, and inventing one would hand an
+      // attacker a way to create rows by guessing addresses.
+      expect(authRepository.recordFailedLogin).not.toHaveBeenCalled();
+      expect(authRepository.lockLoginUntil).not.toHaveBeenCalled();
+    });
+  });
+
   // ─── loginWithGoogleProfile (TASK-168) ──────────────────────────────────────
   //
   // Account resolution for the Google OAuth callback: link-by-verified-email /
@@ -527,24 +716,25 @@ describe('AuthService', () => {
       expect(generateTokenPairSpy).not.toHaveBeenCalled();
     });
 
-    it('links an existing active password account by verified email, preserving its role', async () => {
-      // ADMIN makes the "role preserved unchanged" regression guard meaningful
-      // (plan 153 §Risks — no silent downgrade, no silent upgrade).
-      const adminUser = { ...mockUser, role: 'ADMIN' as const };
+    it('links an existing active CUSTOMER account by verified email, preserving its role', async () => {
+      // The role must survive the link untouched — no silent downgrade, no
+      // silent upgrade (plan 153 §Risks). Since TASK-314 this guard can only be
+      // written with a CUSTOMER: a privileged role is refused outright (see the
+      // TASK-314 block below), so "preserved" and "CUSTOMER" now coincide.
       authRepository.findOAuthAccount.mockResolvedValue(null);
-      authRepository.findByEmail.mockResolvedValue(adminUser);
+      authRepository.findByEmail.mockResolvedValue(mockUser);
 
       const result = await service.loginWithGoogleProfile(googleProfile);
 
       expect(result.accessToken).toBe('access-token-value');
       expect(authRepository.linkOAuthAccount).toHaveBeenCalledTimes(1);
       expect(authRepository.linkOAuthAccount).toHaveBeenCalledWith(
-        adminUser.id,
+        mockUser.id,
         OAuthProvider.GOOGLE,
         'google-sub-123',
         googleProfile.email,
       );
-      expect(generateTokenPairSpy).toHaveBeenCalledWith(adminUser.id, 'ADMIN');
+      expect(generateTokenPairSpy).toHaveBeenCalledWith(mockUser.id, 'CUSTOMER');
     });
 
     it('never links a locked account resolved by email — no silent reactivation side channel', async () => {
@@ -585,6 +775,106 @@ describe('AuthService', () => {
       // The transaction inside createUserFromOAuth already created the link.
       expect(authRepository.linkOAuthAccount).not.toHaveBeenCalled();
       expect(mailOutboxService.enqueueAccountLockedNotice).not.toHaveBeenCalled();
+    });
+
+    // ─── TASK-314: the storefront's Google button is CUSTOMER-only ────────────
+    //
+    // Owner decision, 2026-07-27: storefront Google sign-in may NEVER mint a
+    // token for a role other than CUSTOMER. Staff sign in with a password (plus
+    // 2FA later). Without this gate, any ADMIN row whose email happens to be a
+    // Gmail address turns Google's consent screen into a full admin login —
+    // bypassing the store's password policy, is-strong-app-password and any
+    // future lockout, and moving the whole trust boundary onto that Google
+    // account. There is deliberately no env toggle: the rule is hardcoded.
+
+    /** The single server-side event that records a blocked privileged login. */
+    const blockedEvents = (): Array<Record<string, unknown>> =>
+      loggerMock.warn.mock.calls
+        .map((call) => call[0] as Record<string, unknown>)
+        .filter((payload) => payload?.event === 'auth.googleAdminBlocked');
+
+    it('refuses a linked ADMIN account with the generic message and issues no token', async () => {
+      authRepository.findOAuthAccount.mockResolvedValue({
+        ...mockOAuthLink,
+        user: { ...mockUser, role: 'ADMIN' as const },
+      });
+
+      // Indistinguishable from every other refusal in this file — never
+      // "you are an admin, use the admin login", which would confirm both the
+      // account's existence and its privilege level.
+      await expect(service.loginWithGoogleProfile(googleProfile)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      expect(generateTokenPairSpy).not.toHaveBeenCalled();
+
+      // The truth stays on the server, where the operator can alert on it.
+      expect(blockedEvents()).toHaveLength(1);
+      expect(blockedEvents()[0].userId).toBe(mockUser.id);
+    });
+
+    it('refuses an ADMIN matched by verified email and never links the OAuth identity', async () => {
+      authRepository.findOAuthAccount.mockResolvedValue(null);
+      authRepository.findByEmail.mockResolvedValue({ ...mockUser, role: 'ADMIN' as const });
+
+      await expect(service.loginWithGoogleProfile(googleProfile)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      // A refused login must leave no trace that would make the next attempt
+      // succeed — the same "reject before any side effect" rule the lock check
+      // follows (TASK-168, plan 153 §Locked-account resolution).
+      expect(authRepository.linkOAuthAccount).not.toHaveBeenCalled();
+      expect(generateTokenPairSpy).not.toHaveBeenCalled();
+      expect(blockedEvents()).toHaveLength(1);
+    });
+
+    it('checks the account lock BEFORE the role gate — a deactivated ADMIN is refused as locked', async () => {
+      authRepository.findOAuthAccount.mockResolvedValue({
+        ...mockOAuthLink,
+        user: { ...mockUser, role: 'ADMIN' as const, isActive: false },
+      });
+
+      await expect(service.loginWithGoogleProfile(googleProfile)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      // Order is load-bearing. If the role gate ran first, the two states
+      // ("there is an ADMIN with this email" vs "there is a locked account
+      // with this email") would produce different side effects — the owner
+      // notice fires for one and not the other — recreating exactly the kind
+      // of oracle TASK-274/287 exists to remove.
+      expect(mailOutboxService.enqueueAccountLockedNotice).toHaveBeenCalledTimes(1);
+      expect(blockedEvents()).toHaveLength(0);
+      expect(generateTokenPairSpy).not.toHaveBeenCalled();
+    });
+
+    it('never issues a token when auto-provisioning returns a non-CUSTOMER row', async () => {
+      // Defence in depth: the rule is enforced at the single token-issuance
+      // choke point, so a future change to createUserFromOAuth (or a seed that
+      // pre-creates the row) cannot reopen the hole through the signup branch.
+      authRepository.findOAuthAccount.mockResolvedValue(null);
+      authRepository.findByEmail.mockResolvedValue(null);
+      authRepository.createUserFromOAuth.mockResolvedValue({
+        user: { ...mockUser, id: 'user-uuid-new', passwordHash: null, role: 'ADMIN' as const },
+        oauthAccount: { ...mockOAuthLink, userId: 'user-uuid-new' },
+      });
+
+      await expect(service.loginWithGoogleProfile(googleProfile)).rejects.toThrow(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      expect(generateTokenPairSpy).not.toHaveBeenCalled();
+      expect(blockedEvents()).toHaveLength(1);
+    });
+
+    it('does not log the block event on a normal CUSTOMER sign-in', async () => {
+      authRepository.findOAuthAccount.mockResolvedValue(mockOAuthLink);
+
+      await service.loginWithGoogleProfile(googleProfile);
+
+      expect(blockedEvents()).toHaveLength(0);
+      expect(generateTokenPairSpy).toHaveBeenCalledWith(mockUser.id, 'CUSTOMER');
     });
   });
 
@@ -647,18 +937,77 @@ describe('AuthService', () => {
       expect(authRepository.saveRefreshToken).toHaveBeenCalled();
     });
 
-    it('should throw UnauthorizedException when the token owner is deactivated', async () => {
+    // ─── TASK-314: the session must not outlive the account ──────────────────
+    //
+    // The audit of 2026-07-24 recorded "the session survives deactivation" as
+    // part of TASK-314. An access token buys 15 minutes; the refresh cycle
+    // bought a full 7 days, because this method checked `isActive` only —
+    // while `login()` and `loginWithGoogleProfile()` have always rejected BOTH
+    // a ban and a `deletedAt` tombstone. For an ADMIN row, that gap is the
+    // whole point of banning them.
+    //
+    // deactivateUser/deleteUser do call revokeAllUserTokens, but this method
+    // must not depend on another service having remembered to: a token issued
+    // in the race window, a row flipped by SQL/seed/import, or a future
+    // TASK-334 flow that skips that call would each reopen the hole.
+
+    it('refuses to rotate for a deactivated owner, with the generic message', async () => {
       authRepository.findRefreshToken.mockResolvedValue({
         ...mockRefreshTokenRecord,
         user: { ...mockUser, isActive: false },
       });
 
       await expect(service.refreshToken('refresh-token-value')).rejects.toThrow(
-        new UnauthorizedException('Account is deactivated'),
+        new UnauthorizedException('Invalid refresh token'),
       );
 
       // No rotation / new token issuance for a banned user.
       expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
+      expect(authRepository.revokeToken).not.toHaveBeenCalled();
+    });
+
+    it('refuses to rotate for a soft-deleted (tombstoned) owner', async () => {
+      authRepository.findRefreshToken.mockResolvedValue({
+        ...mockRefreshTokenRecord,
+        user: { ...mockUser, deletedAt: new Date() },
+      });
+
+      await expect(service.refreshToken('refresh-token-value')).rejects.toThrow(
+        new UnauthorizedException('Invalid refresh token'),
+      );
+
+      expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
+      expect(authRepository.revokeToken).not.toHaveBeenCalled();
+    });
+
+    it('answers a locked owner exactly as it answers an unknown token', async () => {
+      authRepository.findRefreshToken.mockResolvedValue(null);
+      const unknownTokenMessage = await service
+        .refreshToken('no-such-token')
+        .catch((err: Error) => err.message);
+
+      authRepository.findRefreshToken.mockResolvedValue({
+        ...mockRefreshTokenRecord,
+        user: { ...mockUser, isActive: false },
+      });
+      const bannedMessage = await service
+        .refreshToken('refresh-token-value')
+        .catch((err: Error) => err.message);
+
+      authRepository.findRefreshToken.mockResolvedValue({
+        ...mockRefreshTokenRecord,
+        user: { ...mockUser, deletedAt: new Date() },
+      });
+      const tombstonedMessage = await service
+        .refreshToken('refresh-token-value')
+        .catch((err: Error) => err.message);
+
+      // Whoever holds a stolen refresh cookie must not learn whether the
+      // account was banned or deleted — i.e. whether the theft was noticed and
+      // remediated. "Banned" must also stay indistinguishable from "deleted":
+      // login() refuses to reveal that difference, so this path cannot either.
+      expect(bannedMessage).toBe(unknownTokenMessage);
+      expect(tombstonedMessage).toBe(unknownTokenMessage);
     });
   });
 
