@@ -9,7 +9,10 @@ describe('CacheService', () => {
     get: jest.Mock;
     set: jest.Mock;
     del: jest.Mock;
-    store?: unknown;
+    disconnect: jest.Mock;
+    // cache-manager v7 replaced the single `store` with a `stores` array of
+    // Keyv instances (TASK-304).
+    stores?: unknown[];
   };
 
   beforeEach(async () => {
@@ -17,6 +20,7 @@ describe('CacheService', () => {
       get: jest.fn(),
       set: jest.fn(),
       del: jest.fn(),
+      disconnect: jest.fn().mockResolvedValue(undefined),
     };
 
     const pinoLoggerMock = {
@@ -95,27 +99,34 @@ describe('CacheService', () => {
 
   describe('delByPrefix', () => {
     it('uses SCAN + DEL when a Redis client is available', async () => {
+      // TASK-304: node-redis (via @keyv/redis), not ioredis — SCAN takes an
+      // options object and resolves to `{ cursor, keys }` with a NUMERIC
+      // cursor, and DEL takes an array rather than varargs.
       const scan = jest
         .fn()
-        // First page returns a non-zero cursor, second page terminates with "0".
-        .mockResolvedValueOnce(['7', ['product:list:a', 'product:list:b']])
-        .mockResolvedValueOnce(['0', ['product:list:c']]);
+        // First page returns a non-zero cursor, second page terminates with 0.
+        .mockResolvedValueOnce({ cursor: 7, keys: ['product:list:a', 'product:list:b'] })
+        .mockResolvedValueOnce({ cursor: 0, keys: ['product:list:c'] });
       const del = jest.fn().mockResolvedValue(1);
-      cacheManagerMock.store = { client: { scan, del } };
+      cacheManagerMock.stores = [{ store: { client: { scan, del } } }];
 
       await service.delByPrefix('product:list');
 
       expect(scan).toHaveBeenCalledTimes(2);
-      expect(scan).toHaveBeenNthCalledWith(1, '0', 'MATCH', 'product:list*', 'COUNT', 100);
-      expect(del).toHaveBeenCalledWith('product:list:a', 'product:list:b');
-      expect(del).toHaveBeenCalledWith('product:list:c');
+      expect(scan).toHaveBeenNthCalledWith(1, 0, { MATCH: 'product:list*', COUNT: 100 });
+      expect(del).toHaveBeenCalledWith(['product:list:a', 'product:list:b']);
+      expect(del).toHaveBeenCalledWith(['product:list:c']);
     });
 
-    it('falls back to store.keys() when no Redis client is present', async () => {
-      const keys = jest
-        .fn()
-        .mockResolvedValue(['product:list:a', 'product:detail:slug:x', 'product:list:b']);
-      cacheManagerMock.store = { keys };
+    it('falls back to iterating the Keyv store when no Redis client is present', async () => {
+      // cache-manager v7 dropped `store.keys()`; the equivalent is the Keyv
+      // async `iterator()`, which yields [key, value] pairs.
+      const iterator = jest.fn(async function* () {
+        yield ['product:list:a', 1] as [string, unknown];
+        yield ['product:detail:slug:x', 2] as [string, unknown];
+        yield ['product:list:b', 3] as [string, unknown];
+      });
+      cacheManagerMock.stores = [{ iterator }];
       cacheManagerMock.del.mockResolvedValue(undefined);
 
       await service.delByPrefix('product:list');
@@ -127,7 +138,7 @@ describe('CacheService', () => {
 
     it('swallows backend errors (never throws)', async () => {
       const scan = jest.fn().mockRejectedValue(new Error('redis down'));
-      cacheManagerMock.store = { client: { scan, del: jest.fn() } };
+      cacheManagerMock.stores = [{ store: { client: { scan, del: jest.fn() } } }];
 
       await expect(service.delByPrefix('product:list')).resolves.toBeUndefined();
     });
@@ -136,24 +147,16 @@ describe('CacheService', () => {
   // ─── onModuleDestroy (TASK-296) ───────────────────────────────────────────
 
   describe('onModuleDestroy', () => {
-    it('quits the ioredis client so it does not outlive the app', async () => {
-      const quit = jest.fn().mockResolvedValue('OK');
-      cacheManagerMock.store = { client: { quit } };
-
+    it('disconnects the cache so the connection does not outlive the app', async () => {
+      // cache-manager v7 exposes one `disconnect()` that tears down every
+      // configured store, replacing the old reach into ioredis' `quit()`.
       await service.onModuleDestroy();
 
-      expect(quit).toHaveBeenCalledTimes(1);
+      expect(cacheManagerMock.disconnect).toHaveBeenCalledTimes(1);
     });
 
-    it('is a no-op on the in-memory store (no client to close)', async () => {
-      cacheManagerMock.store = { keys: jest.fn() };
-
-      await expect(service.onModuleDestroy()).resolves.toBeUndefined();
-    });
-
-    it('never throws when the client is already closed', async () => {
-      const quit = jest.fn().mockRejectedValue(new Error('Connection is closed.'));
-      cacheManagerMock.store = { client: { quit } };
+    it('never throws when the connection is already closed', async () => {
+      cacheManagerMock.disconnect.mockRejectedValue(new Error('Connection is closed.'));
 
       await expect(service.onModuleDestroy()).resolves.toBeUndefined();
     });

@@ -53,7 +53,7 @@
     "deps are allowed to be uninstallable and are simply skipped.",
     "",
     "VERSIONS MUST EQUAL THE PARENT'S EXACTLY (lightningcss@1.32.0,",
-    "@tailwindcss/oxide@4.2.4) — the addon is version-locked to its parent. When you",
+    "@tailwindcss/oxide@4.3.3) — the addon is version-locked to its parent. When you",
     "bump Tailwind or lightningcss, bump these in the same commit.",
     "`scripts/check-lockfile-platforms.js` (CI job `lockfile-platform`) enforces both",
     "the presence and the version match, because the one-off lockfile edit is not",
@@ -66,7 +66,47 @@
   ],
   "optionalDependencies": {
     "lightningcss-linux-x64-gnu": "1.32.0",
-    "@tailwindcss/oxide-linux-x64-gnu": "4.2.4"
+    "@tailwindcss/oxide-linux-x64-gnu": "4.3.3"
+  },
+  "//overrides": [
+    "TASK-343. Transitive advisories that the direct bump does NOT reach, because",
+    "the parent pins an exact version. Re-check on every `next` bump — drop an",
+    "entry the moment the parent ships a fixed version itself.",
+    "",
+    "postcss: `next@16.2.12` declares `postcss: '8.4.31'` EXACTLY, so bumping next",
+    "does not clear GHSA-qx2v-qp2m-jg93 / GHSA-6g55-p6wh-862q / GHSA-r28c-9q8g-f849",
+    "(fixed in 8.5.18). The runtime-reachable copy is store-api's: sanitize-html",
+    "runs postcss over style attributes of admin-authored rich text, so the",
+    "sourceMappingURL path-traversal is not merely a build-time concern.",
+    "",
+    "sharp: `next` lists `sharp: '^0.34.5'` as an optional dependency, which",
+    "excludes the fix for the inherited libvips CVEs (0.35.3, semver-major). Without",
+    "the override, store-api gets 0.35.3 while next keeps a nested vulnerable 0.34.x",
+    "for its Image Optimization API — the copy that actually decodes remote images.",
+    "",
+    "js-yaml (TASK-304): `@nestjs/swagger@11.4.6` declares `js-yaml: '5.2.1'`",
+    "EXACTLY, and 5.2.1 carries GHSA (exponential parsing time in flow",
+    "collections), fixed in 5.2.2. Note this is a DIFFERENT advisory from the",
+    "4.x prototype-pollution one that the swagger 7 -> 11 upgrade did clear; npm",
+    "reports the only 'fix' as downgrading swagger to 11.4.5, which is wrong.",
+    "",
+    "NOTE ON APPLYING THESE: npm only evaluates `overrides` while building a fresh",
+    "ideal tree. Editing this block and re-running `npm install` over an existing",
+    "node_modules silently changes nothing — the entries land only after a clean",
+    "resolve (delete node_modules + package-lock.json, then install). The lockfile",
+    "in git already has them baked in, so `npm ci` reproduces them correctly.",
+    "Scoped per-parent rather than global on purpose: a bare top-level `sharp`",
+    "entry collides with store-api's own direct dependency on sharp, and npm then",
+    "ignores the override instead of erroring."
+  ],
+  "overrides": {
+    "next": {
+      "postcss": "^8.5.23",
+      "sharp": "^0.35.3"
+    },
+    "@nestjs/swagger": {
+      "js-yaml": "^5.2.2"
+    }
   },
   "lint-staged": {
     "*.{json,md,yml,yaml}": [

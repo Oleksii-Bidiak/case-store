@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
+import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
@@ -22,7 +22,16 @@ import { WishlistModule } from '../wishlist/wishlist.module';
       useFactory: (configService: ConfigService) => ({
         secret: configService.getOrThrow<string>('JWT_SECRET'),
         signOptions: {
-          expiresIn: configService.get<string>('JWT_EXPIRATION', '15m'),
+          // TASK-304: since @nestjs/jwt 11 (jsonwebtoken 9) `expiresIn` is typed
+          // `number | ms.StringValue`, where StringValue is a template-literal
+          // union such as `${number}m`. A value read from the environment at
+          // runtime can never be narrowed to that statically, so the cast is
+          // unavoidable; the format itself is validated at boot by
+          // config/env.validation.ts.
+          expiresIn: configService.get<string>(
+            'JWT_EXPIRATION',
+            '15m',
+          ) as JwtSignOptions['expiresIn'],
         },
       }),
       global: true,
