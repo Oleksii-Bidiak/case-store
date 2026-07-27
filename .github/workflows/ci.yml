@@ -424,6 +424,11 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/store_swagger?schema=public
           JWT_SECRET: ci-dummy-jwt-secret-min-32-chars-000000
           JWT_REFRESH_SECRET: ci-dummy-jwt-refresh-secret-min-32-000
+          # Required, not optional: env.validation rejects a production boot without
+          # a >=32-char CSRF_SECRET, so without this line the export exits 1 and takes
+          # the whole deploy with it. Found while closing TASK-325 — this step had
+          # never actually run, because no deploy has ever run.
+          CSRF_SECRET: ci-dummy-csrf-secret-min-32-chars-0000
 
       # ── image coordinates ────────────────────────────────────────────────
       # GHCR requires a LOWERCASE path; the repo owner renders mixed-case
@@ -728,6 +733,11 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/store_swagger?schema=public
           JWT_SECRET: ci-dummy-jwt-secret-min-32-chars-000000
           JWT_REFRESH_SECRET: ci-dummy-jwt-refresh-secret-min-32-000
+          # Required, not optional: env.validation rejects a production boot without
+          # a >=32-char CSRF_SECRET, so without this line the export exits 1 and takes
+          # the whole deploy with it. Found while closing TASK-325 — this step had
+          # never actually run, because no deploy has ever run.
+          CSRF_SECRET: ci-dummy-csrf-secret-min-32-chars-0000
           CORS_ORIGINS: http://localhost:3000
 
       # ── per-app image tags ───────────────────────────────────────────────
