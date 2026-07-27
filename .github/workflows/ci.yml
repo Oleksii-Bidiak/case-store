@@ -59,6 +59,35 @@ jobs:
       # `pretypecheck` runs `npm run codegen` (prisma generate + orval) first.
       - run: npm run typecheck
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # lockfile-platform (TASK-326) — package-lock.json must stay Linux-buildable.
+  #
+  # lightningcss and @tailwindcss/oxide ship their native addon as per-platform
+  # optional packages. npm records only the ones installable on the machine that
+  # resolved the tree, and this lockfile is maintained on Windows — so it held
+  # only the *-win32-x64-msvc entries, `npm ci` on ubuntu installed no addon at
+  # all, and `next build` died with
+  #   Cannot find module '../lightningcss.linux-x64-gnu.node'
+  # Both frontend images were unbuildable.
+  #
+  # Root `optionalDependencies` in package.json now pin the Linux packages, but
+  # THAT ALONE IS NOT DURABLE: the next `npm install` on a Windows machine can
+  # prune them straight back out, silently, and nobody would notice until a
+  # deploy failed. This job is the durable half — it is the actual deliverable,
+  # not the lockfile edit.
+  #
+  # Pure node, no dependencies, so it needs neither `npm ci` nor a service.
+  # ──────────────────────────────────────────────────────────────────────────
+  lockfile-platform:
+    name: Lockfile Platform Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/check-lockfile-platforms.js
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
