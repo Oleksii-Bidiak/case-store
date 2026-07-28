@@ -46,16 +46,57 @@ const { execSync } = require('child_process');
  * @eslint-community/eslint-utils → its peer `eslint` into the "production"
  * tree. `npm explain eslint` prints the path.
  *
- * WHY IT IS NOT SIMPLY FIXED: the only fix npm offers is eslint 10, and
- * `eslint-plugin-import` — including the latest 2.32.0 — still declares
- * `peerDependencies.eslint: "^2 || … || ^9"`. That plugin enforces this repo's
- * FSD import-direction rules (AGENTS.md), so it cannot just be dropped: the real
- * fix is migrating to the maintained `eslint-plugin-import-x` fork and then
- * taking eslint 10. That is a lint-config change with its own blast radius and
- * is deliberately not bundled with a framework major.
+ * WHY IT IS NOT SIMPLY FIXED (re-investigated under TASK-349 — the earlier note
+ * here was WRONG on both the cause and the cure; corrected below).
+ *
+ * The only fix npm offers is eslint 10. Three plugins cap us at eslint 9, and
+ * ALL THREE are hard `dependencies` of `eslint-config-next` (16.2.4 and 16.2.12
+ * alike), so none of them is ours to migrate:
+ *
+ *   eslint-plugin-import   2.32.0 (latest)  peer eslint: ^2 … ^9
+ *   eslint-plugin-react    7.37.5 (latest)  peer eslint: ^3 … ^9.7
+ *   eslint-plugin-jsx-a11y 6.10.2 (latest)  peer eslint: ^3 … ^9
+ *
+ * THE OLD NOTE'S PREMISE WAS FALSE: `eslint-plugin-import` does NOT enforce this
+ * repo's FSD import-direction rules. Those are plain core `no-restricted-imports`
+ * blocks in each frontend's own `eslint.config.mjs`; `eslint --print-config`
+ * shows the only active import rule anywhere is `import/no-anonymous-default-export`
+ * (a warning, set by eslint-config-next itself). So "migrate to
+ * eslint-plugin-import-x" — the cure the old note prescribed — buys nothing: it
+ * cannot remove eslint-config-next's own copy, and even a total removal would
+ * still leave eslint-plugin-react and eslint-plugin-jsx-a11y holding eslint at 9.
+ * The two unused direct `eslint-plugin-import` devDependencies that made it look
+ * like ours were dropped in TASK-349.
+ *
+ * MEASURED, NOT ASSUMED. With `overrides: { eslint: "^10" }` at the root AND all
+ * three workspaces declaring `eslint: "^10"`, a fresh resolve
+ * (`rm package-lock.json && npm install --package-lock-only`) yields FOUR copies:
+ *
+ *   node_modules/eslint                  => 9.39.5   ← survives, still vulnerable
+ *   apps/store-{api,client,admin}/node_modules/eslint => 10.8.0
+ *
+ * npm keeps the 9.x at the root to satisfy the three peers above and nests 10.x
+ * per app. That is worse than the status quo, not better: the advisory chain is
+ * untouched (so not one line of this ALLOWLIST could be deleted) and lint would
+ * run two ESLint runtimes against plugins resolved for the other one.
+ *
+ * WHAT ACTUALLY DISCHARGES THIS — upstream, not us:
+ *   1. an `eslint-config-next` release whose react / jsx-a11y / import plugins
+ *      accept eslint 10 (watch it on every `next` bump — this is the cheap path);
+ *   2. failing that, dropping `eslint-config-next` and composing the frontend
+ *      config by hand from @next/eslint-plugin-next + eslint-plugin-react-hooks
+ *      (already `^10`-ready) + typescript-eslint (already `^10`-ready). That
+ *      trades away the react and jsx-a11y rulesets — and a11y is an explicit
+ *      project rule (AGENTS.md §Frontend Conventions) — to close a DoS that is
+ *      dev-only and not present in any shipped image. Do not do it silently.
+ * Aliasing (`"eslint-plugin-import": "npm:eslint-plugin-import-x@^4"`) was
+ * considered and rejected: import-x reads its settings from `import-x/*` keys
+ * while eslint-config-next writes `import/resolver` + `import/parsers`, so the
+ * resolver config would be silently ignored — and it still would not move
+ * react / jsx-a11y.
  */
 const ALLOWLIST = {
-  // Dev-only lint toolchain — see the note above. Needs eslint-plugin-import-x.
+  // Dev-only lint toolchain, blocked upstream in eslint-config-next — see above.
   eslint: { task: 'TASK-343', expires: '2026-10-31' },
   '@eslint/config-array': { task: 'TASK-343', expires: '2026-10-31' },
   '@eslint/eslintrc': { task: 'TASK-343', expires: '2026-10-31' },
