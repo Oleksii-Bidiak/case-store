@@ -105,6 +105,49 @@ After any schema change, regenerate the client so TypeScript stays in sync:
 npm run db:generate
 ```
 
+### If `migrate status` says none of the migrations are applied (TASK-347)
+
+A database created in the `db push` era has no `_prisma_migrations` table at all, so Prisma
+considers every committed migration pending and `migrate dev` is unusable — it wants to apply
+migrations that would collide with tables already there. The fix is to **baseline**: prove the
+live schema already matches the history, then record the history as applied without running it.
+
+Never skip straight to `migrate resolve`. If the database is even one index behind, marking
+everything applied freezes that gap in permanently — no future migration will ever add it.
+
+```bash
+# from apps/store-api
+npx prisma migrate status                                    # confirm: "have not yet been applied"
+
+# 1. Is the live database already what the history produces? Needs a shadow DB, which
+#    `migrate diff --from-migrations` requires you to declare via datasource.shadowDatabaseUrl
+#    in a Prisma config. Copy prisma.config.ts, add that field, pass it with --config.
+npx prisma migrate diff --config <tmp-config>.ts \
+  --from-migrations ./prisma/migrations --to-config-datasource --script --exit-code
+
+# 2. And does it match schema.prisma? (no shadow DB needed)
+npx prisma migrate diff --from-schema ./prisma/schema.prisma \
+  --to-config-datasource --script --exit-code
+```
+
+Exit `0` means identical, `2` means there is a difference, `1` means the command itself failed —
+do not read a failed invocation as "different". If either diff is non-empty, apply the missing
+DDL first (`npx prisma db execute --file <the migration.sql that introduced it>` keeps the result
+byte-identical to what the migration would have produced), then re-run both diffs until both
+report `0`.
+
+Only then record the history:
+
+```bash
+for m in $(ls -d prisma/migrations/*/ | xargs -n1 basename | sort); do
+  npx prisma migrate resolve --applied "$m"
+done
+npx prisma migrate status    # "Database schema is up to date!"
+```
+
+`migrate dev` also provisions its own shadow database on every run, so the role in `DATABASE_URL`
+needs `CREATEDB`. Check with `SELECT rolcreatedb FROM pg_roles WHERE rolname = current_user`.
+
 ---
 
 ## 5. Resetting a dev database
