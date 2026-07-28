@@ -1,6 +1,6 @@
 "use client";
 
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -72,7 +72,12 @@ export function ReturnResolveForm({ rma }: ReturnResolveFormProps) {
     resetOptions: { keepDirtyValues: true },
   });
 
-  const targetStatus = form.watch("status");
+  // `useWatch` rather than `form.watch`: the latter returns a fresh function the
+  // React Compiler cannot memoize, and it warns rather than silently producing
+  // stale UI. Subscribing by name is also narrower — this re-renders on these
+  // two fields, not on every keystroke in the notes box.
+  const targetStatus = useWatch({ control: form.control, name: "status" });
+  const restock = useWatch({ control: form.control, name: "restock" });
   const restockAvailable = canRestock(targetStatus, rma.restockedAt);
 
   if (allowed.length === 0) {
@@ -205,7 +210,7 @@ export function ReturnResolveForm({ rma }: ReturnResolveFormProps) {
           <span className="flex items-center gap-2">
             <Checkbox
               id="return-restock"
-              checked={form.watch("restock")}
+              checked={restock}
               onCheckedChange={(checked) =>
                 form.setValue("restock", checked === true, {
                   shouldDirty: true,

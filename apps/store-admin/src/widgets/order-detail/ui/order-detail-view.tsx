@@ -201,49 +201,60 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
             <OrderDetailsForm order={order} />
           </section>
 
-          <section className="rounded-lg border border-border shadow-card overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{dict.orders.itemProduct}</TableHead>
-                  <TableHead className="text-right">
-                    {dict.orders.itemUnitPrice}
-                  </TableHead>
-                  <TableHead className="text-right">
-                    {dict.orders.itemQty}
-                  </TableHead>
-                  <TableHead className="text-right">
-                    {dict.orders.itemLineTotal}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {order.items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <Link
-                        href={`/products/${item.productId}/edit`}
-                        aria-label={dict.orders.viewProductAria(
-                          item.productName,
-                        )}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {item.productName}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(item.price)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {item.quantity}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(item.lineTotal)}
-                    </TableCell>
+          <section className="flex flex-col gap-2">
+            <div className="rounded-lg border border-border shadow-card overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{dict.orders.itemProduct}</TableHead>
+                    <TableHead className="text-right">
+                      {dict.orders.itemUnitPrice}
+                    </TableHead>
+                    <TableHead className="text-right">
+                      {dict.orders.itemQty}
+                    </TableHead>
+                    <TableHead className="text-right">
+                      {dict.orders.itemLineTotal}
+                    </TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {order.items.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        <Link
+                          href={`/products/${item.productId}/edit`}
+                          aria-label={dict.orders.viewProductAria(
+                            item.productName,
+                          )}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {item.productName}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(item.price)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {item.quantity}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(item.lineTotal)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            {/* TASK-341: there is no "edit lines" control here, and this says so.
+                Changing an order's lines means returning and re-reserving stock
+                atomically while recomputing totals against the discount and
+                add-on invariants — the backend deliberately does not implement
+                it. An absent explanation is better than a button that silently
+                does nothing, and a stated rule is better than an absent one. */}
+            <p className="text-xs text-muted-foreground">
+              {dict.orders.itemsLockedHint}
+            </p>
           </section>
         </div>
 
