@@ -114,14 +114,25 @@
     "at all, so without the carve-out 21 suites die with 'Cannot use import",
     "statement outside a module'.",
     "",
-    "The pattern is ANCHORED (`^...`) on purpose. The usual idiom",
-    "`/node_modules/(?!pkg/)` CANNOT work for a nested copy: the path contains",
-    "`/node_modules/` twice and the regex simply matches at the second one, where",
-    "the lookahead no longer applies. Anchoring makes it a whole-path statement —",
-    "'ignore anything under node_modules UNLESS it is under sanitize-html's nested",
-    "node_modules' — leaving no second position to slip into. Write POSIX slashes",
-    "only: Jest passes these through replacePathSepForRegex, which rewrites `/` to",
-    "`\\\\` on Windows.",
+    "The carve-out names the WHOLE ESM chain, not just sanitize-html, and that is",
+    "the load-bearing detail. The one-name idiom `/node_modules/(?!sanitize-html/)`",
+    "genuinely does fail on a nested copy — the path holds `/node_modules/` twice",
+    "and the regex matches at the second one, where the lookahead no longer",
+    "applies. Listing every package in the chain removes that second position: at",
+    "`.../sanitize-html/node_modules/htmlparser2/...` BOTH occurrences are followed",
+    "by an allow-listed name, so neither matches and the file is transformed.",
+    "",
+    "An earlier revision anchored the pattern (`^(?!.*/node_modules/sanitize-html/",
+    "node_modules/).*/node_modules/`) instead. That worked, but only while",
+    "htmlparser2@12 stays NESTED — and it is nested purely because htmlparser2@10",
+    "happens to hold the root for other dependents. The day that root consumer goes",
+    "away or bumps to 12, npm hoists 12 to the root, the anchored path stops",
+    "matching, and 21 suites die with an error that points at Jest rather than at",
+    "the hoist that caused it. The name-based form is position-independent: nested",
+    "or hoisted, both resolve the same. Verified against both path shapes.",
+    "",
+    "Write POSIX slashes only: Jest passes these through replacePathSepForRegex,",
+    "which rewrites `/` to `\\\\` on Windows.",
     "",
     "The matching `transform` entry must come FIRST (Jest takes the first matching",
     "key) and must force `module: commonjs`. The default transform uses",
@@ -178,10 +189,10 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transformIgnorePatterns": [
-      "^(?!.*/node_modules/sanitize-html/node_modules/).*/node_modules/"
+      "/node_modules/(?!(?:sanitize-html|htmlparser2|domhandler|domutils|domelementtype|dom-serializer|entities)/)"
     ],
     "transform": {
-      "/node_modules/sanitize-html/node_modules/.*\\.js$": [
+      "/node_modules/(?:sanitize-html|htmlparser2|domhandler|domutils|domelementtype|dom-serializer|entities)/.*\\.js$": [
         "ts-jest",
         {
           "isolatedModules": true,

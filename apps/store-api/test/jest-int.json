@@ -4,9 +4,11 @@
   "testEnvironment": "node",
   "testRegex": ".int-spec.ts$",
   "setupFiles": ["<rootDir>/setup-int.ts"],
-  "transformIgnorePatterns": ["^(?!.*/node_modules/sanitize-html/node_modules/).*/node_modules/"],
+  "transformIgnorePatterns": [
+    "/node_modules/(?!(?:sanitize-html|htmlparser2|domhandler|domutils|domelementtype|dom-serializer|entities)/)"
+  ],
   "transform": {
-    "/node_modules/sanitize-html/node_modules/.*\\.js$": [
+    "/node_modules/(?:sanitize-html|htmlparser2|domhandler|domutils|domelementtype|dom-serializer|entities)/.*\\.js$": [
       "ts-jest",
       {
         "isolatedModules": true,

@@ -7,9 +7,11 @@
   "maxWorkers": 2,
   "workerIdleMemoryLimit": "512MB",
   "testTimeout": 30000,
-  "transformIgnorePatterns": ["^(?!.*/node_modules/sanitize-html/node_modules/).*/node_modules/"],
+  "transformIgnorePatterns": [
+    "/node_modules/(?!(?:sanitize-html|htmlparser2|domhandler|domutils|domelementtype|dom-serializer|entities)/)"
+  ],
   "transform": {
-    "/node_modules/sanitize-html/node_modules/.*\\.js$": [
+    "/node_modules/(?:sanitize-html|htmlparser2|domhandler|domutils|domelementtype|dom-serializer|entities)/.*\\.js$": [
       "ts-jest",
       {
         "isolatedModules": true,
