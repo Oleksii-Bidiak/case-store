@@ -1131,7 +1131,7 @@ exit 0; `swagger:export` без змін коду дає нульовий diff; 
       production, мін. 32 символи), а обидва кроки задають лише `JWT_SECRET` /
       `JWT_REFRESH_SECRET` / `CORS_ORIGINS` при `NODE_ENV=production`. Відтворено локально:
       `Invalid environment configuration: CSRF_SECRET must be at least 32 characters,
-  CSRF_SECRET is required in production` → крок падає → **падає весь деплой**.
+CSRF_SECRET is required in production` → крок падає → **падає весь деплой**.
       **Треба:** додати `CSRF_SECRET` до env обох кроків (у новій джобі `contract-freshness`
       це вже зроблено — беріть її за зразок). Свідомо не чіпав деплойні джоби в межах
       TASK-325: вони поза скоупом задачі й найнебезпечніші у файлі.
@@ -1157,6 +1157,7 @@ exit 0; `swagger:export` без змін коду дає нульовий diff; 
       `node scripts/check-lockfile-platforms.js`. **Має бути:** або `OK`, або зрозумілий
       `DRIFT`, який лагодиться синхронним бампом пінів у кореневих `optionalDependencies`.
       Саме цей сценарій — тиха розсинхронізація версій — гейт і має ловити.
+
 ### TASK-324 — env-гейт: три діри проду, які не було видно (5)
 
 Статичну частину закриває `node scripts/env-check.js --audit` у CI. Тут — лише те, що
@@ -1447,3 +1448,49 @@ exit 0; `swagger:export` без змін коду дає нульовий diff; 
 TASK-333/334 (+ журнал дій TASK-318) у LG-7, чеки Sentry
 та IndexNow у Частині IV, ротація сідових паролів і SPF/DKIM/DMARC у LG-6/LG-7,
 X-Robots-Tag і `/health` у LG-9.
+
+---
+
+### TASK-330 — онлайн-оплата LiqPay (бекенд, WT-B)
+
+Код TASK-330-A закрито (порт → адаптер → вебхук → ідемпотентність → refund → крон
+звірки). Нижче — те, що **неможливо перевірити без живих ключів мерчанта**; усе інше
+покрито юніт-тестами (`liqpay.signature.spec.ts`, `liqpay.adapter.spec.ts`,
+`payment.service.spec.ts`, `payment-reconcile.worker.spec.ts`,
+`liqpay-webhook.controller.spec.ts`, `payment.wiring.spec.ts`).
+
+- [ ] **Алгоритм підпису на живому API.** Реалізовано `sha3-256`, а не історичний
+      `sha1` — визначено відтворенням еталонної пари з живих доків
+      (`https://www.liqpay.ua/en/doc`, звірено 2026-07-28) і запінено тест-вектором.
+      Покинуті офіційні SDK (php/python/java) досі підписують `sha1` — тобто вони
+      застарілі, а не ми. **Перший sandbox-платіж підтверджує це остаточно:** якщо
+      LiqPay відповість «неправильний підпис» — правда за `sha1`, і тоді змінюється
+      один рядок `LIQPAY_SIGNATURE_ALGORITHM` + вектор у `liqpay.signature.spec.ts`.
+- [ ] **`version: 7` у payload.** Живі доки й їхній робочий приклад використовують 7;
+      `docs/payments-liqpay.md` §3 писався раніше й каже 3 (з поміткою `[перевірити]`).
+      URL чекауту лишається `/api/3/checkout` — це версія шляху, не поля. Якщо LiqPay
+      відхилить 7 — константа `LIQPAY_API_VERSION` в `liqpay.types.ts`.
+- [ ] **Пастка sandbox.** З `LIQPAY_SANDBOX=true` тестова картка `4242…` має закрити
+      замовлення як PAID. Далі **вимкнути** прапорець і повторити той самий callback —
+      має бути FAILED, а не PAID (мапа гейтить `status: sandbox` на конфіг).
+- [ ] **Callback реально доходить.** `server_url` будується як
+      `PUBLIC_BASE_URL + /api/payments/liqpay/callback` — перевірити, що адреса
+      публічно доступна ззовні (Caddy пропускає, не блокує CSRF/WAF) і що LiqPay
+      отримує 200. Роут без гардів і з `@SkipThrottle()`.
+- [ ] **Повторний callback.** Продублювати той самий callback вручну — статус не
+      змінюється двічі, в `payment_events` рівно один рядок, у відповідь 200.
+- [ ] **Крон-звірка.** Заблокувати `server_url` (щоб callback не дійшов), оплатити —
+      протягом ~2 хв (`POLL_GRACE_MINUTES`) крон `payment-reconcile` має догнати
+      статус через `action: "status"` і закрити замовлення. Це головна страховка:
+      LiqPay не документує ретраї.
+- [ ] **Авто-скасування резерву.** Виставити `ORDER_RESERVATION_TTL_MINUTES=1`, не
+      платити — замовлення має скасуватись і стік повернутись **рівно один раз**.
+      Перевірити, що післяплата (ON_DELIVERY) при цьому не чіпається.
+- [ ] **Повернення грошей.** Реальний платіж на малу суму → refund з адмінки →
+      дочекатись callback `reversed` → `REFUNDED`. Повернення підтверджує callback,
+      а не відповідь на запит.
+- [ ] **Redaction.** У логах платежу не повинно бути `data`, `signature` чи
+      приватного ключа (додано в `pino.config.ts`).
+- [ ] **`security.e2e-spec.ts`.** Додати перевірку, що `POST /api/payments/liqpay/callback`
+      не блокується CSRF і не вимагає токена. Не додано у WT-B свідомо: e2e-набори
+      конфліктують між паралельними worktree-ами, тож це робота інтеграції.
