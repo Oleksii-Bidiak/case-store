@@ -1265,12 +1265,12 @@ const VARS = [
     need: "optional",
     compose: "default",
     services: [],
-    buildArgs: ["store-client"],
+    buildArgs: ["store-client", "store-admin"],
     example: true,
     validated: "absent",
     code: "used",
     effect:
-      "Порожній → підставляється NEXT_PUBLIC_APP_URL. Це канонічний origin для sitemap, robots, JSON-LD і canonical — помилка тут псує індексацію.",
+      "Порожній → підставляється NEXT_PUBLIC_APP_URL. Це канонічний origin для sitemap, robots, JSON-LD і canonical — помилка тут псує індексацію. Адмінка читає ту саму змінну (розділ SEO-здоровʼя лінкує на /robots.txt, /sitemap.xml, /llms.txt вітрини), тож обидва образи мають отримати однакове значення.",
     howTo: "`https://<DOMAIN>`.",
   },
   {
@@ -1687,7 +1687,8 @@ function parseComposeStructure(text) {
 }
 
 /**
- * A Dockerfile's `ARG X` declarations and its `ENV X=${X}` re-exports.
+ * A Dockerfile's `ARG X` declarations and its `ENV X=${X}` re-exports, read from
+ * THE BUILD STAGE ONLY.
  *
  * Both halves are needed and neither is sufficient. `ARG` alone only creates a
  * build-time substitution variable; `next build` reads `process.env`, so without
@@ -1696,22 +1697,45 @@ function parseComposeStructure(text) {
  * name (`X=${X}`, optionally with a `:-default`) counts — `ENV X=1` is a
  * hardcoded value, not a pass-through, and would make a build arg look wired up
  * when it is being ignored.
+ *
+ * WHY PER-STAGE. Both files are multi-stage (deps → build → runner), and ARG
+ * scope in Docker is per-stage: a name declared in one stage is invisible in the
+ * next unless re-declared, and an `ARG` above the first `FROM` reaches only the
+ * `FROM` lines themselves. A whole-file read therefore accepts exactly the
+ * mistake this check exists to catch — an `ARG`/`ENV` pair sitting in `runner`,
+ * where it decorates the container's environment at RUNTIME and `next build`,
+ * which already ran two stages earlier, never saw it. For a NEXT_PUBLIC_* value
+ * that is not a smaller bug than omitting it: the literal is baked into the
+ * client bundle at build time, so a runtime env var changes nothing at all.
+ *
+ * The build stage is identified by the `RUN npm run build` it contains rather
+ * than by its name, so renaming the stage cannot quietly disable the check. If
+ * no stage matches, the caller is told — an unparseable Dockerfile must fail
+ * loudly, not silently pass.
  */
 function parseDockerfileBuildVars(text) {
   // Fold `\`-continued lines so a multi-line ENV block is one instruction.
   const folded = text.replace(/\\\r?\n/g, " ");
+
+  // Split at `FROM`, keeping each stage's body. Index 0 is the pre-FROM preamble,
+  // which is deliberately dropped: those ARGs are not in scope inside any stage.
+  const stages = folded.split(/^\s*FROM\s+/gim).slice(1);
+  const buildStage = stages.find((body) => /^\s*RUN\b[^\n]*\bnpm run build\b/im.test(body));
+
+  if (!buildStage) return { args: new Set(), envs: new Set(), buildStage: false };
+
   const args = new Set(
-    [...folded.matchAll(/^\s*ARG\s+([A-Z][A-Z0-9_]*)/gim)].map((m) => m[1]),
+    [...buildStage.matchAll(/^\s*ARG\s+([A-Z][A-Z0-9_]*)/gim)].map((m) => m[1]),
   );
   const envs = new Set();
-  for (const line of folded.matchAll(/^\s*ENV\s+(.*)$/gim)) {
+  for (const line of buildStage.matchAll(/^\s*ENV\s+(.*)$/gim)) {
     for (const a of line[1].matchAll(
       /([A-Z][A-Z0-9_]*)=\$\{([A-Z][A-Z0-9_]*)[^}]*\}/g,
     )) {
       if (a[1] === a[2]) envs.add(a[1]);
     }
   }
-  return { args, envs };
+  return { args, envs, buildStage: true };
 }
 
 /** Keys of `.env.production.example` (commented-out lines are not keys). */
@@ -1907,6 +1931,14 @@ function audit() {
     //     an ARG with no matching ENV never reaches `next build`. See the header.
     const dfPath = DOCKERFILES[service];
     const df = parseDockerfileBuildVars(read(dfPath));
+    if (!df.buildStage) {
+      add(
+        service,
+        "dockerfile",
+        `${dfPath} has no stage running \`RUN npm run build\` — this check reads ARG/ENV from the build stage only, and cannot prove anything about a file it cannot parse`,
+      );
+      continue;
+    }
     for (const name of expected) {
       if (!df.args.has(name)) {
         add(

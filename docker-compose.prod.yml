@@ -384,6 +384,11 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL must be set}
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?NEXT_PUBLIC_APP_URL must be set}
         NEXT_PUBLIC_ADMIN_URL: ${NEXT_PUBLIC_ADMIN_URL:?NEXT_PUBLIC_ADMIN_URL must be set}
+        # The admin links the owner out to the storefront's /robots.txt, /sitemap.xml
+        # and /llms.txt from the SEO-health section, so it needs the same canonical
+        # origin the storefront bakes in. Falls back to NEXT_PUBLIC_APP_URL in code —
+        # which is why the omission was invisible while the two happened to be equal.
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}
         # Deep link to Umami's own dashboard for this website (TASK-348). Empty →
         # the admin's traffic card is muted and linkless, which is a valid state.
         NEXT_PUBLIC_UMAMI_DASHBOARD_URL: ${NEXT_PUBLIC_UMAMI_DASHBOARD_URL:-}

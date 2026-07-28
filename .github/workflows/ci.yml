@@ -524,6 +524,7 @@ jobs:
             NEXT_PUBLIC_API_URL=https://api.${{ vars.STAGING_DOMAIN }}
             NEXT_PUBLIC_APP_URL=https://${{ vars.STAGING_DOMAIN }}
             NEXT_PUBLIC_ADMIN_URL=https://admin.${{ vars.STAGING_DOMAIN }}
+            NEXT_PUBLIC_SITE_URL=https://${{ vars.STAGING_DOMAIN }}
             NEXT_PUBLIC_UMAMI_DASHBOARD_URL=${{ vars.NEXT_PUBLIC_UMAMI_DASHBOARD_URL }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging
@@ -870,6 +871,7 @@ jobs:
             NEXT_PUBLIC_API_URL=https://api.${{ vars.PROD_DOMAIN }}
             NEXT_PUBLIC_APP_URL=https://${{ vars.PROD_DOMAIN }}
             NEXT_PUBLIC_ADMIN_URL=https://admin.${{ vars.PROD_DOMAIN }}
+            NEXT_PUBLIC_SITE_URL=https://${{ vars.PROD_DOMAIN }}
             NEXT_PUBLIC_UMAMI_DASHBOARD_URL=${{ vars.NEXT_PUBLIC_UMAMI_DASHBOARD_URL }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=production

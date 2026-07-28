@@ -62,6 +62,12 @@ RUN mkdir -p apps/store-admin/public
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_ADMIN_URL
+# Canonical storefront origin, shared with store-client. The SEO-health section
+# links out to the storefront's /robots.txt, /sitemap.xml and /llms.txt, and
+# shared/config/site.ts falls back to NEXT_PUBLIC_APP_URL when this is empty —
+# so a deployment that sets the two to different values silently sent the owner
+# to the wrong host until this ARG existed.
+ARG NEXT_PUBLIC_SITE_URL
 # Deep link to this store's website view in Umami's own dashboard UI. Empty →
 # the dashboard's traffic card renders muted and linkless (never dead-links).
 ARG NEXT_PUBLIC_UMAMI_DASHBOARD_URL
@@ -76,6 +82,7 @@ ARG SENTRY_AUTH_TOKEN
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
     NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL} \
     NEXT_PUBLIC_ADMIN_URL=${NEXT_PUBLIC_ADMIN_URL} \
+    NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL} \
     NEXT_PUBLIC_UMAMI_DASHBOARD_URL=${NEXT_PUBLIC_UMAMI_DASHBOARD_URL} \
     NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN} \
     NEXT_PUBLIC_SENTRY_ENVIRONMENT=${NEXT_PUBLIC_SENTRY_ENVIRONMENT} \
