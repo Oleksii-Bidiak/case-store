@@ -4,7 +4,22 @@
   "testEnvironment": "node",
   "testRegex": ".int-spec.ts$",
   "setupFiles": ["<rootDir>/setup-int.ts"],
+  "transformIgnorePatterns": ["^(?!.*/node_modules/sanitize-html/node_modules/).*/node_modules/"],
   "transform": {
+    "/node_modules/sanitize-html/node_modules/.*\\.js$": [
+      "ts-jest",
+      {
+        "isolatedModules": true,
+        "tsconfig": {
+          "allowJs": true,
+          "module": "commonjs",
+          "moduleResolution": "node",
+          "target": "ES2021",
+          "esModuleInterop": true,
+          "skipLibCheck": true
+        }
+      }
+    ],
     "^.+\\.(t|j)s$": [
       "ts-jest",
       {

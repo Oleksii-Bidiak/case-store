@@ -80,4 +80,56 @@ describe('sanitizeRichText', () => {
   it('returns an empty string for empty input', () => {
     expect(sanitizeRichText('')).toBe('');
   });
+
+  /**
+   * GHSA-jxwj-j7wr-gfrw (sanitize-html < 2.17.6) — TASK-350.
+   *
+   * `textarea` and `xmp` are RAW-TEXT elements: a parser that is not
+   * namespace-aware tokenises their contents as opaque text even inside
+   * SVG/MathML foreign content, where a browser re-parses them as live markup.
+   * On 2.17.5 the sanitizer then re-emitted that text VERBATIM, so
+   * `<svg><textarea><img src=x onerror=…>` survived intact. The same parser also
+   * failed to treat `</textarea/>` (trailing solidus) as a closing tag.
+   *
+   * We were never exploitable — the bypass needs `textarea`/`xmp` in
+   * `allowedTags`, and this policy allows neither — but that made our safety a
+   * property of the allow-list rather than of the library, invisible to the
+   * suite: every one of the tests above passes identically on 2.17.5 and 2.17.6.
+   * These cases assert the property directly, so widening `allowedTags` or
+   * moving the parser back cannot quietly reopen it.
+   */
+  describe('raw-text element bypass (GHSA-jxwj-j7wr-gfrw)', () => {
+    /** A real tag carrying an inline handler is what "escaped the allow-list" looks like. */
+    const HANDLER_IN_TAG = /<[^>]*\son[a-z]+\s*=/i;
+    const PAYLOAD = '<img src=x onerror=alert(1)>';
+
+    const wrappers: Array<[string, (inner: string) => string]> = [
+      ['bare', (inner) => inner],
+      ['in <svg> foreign content', (inner) => `<svg>${inner}</svg>`],
+      ['in <math> foreign content', (inner) => `<math>${inner}</math>`],
+      ['in <svg><foreignObject>', (inner) => `<svg><foreignObject>${inner}</foreignObject></svg>`],
+      ['inside an allowed <p>', (inner) => `<p>${inner}</p>`],
+    ];
+
+    for (const tag of ['textarea', 'xmp', 'title', 'noembed', 'noframes', 'iframe', 'plaintext']) {
+      for (const [where, wrap] of wrappers) {
+        it(`never emits a live handler for <${tag}> ${where}`, () => {
+          expect(sanitizeRichText(wrap(`<${tag}>${PAYLOAD}</${tag}>`))).not.toMatch(HANDLER_IN_TAG);
+        });
+
+        it(`never emits a live handler for <${tag}> mis-closed with a solidus ${where}`, () => {
+          expect(sanitizeRichText(wrap(`<${tag}></${tag}/>${PAYLOAD}</${tag}>`))).not.toMatch(
+            HANDLER_IN_TAG,
+          );
+        });
+      }
+    }
+
+    it('escapes entity-encoded markup smuggled through <option>', () => {
+      const result = sanitizeRichText('<option>&lt;script&gt;alert(1)&lt;/script&gt;</option>');
+
+      expect(result).not.toMatch(/<\s*script/i);
+      expect(result).toContain('&lt;script&gt;');
+    });
+  });
 });
