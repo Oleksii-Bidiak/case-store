@@ -398,6 +398,24 @@ export class EnvironmentVariables {
   @MinLength(32)
   TOTP_ENCRYPTION_KEY?: string;
 
+  // How long an email-verification link stays usable (TASK-342). Optional —
+  // EmailVerificationService has a default. Declared here for the same reason as
+  // the mail-outbox knobs: "read through ConfigService but declared nowhere" is
+  // the exact shape of the STORE_CLIENT_URL bug, and a garbled value would
+  // otherwise become NaN at runtime instead of failing at boot.
+  @IsOptional()
+  @IsString()
+  EMAIL_VERIFICATION_TOKEN_EXPIRATION?: string;
+
+  // How long the RBAC guard caches a role's effective permissions (TASK-334).
+  // Optional; PermissionService defaults it. This is the knob that decides how
+  // long a revoked permission can still be honoured, so it is worth being able to
+  // set — and worth failing at boot rather than silently becoming NaN.
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  RBAC_PERMISSION_CACHE_TTL_SECONDS?: number;
+
   // ─── Meilisearch full-text search (TASK-075) ────────────────────────────────
   // ALL optional: the app boots without a search engine. When MEILI_HOST /
   // MEILI_MASTER_KEY are absent the search endpoints transparently fall back to

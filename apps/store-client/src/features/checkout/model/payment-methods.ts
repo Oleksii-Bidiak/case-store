@@ -129,8 +129,12 @@ export function parseConfiguredMethods(
  * Read the deployment's allowlist.
  *
  * Read inside a function, not at module scope: Next.js inlines the whole
- * `process.env.NEXT_PUBLIC_*` expression at build time either way, and keeping it
- * behind a call lets tests vary it.
+ * public-env expression at build time either way, and keeping it behind a call
+ * lets tests vary it.
+ *
+ * (The env name is deliberately not spelled out with its `process.env.` prefix
+ * in this prose — `scripts/env-check.js` scans source for that pattern and would
+ * otherwise report a variable named `NEXT_PUBLIC_` from this comment.)
  */
 export function readConfiguredMethods(): CheckoutPaymentMethod[] {
   return parseConfiguredMethods(process.env.NEXT_PUBLIC_PAYMENT_METHODS);

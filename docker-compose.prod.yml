@@ -234,6 +234,11 @@ services:
       # Encrypts TOTP secrets at rest (TASK-344). Losing it locks out every
       # enrolled admin — back it up with the age key.
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
+      # Email verification link lifetime (TASK-342).
+      EMAIL_VERIFICATION_TOKEN_EXPIRATION: ${EMAIL_VERIFICATION_TOKEN_EXPIRATION:-24h}
+      # How long the RBAC guard caches a role’s permissions — i.e. the longest a
+      # revoked permission can still be honoured (TASK-334).
+      RBAC_PERMISSION_CACHE_TTL_SECONDS: ${RBAC_PERMISSION_CACHE_TTL_SECONDS:-60}
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
@@ -300,6 +305,11 @@ services:
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?NEXT_PUBLIC_APP_URL must be set}
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}
         NEXT_PUBLIC_CURRENCY: ${NEXT_PUBLIC_CURRENCY:-UAH}
+        # Which payment methods the checkout offers (TASK-330). Empty → cash on
+        # delivery only. Baked in like every NEXT_PUBLIC_*, so switching card
+        # payments on means a rebuild — a temporary seam until the API exposes an
+        # availability endpoint.
+        NEXT_PUBLIC_PAYMENT_METHODS: ${NEXT_PUBLIC_PAYMENT_METHODS:-}
         NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
         NEXT_PUBLIC_SENTRY_ENVIRONMENT: ${NEXT_PUBLIC_SENTRY_ENVIRONMENT:-production}
         NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE: ${NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE:-0}

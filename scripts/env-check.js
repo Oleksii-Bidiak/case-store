@@ -955,6 +955,55 @@ const VARS = [
     },
   },
 
+  {
+    name: "EMAIL_VERIFICATION_TOKEN_EXPIRATION",
+    group: "api",
+    need: "optional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    code: "used",
+    effect:
+      "Порожній → дефолт сервісу. Скільки живе посилання з листа підтвердження адреси (TASK-342).",
+    howTo: "Формат тривалості, як у JWT_EXPIRATION (напр. `24h`).",
+  },
+  {
+    name: "RBAC_PERMISSION_CACHE_TTL_SECONDS",
+    group: "api",
+    need: "optional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    code: "used",
+    effect:
+      "Порожній → дефолт сервісу (60 c). Скільки гард тримає в кеші права ролі — тобто **скільки щонайдовше діятиме вже зняте право**. Нуль вимикає кеш і б'є в БД на кожен адмін-запит.",
+    howTo: "Секунди. Збільшувати лише свідомо: це вікно, у якому звільнений працівник ще має доступ.",
+  },
+  {
+    name: "NEXT_PUBLIC_PAYMENT_METHODS",
+    group: "frontend",
+    need: "optional",
+    compose: "default",
+    services: [],
+    buildArgs: ["store-client"],
+    example: true,
+    validated: "absent",
+    code: "used",
+    effect:
+      "Порожній → чекаут пропонує лише оплату при отриманні. Список способів оплати, які ввімкнені на цьому стенді, у НАШІЙ термінології (`ON_DELIVERY,ONLINE,INSTALLMENTS`) — не в термінах `paytypes` провайдера.",
+    howTo:
+      "Через кому. Тимчасовий шов: правильне рішення — ендпоінт `GET /api/payments/methods`, щоб фронт не вгадував конфігурацію бекенда.",
+    gap: {
+      reason:
+        "a build-time allowlist standing in for an availability endpoint the API does not expose yet; the frontend cannot otherwise know which methods are configured",
+      task: "TASK-330",
+    },
+  },
+
   // ─── Sentry ───────────────────────────────────────────────────────────────
   {
     name: "SENTRY_DSN",
