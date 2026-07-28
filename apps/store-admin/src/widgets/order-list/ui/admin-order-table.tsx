@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import {
   OrderEntityStatus,
   orderStatusBadgeVariant,
@@ -20,6 +22,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Input,
   SortableColumnHeader,
   Table,
   TableBody,
@@ -37,6 +40,7 @@ import { AdminOrderTableSkeleton } from "./admin-order-table-skeleton";
 
 const PAGE_SIZE = 20;
 const ALL_OPTION = "__all__";
+const SEARCH_DEBOUNCE_MS = 300;
 
 const STATUS_FILTER_OPTIONS = [
   OrderEntityStatus.PENDING,
@@ -88,6 +92,9 @@ export function AdminOrderTable() {
   const searchParams = useSearchParams();
 
   const statusParam = searchParams.get("status") ?? "";
+  // TASK-336: free-text search over order number / email / phone — what an
+  // operator actually holds when a customer rings up.
+  const searchParam = searchParams.get("search") ?? "";
   // TASK-248 deep-link: `?unpaidInTransit=true` filters to active-but-unpaid
   // orders (the needs-action widget's target). The status <Select> has no option
   // for this compound preset — reconciling it is deferred to TASK-250's tabs.
@@ -113,6 +120,27 @@ export function AdminOrderTable() {
     updateParams,
   );
 
+  // forms.md Rule 1b: the search box is focus-sensitive and its value round-trips
+  // through the URL, so the local state is re-seeded only on a genuine EXTERNAL
+  // change (a back button, a pasted link) — never on this component's own echo,
+  // which would steal focus mid-word.
+  const [searchInput, setSearchInput] = useState(searchParam);
+  const lastPushedRef = useRef(searchParam);
+
+  useEffect(() => {
+    if (searchParam !== lastPushedRef.current) {
+      setSearchInput(searchParam);
+      lastPushedRef.current = searchParam;
+    }
+  }, [searchParam]);
+
+  const debouncedSearch = useDebouncedCallback((value: string) => {
+    const trimmed = value.trim();
+    if (trimmed === searchParam) return;
+    lastPushedRef.current = trimmed;
+    updateParams({ search: trimmed || undefined, page: undefined });
+  }, SEARCH_DEBOUNCE_MS);
+
   const { data, isLoading, isFetching, isError } =
     useAdminOrderControllerFindAll({
       page,
@@ -121,6 +149,9 @@ export function AdminOrderTable() {
       // single (`PENDING`) and multi (`CONFIRMED,PROCESSING`) values pass straight
       // through — no enum cast needed.
       status: statusParam || undefined,
+      // TASK-336: matches order-number prefix, email and phone, for account AND
+      // guest orders alike.
+      search: searchParam || undefined,
       // TASK-248 deep-link: active-but-unpaid ("in-transit") filter.
       unpaidInTransit: unpaidInTransit || undefined,
       sortBy,
@@ -159,7 +190,18 @@ export function AdminOrderTable() {
         </TabsList>
       </Tabs>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          type="search"
+          value={searchInput}
+          onChange={(event) => {
+            setSearchInput(event.target.value);
+            debouncedSearch(event.target.value);
+          }}
+          placeholder={dict.orders.searchPlaceholder}
+          aria-label={dict.orders.searchAria}
+          className="w-72"
+        />
         <Select
           value={statusParam || ALL_OPTION}
           onValueChange={handleStatusChange}
@@ -181,6 +223,10 @@ export function AdminOrderTable() {
             ))}
           </SelectContent>
         </Select>
+        {/* TASK-341: a phone order starts here. */}
+        <Button asChild className="ml-auto">
+          <Link href="/orders/new">{dict.orders.createCta}</Link>
+        </Button>
       </div>
 
       {isLoading ? (
@@ -191,9 +237,13 @@ export function AdminOrderTable() {
         </p>
       ) : orders.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {statusParam
-            ? dict.orders.emptyStatus(orderStatusLabel(statusParam))
-            : dict.orders.empty}
+          {/* A search miss names the query, not the status filter: "no PENDING
+              orders" would be a lie when the operator typed a phone number. */}
+          {searchParam
+            ? dict.orders.emptySearch(searchParam)
+            : statusParam
+              ? dict.orders.emptyStatus(orderStatusLabel(statusParam))
+              : dict.orders.empty}
         </div>
       ) : (
         <div className="relative rounded-lg border border-border shadow-card overflow-hidden">

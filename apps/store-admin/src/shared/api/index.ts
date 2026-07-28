@@ -25,6 +25,7 @@ export * from "./generated/site-contact/site-contact";
 export * from "./generated/seo-settings/seo-settings";
 export * from "./generated/faq/faq";
 export * from "./generated/admin-orders/admin-orders";
+export * from "./generated/admin-returns/admin-returns";
 export * from "./generated/admin-dashboard/admin-dashboard";
 export * from "./generated/cart/cart";
 export * from "./generated/reviews/reviews";

@@ -101,3 +101,8 @@ export {
   AdminCarouselTableSkeleton,
 } from "./carousel-list";
 export { CreateCarouselView, EditCarouselView } from "./carousel-form-view";
+// Operator-created (phone) orders (TASK-341)
+export { OrderCreateView } from "./order-create-view";
+// Returns / RMA (TASK-340)
+export { AdminReturnTable, AdminReturnTableSkeleton } from "./return-list";
+export { ReturnDetailView, ReturnDetailSkeleton } from "./return-detail";

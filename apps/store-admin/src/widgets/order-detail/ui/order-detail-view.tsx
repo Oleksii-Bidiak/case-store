@@ -13,6 +13,8 @@ import {
 } from "@/entities/order";
 import { OrderStatusSelect } from "@/features/order-status-update";
 import { PaymentStatusSelect } from "@/features/order-payment-update";
+import { OrderDetailsForm } from "@/features/order-details-form";
+import { OrderAddressForm } from "@/features/order-address-edit";
 import {
   Badge,
   Separator,
@@ -153,11 +155,26 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
               <span className="text-sm font-medium text-foreground">
                 {dict.orders.updateStatus}
               </span>
-              <OrderStatusSelect
-                orderId={order.id}
-                currentStatus={order.status}
-              />
+              {/* TASK-332: the picker takes only the id. The legal moves AND the
+                  optimistic-lock token both come from the server, so passing a
+                  status down would just be a second, staler copy of it. */}
+              <OrderStatusSelect orderId={order.id} />
             </div>
+          </section>
+
+          {/* TASK-330-C: everything about money for this order in one card. */}
+          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+            <h3 className="text-sm font-semibold text-foreground">
+              {dict.orders.paymentHeading}
+            </h3>
+            {/* The status itself is the badge in the header section above — it is
+                NOT repeated here. What belongs in this card is the money and the
+                control that changes it. */}
+            <SummaryRow
+              label={dict.orders.paymentAmountLabel}
+              value={formatCurrency(order.total)}
+            />
+            <Separator />
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium text-foreground">
                 {dict.orderStatus.updatePaymentStatus}
@@ -167,51 +184,78 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                 currentPaymentStatus={order.paymentStatus}
               />
             </div>
+            {/* An honest blank rather than a card that implies there were no
+                payment attempts. The method, the attempt history and the refund
+                button need `Order.paymentMethod` on the entity plus the admin
+                payments endpoints — none of which the merged backend exposes
+                yet. See this file's note and the report for the exact contract. */}
+            <p className="text-xs text-muted-foreground">
+              {dict.orders.paymentAttemptsUnavailable}
+            </p>
           </section>
 
-          <section className="rounded-lg border border-border shadow-card overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{dict.orders.itemProduct}</TableHead>
-                  <TableHead className="text-right">
-                    {dict.orders.itemUnitPrice}
-                  </TableHead>
-                  <TableHead className="text-right">
-                    {dict.orders.itemQty}
-                  </TableHead>
-                  <TableHead className="text-right">
-                    {dict.orders.itemLineTotal}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {order.items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <Link
-                        href={`/products/${item.productId}/edit`}
-                        aria-label={dict.orders.viewProductAria(
-                          item.productName,
-                        )}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {item.productName}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(item.price)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {item.quantity}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(item.lineTotal)}
-                    </TableCell>
+          {/* TASK-335 / 336: waybill + operator-only notes. */}
+          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+            <h3 className="text-sm font-semibold text-foreground">
+              {dict.orders.detailsHeading}
+            </h3>
+            <OrderDetailsForm order={order} />
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <div className="rounded-lg border border-border shadow-card overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{dict.orders.itemProduct}</TableHead>
+                    <TableHead className="text-right">
+                      {dict.orders.itemUnitPrice}
+                    </TableHead>
+                    <TableHead className="text-right">
+                      {dict.orders.itemQty}
+                    </TableHead>
+                    <TableHead className="text-right">
+                      {dict.orders.itemLineTotal}
+                    </TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {order.items.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        <Link
+                          href={`/products/${item.productId}/edit`}
+                          aria-label={dict.orders.viewProductAria(
+                            item.productName,
+                          )}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {item.productName}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(item.price)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {item.quantity}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(item.lineTotal)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            {/* TASK-341: there is no "edit lines" control here, and this says so.
+                Changing an order's lines means returning and re-reserving stock
+                atomically while recomputing totals against the discount and
+                add-on invariants — the backend deliberately does not implement
+                it. An absent explanation is better than a button that silently
+                does nothing, and a stated rule is better than an absent one. */}
+            <p className="text-xs text-muted-foreground">
+              {dict.orders.itemsLockedHint}
+            </p>
           </section>
         </div>
 
@@ -262,10 +306,15 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
             </div>
           </section>
 
-          <AddressBlock
-            title={dict.orders.shippingAddress}
-            address={shipping}
-          />
+          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+            <h3 className="text-sm font-semibold text-foreground">
+              {dict.orders.shippingAddress}
+            </h3>
+            <AddressLines address={shipping} />
+            {/* TASK-341: correctable until the parcel is with the courier; after
+                that the form is replaced by the reason, not disabled. */}
+            <OrderAddressForm order={order} />
+          </section>
           {billingDiffers ? (
             <AddressBlock
               title={dict.orders.billingAddress}
@@ -274,11 +323,18 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
           ) : null}
 
           {order.notes ? (
+            // TASK-336: the CUSTOMER's own note, read-only and labelled as such.
+            // It sits in a different card from `internalNotes` and says whose
+            // words these are, because the failure mode of blurring the two is a
+            // shop's internal remark reaching the buyer it is about.
             <section className="flex flex-col gap-1 rounded-md border border-border p-4">
               <h3 className="text-sm font-semibold text-foreground">
                 {dict.orders.notes}
               </h3>
               <p className="text-sm text-muted-foreground">{order.notes}</p>
+              <p className="text-xs text-muted-foreground">
+                {dict.orders.customerNotesHint}
+              </p>
             </section>
           ) : null}
         </div>
@@ -305,6 +361,35 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * The address itself, without a card around it — the shipping block now owns its
+ * own heading so it can host the edit form underneath.
+ */
+function AddressLines({ address }: { address: AddressFields | null }) {
+  if (!address) {
+    return null;
+  }
+
+  const name = [address.firstName, address.lastName].filter(Boolean).join(" ");
+  const cityLine = [address.city, address.state, address.postalCode]
+    .filter(Boolean)
+    .join(", ");
+
+  return (
+    <address className="text-sm not-italic text-muted-foreground">
+      {name ? <div>{name}</div> : null}
+      {address.company ? <div>{address.company}</div> : null}
+      {address.address1 ? <div>{address.address1}</div> : null}
+      {address.address2 ? <div>{address.address2}</div> : null}
+      {cityLine ? <div>{cityLine}</div> : null}
+      {address.country ? <div>{address.country}</div> : null}
+      {address.phone ? <div>{address.phone}</div> : null}
+    </address>
+  );
+}
+
+/** Read-only address card — still used for the billing address, which has no
+ *  edit path of its own (nothing ships to it). */
 function AddressBlock({
   title,
   address,
@@ -316,23 +401,10 @@ function AddressBlock({
     return null;
   }
 
-  const name = [address.firstName, address.lastName].filter(Boolean).join(" ");
-  const cityLine = [address.city, address.state, address.postalCode]
-    .filter(Boolean)
-    .join(", ");
-
   return (
     <section className="flex flex-col gap-1 rounded-md border border-border p-4">
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-      <address className="text-sm not-italic text-muted-foreground">
-        {name ? <div>{name}</div> : null}
-        {address.company ? <div>{address.company}</div> : null}
-        {address.address1 ? <div>{address.address1}</div> : null}
-        {address.address2 ? <div>{address.address2}</div> : null}
-        {cityLine ? <div>{cityLine}</div> : null}
-        {address.country ? <div>{address.country}</div> : null}
-        {address.phone ? <div>{address.phone}</div> : null}
-      </address>
+      <AddressLines address={address} />
     </section>
   );
 }
