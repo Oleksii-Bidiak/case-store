@@ -12,7 +12,7 @@ import {
 import { NewsletterService } from './newsletter.service';
 import { NewsletterExportQueryDto, NewsletterListQueryDto } from './dto';
 import { NewsletterSubscriptionEntity } from './entities';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /**
  * Pagination metadata for paginated admin subscriber lists.
@@ -51,7 +51,8 @@ class SubscriptionListResponse {
 @ApiTags('Newsletter')
 @ApiExtraModels(NewsletterSubscriptionEntity, SubscriptionPaginationMeta, SubscriptionListResponse)
 @Controller('newsletter/admin')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('newsletter:read')
 export class AdminNewsletterController {
   constructor(private readonly newsletterService: NewsletterService) {}
 

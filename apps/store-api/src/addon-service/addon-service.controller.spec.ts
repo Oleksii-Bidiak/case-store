@@ -3,13 +3,13 @@ import { AddonDeltaType } from '@prisma/client';
 import { AddonServiceController } from './addon-service.controller';
 import { AdminAddonServiceController } from './admin-addon-service.controller';
 import { AddonServiceService } from './addon-service.service';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard } from '../auth/permissions';
 
 /**
  * Controller-level unit tests (TASK-174): every route delegates to the service
  * and wraps the result in the `{ data }` envelope; no business logic leaks into
  * the controller layer. The admin controller is additionally pinned to the
- * `AdminGuard` — the public one must carry no guard at all.
+ * `PermissionGuard` — the public one must carry no guard at all.
  */
 describe('AddonService controllers (TASK-174)', () => {
   let publicController: AddonServiceController;
@@ -37,7 +37,7 @@ describe('AddonService controllers (TASK-174)', () => {
       controllers: [AddonServiceController, AdminAddonServiceController],
       providers: [{ provide: AddonServiceService, useValue: addonServiceService }],
     })
-      .overrideGuard(AdminGuard)
+      .overrideGuard(PermissionGuard)
       .useValue({ canActivate: () => true })
       .compile();
 
@@ -60,9 +60,9 @@ describe('AddonService controllers (TASK-174)', () => {
   });
 
   describe('admin', () => {
-    it('is gated by AdminGuard at the controller level (every route)', () => {
+    it('is gated by PermissionGuard at the controller level (every route)', () => {
       const guards = Reflect.getMetadata('__guards__', AdminAddonServiceController) as unknown[];
-      expect(guards).toContain(AdminGuard);
+      expect(guards).toContain(PermissionGuard);
     });
 
     it('delegates catalog CRUD and wraps single results in { data }', async () => {

@@ -33,7 +33,7 @@ import {
   AddonServiceEntity,
   ResolvedCategoryTemplateEntity,
 } from './entities';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 class AddonServiceResponseEnvelope {
   @ApiProperty({ type: AddonServiceEntity })
@@ -123,7 +123,8 @@ class AddonServiceDeltaListResponse {
   AddonServiceDeltaListResponse,
 )
 @Controller('addon-services')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('addons:write')
 export class AdminAddonServiceController {
   constructor(private readonly addonServiceService: AddonServiceService) {}
 

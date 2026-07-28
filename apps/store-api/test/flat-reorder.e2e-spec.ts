@@ -19,6 +19,8 @@ import {
 } from '../src/common/reorder';
 import { HttpExceptionFilter } from '../src/common/filters';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
  * E2E tests for the three FLAT reorder endpoints (TASK-295):
@@ -200,6 +202,8 @@ describe('Flat reorder endpoints (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(UserRepository)

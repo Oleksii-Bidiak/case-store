@@ -11,7 +11,7 @@ import {
 import { BrandService } from './brand.service';
 import { CreateBrandDto, UpdateBrandDto, BrandListQueryDto, UpdateBrandStatusDto } from './dto';
 import { BrandEntity } from './entities';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /**
  * Response envelope for a single brand.
@@ -68,7 +68,8 @@ class AdminBrandListResponse {
   AdminBrandListResponse,
 )
 @Controller('brands')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('brands:write')
 export class AdminBrandController {
   constructor(private readonly brandService: BrandService) {}
 

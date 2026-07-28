@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
@@ -12,6 +12,9 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth';
+import { PermissionModule } from './auth/permissions';
+import { AuditModule } from './audit';
+import { AuditInterceptor } from './audit/audit.interceptor';
 import { UserModule } from './user';
 import { ProductModule } from './product';
 import { ProductGroupModule } from './product-group';
@@ -120,6 +123,14 @@ import { buildPinoHttpOptions } from './config/pino.config';
     // Authentication
     AuthModule,
 
+    // RBAC — permission matrix + PermissionGuard (global, TASK-334). Imported
+    // BEFORE every feature module: the guard those modules reference resolves
+    // PermissionService from this module's global export.
+    PermissionModule,
+
+    // Admin action log (global — provides AuditService everywhere, TASK-318)
+    AuditModule,
+
     // User management
     UserModule,
 
@@ -221,6 +232,11 @@ import { buildPinoHttpOptions } from './config/pino.config';
     LoggingInterceptor,
     // Register ThrottlerGuard globally so @Throttle() decorators work on all endpoints
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Admin action log (TASK-318). Registered here rather than via
+    // `app.useGlobalInterceptors` in main.ts so it is also active under
+    // `Test.createTestingModule`, which never runs main.ts — an audit trail that
+    // exists in production but not in the e2e suite is one no test can defend.
+    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
 })
 export class AppModule {}

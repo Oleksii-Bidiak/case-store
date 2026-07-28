@@ -28,7 +28,7 @@ import {
   DeviceModelListQueryDto,
   ReorderDeviceBrandsDto,
 } from './dto';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 // Direct file import, NOT the `../auth` barrel: the barrel pulls the auth module in and the
 // resulting require cycle leaves `CurrentUser` undefined at decorator-evaluation time.
 import { CurrentUser } from '../auth/decorators';
@@ -92,7 +92,8 @@ class AdminDeviceModelListResponse {
   AdminDeviceModelListResponse,
 )
 @Controller('admin/devices')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('devices:write')
 @ApiBearerAuth('access-token')
 export class AdminDeviceController {
   constructor(private readonly deviceService: DeviceService) {}

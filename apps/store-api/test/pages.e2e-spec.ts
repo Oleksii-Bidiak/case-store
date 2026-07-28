@@ -10,6 +10,8 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { PageRepository } from '../src/pages/pages.repository';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
  * E2E tests for the Pages module (TASK-153).
@@ -122,6 +124,8 @@ describe('Pages (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(UserRepository)

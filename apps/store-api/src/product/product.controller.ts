@@ -30,7 +30,7 @@ import {
   SetDeviceCompatDto,
   UpdateProductSpecsDto,
 } from './dto';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import {
   ProductEntity,
   PublicProductEntity,
@@ -247,7 +247,8 @@ export class ProductController {
    * routes in declaration order, and `admin/:id` would capture "list" as `:id`.
    */
   @Get('admin/list')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:read')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'List products including deactivated (admin)',
@@ -321,7 +322,8 @@ export class ProductController {
    * unreachable.
    */
   @Get('admin/preview/:slug')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:read')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Preview a product by slug, including deactivated (admin)',
@@ -349,7 +351,8 @@ export class ProductController {
    * `GET /products/:slug` route.
    */
   @Get('admin/:id')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:read')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get product by ID (admin)', operationId: 'productControllerFindById' })
   @ApiParam({ name: 'id', description: 'Product UUID' })
@@ -369,7 +372,8 @@ export class ProductController {
    * Slug is auto-generated from name if not provided.
    */
   @Post()
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Create a product (admin)' })
   @ApiResponse({ status: 201, description: 'Product created', type: ProductResponseEnvelope })
@@ -388,7 +392,8 @@ export class ProductController {
    * Only provided fields will be updated.
    */
   @Put(':id')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Update a product (admin)' })
   @ApiParam({ name: 'id', description: 'Product UUID' })
@@ -411,7 +416,8 @@ export class ProductController {
    * `group` segment is never captured as an `:id`.
    */
   @Put('group/:groupId/device-compat')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('devices:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Apply device compatibility to a whole group (admin)',
@@ -442,7 +448,8 @@ export class ProductController {
    * write.
    */
   @Put(':id/device-compat')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('devices:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Set device compatibility for a product (admin)',
@@ -470,7 +477,8 @@ export class ProductController {
    * ancestors) and against each definition's type before persisting.
    */
   @Put(':id/specs')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: "Replace a product's structured specs (admin)",
@@ -495,7 +503,8 @@ export class ProductController {
    * Deactivates a product (sets isActive = false). Admin-only endpoint.
    */
   @Patch(':id/deactivate')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Deactivate a product (admin)' })
   @ApiParam({ name: 'id', description: 'Product UUID' })
@@ -514,7 +523,8 @@ export class ProductController {
    * Activates a product (sets isActive = true). Admin-only endpoint.
    */
   @Patch(':id/activate')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Activate a product (admin)' })
   @ApiParam({ name: 'id', description: 'Product UUID' })
@@ -535,7 +545,8 @@ export class ProductController {
    * items still resolve. Returns 204 No Content.
    */
   @Delete(':id')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:delete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Delete a product (admin, soft-delete)', operationId: 'deleteProduct' })

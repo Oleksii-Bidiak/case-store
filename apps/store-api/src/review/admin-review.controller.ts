@@ -22,7 +22,7 @@ import {
 import { ReviewService } from './review.service';
 import { ReviewEntity, AdminReviewEntity } from './entities';
 import { AdminReviewQueryDto } from './dto';
-import { AdminGuard } from '../auth';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /**
  * Pagination metadata for the admin moderation queue.
@@ -61,7 +61,7 @@ class AdminReviewResponseEnvelope {
 }
 
 /**
- * Admin-only review moderation endpoints (ADMIN role required via AdminGuard).
+ * Admin-only review moderation endpoints, gated on `reviews:moderate` (TASK-334).
  *
  *   GET    /api/admin/reviews             — moderation queue (pending|approved)
  *   PATCH  /api/admin/reviews/:id/approve — publish a pending review
@@ -79,7 +79,8 @@ class AdminReviewResponseEnvelope {
   AdminReviewResponseEnvelope,
 )
 @Controller('admin/reviews')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('reviews:moderate')
 export class AdminReviewController {
   constructor(private readonly reviewService: ReviewService) {}
 

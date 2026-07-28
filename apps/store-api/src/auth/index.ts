@@ -14,6 +14,20 @@ export { JwtAuthGuard } from './guards/jwt-auth.guard';
 export { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 export { RolesGuard } from './guards/roles.guard';
 export { AdminGuard } from './guards/admin.guard';
+export { PermissionGuard } from './permissions/permission.guard';
+
+// RBAC (TASK-334)
+export {
+  PermissionModule,
+  PermissionService,
+  PermissionRepository,
+  RequirePermission,
+  OwnerOnly,
+  PERMISSIONS,
+  isKnownPermission,
+  type Permission,
+  type PermissionActor,
+} from './permissions';
 
 // Decorators
 export { CurrentUser } from './decorators/current-user.decorator';

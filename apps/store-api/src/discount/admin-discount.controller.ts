@@ -21,7 +21,7 @@ import {
 import { DiscountService } from './discount.service';
 import { CreateDiscountDto, UpdateDiscountDto, DiscountListQueryDto } from './dto';
 import { DiscountEntity } from './entities';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /** Response envelope for a single discount. */
 class DiscountResponseEnvelope {
@@ -80,7 +80,8 @@ class DiscountDeletedEnvelope {
   DiscountDeletedEnvelope,
 )
 @Controller('admin/discounts')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('discounts:write')
 export class AdminDiscountController {
   constructor(private readonly discountService: DiscountService) {}
 

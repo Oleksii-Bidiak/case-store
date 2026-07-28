@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { PermissionGuard } from '../auth/permissions';
 import { BannerPlacement, PublishStatus } from '@prisma/client';
 import { BannerController } from './banners.controller';
 import { AdminBannerController } from './admin-banners.controller';
@@ -44,7 +45,10 @@ describe('Banner controllers', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [BannerController, AdminBannerController],
       providers: [{ provide: BannerService, useValue: serviceMock }],
-    }).compile();
+    })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     publicController = module.get<BannerController>(BannerController);
     adminController = module.get<AdminBannerController>(AdminBannerController);

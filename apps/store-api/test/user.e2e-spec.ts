@@ -9,6 +9,8 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
  * E2E tests for the User module.
@@ -131,6 +133,8 @@ describe('UserController (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(UserRepository)

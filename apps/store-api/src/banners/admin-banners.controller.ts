@@ -27,7 +27,7 @@ import {
   AdminBannerListQueryDto,
   ReorderBannersDto,
 } from './dto';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 // Direct file import, NOT the `../auth` barrel: the barrel pulls the auth module in and the
 // resulting require cycle leaves `CurrentUser` undefined at decorator-evaluation time.
 import { CurrentUser } from '../auth/decorators';
@@ -64,7 +64,8 @@ class BannerResponseEnvelope {
 @ApiTags('Banners')
 @ApiExtraModels(AdminBannerListResponse, BannerEntity, BannerResponseEnvelope)
 @Controller('admin/banners')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('banners:write')
 export class AdminBannerController {
   constructor(private readonly bannerService: BannerService) {}
 

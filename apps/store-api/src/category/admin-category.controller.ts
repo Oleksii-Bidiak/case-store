@@ -28,7 +28,7 @@ import {
   ReorderCategoriesDto,
   BulkCategoryStatusDto,
 } from './dto';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 // Direct file import, NOT the `../auth` barrel: the barrel pulls in `auth.module` →
 // `auth.controller` → … → the `../category` barrel → this file, and that require cycle
 // leaves `CurrentUser` undefined at decorator-evaluation time ("CurrentUser is not a
@@ -122,7 +122,8 @@ export class AdminCategoryTreeResponse {
   AdminCategoryTreeNodeEntity,
 )
 @Controller('admin/categories')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('categories:write')
 export class AdminCategoryController {
   constructor(private readonly categoryService: CategoryService) {}
 

@@ -12,7 +12,7 @@ import { FaqService } from './faq.service';
 import { CreateFaqItemDto, UpdateFaqItemDto } from './dto';
 import { FaqItemEntity } from './entities';
 import { FaqListResponse } from './faq.controller';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /**
  * Response envelope for a single FAQ item.
@@ -52,7 +52,8 @@ export class DeleteFaqResponseEnvelope {
 @ApiTags('FAQ')
 @ApiExtraModels(FaqItemEntity, FaqItemResponseEnvelope, FaqListResponse, DeleteFaqResponseEnvelope)
 @Controller('admin/faq')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('faq:write')
 export class AdminFaqController {
   constructor(private readonly faqService: FaqService) {}
 

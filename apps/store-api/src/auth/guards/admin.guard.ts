@@ -3,7 +3,16 @@ import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 /**
- * AdminGuard — single guard enforcing an authenticated ADMIN user.
+ * AdminGuard — RETIRED (TASK-334). Use `PermissionGuard` + `@RequirePermission()`
+ * / `@OwnerOnly()` instead.
+ *
+ * @deprecated Every one of its 43 call sites was migrated to `PermissionGuard`,
+ * and `permission.catalog.spec.ts` fails the build if a controller starts using
+ * this again. The class is kept only so an in-flight branch that still imports
+ * it does not fail to compile at merge time — reaching for it in new code
+ * reinstates the hardcoded `role !== ADMIN` check, which locks every MANAGER out
+ * of a route the permission matrix says they hold. That failure surfaces as a
+ * confused support ticket months later, not as a red test.
  *
  * Composes the two checks every admin endpoint needs into one decorator:
  *   1. A valid JWT access token — inherited from {@link JwtAuthGuard}, which

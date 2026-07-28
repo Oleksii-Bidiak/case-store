@@ -6,6 +6,8 @@ import { APP_GUARD } from '@nestjs/core';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 import { MeiliClient } from '../src/search';
 
 /**
@@ -85,6 +87,8 @@ describe('Search (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(MeiliClient)
       .useValue(meiliClientMock)
       .overrideProvider(APP_GUARD)

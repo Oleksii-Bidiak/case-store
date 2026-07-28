@@ -366,7 +366,7 @@ export class ProductService {
    * Unlike {@link findBySlug}, this calls the repository with
    * `{ activeOnly: false }` so deactivated products ARE returned — letting staff
    * preview hidden products live before re-activating them (TASK-155). The RBAC
-   * guard lives at the controller level (`AdminGuard`); soft-deleted rows remain
+   * guard lives at the controller level (`PermissionGuard`); soft-deleted rows remain
    * excluded by the repository regardless.
    *
    * Intentionally skips the public detail cache entirely: the response holds a

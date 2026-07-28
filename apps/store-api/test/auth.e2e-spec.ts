@@ -12,6 +12,8 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { GoogleAuthGuard } from '../src/auth/guards/google-auth.guard';
 import { GoogleOAuthProfile } from '../src/auth/oauth/google-oauth-profile';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 import * as argon2 from 'argon2';
 
 // Google OAuth must stay UNCONFIGURED for this suite: part of what the Google
@@ -149,6 +151,8 @@ describe('AuthController (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       // Override ThrottlerGuard with pass-through to avoid rate limiting in tests

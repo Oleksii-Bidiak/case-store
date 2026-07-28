@@ -9,6 +9,8 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CartRepository } from '../src/cart/cart.repository';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 import { CsrfService } from '../src/csrf';
 import { buildHelmetOptions } from '../src/config/security.config';
 
@@ -97,6 +99,8 @@ describe('Security hardening (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(UserRepository)

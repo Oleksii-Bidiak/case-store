@@ -10,6 +10,8 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { SiteContactRepository, SINGLETON_ID } from '../src/site-contact';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
  * E2E tests for the SiteContact module (TASK-154).
@@ -98,6 +100,8 @@ describe('SiteContact (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(UserRepository)

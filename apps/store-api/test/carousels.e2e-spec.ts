@@ -13,6 +13,8 @@ import { ProductService } from '../src/product/product.service';
 import { RevalidationNotifier } from '../src/publishing';
 import { HttpExceptionFilter } from '../src/common/filters';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
  * E2E tests for the carousel PLACEMENT dimension (TASK-288):
@@ -124,6 +126,8 @@ describe('Carousel placement (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(CarouselRepository)
       .useValue(carouselRepositoryMock)
       .overrideProvider(ProductService)

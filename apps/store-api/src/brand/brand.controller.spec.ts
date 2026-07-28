@@ -3,7 +3,7 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { BrandService } from './brand.service';
 import { BrandController } from './brand.controller';
 import { AdminBrandController } from './admin-brand.controller';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard } from '../auth/permissions';
 
 const serviceMock = {
   findAllActive: jest.fn(),
@@ -23,7 +23,10 @@ describe('BrandController (public)', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [BrandController],
       providers: [{ provide: BrandService, useValue: serviceMock }],
-    }).compile();
+    })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<BrandController>(BrandController);
   });
@@ -40,7 +43,7 @@ describe('BrandController (public)', () => {
 
   it('is NOT admin-guarded (public endpoint)', () => {
     const guards = Reflect.getMetadata(GUARDS_METADATA, BrandController) ?? [];
-    expect(guards).not.toContain(AdminGuard);
+    expect(guards).not.toContain(PermissionGuard);
   });
 });
 
@@ -53,14 +56,17 @@ describe('AdminBrandController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AdminBrandController],
       providers: [{ provide: BrandService, useValue: serviceMock }],
-    }).compile();
+    })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<AdminBrandController>(AdminBrandController);
   });
 
-  it('is guarded by AdminGuard at the controller level', () => {
+  it('is guarded by PermissionGuard at the controller level', () => {
     const guards = Reflect.getMetadata(GUARDS_METADATA, AdminBrandController) ?? [];
-    expect(guards).toContain(AdminGuard);
+    expect(guards).toContain(PermissionGuard);
   });
 
   it('returns the paginated list envelope from the service', async () => {

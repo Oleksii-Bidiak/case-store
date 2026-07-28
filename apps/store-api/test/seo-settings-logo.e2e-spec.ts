@@ -11,6 +11,8 @@ import { UserRepository } from '../src/user/user.repository';
 import { SeoSettingsRepository, SINGLETON_ID } from '../src/seo-settings';
 import { ImageProcessor, STORAGE_SERVICE } from '../src/storage';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
  * E2E tests for the store-logo endpoints (TASK-299).
@@ -82,6 +84,8 @@ describe('SeoSettings logo (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(UserRepository)

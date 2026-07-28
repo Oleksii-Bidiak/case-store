@@ -12,7 +12,7 @@ import {
 import { ContactService } from './contact.service';
 import { ContactMessageListQueryDto, UpdateContactMessageDto } from './dto';
 import { ContactMessageEntity } from './entities';
-import { AdminGuard } from '../auth';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /**
  * Pagination + unread-count metadata for the admin inbox. Declared as a
@@ -71,7 +71,8 @@ class ContactUnreadResponse {
 }
 
 /**
- * Admin-only contact-inbox endpoints (ADMIN role required via AdminGuard).
+ * Admin-only contact-inbox endpoints. `messages:read` at class level; the one
+ * mutating route overrides to `messages:write` (TASK-334).
  *
  *   GET   /api/contact/admin              — inbox list (status filter, newest first)
  *   GET   /api/contact/admin/unread-count — unread (NEW) count for the sidebar badge
@@ -88,7 +89,8 @@ class ContactUnreadResponse {
   ContactUnreadResponse,
 )
 @Controller('contact/admin')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('messages:read')
 export class AdminContactController {
   constructor(private readonly contactService: ContactService) {}
 
@@ -135,6 +137,7 @@ export class AdminContactController {
   }
 
   @Patch(':id')
+  @RequirePermission('messages:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Update a contact message — status / admin note (admin)',

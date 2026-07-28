@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { PermissionGuard } from '../auth/permissions';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule, SchedulerRegistry } from '@nestjs/schedule';
 import { LoggerModule } from 'nestjs-pino';
@@ -34,7 +35,10 @@ describe('PublishingModule wiring', () => {
         PublishingModule,
         PagesModule,
       ],
-    }).compile();
+    })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     const scheduler = moduleRef.get(PublishingScheduler);
     // Exercise the real DiscoveryService against the real container.
