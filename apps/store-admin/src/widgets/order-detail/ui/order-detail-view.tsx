@@ -13,6 +13,7 @@ import {
 } from "@/entities/order";
 import { OrderStatusSelect } from "@/features/order-status-update";
 import { PaymentStatusSelect } from "@/features/order-payment-update";
+import { OrderDetailsForm } from "@/features/order-details-form";
 import {
   Badge,
   Separator,
@@ -153,11 +154,26 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
               <span className="text-sm font-medium text-foreground">
                 {dict.orders.updateStatus}
               </span>
-              <OrderStatusSelect
-                orderId={order.id}
-                currentStatus={order.status}
-              />
+              {/* TASK-332: the picker takes only the id. The legal moves AND the
+                  optimistic-lock token both come from the server, so passing a
+                  status down would just be a second, staler copy of it. */}
+              <OrderStatusSelect orderId={order.id} />
             </div>
+          </section>
+
+          {/* TASK-330-C: everything about money for this order in one card. */}
+          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+            <h3 className="text-sm font-semibold text-foreground">
+              {dict.orders.paymentHeading}
+            </h3>
+            {/* The status itself is the badge in the header section above — it is
+                NOT repeated here. What belongs in this card is the money and the
+                control that changes it. */}
+            <SummaryRow
+              label={dict.orders.paymentAmountLabel}
+              value={formatCurrency(order.total)}
+            />
+            <Separator />
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium text-foreground">
                 {dict.orderStatus.updatePaymentStatus}
@@ -167,6 +183,22 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                 currentPaymentStatus={order.paymentStatus}
               />
             </div>
+            {/* An honest blank rather than a card that implies there were no
+                payment attempts. The method, the attempt history and the refund
+                button need `Order.paymentMethod` on the entity plus the admin
+                payments endpoints — none of which the merged backend exposes
+                yet. See this file's note and the report for the exact contract. */}
+            <p className="text-xs text-muted-foreground">
+              {dict.orders.paymentAttemptsUnavailable}
+            </p>
+          </section>
+
+          {/* TASK-335 / 336: waybill + operator-only notes. */}
+          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+            <h3 className="text-sm font-semibold text-foreground">
+              {dict.orders.detailsHeading}
+            </h3>
+            <OrderDetailsForm order={order} />
           </section>
 
           <section className="rounded-lg border border-border shadow-card overflow-hidden">
@@ -274,11 +306,18 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
           ) : null}
 
           {order.notes ? (
+            // TASK-336: the CUSTOMER's own note, read-only and labelled as such.
+            // It sits in a different card from `internalNotes` and says whose
+            // words these are, because the failure mode of blurring the two is a
+            // shop's internal remark reaching the buyer it is about.
             <section className="flex flex-col gap-1 rounded-md border border-border p-4">
               <h3 className="text-sm font-semibold text-foreground">
                 {dict.orders.notes}
               </h3>
               <p className="text-sm text-muted-foreground">{order.notes}</p>
+              <p className="text-xs text-muted-foreground">
+                {dict.orders.customerNotesHint}
+              </p>
             </section>
           ) : null}
         </div>

@@ -110,11 +110,13 @@ describe("OrderDetailView — customer section (TASK-125)", () => {
 
     renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
 
-    await screen.findByText(dict.orders.summary);
-
-    // Two separate comboboxes: order status + payment status.
+    // Two separate comboboxes: order status + payment status. The order-status
+    // one waits on its own `allowed-transitions` read (TASK-332), so it is
+    // awaited rather than asserted synchronously after the order lands.
     expect(
-      screen.getByRole("combobox", { name: dict.orderStatus.updateAria }),
+      await screen.findByRole("combobox", {
+        name: dict.orderStatus.updateAria,
+      }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("combobox", {

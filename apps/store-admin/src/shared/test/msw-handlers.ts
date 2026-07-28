@@ -36,6 +36,28 @@ export const handlers = [
     HttpResponse.json({ data: [] }),
   ),
 
+  // Legal next statuses + the optimistic-lock token (TASK-332). The status
+  // picker is now server-driven, so ANY test that mounts OrderDetailView needs
+  // this. The default is the real PENDING row of `order-state-machine.ts` rather
+  // than "every status": a fixture that offers illegal moves would let a
+  // regression to the old guess-everything behaviour pass unnoticed. Override
+  // per-test for other source statuses.
+  http.get("*/api/admin/orders/:orderId/allowed-transitions", () =>
+    HttpResponse.json({
+      data: {
+        current: "PENDING",
+        allowed: [
+          "CONFIRMED",
+          "PROCESSING",
+          "SHIPPED",
+          "DELIVERED",
+          "CANCELLED",
+        ],
+        updatedAt: "2026-06-01T10:00:00.000Z",
+      },
+    }),
+  ),
+
   // Unread (NEW) contact-message count for the nav «Повідомлення» badge — none
   // by default; both AdminNavList mount points (sidebar + drawer) read it, so a
   // shared stub keeps every shell test off onUnhandledRequest. Override per-test.

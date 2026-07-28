@@ -1415,6 +1415,69 @@ export const dict = {
     timelineHeading: "Історія змін",
     timelineLoadError: "Не вдалося завантажити історію змін.",
     timelineEmpty: "Історія змін порожня.",
+
+    // --- Free-text search (TASK-336) ------------------------------------------
+    // Deliberately does NOT mention "ID": what an operator has on the phone is a
+    // number the customer read off an email, or a phone number — never a UUID.
+    searchPlaceholder: "Номер замовлення, пошта або телефон…",
+    searchAria: "Пошук замовлень",
+    emptySearch: (q: string) => `Нічого не знайдено за запитом «${q}».`,
+
+    // --- Operator-editable fields (TASK-335 / TASK-336) -----------------------
+    detailsHeading: "Дані для оператора",
+    trackingNumber: "ТТН (Нова Пошта)",
+    trackingNumberPlaceholder: "20450000000001",
+    // Says out loud that we do NOT create the waybill: creating one needs a
+    // counterparty in the client's NP account, so the number is copied in from
+    // the courier's own interface.
+    trackingNumberHint:
+      "Введіть номер накладної з кабінету Нової Пошти. Якщо замовлення вже «Відправлено», клієнт отримає лист із номером для відстеження.",
+    trackingNumberInvalid: "ТТН — до 64 символів.",
+    internalNotes: "Внутрішні примітки",
+    internalNotesPlaceholder: "Нотатка для команди…",
+    // The whole point of TASK-336: this field and `notes` are different things,
+    // and the operator must see which one they are typing into.
+    internalNotesHint: "Бачить лише команда. Клієнту не показується ніколи.",
+    internalNotesInvalid: "Примітка — до 2000 символів.",
+    customerNotesHint: "Це написав клієнт при оформленні.",
+    detailsSave: "Зберегти",
+    detailsSaved: "Дані замовлення збережено.",
+    detailsFailed: "Не вдалося зберегти. Спробуйте ще раз.",
+
+    // --- Address edit before shipment (TASK-341) ------------------------------
+    addressEdit: "Змінити адресу",
+    addressEditCancel: "Скасувати",
+    addressSave: "Зберегти адресу",
+    addressSaved: "Адресу доставки оновлено.",
+    // Explains the ABSENCE of the button rather than leaving a dead control:
+    // once the parcel is with the courier, the address on the waybill is the one
+    // that counts and editing the order would only make the record disagree.
+    addressLockedHint:
+      "Адресу можна змінити лише до відправлення — замовлення вже передано перевізнику.",
+
+    // --- Payment card (TASK-330-C, partial — see the widget's note) -----------
+    paymentHeading: "Оплата",
+    paymentAmountLabel: "Сума",
+    // An honest blank. The method, the per-attempt history and the refund button
+    // need `Order.paymentMethod` on the order entity plus the admin payments
+    // endpoints, and the merged backend exposes neither — so the card says it
+    // cannot read them rather than implying there were no attempts.
+    paymentAttemptsUnavailable:
+      "Історія спроб оплати та повернення коштів стануть доступні після увімкнення онлайн-оплати.",
+
+    // --- Operator-created (phone) orders (TASK-341) ---------------------------
+    createHeading: "Нове замовлення",
+    createMetaTitle: "Нове замовлення — Адмін",
+    createCta: "Створити замовлення",
+    // Line editing is deliberately NOT implemented server-side: changing lines
+    // means returning and re-reserving stock atomically while recomputing totals
+    // against the discount and add-on invariants. Saying so beats an operator
+    // hunting for a button that does not exist.
+    itemsLockedHint:
+      "Склад замовлення не редагується після створення. Щоб змінити позиції — скасуйте це замовлення й створіть нове.",
+
+    // --- Returns cross-link (TASK-340) ----------------------------------------
+    returnsForOrder: "Повернення",
   },
 
   reviews: {
@@ -1503,6 +1566,176 @@ export const dict = {
     paymentToastUpdated: (label: string) => `Статус оплати оновлено: ${label}`,
     paymentToastFailed: "Не вдалося оновити статус оплати",
     paymentUpdateAria: "Оновити статус оплати",
+
+    // --- Server-driven transitions (TASK-332) ---------------------------------
+    transitionsLoading: "Завантаження доступних статусів…",
+    transitionsLoadError:
+      "Не вдалося отримати список доступних статусів. Оновіть сторінку.",
+    // The select now offers exactly what the server allows, so the picker names
+    // that fact — an operator who expected "Скасовано" to be there needs to know
+    // it is missing on purpose, not by accident.
+    transitionsHint: "Доступні лише переходи, дозволені для поточного статусу.",
+
+    // One string per stable 409 code from `order.errors.ts`. The client never
+    // echoes a raw backend message: these codes are the contract, the wording is
+    // ours (same discipline as `dict.reorderList.rejected`).
+    conflict: {
+      // Edge case E-11: two admins with one order open. Retrying blindly is
+      // exactly what the lock exists to stop, so the remedy named is "reload".
+      ORDER_STALE:
+        "Хтось інший щойно змінив це замовлення, оновіть сторінку. Ваша зміна не збережена.",
+      ORDER_TRANSITION_INVALID:
+        "Такий перехід статусу неможливий — замовлення вже змінилося. Список статусів оновлено.",
+    },
+    conflictUnknown:
+      "Замовлення змінилося, і зміну не збережено. Оновіть сторінку й спробуйте ще раз.",
+    reloadCta: "Оновити",
+  },
+
+  // --- Returns / RMA (TASK-340) -----------------------------------------------
+  returns: {
+    metaTitle: "Повернення — Адмін",
+    metaTitleDetail: (id: string) => `Повернення ${id} — Адмін`,
+    heading: "Повернення",
+    back: "← Назад до повернень",
+    title: (id: string) => `Повернення #${id}`,
+
+    filterStatusAria: "Фільтр за статусом повернення",
+    allStatuses: "Усі статуси",
+    loadError: "Не вдалося завантажити повернення. Спробуйте ще раз.",
+    loadOneError: "Не вдалося завантажити повернення. Спробуйте ще раз.",
+    empty: "Запитів на повернення ще немає.",
+    emptyStatus: (s: string) => `Немає повернень зі статусом «${s}».`,
+
+    colReturn: "Повернення",
+    colOrder: "Замовлення",
+    colStatus: "Статус",
+    colItems: "Позиції",
+    colRequested: "Запит",
+    colRefunded: "Повернуто",
+    rowAria: (id: string) => `Повернення ${id}`,
+    viewOrder: "Замовлення",
+
+    // Ukrainian labels for ReturnStatus. RECEIVED and REFUNDED are worded so the
+    // difference is unmistakable: the goods arriving and the money going out are
+    // two separate events, and conflating them is how a shop refunds twice.
+    statusREQUESTED: "Запит",
+    statusAPPROVED: "Схвалено",
+    statusREJECTED: "Відхилено",
+    statusRECEIVED: "Товар отримано",
+    statusREFUNDED: "Гроші повернуто",
+
+    reason: "Причина (від клієнта)",
+    noReason: "Причину не вказано",
+    operatorNotes: "Внутрішні примітки",
+    operatorNotesPlaceholder: "Нотатка для команди…",
+    operatorNotesHint: "Бачить лише команда. Клієнту не показується.",
+    requestedAt: "Запит створено",
+    resolvedAt: "Рішення прийнято",
+    restockedAt: "Повернуто на склад",
+    notRestocked: "На склад не повертали",
+    refundedAmount: "Повернуто коштів",
+    notRefunded: "Кошти не повертали",
+    itemsHeading: "Позиції до повернення",
+    itemProduct: "Товар",
+    itemQty: "К-сть",
+    itemPrice: "Ціна за од.",
+
+    // --- Resolve action -------------------------------------------------------
+    resolveHeading: "Рішення",
+    resolveStatus: "Новий статус",
+    resolveStatusAria: "Новий статус повернення",
+    resolveStatusPlaceholder: "Оберіть статус…",
+    resolveNoTransitions:
+      "Це повернення завершене — змінити його статус більше не можна.",
+    resolveRefundedAmount: "Сума повернення",
+    resolveRefundedAmountPlaceholder: "499.00",
+    // Partial refunds are normal: shipping is not always refundable and a
+    // customer may be returning one line out of three.
+    resolveRefundedAmountHint:
+      "Скільки фактично повернули клієнту. Може бути меншим за суму позицій — доставка повертається не завжди.",
+    resolveRefundedAmountInvalid:
+      "Сума має бути у форматі 499 або 499.00 (до двох знаків).",
+    resolveRestock: "Повернути товар у продаж",
+    // `restock` is explicit rather than inferred from the status because "the
+    // parcel arrived" and "the contents are sellable again" are different claims.
+    resolveRestockHint:
+      "Доступно лише для статусу «Товар отримано». Позначайте, коли товар справді придатний до продажу.",
+    resolveRestockAlreadyDone:
+      "Товар уже повернуто на склад — повторно це зробити не можна.",
+    resolveSubmit: "Зберегти рішення",
+    resolveSuccess: "Рішення збережено.",
+    resolveFailed: "Не вдалося зберегти рішення. Спробуйте ще раз.",
+    // 409 from the return state machine / the double-restock guard.
+    resolveConflict:
+      "Повернення вже змінилося — оновіть сторінку й прийміть рішення ще раз.",
+    resolveBadRequest:
+      "Повернення товару на склад доступне лише для статусу «Товар отримано».",
+  },
+
+  // --- Operator-created (phone) orders (TASK-341) ------------------------------
+  orderCreate: {
+    customerHeading: "Клієнт",
+    // An operator-created order either belongs to an existing account or to a
+    // walk-in whose contact was taken over the phone. Making that an explicit
+    // choice keeps "which of these two do I fill in" off the operator.
+    modeAccount: "Існуючий акаунт",
+    modeGuest: "Без акаунта (за телефоном)",
+    modeAria: "Кому належить замовлення",
+    userId: "ID користувача",
+    userIdPlaceholder: "550e8400-e29b-41d4-a716-446655440001",
+    userIdHint:
+      "Скопіюйте ID зі сторінки користувача. Без нього замовлення буде оформлено як гостьове.",
+    userIdInvalid: "Вкажіть коректний ID користувача (UUID).",
+    contactName: "Імʼя",
+    contactEmail: "Електронна пошта",
+    contactPhone: "Телефон",
+    contactNameInvalid: "Вкажіть імʼя клієнта.",
+    contactEmailInvalid: "Вкажіть коректну електронну пошту.",
+    contactPhoneInvalid: "Вкажіть коректний номер телефону.",
+
+    addressHeading: "Адреса доставки",
+    addressFirstName: "Імʼя",
+    addressLastName: "Прізвище",
+    addressPhone: "Телефон",
+    addressCity: "Місто",
+    addressAddress1: "Відділення / адреса",
+    addressPostalCode: "Індекс",
+    addressCountry: "Країна",
+    addressRequired: "Обовʼязкове поле.",
+
+    itemsHeading: "Позиції",
+    itemsSearchPlaceholder: "Пошук товару за назвою…",
+    itemsSearchAria: "Пошук товару для замовлення",
+    itemsSearching: "Пошук…",
+    itemsNoResults: "Товарів не знайдено.",
+    itemsAdd: "Додати",
+    itemsAddAria: (name: string) => `Додати «${name}» до замовлення`,
+    itemsRemove: "Прибрати",
+    itemsRemoveAria: (name: string) => `Прибрати «${name}» із замовлення`,
+    itemsQtyAria: (name: string) => `Кількість «${name}»`,
+    itemsEmpty: "Додайте хоча б один товар.",
+    // No price field anywhere, on purpose: an operator-created order is still a
+    // sale at the shop's price. Prices come from the live catalogue.
+    itemsPriceHint:
+      "Ціни беруться з каталогу на момент створення — вручну їх не змінюють.",
+
+    paymentHeading: "Оплата й примітки",
+    paymentMethod: "Спосіб оплати",
+    paymentMethodAria: "Спосіб оплати замовлення",
+    notes: "Примітки для клієнта",
+    notesPlaceholder: "Побажання клієнта…",
+    internalNotes: "Внутрішні примітки",
+    internalNotesPlaceholder: "Нотатка для команди…",
+
+    submit: "Створити замовлення",
+    cancel: "Скасувати",
+    success: "Замовлення створено.",
+    failed: "Не вдалося створити замовлення. Спробуйте ще раз.",
+    // 400 from the backend covers "no customer identified", "product
+    // unavailable" and "stock is short" — all things the operator can fix.
+    failedBadRequest:
+      "Замовлення не створено: перевірте клієнта, товари та наявність на складі.",
   },
 
   // --- Users (TASK-115) -------------------------------------------------------
