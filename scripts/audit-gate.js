@@ -68,17 +68,31 @@ const { execSync } = require('child_process');
  * The two unused direct `eslint-plugin-import` devDependencies that made it look
  * like ours were dropped in TASK-349.
  *
- * MEASURED, NOT ASSUMED. With `overrides: { eslint: "^10" }` at the root AND all
- * three workspaces declaring `eslint: "^10"`, a fresh resolve
- * (`rm package-lock.json && npm install --package-lock-only`) yields FOUR copies:
+ * WHAT AN `overrides: { eslint: "^10" }` ESCAPE HATCH ACTUALLY BUYS: a clean
+ * audit and no working lint.
  *
- *   node_modules/eslint                  => 9.39.5   ← survives, still vulnerable
- *   apps/store-{api,client,admin}/node_modules/eslint => 10.8.0
+ * The peer ranges above are not what stops it. Overrides exist precisely to
+ * force a tree past a peer deadlock, and they do — the chain moves to eslint 10
+ * and these advisories clear. The blocker is one step later, at runtime.
+ * eslint-plugin-react 7.37.5 calls `context.getFilename()`, which ESLint 10
+ * removed, from `lib/util/version.js:31` (`resolveBasedir`) — the React-version
+ * detection that every `react/*` rule runs when it loads. The first lint after
+ * the override dies with:
  *
- * npm keeps the 9.x at the root to satisfy the three peers above and nests 10.x
- * per app. That is worse than the status quo, not better: the advisory chain is
- * untouched (so not one line of this ALLOWLIST could be deleted) and lint would
- * run two ESLint runtimes against plugins resolved for the other one.
+ *   TypeError: Error while loading rule 'react/display-name':
+ *              contextOrFilename.getFilename is not a function
+ *
+ * Both call sites (that one and `lib/rules/jsx-filename-extension.js:64`) are
+ * present in the installed copy today — `grep -rn getFilename
+ * node_modules/eslint-plugin-react/lib` re-checks it in seconds with no
+ * reinstall. Trading a working lint for a dev-only DoS advisory that ships in no
+ * image is the wrong way round, so: not now.
+ *
+ * (An earlier revision of this note claimed the override yields FOUR eslint
+ * copies with 9.39.5 surviving at the root, and concluded the ALLOWLIST could
+ * not shrink at all. That is not how overrides resolve and it did not
+ * reproduce. Corrected in place rather than deleted, so the next person does
+ * not re-run that experiment expecting the old answer.)
  *
  * WHAT ACTUALLY DISCHARGES THIS — upstream, not us:
  *   1. an `eslint-config-next` release whose react / jsx-a11y / import plugins
