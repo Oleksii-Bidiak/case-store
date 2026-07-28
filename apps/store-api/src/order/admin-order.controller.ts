@@ -1,4 +1,15 @@
-import { Controller, Get, Patch, Param, Query, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Param,
+  Query,
+  Body,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+} from '@nestjs/common';
 import { CurrentUser } from '../auth';
 import {
   ApiTags,
@@ -24,6 +35,7 @@ import {
   UpdateOrderStatusDto,
   UpdateOrderPaymentStatusDto,
   UpdateOrderDetailsDto,
+  CreateManualOrderDto,
 } from './dto';
 import { AdminGuard } from '../auth/guards';
 
@@ -117,6 +129,7 @@ class AdminOrderAllowedTransitionsResponse {
  * Controller for admin order management endpoints.
  *
  * Admin endpoints (ADMIN role required):
+ *   POST   /admin/orders                              — Operator-created (phone) order (341)
  *   GET    /admin/orders                              — List all orders across all users
  *   GET    /admin/orders/:orderId                     — Get any order by ID
  *   GET    /admin/orders/:orderId/allowed-transitions — Legal next statuses (TASK-332)
@@ -169,6 +182,37 @@ export class AdminOrderController {
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: AdminOrderListQueryDto): Promise<AdminOrderListResponse> {
     return this.orderService.adminGetAllOrders(query);
+  }
+
+  /**
+   * POST /api/admin/orders
+   *
+   * Create an order on the customer's behalf — a phone order (TASK-341). Prices
+   * come from the live catalogue, never from the request.
+   */
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiBearerAuth('access-token')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Create an order on behalf of a customer (admin)',
+    operationId: 'adminOrderControllerCreate',
+  })
+  @ApiResponse({ status: 201, description: 'Order created', type: AdminOrderResponseEnvelope })
+  @ApiResponse({
+    status: 400,
+    description: 'No customer identified, a product is unavailable, or stock is short',
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async create(
+    @Body() dto: CreateManualOrderDto,
+    // Recorded as the history row's changedBy: unlike a self-service order, this
+    // one has an acting user, and that is the point of auditing manual orders.
+    @CurrentUser('id') adminUserId: string,
+  ): Promise<AdminOrderResponseEnvelope> {
+    const order = await this.orderService.adminCreateOrder(dto, adminUserId);
+
+    return { data: order };
   }
 
   /**
@@ -322,6 +366,21 @@ export class AdminOrderController {
     @Param('orderId') orderId: string,
     @Body() dto: UpdateOrderDetailsDto,
   ): Promise<AdminOrderResponseEnvelope> {
+    const lock = {
+      ...(dto.expectedUpdatedAt ? { expectedUpdatedAt: new Date(dto.expectedUpdatedAt) } : {}),
+    };
+
+    // TASK-341: the address edit has its own pre-shipment rule, so it goes
+    // through its own service method rather than being smuggled into the details
+    // write. Applied FIRST: if the order has already shipped the whole request
+    // fails with 409 and nothing at all is written, rather than the operator
+    // getting a half-applied edit whose refused half they have to notice.
+    let addressApplied = false;
+    if (dto.shippingAddress) {
+      await this.orderService.adminUpdateShippingAddress(orderId, dto.shippingAddress, lock);
+      addressApplied = true;
+    }
+
     const order = await this.orderService.adminUpdateDetails(
       orderId,
       {
@@ -330,9 +389,11 @@ export class AdminOrderController {
         ...(dto.trackingNumber !== undefined ? { trackingNumber: dto.trackingNumber } : {}),
         ...(dto.internalNotes !== undefined ? { internalNotes: dto.internalNotes } : {}),
       },
-      {
-        ...(dto.expectedUpdatedAt ? { expectedUpdatedAt: new Date(dto.expectedUpdatedAt) } : {}),
-      },
+      // The version token is spent by whichever write goes first. If the address
+      // was just applied, the row's `updatedAt` has already moved on — re-checking
+      // the caller's now-superseded token here would reject this request's own
+      // second half as a concurrent edit by itself.
+      addressApplied ? {} : lock,
     );
 
     return { data: order };

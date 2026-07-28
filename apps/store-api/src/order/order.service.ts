@@ -20,7 +20,13 @@ import { PRE_SHIPMENT_STATUSES } from './order.constants';
 import { allowedTransitions, canTransition } from './order-state-machine';
 import { invalidTransitionError, staleOrderError } from './order.errors';
 import { AddonApplicabilityResolver } from '../addon-service';
-import type { CreateOrderDto, OrderListQueryDto, AdminOrderListQueryDto } from './dto';
+import type {
+  CreateOrderDto,
+  CreateManualOrderDto,
+  OrderListQueryDto,
+  AdminOrderListQueryDto,
+  AddressDto,
+} from './dto';
 import type {
   CreateOrderParams,
   OrderActor,
@@ -733,6 +739,135 @@ export class OrderService {
         fields: Object.keys(fields),
       },
       'Order details updated',
+    );
+
+    return OrderEntity.fromPrisma(order, { includeInternal: true });
+  }
+
+  /**
+   * Admin — create an order on the customer's behalf: a phone order (TASK-341).
+   *
+   * Prices come from the live catalogue, never from the request. An
+   * operator-created order is still a sale at the shop's price, and accepting a
+   * price from the admin panel would make every discount a matter of whoever is
+   * on the phone, with nothing in the record to say one was given.
+   *
+   * The same three gates as a self-service checkout apply, for the same reasons:
+   * the product must still be on sale, its category must still be on sale, and
+   * there must be stock. An operator is not a reason to oversell.
+   *
+   * @throws BadRequestException when neither an account nor contact details were
+   *   given, a product is unknown or withdrawn, or stock is short.
+   * @throws ForbiddenException when the named account is deactivated.
+   */
+  async adminCreateOrder(dto: CreateManualOrderDto, adminUserId: string): Promise<OrderEntity> {
+    if (!dto.userId && !dto.contact) {
+      throw new BadRequestException(
+        'Either an existing customer or contact details are required — an order nobody can be reached about is not a sale',
+      );
+    }
+
+    if (dto.userId) {
+      const user = await this.userRepository.findById(dto.userId);
+      if (!user) {
+        throw new BadRequestException('That customer account does not exist');
+      }
+      if (!user.isActive) {
+        throw new ForbiddenException('That customer account is deactivated');
+      }
+    }
+
+    const productIds = [...new Set(dto.items.map((item) => item.productId))];
+    const products = await this.orderRepository.findOrderableProducts(productIds);
+    const byId = new Map(products.map((product) => [product.id, product]));
+
+    const items = dto.items.map((line) => {
+      const product = byId.get(line.productId);
+
+      if (!product) {
+        throw new BadRequestException('One of the selected products no longer exists');
+      }
+      if (!product.isActive || !product.category.isActive) {
+        throw new BadRequestException(`Product "${product.name}" is no longer available`);
+      }
+      if (line.quantity > product.stock) {
+        throw new BadRequestException(
+          `Insufficient stock for "${product.name}" — ${product.stock} available`,
+        );
+      }
+
+      return {
+        productId: line.productId,
+        quantity: line.quantity,
+        price: product.price.toString(),
+        name: product.name,
+      };
+    });
+
+    const order = await this.orderRepository.createManual(
+      {
+        userId: dto.userId ?? null,
+        ...(dto.contact ? { guest: dto.contact } : {}),
+        items,
+        shippingAddress: dto.shippingAddress,
+        ...(dto.notes ? { notes: dto.notes } : {}),
+        ...(dto.internalNotes ? { internalNotes: dto.internalNotes } : {}),
+        ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
+      },
+      adminUserId,
+    );
+
+    this.logger.info(
+      {
+        event: 'order.created_by_operator',
+        orderId: order.id,
+        adminUserId,
+        forAccount: Boolean(dto.userId),
+      },
+      'Operator created an order on the customer’s behalf',
+    );
+
+    return OrderEntity.fromPrisma(order, { includeInternal: true });
+  }
+
+  /**
+   * Admin — correct an order's delivery address before it ships (TASK-341).
+   *
+   * Pre-shipment only. Once the parcel is with the courier, the address on the
+   * waybill is the one that counts; editing the order afterwards would not move
+   * the parcel, it would only make the record disagree with reality — and the
+   * record is what support reads when the customer calls.
+   *
+   * @throws ConflictException when the order has already shipped.
+   */
+  async adminUpdateShippingAddress(
+    orderId: string,
+    shippingAddress: AddressDto,
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<OrderEntity> {
+    const existing = await this.orderRepository.findById(orderId);
+
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+
+    this.assertFresh(existing, options.expectedUpdatedAt);
+
+    if (!PRE_SHIPMENT_STATUSES.has(existing.status)) {
+      throw new ConflictException(
+        'The delivery address can only be changed before the order ships',
+      );
+    }
+
+    const order = await this.orderRepository.updateShippingAddress(
+      orderId,
+      shippingAddress,
+      options,
+    );
+
+    this.logger.info(
+      { event: 'order.address_updated', orderId },
+      'Delivery address corrected before shipment',
     );
 
     return OrderEntity.fromPrisma(order, { includeInternal: true });

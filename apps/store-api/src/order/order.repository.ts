@@ -15,8 +15,9 @@ import type {
   OrderAddonSnapshot,
   PaymentWithOrderRow,
   PaymentApplyPlan,
+  ManualOrderParams,
 } from './order.types';
-import type { OrderListQueryDto, AdminOrderListQueryDto } from './dto';
+import type { OrderListQueryDto, AdminOrderListQueryDto, AddressDto } from './dto';
 import { staleOrderError } from './order.errors';
 
 /**
@@ -274,6 +275,165 @@ export class OrderRepository {
     await this.evictProductCaches((order as OrderWithItems).items);
 
     return order as OrderWithItems;
+  }
+
+  /**
+   * Read the catalogue facts needed to price and stock-check an operator-created
+   * order (TASK-341).
+   *
+   * Lives here rather than reaching into ProductRepository so the order module
+   * keeps one door to the database, and so this read carries exactly the four
+   * facts the decision needs — price, stock, and the two "is it on sale" flags —
+   * instead of a full product with its images and rollups.
+   */
+  findOrderableProducts(productIds: string[]): Promise<
+    Array<{
+      id: string;
+      name: string;
+      price: { toString(): string };
+      stock: number;
+      isActive: boolean;
+      category: { isActive: boolean };
+    }>
+  > {
+    return this.prisma.product.findMany({
+      where: { id: { in: productIds }, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        price: true,
+        stock: true,
+        isActive: true,
+        category: { select: { isActive: true } },
+      },
+    });
+  }
+
+  /**
+   * Create an order the OPERATOR placed on the customer's behalf — a phone order
+   * (TASK-341).
+   *
+   * Deliberately NOT a variant of {@link createFromCart}. That method's whole
+   * shape is "convert this cart": it empties the cart, redeems the promo code the
+   * shopper typed, and freezes the add-ons they picked. A phone order has no cart
+   * and none of those steps, and threading a `cartId?: null` through the existing
+   * transaction would leave every one of those concerns guarded by an `if` that a
+   * later edit could get wrong.
+   *
+   * What IS shared is the part that must never diverge: the conditional
+   * `WHERE stock >= quantity` decrement, so an operator cannot oversell any more
+   * than a shopper can.
+   *
+   * @throws ConflictException when a line's stock is gone at commit time.
+   */
+  async createManual(params: ManualOrderParams, changedBy: string | null): Promise<OrderWithItems> {
+    const itemData = params.items.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      price: new Prisma.Decimal(item.price),
+    }));
+
+    const subtotalCents = itemData.reduce(
+      (cents, item) => cents + Math.round(item.price.toNumber() * 100) * item.quantity,
+      0,
+    );
+    const subtotal = new Prisma.Decimal(centsToDecimalString(subtotalCents));
+    const shipping = new Prisma.Decimal((params.shippingCost ?? 0).toString());
+    const total = subtotal.plus(shipping);
+
+    const order = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.order.create({
+        data: {
+          userId: params.userId ?? null,
+          ...(params.guest
+            ? {
+                guestEmail: params.guest.email,
+                guestPhone: params.guest.phone,
+                guestName: params.guest.name,
+              }
+            : {}),
+          status: OrderStatus.PENDING,
+          paymentStatus: PaymentStatus.PENDING,
+          ...(params.paymentMethod ? { paymentMethod: params.paymentMethod } : {}),
+          subtotal,
+          discount: new Prisma.Decimal(0),
+          shippingCost: shipping,
+          tax: new Prisma.Decimal(0),
+          addonsTotal: new Prisma.Decimal(0),
+          total,
+          shippingAddress: params.shippingAddress as unknown as Prisma.InputJsonValue,
+          billingAddress: (params.billingAddress ??
+            params.shippingAddress) as unknown as Prisma.InputJsonValue,
+          notes: params.notes ?? null,
+          internalNotes: params.internalNotes ?? null,
+          items: { create: itemData },
+        },
+        include: ORDERS_INCLUDE,
+      });
+
+      // The order's birth record. Unlike a self-service order this one HAS an
+      // acting user — the operator who took the call — and recording them is the
+      // whole point of an audit trail on manually-created orders.
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId: created.id,
+          changeType: OrderHistoryChangeType.STATUS,
+          fromStatus: null,
+          toStatus: OrderStatus.PENDING,
+          changedBy,
+        },
+      });
+
+      for (const item of params.items) {
+        const { count } = await tx.product.updateMany({
+          where: { id: item.productId, stock: { gte: item.quantity } },
+          data: { stock: { decrement: item.quantity } },
+        });
+        if (count === 0) {
+          throw new ConflictException(
+            `Insufficient stock for "${item.name}" — please review the order`,
+          );
+        }
+      }
+
+      return created;
+    });
+
+    await this.evictProductCaches((order as OrderWithItems).items);
+
+    return order as OrderWithItems;
+  }
+
+  /**
+   * Replace an order's delivery address before it ships (TASK-341).
+   *
+   * Address-only: changing WHERE a parcel goes touches no money and no stock, so
+   * it is separable from the line-item edit that does. The caller enforces the
+   * pre-shipment rule; the repository writes the snapshot.
+   */
+  async updateShippingAddress(
+    orderId: string,
+    shippingAddress: AddressDto,
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<OrderWithItems> {
+    const data = { shippingAddress: shippingAddress as unknown as Prisma.InputJsonValue };
+
+    if (options.expectedUpdatedAt) {
+      const { count } = await this.prisma.order.updateMany({
+        where: { id: orderId, updatedAt: options.expectedUpdatedAt },
+        data,
+      });
+      if (count === 0) {
+        throw staleOrderError();
+      }
+    } else {
+      await this.prisma.order.update({ where: { id: orderId }, data });
+    }
+
+    return this.prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: ADMIN_ORDERS_INCLUDE,
+    }) as Promise<OrderWithItems>;
   }
 
   /**
@@ -718,6 +878,16 @@ export class OrderRepository {
 
     const expectedUpdatedAt = options.expectedUpdatedAt;
 
+    // A request that changes none of these fields is a read, not a write — and a
+    // guarded `updateMany` with an empty `data` would neither express the version
+    // check meaningfully nor leave the row alone.
+    if (Object.keys(data).length === 0) {
+      return this.prisma.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: ADMIN_ORDERS_INCLUDE,
+      }) as Promise<OrderWithItems>;
+    }
+
     if (expectedUpdatedAt) {
       const { count } = await this.prisma.order.updateMany({
         where: { id: orderId, updatedAt: expectedUpdatedAt },
@@ -726,7 +896,7 @@ export class OrderRepository {
       if (count === 0) {
         throw staleOrderError();
       }
-    } else if (Object.keys(data).length > 0) {
+    } else {
       await this.prisma.order.update({ where: { id: orderId }, data });
     }
 

@@ -335,3 +335,33 @@ export interface GuestContact {
  */
 export type OrderActor =
   { type: 'user'; userId: string } | { type: 'guest'; cartToken: string; contact: GuestContact };
+
+/**
+ * An order the OPERATOR placed on the customer's behalf — a phone order
+ * (TASK-341).
+ *
+ * `items[].price` is filled by the SERVICE from the live catalogue, never from
+ * the request: an operator-created order is still a sale at the shop's price, and
+ * accepting a price from the admin panel would make every discount a matter of
+ * whoever is on the phone.
+ */
+export interface ManualOrderParams {
+  /** The account this order belongs to, or null when the caller is a walk-in. */
+  userId?: string | null;
+  /** Contact details when there is no account behind the order. */
+  guest?: GuestContact;
+  items: Array<{
+    productId: string;
+    quantity: number;
+    /** Snapshotted from the catalogue by the service. */
+    price: string;
+    /** For the insufficient-stock message; not persisted. */
+    name: string;
+  }>;
+  shippingAddress: AddressDto;
+  billingAddress?: AddressDto;
+  notes?: string;
+  internalNotes?: string;
+  shippingCost?: number;
+  paymentMethod?: PaymentMethod;
+}

@@ -175,6 +175,10 @@ const orderRepositoryMock = {
   // TASK-335/336: waybill + internal notes, and who to email about a shipment.
   updateDetails: jest.fn(),
   findRecipient: jest.fn(),
+  // TASK-341: operator-created orders + pre-shipment address correction.
+  findOrderableProducts: jest.fn(),
+  createManual: jest.fn(),
+  updateShippingAddress: jest.fn(),
   claimGuestOrders: jest.fn(),
   updateStatus: jest.fn(),
   cancelAndRestock: jest.fn(),
@@ -1517,6 +1521,186 @@ describe('OrderService', () => {
         PaymentStatus.PENDING,
         ADMIN_ID,
         expect.anything(),
+      );
+    });
+  });
+
+  // ─── Operator-created orders (TASK-341) ──────────────────────────────────────
+  // A phone order. The shop still sells at its own price, and the operator is
+  // not a reason to oversell.
+
+  describe('adminCreateOrder', () => {
+    const catalogueProduct = {
+      id: 'product-uuid-1',
+      name: 'iPhone 15 Pro Case',
+      price: { toString: () => '499.00' },
+      stock: 10,
+      isActive: true,
+      category: { isActive: true },
+    };
+
+    const dto = {
+      contact: guestContact,
+      shippingAddress: address,
+      items: [{ productId: 'product-uuid-1', quantity: 2 }],
+    };
+
+    beforeEach(() => {
+      orderRepositoryMock.findOrderableProducts.mockResolvedValue([catalogueProduct]);
+      orderRepositoryMock.createManual.mockResolvedValue(makeOrder());
+    });
+
+    it('prices the order from the catalogue, never from the request', async () => {
+      await service.adminCreateOrder(dto, ADMIN_ID);
+
+      expect(orderRepositoryMock.createManual).toHaveBeenCalledWith(
+        expect.objectContaining({
+          items: [
+            expect.objectContaining({ productId: 'product-uuid-1', quantity: 2, price: '499.00' }),
+          ],
+        }),
+        ADMIN_ID,
+      );
+    });
+
+    it('records the acting operator on the order', async () => {
+      await service.adminCreateOrder(dto, ADMIN_ID);
+
+      // Unlike a self-service order this one HAS an acting user, and recording
+      // them is the point of auditing manual orders.
+      expect(orderRepositoryMock.createManual).toHaveBeenCalledWith(expect.anything(), ADMIN_ID);
+    });
+
+    it('requires either an account or contact details', async () => {
+      await expect(
+        service.adminCreateOrder({ shippingAddress: address, items: dto.items }, ADMIN_ID),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+    });
+
+    it('creates against an existing account when one is named', async () => {
+      userRepositoryMock.findById.mockResolvedValue(recipient);
+
+      await service.adminCreateOrder({ ...dto, contact: undefined, userId: USER_ID }, ADMIN_ID);
+
+      expect(orderRepositoryMock.createManual).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: USER_ID }),
+        ADMIN_ID,
+      );
+    });
+
+    it('refuses to place an order for a deactivated account', async () => {
+      userRepositoryMock.findById.mockResolvedValue(bannedUser);
+
+      await expect(
+        service.adminCreateOrder({ ...dto, contact: undefined, userId: USER_ID }, ADMIN_ID),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('refuses a product that has been withdrawn from sale', async () => {
+      orderRepositoryMock.findOrderableProducts.mockResolvedValue([
+        { ...catalogueProduct, isActive: false },
+      ]);
+
+      await expect(service.adminCreateOrder(dto, ADMIN_ID)).rejects.toThrow(BadRequestException);
+      expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+    });
+
+    it('refuses a product whose category has been withdrawn from sale', async () => {
+      orderRepositoryMock.findOrderableProducts.mockResolvedValue([
+        { ...catalogueProduct, category: { isActive: false } },
+      ]);
+
+      await expect(service.adminCreateOrder(dto, ADMIN_ID)).rejects.toThrow(BadRequestException);
+    });
+
+    it('refuses to oversell — an operator is not an exemption', async () => {
+      orderRepositoryMock.findOrderableProducts.mockResolvedValue([
+        { ...catalogueProduct, stock: 1 },
+      ]);
+
+      await expect(service.adminCreateOrder(dto, ADMIN_ID)).rejects.toThrow(BadRequestException);
+      expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+    });
+
+    it('refuses a product id that is not in the catalogue', async () => {
+      orderRepositoryMock.findOrderableProducts.mockResolvedValue([]);
+
+      await expect(service.adminCreateOrder(dto, ADMIN_ID)).rejects.toThrow(BadRequestException);
+    });
+
+    it('returns the operator-only fields on the response', async () => {
+      orderRepositoryMock.createManual.mockResolvedValue(
+        makeOrder({ internalNotes: 'Paid cash at the counter' }),
+      );
+
+      const result = await service.adminCreateOrder(
+        { ...dto, internalNotes: 'Paid cash at the counter' },
+        ADMIN_ID,
+      );
+
+      expect(result.internalNotes).toBe('Paid cash at the counter');
+    });
+  });
+
+  // ─── Pre-shipment address correction (TASK-341) ──────────────────────────────
+
+  describe('adminUpdateShippingAddress', () => {
+    const newAddress = { ...address, city: 'Львів' };
+
+    beforeEach(() => {
+      orderRepositoryMock.updateShippingAddress.mockResolvedValue(makeOrder());
+    });
+
+    it.each([OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
+      'corrects the address while the order is still %s',
+      async (status) => {
+        orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status }));
+
+        await service.adminUpdateShippingAddress('order-uuid-1', newAddress);
+
+        expect(orderRepositoryMock.updateShippingAddress).toHaveBeenCalledWith(
+          'order-uuid-1',
+          newAddress,
+          expect.anything(),
+        );
+      },
+    );
+
+    it.each([OrderStatus.SHIPPED, OrderStatus.DELIVERED])(
+      'refuses once the parcel is with the courier (%s)',
+      async (status) => {
+        orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status }));
+
+        // Editing the order would not move the parcel — it would only make the
+        // record disagree with reality, and the record is what support reads.
+        await expect(
+          service.adminUpdateShippingAddress('order-uuid-1', newAddress),
+        ).rejects.toThrow(ConflictException);
+        expect(orderRepositoryMock.updateShippingAddress).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rejects a stale edit before touching the address', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PENDING, updatedAt: new Date('2026-07-28T10:20:00.000Z') }),
+      );
+
+      await expect(
+        service.adminUpdateShippingAddress('order-uuid-1', newAddress, {
+          expectedUpdatedAt: new Date('2026-07-28T10:15:30.000Z'),
+        }),
+      ).rejects.toMatchObject({ response: { error: 'ORDER_STALE' } });
+
+      expect(orderRepositoryMock.updateShippingAddress).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when the order does not exist', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.adminUpdateShippingAddress('missing', newAddress)).rejects.toThrow(
+        NotFoundException,
       );
     });
   });

@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsDateString, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsDateString, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
+import { AddressDto } from './address.dto';
 
 /**
  * Operator-editable fields that are not part of the order's lifecycle
@@ -52,6 +53,19 @@ export class UpdateOrderDetailsDto {
     return trimmed === '' ? null : trimmed;
   })
   internalNotes?: string | null;
+
+  @ApiProperty({
+    description:
+      'Replacement delivery address (TASK-341). Accepted only BEFORE the parcel ships — once ' +
+      'it is with the courier the address on the waybill is the one that counts, and editing ' +
+      'the order would only make the record disagree with reality.',
+    type: AddressDto,
+    required: false,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AddressDto)
+  shippingAddress?: AddressDto;
 
   /**
    * Optimistic-lock token — the same contract as
