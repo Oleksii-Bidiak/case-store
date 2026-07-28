@@ -29,6 +29,7 @@ import {
   ProductCardsQueryDto,
   SetDeviceCompatDto,
   UpdateProductSpecsDto,
+  BulkProductStatusDto,
 } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import {
@@ -92,6 +93,22 @@ class AdminProductListResponseEnvelope {
 
   @ApiProperty({ type: PaginationMeta })
   meta!: PaginationMeta;
+}
+
+/**
+ * What a bulk status write reports back (TASK-355): how many rows the database
+ * actually wrote, not how many the payload asked for. The two can only differ
+ * if something went wrong, and the operator's confirmation should say what
+ * happened rather than what was requested.
+ */
+class BulkProductStatusResult {
+  @ApiProperty({ description: 'Products whose isActive was written', example: 12 })
+  updatedCount!: number;
+}
+
+class BulkProductStatusResponse {
+  @ApiProperty({ type: BulkProductStatusResult })
+  data!: BulkProductStatusResult;
 }
 
 /**
@@ -495,6 +512,50 @@ export class ProductController {
   ): Promise<ProductResponse> {
     const product = await this.productService.updateSpecs(id, dto.specs);
     return { data: product };
+  }
+
+  /**
+   * PATCH /api/products/status
+   *
+   * Bulk activate / deactivate (TASK-355). Writes `isActive` on exactly the
+   * named products in one transaction — an unknown id aborts the whole batch —
+   * and performs the same cache eviction and search-index sync the per-row
+   * toggles do.
+   *
+   * DECLARED BEFORE the `:id` routes below. Today nothing would shadow it (there
+   * is no single-segment `@Patch(':id')` on this controller), but that is an
+   * accident of the current route list, not a guarantee: adding one later would
+   * silently capture `status` as an id. The category controller declares its
+   * `status` and `reorder` routes first for exactly this reason.
+   *
+   * Returns the number of rows written rather than the products themselves: the
+   * panel refetches its page anyway, and echoing N full product entities back
+   * would be a payload nobody reads.
+   *
+   * There is deliberately no bulk counterpart to `DELETE /:id`. Soft-deletion
+   * mangles slug and sku and is not something to hand an operator behind a
+   * checkbox column.
+   */
+  @Patch('status')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:write')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Bulk activate / deactivate products (admin)',
+    operationId: 'productControllerSetStatusMany',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Number of products updated',
+    type: BulkProductStatusResponse,
+  })
+  @ApiResponse({ status: 400, description: 'Validation error — empty, oversized or non-UUID ids' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({ status: 404, description: 'Unknown product id — nothing was written' })
+  async setStatusMany(@Body() dto: BulkProductStatusDto): Promise<BulkProductStatusResponse> {
+    const updatedCount = await this.productService.setStatusMany(dto.ids, dto.isActive);
+
+    return { data: { updatedCount } };
   }
 
   /**

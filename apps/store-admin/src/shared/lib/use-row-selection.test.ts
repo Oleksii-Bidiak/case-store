@@ -138,6 +138,70 @@ describe("useRowSelection", () => {
     });
   });
 
+  describe("extendTo (Shift+click / Shift+Space)", () => {
+    it("selects the whole span between the anchor and the target", () => {
+      const { result } = setup();
+
+      act(() => result.current.toggle("a")); // anchor
+      act(() => result.current.extendTo("d"));
+
+      expect([...result.current.selectedIds].sort()).toEqual([
+        "a",
+        "b",
+        "c",
+        "d",
+      ]);
+    });
+
+    it("works upwards as well as downwards", () => {
+      const { result } = setup();
+
+      act(() => result.current.toggle("d"));
+      act(() => result.current.extendTo("b"));
+
+      expect([...result.current.selectedIds].sort()).toEqual(["b", "c", "d"]);
+    });
+
+    it("keeps the anchor put so the range can be re-swept smaller", () => {
+      const { result } = setup();
+
+      act(() => result.current.toggle("a"));
+      act(() => result.current.extendTo("d"));
+      act(() => result.current.extendTo("b"));
+
+      // Still anchored at "a" — a second Shift+click narrows the range rather
+      // than starting a new one from the previous target.
+      expect([...result.current.selectedIds].sort()).toEqual(["a", "b"]);
+    });
+
+    it("falls back to a plain toggle when there is no anchor yet", () => {
+      const { result } = setup();
+
+      act(() => result.current.extendTo("c"));
+
+      expect([...result.current.selectedIds]).toEqual(["c"]);
+    });
+
+    it("stays checked when the range lands on an already-selected row", () => {
+      const { result } = setup();
+
+      act(() => result.current.toggle("a"));
+      act(() => result.current.extendTo("c"));
+      act(() => result.current.extendTo("c"));
+
+      expect(result.current.isSelected("c")).toBe(true);
+    });
+
+    it("ignores a target that is not on the page", () => {
+      const { result } = setup();
+
+      act(() => result.current.toggle("a"));
+      act(() => result.current.extendTo("zzz"));
+
+      expect([...result.current.selectedIds]).toEqual(["a"]);
+    });
+  });
+
   describe("rows that leave the page", () => {
     it("does not expose a selected row that is no longer rendered", () => {
       const { result, rerender } = setup();

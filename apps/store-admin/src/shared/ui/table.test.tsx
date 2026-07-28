@@ -1,4 +1,4 @@
-import { render, screen, within } from "@/shared/test/render";
+import { render, screen, within, fireEvent } from "@/shared/test/render";
 import {
   Table,
   TableBody,
@@ -373,6 +373,9 @@ describe("SortableColumnHeader hideOnMobile pass-through", () => {
  * group semantics survive, and the checkbox does not become a captioned field.
  */
 describe("Table row selection", () => {
+  const onSelect = jest.fn();
+  beforeEach(() => onSelect.mockClear());
+
   const selectionTable = (layout: "scroll" | "card") => (
     <Table layout={layout}>
       <TableHeader>
@@ -389,7 +392,7 @@ describe("Table row selection", () => {
         <TableRow rowLabel="iPhone 15 Pro" data-state="selected">
           <TableSelectCell
             checked
-            onCheckedChange={jest.fn()}
+            onSelect={onSelect}
             label={"Вибрати „iPhone 15 Pro“"}
           />
           <TableCell label="Назва">iPhone 15 Pro</TableCell>
@@ -459,5 +462,44 @@ describe("Table row selection", () => {
       '[data-slot="table-select-cell"]',
     ) as HTMLElement;
     expect(cell.className).not.toContain("absolute");
+  });
+
+  describe("modifier reporting", () => {
+    it("reports a plain activation as shiftKey: false", () => {
+      setCardViewport(false);
+      render(selectionTable("scroll"));
+
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Вибрати „iPhone 15 Pro“" }),
+      );
+
+      expect(onSelect).toHaveBeenCalledWith({ shiftKey: false });
+    });
+
+    it("reports Shift+click so the table can extend a range", () => {
+      setCardViewport(false);
+      render(selectionTable("scroll"));
+
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Вибрати „iPhone 15 Pro“" }),
+        { shiftKey: true },
+      );
+
+      expect(onSelect).toHaveBeenCalledWith({ shiftKey: true });
+    });
+
+    it("reports Shift+Space too — one handler covers mouse and keyboard", () => {
+      setCardViewport(false);
+      render(selectionTable("scroll"));
+
+      // A <button> raises `click` for Space, carrying the modifier state, which
+      // is why the cell listens for click rather than keydown.
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Вибрати „iPhone 15 Pro“" }),
+        { shiftKey: true, detail: 0 },
+      );
+
+      expect(onSelect).toHaveBeenCalledWith({ shiftKey: true });
+    });
   });
 });

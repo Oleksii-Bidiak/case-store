@@ -279,10 +279,19 @@ function TableSelectHead({
 
 interface TableSelectCellProps extends Omit<
   React.ComponentProps<"td">,
-  "children"
+  "children" | "onSelect"
 > {
   checked: boolean;
-  onCheckedChange: () => void;
+  /**
+   * Called with the modifier state of the activating event.
+   *
+   * `shiftKey` is reported rather than interpreted, so the cell stays dumb — the
+   * table decides whether that means "toggle" or "extend the range". It is read
+   * from the CLICK event on purpose: a `<button>` fires `click` for Space and
+   * Enter as well as for a mouse press, so one handler covers Shift+click AND
+   * Shift+Space without a second keyboard path to keep in step with it.
+   */
+  onSelect: (modifiers: { shiftKey: boolean }) => void;
   disabled?: boolean;
   /** Accessible name naming the ROW, e.g. `Вибрати „iPhone 15 Pro“`. */
   label: string;
@@ -305,7 +314,7 @@ interface TableSelectCellProps extends Omit<
  */
 function TableSelectCell({
   checked,
-  onCheckedChange,
+  onSelect,
   disabled,
   label,
   className,
@@ -325,7 +334,12 @@ function TableSelectCell({
     >
       <Checkbox
         checked={checked}
-        onCheckedChange={onCheckedChange}
+        // Selection is driven from `onClick`, not `onCheckedChange`, because
+        // only the DOM event carries `shiftKey`. `checked` is controlled by the
+        // caller either way, so the box still shows exactly what the selection
+        // model says — including a Shift+click that lands on an already-checked
+        // row and must stay checked rather than toggle off.
+        onClick={(event) => onSelect({ shiftKey: event.shiftKey })}
         disabled={disabled}
         aria-label={label}
       />

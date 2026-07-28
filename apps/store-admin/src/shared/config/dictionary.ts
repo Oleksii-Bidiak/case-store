@@ -265,6 +265,22 @@ export const dict = {
     // (tied up in unshipped orders) / physical (on the shelf = available + reserved).
     // The sortable header uses the generic dict.common.sortByAria(label) helper.
     colStock: "Вільно / Резерв / Фізично",
+    // Bulk activate / deactivate over the on-screen selection (TASK-355).
+    bulk: {
+      activate: (count: number) => `Активувати (${count})`,
+      deactivate: (count: number) => `Деактивувати (${count})`,
+      selectRow: (name: string) => `Вибрати „${name}“`,
+      // Blast radius spelled out: deactivating hides the products from the
+      // storefront, and the count is the reason this prompt exists.
+      deactivateConfirm: (count: number) =>
+        `Деактивувати ${count} тов. — вони зникнуть із вітрини. Продовжити?`,
+      announceSaving: (count: number) => `Збереження ${count} тов.…`,
+      announceDone: (count: number, isActive: boolean) =>
+        isActive
+          ? `Активовано товарів: ${count}`
+          : `Деактивовано товарів: ${count}`,
+      announceFailed: "Не вдалося змінити статус товарів",
+    },
     back: "← Назад до товарів",
     createHeading: "Створення товару",
     editHeading: "Редагування товару",

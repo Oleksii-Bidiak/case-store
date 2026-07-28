@@ -11,13 +11,16 @@ import { DiscountStatusToggle } from "@/features/discount-status-toggle";
 import {
   Button,
   Input,
+  SortableColumnHeader,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  TableToolbar,
 } from "@/shared/ui";
+import { useTableSort } from "@/shared/lib/use-table-sort";
 import { dict } from "@/shared/config";
 import { AdminDiscountTableSkeleton } from "./admin-discount-table-skeleton";
 
@@ -37,10 +40,17 @@ function formatExpiry(expiresAt: string | null): string {
 }
 
 /**
- * Paginated, searchable discount table for the admin panel.
+ * Paginated, searchable, sortable discount table for the admin panel.
  *
- * Search (by code) and page state live in the URL (`?search=`, `?page=`). Shows
- * the redeemed count vs. the global cap and a one-click deactivate action.
+ * Search, page and sort state all live in the URL (`?search=`, `?page=`,
+ * `?sortBy=&sortOrder=`), so a view survives a refresh and can be pasted to a
+ * colleague.
+ *
+ * The sort is SERVER-side and was already implemented: `DiscountListQueryDto`
+ * has accepted `sortBy`/`sortOrder` since TASK-147, but this table hard-coded
+ * `createdAt desc` and never offered the control (TASK-355). Only the four keys
+ * the DTO's `@IsIn` allows are wired — `code`, `redeemedCount`, `expiresAt` are
+ * visible columns; `createdAt` stays the default and has no column of its own.
  */
 export function AdminDiscountTable() {
   const router = useRouter();
@@ -51,17 +61,6 @@ export function AdminDiscountTable() {
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
 
   const [searchInput, setSearchInput] = useState(searchParam);
-
-  const { data, isLoading, isError } = useAdminListDiscounts({
-    page,
-    limit: PAGE_SIZE,
-    search: searchParam || undefined,
-    sortBy: "createdAt",
-    sortOrder: "desc",
-  });
-
-  const discounts = data?.data ?? [];
-  const totalPages = data?.meta?.totalPages ?? 1;
 
   const updateParams = (next: Record<string, string | undefined>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -76,6 +75,23 @@ export function AdminDiscountTable() {
     router.push(queryString ? `${pathname}?${queryString}` : pathname);
   };
 
+  const { sortBy, sortOrder, onSort } = useTableSort(
+    searchParams,
+    updateParams,
+  );
+
+  const { data, isLoading, isError, isFetching, refetch } =
+    useAdminListDiscounts({
+      page,
+      limit: PAGE_SIZE,
+      search: searchParam || undefined,
+      sortBy,
+      sortOrder,
+    });
+
+  const discounts = data?.data ?? [];
+  const totalPages = data?.meta?.totalPages ?? 1;
+
   const handleSearchSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     updateParams({ search: searchInput.trim() || undefined, page: undefined });
@@ -83,19 +99,30 @@ export function AdminDiscountTable() {
 
   return (
     <div className="flex flex-col gap-4">
-      <form onSubmit={handleSearchSubmit} className="flex gap-2" role="search">
-        <Input
-          type="search"
-          placeholder={dict.discounts.searchPlaceholder}
-          value={searchInput}
-          onChange={(event) => setSearchInput(event.target.value)}
-          className="max-w-xs"
-          aria-label={dict.discounts.searchAria}
-        />
-        <Button type="submit" variant="outline">
-          {dict.common.search}
-        </Button>
-      </form>
+      <TableToolbar
+        className="mb-0"
+        onRefresh={() => void refetch()}
+        isRefreshing={isFetching}
+        search={
+          <form
+            onSubmit={handleSearchSubmit}
+            className="flex gap-2"
+            role="search"
+          >
+            <Input
+              type="search"
+              placeholder={dict.discounts.searchPlaceholder}
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              className="max-w-xs"
+              aria-label={dict.discounts.searchAria}
+            />
+            <Button type="submit" variant="outline">
+              {dict.common.search}
+            </Button>
+          </form>
+        }
+      />
 
       {isLoading ? (
         <AdminDiscountTableSkeleton />
@@ -114,11 +141,30 @@ export function AdminDiscountTable() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{dict.discounts.colCode}</TableHead>
+                <SortableColumnHeader
+                  field="code"
+                  label={dict.discounts.colCode}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
                 <TableHead hideOnMobile>{dict.discounts.colType}</TableHead>
                 <TableHead>{dict.discounts.colValue}</TableHead>
-                <TableHead hideOnMobile>{dict.discounts.colRedeemed}</TableHead>
-                <TableHead>{dict.discounts.colExpires}</TableHead>
+                <SortableColumnHeader
+                  field="redeemedCount"
+                  label={dict.discounts.colRedeemed}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                  hideOnMobile
+                />
+                <SortableColumnHeader
+                  field="expiresAt"
+                  label={dict.discounts.colExpires}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
                 <TableHead>{dict.discounts.colStatus}</TableHead>
                 <TableHead className="text-right">
                   {dict.common.actions}

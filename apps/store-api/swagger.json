@@ -2915,6 +2915,52 @@
         ]
       }
     },
+    "/api/products/status": {
+      "patch": {
+        "operationId": "productControllerSetStatusMany",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkProductStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Number of products updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkProductStatusResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — empty, oversized or non-UUID ids"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Unknown product id — nothing was written"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Bulk activate / deactivate products (admin)",
+        "tags": [
+          "Products"
+        ]
+      }
+    },
     "/api/products/{id}/deactivate": {
       "patch": {
         "operationId": "ProductController_deactivate",
@@ -13459,6 +13505,50 @@
         },
         "required": [
           "specs"
+        ]
+      },
+      "BulkProductStatusDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "description": "Ids of the products whose status is being set.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "The status to write: `true` activates every listed product, `false` deactivates."
+          }
+        },
+        "required": [
+          "ids",
+          "isActive"
+        ]
+      },
+      "BulkProductStatusResult": {
+        "type": "object",
+        "properties": {
+          "updatedCount": {
+            "type": "number",
+            "description": "Products whose isActive was written",
+            "example": 12
+          }
+        },
+        "required": [
+          "updatedCount"
+        ]
+      },
+      "BulkProductStatusResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkProductStatusResult"
+          }
+        },
+        "required": [
+          "data"
         ]
       },
       "ProductImageListEnvelope": {

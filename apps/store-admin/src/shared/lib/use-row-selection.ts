@@ -66,6 +66,12 @@ export interface RowSelection {
    * the list. Focus is returned rather than moved so the hook stays free of DOM.
    */
   extend: (fromId: string, delta: 1 | -1) => string | null;
+  /**
+   * Select everything from the anchor to `id` inclusive — the Shift+click (and
+   * Shift+Space) range that flat tables are expected to support. With no anchor
+   * yet it degrades to a plain toggle rather than doing nothing.
+   */
+  extendTo: (id: string) => void;
   /** Tri-state state of the header checkbox, over the current page. */
   headerChecked: boolean | "indeterminate";
   /** Select every row on the page, or clear them if all are already selected. */
@@ -162,6 +168,40 @@ export function useRowSelection({
     [announce, messages, onPage, rawSelectedIds, rowIds],
   );
 
+  const extendTo = useCallback(
+    (id: string) => {
+      const targetIndex = rowIds.indexOf(id);
+      if (targetIndex === -1) return;
+
+      const anchorId = anchorRef.current;
+      const anchorIndex = anchorId === null ? -1 : rowIds.indexOf(anchorId);
+      if (anchorIndex === -1) {
+        // No anchor on this page (first click, or the anchor row is gone).
+        // Falling back to a plain toggle is what every table that supports
+        // Shift+click does — the alternative is a modifier that silently does
+        // nothing, which reads as a broken control.
+        toggle(id);
+        return;
+      }
+
+      const [lo, hi] =
+        anchorIndex <= targetIndex
+          ? [anchorIndex, targetIndex]
+          : [targetIndex, anchorIndex];
+      const range = rowIds.slice(lo, hi + 1);
+
+      const next = new Set(
+        [...rawSelectedIds].filter((rowId) => !onPage.has(rowId)),
+      );
+      for (const rowId of range) next.add(rowId);
+      setRawSelectedIds(next);
+      // The anchor deliberately stays put: sweeping back and forth from the same
+      // origin is the whole point of a Shift range.
+      announce(messages?.selectedAll(range.length));
+    },
+    [announce, messages, onPage, rawSelectedIds, rowIds, toggle],
+  );
+
   const selectedCount = selectedIds.size;
 
   const headerChecked: boolean | "indeterminate" =
@@ -202,6 +242,7 @@ export function useRowSelection({
     isSelected,
     toggle,
     extend,
+    extendTo,
     headerChecked,
     toggleAll,
     clear,

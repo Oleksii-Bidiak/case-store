@@ -1,7 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ProductRepository, CreateProductInput, UpdateProductInput } from './product.repository';
+import {
+  ProductRepository,
+  ProductsNotFoundError,
+  CreateProductInput,
+  UpdateProductInput,
+} from './product.repository';
 import { ProductDeviceCompatRepository } from './product-device-compat.repository';
 import { ProductSpecRepository } from './product-spec.repository';
 import { CategoryRepository } from '../category';
@@ -61,6 +66,7 @@ const productRepositoryMock = {
   update: jest.fn(),
   deactivate: jest.fn(),
   activate: jest.fn(),
+  setActiveMany: jest.fn(),
   softDelete: jest.fn(),
   // TASK-254: derived reserved-qty aggregate. Defaults to an empty map (no
   // reservations); individual tests override to assert the enrichment.
@@ -836,6 +842,85 @@ describe('ProductService', () => {
 
       await expect(service.deactivate('nonexistent-id')).rejects.toThrow(NotFoundException);
       expect(productRepositoryMock.deactivate).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── setStatusMany (admin, TASK-355) ─────────────────────────────────────────
+
+  describe('setStatusMany', () => {
+    const updated = [
+      { id: 'product-uuid-1', slug: 'iphone-15-pro-case', isActive: false },
+      { id: 'product-uuid-2', slug: 'galaxy-s24-case', isActive: false },
+    ];
+
+    it('performs the SAME side effects the per-row toggle does, for every row', async () => {
+      productRepositoryMock.setActiveMany.mockResolvedValue(updated);
+
+      const count = await service.setStatusMany(['product-uuid-1', 'product-uuid-2'], false);
+
+      expect(count).toBe(2);
+      expect(productRepositoryMock.setActiveMany).toHaveBeenCalledWith(
+        ['product-uuid-1', 'product-uuid-2'],
+        false,
+      );
+
+      // Detail cache evicted by BOTH id and slug, per product — the same two
+      // keys `deactivate` clears. A bulk path that dropped one of them would
+      // leave a stale PDP served under the other.
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(expect.stringContaining('product-uuid-1'));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(
+        expect.stringContaining('iphone-15-pro-case'),
+      );
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(expect.stringContaining('product-uuid-2'));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(expect.stringContaining('galaxy-s24-case'));
+
+      // Deactivated products leave the search index.
+      expect(productIndexerMock.remove).toHaveBeenCalledWith('product-uuid-1');
+      expect(productIndexerMock.remove).toHaveBeenCalledWith('product-uuid-2');
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+    });
+
+    it('re-indexes instead of removing when activating', async () => {
+      productRepositoryMock.setActiveMany.mockResolvedValue(
+        updated.map((row) => ({ ...row, isActive: true })),
+      );
+
+      await service.setStatusMany(['product-uuid-1', 'product-uuid-2'], true);
+
+      expect(productIndexerMock.index).toHaveBeenCalledWith('product-uuid-1');
+      expect(productIndexerMock.index).toHaveBeenCalledWith('product-uuid-2');
+      expect(productIndexerMock.remove).not.toHaveBeenCalled();
+    });
+
+    it('evicts the list prefix once, not once per product', async () => {
+      productRepositoryMock.setActiveMany.mockResolvedValue(updated);
+
+      await service.setStatusMany(['product-uuid-1', 'product-uuid-2'], false);
+
+      expect(cacheServiceMock.delByPrefix).toHaveBeenCalledTimes(1);
+    });
+
+    it('maps the repository domain error to 404 and touches no cache', async () => {
+      productRepositoryMock.setActiveMany.mockRejectedValue(
+        new ProductsNotFoundError(['missing-uuid']),
+      );
+
+      await expect(
+        service.setStatusMany(['product-uuid-1', 'missing-uuid'], false),
+      ).rejects.toThrow(NotFoundException);
+
+      // The write was rolled back, so nothing downstream may have run — an
+      // eviction here would mean the service acted on a batch that never landed.
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+      expect(productIndexerMock.remove).not.toHaveBeenCalled();
+    });
+
+    it('lets an unexpected repository failure through untouched', async () => {
+      const boom = new Error('connection reset');
+      productRepositoryMock.setActiveMany.mockRejectedValue(boom);
+
+      await expect(service.setStatusMany(['product-uuid-1'], true)).rejects.toThrow(boom);
     });
   });
 
