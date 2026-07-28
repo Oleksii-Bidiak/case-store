@@ -1,11 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerStorage } from '@nestjs/throttler';
 import { JwtService } from '@nestjs/jwt';
 import { OrderStatus, PaymentStatus, OrderHistoryChangeType, Prisma } from '@prisma/client';
 import request from 'supertest';
+import cookieParser from 'cookie-parser';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
@@ -27,15 +27,11 @@ import { createPermissionRepositoryMock } from './permission-repository.mock';
  * an `Authorization: Bearer` header. OrderRepository and CartRepository — the
  * clean-architecture boundary — are mocked, so no real database is needed.
  * AuthRepository, UserRepository, and PrismaService are also mocked to let
- * AppModule bootstrap without a DB. ThrottlerGuard is overridden with a
- * pass-through guard to disable rate limiting.
+ * AppModule bootstrap without a DB.
+ *
+ * Rate limiting is disabled by replacing the throttler's STORAGE, not its guard —
+ * see the override below for why the guard-shaped spellings silently do nothing.
  */
-
-class ThrottlerGuardPassThrough extends ThrottlerGuard {
-  protected async handleRequest(): Promise<boolean> {
-    return true;
-  }
-}
 
 describe('OrderController (e2e)', () => {
   let app: INestApplication;
@@ -52,6 +48,9 @@ describe('OrderController (e2e)', () => {
     reviveAndReserve: jest.fn(),
     updatePaymentStatus: jest.fn(),
     findHistoryByOrderId: jest.fn(),
+    // TASK-338: guest order access by emailed token, and claiming on registration.
+    findByAccessTokenHash: jest.fn(),
+    claimGuestOrders: jest.fn(),
   };
 
   // TASK-079: DiscountRepository is mocked so the order-with-discount path can
@@ -280,12 +279,38 @@ describe('OrderController (e2e)', () => {
       .useValue(mailServiceMock)
       .overrideProvider(MailOutboxService)
       .useValue(mailOutboxServiceMock)
-      .overrideProvider(APP_GUARD)
-      .useClass(ThrottlerGuardPassThrough)
+      // Rate limiting is disabled by replacing the COUNTER, not the guard.
+      //
+      // The obvious spellings do not work and fail silently, which is how every
+      // e2e suite here ended up running through the real rate limiter while
+      // believing it was disabled: .overrideProvider(APP_GUARD) does not reach
+      // a global enhancer, and .overrideGuard() does not either. It stayed
+      // invisible until TASK-338 lowered the guest order limit to 3/min and this
+      // suite started 429-ing on its fourth POST.
+      //
+      // Overriding the storage works whatever the route declares, because every
+      // limit — global, @Throttle, or the per-request resolver TASK-338 added —
+      // is enforced through this one counter. Reporting one hit makes every
+      // request look like the first.
+      .overrideProvider(ThrottlerStorage)
+      .useValue({
+        increment: async () => ({
+          totalHits: 1,
+          timeToExpire: 60,
+          isBlocked: false,
+          timeToBlockExpire: 0,
+        }),
+      })
       .compile();
 
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get<JwtService>(JwtService);
+
+    // main.ts registers this; a test app does not inherit it. Without it
+    // `request.cookies` is undefined, so CartIdentityInterceptor treats every guest
+    // as brand new and mints a fresh cart token — the guest-checkout assertions
+    // then compare against a UUID nobody sent (TASK-338).
+    app.use(cookieParser());
 
     app.useGlobalPipes(
       new ValidationPipe({
@@ -448,11 +473,106 @@ describe('OrderController (e2e)', () => {
       expect(response.body.data.total).toBe('53.98');
     });
 
-    it('should return 401 without a JWT', async () => {
-      await request(app.getHttpServer())
+    // ── TASK-338: the guard is gone from this route on purpose ────────────────
+    // A guest could always fill a cart; the barrier stood exactly here, which is
+    // what made the storefront's "order in two minutes, no registration" promise
+    // untrue. An anonymous request is no longer rejected for being anonymous —
+    // it is rejected only if it does not say who to deliver to.
+
+    it('should return 400, not 401, for an anonymous request with no contact details', async () => {
+      const response = await request(app.getHttpServer())
         .post('/api/orders')
         .send({ shippingAddress: validAddress })
-        .expect(401);
+        .expect(400);
+
+      expect(response.body.message).toMatch(/contact details/i);
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    it('should create a guest order from the cookie cart (201)', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue(makeCart(userA.id));
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+        .send({
+          shippingAddress: validAddress,
+          contact: {
+            email: 'guest@example.com',
+            phone: '+380671112233',
+            name: 'Гість Гостьович',
+          },
+        })
+        .expect(201);
+
+      // The guest's cart is found by the cookie, never by a user id, and no
+      // account lookup happens at all.
+      expect(cartRepositoryMock.findByToken).toHaveBeenCalledWith('guest-cart-token-e2e');
+      expect(userRepositoryMock.findById).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: null, guest: expect.any(Object) }),
+        expect.any(Function),
+      );
+    });
+
+    it('should reject guest contact details that are not a real email (400)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+        .send({
+          shippingAddress: validAddress,
+          contact: { email: 'not-an-email', phone: '+380671112233', name: 'Гість' },
+        })
+        .expect(400);
+
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    it('ignores a contact block from a SIGNED-IN shopper (no email redirection)', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
+      const createdOrder = makeOrder();
+      const txStub = { mailOutbox: { create: jest.fn() } };
+      orderRepositoryMock.createFromCart.mockImplementation(
+        async (
+          _params: unknown,
+          afterCreate?: (tx: unknown, created: OrderWithItems) => Promise<void>,
+        ) => {
+          if (afterCreate) await afterCreate(txStub, createdOrder);
+          return createdOrder;
+        },
+      );
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          shippingAddress: validAddress,
+          contact: { email: 'attacker@evil.example', phone: '+380671112233', name: 'X' },
+        })
+        .expect(201);
+
+      // The confirmation email — which carries an order-access link — must go to
+      // the ACCOUNT's address, never to one supplied in the request body.
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'usera@example.com' }),
+        txStub,
+      );
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: userA.id }),
+        expect.any(Function),
+      );
+      // Checked separately rather than as `guest: undefined` inside
+      // objectContaining: that form requires the KEY to be present holding
+      // undefined, and the service simply omits it — so the original assertion
+      // failed on a behaviour that was correct. What actually matters is the
+      // property: a signed-in order must never carry an attacker-supplied contact
+      // block, or the confirmation mail could be redirected to any address.
+      const [createParams] = orderRepositoryMock.createFromCart.mock.calls[0] as [
+        { guest?: unknown },
+      ];
+      expect(createParams.guest).toBeUndefined();
     });
 
     it('should return 403 when the placing account is deactivated (banned)', async () => {
@@ -852,6 +972,98 @@ describe('OrderController (e2e)', () => {
     });
   });
 
+  // ─── GET /api/orders/guest/:token (TASK-338) ────────────────────────────────────
+  // Public by necessity — there is no account to authenticate against. The token
+  // IS the credential.
+
+  describe('GET /api/orders/guest/:token', () => {
+    const RAW_TOKEN = 'b'.repeat(64);
+
+    it('returns the order for a valid token, with no JWT at all (200)', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ userId: null, createdAt: new Date() }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/orders/guest/${RAW_TOKEN}`)
+        .expect(200);
+
+      expect(response.body.data.id).toBeDefined();
+      // The raw token must never be what we query with — only its SHA-256.
+      expect(orderRepositoryMock.findByAccessTokenHash).not.toHaveBeenCalledWith(RAW_TOKEN);
+    });
+
+    it('returns 404 for an unknown token', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(null);
+
+      await request(app.getHttpServer()).get(`/api/orders/guest/${RAW_TOKEN}`).expect(404);
+    });
+
+    it('never exposes operator-only internal notes to the guest', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({
+          userId: null,
+          createdAt: new Date(),
+          internalNotes: 'Suspected fraud — call before dispatch',
+        }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/orders/guest/${RAW_TOKEN}`)
+        .expect(200);
+
+      expect(response.body.data.internalNotes).toBeUndefined();
+      expect(JSON.stringify(response.body)).not.toContain('Suspected fraud');
+    });
+  });
+
+  // ─── GET /api/admin/orders/:orderId/allowed-transitions (TASK-332) ──────────────
+
+  describe('GET /api/admin/orders/:orderId/allowed-transitions', () => {
+    it('should return the legal targets and the optimistic-lock token (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.PROCESSING }));
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/allowed-transitions')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data.current).toBe(OrderStatus.PROCESSING);
+      expect(response.body.data.allowed).toEqual([
+        OrderStatus.SHIPPED,
+        OrderStatus.DELIVERED,
+        OrderStatus.CANCELLED,
+      ]);
+      expect(response.body.data.updatedAt).toBeDefined();
+    });
+
+    it('should return 404 when the order does not exist', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/nonexistent-uuid/allowed-transitions')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('should return 403 for a non-admin user', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/allowed-transitions')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('should return 401 without a JWT', async () => {
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/allowed-transitions')
+        .expect(401);
+    });
+  });
+
   // ─── PATCH /api/admin/orders/:orderId/status (admin) ────────────────────────────
 
   describe('PATCH /api/admin/orders/:orderId/status', () => {
@@ -884,8 +1096,60 @@ describe('OrderController (e2e)', () => {
         OrderStatus.PROCESSING,
         PaymentStatus.PENDING,
         admin.id,
-        { evictProductStockCaches: false },
+        // TASK-332: the eviction flag now travels alongside the optimistic-lock
+        // token (absent here — the request declared no `expectedUpdatedAt`).
+        { evictProductStockCaches: false, expectedUpdatedAt: undefined },
       );
+    });
+
+    // ── TASK-332: the server, not the admin UI, decides what is legal ──────────
+    it('should return 409 ORDER_TRANSITION_INVALID for a backward move', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.DELIVERED }));
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.PROCESSING })
+        .expect(409);
+
+      expect(response.body.error).toBe('ORDER_TRANSITION_INVALID');
+      // The refusal must not reach any write path — a rejected request is not an
+      // event, and OrderStatusHistory is evidence of events.
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
+    });
+
+    it('should return 409 ORDER_STALE when another admin changed the order first', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PENDING, updatedAt: new Date('2026-07-28T10:20:00.000Z') }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          status: OrderStatus.CONFIRMED,
+          expectedUpdatedAt: '2026-07-28T10:15:30.000Z',
+        })
+        .expect(409);
+
+      expect(response.body.error).toBe('ORDER_STALE');
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 for a malformed expectedUpdatedAt (not a silent staleness)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.CONFIRMED, expectedUpdatedAt: 'yesterday' })
+        .expect(400);
+
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
 
     // TASK-228: reviving a restocked CANCELLED order must go through the
@@ -914,6 +1178,8 @@ describe('OrderController (e2e)', () => {
         OrderStatus.PENDING,
         PaymentStatus.PENDING,
         admin.id,
+        // TASK-332: the optimistic-lock token (absent here) rides as the 5th arg.
+        { expectedUpdatedAt: undefined },
       );
       expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });

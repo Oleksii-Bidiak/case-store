@@ -109,9 +109,20 @@ export function DashboardLastOrdersTable() {
                         </span>
                       )}
                     </div>
+                  ) : order.guest ? (
+                    // Guest order (TASK-338): there is no account, so the contact
+                    // typed at checkout IS the customer. Falling through to the
+                    // userId branch would print "null…" — and worse, would hide the
+                    // one identifier an operator can actually call back.
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm">{order.guest.email}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {order.guest.name} · {dict.orders.guestBadge}
+                      </span>
+                    </div>
                   ) : (
                     <span className="font-mono text-xs text-muted-foreground">
-                      {order.userId.slice(0, 8)}…
+                      {order.userId ? `${order.userId.slice(0, 8)}…` : "—"}
                     </span>
                   )}
                 </TableCell>

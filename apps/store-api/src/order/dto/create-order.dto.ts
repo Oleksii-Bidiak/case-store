@@ -2,15 +2,31 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Type, Transform } from 'class-transformer';
 import { IsDefined, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
 import { AddressDto } from './address.dto';
+import { GuestContactDto } from './guest-contact.dto';
 
 /**
- * DTO for creating an order from the authenticated user's current cart.
+ * DTO for creating an order from the caller's current cart.
  *
- * The cart contents are read server-side from the user's cart — the client
+ * The cart contents are read server-side from the caller's cart — the client
  * only supplies the shipping/billing address and optional notes. Prices are
  * snapshotted from the cart at order-creation time.
+ *
+ * Since TASK-338 the caller may be a guest, in which case {@link contact} is
+ * required. Guests could already fill a cart; the barrier stood exactly here.
  */
 export class CreateOrderDto {
+  @ApiProperty({
+    description:
+      'Contact details for a GUEST order (TASK-338). Required when the request carries no ' +
+      'access token; ignored for authenticated shoppers, whose account is the source of truth.',
+    type: GuestContactDto,
+    required: false,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GuestContactDto)
+  contact?: GuestContactDto;
+
   @ApiProperty({ description: 'Shipping address', type: AddressDto })
   @IsDefined()
   @ValidateNested()

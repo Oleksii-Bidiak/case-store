@@ -36,6 +36,14 @@ export interface OrderConfirmationItem {
 /** Plain data object consumed by {@link buildOrderConfirmationEmail}. */
 export interface OrderConfirmationParams {
   customerName?: string;
+  /**
+   * Absolute link to the order's status page (TASK-338).
+   *
+   * Sent to GUEST buyers, for whom it is the only way back to their own order.
+   * Rendered as a prominent button — a guest who loses this email has no other
+   * route, so burying it in body text would be a support burden by design.
+   */
+  orderStatusUrl?: string;
   order: {
     id: string;
     createdAt: Date;
@@ -67,6 +75,8 @@ export interface MailTemplate {
 export interface OrderConfirmationMailPayload {
   to: string;
   customerName?: string;
+  /** Guest order-status link (TASK-338); absent on account orders. */
+  orderStatusUrl?: string;
   order: Omit<OrderConfirmationParams['order'], 'createdAt'> & { createdAt: string };
 }
 
@@ -156,6 +166,26 @@ function renderAddressHtml(address: OrderConfirmationAddress | null): string {
 <p style="margin:0;color:#334155;line-height:1.5;">${lines}</p>`;
 }
 
+/**
+ * The guest's way back to their own order (TASK-338).
+ *
+ * Rendered as a button rather than a line of body text because for a guest this
+ * link is not a convenience — it is the only route that exists. `escapeHtml` is
+ * applied to the URL for the same reason it is applied to everything else here:
+ * the token is opaque and machine-generated, but "it can't contain a quote" is
+ * exactly the assumption that ages badly.
+ */
+function renderStatusLinkHtml(orderStatusUrl?: string): string {
+  if (!orderStatusUrl) return '';
+  const href = escapeHtml(orderStatusUrl);
+  return `<p style="margin:24px 0 0;text-align:center;">
+  <a href="${href}" style="display:inline-block;padding:12px 24px;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;">Переглянути статус замовлення</a>
+</p>
+<p style="margin:12px 0 0;color:#94a3b8;font-size:13px;text-align:center;">
+  Збережіть цей лист — це єдиний спосіб відкрити ваше замовлення без реєстрації.
+</p>`;
+}
+
 function renderHtml(params: OrderConfirmationParams): string {
   const { order } = params;
   const greetingName = params.customerName ? ` ${escapeHtml(params.customerName)}` : '';
@@ -186,6 +216,7 @@ ${renderTotalsHtml(order)}
       </tbody>
     </table>
     ${renderAddressHtml(order.shippingAddress)}
+    ${renderStatusLinkHtml(params.orderStatusUrl)}
     <p style="margin:24px 0 0;color:#94a3b8;font-size:13px;">
       Якщо у вас є запитання щодо замовлення, просто дайте відповідь на цей лист.
     </p>
@@ -229,6 +260,17 @@ function renderText(params: OrderConfirmationParams): string {
 
   if (order.shippingAddress) {
     sections.push('', 'Адреса доставки:', addressLines(order.shippingAddress).join('\n'));
+  }
+
+  // TASK-338: the guest's only route back. Present in the plain-text part too —
+  // a buyer whose client strips HTML must not be the one person who loses it.
+  if (params.orderStatusUrl) {
+    sections.push(
+      '',
+      'Статус замовлення:',
+      params.orderStatusUrl,
+      'Збережіть цей лист — це єдиний спосіб відкрити ваше замовлення без реєстрації.',
+    );
   }
 
   sections.push('', 'Якщо у вас є запитання щодо замовлення, просто дайте відповідь на цей лист.');

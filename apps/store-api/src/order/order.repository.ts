@@ -13,8 +13,12 @@ import type {
   OrderItemRow,
   OrderStatusHistoryRow,
   OrderAddonSnapshot,
+  PaymentWithOrderRow,
+  PaymentApplyPlan,
+  ManualOrderParams,
 } from './order.types';
-import type { OrderListQueryDto, AdminOrderListQueryDto } from './dto';
+import type { OrderListQueryDto, AdminOrderListQueryDto, AddressDto } from './dto';
+import { staleOrderError } from './order.errors';
 
 /**
  * Shared Prisma include clause for order queries. Always fetches the order
@@ -185,6 +189,17 @@ export class OrderRepository {
       const created = await tx.order.create({
         data: {
           userId,
+          // TASK-338: exactly one of `userId` and this block is populated. The
+          // contact details are a snapshot of what was typed at checkout and are
+          // never rewritten, not even when an account later claims the order.
+          ...(params.guest
+            ? {
+                guestEmail: params.guest.email,
+                guestPhone: params.guest.phone,
+                guestName: params.guest.name,
+                accessTokenHash: params.guest.accessTokenHash,
+              }
+            : {}),
           status: OrderStatus.PENDING,
           paymentStatus: PaymentStatus.PENDING,
           subtotal,
@@ -263,6 +278,165 @@ export class OrderRepository {
   }
 
   /**
+   * Read the catalogue facts needed to price and stock-check an operator-created
+   * order (TASK-341).
+   *
+   * Lives here rather than reaching into ProductRepository so the order module
+   * keeps one door to the database, and so this read carries exactly the four
+   * facts the decision needs — price, stock, and the two "is it on sale" flags —
+   * instead of a full product with its images and rollups.
+   */
+  findOrderableProducts(productIds: string[]): Promise<
+    Array<{
+      id: string;
+      name: string;
+      price: { toString(): string };
+      stock: number;
+      isActive: boolean;
+      category: { isActive: boolean };
+    }>
+  > {
+    return this.prisma.product.findMany({
+      where: { id: { in: productIds }, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        price: true,
+        stock: true,
+        isActive: true,
+        category: { select: { isActive: true } },
+      },
+    });
+  }
+
+  /**
+   * Create an order the OPERATOR placed on the customer's behalf — a phone order
+   * (TASK-341).
+   *
+   * Deliberately NOT a variant of {@link createFromCart}. That method's whole
+   * shape is "convert this cart": it empties the cart, redeems the promo code the
+   * shopper typed, and freezes the add-ons they picked. A phone order has no cart
+   * and none of those steps, and threading a `cartId?: null` through the existing
+   * transaction would leave every one of those concerns guarded by an `if` that a
+   * later edit could get wrong.
+   *
+   * What IS shared is the part that must never diverge: the conditional
+   * `WHERE stock >= quantity` decrement, so an operator cannot oversell any more
+   * than a shopper can.
+   *
+   * @throws ConflictException when a line's stock is gone at commit time.
+   */
+  async createManual(params: ManualOrderParams, changedBy: string | null): Promise<OrderWithItems> {
+    const itemData = params.items.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      price: new Prisma.Decimal(item.price),
+    }));
+
+    const subtotalCents = itemData.reduce(
+      (cents, item) => cents + Math.round(item.price.toNumber() * 100) * item.quantity,
+      0,
+    );
+    const subtotal = new Prisma.Decimal(centsToDecimalString(subtotalCents));
+    const shipping = new Prisma.Decimal((params.shippingCost ?? 0).toString());
+    const total = subtotal.plus(shipping);
+
+    const order = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.order.create({
+        data: {
+          userId: params.userId ?? null,
+          ...(params.guest
+            ? {
+                guestEmail: params.guest.email,
+                guestPhone: params.guest.phone,
+                guestName: params.guest.name,
+              }
+            : {}),
+          status: OrderStatus.PENDING,
+          paymentStatus: PaymentStatus.PENDING,
+          ...(params.paymentMethod ? { paymentMethod: params.paymentMethod } : {}),
+          subtotal,
+          discount: new Prisma.Decimal(0),
+          shippingCost: shipping,
+          tax: new Prisma.Decimal(0),
+          addonsTotal: new Prisma.Decimal(0),
+          total,
+          shippingAddress: params.shippingAddress as unknown as Prisma.InputJsonValue,
+          billingAddress: (params.billingAddress ??
+            params.shippingAddress) as unknown as Prisma.InputJsonValue,
+          notes: params.notes ?? null,
+          internalNotes: params.internalNotes ?? null,
+          items: { create: itemData },
+        },
+        include: ORDERS_INCLUDE,
+      });
+
+      // The order's birth record. Unlike a self-service order this one HAS an
+      // acting user — the operator who took the call — and recording them is the
+      // whole point of an audit trail on manually-created orders.
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId: created.id,
+          changeType: OrderHistoryChangeType.STATUS,
+          fromStatus: null,
+          toStatus: OrderStatus.PENDING,
+          changedBy,
+        },
+      });
+
+      for (const item of params.items) {
+        const { count } = await tx.product.updateMany({
+          where: { id: item.productId, stock: { gte: item.quantity } },
+          data: { stock: { decrement: item.quantity } },
+        });
+        if (count === 0) {
+          throw new ConflictException(
+            `Insufficient stock for "${item.name}" — please review the order`,
+          );
+        }
+      }
+
+      return created;
+    });
+
+    await this.evictProductCaches((order as OrderWithItems).items);
+
+    return order as OrderWithItems;
+  }
+
+  /**
+   * Replace an order's delivery address before it ships (TASK-341).
+   *
+   * Address-only: changing WHERE a parcel goes touches no money and no stock, so
+   * it is separable from the line-item edit that does. The caller enforces the
+   * pre-shipment rule; the repository writes the snapshot.
+   */
+  async updateShippingAddress(
+    orderId: string,
+    shippingAddress: AddressDto,
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<OrderWithItems> {
+    const data = { shippingAddress: shippingAddress as unknown as Prisma.InputJsonValue };
+
+    if (options.expectedUpdatedAt) {
+      const { count } = await this.prisma.order.updateMany({
+        where: { id: orderId, updatedAt: options.expectedUpdatedAt },
+        data,
+      });
+      if (count === 0) {
+        throw staleOrderError();
+      }
+    } else {
+      await this.prisma.order.update({ where: { id: orderId }, data });
+    }
+
+    return this.prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: ADMIN_ORDERS_INCLUDE,
+    }) as Promise<OrderWithItems>;
+  }
+
+  /**
    * Find all orders for a user, newest first, with an optional status filter
    * and pagination. Runs the count and page query in a single transaction.
    */
@@ -314,6 +488,28 @@ export class OrderRepository {
       ...(query.status?.length ? { status: { in: query.status } } : {}),
       ...(query.dateFrom || query.dateTo ? { createdAt } : {}),
     };
+
+    // TASK-336: free-text search. An operator taking a phone call has an order
+    // number, an email or a phone — never a UUID — and since TASK-338 the
+    // customer's details may live on the ORDER (guest) rather than on a user row,
+    // so both places have to be searched or half the orders become unfindable.
+    //
+    // The id arm is `startsWith` on a LOWERCASED term because the storefront and
+    // every email show the order number as the first 8 characters of the uuid,
+    // uppercased — the operator reads back "ABC12345" and the column holds
+    // "abc12345…". Emails and phones use case-insensitive `contains`: a customer
+    // reads their number aloud as "067 111 22 33" or "+380671112233", and a
+    // prefix match would find neither.
+    if (query.search) {
+      const term = query.search;
+      where.OR = [
+        { id: { startsWith: term.toLowerCase() } },
+        { guestEmail: { contains: term, mode: 'insensitive' } },
+        { guestPhone: { contains: term } },
+        { user: { email: { contains: term, mode: 'insensitive' } } },
+        { user: { phone: { contains: term } } },
+      ];
+    }
 
     // TASK-248: active-but-unpaid ("in-transit") deep-link filter — the same
     // compound condition as DashboardRepository's unrealized-revenue figure
@@ -392,6 +588,16 @@ export class OrderRepository {
    * owns the boundary-crossing decision (it knows PRE_SHIPMENT_STATUSES); the
    * repository just reuses the same {@link evictProductCaches} helper the
    * restock/revive paths use.
+   *
+   * TASK-332: when `expectedUpdatedAt` is supplied the write becomes CONDITIONAL
+   * on the row still carrying that version — `updateMany ... WHERE updatedAt = ?`
+   * rather than a bare `update`. The service already compared versions before
+   * calling, but that read sits outside this transaction: two admins who click at
+   * the same moment both pass it. Making the version part of the WHERE moves the
+   * arbitration into the row lock, exactly as `cancelAndRestock` does with
+   * `restockedAt IS NULL`. The loser affects zero rows, throws, and appends no
+   * history — which is the point, since the history row is the evidence that a
+   * change happened.
    */
   async updateStatus(
     orderId: string,
@@ -399,18 +605,28 @@ export class OrderRepository {
     toStatus: OrderStatus,
     paymentStatus: PaymentStatus,
     changedBy: string | null,
-    options: { evictProductStockCaches?: boolean } = {},
+    options: { evictProductStockCaches?: boolean; expectedUpdatedAt?: Date } = {},
   ): Promise<OrderWithItems> {
     // TASK-251: converted from a bare update to a $transaction so the status
     // change and its audit-log row commit (or roll back) together. `fromStatus`
     // is supplied by the service (which already loaded it to decide this is a
     // plain transition), not re-read here — see plan 134 Design Decision 4.
+    const expectedUpdatedAt = options.expectedUpdatedAt;
     const updated = (await this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.update({
-        where: { id: orderId },
-        data: { status: toStatus, paymentStatus },
-        include: ORDERS_INCLUDE,
-      });
+      if (expectedUpdatedAt) {
+        const { count } = await tx.order.updateMany({
+          where: { id: orderId, updatedAt: expectedUpdatedAt },
+          data: { status: toStatus, paymentStatus },
+        });
+        if (count === 0) {
+          throw staleOrderError();
+        }
+      } else {
+        await tx.order.update({
+          where: { id: orderId },
+          data: { status: toStatus, paymentStatus },
+        });
+      }
       await tx.orderStatusHistory.create({
         data: {
           orderId,
@@ -420,7 +636,10 @@ export class OrderRepository {
           changedBy,
         },
       });
-      return order;
+      return tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: ORDERS_INCLUDE,
+      });
     })) as OrderWithItems;
 
     if (options.evictProductStockCaches) {
@@ -458,9 +677,15 @@ export class OrderRepository {
    * the WHERE after it commits, matches zero rows, and aborts before touching any
    * product. The loser never increments anything.
    *
-   * @throws ConflictException when the stock was already returned.
+   * @throws ConflictException when the stock was already returned, or (TASK-332)
+   *   when `expectedUpdatedAt` no longer matches the stored row.
    */
-  async cancelAndRestock(orderId: string, changedBy: string | null): Promise<OrderWithItems> {
+  async cancelAndRestock(
+    orderId: string,
+    changedBy: string | null,
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<OrderWithItems> {
+    const expectedUpdatedAt = options.expectedUpdatedAt;
     const updated = (await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
@@ -470,12 +695,25 @@ export class OrderRepository {
       // The arbiter. Runs BEFORE any stock write, so a losing concurrent cancel
       // cannot credit inventory on its way out. TASK-228: restockedAt also tells a
       // later revive that this order's stock was given back and must be re-reserved.
+      // TASK-332: the caller's version joins the condition, so a lost update loses
+      // here too rather than silently winning.
       const { count } = await tx.order.updateMany({
-        where: { id: orderId, restockedAt: null },
+        where: {
+          id: orderId,
+          restockedAt: null,
+          ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
+        },
         data: { status: OrderStatus.CANCELLED, restockedAt: new Date() },
       });
 
       if (count === 0) {
+        // Two different failures share one zero-row outcome, and the operator
+        // needs to be told which: "someone already cancelled this" and "someone
+        // edited this while you were deciding" call for different next moves. The
+        // freshly-read row above is inside this transaction, so it is authoritative.
+        if (expectedUpdatedAt && order.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+          throw staleOrderError();
+        }
         throw new ConflictException('This order’s stock has already been returned to inventory');
       }
 
@@ -525,12 +763,20 @@ export class OrderRepository {
     status: OrderStatus,
     paymentStatus: PaymentStatus,
     changedBy: string | null,
+    options: { expectedUpdatedAt?: Date } = {},
   ): Promise<OrderWithItems> {
+    const expectedUpdatedAt = options.expectedUpdatedAt;
     const updated = (await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: ORDERS_INCLUDE,
       });
+
+      // TASK-332: refuse a lost update BEFORE any stock is decremented — a revive
+      // that loses the race must not leave the warehouse short.
+      if (expectedUpdatedAt && order.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+        throw staleOrderError();
+      }
 
       for (const item of order.items) {
         const { count } = await tx.product.updateMany({
@@ -602,6 +848,242 @@ export class OrderRepository {
         },
       });
       return updated;
+    })) as OrderWithItems;
+  }
+
+  /**
+   * Update the operator-editable, lifecycle-neutral fields of an order
+   * (TASK-335 / TASK-336).
+   *
+   * Only keys the caller actually supplied are written, so "set a waybill" never
+   * silently clears the internal notes. An explicit `null` DOES clear — that is
+   * the difference between an absent key and a null one, and the DTO turns an
+   * empty string into null precisely so a cleared field reads as cleared.
+   *
+   * No history row: `OrderStatusHistory` records STATUS and PAYMENT_STATUS
+   * changes, and stretching it to cover free-text edits would blur what the
+   * timeline means.
+   *
+   * @throws ConflictException `ORDER_STALE` when `expectedUpdatedAt` no longer
+   *   matches.
+   */
+  async updateDetails(
+    orderId: string,
+    fields: { trackingNumber?: string | null; internalNotes?: string | null },
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<OrderWithItems> {
+    const data: Prisma.OrderUpdateInput = {};
+    if (fields.trackingNumber !== undefined) data.trackingNumber = fields.trackingNumber;
+    if (fields.internalNotes !== undefined) data.internalNotes = fields.internalNotes;
+
+    const expectedUpdatedAt = options.expectedUpdatedAt;
+
+    // A request that changes none of these fields is a read, not a write — and a
+    // guarded `updateMany` with an empty `data` would neither express the version
+    // check meaningfully nor leave the row alone.
+    if (Object.keys(data).length === 0) {
+      return this.prisma.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: ADMIN_ORDERS_INCLUDE,
+      }) as Promise<OrderWithItems>;
+    }
+
+    if (expectedUpdatedAt) {
+      const { count } = await this.prisma.order.updateMany({
+        where: { id: orderId, updatedAt: expectedUpdatedAt },
+        data,
+      });
+      if (count === 0) {
+        throw staleOrderError();
+      }
+    } else {
+      await this.prisma.order.update({ where: { id: orderId }, data });
+    }
+
+    return this.prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: ADMIN_ORDERS_INCLUDE,
+    }) as Promise<OrderWithItems>;
+  }
+
+  /**
+   * Who to email about an order, and what to call them (TASK-335).
+   *
+   * One narrow read rather than widening `findById`, which is on the hot path of
+   * every status change: the recipient is only needed on the rare transition that
+   * actually notifies someone.
+   *
+   * Guest details win when present because a guest order HAS no user row; an
+   * order later claimed by an account keeps both, and the address the buyer
+   * actually gave at checkout is the one that reached them the first time.
+   */
+  async findRecipient(orderId: string): Promise<{ email: string; name?: string } | null> {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, deletedAt: null },
+      select: {
+        guestEmail: true,
+        guestName: true,
+        user: { select: { email: true, firstName: true } },
+      },
+    });
+
+    if (!order) return null;
+
+    if (order.guestEmail) {
+      return { email: order.guestEmail, ...(order.guestName ? { name: order.guestName } : {}) };
+    }
+
+    if (order.user?.email) {
+      return {
+        email: order.user.email,
+        ...(order.user.firstName ? { name: order.user.firstName } : {}),
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Find a guest order by the SHA-256 of the token from its confirmation email
+   * (TASK-338).
+   *
+   * The raw token never reaches the database, so the caller hashes first and this
+   * is a single indexed hit on a unique column — the same shape as the refresh and
+   * password-reset token lookups. Soft-deleted orders are excluded like everywhere
+   * else.
+   */
+  findByAccessTokenHash(accessTokenHash: string): Promise<OrderWithItems | null> {
+    return this.prisma.order.findFirst({
+      where: { accessTokenHash, deletedAt: null },
+      include: ORDERS_INCLUDE,
+    }) as Promise<OrderWithItems | null>;
+  }
+
+  /**
+   * Attach previously-placed guest orders to a freshly-registered account
+   * (TASK-338).
+   *
+   * Matches on the guest email and only touches orders that are still unclaimed
+   * (`userId IS NULL`), so running it twice is harmless and a guest order already
+   * claimed by one account can never be re-pointed at another. The guest columns
+   * are deliberately LEFT IN PLACE: they are the snapshot of what was typed that
+   * day, and the emailed status link keeps working.
+   *
+   * @returns how many orders were claimed.
+   */
+  async claimGuestOrders(userId: string, email: string): Promise<number> {
+    const { count } = await this.prisma.order.updateMany({
+      where: { userId: null, guestEmail: email, deletedAt: null },
+      data: { userId },
+    });
+    return count;
+  }
+
+  /**
+   * Read the Payment attempt a provider callback names, with the slice of its
+   * order needed to decide what the event means (TASK-330).
+   *
+   * The `payments` table belongs to the payment module, but this read lives here
+   * for the same reason `applyPaymentEvent` does: the order module is the only
+   * thing allowed to move an order, and it cannot make that decision without
+   * knowing what was originally charged. The payment module hands over an id and
+   * a translated outcome; it never reads or writes order rows itself.
+   *
+   * Deliberately slim on the order side — a webhook is a hot path, and the
+   * decision needs the current statuses, nothing more. No items, no images.
+   */
+  findPaymentWithOrder(paymentId: string): Promise<PaymentWithOrderRow | null> {
+    return this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      select: {
+        id: true,
+        orderId: true,
+        provider: true,
+        providerPaymentId: true,
+        amount: true,
+        currency: true,
+        status: true,
+        order: {
+          select: {
+            id: true,
+            status: true,
+            paymentStatus: true,
+            paidAt: true,
+            reservationExpiresAt: true,
+          },
+        },
+      },
+    }) as Promise<PaymentWithOrderRow | null>;
+  }
+
+  /**
+   * Write an already-decided payment application in ONE transaction (TASK-330).
+   *
+   * Every field of the plan was chosen by the service; nothing here branches on
+   * business meaning. That is the point: "a partial application is how stock,
+   * money and history drift apart" is only enforceable if there is exactly one
+   * place a partial application could be introduced, and it is this method.
+   *
+   * Up to five writes commit together — the attempt's own state, the order's
+   * payment status, `paidAt`, the lifted reservation deadline, the order status,
+   * and one history row per status kind that actually moved. `changedBy` is null
+   * on every history row: a callback has no acting user, and inventing one would
+   * put a lie in the audit trail.
+   */
+  async applyPaymentOutcome(plan: PaymentApplyPlan): Promise<OrderWithItems> {
+    return (await this.prisma.$transaction(async (tx) => {
+      await tx.payment.update({
+        where: { id: plan.paymentId },
+        data: {
+          status: plan.attemptStatus,
+          ...(plan.providerPaymentId ? { providerPaymentId: plan.providerPaymentId } : {}),
+          ...(plan.failureCode !== undefined ? { failureCode: plan.failureCode } : {}),
+          ...(plan.failureMessage !== undefined ? { failureMessage: plan.failureMessage } : {}),
+          ...(plan.settledAt !== undefined ? { settledAt: plan.settledAt } : {}),
+        },
+      });
+
+      const orderData: Prisma.OrderUpdateInput = {};
+      if (plan.paymentStatusChange) orderData.paymentStatus = plan.paymentStatusChange.to;
+      if (plan.statusChange) orderData.status = plan.statusChange.to;
+      if (plan.paidAt !== undefined) orderData.paidAt = plan.paidAt;
+      // Lifting the deadline is unconditional once payment settled: a paid order's
+      // reservation is no longer provisional, and leaving the column set would let
+      // the auto-cancel worker cancel an order the customer has already paid for.
+      if (plan.clearReservation) orderData.reservationExpiresAt = null;
+
+      if (Object.keys(orderData).length > 0) {
+        await tx.order.update({ where: { id: plan.orderId }, data: orderData });
+      }
+
+      if (plan.paymentStatusChange) {
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: plan.orderId,
+            changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+            fromPaymentStatus: plan.paymentStatusChange.from,
+            toPaymentStatus: plan.paymentStatusChange.to,
+            changedBy: null,
+          },
+        });
+      }
+
+      if (plan.statusChange) {
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: plan.orderId,
+            changeType: OrderHistoryChangeType.STATUS,
+            fromStatus: plan.statusChange.from,
+            toStatus: plan.statusChange.to,
+            changedBy: null,
+          },
+        });
+      }
+
+      return tx.order.findUniqueOrThrow({
+        where: { id: plan.orderId },
+        include: ORDERS_INCLUDE,
+      });
     })) as OrderWithItems;
   }
 

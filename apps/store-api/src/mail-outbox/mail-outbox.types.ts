@@ -32,6 +32,14 @@ export const ACCOUNT_LOCKED_MAIL_TYPE = 'account-locked';
  */
 export const EMAIL_VERIFICATION_MAIL_TYPE = 'email-verification';
 
+/**
+ * `MailOutbox.type` value for the "your order has shipped" notice (TASK-335).
+ *
+ * Until it existed, a parcel left the warehouse and the customer found out by
+ * refreshing the site — if they thought to.
+ */
+export const ORDER_SHIPPED_MAIL_TYPE = 'order-shipped';
+
 /** Aggregate outcome of a single {@link MailOutboxService.dispatchDue} run. */
 export interface DispatchResult {
   /** Rows delivered (or drained as a no-op when mail is disabled). */

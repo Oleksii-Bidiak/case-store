@@ -11,7 +11,7 @@ import { OrderTimelineSkeleton } from "./order-timeline-skeleton";
 interface OrderTimelineProps {
   orderId: string;
   /** The order's owner id — used to tell a customer self-action from an admin's. */
-  customerUserId: string;
+  customerUserId: string | null;
 }
 
 const timestampFormatter = new Intl.DateTimeFormat("en-US", {

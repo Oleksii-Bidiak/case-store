@@ -20,12 +20,25 @@ import {
   buildEmailVerificationEmail,
   type EmailVerificationMailPayload,
 } from './templates/email-verification.template';
+import {
+  buildOrderShippedEmail,
+  type OrderShippedMailPayload,
+} from './templates/order-shipped.template';
 
 /** Parameters accepted by {@link MailService.sendOrderConfirmation}. */
 export interface SendOrderConfirmationParams {
   to: string;
   order: OrderEntity;
   customerName?: string;
+  /**
+   * Absolute link to this order's status page (TASK-338).
+   *
+   * Present for GUEST orders, where it is the buyer's only route back to their own
+   * order — there is no account to sign into, and the cart cookie will not survive
+   * a new device. The order module builds it, because the order module is the only
+   * place that ever holds the raw token.
+   */
+  orderStatusUrl?: string;
 }
 
 /**
@@ -86,6 +99,8 @@ export class MailService {
 
     const template = buildOrderConfirmationEmail({
       customerName: payload.customerName,
+      // TASK-338: the guest's order-status link. Absent on account orders.
+      orderStatusUrl: payload.orderStatusUrl,
       // `createdAt` is stored as an ISO string in the outbox payload; the pure
       // template builder expects a `Date`, so rehydrate it here.
       order: { ...payload.order, createdAt: new Date(payload.order.createdAt) },
@@ -172,6 +187,29 @@ export class MailService {
   }
 
   /**
+   * Render and send the "your order has shipped" notice from the JSON-safe payload
+   * stored in a `MailOutbox` row (TASK-335). Same contract as the other payload
+   * senders: a logged no-op when mail is disabled, throwing on transport failure
+   * so the outbox worker applies its retry/backoff policy.
+   */
+  async sendOrderShippedPayload(payload: OrderShippedMailPayload): Promise<void> {
+    if (!this.enabled) {
+      this.logger.info(`Mail disabled — skipping shipped notice to ${payload.to}`);
+      return;
+    }
+
+    const template = buildOrderShippedEmail(payload);
+
+    await this.getTransporter().sendMail({
+      from: this.from,
+      to: payload.to,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    });
+  }
+
+  /**
    * Flatten a live {@link OrderEntity} send request into the JSON-safe
    * {@link OrderConfirmationMailPayload} persisted in a `MailOutbox` row. Pure
    * mapping (no DI) so both the direct send path and the outbox enqueue path
@@ -185,6 +223,7 @@ export class MailService {
     return {
       to: params.to,
       ...(params.customerName !== undefined ? { customerName: params.customerName } : {}),
+      ...(params.orderStatusUrl !== undefined ? { orderStatusUrl: params.orderStatusUrl } : {}),
       order: {
         id: order.id,
         createdAt: order.createdAt.toISOString(),

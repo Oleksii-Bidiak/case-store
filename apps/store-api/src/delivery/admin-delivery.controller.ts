@@ -1,7 +1,7 @@
 import { Controller, Get, Put, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiExtraModels } from '@nestjs/swagger';
 import { DeliveryService } from './delivery.service';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import { DeliverySettingDto, DeliverySettingResponse, UpdateDeliverySettingDto } from './dto';
 
 /**
@@ -24,7 +24,8 @@ import { DeliverySettingDto, DeliverySettingResponse, UpdateDeliverySettingDto }
 @ApiTags('Delivery')
 @ApiExtraModels(DeliverySettingDto, DeliverySettingResponse)
 @Controller('admin/delivery-settings')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('settings:delivery')
 export class AdminDeliveryController {
   constructor(private readonly deliveryService: DeliveryService) {}
 

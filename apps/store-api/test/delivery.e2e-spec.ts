@@ -30,6 +30,14 @@ describe('DeliveryController (e2e)', () => {
   const prismaServiceMock = {
     $connect: jest.fn(),
     $disconnect: jest.fn(),
+    // DeliveryService resolves the dispatch origin through DeliveryRepository now
+    // (TASK-080-E), so the singleton read has to exist here. null = never
+    // configured, which is the state this suite is asserting against: the origin
+    // then falls back to NP_SENDER_CITY_REF and finally to the Kyiv default.
+    deliverySetting: {
+      findUnique: jest.fn(async () => null),
+      upsert: jest.fn(async () => null),
+    },
   };
 
   const novaPoshtaClientMock = {

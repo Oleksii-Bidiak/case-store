@@ -204,7 +204,9 @@ describe('permission catalogue', () => {
       .map(
         (route) =>
           `${route.method} ${route.path} → ${route.controller}.${route.handler} ` +
-          'is an admin route with NO PermissionGuard — it is reachable by anyone',
+          'is an admin route with NO PermissionGuard — it bypasses the permission matrix ' +
+          '(if it still carries AdminGuard it is ADMIN-only and cannot be delegated; ' +
+          'if it carries no guard at all it is reachable by anyone)',
       );
 
     expect(offenders).toEqual([]);

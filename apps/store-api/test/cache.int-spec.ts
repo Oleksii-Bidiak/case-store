@@ -8,6 +8,8 @@ import { LoggerModule } from 'nestjs-pino';
 import { PrismaModule, PrismaService } from '../src/prisma';
 import { RedisCacheModule, CacheService, productDetailIdKey } from '../src/cache';
 import { ProductModule } from '../src/product';
+import { PermissionModule } from '../src/auth/permissions';
+import { AuditModule } from '../src/audit';
 import { ProductService } from '../src/product/product.service';
 import { ProductRepository } from '../src/product/product.repository';
 
@@ -59,6 +61,13 @@ describe('Product cache (integration)', () => {
         LoggerModule.forRoot({ pinoHttp: { level: 'silent' } }),
         PrismaModule,
         RedisCacheModule,
+        // ProductModule's admin routes carry PermissionGuard (TASK-334), and Nest
+        // resolves a @UseGuards() guard from the HOST module's injector. Both of
+        // these are @Global() in the running app, but a partial test graph still
+        // has to name them once or the guard cannot be constructed and compilation
+        // fails — loudly, which is the right failure mode for a security guard.
+        AuditModule,
+        PermissionModule,
         ProductModule,
       ],
     }).compile();

@@ -263,9 +263,19 @@ export function AdminOrderTable() {
                           </span>
                         )}
                       </div>
+                    ) : order.guest ? (
+                      // Guest order (TASK-338): the contact typed at checkout is
+                      // the only way to reach this buyer, so show it rather than
+                      // an id that does not exist.
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-sm">{order.guest.email}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {order.guest.name} · {dict.orders.guestBadge}
+                        </span>
+                      </div>
                     ) : (
                       <span className="font-mono text-xs text-muted-foreground">
-                        {order.userId.slice(0, 8)}…
+                        {order.userId ? `${order.userId.slice(0, 8)}…` : "—"}
                       </span>
                     )}
                   </TableCell>

@@ -113,6 +113,11 @@ export function makeOrder(overrides: Partial<OrderEntity> = {}): {
       addonsTotal: "0.00",
       discount: "0.00",
       discountCode: null,
+      // Required-but-nullable on OrderEntity since TASK-335. Spelled out rather
+      // than left to the `overrides` spread: `Partial<OrderEntity>` makes it
+      // optional, so omitting it here widens the field to `| undefined` and the
+      // factory stops satisfying its own return type.
+      trackingNumber: null,
       shippingCost: "0.00",
       tax: "0.00",
       total: "998.00",

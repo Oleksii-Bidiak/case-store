@@ -1360,6 +1360,10 @@ export const dict = {
   // NB: raw status enum values (PENDING…) are intentionally left untranslated —
   // user-facing status labels are owned by TASK-129.
   orders: {
+    // Marks an order placed without an account (TASK-338). Worth showing rather
+    // than leaving blank: it tells the operator there is no order history behind
+    // this buyer and no account to look them up by — only the contact they typed.
+    guestBadge: "гість",
     metaTitle: "Замовлення — Адмін",
     metaTitleDetail: (id: string) => `Замовлення ${id} — Адмін`,
     heading: "Замовлення",

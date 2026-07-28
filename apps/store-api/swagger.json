@@ -187,6 +187,49 @@
         ]
       }
     },
+    "/api/auth/password/change": {
+      "post": {
+        "operationId": "AuthController_changePassword",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password updated; all other sessions revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input (weak new password / missing fields)"
+          },
+          "401": {
+            "description": "Not signed in, or the current password is wrong"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Change your own password (requires the current one)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
     "/api/auth/refresh": {
       "post": {
         "operationId": "AuthController_refresh",
@@ -253,6 +296,101 @@
           }
         ],
         "summary": "Logout user",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/email/verify/request": {
+      "post": {
+        "operationId": "AuthController_requestEmailVerification",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Generic acknowledgement (identical whatever the account state)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Send a verification link to your own email address",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/email/verify/confirm": {
+      "post": {
+        "operationId": "AuthController_confirmEmailVerification",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmEmailVerificationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Address verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, used, expired or superseded token"
+          }
+        },
+        "summary": "Confirm an email address with a single-use token",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/me/permissions": {
+      "get": {
+        "operationId": "getMyPermissions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Effective permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionsResponseEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Effective permissions of the signed-in user (resolved from the database)",
         "tags": [
           "Auth"
         ]
@@ -4577,6 +4715,184 @@
         ]
       }
     },
+    "/api/admin/permissions": {
+      "get": {
+        "operationId": "PermissionController_getMatrix",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Catalogue + grants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionMatrixResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — owner-only"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Read the permission catalogue and the current matrix (owner-only)",
+        "tags": [
+          "Permissions"
+        ]
+      },
+      "put": {
+        "operationId": "PermissionController_updateGrants",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleGrantsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Grants replaced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleGrantsResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown permission key, or a role the matrix cannot express (ADMIN)"
+          },
+          "403": {
+            "description": "Forbidden — owner-only"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Replace one role’s permission grants (owner-only)",
+        "tags": [
+          "Permissions"
+        ]
+      }
+    },
+    "/api/admin/audit-log": {
+      "get": {
+        "operationId": "getAuditLog",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (1-based)",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page",
+            "schema": {
+              "default": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "actorId",
+            "required": false,
+            "in": "query",
+            "description": "Filter by actor user id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "required": false,
+            "in": "query",
+            "description": "Filter by action, e.g. product.update",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "entityType",
+            "required": false,
+            "in": "query",
+            "description": "Filter by entity type, e.g. product",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "entityId",
+            "required": false,
+            "in": "query",
+            "description": "Filter by entity id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "Only entries at or after this instant (ISO 8601)",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Only entries at or before this instant (ISO 8601)",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated log entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogListResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — owner-only"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Read the admin action log (owner-only)",
+        "tags": [
+          "Audit"
+        ]
+      }
+    },
     "/api/users/me": {
       "get": {
         "operationId": "UserController_getProfile",
@@ -4755,6 +5071,162 @@
           }
         ],
         "summary": "List all users (admin)",
+        "tags": [
+          "Users"
+        ]
+      },
+      "post": {
+        "operationId": "createUser",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Staff account created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input (weak password / bad role)"
+          },
+          "403": {
+            "description": "Forbidden — owner-only"
+          },
+          "409": {
+            "description": "Email is already taken"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Create a staff account (owner-only)",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/users/{id}/password": {
+      "post": {
+        "operationId": "setUserPassword",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetUserPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password reset; target sessions revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input (weak password)"
+          },
+          "403": {
+            "description": "Forbidden — owner-only"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reset another user's password (owner-only)",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/users/{id}/role": {
+      "patch": {
+        "operationId": "updateUserRole",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Role updated; target sessions revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid role"
+          },
+          "403": {
+            "description": "Forbidden — owner-only, your own account, or the last active administrator"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Change a user's role (owner-only)",
         "tags": [
           "Users"
         ]
@@ -7873,7 +8345,7 @@
             }
           },
           "400": {
-            "description": "Empty cart or insufficient stock"
+            "description": "Empty cart, insufficient stock, or missing guest contact details"
           },
           "404": {
             "description": "Cart not found"
@@ -7882,6 +8354,9 @@
         "security": [
           {
             "access-token": []
+          },
+          {
+            "cart-token": []
           }
         ],
         "summary": "Create order from cart",
@@ -7952,6 +8427,57 @@
           }
         ],
         "summary": "List current user orders",
+        "tags": [
+          "Orders"
+        ]
+      }
+    },
+    "/api/orders/guest/{token}": {
+      "get": {
+        "operationId": "getGuestOrder",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "description": "Opaque access token from the confirmation email",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Order details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/OrderResponseEnvelope"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/OrderEntity"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No order for this token, or the link has expired (deliberately indistinguishable)"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Get a guest order by its emailed token",
         "tags": [
           "Orders"
         ]
@@ -8110,6 +8636,17 @@
             }
           },
           {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID.",
+            "schema": {
+              "maxLength": 120,
+              "example": "ABC12345",
+              "type": "string"
+            }
+          },
+          {
             "name": "dateFrom",
             "required": false,
             "in": "query",
@@ -8186,6 +8723,47 @@
         "tags": [
           "Admin Orders"
         ]
+      },
+      "post": {
+        "operationId": "adminOrderControllerCreate",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateManualOrderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Order created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No customer identified, a product is unavailable, or stock is short"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Create an order on behalf of a customer (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
       }
     },
     "/api/admin/orders/{orderId}": {
@@ -8226,6 +8804,60 @@
           }
         ],
         "summary": "Get order by ID (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
+      },
+      "patch": {
+        "operationId": "adminOrderControllerUpdateDetails",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrderDetailsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Order updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Order not found"
+          },
+          "409": {
+            "description": "ORDER_STALE — another admin changed this order first"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Update order tracking number / internal notes (admin)",
         "tags": [
           "Admin Orders"
         ]
@@ -8274,6 +8906,49 @@
         ]
       }
     },
+    "/api/admin/orders/{orderId}/allowed-transitions": {
+      "get": {
+        "operationId": "adminOrderControllerGetAllowedTransitions",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current status, the legal targets, and the optimistic-lock token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderAllowedTransitionsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Order not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List legal next statuses for an order (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
+      }
+    },
     "/api/admin/orders/{orderId}/status": {
       "patch": {
         "operationId": "adminOrderControllerUpdateStatus",
@@ -8314,6 +8989,9 @@
           },
           "404": {
             "description": "Order not found"
+          },
+          "409": {
+            "description": "ORDER_TRANSITION_INVALID — the state machine forbids this move; or ORDER_STALE — another admin changed this order first"
           }
         },
         "security": [
@@ -8377,6 +9055,258 @@
         "summary": "Update order payment status (admin)",
         "tags": [
           "Admin Orders"
+        ]
+      }
+    },
+    "/api/orders/{orderId}/returns": {
+      "post": {
+        "operationId": "createReturn",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReturnDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Return requested",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Order has not shipped, unknown line, or more units than were bought"
+          },
+          "404": {
+            "description": "Order not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Request a return",
+        "tags": [
+          "Returns"
+        ]
+      },
+      "get": {
+        "operationId": "getOrderReturns",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Returns for the order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnListResponseEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Order not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List returns for an order",
+        "tags": [
+          "Returns"
+        ]
+      }
+    },
+    "/api/admin/returns": {
+      "get": {
+        "operationId": "adminReturnControllerFindAll",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Filter by return status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "REQUESTED",
+                "APPROVED",
+                "REJECTED",
+                "RECEIVED",
+                "REFUNDED"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (1-based)",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page (max 100)",
+            "schema": {
+              "default": 10,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated returns",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReturnListResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List return requests (admin)",
+        "tags": [
+          "Admin Returns"
+        ]
+      }
+    },
+    "/api/admin/returns/{returnId}": {
+      "get": {
+        "operationId": "adminReturnControllerFindById",
+        "parameters": [
+          {
+            "name": "returnId",
+            "required": true,
+            "in": "path",
+            "description": "Return UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Return found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReturnResponseEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Return not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Get a return by ID (admin)",
+        "tags": [
+          "Admin Returns"
+        ]
+      },
+      "patch": {
+        "operationId": "adminReturnControllerResolve",
+        "parameters": [
+          {
+            "name": "returnId",
+            "required": true,
+            "in": "path",
+            "description": "Return UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveReturnDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReturnResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Restock requested for the wrong status"
+          },
+          "404": {
+            "description": "Return not found"
+          },
+          "409": {
+            "description": "Illegal transition, or the goods were already credited back to inventory"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Resolve a return (admin)",
+        "tags": [
+          "Admin Returns"
         ]
       }
     },
@@ -8490,6 +9420,83 @@
           }
         },
         "summary": "Estimate shipping cost + ETA to a city",
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
+    "/api/admin/delivery-settings": {
+      "get": {
+        "operationId": "getDeliverySettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Current delivery settings; all-null when never configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliverySettingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Read the delivery dispatch-origin settings (admin)",
+        "tags": [
+          "Delivery"
+        ]
+      },
+      "put": {
+        "operationId": "updateDeliverySettings",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDeliverySettingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Delivery settings updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliverySettingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data"
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Update the delivery dispatch-origin settings (admin)",
         "tags": [
           "Delivery"
         ]
@@ -8831,6 +9838,54 @@
         "summary": "List currently active, redeemable discounts",
         "tags": [
           "Discounts"
+        ]
+      }
+    },
+    "/api/payments/orders/{orderId}/checkout": {
+      "post": {
+        "operationId": "paymentControllerCreateCheckout",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Signed provider handoff",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentCheckoutResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "404": {
+            "description": "Order not found"
+          },
+          "409": {
+            "description": "Order is already paid or cannot be paid"
+          },
+          "503": {
+            "description": "Online payment is not configured"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start an online payment for an order",
+        "tags": [
+          "Payments"
         ]
       }
     },
@@ -9524,6 +10579,51 @@
         "type": "object",
         "properties": {}
       },
+      "EffectivePermissionsEntity": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "CUSTOMER",
+              "ADMIN",
+              "MANAGER"
+            ],
+            "example": "MANAGER"
+          },
+          "isOwner": {
+            "type": "boolean",
+            "example": false,
+            "description": "True for ADMIN — the owner, who always holds every permission"
+          },
+          "permissions": {
+            "example": [
+              "orders:read",
+              "products:write"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "role",
+          "isOwner",
+          "permissions"
+        ]
+      },
+      "PermissionsResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EffectivePermissionsEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "RegisterDto": {
         "type": "object",
         "properties": {
@@ -9604,6 +10704,39 @@
         "required": [
           "token",
           "newPassword"
+        ]
+      },
+      "ChangePasswordDto": {
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": "string",
+            "description": "The password currently on the account — proof the session is the owner",
+            "example": "OldP@ssw0rd"
+          },
+          "newPassword": {
+            "type": "string",
+            "description": "New account password (minimum 8 characters, at least one lowercase letter, one uppercase letter and one digit)",
+            "example": "StrongP@ss123",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ]
+      },
+      "ConfirmEmailVerificationDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The single-use verification token from the emailed link",
+            "example": "a1b2c3d4e5f6..."
+          }
+        },
+        "required": [
+          "token"
         ]
       },
       "ResolvedAddonEntity": {
@@ -13251,6 +14384,294 @@
           "productId"
         ]
       },
+      "PermissionCatalogueEntry": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "orders:read"
+          },
+          "zone": {
+            "type": "string",
+            "example": "orders"
+          },
+          "label": {
+            "type": "string",
+            "example": "Переглядати замовлення"
+          }
+        },
+        "required": [
+          "key",
+          "zone",
+          "label"
+        ]
+      },
+      "PermissionZoneEntry": {
+        "type": "object",
+        "properties": {
+          "zone": {
+            "type": "string",
+            "example": "orders"
+          },
+          "label": {
+            "type": "string",
+            "example": "Замовлення"
+          }
+        },
+        "required": [
+          "zone",
+          "label"
+        ]
+      },
+      "RoleGrantsEntry": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "CUSTOMER",
+              "ADMIN",
+              "MANAGER"
+            ],
+            "example": "MANAGER"
+          },
+          "permissions": {
+            "example": [
+              "orders:read"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "role",
+          "permissions"
+        ]
+      },
+      "PermissionMatrixEntity": {
+        "type": "object",
+        "properties": {
+          "catalogue": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionCatalogueEntry"
+            }
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionZoneEntry"
+            }
+          },
+          "grantableRoles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CUSTOMER",
+                "ADMIN",
+                "MANAGER"
+              ]
+            }
+          },
+          "grants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleGrantsEntry"
+            }
+          }
+        },
+        "required": [
+          "catalogue",
+          "zones",
+          "grantableRoles",
+          "grants"
+        ]
+      },
+      "PermissionMatrixResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PermissionMatrixEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "RoleGrantsResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RoleGrantsEntry"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "UpdateRoleGrantsDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "The role whose grants are being replaced. ADMIN is rejected — the owner always holds everything.",
+            "enum": [
+              "MANAGER"
+            ],
+            "example": "MANAGER"
+          },
+          "permissions": {
+            "description": "The complete set of permission keys this role should hold. An empty array revokes everything.",
+            "example": [
+              "orders:read",
+              "products:write"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "role",
+          "permissions"
+        ]
+      },
+      "AuditLogEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "5f1c…"
+          },
+          "actorId": {
+            "type": "object",
+            "example": "5f1c…",
+            "nullable": true,
+            "description": "Null for system actions"
+          },
+          "actorEmail": {
+            "type": "object",
+            "example": "manager@store.com",
+            "nullable": true
+          },
+          "actorRole": {
+            "type": "string",
+            "enum": [
+              "CUSTOMER",
+              "ADMIN",
+              "MANAGER"
+            ],
+            "nullable": true
+          },
+          "action": {
+            "type": "string",
+            "example": "product.update"
+          },
+          "entityType": {
+            "type": "object",
+            "example": "Product",
+            "nullable": true
+          },
+          "entityId": {
+            "type": "object",
+            "example": "5f1c…",
+            "nullable": true
+          },
+          "summary": {
+            "type": "object",
+            "example": "PATCH /api/products/5f1c…",
+            "nullable": true
+          },
+          "diff": {
+            "type": "object",
+            "nullable": true,
+            "description": "Changed fields only. Secrets are stored as \"[redacted]\".",
+            "example": {
+              "price": {
+                "to": 499
+              }
+            }
+          },
+          "ip": {
+            "type": "object",
+            "example": "127.0.0.1",
+            "nullable": true
+          },
+          "userAgent": {
+            "type": "object",
+            "example": "Mozilla/5.0…",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-07-28T10:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "actorId",
+          "actorEmail",
+          "actorRole",
+          "action",
+          "entityType",
+          "entityId",
+          "summary",
+          "diff",
+          "ip",
+          "userAgent",
+          "createdAt"
+        ]
+      },
+      "AuditLogPaginationMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "example": 240
+          },
+          "page": {
+            "type": "number",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "example": 50
+          },
+          "totalPages": {
+            "type": "number",
+            "example": 5
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit",
+          "totalPages"
+        ]
+      },
+      "AuditLogListResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditLogEntity"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/AuditLogPaginationMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
       "UserEntity": {
         "type": "object",
         "properties": {
@@ -13637,6 +15058,78 @@
             "example": "+380991234567"
           }
         }
+      },
+      "CreateUserDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address (also the login)",
+            "example": "manager@example.com"
+          },
+          "password": {
+            "type": "string",
+            "description": "Initial password (minimum 8 characters, at least one lowercase letter, one uppercase letter and one digit)",
+            "example": "StrongP@ss123",
+            "minLength": 8
+          },
+          "role": {
+            "type": "string",
+            "description": "Staff role. CUSTOMER is rejected — use public registration for shoppers.",
+            "enum": [
+              "ADMIN",
+              "MANAGER"
+            ],
+            "example": "MANAGER"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "First name",
+            "example": "Olena"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name",
+            "example": "Kovalenko"
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "role"
+        ]
+      },
+      "SetUserPasswordDto": {
+        "type": "object",
+        "properties": {
+          "newPassword": {
+            "type": "string",
+            "description": "New password for the target account (minimum 8 characters, at least one lowercase letter, one uppercase letter and one digit)",
+            "example": "StrongP@ss123",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "newPassword"
+        ]
+      },
+      "UpdateUserRoleDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "New role for the account",
+            "enum": [
+              "CUSTOMER",
+              "ADMIN",
+              "MANAGER"
+            ],
+            "example": "MANAGER"
+          }
+        },
+        "required": [
+          "role"
+        ]
       },
       "ProductGroupSummaryEntity": {
         "type": "object",
@@ -16174,6 +17667,31 @@
           }
         }
       },
+      "OrderGuestData": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email given at checkout",
+            "example": "olena@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone given at checkout",
+            "example": "+380501234567"
+          },
+          "name": {
+            "type": "string",
+            "description": "Name given at checkout",
+            "example": "Олена Шевченко"
+          }
+        },
+        "required": [
+          "email",
+          "phone",
+          "name"
+        ]
+      },
       "OrderItemAddonEntity": {
         "type": "object",
         "properties": {
@@ -16316,8 +17834,19 @@
           },
           "userId": {
             "type": "string",
-            "description": "Owning user ID",
+            "description": "Owning user ID, or null for a guest order (TASK-338). Exactly one of `userId` and `guest` is populated.",
+            "nullable": true,
             "example": "550e8400-e29b-41d4-a716-446655440001"
+          },
+          "guest": {
+            "description": "Contact details captured at guest checkout (TASK-338); absent on account orders. Kept as a snapshot of what was actually typed, even after an account later claims the order.",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderGuestData"
+              }
+            ]
           },
           "status": {
             "type": "string",
@@ -16433,6 +17962,17 @@
             "type": "string",
             "description": "Last update timestamp",
             "example": "2024-01-01T00:00:00.000Z"
+          },
+          "trackingNumber": {
+            "type": "string",
+            "description": "Nova Poshta waybill (ТТН) entered by the operator (TASK-335), or null. Shown to the customer so they can track the parcel.",
+            "nullable": true,
+            "example": "20450000000001"
+          },
+          "internalNotes": {
+            "type": "string",
+            "description": "Operator-only notes (TASK-336). Present ONLY on admin responses — distinct from `notes`, which is what the customer typed and is shown back to them.",
+            "nullable": true
           }
         },
         "required": [
@@ -16453,7 +17993,8 @@
           "items",
           "restockedAt",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "trackingNumber"
         ]
       },
       "StorefrontPaginationMeta": {
@@ -16515,6 +18056,34 @@
         "required": [
           "data",
           "meta"
+        ]
+      },
+      "GuestContactDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email for the confirmation letter and the order-status link",
+            "example": "olena@example.com",
+            "maxLength": 254
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number the courier can call",
+            "example": "+380501234567",
+            "maxLength": 32
+          },
+          "name": {
+            "type": "string",
+            "description": "Buyer name",
+            "example": "Олена Шевченко",
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "email",
+          "phone",
+          "name"
         ]
       },
       "AddressDto": {
@@ -16597,6 +18166,14 @@
       "CreateOrderDto": {
         "type": "object",
         "properties": {
+          "contact": {
+            "description": "Contact details for a GUEST order (TASK-338). Required when the request carries no access token; ignored for authenticated shoppers, whose account is the source of truth.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GuestContactDto"
+              }
+            ]
+          },
           "shippingAddress": {
             "description": "Shipping address",
             "allOf": [
@@ -16806,6 +18383,139 @@
           "data"
         ]
       },
+      "AdminOrderAllowedTransitions": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "string",
+            "description": "The order's current status",
+            "enum": [
+              "PENDING",
+              "CONFIRMED",
+              "PROCESSING",
+              "SHIPPED",
+              "DELIVERED",
+              "CANCELLED",
+              "REFUNDED"
+            ]
+          },
+          "allowed": {
+            "type": "array",
+            "description": "Statuses the order may legally move to right now",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "CONFIRMED",
+                "PROCESSING",
+                "SHIPPED",
+                "DELIVERED",
+                "CANCELLED",
+                "REFUNDED"
+              ]
+            }
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "The order's current `updatedAt` — send it back as `expectedUpdatedAt` on the status PATCH to detect a concurrent edit.",
+            "example": "2026-07-28T10:15:30.000Z"
+          }
+        },
+        "required": [
+          "current",
+          "allowed",
+          "updatedAt"
+        ]
+      },
+      "AdminOrderAllowedTransitionsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AdminOrderAllowedTransitions"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ManualOrderItemDto": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "description": "Product to sell",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "number",
+            "description": "How many units",
+            "minimum": 1,
+            "example": 1
+          }
+        },
+        "required": [
+          "productId",
+          "quantity"
+        ]
+      },
+      "CreateManualOrderDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "Existing customer account this order belongs to. Omit for a walk-in, and supply `contact` instead.",
+            "format": "uuid"
+          },
+          "contact": {
+            "description": "Contact details when there is no account. Required unless `userId` is given — an order nobody can be reached about is not a sale.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GuestContactDto"
+              }
+            ]
+          },
+          "shippingAddress": {
+            "description": "Where the parcel goes",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto"
+              }
+            ]
+          },
+          "items": {
+            "description": "Lines to sell",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManualOrderItemDto"
+            }
+          },
+          "paymentMethod": {
+            "type": "string",
+            "description": "How the customer will pay",
+            "enum": [
+              "ONLINE",
+              "ON_DELIVERY",
+              "INSTALLMENTS"
+            ],
+            "default": "ON_DELIVERY"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes shown to the customer",
+            "maxLength": 500
+          },
+          "internalNotes": {
+            "type": "string",
+            "description": "Operator-only notes",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "shippingAddress",
+          "items"
+        ]
+      },
       "UpdateOrderStatusDto": {
         "type": "object",
         "properties": {
@@ -16821,11 +18531,49 @@
               "CANCELLED",
               "REFUNDED"
             ]
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "description": "The order's `updatedAt` as the client last read it. When supplied and no longer current, the request is rejected with 409 ORDER_STALE (another admin changed the order first). Omit for system-driven changes.",
+            "format": "date-time",
+            "example": "2026-07-28T10:15:30.000Z"
           }
         },
         "required": [
           "status"
         ]
+      },
+      "UpdateOrderDetailsDto": {
+        "type": "object",
+        "properties": {
+          "trackingNumber": {
+            "type": "object",
+            "description": "Nova Poshta waybill (ТТН), typed in by the operator (TASK-335). Send null to clear it. Setting it on an already-SHIPPED order that had none sends the customer their tracking notice.",
+            "nullable": true,
+            "maxLength": 64,
+            "example": "20450000000001"
+          },
+          "internalNotes": {
+            "type": "object",
+            "description": "Operator-only notes (TASK-336). NEVER returned on customer-facing order endpoints — `notes` is the customer's own field and the two are different things. Send null to clear.",
+            "nullable": true,
+            "maxLength": 2000
+          },
+          "shippingAddress": {
+            "description": "Replacement delivery address (TASK-341). Accepted only BEFORE the parcel ships — once it is with the courier the address on the waybill is the one that counts, and editing the order would only make the record disagree with reality.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressDto"
+              }
+            ]
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "description": "The order's `updatedAt` as the client last read it. When supplied and no longer current, the request is rejected with 409 ORDER_STALE.",
+            "format": "date-time",
+            "example": "2026-07-28T10:15:30.000Z"
+          }
+        }
       },
       "UpdateOrderPaymentStatusDto": {
         "type": "object",
@@ -16843,6 +18591,279 @@
         },
         "required": [
           "paymentStatus"
+        ]
+      },
+      "ReturnItemEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Return line id",
+            "format": "uuid"
+          },
+          "orderItemId": {
+            "type": "string",
+            "description": "The order line being returned",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "number",
+            "description": "How many units are coming back",
+            "example": 1
+          },
+          "productName": {
+            "type": "string",
+            "description": "Product name at the time of the return",
+            "example": "iPhone 15 Case"
+          },
+          "price": {
+            "type": "string",
+            "description": "Unit price paid for this line, as a string",
+            "example": "499.00",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "orderItemId",
+          "quantity",
+          "productName",
+          "price"
+        ]
+      },
+      "ReturnEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Return id",
+            "format": "uuid"
+          },
+          "orderId": {
+            "type": "string",
+            "description": "The order these goods came from",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "description": "Return status",
+            "enum": [
+              "REQUESTED",
+              "APPROVED",
+              "REJECTED",
+              "RECEIVED",
+              "REFUNDED"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the customer is returning, in their own words",
+            "nullable": true
+          },
+          "operatorNotes": {
+            "type": "string",
+            "description": "Operator-only notes. Present ONLY on admin responses.",
+            "nullable": true
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the customer asked",
+            "example": "2026-07-28T10:15:30.000Z"
+          },
+          "resolvedAt": {
+            "type": "string",
+            "description": "When the operator decided",
+            "format": "date-time",
+            "nullable": true
+          },
+          "restockedAt": {
+            "type": "string",
+            "description": "When these units were credited back to sellable stock; null while they have not been. Mirrors Order.restockedAt and guards against a double credit.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "refundedAmount": {
+            "type": "string",
+            "description": "What was actually refunded, as a string; null until money moves",
+            "nullable": true,
+            "example": "499.00"
+          },
+          "items": {
+            "description": "Lines coming back",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReturnItemEntity"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "orderId",
+          "status",
+          "reason",
+          "requestedAt",
+          "resolvedAt",
+          "restockedAt",
+          "refundedAmount",
+          "items"
+        ]
+      },
+      "ReturnResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ReturnEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ReturnListResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReturnEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ReturnItemDto": {
+        "type": "object",
+        "properties": {
+          "orderItemId": {
+            "type": "string",
+            "description": "Order line being returned",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "number",
+            "description": "How many units of that line are coming back. Separate from the line quantity because a customer who bought three may return one.",
+            "minimum": 1,
+            "example": 1
+          }
+        },
+        "required": [
+          "orderItemId",
+          "quantity"
+        ]
+      },
+      "CreateReturnDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Why the customer is returning, in their own words",
+            "maxLength": 1000
+          },
+          "items": {
+            "description": "The lines coming back, with quantities",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReturnItemDto"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "AdminReturnPaginationMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "example": 42
+          },
+          "page": {
+            "type": "number",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "example": 10
+          },
+          "totalPages": {
+            "type": "number",
+            "example": 5
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit",
+          "totalPages"
+        ]
+      },
+      "AdminReturnListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReturnEntity"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/AdminReturnPaginationMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "AdminReturnResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ReturnEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ResolveReturnDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "New return status. Validated against the return state machine.",
+            "enum": [
+              "REQUESTED",
+              "APPROVED",
+              "REJECTED",
+              "RECEIVED",
+              "REFUNDED"
+            ]
+          },
+          "operatorNotes": {
+            "type": "object",
+            "description": "Operator-only notes — never shown to the customer",
+            "nullable": true,
+            "maxLength": 2000
+          },
+          "refundedAmount": {
+            "type": "object",
+            "description": "What was actually refunded, as a decimal string. May be less than the line total — shipping is not always refundable and partial returns are normal.",
+            "nullable": true,
+            "example": "499.00"
+          },
+          "restock": {
+            "type": "boolean",
+            "description": "Credit the returned units back to sellable stock. Only meaningful when moving to RECEIVED — the goods are physically back. Guarded so the same return can never be restocked twice.",
+            "example": true
+          }
+        },
+        "required": [
+          "status"
         ]
       },
       "NpCityDto": {
@@ -16965,6 +18986,85 @@
         "required": [
           "data"
         ]
+      },
+      "DeliverySettingDto": {
+        "type": "object",
+        "properties": {
+          "senderCityRef": {
+            "type": "string",
+            "description": "Nova Poshta city ref of the dispatch origin. Null → the env/Kyiv fallback.",
+            "example": "db5c88e0-391c-11dd-90d9-001a92567626",
+            "nullable": true
+          },
+          "senderCityName": {
+            "type": "string",
+            "description": "Human-readable dispatch city, so the admin form never shows a bare UUID",
+            "example": "м. Київ, Київська обл.",
+            "nullable": true
+          },
+          "senderWarehouseRef": {
+            "type": "string",
+            "description": "Optional specific dispatch branch. Stored for future waybill creation (InternetDocument/save); the cost estimate itself is city-to-city.",
+            "example": "1ec09d88-e1c2-11e3-8c4a-0050568002cf",
+            "nullable": true
+          },
+          "defaultWeightKg": {
+            "type": "number",
+            "description": "Parcel weight (kg) used for the estimate when the real weight is unknown",
+            "example": 0.5
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "When the settings were last changed. Null when never written.",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "senderCityRef",
+          "senderCityName",
+          "senderWarehouseRef",
+          "defaultWeightKg",
+          "updatedAt"
+        ]
+      },
+      "DeliverySettingResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DeliverySettingDto"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "UpdateDeliverySettingDto": {
+        "type": "object",
+        "properties": {
+          "senderCityRef": {
+            "type": "string",
+            "description": "Nova Poshta city ref of the dispatch origin (from GET /api/delivery/cities)",
+            "example": "db5c88e0-391c-11dd-90d9-001a92567626"
+          },
+          "senderCityName": {
+            "type": "string",
+            "description": "Human-readable dispatch city, stored so the form can show it back",
+            "example": "м. Київ, Київська обл."
+          },
+          "senderWarehouseRef": {
+            "type": "string",
+            "description": "Optional specific dispatch branch ref",
+            "example": "1ec09d88-e1c2-11e3-8c4a-0050568002cf"
+          },
+          "defaultWeightKg": {
+            "type": "number",
+            "description": "Fallback parcel weight in kg, used when the real weight is unknown (0.1–30)",
+            "example": 0.5,
+            "minimum": 0.1,
+            "maximum": 30
+          }
+        }
       },
       "PreviewDiscountDto": {
         "type": "object",
@@ -17364,6 +19464,55 @@
             "items": {
               "$ref": "#/components/schemas/PublicDiscountEntity"
             }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "PaymentCheckoutEntity": {
+        "type": "object",
+        "properties": {
+          "paymentId": {
+            "type": "string",
+            "description": "The payment attempt this handoff belongs to"
+          },
+          "url": {
+            "type": "string",
+            "description": "The provider's hosted checkout URL"
+          },
+          "method": {
+            "type": "string",
+            "description": "How the browser must reach it",
+            "enum": [
+              "POST",
+              "GET"
+            ]
+          },
+          "fields": {
+            "type": "object",
+            "description": "Signed form fields to submit. Never contains the private key",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "example": {
+              "data": "eyJ2ZXJzaW9uIjo3…",
+              "signature": "0adgJ8F2Ds5HCVkcz4…"
+            }
+          }
+        },
+        "required": [
+          "paymentId",
+          "url",
+          "method",
+          "fields"
+        ]
+      },
+      "PaymentCheckoutResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PaymentCheckoutEntity"
           }
         },
         "required": [

@@ -10,6 +10,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
 } from 'class-validator';
 import { OrderStatus } from '@prisma/client';
 import { OrderListQueryDto } from './order-list-query.dto';
@@ -63,6 +64,29 @@ export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status
   @IsOptional()
   @IsUUID()
   userId?: string;
+
+  @ApiProperty({
+    description:
+      'Free-text search across order number (id prefix), email and phone — for account AND ' +
+      'guest orders (TASK-336). This is what an operator actually has when a customer rings ' +
+      'up: "my order ABC12345", or a phone number. Never a UUID.',
+    required: false,
+    maxLength: 120,
+    example: 'ABC12345',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  // Read the ORIGINAL value from `obj` — the same enableImplicitConversion guard
+  // the rest of this DTO uses — then trim, and collapse an all-whitespace search
+  // to undefined so "no filter" cannot arrive disguised as an empty string.
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (typeof raw !== 'string') return undefined;
+    const trimmed = raw.trim();
+    return trimmed === '' ? undefined : trimmed;
+  })
+  search?: string;
 
   @ApiProperty({
     description: 'Include orders created on or after this ISO date',

@@ -21,7 +21,13 @@ import { orderStatusLabel, paymentStatusLabel } from "./status-label";
  */
 export function historyActorLabel(
   changedBy: string | null,
-  orderUserId: string,
+  // Nullable since TASK-338: a guest order has no owning account. The null case
+  // needs no special branch — a guest cannot act as an authenticated user, so
+  // `changedBy` for their own actions is null and the "Система" branch below
+  // catches it first. Writing `orderUserId: string` again would only force a
+  // caller-side cast, which is how a null reaches the comparison and every
+  // system row starts claiming to be the customer.
+  orderUserId: string | null,
 ): string {
   if (changedBy === null) {
     return "Система";

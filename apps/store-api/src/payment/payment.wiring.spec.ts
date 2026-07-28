@@ -12,6 +12,8 @@ import { PaymentReconcileWorker } from './payment-reconcile.worker';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './payment.port';
 import { PaymentService } from './payment.service';
 import { PaymentModule } from './payment.module';
+import { PermissionModule } from '../auth/permissions';
+import { AuditModule } from '../audit';
 
 /**
  * DI-wiring test (no DB), mirroring `publishing.wiring.spec.ts`.
@@ -58,6 +60,16 @@ describe('PaymentModule wiring', () => {
             }),
           ],
         }),
+        // Integration (plan 167): PermissionModule is @Global(), but a test graph
+        // still has to pull it in ONCE. Without it Nest cannot construct
+        // PermissionGuard in the transitively imported admin controllers and the
+        // whole compile fails — loudly, which is the right failure mode for a
+        // security guard, and the reason WT-C chose explicit DI over a lazy lookup.
+        // AuditModule too: PermissionController records who changed the matrix, so
+        // the RBAC graph does not stand up without the audit graph. Both are
+        // @Global() in the app; a test graph must still name them once.
+        AuditModule,
+        PermissionModule,
         ScheduleModule.forRoot(),
         LoggerModule.forRoot({ pinoHttp: { enabled: false } }),
         InfraStubModule,
