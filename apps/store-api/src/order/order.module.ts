@@ -10,6 +10,10 @@ import { OrderRepository } from './order.repository';
 import { OrderService } from './order.service';
 import { OrderController } from './order.controller';
 import { AdminOrderController } from './admin-order.controller';
+import { ReturnRepository } from './returns/return.repository';
+import { ReturnService } from './returns/return.service';
+import { ReturnController } from './returns/return.controller';
+import { AdminReturnController } from './returns/admin-return.controller';
 
 @Module({
   // UserModule provides UserRepository (recipient lookup for confirmation
@@ -29,13 +33,22 @@ import { AdminOrderController } from './admin-order.controller';
     DiscountModule,
     AddonServiceModule,
   ],
-  controllers: [OrderController, AdminOrderController],
+  controllers: [OrderController, AdminOrderController, ReturnController, AdminReturnController],
   // TASK-338: OrderController resolves the buyer's identity exactly as the cart
   // does — a JWT when there is one, the `cartToken` cookie otherwise — so a guest
   // converts the very cart they already own. CartIdentityInterceptor is listed
   // here because a route-scoped enhancer is instantiated from the injector of the
   // module that USES it, not the one that happens to declare it.
-  providers: [OrderRepository, OrderService, CartIdentityInterceptor],
-  exports: [OrderService],
+  // TASK-340: returns live inside the order module — a return is an order line
+  // coming back, and splitting them would put the stock guard on one side of a
+  // module boundary and the order it belongs to on the other.
+  providers: [
+    OrderRepository,
+    OrderService,
+    ReturnRepository,
+    ReturnService,
+    CartIdentityInterceptor,
+  ],
+  exports: [OrderService, ReturnService],
 })
 export class OrderModule {}
