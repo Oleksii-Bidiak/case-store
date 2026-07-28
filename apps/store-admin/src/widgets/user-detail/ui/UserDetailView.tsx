@@ -1,15 +1,22 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  UserEntityRole,
+  ROLE_VALUES,
+  roleLabel,
   useGetUserAdminCard,
   type CustomerCardContactMessageEntity,
 } from "@/entities/user";
 import { orderStatusBadgeVariant, orderStatusLabel } from "@/entities/order";
+import { useAuth } from "@/entities/session";
 import { UserBanToggle } from "@/features/user-ban-toggle";
+import {
+  DeleteUserDialog,
+  UserPasswordResetDialog,
+  UserRoleChange,
+} from "@/features/user-account-actions";
 import {
   Badge,
   Button,
@@ -57,7 +64,10 @@ function contactStatusLabel(status: string): string {
  */
 export function UserDetailView({ userId }: UserDetailViewProps) {
   const router = useRouter();
+  const { isOwner } = useAuth();
   const { data, isLoading, isError, error } = useGetUserAdminCard(userId);
+  const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const isNotFound = error?.response?.status === 404;
 
@@ -89,6 +99,12 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
   const contactMessages = card.contactMessages;
 
   const name = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
+  // Widened deliberately: the generated `UserEntity.role` union is still
+  // `CUSTOMER | ADMIN` because the API's `@ApiProperty` predates MANAGER, but
+  // MANAGER values arrive over the wire today. Comparing the narrow union
+  // against "MANAGER" is a compile error AND, worse, would render every manager
+  // as «Клієнт». See docs/manual-qa-pending.md §TASK-334.
+  const role: string = user.role;
 
   return (
     <div className="flex flex-col gap-6">
@@ -119,14 +135,14 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge
                     variant={
-                      user.role === UserEntityRole.ADMIN
+                      role === ROLE_VALUES.ADMIN
                         ? "default"
-                        : "secondary"
+                        : role === ROLE_VALUES.MANAGER
+                          ? "warning"
+                          : "secondary"
                     }
                   >
-                    {user.role === UserEntityRole.ADMIN
-                      ? dict.users.roleAdmin
-                      : dict.users.roleCustomer}
+                    {roleLabel(role)}
                   </Badge>
                   <Badge variant={user.isActive ? "default" : "destructive"}>
                     {user.isActive ? dict.common.active : dict.common.inactive}
@@ -347,6 +363,69 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
               <UserBanToggle userId={user.id} isActive={user.isActive} />
             </div>
           </section>
+
+          {/* Staff management (TASK-317). Every action here is `@OwnerOnly()` on
+              the API, so the whole panel is hidden for a manager — who would
+              otherwise be offered a role selector that answers 403. */}
+          {isOwner && (
+            <section className="flex flex-col gap-4 rounded-md border border-border p-4">
+              <h3 className="text-sm font-semibold text-foreground">
+                {dict.users.staffHeading}
+              </h3>
+
+              <UserRoleChange userId={user.id} currentRole={role} />
+
+              <Separator />
+
+              {/* Lockout visibility (plan 164 / TASK-317) is NOT implemented:
+                  `lockedUntil` and `failedLoginAttempts` exist on the User model
+                  but no endpoint exposes them, and store-api is out of this
+                  branch's scope. Rather than silently drop the requirement, the
+                  screen states the gap and points at the one action that does
+                  clear a lockout. See docs/manual-qa-pending.md §TASK-334. */}
+              <div className="flex flex-col gap-2">
+                <span className="text-sm font-medium text-foreground">
+                  {dict.users.lockoutHeading}
+                </span>
+                <p className="text-xs text-muted-foreground">
+                  {dict.users.lockoutUnavailable}
+                </p>
+              </div>
+
+              <Separator />
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setResetPasswordOpen(true)}
+                >
+                  {dict.users.passwordResetHeading}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  {dict.users.deleteHeading}
+                </Button>
+              </div>
+
+              <UserPasswordResetDialog
+                userId={user.id}
+                open={resetPasswordOpen}
+                onOpenChange={setResetPasswordOpen}
+              />
+              <DeleteUserDialog
+                userId={user.id}
+                email={user.email}
+                open={deleteOpen}
+                onOpenChange={setDeleteOpen}
+              />
+            </section>
+          )}
 
           <section className="flex flex-col gap-3 rounded-md border border-border p-4">
             <h3 className="text-sm font-semibold text-foreground">

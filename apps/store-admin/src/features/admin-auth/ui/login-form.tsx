@@ -28,16 +28,23 @@ function decodeRole(token: string): string | null {
 }
 
 /**
+ * Roles allowed into the admin panel (TASK-334). Kept in step with
+ * `STAFF_ROLES` in `entities/session/model/auth.context.tsx` — the provider
+ * enforces the same rule, this check only produces the friendlier message.
+ */
+const STAFF_ROLES: ReadonlySet<string> = new Set(["ADMIN", "MANAGER"]);
+
+/**
  * AdminLoginForm — email/password sign-in for the admin panel.
  *
- * On success it verifies the account is an ADMIN before establishing the
- * session; a valid CUSTOMER login is rejected with a clear message rather than
- * silently failing.
+ * On success it verifies the account is STAFF (ADMIN or MANAGER) before
+ * establishing the session; a valid CUSTOMER login is rejected with a clear
+ * message rather than silently failing.
  */
 export function AdminLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isAdmin, setTokens } = useAuth();
+  const { isStaff, setTokens } = useAuth();
   const [notAdmin, setNotAdmin] = useState(false);
 
   // Honour a same-origin `?redirect=` param (leading-slash check blocks
@@ -54,12 +61,12 @@ export function AdminLoginForm() {
 
   const login = useAuthControllerLogin();
 
-  // Already an authenticated admin → leave the login page.
+  // Already an authenticated staff member → leave the login page.
   useEffect(() => {
-    if (isAdmin) {
+    if (isStaff) {
       router.replace(redirectTarget);
     }
-  }, [isAdmin, router, redirectTarget]);
+  }, [isStaff, router, redirectTarget]);
 
   const onSubmit = (values: LoginValues) => {
     setNotAdmin(false);
@@ -70,7 +77,8 @@ export function AdminLoginForm() {
           const token = res?.data?.accessToken;
           if (!token) return;
 
-          if (decodeRole(token) !== "ADMIN") {
+          const tokenRole = decodeRole(token);
+          if (tokenRole === null || !STAFF_ROLES.has(tokenRole)) {
             setNotAdmin(true);
             return;
           }

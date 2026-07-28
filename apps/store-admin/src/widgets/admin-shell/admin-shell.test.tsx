@@ -24,10 +24,17 @@ jest.mock("@/entities/session", () => ({
   useAuth: () => ({
     userId: "admin-1",
     role: "ADMIN",
+    email: "admin@example.com",
     accessToken: null,
     isAuthenticated: true,
-    isAdmin: true,
+    isStaff: true,
+    isOwner: true,
     isInitializing: false,
+    permissions: [],
+    arePermissionsLoading: false,
+    // Owner: holds everything, so the shell still renders the complete nav.
+    can: () => true,
+    canAll: () => true,
     setTokens: jest.fn(),
     clearTokens: jest.fn(),
   }),

@@ -7,10 +7,14 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import {
+  ROLE_VALUES,
   UserEntityRole,
+  roleLabel,
   useUserControllerFindAll,
   type UserEntity,
 } from "@/entities/user";
+import { useAuth } from "@/entities/session";
+import { CreateUserDialog } from "@/features/user-create";
 import {
   Badge,
   Button,
@@ -45,6 +49,20 @@ function fullName(user: UserEntity): string {
 }
 
 /**
+ * Widen the generated role union.
+ *
+ * `UserEntity.role` is still typed `CUSTOMER | ADMIN` because the API's
+ * `@ApiProperty` predates MANAGER, yet MANAGER rows arrive over the wire today.
+ * Comparing the narrow union against "MANAGER" is a compile error — and the
+ * previous binary check rendered every manager as «Клієнт», which on a screen
+ * about who holds which powers is the worst possible wrong answer. See
+ * docs/manual-qa-pending.md §TASK-334.
+ */
+function roleOf(user: UserEntity): string {
+  return user.role;
+}
+
+/**
  * Paginated, searchable, filterable user table for the admin panel.
  *
  * Search, role, status, and page state all live in the URL (`?search=`,
@@ -62,6 +80,11 @@ export function AdminUserTable() {
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
 
   const [searchInput, setSearchInput] = useState(searchParam);
+  // Creating staff is owner-only on the API (`@OwnerOnly()` on POST /users).
+  // Hiding the button for a manager keeps the panel honest; the 403 is what
+  // actually stops them.
+  const { isOwner } = useAuth();
+  const [createOpen, setCreateOpen] = useState(false);
 
   const updateParams = (next: Record<string, string | undefined>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -143,10 +166,17 @@ export function AdminUserTable() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL_OPTION}>{dict.users.allRoles}</SelectItem>
-            <SelectItem value={UserEntityRole.CUSTOMER}>
+            <SelectItem value={ROLE_VALUES.CUSTOMER}>
               {dict.users.roleCustomer}
             </SelectItem>
-            <SelectItem value={UserEntityRole.ADMIN}>
+            {/* TASK-334: MANAGER is a real role the API returns and filters on,
+                even though the generated `UserEntityRole` union still predates
+                it. Without this option the owner could not list their own
+                managers. */}
+            <SelectItem value={ROLE_VALUES.MANAGER}>
+              {dict.users.roleManager}
+            </SelectItem>
+            <SelectItem value={ROLE_VALUES.ADMIN}>
               {dict.users.roleAdmin}
             </SelectItem>
           </SelectContent>
@@ -167,7 +197,21 @@ export function AdminUserTable() {
             <SelectItem value="false">{dict.common.inactive}</SelectItem>
           </SelectContent>
         </Select>
+
+        {isOwner && (
+          <Button
+            type="button"
+            className="ml-auto"
+            onClick={() => setCreateOpen(true)}
+          >
+            {dict.users.create}
+          </Button>
+        )}
       </div>
+
+      {isOwner && (
+        <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
+      )}
 
       {isLoading ? (
         <AdminUserTableSkeleton />
@@ -229,14 +273,14 @@ export function AdminUserTable() {
                   <TableCell>
                     <Badge
                       variant={
-                        user.role === UserEntityRole.ADMIN
+                        roleOf(user) === ROLE_VALUES.ADMIN
                           ? "default"
-                          : "secondary"
+                          : roleOf(user) === ROLE_VALUES.MANAGER
+                            ? "warning"
+                            : "secondary"
                       }
                     >
-                      {user.role === UserEntityRole.ADMIN
-                        ? dict.users.roleAdmin
-                        : dict.users.roleCustomer}
+                      {roleLabel(roleOf(user))}
                     </Badge>
                   </TableCell>
                   <TableCell>

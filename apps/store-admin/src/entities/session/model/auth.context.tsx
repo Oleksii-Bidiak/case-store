@@ -12,12 +12,30 @@ import { isAxiosError } from "axios";
 import {
   authControllerRefresh,
   setAccessToken,
+  useGetMyPermissions,
   userControllerGetProfile,
 } from "@/shared/api";
 import {
   ADMIN_UI_SESSION_COOKIE,
   ADMIN_UI_SESSION_MAX_AGE_SECONDS,
 } from "@/shared/config/admin-ui-session";
+
+/**
+ * Roles that may occupy the admin shell at all (TASK-334).
+ *
+ * MANAGER was added here as the very first step of the RBAC work: until it was,
+ * `setTokens` cleared any non-ADMIN token on arrival and `AdminShellGuard`
+ * bounced the session to /login, so a manager account could be created, granted
+ * permissions, and still never see a single screen.
+ *
+ * This is a *shell* gate, not an authorisation decision — it only answers "does
+ * this person belong in the admin app". What they may then do comes from
+ * `permissions`, which is resolved server-side per request.
+ */
+const STAFF_ROLES: ReadonlySet<string> = new Set(["ADMIN", "MANAGER"]);
+
+/** How long an effective-permission answer is trusted before a refetch. */
+const PERMISSIONS_STALE_MS = 30_000;
 
 export interface AuthContextValue {
   accessToken: string | null;
@@ -30,13 +48,38 @@ export interface AuthContextValue {
    */
   email: string | null;
   isAuthenticated: boolean;
-  /** True only for an authenticated session whose role is ADMIN. */
-  isAdmin: boolean;
+  /** True for an authenticated staff session (ADMIN or MANAGER). */
+  isStaff: boolean;
+  /**
+   * True only for ADMIN — the shop owner, who is never subject to the
+   * permission matrix and is the only role that may manage users, edit the
+   * matrix, or read the action log.
+   */
+  isOwner: boolean;
   /** True while the initial refresh attempt is in-flight. */
   isInitializing: boolean;
+  /**
+   * Effective permission keys for this session, resolved from the DATABASE via
+   * `GET /api/auth/me/permissions` — never decoded from the JWT, whose role
+   * claim is a up-to-15-minute-old snapshot. Empty for the owner, who holds
+   * everything implicitly (`isOwner` / `can()` cover that).
+   */
+  permissions: string[];
+  /** True until the first effective-permission answer has arrived. */
+  arePermissionsLoading: boolean;
+  /**
+   * UI-only convenience: may this session see the control for `permission`?
+   *
+   * A hidden button is not a security boundary — the server guard is. This
+   * exists so the panel a manager sees matches what the API will actually let
+   * them do, not so it can replace the guard.
+   */
+  can: (permission: string) => boolean;
+  /** True when every one of `permissions` is held. */
+  canAll: (permissions: readonly string[]) => boolean;
   /** Store a new access token (called after login). */
   setTokens: (accessToken: string) => void;
-  /** Clear the session (called after logout or for a non-admin session). */
+  /** Clear the session (called after logout or for a non-staff session). */
   clearTokens: () => void;
 }
 
@@ -99,17 +142,20 @@ function decodeJwt(token: string): { sub?: string; role?: string } | null {
  * AuthProvider — holds the in-memory access token and admin session metadata.
  *
  * On mount it silently calls /api/auth/refresh to restore a session from the
- * HttpOnly refresh cookie. Unlike the storefront, the admin app only accepts
- * ADMIN sessions: if the restored (or set) token decodes to any other role, the
- * token is cleared immediately so a CUSTOMER can never occupy the admin shell.
+ * HttpOnly refresh cookie. The admin app accepts only STAFF sessions (ADMIN or
+ * MANAGER): if the restored (or set) token decodes to any other role, the token
+ * is cleared immediately so a CUSTOMER can never occupy the admin shell.
  *
- * The decoded role is used purely for UI decisions (gating, redirects, display).
- * Every API call is still authorised server-side by the signed JWT.
+ * The decoded role is used purely for the shell gate. What the session may
+ * actually DO comes from `GET /api/auth/me/permissions` — a database read, not
+ * a token claim, so a permission revoked a minute ago is gone here on the next
+ * fetch (refetch on window focus, 30 s staleness) rather than at the end of the
+ * token's 15-minute life. Every API call is still authorised server-side.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [accessToken, setToken] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [role, setRole] = useState<string | null>(null);
+  const [tokenRole, setTokenRole] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
@@ -117,7 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccessToken(null);
     setToken(null);
     setUserId(null);
-    setRole(null);
+    setTokenRole(null);
     setEmail(null);
     writeAdminUiSessionMarker(false);
   }, []);
@@ -126,16 +172,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (token: string) => {
       const claims = decodeJwt(token);
 
-      // Reject non-admin sessions outright — the admin app is ADMIN-only.
-      if (claims?.role !== "ADMIN") {
+      // Reject non-staff sessions outright — a shopper's valid token must not
+      // buy a seat in the admin shell.
+      if (!claims?.role || !STAFF_ROLES.has(claims.role)) {
         clearTokens();
         return;
       }
 
       setAccessToken(token);
       setToken(token);
-      setUserId(claims?.sub ?? null);
-      setRole(claims.role);
+      setUserId(claims.sub ?? null);
+      setTokenRole(claims.role);
       writeAdminUiSessionMarker(true);
     },
     [clearTokens],
@@ -171,7 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // TASK-255: light profile fetch for the header identity. Keyed on
   // `accessToken` so it re-runs on bootstrap restore, login, and every
   // refresh-token rotation. A failure only leaves `email` null — it must never
-  // tear down the session (isAuthenticated/isAdmin are untouched). No fetch
+  // tear down the session (isAuthenticated/isStaff are untouched). No fetch
   // while signed out: the token only ever becomes null via clearTokens(),
   // which already resets `email`.
   useEffect(() => {
@@ -199,6 +246,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [accessToken]);
 
+  // TASK-334: the frontend's single source of truth for what this session may
+  // do. `retry: false` because the only interesting failure (401) is not worth
+  // retrying, and a failed fetch degrades to "no permissions" — the safe
+  // direction: a manager sees an empty panel rather than links that 403.
+  const { data: permissionsData, isPending: permissionsPending } =
+    useGetMyPermissions({
+      query: {
+        enabled: accessToken !== null,
+        staleTime: PERMISSIONS_STALE_MS,
+        refetchOnWindowFocus: true,
+        retry: false,
+      },
+    });
+
+  const effective = permissionsData?.data;
+  const permissions = useMemo(
+    () => effective?.permissions ?? [],
+    [effective?.permissions],
+  );
+
+  // The server's answer wins over the token claim once it arrives; before that
+  // the JWT role keeps the shell from flashing a redirect.
+  const role = effective?.role ?? tokenRole;
+  const isStaff =
+    accessToken !== null && role !== null && STAFF_ROLES.has(role);
+  const isOwner =
+    effective?.isOwner ?? (accessToken !== null && role === "ADMIN");
+
+  const can = useCallback(
+    (permission: string) => isOwner || permissions.includes(permission),
+    [isOwner, permissions],
+  );
+
+  const canAll = useCallback(
+    (required: readonly string[]) => required.every((key) => can(key)),
+    [can],
+  );
+
   const value = useMemo<AuthContextValue>(
     () => ({
       accessToken,
@@ -206,12 +291,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role,
       email,
       isAuthenticated: accessToken !== null,
-      isAdmin: accessToken !== null && role === "ADMIN",
+      isStaff,
+      isOwner,
       isInitializing,
+      permissions,
+      arePermissionsLoading: accessToken !== null && permissionsPending,
+      can,
+      canAll,
       setTokens,
       clearTokens,
     }),
-    [accessToken, userId, role, email, isInitializing, setTokens, clearTokens],
+    [
+      accessToken,
+      userId,
+      role,
+      email,
+      isStaff,
+      isOwner,
+      isInitializing,
+      permissions,
+      permissionsPending,
+      can,
+      canAll,
+      setTokens,
+      clearTokens,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

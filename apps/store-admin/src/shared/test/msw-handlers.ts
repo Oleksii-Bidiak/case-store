@@ -168,6 +168,18 @@ export const handlers = [
     }),
   ),
 
+  // Effective permissions (TASK-334) — AuthProvider fetches this whenever an
+  // access token appears, so every suite that renders the real provider to an
+  // authenticated state stays off onUnhandledRequest. Owner by default (it
+  // matches the admin@example.com profile above): `isOwner` short-circuits
+  // `can()`, so pre-existing suites keep seeing the full panel. Override
+  // per-test to simulate a MANAGER with a narrow grant set.
+  http.get("*/api/auth/me/permissions", () =>
+    HttpResponse.json({
+      data: { role: "ADMIN", isOwner: true, permissions: [] },
+    }),
+  ),
+
   // CSRF token fetched lazily by the axios instance before mutations.
   http.get("*/api/csrf-token", () =>
     HttpResponse.json({ data: { csrfToken: "test-csrf" } }),

@@ -7,6 +7,11 @@ export {
   useAuthControllerLogin,
   useAuthControllerLogout,
   useAuthControllerRefresh,
+  // TASK-333: one change-password mechanism, shared by storefront and admin.
+  useAuthControllerChangePassword,
+  // TASK-334: the frontend's source of truth for effective permissions.
+  useGetMyPermissions,
+  getGetMyPermissionsQueryKey,
 } from "@/shared/api";
 
-export type { LoginDto } from "@/shared/api";
+export type { LoginDto, ChangePasswordDto } from "@/shared/api";

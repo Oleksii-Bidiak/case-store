@@ -77,6 +77,13 @@ export {
   AdminSubscriberTableSkeleton,
 } from "./subscriber-list";
 export { UserDetailView, UserDetailSkeleton } from "./user-detail";
+// TASK-334 / TASK-318 / TASK-317 — RBAC surfaces.
+export {
+  PermissionMatrixView,
+  PermissionMatrixSkeleton,
+} from "./permission-matrix";
+export { AuditLogView, AuditLogSkeleton } from "./audit-log";
+export { AdminProfileView } from "./admin-profile";
 export {
   AdminDashboardStats,
   AdminDashboardStatsSkeleton,

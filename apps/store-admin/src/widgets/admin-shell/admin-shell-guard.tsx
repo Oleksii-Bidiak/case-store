@@ -9,21 +9,27 @@ import { dict } from "@/shared/config";
  * AdminShellGuard — route gate for the authenticated admin area.
  *
  *   - while the silent refresh is in-flight → full-screen spinner (avoids a
- *     flash-redirect for an admin who is actually signed in);
- *   - resolved and not an admin → client-side redirect to /login;
- *   - resolved and admin → renders the protected shell ({children}).
+ *     flash-redirect for a staff member who is actually signed in);
+ *   - resolved and not staff → client-side redirect to /login;
+ *   - resolved and staff (ADMIN or MANAGER) → renders the shell ({children}).
+ *
+ * TASK-334: the gate is `isStaff`, not `isOwner`. It used to demand ADMIN, which
+ * meant a MANAGER with a perfectly valid session was bounced straight back to
+ * /login and no amount of granted permissions could get them in. What a manager
+ * may then see inside is decided per nav item / per tile, and enforced for real
+ * by the server guard on every request.
  */
 export function AdminShellGuard({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const { isInitializing, isAdmin } = useAuth();
+  const { isInitializing, isStaff } = useAuth();
 
   useEffect(() => {
-    if (!isInitializing && !isAdmin) {
+    if (!isInitializing && !isStaff) {
       router.replace("/login");
     }
-  }, [isInitializing, isAdmin, router]);
+  }, [isInitializing, isStaff, router]);
 
-  if (isInitializing || !isAdmin) {
+  if (isInitializing || !isStaff) {
     return (
       <div
         role="status"
