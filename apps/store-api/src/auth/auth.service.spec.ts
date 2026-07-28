@@ -1228,4 +1228,68 @@ describe('AuthService', () => {
       );
     });
   });
+  // ─── changePassword (TASK-333) ──────────────────────────────────────────────
+
+  describe('changePassword', () => {
+    it('requires the CURRENT password — a valid token alone is not enough', async () => {
+      // A token lifted from an unlocked laptop or an XSS payload must not be
+      // enough to take the account over permanently. That escalation is the
+      // whole reason this check exists.
+      authRepository.findById.mockResolvedValue(mockUser);
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        service.changePassword('user-uuid-1', 'WrongOldPass1', 'BrandNewPass1'),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(authRepository.updatePasswordHash).not.toHaveBeenCalled();
+      expect(authRepository.revokeAllUserTokens).not.toHaveBeenCalled();
+    });
+
+    it('revokes every session on success — the point of changing a leaked password', async () => {
+      authRepository.findById.mockResolvedValue(mockUser);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      await service.changePassword('user-uuid-1', 'OldPass123', 'BrandNewPass1');
+
+      expect(authRepository.updatePasswordHash).toHaveBeenCalledWith(
+        'user-uuid-1',
+        'hashed-password',
+      );
+      expect(authRepository.revokeAllUserTokens).toHaveBeenCalledWith('user-uuid-1');
+    });
+
+    it('clears a lockout, so the new password is not silently refused for 15 minutes', async () => {
+      // `login()` checks the lock BEFORE the password, so leaving it armed
+      // makes a successful change look exactly like a failed one.
+      authRepository.findById.mockResolvedValue(mockUser);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      await service.changePassword('user-uuid-1', 'OldPass123', 'BrandNewPass1');
+
+      expect(authRepository.clearFailedLogins).toHaveBeenCalledWith('user-uuid-1');
+    });
+
+    it('treats a password-less (Google-only) account exactly like a wrong password', async () => {
+      // A distinct error would tell whoever holds a stolen token that the victim
+      // signs in with Google — i.e. where to aim next.
+      authRepository.findById.mockResolvedValue({ ...mockUser, passwordHash: null });
+
+      await expect(
+        service.changePassword('user-uuid-1', 'anything', 'BrandNewPass1'),
+      ).rejects.toThrow(UnauthorizedException);
+
+      // …and still pays the argon2 cost, so the branch is not a timing outlier.
+      expect(argon2.hash).toHaveBeenCalled();
+      expect(argon2.verify).not.toHaveBeenCalled();
+    });
+
+    it('gives the same generic message for a missing account as for a wrong password', async () => {
+      authRepository.findById.mockResolvedValue(null);
+
+      await expect(service.changePassword('ghost', 'anything', 'BrandNewPass1')).rejects.toThrow(
+        'Invalid credentials',
+      );
+    });
+  });
 });

@@ -3,13 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { PinoLogger } from 'nestjs-pino';
 import { randomBytes } from 'crypto';
-import * as argon2 from 'argon2';
 import { OAuthProvider, User, UserRole } from '@prisma/client';
 import { AuthRepository, CreateUserInput } from './auth.repository';
 import { AuthTokens } from './entities';
 import { RegisterDto } from './dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
+import { hashPassword, verifyPassword } from '../common/security';
 
 /** Bytes of entropy for an opaque password-reset token (→ 64 hex chars). */
 const PASSWORD_RESET_TOKEN_BYTES = 32;
@@ -125,7 +125,7 @@ export class AuthService {
     }
 
     // Hash password with argon2
-    const passwordHash = await argon2.hash(dto.password);
+    const passwordHash = await hashPassword(dto.password);
 
     // Create user
     const createUserInput: CreateUserInput = {
@@ -169,7 +169,7 @@ export class AuthService {
       throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
 
-    const isPasswordValid = await argon2.verify(user.passwordHash, password);
+    const isPasswordValid = await verifyPassword(user.passwordHash, password);
     const isLocked = !user.isActive || Boolean(user.deletedAt);
 
     // TASK-287: the owner — and only the owner — gets the truth, by email. The
@@ -484,16 +484,95 @@ export class AuthService {
       throw new UnauthorizedException(INVALID_RESET_TOKEN_MESSAGE);
     }
 
-    const passwordHash = await argon2.hash(newPassword);
-    await this.authRepository.updatePasswordHash(stored.user.id, passwordHash);
+    // Hash + clear the lockout + terminate every existing session. Routed
+    // through the shared tail (TASK-333) so a reset can never drift from a
+    // change; clearing `lockedUntil` here also closes a real trap — the owner
+    // who locked themselves out, reset their password, and then found the new
+    // one rejected for another 15 minutes with no explanation.
+    await this.setPassword(stored.user.id, newPassword);
     await this.authRepository.markPasswordResetTokenUsed(stored.id);
-    // Terminate every existing session — the reset must log the user out everywhere.
-    await this.authRepository.revokeAllUserTokens(stored.user.id);
 
     this.logger.info(
       { event: 'user.passwordResetCompleted', userId: stored.user.id },
       'Password reset completed',
     );
+  }
+
+  /**
+   * Change the signed-in user's own password (TASK-333).
+   *
+   * ONE endpoint serves both the storefront `/account` screen and the admin
+   * panel — the mechanism is identical, and two implementations would be two
+   * places for the session-revocation step to be forgotten.
+   *
+   * Requires the CURRENT password. A valid access token is not sufficient proof
+   * on its own: a token lifted from an unlocked laptop or an XSS payload would
+   * otherwise be enough to take the account over permanently, which is exactly
+   * the escalation this check exists to stop.
+   *
+   * On success every refresh token is revoked, mirroring
+   * {@link confirmPasswordReset}. That is the point of changing a password you
+   * suspect is compromised: whoever else was signed in is signed out. The
+   * caller's own access token stays valid until it expires (≤15 min) — the
+   * frontend simply re-authenticates on its next refresh.
+   *
+   * Both failure modes throw the same generic message. A distinct "no password
+   * on this account" would tell an attacker holding a stolen token that the
+   * victim signs in with Google, i.e. where to aim next.
+   */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.authRepository.findById(userId);
+
+    // A Google-only account genuinely has no password to prove. Routed to the
+    // same rejection as a wrong password (and paying the same argon2 cost) so
+    // the two are indistinguishable from outside.
+    if (!user || !user.passwordHash) {
+      await this.burnTimingCost();
+      throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
+    }
+
+    const isCurrentValid = await verifyPassword(user.passwordHash, currentPassword);
+    if (!isCurrentValid) {
+      this.logger.warn(
+        { event: 'user.passwordChangeRejected', userId },
+        'Password change rejected — current password did not match',
+      );
+      throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
+    }
+
+    await this.setPassword(userId, newPassword);
+
+    this.logger.info(
+      { event: 'user.passwordChanged', userId },
+      'Password changed by the account owner',
+    );
+  }
+
+  /**
+   * Write a new password hash and terminate every existing session (TASK-333).
+   *
+   * The shared tail of "the password just changed", whatever proved the right to
+   * change it: the owner's current password ({@link changePassword}), a
+   * single-use reset token ({@link confirmPasswordReset}), or the shop owner
+   * resetting an employee's ({@link UserService.setUserPassword}). Keeping the
+   * hash write and the revoke together is what stops a future path from doing
+   * one without the other.
+   *
+   * `clearFailedLogins` is included deliberately: an account that got locked out
+   * is the most likely one to be having its password reset, and leaving the lock
+   * armed would mean the new password does not work for another 15 minutes —
+   * indistinguishable, to the user, from the reset having silently failed.
+   */
+  async setPassword(userId: string, newPassword: string): Promise<void> {
+    const passwordHash = await hashPassword(newPassword);
+
+    await this.authRepository.updatePasswordHash(userId, passwordHash);
+    await this.authRepository.clearFailedLogins(userId);
+    await this.authRepository.revokeAllUserTokens(userId);
   }
 
   /**
@@ -620,7 +699,7 @@ export class AuthService {
    * The hash is deliberately discarded, and nothing about the account is logged.
    */
   private async burnTimingCost(): Promise<void> {
-    await argon2.hash(DUMMY_TIMING_PASSWORD);
+    await hashPassword(DUMMY_TIMING_PASSWORD);
   }
 
   /**

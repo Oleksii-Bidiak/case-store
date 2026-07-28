@@ -33,6 +33,19 @@ export interface UpdateUserInput {
 }
 
 /**
+ * Fields accepted when the owner provisions a staff account from the admin UI
+ * (TASK-333). `passwordHash` is already hashed by the service — a repository
+ * that took a plaintext password would be one refactor away from storing it.
+ */
+export interface CreateStaffUserInput {
+  email: string;
+  passwordHash: string;
+  role: UserRole;
+  firstName?: string;
+  lastName?: string;
+}
+
+/**
  * Result of a paginated user query.
  */
 export interface PaginatedUsersResult {
@@ -116,6 +129,47 @@ export class UserRepository {
     ]);
 
     return { users, total };
+  }
+
+  /**
+   * Create a staff account from the admin UI (TASK-333/317).
+   *
+   * `emailVerifiedAt` is left null: the owner typed this address, nobody has
+   * proven it, and stamping it verified here would launder an assumption into a
+   * fact. The employee proves it through the normal TASK-342 flow.
+   */
+  create(data: CreateStaffUserInput): Promise<User> {
+    return this.prisma.user.create({ data });
+  }
+
+  /**
+   * Change a user's role (TASK-317/334). Callers MUST run the last-admin guard
+   * first — this method is deliberately dumb about policy.
+   */
+  updateRole(id: string, role: UserRole): Promise<User> {
+    return this.prisma.user.update({ where: { id }, data: { role } });
+  }
+
+  /**
+   * How many live, active ADMIN accounts exist (TASK-334).
+   *
+   * The input to every "you cannot remove the last admin" check. Counts only
+   * rows that could actually sign in today — a deactivated or soft-deleted admin
+   * is not a way back into the shop, so counting one would let the owner strip
+   * the only working admin while the guard reported everything was fine.
+   *
+   * `excludeUserId` answers the question the callers actually ask: "if I
+   * demote/deactivate/delete THIS one, is anybody left?"
+   */
+  countActiveAdmins(excludeUserId?: string): Promise<number> {
+    return this.prisma.user.count({
+      where: {
+        role: UserRole.ADMIN,
+        isActive: true,
+        deletedAt: null,
+        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+      },
+    });
   }
 
   /**
