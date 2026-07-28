@@ -18,6 +18,15 @@ export const DELIVERY_STEP_FIELDS = [
   "notes",
 ] as const satisfies readonly (keyof CheckoutFormValues)[];
 
+/**
+ * Extra step-1 field for a shopper without an account (TASK-338). Validated here
+ * rather than only at submit, so a guest hears about a missing email on the
+ * screen that holds the input instead of two screens later.
+ */
+export const GUEST_STEP_FIELDS = [
+  "email",
+] as const satisfies readonly (keyof CheckoutFormValues)[];
+
 export interface CheckoutSteps {
   /** Current step: 1 = Delivery, 2 = Review. */
   step: 1 | 2;
@@ -37,6 +46,7 @@ export interface CheckoutSteps {
  */
 export function useCheckoutSteps(
   trigger: UseFormTrigger<CheckoutFormValues>,
+  isGuest = false,
 ): CheckoutSteps {
   const [step, setStep] = useState<1 | 2>(1);
   const [isValidating, setIsValidating] = useState(false);
@@ -44,12 +54,15 @@ export function useCheckoutSteps(
   const goToReview = useCallback(async () => {
     setIsValidating(true);
     try {
-      const valid = await trigger([...DELIVERY_STEP_FIELDS]);
+      const fields = isGuest
+        ? [...DELIVERY_STEP_FIELDS, ...GUEST_STEP_FIELDS]
+        : [...DELIVERY_STEP_FIELDS];
+      const valid = await trigger(fields);
       if (valid) setStep(2);
     } finally {
       setIsValidating(false);
     }
-  }, [trigger]);
+  }, [trigger, isGuest]);
 
   const goToDelivery = useCallback(() => setStep(1), []);
 

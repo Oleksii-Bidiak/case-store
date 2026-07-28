@@ -3,7 +3,10 @@
 import { useEffect } from "react";
 import type { UseFormReset } from "react-hook-form";
 import { useUserControllerGetProfile } from "@/entities/user";
-import type { CheckoutFormValues } from "./checkout-schema";
+import {
+  CHECKOUT_DEFAULT_VALUES,
+  type CheckoutFormValues,
+} from "./checkout-schema";
 
 /**
  * useCheckoutPrefill — seed the checkout form with the logged-in user's saved
@@ -48,6 +51,11 @@ export function useCheckoutPrefill(
         deliveryAddress: "",
         npWarehouseRef: "",
         notes: "",
+        // `reset` replaces the entire form value, so any field it omits becomes
+        // undefined. Restating the static defaults keeps the payment radio from
+        // silently losing its selection the moment the profile lands;
+        // `keepDirtyValues` still protects a choice the shopper already made.
+        ...CHECKOUT_DEFAULT_VALUES,
       },
       { keepDirtyValues: true },
     );

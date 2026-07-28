@@ -1075,18 +1075,66 @@ export const dict = {
     discountLine: "Знижка",
     totalLine: "До сплати",
     secureNote: "З'єднання захищене · Ваші дані у безпеці",
-    // Payment. There is no online-payment provider yet (TASK-034), so the
-    // storefront offers exactly one method and says so plainly. It previously
-    // rendered a "Картка онлайн — Visa / Mastercard · Apple Pay, Google Pay"
-    // radio option that was never sent to the API (CreateOrderDto has no payment
-    // field): the customer believed they had paid by card while the order was
-    // actually created as PENDING for a manager to settle by phone. Do not
-    // reintroduce a payment choice until a provider is genuinely wired up.
+    // Payment (TASK-330-B). The choice is real again — but only because every
+    // option now has somewhere to go: ON_DELIVERY is the backend's own default,
+    // and ONLINE/INSTALLMENTS open a real payment attempt via
+    // POST /api/payments/orders/:id/checkout before handing the browser to the
+    // provider. The rule this section was rebuilt under: never render an option
+    // the storefront cannot carry through. An earlier version offered "Картка
+    // онлайн" that reached nothing at all, so a shopper who chose it saw a
+    // successful order and believed they had paid.
     paymentHeading: "Оплата",
-    paymentMethodTitle: "Оплата при отриманні",
-    paymentMethodNote: "Готівкою або карткою у відділенні перевізника.",
+    payment: {
+      onDeliveryTitle: "Оплата при отриманні",
+      onDeliveryNote: "Готівкою або карткою у відділенні перевізника.",
+      onlineTitle: "Картка онлайн",
+      onlineNote: "Захищена оплата карткою на сторінці банку.",
+      installmentsTitle: "Оплата частинами",
+      installmentsNote:
+        "Розстрочка від банку — товар одразу, оплата частинами.",
+      // Shown on a disabled option instead of letting a guest dead-end on a 401:
+      // the payment endpoint requires an account.
+      accountRequired: "Доступно після входу в акаунт.",
+      signIn: "Увійти",
+      groupAria: "Спосіб оплати",
+      redirecting: "Переходимо до оплати…",
+      // Handoff failures. None of these ever claim the order is paid.
+      errorUnavailable:
+        "Онлайн-оплата зараз недоступна. Замовлення прийнято — менеджер зателефонує, щоб узгодити оплату.",
+      errorAccount:
+        "Щоб оплатити карткою, увійдіть в акаунт. Замовлення вже прийнято.",
+      errorConflict: "Це замовлення вже не можна оплатити онлайн.",
+      errorGeneric:
+        "Не вдалося перейти до оплати. Замовлення прийнято — спробуйте оплатити на сторінці замовлення.",
+    },
     paymentManagerNote:
-      "Менеджер зателефонує, щоб підтвердити замовлення. Оплату карткою онлайн буде додано згодом.",
+      "Менеджер зателефонує, щоб підтвердити замовлення, якщо буде потрібно.",
+    // Guest checkout (TASK-338). The contact block appears only for shoppers
+    // without an account — a signed-in shopper's account is the source of truth
+    // and the backend ignores any contact block they send.
+    guest: {
+      heading: "Контактні дані",
+      emailLabel: "Email",
+      emailPlaceholder: "напр. olena@example.com",
+      emailHint:
+        "Надішлемо підтвердження та посилання на статус замовлення. Реєстрація не потрібна.",
+      contactNote:
+        "Для звʼязку використаємо імʼя та телефон, які ви вказали в доставці.",
+      validationEmail: "Вкажіть коректну електронну пошту",
+      validationEmailRequired: "Email є обовʼязковим",
+      // Post-order panel. A guest cannot open /orders/[id]/confirmation — that
+      // route needs a JWT — so the success state is rendered in place.
+      successHeading: "Замовлення прийнято!",
+      successNumberLabel: "Номер замовлення:",
+      successEmail: (email: string) =>
+        `Підтвердження та посилання на статус замовлення надіслано на ${email}.`,
+      successTotal: "До сплати",
+      // The account offer comes AFTER the order, never before it.
+      accountOfferHeading: "Створити акаунт?",
+      accountOfferBody:
+        "Збережемо історію замовлень, адреси та обране. Ваші попередні замовлення привʼяжемо до цього email автоматично.",
+      accountOfferCta: "Створити акаунт",
+    },
     // Loyalty bonuses — stub (no loyalty backend — TASK-175).
     bonusesStub: "Списати бонуси (програма лояльності — незабаром)",
   },
@@ -1123,6 +1171,52 @@ export const dict = {
     loadErrorBody: "Не вдалося завантажити ваше замовлення. Спробуйте ще раз.",
     notFoundHeading: "Не вдалося знайти це замовлення",
     notFoundBody: "Замовлення не існує або належить іншому акаунту.",
+
+    // ── Online payment (TASK-330-B) ─────────────────────────────────────────
+    // The shopper arrives here from the provider's `result_url`. That redirect
+    // is unauthenticated and trivially forgeable, and the money is confirmed by
+    // a separate server-to-server callback that may land seconds later
+    // (docs/payments-liqpay.md §3–§4). So none of this copy asserts payment on
+    // its own — it narrates whatever `paymentStatus` the server reports, and
+    // says "we are checking" while that is still PENDING.
+    payment: {
+      heading: "Оплата",
+      paidTitle: "Оплату отримано",
+      paidBody: "Дякуємо! Ми підтвердили вашу оплату.",
+      pendingTitle: "Підтверджуємо вашу оплату",
+      pendingBody:
+        "Банк ще не надіслав підтвердження. Це може зайняти до кількох хвилин — сторінка оновиться сама.",
+      pendingNote:
+        "Не хвилюйтесь: якщо гроші списано, замовлення оновиться автоматично.",
+      slowTitle: "Оплату ще не підтверджено",
+      slowBody:
+        "Підтвердження від банку досі не надійшло. Якщо гроші списано, ми оновимо замовлення автоматично — або зателефонує менеджер.",
+      failedTitle: "Оплата не пройшла",
+      failedBody:
+        "Банк відхилив платіж або його було скасовано. Замовлення збережено — можна спробувати оплатити ще раз.",
+      refundedTitle: "Гроші повернуто",
+      refundedBody: "Кошти за це замовлення повернуто на вашу картку.",
+      retry: "Спробувати ще раз",
+      retrying: "Переходимо до оплати…",
+      // Failures of the retry call itself. Never a claim about the money.
+      retryUnavailable:
+        "Онлайн-оплата зараз недоступна. Зателефонуйте нам або зачекайте на дзвінок менеджера.",
+      retryConflict: "Це замовлення вже не можна оплатити онлайн.",
+      retryGeneric: "Не вдалося перейти до оплати. Спробуйте ще раз.",
+    },
+
+    // ── Guest order status page (TASK-338) ──────────────────────────────────
+    guest: {
+      heading: "Ваше замовлення",
+      linkInvalidHeading: "Посилання недійсне",
+      linkInvalidBody:
+        "Посилання на замовлення застаріло або неправильне. Перевірте лист із підтвердженням або зверніться до нас.",
+      contactHeading: "Контактні дані",
+      accountOfferHeading: "Створіть акаунт",
+      accountOfferBody:
+        "З акаунтом ви бачитимете всі замовлення в одному місці. Це замовлення привʼяжеться до нього автоматично.",
+      accountOfferCta: "Створити акаунт",
+    },
   },
 
   account: {
@@ -1352,6 +1446,10 @@ export const dict = {
     checkoutTitle: "Оформлення замовлення | MobileStore",
     checkoutDescription: "Завершіть оформлення покупки.",
     orderTitle: (ref: string) => `Замовлення ${ref} підтверджено | MobileStore`,
+    // Deliberately carries no order reference: the URL that reaches this page is
+    // a bearer token from an email, so the title must stay uninformative to
+    // anyone the link is forwarded to (TASK-338).
+    guestOrderTitle: "Статус замовлення | MobileStore",
     loginTitle: "Вхід | MobileStore",
     loginDescription: "Увійдіть до свого акаунту.",
     registerTitle: "Реєстрація | MobileStore",

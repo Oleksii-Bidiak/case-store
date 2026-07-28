@@ -23,6 +23,7 @@ export { CheckoutView, CheckoutOrderSummary } from "./checkout";
 export {
   OrderConfirmationView,
   OrderConfirmationSkeleton,
+  GuestOrderView,
 } from "./order-confirmation";
 export { AccountView, AccountSkeleton } from "./account";
 export { OrderHistoryView, OrderHistorySkeleton } from "./order-history";
