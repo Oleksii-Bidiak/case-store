@@ -1,6 +1,7 @@
 import {
   Injectable,
   NotFoundException,
+  NotImplementedException,
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -18,6 +19,7 @@ import { PRE_SHIPMENT_STATUSES } from './order.constants';
 import { AddonApplicabilityResolver } from '../addon-service';
 import type { CreateOrderDto, OrderListQueryDto, AdminOrderListQueryDto } from './dto';
 import type { CreateOrderParams, OrderAddonSnapshot } from './order.types';
+import type { PaymentApplyResult, PaymentEventInput } from '../payment/payment.types';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
@@ -429,6 +431,44 @@ export class OrderService {
     );
 
     return OrderEntity.fromPrisma(order);
+  }
+
+  /**
+   * Apply a translated payment-provider event to an order (TASK-330).
+   *
+   * ── SEAM DECLARED AHEAD OF THE IMPLEMENTATION (plan 167, Фаза 0) ─────────────
+   * This method is the ONE door through which the payment module moves an order.
+   * It is declared here, before either side is written, so the payments branch can
+   * call it while the orders branch fills it in, and neither has to guess the
+   * other's shape. Filling it in is TASK-330-A / TASK-332 work.
+   *
+   * Three rules the implementation must honour, all of them learned the hard way
+   * and all of them recorded in docs/payments-liqpay.md:
+   *
+   *  1. **Idempotency belongs to the database.** The caller has already inserted a
+   *     PaymentEvent row; the unique constraint on
+   *     (paymentId, providerStatus, providerPaymentId) is what makes a repeated
+   *     callback a no-op. Never re-derive "have I seen this?" with an `if` — two
+   *     concurrent callbacks pass the same `if`.
+   *  2. **Verify the money before believing it.** Compare the event's amount and
+   *     currency against what the Payment row was created with. A mismatch is
+   *     rejected, not applied: otherwise a tampered amount is accepted in full.
+   *  3. **Everything flows through the state machine.** Payment status, order
+   *     status, `paidAt`, clearing `reservationExpiresAt` and the OrderStatusHistory
+   *     row (with `changedBy: null` — a callback has no acting user) all happen in
+   *     ONE transaction. A partial application is how stock, money and history
+   *     drift apart.
+   *
+   * Returns `applied: false` for a duplicate or a non-actionable event (a provider
+   * reporting work still in progress); the caller answers 200 either way, because
+   * a provider that does not get a 200 will simply retry forever.
+   *
+   * @throws NotFoundException when the payment or its order does not exist.
+   */
+  applyPaymentEvent(_event: PaymentEventInput): Promise<PaymentApplyResult> {
+    throw new NotImplementedException(
+      'OrderService.applyPaymentEvent is a declared seam (plan 167) — implemented by TASK-330-A/332',
+    );
   }
 
   /**
