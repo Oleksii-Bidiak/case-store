@@ -195,6 +195,27 @@ export const dict = {
     sortAsc: "за зростанням",
     sortDesc: "за спаданням",
     sortNone: "не відсортовано",
+
+    // Shared table chrome: toolbar, refresh, row selection (TASK-353).
+    // Lives in `common` because every admin table uses the same strings —
+    // a per-widget copy would drift the moment one of them is reworded.
+    table: {
+      refresh: "Оновити",
+      refreshing: "Оновлення…",
+      refreshed: "Дані оновлено",
+      refreshAria: "Оновити дані таблиці",
+      searchPlaceholder: "Пошук…",
+      selectRow: (name: string) => `Вибрати „${name}“`,
+      selectAll: "Вибрати всі рядки на сторінці",
+      selectedCount: (count: number) => `Вибрано: ${count}`,
+      clearSelection: "Зняти вибір",
+      announceSelected: (name: string, count: number) =>
+        `„${name}“ вибрано. Усього вибрано: ${count}`,
+      announceDeselected: (name: string, count: number) =>
+        `„${name}“ знято. Усього вибрано: ${count}`,
+      announceSelectedAll: (count: number) => `Вибрано рядків: ${count}`,
+      announceCleared: "Вибір знято",
+    },
   },
 
   // --- Products (TASK-115) ----------------------------------------------------

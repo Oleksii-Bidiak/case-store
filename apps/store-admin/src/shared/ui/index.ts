@@ -67,7 +67,15 @@ export {
   TableHead,
   TableHeader,
   TableRow,
+  TableSelectCell,
+  TableSelectHead,
 } from "./table";
+export { TableToolbar, type TableToolbarProps } from "./table-toolbar";
+export {
+  BulkActionsBar,
+  type BulkAction,
+  type BulkActionsBarProps,
+} from "./bulk-actions-bar";
 export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";
 export {
   Tooltip,
