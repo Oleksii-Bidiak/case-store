@@ -228,6 +228,11 @@ When working on this project, read these files for additional context:
 
 - `requirements.md` — Product vision & niche (UA)
 - `BACKLOG.md` — Task status and roadmap (one-line rows; details in `docs/plans/NNN-*.md`)
+- `docs/payments-liqpay.md` — **online payments (UA)**: the LiqPay contract as we implement
+  it — merchant onboarding, the full checkout→callback→reconcile flow, status map, sandbox
+  cards, the "where to look when it breaks" table, BNPL. Written before the code because
+  LiqPay's own docs are fragmented and partly 404; this file is the source of truth for our
+  contract. Read it before touching anything under `apps/store-api/src/payment/`
 - `docs/design-system.md` — Storefront design tokens & UI conventions
 - `docs/conventions/forms.md` — Form state-sync rules (async-seeded forms)
 - `docs/seed-guide.md` — Seeding the dev database: reset, admin credentials, what gets seeded
