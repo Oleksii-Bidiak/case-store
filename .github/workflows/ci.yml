@@ -484,6 +484,13 @@ jobs:
       # Values come from the `staging` Environment's variables (public URLs, not
       # secrets). Optional vars (Sentry/Umami) default to empty via the
       # Dockerfile ARGs when the corresponding `vars.*` are unset.
+      #
+      # THESE LISTS — not docker-compose.prod.yml — are what actually builds the
+      # deployed images. compose's `build.args` only run on a manual
+      # `docker compose up --build`, so a var added there and not here still
+      # never reaches a deployed container. Whenever you add an `ARG` to a
+      # frontend Dockerfile, add it in BOTH places or decide, in writing, that
+      # empty is correct for this environment (TASK-348).
       - name: Build & push store-client
         uses: docker/build-push-action@v6
         with:
@@ -495,6 +502,8 @@ jobs:
             NEXT_PUBLIC_APP_URL=https://${{ vars.STAGING_DOMAIN }}
             NEXT_PUBLIC_SITE_URL=https://${{ vars.STAGING_DOMAIN }}
             NEXT_PUBLIC_CURRENCY=${{ vars.NEXT_PUBLIC_CURRENCY || 'UAH' }}
+            NEXT_PUBLIC_IMAGE_HOSTS=${{ vars.NEXT_PUBLIC_IMAGE_HOSTS }}
+            NEXT_PUBLIC_PAYMENT_METHODS=${{ vars.NEXT_PUBLIC_PAYMENT_METHODS }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging
             NEXT_PUBLIC_UMAMI_SRC=${{ vars.NEXT_PUBLIC_UMAMI_SRC }}
@@ -515,6 +524,7 @@ jobs:
             NEXT_PUBLIC_API_URL=https://api.${{ vars.STAGING_DOMAIN }}
             NEXT_PUBLIC_APP_URL=https://${{ vars.STAGING_DOMAIN }}
             NEXT_PUBLIC_ADMIN_URL=https://admin.${{ vars.STAGING_DOMAIN }}
+            NEXT_PUBLIC_UMAMI_DASHBOARD_URL=${{ vars.NEXT_PUBLIC_UMAMI_DASHBOARD_URL }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging
           tags: |
@@ -822,6 +832,11 @@ jobs:
           cache-from: type=gha,scope=store-api
           cache-to: type=gha,mode=max,scope=store-api
 
+      # As on staging: THIS list, not docker-compose.prod.yml, is what bakes the
+      # deployed bundle. NEXT_PUBLIC_PAYMENT_METHODS in particular must be set in
+      # the `production` Environment's variables when card payment goes live —
+      # unset, the checkout offers cash on delivery only, whatever LiqPay keys
+      # store-api holds (TASK-348).
       - name: Build & push store-client
         if: steps.need.outputs.client == 'true'
         uses: docker/build-push-action@v6
@@ -834,6 +849,8 @@ jobs:
             NEXT_PUBLIC_APP_URL=https://${{ vars.PROD_DOMAIN }}
             NEXT_PUBLIC_SITE_URL=https://${{ vars.PROD_DOMAIN }}
             NEXT_PUBLIC_CURRENCY=${{ vars.NEXT_PUBLIC_CURRENCY || 'UAH' }}
+            NEXT_PUBLIC_IMAGE_HOSTS=${{ vars.NEXT_PUBLIC_IMAGE_HOSTS }}
+            NEXT_PUBLIC_PAYMENT_METHODS=${{ vars.NEXT_PUBLIC_PAYMENT_METHODS }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=production
             NEXT_PUBLIC_UMAMI_SRC=${{ vars.NEXT_PUBLIC_UMAMI_SRC }}
@@ -853,6 +870,7 @@ jobs:
             NEXT_PUBLIC_API_URL=https://api.${{ vars.PROD_DOMAIN }}
             NEXT_PUBLIC_APP_URL=https://${{ vars.PROD_DOMAIN }}
             NEXT_PUBLIC_ADMIN_URL=https://admin.${{ vars.PROD_DOMAIN }}
+            NEXT_PUBLIC_UMAMI_DASHBOARD_URL=${{ vars.NEXT_PUBLIC_UMAMI_DASHBOARD_URL }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=production
           tags: ${{ steps.img.outputs.prefix }}/store-admin:${{ steps.img.outputs.tag_admin }}

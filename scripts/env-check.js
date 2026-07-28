@@ -5,12 +5,13 @@
  *
  * WHY THIS EXISTS
  * ---------------
- * The same variable is written down in four independent places:
+ * The same variable is written down in five independent places:
  *
  *   1. docker-compose.prod.yml (+ .staging)  — what the containers actually get
  *   2. .env.production.example               — what the operator is told to fill in
  *   3. apps/store-api/src/config/env.validation.ts — what the API refuses to boot without
- *   4. the application source                — what the code actually reads
+ *   4. the two frontend Dockerfiles          — which build args the image accepts
+ *   5. the application source                — what the code actually reads
  *
  * Nothing kept them in sync, and they drifted — not theoretically. Three holes
  * were live in production at once (TASK-324):
@@ -28,6 +29,27 @@
  * perfectly happily in every one of these states. That is the failure mode this
  * gate exists to make impossible: a variable that has a default is a variable
  * that will silently keep its default in production.
+ *
+ * Source 4 was added by TASK-348, after the gate proved it could not see a whole
+ * class of the very bug it was written for. A NEXT_PUBLIC_* var is baked in by
+ * `next build`, so it has to survive TWO hops the other vars never take:
+ * `--build-arg` → `ARG` → `ENV` → `process.env`. Both hops fail silently. A
+ * build arg for a name the Dockerfile never declares is discarded by BuildKit
+ * with a warning nobody reads in CI, and an `ARG` with no matching `ENV` never
+ * reaches `process.env` at all. Three variables were sitting in exactly that
+ * hole — compose passed them, the Dockerfile did not take them:
+ *
+ *   - NEXT_PUBLIC_IMAGE_HOSTS / NEXT_PUBLIC_UMAMI_DASHBOARD_URL degraded
+ *     additively (no extra image hosts, no dashboard link), which is why nobody
+ *     noticed for two waves;
+ *   - NEXT_PUBLIC_PAYMENT_METHODS did NOT: it is the storefront's entire notion
+ *     of which payment methods exist, so every container build offered cash on
+ *     delivery only — real LiqPay keys in store-api and all. The feature the
+ *     whole Stage-8 payments wave was built for could not have shipped.
+ *
+ * Hence check 3b below: for every variable the table says is a build arg, the
+ * named Dockerfile must declare `ARG X` *and* re-export `ENV X=${X}`, and must
+ * not declare build ARGs the table does not know about.
  *
  * HOW IT WORKS
  * ------------
@@ -69,6 +91,15 @@ const DOC_MARKER_END = "<!-- env-matrix:end -->";
 const APP_SERVICES = ["store-api", "store-client", "store-admin"];
 /** Compose services whose `build.args` keys are checked key-for-key. */
 const BUILD_SERVICES = ["store-client", "store-admin"];
+
+/**
+ * The Dockerfile that builds each of those services. Checked for the `ARG X` +
+ * `ENV X=${X}` pair every build arg needs to survive as far as `next build`.
+ */
+const DOCKERFILES = {
+  "store-client": "apps/store-client/Dockerfile",
+  "store-admin": "apps/store-admin/Dockerfile",
+};
 
 /** Source roots scanned for `process.env.X` / `config.get('X')`. */
 const CODE_ROOTS = [
@@ -121,7 +152,8 @@ const GROUPS = [
  *              'required' (`:?` — compose refuses to start without it),
  *              'default'  (`:-` or a bare pass-through), 'none'
  * services   — app services that must receive it as an `environment:` key
- * buildArgs  — app services that must receive it as a `build.args` key
+ * buildArgs  — app services that must receive it as a `build.args` key, AND
+ *              whose Dockerfile must carry the matching `ARG` + `ENV` pair
  * example    — must be a key in .env.production.example
  * validated  — expected declaration in env.validation.ts:
  *              'required' | 'conditional' | 'optional' | 'absent'
@@ -778,15 +810,11 @@ const VARS = [
     buildArgs: [],
     example: true,
     validated: "optional",
-    code: "either",
+    // Reader landed with TASK-337: apps/store-api/src/delivery/nova-poshta.client.ts.
+    code: "used",
     effect:
       "Лише dev/staging. `true` → клієнт НП ходить у справжнє API з порожнім ключем (перевірено 2026-07-28: усі методи, які викликає проєкт, так відповідають) — це дозволяє пройти живу перевірку LG-4 ще до видачі ключа замовником. У проді МУСИТЬ бути `false`: поведінка недокументована й анонімні запити лімітуються.",
     howTo: "Не задавайте у проді. На стенді — `true`.",
-    gap: {
-      reason:
-        "declared ahead of its reader: NovaPoshtaClient starts honouring it in TASK-337, which lands in the Stage-8 backend wave",
-      task: "TASK-337",
-    },
   },
 
   // ─── Онлайн-оплата ────────────────────────────────────────────────────────
@@ -799,15 +827,12 @@ const VARS = [
     buildArgs: [],
     example: true,
     validated: "optional",
-    code: "either",
+    // Reader landed with TASK-330: payment/adapters/liqpay/liqpay.adapter.ts.
+    code: "used",
     effect:
       "Порожній → онлайн-оплати немає взагалі, чекаут пропонує лише оплату при отриманні. Застосунок стартує.",
     howTo:
       "Кабінет мерчанта LiqPay (реєструє ВЛАСНИК на свій ФОП). Тестова пара має префікс `sandbox_`.",
-    gap: {
-      reason: "declared ahead of its reader: the LiqPay adapter lands in TASK-330-A",
-      task: "TASK-330",
-    },
   },
   {
     name: "LIQPAY_PRIVATE_KEY",
@@ -818,14 +843,12 @@ const VARS = [
     buildArgs: [],
     example: true,
     validated: "optional",
-    code: "either",
+    // Reader landed with TASK-330: payment/adapters/liqpay/liqpay.adapter.ts.
+    code: "used",
     effect:
       "Порожній → те саме, що й без публічного ключа. Ключ підпису: НІКОЛИ не потрапляє у фронт і не може бути build-arg.",
-    howTo: "Той самий кабінет; зберігати в менеджері паролів разом із рештою секретів.",
-    gap: {
-      reason: "declared ahead of its reader: the LiqPay adapter lands in TASK-330-A",
-      task: "TASK-330",
-    },
+    howTo:
+      "Той самий кабінет; зберігати в менеджері паролів разом із рештою секретів.",
   },
   {
     name: "LIQPAY_SANDBOX",
@@ -836,14 +859,11 @@ const VARS = [
     buildArgs: [],
     example: true,
     validated: "optional",
-    code: "either",
+    // Reader landed with TASK-330: payment/adapters/liqpay/liqpay.adapter.ts.
+    code: "used",
     effect:
       "У проді МУСИТЬ бути `false`. У пісочниці LiqPay віддає статус `sandbox`, який адаптер трактує як успішну оплату — залишений увімкненим у проді, він дозволяє будь-кому, хто знає публічний ключ, позначати замовлення оплаченими.",
     howTo: "`true` лише на staging, разом із ключами `sandbox_*`.",
-    gap: {
-      reason: "declared ahead of its reader: the LiqPay adapter lands in TASK-330-A",
-      task: "TASK-330",
-    },
   },
   {
     name: "LIQPAY_PAYTYPES",
@@ -854,14 +874,11 @@ const VARS = [
     buildArgs: [],
     example: true,
     validated: "optional",
-    code: "either",
+    // Reader landed with TASK-330: payment/adapters/liqpay/liqpay.adapter.ts.
+    code: "used",
     effect:
       "Порожній → дефолтний набір (картка, Apple/Google Pay, Privat24). `payparts`/`moment_part` (оплата частинами) потребують ОКРЕМОЇ угоди з ПриватБанком — без неї кнопка з'явиться і не спрацює.",
     howTo: "Через кому. Розстрочку додавати лише після підписання угоди.",
-    gap: {
-      reason: "declared ahead of its reader: the LiqPay adapter lands in TASK-330-A",
-      task: "TASK-330",
-    },
   },
   {
     name: "PAYMENT_RECONCILE_CRON",
@@ -872,14 +889,11 @@ const VARS = [
     buildArgs: [],
     example: true,
     validated: "optional",
-    code: "either",
+    // Reader landed with TASK-330: payment/payment-reconcile.worker.ts.
+    code: "used",
     effect:
       "Порожній → щохвилини. Це страховка від callback-ів, які не дійшли: LiqPay не документує ретраї, тож без опитування покупець може заплатити, а замовлення лишиться неоплаченим назавжди.",
     howTo: "Cron-вираз. Змінюйте лише якщо є причина.",
-    gap: {
-      reason: "declared ahead of its reader: the reconcile worker lands in TASK-330-A",
-      task: "TASK-330",
-    },
   },
   {
     name: "ORDER_RESERVATION_TTL_MINUTES",
@@ -890,14 +904,14 @@ const VARS = [
     buildArgs: [],
     example: true,
     validated: "optional",
-    code: "either",
+    // Reader landed with TASK-330: order/order.service.ts sets the reservation
+    // deadline from it. TASK-352 stays open as the OWNER's decision on the value,
+    // not as a missing reader.
+    code: "used",
     effect:
       "Порожній → 30 хвилин. Скільки неоплачене онлайн-замовлення тримає резерв складу, перш ніж авто-скасуватись. На післяплату не діє — там резерв безстроковий.",
-    howTo: "Рішення власника; відкрите питання TASK-352. Тому змінна, а не константа.",
-    gap: {
-      reason: "declared ahead of its reader: the reservation deadline lands with TASK-330-A/332",
-      task: "TASK-352",
-    },
+    howTo:
+      "Рішення власника; відкрите питання TASK-352. Тому змінна, а не константа.",
   },
   {
     name: "ORDER_AUTOCANCEL_UNPAID",
@@ -908,14 +922,12 @@ const VARS = [
     buildArgs: [],
     example: true,
     validated: "optional",
-    code: "either",
+    // Reader landed with TASK-330: payment/payment-reconcile.worker.ts (and
+    // order/order.service.ts). TASK-352 stays open as the owner's policy call.
+    code: "used",
     effect:
       "Порожній → `true`. `false` повністю вимикає авто-скасування: неоплачені замовлення тримають склад, доки не втрутиться оператор.",
     howTo: "Рішення власника (TASK-352).",
-    gap: {
-      reason: "declared ahead of its reader: the auto-cancel worker lands with TASK-330-A",
-      task: "TASK-352",
-    },
   },
   {
     name: "GUEST_ORDER_TOKEN_TTL_DAYS",
@@ -926,14 +938,11 @@ const VARS = [
     buildArgs: [],
     example: true,
     validated: "optional",
-    code: "either",
+    // Reader landed with TASK-338: order/order.service.ts.
+    code: "used",
     effect:
       "Порожній → 60 днів. Скільки живе посилання зі статусом замовлення для гостя — єдиний спосіб побачити своє замовлення, коли cookie кошика вже немає.",
     howTo: "Дні. Коротший строк безпечніший, але дратує покупця.",
-    gap: {
-      reason: "declared ahead of its reader: guest order access lands in TASK-338",
-      task: "TASK-338",
-    },
   },
   {
     name: "TOTP_ENCRYPTION_KEY",
@@ -949,8 +958,18 @@ const VARS = [
       "Потрібен лише коли ввімкнено 2FA адмінки. Шифрує TOTP-секрети (AES-256-GCM). ВТРАТА КЛЮЧА = кожен адмін із 2FA заблокований назавжди: секрети не відновлюються, лишаються тільки резервні коди.",
     howTo:
       "`openssl rand -base64 32`. Зберігати в менеджері паролів поруч із age-ключем бекапів.",
+    // STILL `either` — the ONLY one of the ten Stage-8 "declared ahead of its
+    // reader" variables that has not caught up. Re-verified 2026-07-28
+    // (TASK-348): the only occurrences outside this table are the field in
+    // env.validation.ts, the compose pass-through, and a doc comment on
+    // User.totpSecret in schema.prisma. There is no auth/totp module, nothing
+    // imports otplib, and nothing decrypts anything with this key. Do not flip
+    // it to `used` until TASK-344 actually lands — an unread key that the
+    // operator has been told to generate and back up is a lie the gate exists to
+    // catch.
     gap: {
-      reason: "declared ahead of its reader: TOTP enrolment lands in TASK-344",
+      reason:
+        "declared ahead of its reader and STILL unread: TASK-344 (TOTP enrolment) was deliberately deferred out of the Stage-8 wave, so the encrypt/decrypt path does not exist yet — verified by grep 2026-07-28",
       task: "TASK-344",
     },
   },
@@ -981,7 +1000,8 @@ const VARS = [
     code: "used",
     effect:
       "Порожній → дефолт сервісу (60 c). Скільки гард тримає в кеші права ролі — тобто **скільки щонайдовше діятиме вже зняте право**. Нуль вимикає кеш і б'є в БД на кожен адмін-запит.",
-    howTo: "Секунди. Збільшувати лише свідомо: це вікно, у якому звільнений працівник ще має доступ.",
+    howTo:
+      "Секунди. Збільшувати лише свідомо: це вікно, у якому звільнений працівник ще має доступ.",
   },
   {
     name: "NEXT_PUBLIC_PAYMENT_METHODS",
@@ -1185,20 +1205,16 @@ const VARS = [
     name: "NEXT_PUBLIC_UMAMI_DASHBOARD_URL",
     group: "analytics",
     need: "optional",
-    compose: "none",
+    compose: "default",
     services: [],
-    buildArgs: [],
-    example: false,
+    buildArgs: ["store-admin"],
+    example: true,
     validated: "absent",
     code: "used",
     effect:
-      "Порожній → в адмінці немає посилання на дашборд Umami. **Наразі не підключена**: значення нікуди не передається.",
-    howTo: "Поки не задається.",
-    gap: {
-      reason:
-        "read by store-admin but has no ARG in apps/store-admin/Dockerfile, so it cannot be wired through compose build args without editing that Dockerfile (owned elsewhere in this wave)",
-      task: "TASK-324",
-    },
+      "Порожній → картка «Відвідуваність» в адмінці показується приглушеною, без посилання (не веде в нікуди). Це НЕ те саме, що NEXT_PUBLIC_UMAMI_SRC: там скрипт лічильника для вітрини, тут лише посилання для власника. Build-time.",
+    howTo:
+      "Повний URL сторінки сайту в самій Umami, напр. `https://analytics.<DOMAIN>/websites/<website-id>`. Задавати лише коли Umami вже доступна на публічному домені.",
   },
 
   // ─── Вітрина й адмінка ────────────────────────────────────────────────────
@@ -1274,20 +1290,16 @@ const VARS = [
     name: "NEXT_PUBLIC_IMAGE_HOSTS",
     group: "frontend",
     need: "optional",
-    compose: "none",
+    compose: "default",
     services: [],
-    buildArgs: [],
-    example: false,
+    buildArgs: ["store-client"],
+    example: true,
     validated: "absent",
     code: "used",
     effect:
-      "Додаткові дозволені хости картинок для плиток категорій. **Наразі не підключена**: значення нікуди не передається, працює лише дефолт (NEXT_PUBLIC_API_URL).",
-    howTo: "Поки не задається.",
-    gap: {
-      reason:
-        "read by store-client but has no ARG in apps/store-client/Dockerfile, so it cannot be wired through compose build args without editing that Dockerfile (owned elsewhere in this wave)",
-      task: "TASK-324",
-    },
+      "Порожній → оптимізується лише origin із NEXT_PUBLIC_API_URL, і плитка категорії з картинкою на будь-якому іншому хості мовчки падає на заглушку: ні помилки, ні запису в лог, просто категорія без зображення. Build-time.",
+    howTo:
+      "Через кому, ГОЛІ імена хостів без схеми й шляху: `cdn.mystore.ua,images.brand.com`. Додавати щойно в адмінці з'явилося зовнішнє посилання на картинку категорії.",
   },
   {
     name: "SERVER_FETCH_TIMEOUT_MS",
@@ -1674,6 +1686,34 @@ function parseComposeStructure(text) {
   return { services, buildArgs };
 }
 
+/**
+ * A Dockerfile's `ARG X` declarations and its `ENV X=${X}` re-exports.
+ *
+ * Both halves are needed and neither is sufficient. `ARG` alone only creates a
+ * build-time substitution variable; `next build` reads `process.env`, so without
+ * the `ENV` line the value is accepted and then dropped. `ENV` alone would work
+ * but cannot be fed from the outside. Only an assignment that references its own
+ * name (`X=${X}`, optionally with a `:-default`) counts — `ENV X=1` is a
+ * hardcoded value, not a pass-through, and would make a build arg look wired up
+ * when it is being ignored.
+ */
+function parseDockerfileBuildVars(text) {
+  // Fold `\`-continued lines so a multi-line ENV block is one instruction.
+  const folded = text.replace(/\\\r?\n/g, " ");
+  const args = new Set(
+    [...folded.matchAll(/^\s*ARG\s+([A-Z][A-Z0-9_]*)/gim)].map((m) => m[1]),
+  );
+  const envs = new Set();
+  for (const line of folded.matchAll(/^\s*ENV\s+(.*)$/gim)) {
+    for (const a of line[1].matchAll(
+      /([A-Z][A-Z0-9_]*)=\$\{([A-Z][A-Z0-9_]*)[^}]*\}/g,
+    )) {
+      if (a[1] === a[2]) envs.add(a[1]);
+    }
+  }
+  return { args, envs };
+}
+
 /** Keys of `.env.production.example` (commented-out lines are not keys). */
 function parseExample(text) {
   const keys = new Set();
@@ -1858,6 +1898,36 @@ function audit() {
           name,
           "build-arg",
           `the table says \`${service}\` must build with it, but ${COMPOSE_FILES[0]} does not pass it`,
+        );
+      }
+    }
+
+    // 3b. …and the Dockerfile must actually accept it. Compose passing a build
+    //     arg the image never declares is a no-op with only a BuildKit warning;
+    //     an ARG with no matching ENV never reaches `next build`. See the header.
+    const dfPath = DOCKERFILES[service];
+    const df = parseDockerfileBuildVars(read(dfPath));
+    for (const name of expected) {
+      if (!df.args.has(name)) {
+        add(
+          name,
+          "dockerfile",
+          `passed as a build arg to \`${service}\`, but ${dfPath} has no \`ARG ${name}\` — BuildKit discards the value and the build sees nothing`,
+        );
+      } else if (!df.envs.has(name)) {
+        add(
+          name,
+          "dockerfile",
+          `\`ARG ${name}\` exists in ${dfPath} but is never re-exported as \`ENV ${name}=\${${name}}\` — \`next build\` reads process.env, so the value is dropped`,
+        );
+      }
+    }
+    for (const name of df.args) {
+      if (!expected.has(name)) {
+        add(
+          name,
+          "dockerfile",
+          `declared as \`ARG ${name}\` in ${dfPath}, but the table does not list \`${service}\` in buildArgs — nothing passes it, so the image bakes in an empty value`,
         );
       }
     }

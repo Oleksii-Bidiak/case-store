@@ -112,10 +112,19 @@ GitHub → репозиторій → **Settings → Environments → `staging`*
 | -------------------------------------------------------- | ----------------------- |
 | `STAGING_DOMAIN`                                         | `staging.shop.<домен>`  |
 | `NEXT_PUBLIC_CURRENCY`                                   | `UAH` _(необов'язково)_ |
+| `NEXT_PUBLIC_PAYMENT_METHODS`                            | `ON_DELIVERY,ONLINE`    |
+| `NEXT_PUBLIC_IMAGE_HOSTS`                                | _(необов'язково)_       |
 | `NEXT_PUBLIC_SENTRY_DSN`                                 | _(необов'язково)_       |
 | `NEXT_PUBLIC_UMAMI_SRC` / `NEXT_PUBLIC_UMAMI_WEBSITE_ID` | _(необов'язково)_       |
+| `NEXT_PUBLIC_UMAMI_DASHBOARD_URL`                        | _(необов'язково)_       |
 
 > `STAGING_DOMAIN` — **один** рядок. Адреси `admin.` й `api.` пайплайн збирає сам.
+
+> ⚠ `NEXT_PUBLIC_*` **запікаються в образ** тим самим пайплайном, тому їх задають
+> тут, у Variables середовища, а не в `.env.production` на сервері. Найважливіша —
+> `NEXT_PUBLIC_PAYMENT_METHODS`: поки вона порожня, чекаут пропонує **лише оплату
+> при отриманні**, які б ключі LiqPay не лежали в `.env.production`. Змінили
+> будь-яку з них — потрібне **перезбирання**, а не перезапуск (TASK-348).
 
 ---
 
@@ -128,6 +137,11 @@ GitHub → репозиторій → **Settings → Environments → `staging`*
 | Secret   | `SSH_HOST` / `SSH_USER` / `SSH_PRIVATE_KEY` | доступ до **прод**-сервера                        |
 | Secret   | `PROD_ENV_FILE`                             | увесь `.env.production` прод-сервера одним блоком |
 | Variable | `PROD_DOMAIN`                               | `shop.<домен>` (**без** `staging.`)               |
+
+Решта `NEXT_PUBLIC_*` Variables — ті самі, що й у таблиці staging вище, з
+прод-значеннями. Їх треба завести **окремо**: середовища не успадковують змінних одне
+від одного, а порожня `NEXT_PUBLIC_PAYMENT_METHODS` у `production` мовчки вимкне
+онлайн-оплату на бойовому сайті.
 
 ### ⚠⚠ Ручне затвердження — увімкніть зараз
 

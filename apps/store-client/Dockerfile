@@ -97,10 +97,31 @@ RUN mkdir -p apps/store-client/public
 # var store-client reads is declared here and re-exposed as ENV so `next build`
 # picks it up. The two Umami vars are TASK-261's contract — this image only
 # passes their names through.
+#
+# ARG *and* ENV, always both. An ARG alone is only a build-time substitution
+# variable; `next build` reads process.env, so without the matching ENV line the
+# value is accepted on the command line and then dropped. And a `--build-arg` (or
+# a compose `build.args` entry) for a name this file never declares is discarded
+# with nothing louder than a BuildKit warning nobody reads in CI. Both failure
+# modes are silent, and NEXT_PUBLIC_* vars mostly degrade additively, so the
+# result is a container that builds green and quietly behaves as if the operator
+# had set nothing. That is precisely how NEXT_PUBLIC_IMAGE_HOSTS,
+# NEXT_PUBLIC_PAYMENT_METHODS (compose passed it; this file did not take it, so
+# card payment never appeared at checkout in ANY container build) and admin's
+# NEXT_PUBLIC_UMAMI_DASHBOARD_URL went unnoticed until TASK-348.
+# `scripts/env-check.js --audit` now fails when a compose build arg has no
+# ARG+ENV pair here, so this list cannot silently fall behind again.
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_SITE_URL
 ARG NEXT_PUBLIC_CURRENCY
+# Extra hostnames allowed for category-tile images, comma-separated bare hosts
+# (`cdn.mystore.ua,images.brand.com`). Empty → only the NEXT_PUBLIC_API_URL
+# origin is optimizable and any other remote tile silently falls back.
+ARG NEXT_PUBLIC_IMAGE_HOSTS
+# Which payment methods the checkout offers (ON_DELIVERY,ONLINE,INSTALLMENTS).
+# Empty → cash on delivery only, whatever LiqPay keys store-api holds.
+ARG NEXT_PUBLIC_PAYMENT_METHODS
 ARG NEXT_PUBLIC_SENTRY_DSN
 ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT
 ARG NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE
@@ -115,6 +136,8 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
     NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL} \
     NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL} \
     NEXT_PUBLIC_CURRENCY=${NEXT_PUBLIC_CURRENCY} \
+    NEXT_PUBLIC_IMAGE_HOSTS=${NEXT_PUBLIC_IMAGE_HOSTS} \
+    NEXT_PUBLIC_PAYMENT_METHODS=${NEXT_PUBLIC_PAYMENT_METHODS} \
     NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN} \
     NEXT_PUBLIC_SENTRY_ENVIRONMENT=${NEXT_PUBLIC_SENTRY_ENVIRONMENT} \
     NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=${NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE} \
