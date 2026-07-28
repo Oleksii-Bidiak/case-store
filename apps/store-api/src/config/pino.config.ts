@@ -23,6 +23,17 @@ const REDACT_PATHS = [
   'req.body.accessToken',
   'req.body.token',
   'req.body.csrfToken',
+  // Payment provider callbacks (TASK-330). `data` is the base64 payload and
+  // `signature` is its MAC — together they are a replayable, provider-signed
+  // message about money, and `signature` is derived from the private key, so
+  // neither belongs in a log aggregator. Logging them is explicitly forbidden by
+  // docs/payments-liqpay.md §4 rule 3.
+  'req.body.data',
+  'req.body.signature',
+  // Defence in depth: the signing secret must never appear even if something
+  // logs a config object or a process env dump.
+  'LIQPAY_PRIVATE_KEY',
+  '*.LIQPAY_PRIVATE_KEY',
 ];
 
 /** Minimal shape of the request object pino-http hands to the `req` serializer. */
