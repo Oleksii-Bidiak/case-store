@@ -220,6 +220,22 @@ export interface CreateOrderParams {
    */
   shippingCost?: number;
   /**
+   * How the shopper chose to pay (TASK-330). Absent → the column default,
+   * ON_DELIVERY.
+   */
+  paymentMethod?: PaymentMethod;
+  /**
+   * When an unpaid order of this kind must be auto-cancelled and its stock
+   * returned, or null when it never should (TASK-330).
+   *
+   * Load-bearing rather than informational: `findExpiredReservations` matches on
+   * this column AND an ONLINE/INSTALLMENTS method, so leaving it unset made the
+   * reconcile worker unable to find a single row — it ran every minute and
+   * cancelled nothing, while stock held by abandoned card payments was never
+   * returned. Nothing failed; it simply never happened.
+   */
+  reservationExpiresAt?: Date | null;
+  /**
    * Optional promo-code discount to apply inside the order transaction
    * (TASK-079). The service has already recomputed the amount authoritatively
    * via DiscountService.computeDiscount; the repository persists `amount` +
@@ -364,4 +380,11 @@ export interface ManualOrderParams {
   internalNotes?: string;
   shippingCost?: number;
   paymentMethod?: PaymentMethod;
+  /**
+   * Reservation deadline for an operator-created order (TASK-330). Present for
+   * the same reason as on {@link CreateOrderParams}: an operator can take a phone
+   * order and send a payment link, and that order's stock must expire like any
+   * other unpaid card order rather than being held forever.
+   */
+  reservationExpiresAt?: Date | null;
 }

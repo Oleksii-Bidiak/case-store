@@ -8,7 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { createHash, randomBytes } from 'crypto';
-import { OrderStatus, PaymentStatus, PaymentAttemptStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus, PaymentAttemptStatus, PaymentMethod } from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { CartRepository, type CartWithItems } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
@@ -48,6 +48,9 @@ const DEFAULT_LIMIT = 10;
  * leaked old email is not a permanent key.
  */
 const DEFAULT_GUEST_TOKEN_TTL_DAYS = 60;
+
+/** Fallback reservation window for unpaid card orders (owner decision 2026-07-28). */
+const DEFAULT_RESERVATION_TTL_MINUTES = 30;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -202,6 +205,10 @@ export class OrderService {
     // ref (TASK-080). A transient courier failure must never block an order, so
     // the fallback to 0 stays — but it is a fallback for a BAD MINUTE, not for a
     // bad deployment (TASK-337).
+    // Absent means cash on delivery — the honest reading of a request that never
+    // mentions payment, and what every pre-TASK-330 order actually was.
+    const paymentMethod = dto.paymentMethod ?? PaymentMethod.ON_DELIVERY;
+
     let shippingCost: number | undefined;
     const npCityRef = dto.shippingAddress.npCityRef;
     if (npCityRef) {
@@ -297,6 +304,15 @@ export class OrderService {
         shippingAddress: dto.shippingAddress,
         billingAddress: dto.billingAddress,
         notes: dto.notes,
+        // ─── TASK-330: the payment method and its consequence ──────────────────
+        // Both were missing, and their absence was invisible. `paymentMethod`
+        // defaulted to ON_DELIVERY for every order including card payments, and
+        // because `findExpiredReservations` requires BOTH an ONLINE/INSTALLMENTS
+        // method AND a non-null deadline, the auto-cancel worker could never match
+        // a row. It ran every minute, found nothing, logged nothing, and stock held
+        // by abandoned card payments was never returned.
+        paymentMethod,
+        reservationExpiresAt: this.resolveReservationDeadline(paymentMethod),
         ...(shippingCost !== undefined ? { shippingCost } : {}),
         ...(discount ? { discount } : {}),
       },
@@ -825,6 +841,12 @@ export class OrderService {
         ...(dto.notes ? { notes: dto.notes } : {}),
         ...(dto.internalNotes ? { internalNotes: dto.internalNotes } : {}),
         ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
+        // An operator can take a phone order and send a payment link, so a manual
+        // order needs the same reservation deadline as a storefront one — its
+        // stock must expire rather than be held forever by a link nobody opened.
+        reservationExpiresAt: this.resolveReservationDeadline(
+          dto.paymentMethod ?? PaymentMethod.ON_DELIVERY,
+        ),
       },
       adminUserId,
     );
@@ -1277,6 +1299,30 @@ export class OrderService {
    * what gets frozen, so a later reprice or template edit can never rewrite the
    * order's history.
    */
+  /**
+   * When an unpaid order of this kind must be auto-cancelled and its stock
+   * returned, or null when it never should.
+   *
+   * Only card-style methods get a deadline. Cash on delivery holds its
+   * reservation indefinitely — the shopper has promised nothing yet and an
+   * operator decides — which is the hybrid the owner chose on 2026-07-28.
+   *
+   *  and  are settings
+   * rather than constants on purpose (TASK-352): the window is still open with
+   * the client, and the answer must be an env change, not a rewrite of this.
+   */
+  private resolveReservationDeadline(method: PaymentMethod): Date | null {
+    if (method === PaymentMethod.ON_DELIVERY) return null;
+
+    const enabled = this.configService.get<string>('ORDER_AUTOCANCEL_UNPAID') !== 'false';
+    if (!enabled) return null;
+
+    const minutes =
+      Number(this.configService.get<string>('ORDER_RESERVATION_TTL_MINUTES')) ||
+      DEFAULT_RESERVATION_TTL_MINUTES;
+
+    return new Date(Date.now() + minutes * 60_000);
+  }
   private async snapshotAddons(
     cart: CartWithItems,
     // Null for a guest order (TASK-338). Used only to attribute the "dropped a

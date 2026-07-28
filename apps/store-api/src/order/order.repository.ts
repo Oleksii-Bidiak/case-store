@@ -355,6 +355,14 @@ export class OrderRepository {
           status: OrderStatus.PENDING,
           paymentStatus: PaymentStatus.PENDING,
           ...(params.paymentMethod ? { paymentMethod: params.paymentMethod } : {}),
+          // The countdown after which an unpaid card order is auto-cancelled and
+          // its stock returned. Only ONLINE/INSTALLMENTS carry one — cash on
+          // delivery holds its reservation until an operator intervenes — so the
+          // service passes null for those and this column stays null, which is
+          // exactly what `findExpiredReservations` filters on.
+          ...(params.reservationExpiresAt !== undefined
+            ? { reservationExpiresAt: params.reservationExpiresAt }
+            : {}),
           subtotal,
           discount: new Prisma.Decimal(0),
           shippingCost: shipping,

@@ -340,10 +340,55 @@ describe('OrderService', () => {
           shippingAddress: address,
           billingAddress: undefined,
           notes: undefined,
+          // TASK-330: a request that never mentions payment is cash on delivery,
+          // and cash on delivery holds its reservation indefinitely.
+          paymentMethod: 'ON_DELIVERY',
+          reservationExpiresAt: null,
         },
         // TASK-103-F: in-transaction outbox-enqueue hook passed as 2nd arg.
         expect.any(Function),
       );
+    });
+
+    // ── Regression guard for a bug that survived an entire wave ────────────────
+    // `paymentMethod` and `reservationExpiresAt` were both declared, both wired
+    // through the repository, and both never written by this path. Because
+    // `findExpiredReservations` matches on BOTH an ONLINE/INSTALLMENTS method AND
+    // a non-null deadline, the auto-cancel worker could not match a single row: it
+    // ran every minute, cancelled nothing, logged nothing, and stock held by
+    // abandoned card payments was never returned. Every test was green throughout.
+    // These two assertions are what would have caught it.
+    it('starts the reservation countdown for a card order', async () => {
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+
+      const before = Date.now();
+      await service.createOrder(userActor, { ...createDto, paymentMethod: 'ONLINE' });
+
+      const [params] = orderRepositoryMock.createFromCart.mock.calls[0] as [
+        { paymentMethod?: string; reservationExpiresAt?: Date | null },
+      ];
+      expect(params.paymentMethod).toBe('ONLINE');
+      expect(params.reservationExpiresAt).toBeInstanceOf(Date);
+      // Default window is 30 minutes; assert a range rather than an exact instant
+      // so the test does not depend on how long the call took.
+      const deadline = (params.reservationExpiresAt as Date).getTime();
+      expect(deadline).toBeGreaterThan(before + 29 * 60_000);
+      expect(deadline).toBeLessThan(before + 31 * 60_000);
+    });
+
+    it('never starts a countdown for cash on delivery', async () => {
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+
+      await service.createOrder(userActor, { ...createDto, paymentMethod: 'ON_DELIVERY' });
+
+      const [params] = orderRepositoryMock.createFromCart.mock.calls[0] as [
+        { reservationExpiresAt?: Date | null },
+      ];
+      // The owner's hybrid: a shopper who has promised nothing yet keeps their
+      // reservation until an operator decides otherwise.
+      expect(params.reservationExpiresAt).toBeNull();
     });
 
     it('does not estimate shipping for a free-text order (no npCityRef)', async () => {
