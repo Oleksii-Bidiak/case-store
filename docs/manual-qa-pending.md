@@ -1478,8 +1478,8 @@ Keyless перевірено наживо 2026-07-28 (повторно, неза
 - [ ] **Staging: у логах є `delivery.keyless`** (рівень `warn`) — підтверджує, що стенд
       справді анонімний, а не мовчки впав у фолбек.
 - [ ] **Prod-конфіг без ключа падає гучно.** `NODE_ENV=production` + порожній `NP_API_KEY`:
-      `GET /api/delivery/estimate?cityRef=…` має віддати **503** з `code:
-    DELIVERY_NOT_CONFIGURED`, а не `{ cost: "0.00" }`.
+      `GET /api/delivery/estimate?cityRef=…` має віддати **503**
+      з `code: DELIVERY_NOT_CONFIGURED`, а не `{ cost: "0.00" }`.
 - [ ] **Prod-конфіг ігнорує keyless.** `NODE_ENV=production` + `NP_ALLOW_KEYLESS=true`:
       у логах при старті має бути `delivery.keylessRefused` (рівень `error`), запити — 503.
       Перевіряє, що скопійований зі staging env-файл не вмикає анонімний режим у проді.
