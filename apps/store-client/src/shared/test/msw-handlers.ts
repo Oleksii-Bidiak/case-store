@@ -118,6 +118,11 @@ export function makeOrder(overrides: Partial<OrderEntity> = {}): {
       // optional, so omitting it here widens the field to `| undefined` and the
       // factory stops satisfying its own return type.
       trackingNumber: null,
+      // Required-but-nullable on OrderEntity since TASK-330. Spelled out for the
+      // same reason as trackingNumber: Partial<OrderEntity> makes them optional,
+      // so relying on the overrides spread widens them to | undefined.
+      paymentMethod: "ON_DELIVERY",
+      paidAt: null,
       shippingCost: "0.00",
       tax: "0.00",
       total: "998.00",
@@ -157,6 +162,12 @@ export function makeUser(overrides: Partial<UserEntity> = {}): {
       phone: "+380501234567",
       role: "CUSTOMER",
       isActive: true,
+      // Required-but-nullable since TASK-342/314. A verified default keeps the
+      // account banner quiet in unrelated suites; the verification tests override
+      // it with null to assert the unverified state.
+      emailVerifiedAt: "2026-06-01T00:00:00.000Z",
+      lockedUntil: null,
+      failedLoginAttempts: 0,
       createdAt: "2026-06-01T00:00:00.000Z",
       updatedAt: "2026-06-01T00:00:00.000Z",
       ...overrides,

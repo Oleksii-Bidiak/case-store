@@ -103,7 +103,34 @@ describe("PermissionMatrixForm (TASK-334)", () => {
     ).not.toBeInTheDocument();
   });
 
+  // PERMISSIONS_WITHOUT_ROUTES is EMPTY today — every catalogue permission gained
+  // a route at integration, which is the state we want. So this asserts the
+  // MECHANISM against an injected entry rather than against live data: the badge
+  // must still appear the day someone ships a permission ahead of its endpoint,
+  // and a test bound to real data would have quietly stopped checking anything
+  // the moment the list emptied.
   it("marks a permission with no route behind it so a tick cannot look effective", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <PermissionMatrixForm
+        matrix={makeMatrix()}
+        permissionsWithoutRoutes={new Set(["payments:refund"])}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: d.zoneExpandAria("Замовлення"),
+      }),
+    );
+
+    const badges = await screen.findAllByText(d.badgeNoRoute);
+    expect(badges).toHaveLength(1);
+    // …and the not-yet-granted marker is on every ungranted key in the zone.
+    expect(screen.getAllByText(d.badgeNew).length).toBeGreaterThan(0);
+  });
+
+  it("shows no such badge when every permission has a route (today's state)", async () => {
     const user = userEvent.setup();
     renderWithProviders(<PermissionMatrixForm matrix={makeMatrix()} />);
 
@@ -113,11 +140,7 @@ describe("PermissionMatrixForm (TASK-334)", () => {
       }),
     );
 
-    // `payments:refund` is in the catalogue but no endpoint requires it.
-    const badges = await screen.findAllByText(d.badgeNoRoute);
-    expect(badges).toHaveLength(1);
-    // …and the not-yet-granted marker is on every ungranted key in the zone.
-    expect(screen.getAllByText(d.badgeNew).length).toBeGreaterThan(0);
+    expect(screen.queryByText(d.badgeNoRoute)).not.toBeInTheDocument();
   });
 
   it("sends the whole grant set for the role and surfaces the server's refusal verbatim", async () => {

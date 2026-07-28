@@ -4,6 +4,7 @@ import { LiqPayAdapter } from './adapters/liqpay/liqpay.adapter';
 import { LiqPayWebhookController } from './liqpay-webhook.controller';
 import { PAYMENT_CLOCK, systemClock } from './payment.clock';
 import { PaymentController } from './payment.controller';
+import { AdminPaymentController } from './admin-payment.controller';
 import { PAYMENT_PROVIDER } from './payment.port';
 import { PaymentReconcileWorker } from './payment-reconcile.worker';
 import { PaymentRepository } from './payment.repository';
@@ -26,7 +27,7 @@ import { PaymentService } from './payment.service';
  */
 @Module({
   imports: [OrderModule],
-  controllers: [PaymentController, LiqPayWebhookController],
+  controllers: [PaymentController, AdminPaymentController, LiqPayWebhookController],
   providers: [
     PaymentRepository,
     PaymentService,

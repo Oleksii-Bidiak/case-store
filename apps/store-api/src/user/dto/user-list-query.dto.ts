@@ -45,14 +45,22 @@ export class UserListQueryDto {
   @Max(100, { message: 'Limit must be at most 100' })
   limit?: number = 20;
 
+  // `enum: UserRole`, not a literal list, and the validator message is derived
+  // rather than spelled out. The hand-written pair went stale the moment TASK-334
+  // added MANAGER: the generated client refused the value, so the owner could not
+  // filter the user list down to the very role they had just created — while the
+  // runtime @IsEnum was happily accepting it. A copy of an enum that already knows
+  // its own members can only drift.
   @ApiProperty({
     description: 'Filter by user role',
     example: 'CUSTOMER',
     required: false,
-    enum: ['CUSTOMER', 'ADMIN'],
+    enum: UserRole,
   })
   @IsOptional()
-  @IsEnum(UserRole, { message: 'Role must be CUSTOMER or ADMIN' })
+  @IsEnum(UserRole, {
+    message: `Role must be one of: ${Object.values(UserRole).join(', ')}`,
+  })
   role?: UserRole;
 
   @ApiProperty({

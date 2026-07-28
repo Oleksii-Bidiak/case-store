@@ -91,6 +91,14 @@ export function ungrantedKeys(matrix: PermissionMatrixEntity): Set<string> {
 
 interface PermissionMatrixFormProps {
   matrix: PermissionMatrixEntity;
+  /**
+   * Permissions to badge as «Не діє». Injectable so the badge mechanism stays
+   * testable once the real set is empty — which it is today. A test bound to the
+   * live constant would silently stop asserting anything the moment every
+   * permission gained a route, and the badge would rot unnoticed until the next
+   * time someone shipped one ahead of its endpoint.
+   */
+  permissionsWithoutRoutes?: ReadonlySet<string>;
 }
 
 /**
@@ -103,7 +111,10 @@ interface PermissionMatrixFormProps {
  * offering ADMIN in `grantableRoles`, the filter below still drops it — a
  * matrix that can revoke the owner's own access is a lockout waiting to happen.
  */
-export function PermissionMatrixForm({ matrix }: PermissionMatrixFormProps) {
+export function PermissionMatrixForm({
+  matrix,
+  permissionsWithoutRoutes = PERMISSIONS_WITHOUT_ROUTES,
+}: PermissionMatrixFormProps) {
   const queryClient = useQueryClient();
   const updateGrants = usePermissionControllerUpdateGrants();
 
@@ -353,7 +364,7 @@ export function PermissionMatrixForm({ matrix }: PermissionMatrixFormProps) {
                             {dict.permissionsMatrix.badgeNew}
                           </Badge>
                         )}
-                        {PERMISSIONS_WITHOUT_ROUTES.has(permission.key) && (
+                        {permissionsWithoutRoutes.has(permission.key) && (
                           <Badge
                             variant="destructive"
                             title={dict.permissionsMatrix.badgeNoRouteTitle}

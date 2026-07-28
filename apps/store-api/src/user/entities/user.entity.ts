@@ -48,11 +48,48 @@ export class UserEntity {
   })
   phone!: string | null;
 
-  @ApiProperty({ description: 'User role', example: 'CUSTOMER', enum: ['CUSTOMER', 'ADMIN'] })
+  // enum: UserRole, not a hand-written array. The literal list omitted MANAGER
+  // after TASK-334 added it, so Orval generated a union without it and the admin
+  // panel rendered a manager as «Клієнт» — a stale copy of an enum that already
+  // knows its own members.
+  @ApiProperty({ description: 'User role', example: 'CUSTOMER', enum: UserRole })
   role!: UserRole;
 
   @ApiProperty({ description: 'Whether the user account is active', example: true })
   isActive!: boolean;
+
+  /**
+   * When this address was proven (TASK-342); null when it never was.
+   *
+   * Exposed because the storefront could not otherwise know: it had to treat the
+   * missing field as 'unknown' and stay silent rather than tell every long-verified
+   * user to confirm an address they confirmed months ago.
+   */
+  @ApiProperty({
+    description: 'When the email address was verified; null if never',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+  })
+  emailVerifiedAt!: string | null;
+
+  /**
+   * Login lockout state (TASK-314), admin-facing.
+   *
+   * Without these the admin user card could not answer the one question an
+   * operator actually has when someone cannot get in — is the password wrong, or
+   * is the account temporarily locked?
+   */
+  @ApiProperty({
+    description: 'Locked out until this instant; null when not locked',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+  })
+  lockedUntil!: string | null;
+
+  @ApiProperty({ description: 'Consecutive failed login attempts', example: 0 })
+  failedLoginAttempts!: number;
 
   @ApiProperty({ description: 'Account creation timestamp', example: '2024-01-01T00:00:00.000Z' })
   createdAt!: Date;
@@ -75,6 +112,9 @@ export class UserEntity {
     phone: string | null;
     role: UserRole;
     isActive: boolean;
+    emailVerifiedAt?: Date | null;
+    lockedUntil?: Date | null;
+    failedLoginAttempts?: number;
     createdAt: Date;
     updatedAt: Date;
   }): UserEntity {
@@ -86,6 +126,9 @@ export class UserEntity {
     entity.phone = user.phone;
     entity.role = user.role;
     entity.isActive = user.isActive;
+    entity.emailVerifiedAt = user.emailVerifiedAt ? user.emailVerifiedAt.toISOString() : null;
+    entity.lockedUntil = user.lockedUntil ? user.lockedUntil.toISOString() : null;
+    entity.failedLoginAttempts = user.failedLoginAttempts ?? 0;
     entity.createdAt = user.createdAt;
     entity.updatedAt = user.updatedAt;
     return entity;

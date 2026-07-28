@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
 import { OrderItemEntity } from './order-item.entity';
 import { toTwoDecimals } from '../../addon-service';
 import type { OrderWithItems, ShippingAddressData } from '../order.types';
@@ -91,6 +91,31 @@ export class OrderEntity {
     example: PaymentStatus.PENDING,
   })
   paymentStatus!: PaymentStatus;
+
+  /**
+   * How the shopper chose to pay (TASK-330).
+   *
+   * Exposed because both frontends were reduced to guessing without it: the
+   * storefront could not tell "just paid by card, confirmation pending" from
+   * "cash on delivery, PENDING until delivery" and had to keep a forgeable hint
+   * in sessionStorage, and the admin payment card could not name the method at
+   * all. `paymentStatus` says whether money moved; this says how it was meant to.
+   */
+  @ApiProperty({
+    description: 'How the shopper chose to pay',
+    enum: PaymentMethod,
+    example: PaymentMethod.ON_DELIVERY,
+  })
+  paymentMethod!: PaymentMethod;
+
+  /** When money actually settled (TASK-330); null while unpaid. */
+  @ApiProperty({
+    description: 'When the payment settled; null while unpaid',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+  })
+  paidAt!: string | null;
 
   @ApiProperty({ description: 'Sum of all line totals as string', example: '149.97' })
   subtotal!: string;
@@ -214,6 +239,10 @@ export class OrderEntity {
     entity.userId = order.userId;
     entity.status = order.status;
     entity.paymentStatus = order.paymentStatus;
+    // `?? ON_DELIVERY` mirrors the column default so a fixture predating TASK-330
+    // reads as what it actually was, rather than as undefined.
+    entity.paymentMethod = order.paymentMethod ?? PaymentMethod.ON_DELIVERY;
+    entity.paidAt = order.paidAt ? order.paidAt.toISOString() : null;
     entity.subtotal = order.subtotal.toString();
     entity.discount = order.discount.toString();
     entity.discountCode = order.discountCode ?? null;

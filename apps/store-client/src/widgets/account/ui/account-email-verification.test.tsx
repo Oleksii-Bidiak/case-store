@@ -84,11 +84,19 @@ describe("AccountEmailVerification", () => {
     ).not.toBeInTheDocument();
   });
 
-  // While the profile endpoint omits `emailVerifiedAt`, a banner would appear
-  // for every user including those who verified long ago.
+  // The profile endpoint reports `emailVerifiedAt` now, but a response that
+  // omits it — an older cached one, or a future endpoint that trims the field —
+  // must still render nothing. Reading "absent" as "unverified" would show the
+  // banner to every user, including those who verified long ago.
+  //
+  // The field is deleted explicitly: `makeUser` has to satisfy UserEntity, where
+  // it is required, so "absent" is only expressible here.
   it("renders nothing when the profile does not report verification state", () => {
+    const user = makeUser().data;
+    delete (user as { emailVerifiedAt?: unknown }).emailVerifiedAt;
+
     const { container } = renderWithProviders(
-      <AccountEmailVerification user={makeUser().data} />,
+      <AccountEmailVerification user={user} />,
       { auth: { isAuthenticated: true } },
     );
 

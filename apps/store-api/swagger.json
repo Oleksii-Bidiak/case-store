@@ -5000,7 +5000,8 @@
               "type": "string",
               "enum": [
                 "CUSTOMER",
-                "ADMIN"
+                "ADMIN",
+                "MANAGER"
               ]
             }
           },
@@ -9889,6 +9890,90 @@
         ]
       }
     },
+    "/api/admin/payments/orders/{orderId}": {
+      "get": {
+        "operationId": "adminListOrderPayments",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Payment attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentListResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — payments:read required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List every payment attempt for an order (admin)",
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/api/admin/payments/{paymentId}/refund": {
+      "post": {
+        "operationId": "adminRefundPayment",
+        "parameters": [
+          {
+            "name": "paymentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefundRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Refund requested. The payment becomes REFUNDED only when the provider confirms it by callback — do not treat this response as confirmation."
+          },
+          "403": {
+            "description": "Forbidden — payments:refund required"
+          },
+          "404": {
+            "description": "Payment not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Request a refund for a payment (admin)",
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
     "/api/products/{productId}/reviews": {
       "post": {
         "operationId": "reviewControllerSubmit",
@@ -14709,13 +14794,31 @@
             "example": "CUSTOMER",
             "enum": [
               "CUSTOMER",
-              "ADMIN"
+              "ADMIN",
+              "MANAGER"
             ]
           },
           "isActive": {
             "type": "boolean",
             "description": "Whether the user account is active",
             "example": true
+          },
+          "emailVerifiedAt": {
+            "type": "string",
+            "description": "When the email address was verified; null if never",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lockedUntil": {
+            "type": "string",
+            "description": "Locked out until this instant; null when not locked",
+            "format": "date-time",
+            "nullable": true
+          },
+          "failedLoginAttempts": {
+            "type": "number",
+            "description": "Consecutive failed login attempts",
+            "example": 0
           },
           "createdAt": {
             "format": "date-time",
@@ -14735,6 +14838,9 @@
           "email",
           "role",
           "isActive",
+          "emailVerifiedAt",
+          "lockedUntil",
+          "failedLoginAttempts",
           "createdAt",
           "updatedAt"
         ]
@@ -17873,6 +17979,22 @@
             ],
             "example": "PENDING"
           },
+          "paymentMethod": {
+            "type": "string",
+            "description": "How the shopper chose to pay",
+            "enum": [
+              "ONLINE",
+              "ON_DELIVERY",
+              "INSTALLMENTS"
+            ],
+            "example": "ON_DELIVERY"
+          },
+          "paidAt": {
+            "type": "string",
+            "description": "When the payment settled; null while unpaid",
+            "format": "date-time",
+            "nullable": true
+          },
           "subtotal": {
             "type": "string",
             "description": "Sum of all line totals as string",
@@ -17980,6 +18102,8 @@
           "userId",
           "status",
           "paymentStatus",
+          "paymentMethod",
+          "paidAt",
           "subtotal",
           "discount",
           "discountCode",
@@ -18173,6 +18297,16 @@
                 "$ref": "#/components/schemas/GuestContactDto"
               }
             ]
+          },
+          "paymentMethod": {
+            "type": "string",
+            "description": "Intended payment method. Omitted defaults to ON_DELIVERY. ONLINE and INSTALLMENTS additionally start the reservation countdown after which an unpaid order is auto-cancelled and its stock returned.",
+            "enum": [
+              "ONLINE",
+              "ON_DELIVERY",
+              "INSTALLMENTS"
+            ],
+            "default": "ON_DELIVERY"
           },
           "shippingAddress": {
             "description": "Shipping address",
@@ -19518,6 +19652,108 @@
         "required": [
           "data"
         ]
+      },
+      "PaymentEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Payment attempt id. This is the identifier sent to the provider as ITS order id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "orderId": {
+            "type": "string",
+            "description": "Order this attempt belongs to"
+          },
+          "provider": {
+            "type": "string",
+            "description": "Payment adapter key",
+            "example": "liqpay"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Amount charged, as a decimal string",
+            "example": "1249.00"
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 currency code",
+            "example": "UAH"
+          },
+          "status": {
+            "type": "string",
+            "description": "Lifecycle of this attempt",
+            "enum": [
+              "PENDING",
+              "SUCCEEDED",
+              "FAILED",
+              "EXPIRED",
+              "REFUNDED"
+            ]
+          },
+          "providerPaymentId": {
+            "type": "string",
+            "description": "The provider's own id for the transaction",
+            "nullable": true
+          },
+          "failureCode": {
+            "type": "string",
+            "description": "Provider error code",
+            "nullable": true
+          },
+          "failureMessage": {
+            "type": "string",
+            "description": "Provider error message",
+            "nullable": true
+          },
+          "settledAt": {
+            "type": "object",
+            "description": "When the attempt reached a final state",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the attempt was opened"
+          }
+        },
+        "required": [
+          "id",
+          "orderId",
+          "provider",
+          "amount",
+          "currency",
+          "status",
+          "providerPaymentId",
+          "failureCode",
+          "failureMessage",
+          "settledAt",
+          "createdAt"
+        ]
+      },
+      "PaymentListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "RefundRequestDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "string",
+            "description": "Amount to refund as a decimal string. Omit to refund in full.",
+            "example": "499.00"
+          }
+        }
       },
       "ReviewEntity": {
         "type": "object",

@@ -80,7 +80,12 @@ export const PERMISSIONS = [
   { key: 'products:read', zone: PERMISSION_ZONES.CATALOG, label: 'Переглядати товари' },
   { key: 'products:write', zone: PERMISSION_ZONES.CATALOG, label: 'Редагувати товари й ціни' },
   { key: 'products:delete', zone: PERMISSION_ZONES.CATALOG, label: 'Видаляти товари' },
-  { key: 'stock:write', zone: PERMISSION_ZONES.CATALOG, label: 'Змінювати залишки' },
+  // NOTE: there is deliberately no `stock:write`. Stock is edited through the
+  // ordinary product update, so it is not a separable capability — and a
+  // permission that cannot be enforced is worse than a missing one: the owner
+  // ticks a box believing stock is separately controlled while anyone holding
+  // `products:write` can still change it. Splitting stock into its own endpoint
+  // would make the permission real; until someone does, it must not be offered.
   { key: 'categories:write', zone: PERMISSION_ZONES.CATALOG, label: 'Категорії' },
   { key: 'brands:write', zone: PERMISSION_ZONES.CATALOG, label: 'Бренди' },
   { key: 'devices:write', zone: PERMISSION_ZONES.CATALOG, label: 'Пристрої та сумісність' },
