@@ -28,11 +28,38 @@
     "env:check": "node scripts/env-check.js --audit",
     "prepare": "husky"
   },
+  "//prettier": [
+    "TASK-351. Prettier was never declared anywhere in this monorepo — it arrived",
+    "only as a PEER dependency of @nestjs/schematics (^3.0.0), eslint-plugin-prettier",
+    "(>=3.0.0) and orval (>=3.0.0), so package-lock.json carried it with",
+    "\"peer\": true and npm was free to resolve any 3.x. It duly drifted 3.8.3 -> 3.9.6",
+    "on a clean install and changed how union types are formatted.",
+    "",
+    "WHY THIS MATTERS MORE THAN IT LOOKS: the root lint-staged rule runs",
+    "`prettier --write` on every staged *.{json,md,yml,yaml}, and editors format",
+    "*.ts/*.tsx on save from this same resolved copy. A floating version therefore",
+    "rewrites files that the commit never intended to touch — every `npm install`",
+    "becomes a potential reformat, and in a parallel-worktree wave each branch",
+    "reformats differently and every diff fills with noise.",
+    "",
+    "EXACT, NOT CARET: ^3.9.6 would still admit 3.10 and the next formatting change.",
+    "The point of the pin is byte-identical output across machines and worktrees,",
+    "which a range cannot give. Bump deliberately, in its own commit, and expect a",
+    "reformat diff when you do.",
+    "",
+    "PINNED AT THE INSTALLED VERSION ON PURPOSE (3.9.6, not a rollback to 3.8.3):",
+    "recent commits already went through lint-staged under 3.9.6, so this pin costs",
+    "zero churn. Note the repo has never been fully Prettier-formatted — only",
+    "json/md/yml/yaml are enforced on commit, so `prettier --check .` is red on ~100",
+    "pre-existing files. That is the status quo, NOT drift, and reformatting them is",
+    "deliberately out of scope here."
+  ],
   "devDependencies": {
     "@playwright/test": "^1.61.0",
     "@types/jest": "^30.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^15.2.10",
+    "prettier": "3.9.6",
     "typescript": "^6.0.3"
   },
   "//optionalDependencies": [
