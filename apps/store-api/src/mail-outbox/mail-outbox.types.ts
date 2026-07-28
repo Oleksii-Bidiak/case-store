@@ -23,6 +23,15 @@ export const PASSWORD_RESET_MAIL_TYPE = 'password-reset';
  */
 export const ACCOUNT_LOCKED_MAIL_TYPE = 'account-locked';
 
+/**
+ * `MailOutbox.type` value for an email-verification link (TASK-342).
+ *
+ * The recipient stored on the row is the address BEING VERIFIED, which the user
+ * may have already changed again by the time the worker sends. That is why the
+ * address travels in the payload rather than being re-read from the user row.
+ */
+export const EMAIL_VERIFICATION_MAIL_TYPE = 'email-verification';
+
 /** Aggregate outcome of a single {@link MailOutboxService.dispatchDue} run. */
 export interface DispatchResult {
   /** Rows delivered (or drained as a no-op when mail is disabled). */

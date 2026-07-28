@@ -16,6 +16,10 @@ import {
   buildAccountLockedEmail,
   type AccountLockedMailPayload,
 } from './templates/account-locked.template';
+import {
+  buildEmailVerificationEmail,
+  type EmailVerificationMailPayload,
+} from './templates/email-verification.template';
 
 /** Parameters accepted by {@link MailService.sendOrderConfirmation}. */
 export interface SendOrderConfirmationParams {
@@ -134,6 +138,29 @@ export class MailService {
     }
 
     const template = buildAccountLockedEmail(payload);
+
+    await this.getTransporter().sendMail({
+      from: this.from,
+      to: payload.to,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    });
+  }
+
+  /**
+   * Render and send an email-verification link from the JSON-safe payload stored
+   * in a `MailOutbox` row (TASK-342). Same contract as the other payload
+   * senders: a logged no-op when mail is disabled, throwing on transport failure
+   * so the outbox worker applies its retry/backoff policy.
+   */
+  async sendEmailVerificationPayload(payload: EmailVerificationMailPayload): Promise<void> {
+    if (!this.enabled) {
+      this.logger.info(`Mail disabled — skipping email verification to ${payload.to}`);
+      return;
+    }
+
+    const template = buildEmailVerificationEmail(payload);
 
     await this.getTransporter().sendMail({
       from: this.from,

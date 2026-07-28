@@ -7,9 +7,11 @@ import { MailService, type SendOrderConfirmationParams } from '../mail/mail.serv
 import type { OrderConfirmationMailPayload } from '../mail/templates/order-confirmation.template';
 import type { PasswordResetMailPayload } from '../mail/templates/password-reset.template';
 import type { AccountLockedMailPayload } from '../mail/templates/account-locked.template';
+import type { EmailVerificationMailPayload } from '../mail/templates/email-verification.template';
 import { Clock, MAIL_OUTBOX_CLOCK } from './mail-outbox.clock';
 import {
   ACCOUNT_LOCKED_MAIL_TYPE,
+  EMAIL_VERIFICATION_MAIL_TYPE,
   ORDER_CONFIRMATION_MAIL_TYPE,
   PASSWORD_RESET_MAIL_TYPE,
   type DispatchResult,
@@ -113,6 +115,29 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: ACCOUNT_LOCKED_MAIL_TYPE,
+        recipient: payload.to,
+        payload: payload as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Enqueue an email-verification link (TASK-342).
+   *
+   * The recipient is the address BEING VERIFIED, carried in the payload — never
+   * re-read from the user row at send time. A user who changes their address
+   * again while this row is still pending would otherwise have the
+   * proof-of-ownership link delivered to the new address, verifying something
+   * nobody proved.
+   */
+  async enqueueEmailVerification(
+    payload: EmailVerificationMailPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.repository.enqueue(
+      {
+        type: EMAIL_VERIFICATION_MAIL_TYPE,
         recipient: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
@@ -242,6 +267,11 @@ export class MailOutboxService {
       case ACCOUNT_LOCKED_MAIL_TYPE:
         await this.mailService.sendAccountLockedPayload(
           row.payload as unknown as AccountLockedMailPayload,
+        );
+        return;
+      case EMAIL_VERIFICATION_MAIL_TYPE:
+        await this.mailService.sendEmailVerificationPayload(
+          row.payload as unknown as EmailVerificationMailPayload,
         );
         return;
       default:
