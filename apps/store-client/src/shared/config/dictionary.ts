@@ -973,21 +973,6 @@ export const dict = {
       selectedAria: (name: string) => `Послугу «${name}» додано`,
       deselectedAria: (name: string) => `Послугу «${name}» прибрано`,
     },
-    // Delivery + payment blocks — stubs; the real selection lives in checkout.
-    deliveryTitle: "Доставка",
-    deliveryCityLabel: "Місто",
-    deliveryCities: ["Київ", "Львів", "Одеса", "Харків", "Дніпро"],
-    deliveryMethods: [
-      "Нова Пошта — відділення",
-      "Нова Пошта — поштомат",
-      "Кур'єр додому",
-      "Самовивіз із магазину",
-    ],
-    deliveryMethodAria: "Спосіб доставки",
-    paymentTitle: "Оплата",
-    paymentAria: "Спосіб оплати",
-    payOnline: "Картка онлайн",
-    payOnDelivery: "Оплата при отриманні",
   },
 
   // Promo code / discount (TASK-079)

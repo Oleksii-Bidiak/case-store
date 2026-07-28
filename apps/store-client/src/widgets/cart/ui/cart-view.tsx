@@ -20,7 +20,6 @@ import {
 import { CartItemRow } from "./cart-item-row";
 import { CartSummary } from "./cart-summary";
 import { CartSkeleton } from "./cart-skeleton";
-import { CartDeliveryStub, CartPaymentStub } from "./cart-delivery-payment";
 
 /**
  * CartView — client orchestrator for the cart page (Cart.dc.html redesign).
@@ -157,12 +156,14 @@ export function CartView() {
           </div>
         </div>
 
-        {/* Summary + delivery/payment stubs */}
+        {/* Summary only. The delivery and payment pickers that used to sit here
+            were UI stubs — uncontrolled selects and a radio group default-checked
+            on "Картка онлайн", none of which reached the API (TASK-331). Showing a
+            payment method the shop cannot take is worse than showing none: the
+            real choice lives on /checkout, where it is wired to the order. */}
         {cart && (
           <div className={`flex flex-col gap-4 lg:sticky ${STICKY_ASIDE_TOP}`}>
             <CartSummary totals={cart.totals} />
-            <CartDeliveryStub />
-            <CartPaymentStub />
           </div>
         )}
       </div>
