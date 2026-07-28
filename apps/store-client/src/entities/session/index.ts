@@ -10,6 +10,11 @@ export {
   useAuthControllerRefresh,
   useAuthControllerRequestPasswordReset,
   useAuthControllerConfirmPasswordReset,
+  // TASK-333 — change your own password (requires the current one).
+  useAuthControllerChangePassword,
+  // TASK-342 — email verification: request a link, confirm a token.
+  useAuthControllerRequestEmailVerification,
+  useAuthControllerConfirmEmailVerification,
 } from "@/shared/api/generated/auth/auth";
 
 export type {
@@ -17,4 +22,6 @@ export type {
   RegisterDto,
   RequestPasswordResetDto,
   ConfirmPasswordResetDto,
+  ChangePasswordDto,
+  ConfirmEmailVerificationDto,
 } from "@/shared/api/generated/models";

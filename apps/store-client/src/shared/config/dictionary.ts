@@ -1163,7 +1163,6 @@ export const dict = {
       securityHeading: "Безпека",
       securityNote: "Змінюйте пароль регулярно, щоб захистити свій акаунт.",
       changePassword: "Змінити пароль",
-      changePasswordStub: "Зміна пароля буде доступна незабаром",
       // Bonuses section (stub — no loyalty backend yet)
       bonusesHeading: "Бонуси",
       bonusesAvailable: "Доступно бонусів",
@@ -1290,6 +1289,59 @@ export const dict = {
         "Посилання неповне або пошкоджене. Скористайтеся посиланням з листа ще раз.",
       backToLogin: "Повернутися до входу",
     },
+    // Change password from /account (TASK-333). Distinct from `resetPassword`,
+    // which is the emailed-token flow for someone who cannot sign in at all.
+    changePassword: {
+      heading: "Зміна пароля",
+      currentPassword: "Поточний пароль",
+      newPassword: "Новий пароль",
+      confirmPassword: "Підтвердіть новий пароль",
+      submit: "Зберегти пароль",
+      submitting: "Зберігаємо…",
+      cancel: "Скасувати",
+      // The backend revokes EVERY refresh token, this session included, and
+      // clears the refresh cookie. Say so before the user commits: an
+      // unannounced sign-out on their phone reads as the site breaking.
+      sessionsWarning:
+        "Після зміни пароля всі активні сеанси буде завершено — і на інших пристроях, і тут. Вам потрібно буде увійти знову з новим паролем.",
+      success: "Пароль змінено. Увійдіть з новим паролем.",
+      errorWrongCurrent:
+        "Поточний пароль неправильний. Перевірте розкладку та Caps Lock і спробуйте ще раз.",
+      validationCurrentRequired: "Введіть поточний пароль",
+      validationSameAsCurrent: "Новий пароль має відрізнятися від поточного",
+    },
+    // Email verification (TASK-342) — the /verify-email landing page and the
+    // /account banner.
+    verifyEmail: {
+      heading: "Підтвердження email",
+      checking: "Перевіряємо посилання…",
+      successHeading: "Адресу підтверджено",
+      successBody:
+        "Дякуємо! Вашу електронну адресу підтверджено. Тепер ми зможемо надсилати вам статуси замовлень.",
+      toAccount: "До кабінету",
+      errorMissingToken:
+        "Посилання неповне або пошкоджене. Скористайтеся посиланням з листа ще раз.",
+      errorHeading: "Не вдалося підтвердити адресу",
+      // The API answers every confirm failure with ONE generic message on
+      // purpose — distinguishing "expired" from "already used" from "the
+      // address changed" would let a stranger holding a random token learn
+      // facts about an account. So we cannot name the cause; we list the
+      // possibilities honestly instead of pretending to know.
+      errorBody:
+        "Посилання недійсне. Таке буває, якщо термін дії минув, ним уже скористалися, або ви змінили адресу пошти після того, як лист було надіслано.",
+      errorNextStep:
+        "Увійдіть у кабінет і надішліть новий лист — він піде на вашу поточну адресу.",
+      // /account banner
+      bannerUnverifiedTitle: "Адресу не підтверджено",
+      bannerUnverifiedBody:
+        "Підтвердіть електронну пошту, щоб отримувати листи про статус замовлень.",
+      bannerVerified: "Адресу підтверджено",
+      resend: "Надіслати лист повторно",
+      resending: "Надсилаємо…",
+      resendSuccess:
+        "Якщо адресу ще не підтверджено, ми надіслали лист. Перевірте пошту, зокрема теку «Спам».",
+      resendError: "Не вдалося надіслати лист. Спробуйте ще раз за хвилину.",
+    },
     register: {
       heading: "Створити акаунт",
       email: "Email",
@@ -1360,6 +1412,8 @@ export const dict = {
     forgotPasswordDescription: "Отримайте посилання для скидання пароля.",
     resetPasswordTitle: "Новий пароль | MobileStore",
     resetPasswordDescription: "Установіть новий пароль для вашого акаунту.",
+    verifyEmailTitle: "Підтвердження email | MobileStore",
+    verifyEmailDescription: "Підтвердіть свою електронну адресу.",
     accountTitle: "Мій акаунт | MobileStore",
     accountDescription: "Керуйте профілем та переглядайте свої замовлення.",
     ordersTitle: "Мої замовлення | MobileStore",
