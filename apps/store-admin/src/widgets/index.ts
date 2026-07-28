@@ -101,3 +101,6 @@ export {
   AdminCarouselTableSkeleton,
 } from "./carousel-list";
 export { CreateCarouselView, EditCarouselView } from "./carousel-form-view";
+// Returns / RMA (TASK-340)
+export { AdminReturnTable, AdminReturnTableSkeleton } from "./return-list";
+export { ReturnDetailView, ReturnDetailSkeleton } from "./return-detail";
