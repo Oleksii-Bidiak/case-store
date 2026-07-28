@@ -11,3 +11,9 @@ export {
   useUserControllerUpdateProfile,
   getUserControllerGetProfileQueryKey,
 } from "@/shared/api/generated/users/users";
+
+// Email-verification state derived from the profile (TASK-342).
+export {
+  readEmailVerificationState,
+  type EmailVerificationState,
+} from "./model/email-verification";
