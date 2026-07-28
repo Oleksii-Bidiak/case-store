@@ -32,6 +32,7 @@ import { ContactModule } from './contact';
 import { CartModule } from './cart';
 import { WishlistModule } from './wishlist';
 import { OrderModule } from './order';
+import { PaymentModule } from './payment';
 import { DiscountModule } from './discount';
 import { ReviewModule } from './review';
 import { DeliveryModule } from './delivery';
@@ -177,6 +178,10 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Orders
     OrderModule,
+
+    // Online payments — LiqPay adapter, callback webhook, reconcile cron
+    // (TASK-330). Provider-agnostic behind PAYMENT_PROVIDER.
+    PaymentModule,
 
     // Discounts / promo codes (TASK-079)
     DiscountModule,
