@@ -1,22 +1,36 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/entities/session";
 import { useGetOrder } from "@/entities/order";
 import { CancelOrderButton } from "@/features/cancel-order";
+import { forgetPaymentAttempt, readPaymentAttempt } from "@/features/checkout";
 import { dict } from "@/shared/config";
 import { trackEvent } from "@/shared/lib";
 import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
 import { OrderItemList } from "./order-item-list";
 import { OrderAddressSummary } from "./order-address-summary";
+import { OrderPaymentPanel } from "./order-payment-panel";
 import { OrderTotalsBreakdown } from "./order-totals-breakdown";
 
 interface OrderConfirmationViewProps {
   orderId: string;
 }
+
+/**
+ * How long to keep asking the server whether the payment callback has landed,
+ * measured from the moment this browser was handed off to the provider.
+ *
+ * Long enough to cover a 3-D Secure detour and a provider retry; short enough
+ * that a shopper whose callback never arrives is told so plainly instead of
+ * watching a spinner indefinitely. Past this window the reconciliation cron is
+ * the safety net — not the shopper's patience.
+ */
+const CALLBACK_WAIT_MS = 3 * 60 * 1000;
+const CALLBACK_POLL_MS = 4000;
 
 const primaryCta =
   "inline-block rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -37,9 +51,52 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
   const router = useRouter();
   const { isAuthenticated, isInitializing } = useAuth();
 
+  // Did THIS browser just go off to pay for THIS order? Read once per order id.
+  // It is session-local and forgeable, so it may influence wording and polling
+  // and nothing else — every statement about money comes from `paymentStatus`.
+  const attempt = useMemo(() => readPaymentAttempt(orderId), [orderId]);
+  const callbackDeadline = attempt ? attempt.startedAt + CALLBACK_WAIT_MS : 0;
+
+  // Whether the wait window has run out. Held in state and flipped by a timer
+  // rather than compared against `Date.now()` during render: a render-time clock
+  // read is impure, and — worse here — it would only ever change when something
+  // unrelated happened to re-render, so a shopper staring at the page could sit
+  // on "confirming…" long past the point where we know better.
+  const [waitElapsed, setWaitElapsed] = useState(false);
+  useEffect(() => {
+    if (!attempt) return;
+    // Clamped rather than branched: an already-expired attempt schedules a
+    // zero-delay timer instead of setting state synchronously inside the effect,
+    // which would cascade an extra render for no benefit.
+    const remaining = Math.max(0, callbackDeadline - Date.now());
+    const timer = setTimeout(() => setWaitElapsed(true), remaining);
+    return () => clearTimeout(timer);
+  }, [attempt, callbackDeadline]);
+
   const { data, isLoading, isError, error, refetch } = useGetOrder(orderId, {
-    query: { enabled: isAuthenticated },
+    query: {
+      enabled: isAuthenticated,
+      // Poll only while there is a real reason to: this browser paid, the server
+      // still says PENDING, and we are inside the wait window. The predicate form
+      // reads the freshest cached order, so the first non-PENDING response stops
+      // the loop by itself.
+      refetchInterval: (query) => {
+        if (!attempt) return false;
+        if (query.state.data?.data?.paymentStatus !== "PENDING") return false;
+        if (Date.now() > callbackDeadline) return false;
+        return CALLBACK_POLL_MS;
+      },
+    },
   });
+
+  // Once the payment reaches a settled state the note has done its job. Clearing
+  // it stops a later visit to this page from re-entering the "confirming" copy.
+  const settledStatus = data?.data?.paymentStatus;
+  useEffect(() => {
+    if (settledStatus && settledStatus !== "PENDING") {
+      forgetPaymentAttempt(orderId);
+    }
+  }, [settledStatus, orderId]);
 
   // Redirect unauthenticated visitors to login (once init has settled).
   useEffect(() => {
@@ -112,6 +169,17 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
         status={order.status}
         paymentStatus={order.paymentStatus}
         createdAt={order.createdAt}
+      />
+
+      {/* Reads the server's `paymentStatus` and nothing else. Arriving here from
+          the provider's redirect proves only that a browser was pointed at this
+          URL — the money is confirmed by a signed callback that may still be in
+          flight (docs/payments-liqpay.md §4, rule 1). */}
+      <OrderPaymentPanel
+        orderId={order.id}
+        paymentStatus={order.paymentStatus}
+        hasRecentAttempt={!!attempt}
+        isAwaitingCallback={!!attempt && !waitElapsed}
       />
 
       <div className="flex flex-col gap-8 lg:grid lg:grid-cols-3">

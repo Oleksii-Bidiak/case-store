@@ -1,4 +1,4 @@
-import { checkoutSchema } from "./checkout-schema";
+import { checkoutSchema, guestCheckoutSchema } from "./checkout-schema";
 import { dict } from "@/shared/config";
 
 const validForm = {
@@ -7,6 +7,10 @@ const validForm = {
   phone: "+380501234567",
   city: "Kyiv",
   deliveryAddress: "Нова Пошта, відділення №12",
+  // Required since TASK-330-B. The form always supplies it (it is a default
+  // value, not something the shopper has to touch), so a payload without one is
+  // a bug rather than a case to tolerate.
+  paymentMethod: "ON_DELIVERY" as const,
 };
 
 describe("checkoutSchema (UA)", () => {
@@ -81,5 +85,58 @@ describe("checkoutSchema (UA)", () => {
       );
       expect(issue?.message).toBe(dict.checkout.validation.notesMax);
     }
+  });
+
+  it("rejects a payment method the storefront cannot carry out", () => {
+    expect(
+      checkoutSchema.safeParse({ ...validForm, paymentMethod: "BITCOIN" })
+        .success,
+    ).toBe(false);
+  });
+});
+
+/**
+ * TASK-338. A guest supplies one field an account holder does not — the email
+ * that carries their confirmation letter and, with it, the tokenised link that
+ * is their only way back to the order.
+ */
+describe("guestCheckoutSchema", () => {
+  const emailIssue = (value: unknown) => {
+    const result = guestCheckoutSchema.safeParse({
+      ...validForm,
+      email: value,
+    });
+    if (result.success) return null;
+    return result.error.issues.find((i) => i.path.join(".") === "email");
+  };
+
+  it("accepts a valid contact email", () => {
+    expect(
+      guestCheckoutSchema.safeParse({
+        ...validForm,
+        email: "olena@example.com",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("requires an email", () => {
+    expect(emailIssue(undefined)?.message).toBe(
+      dict.checkout.guest.validationEmailRequired,
+    );
+    expect(emailIssue("   ")?.message).toBe(
+      dict.checkout.guest.validationEmailRequired,
+    );
+  });
+
+  it("rejects a malformed email", () => {
+    expect(emailIssue("not-an-email")?.message).toBe(
+      dict.checkout.guest.validationEmail,
+    );
+  });
+
+  it("leaves the email optional for an account holder", () => {
+    // Same field, different schema: the backend ignores a contact block from an
+    // authenticated caller, so demanding it of them would be pointless friction.
+    expect(checkoutSchema.safeParse(validForm).success).toBe(true);
   });
 });
