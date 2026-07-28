@@ -52,9 +52,19 @@ RUN npm run generate:api -w apps/store-admin
 # (this app ships no static public assets today, so it is not committed).
 RUN mkdir -p apps/store-admin/public
 
+# Build-time public config, baked into the admin bundle. ARG *and* ENV, always
+# both: an ARG alone is only a build-time substitution and `next build` reads
+# process.env, while a compose build arg for a name this file never declares is
+# discarded with only a BuildKit warning. See the longer note in
+# apps/store-client/Dockerfile — NEXT_PUBLIC_UMAMI_DASHBOARD_URL below was
+# exactly that hole until TASK-348, and `scripts/env-check.js --audit` now fails
+# when a compose build arg has no ARG+ENV pair here.
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_ADMIN_URL
+# Deep link to this store's website view in Umami's own dashboard UI. Empty →
+# the dashboard's traffic card renders muted and linkless (never dead-links).
+ARG NEXT_PUBLIC_UMAMI_DASHBOARD_URL
 ARG NEXT_PUBLIC_SENTRY_DSN
 ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT
 ARG NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE
@@ -66,6 +76,7 @@ ARG SENTRY_AUTH_TOKEN
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
     NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL} \
     NEXT_PUBLIC_ADMIN_URL=${NEXT_PUBLIC_ADMIN_URL} \
+    NEXT_PUBLIC_UMAMI_DASHBOARD_URL=${NEXT_PUBLIC_UMAMI_DASHBOARD_URL} \
     NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN} \
     NEXT_PUBLIC_SENTRY_ENVIRONMENT=${NEXT_PUBLIC_SENTRY_ENVIRONMENT} \
     NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=${NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE} \
