@@ -14,6 +14,7 @@ import {
 import { OrderStatusSelect } from "@/features/order-status-update";
 import { PaymentStatusSelect } from "@/features/order-payment-update";
 import { OrderDetailsForm } from "@/features/order-details-form";
+import { OrderAddressForm } from "@/features/order-address-edit";
 import {
   Badge,
   Separator,
@@ -305,10 +306,15 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
             </div>
           </section>
 
-          <AddressBlock
-            title={dict.orders.shippingAddress}
-            address={shipping}
-          />
+          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+            <h3 className="text-sm font-semibold text-foreground">
+              {dict.orders.shippingAddress}
+            </h3>
+            <AddressLines address={shipping} />
+            {/* TASK-341: correctable until the parcel is with the courier; after
+                that the form is replaced by the reason, not disabled. */}
+            <OrderAddressForm order={order} />
+          </section>
           {billingDiffers ? (
             <AddressBlock
               title={dict.orders.billingAddress}
@@ -355,6 +361,35 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * The address itself, without a card around it — the shipping block now owns its
+ * own heading so it can host the edit form underneath.
+ */
+function AddressLines({ address }: { address: AddressFields | null }) {
+  if (!address) {
+    return null;
+  }
+
+  const name = [address.firstName, address.lastName].filter(Boolean).join(" ");
+  const cityLine = [address.city, address.state, address.postalCode]
+    .filter(Boolean)
+    .join(", ");
+
+  return (
+    <address className="text-sm not-italic text-muted-foreground">
+      {name ? <div>{name}</div> : null}
+      {address.company ? <div>{address.company}</div> : null}
+      {address.address1 ? <div>{address.address1}</div> : null}
+      {address.address2 ? <div>{address.address2}</div> : null}
+      {cityLine ? <div>{cityLine}</div> : null}
+      {address.country ? <div>{address.country}</div> : null}
+      {address.phone ? <div>{address.phone}</div> : null}
+    </address>
+  );
+}
+
+/** Read-only address card — still used for the billing address, which has no
+ *  edit path of its own (nothing ships to it). */
 function AddressBlock({
   title,
   address,
@@ -366,23 +401,10 @@ function AddressBlock({
     return null;
   }
 
-  const name = [address.firstName, address.lastName].filter(Boolean).join(" ");
-  const cityLine = [address.city, address.state, address.postalCode]
-    .filter(Boolean)
-    .join(", ");
-
   return (
     <section className="flex flex-col gap-1 rounded-md border border-border p-4">
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-      <address className="text-sm not-italic text-muted-foreground">
-        {name ? <div>{name}</div> : null}
-        {address.company ? <div>{address.company}</div> : null}
-        {address.address1 ? <div>{address.address1}</div> : null}
-        {address.address2 ? <div>{address.address2}</div> : null}
-        {cityLine ? <div>{cityLine}</div> : null}
-        {address.country ? <div>{address.country}</div> : null}
-        {address.phone ? <div>{address.phone}</div> : null}
-      </address>
+      <AddressLines address={address} />
     </section>
   );
 }
