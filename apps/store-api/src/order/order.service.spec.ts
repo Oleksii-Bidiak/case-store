@@ -6,7 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus, PaymentAttemptStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { OrderService } from './order.service';
 import { OrderEntity } from './entities';
@@ -17,8 +17,9 @@ import { DeliveryService } from '../delivery';
 import { DiscountService } from '../discount';
 import { AddonApplicabilityResolver } from '../addon-service';
 import type { User } from '@prisma/client';
-import type { OrderWithItems } from './order.types';
+import type { OrderWithItems, PaymentApplyPlan, PaymentWithOrderRow } from './order.types';
 import type { CreateOrderDto } from './dto';
+import { PaymentOutcome, type PaymentEventInput } from '../payment/payment.types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -151,6 +152,10 @@ const orderRepositoryMock = {
   cancelAndRestock: jest.fn(),
   reviveAndReserve: jest.fn(),
   updatePaymentStatus: jest.fn(),
+  // TASK-330: the payment seam — the order module reads the attempt it is told
+  // about and writes the whole application in one go.
+  findPaymentWithOrder: jest.fn(),
+  applyPaymentOutcome: jest.fn(),
 };
 
 const cartRepositoryMock = {
@@ -333,6 +338,57 @@ describe('OrderService', () => {
         expect.objectContaining({ shippingCost: 0 }),
         expect.any(Function),
       );
+    });
+
+    // ── TASK-337 (WT-D seam): "not configured" must NOT use that fallback ──────
+    // A bad minute at Nova Poshta and a missing NP_API_KEY arrive at the same
+    // catch block, and treating them alike means every production order silently
+    // books 0.00 shipping — the shop paying for delivery out of its own pocket
+    // with nothing louder than a warning to show for it.
+
+    describe('a delivery module that was never configured', () => {
+      class DeliveryNotConfiguredException extends Error {
+        constructor() {
+          super('Nova Poshta is not configured');
+          this.name = 'DeliveryNotConfiguredException';
+        }
+      }
+
+      /** The same class WITHOUT an explicit `name` — a plain-Error base. */
+      class NamelessDeliveryNotConfiguredException extends Error {}
+      Object.defineProperty(NamelessDeliveryNotConfiguredException, 'name', {
+        value: 'DeliveryNotConfiguredException',
+      });
+
+      const npDto: CreateOrderDto = {
+        shippingAddress: { ...address, npCityRef: 'city-ref-1' },
+      };
+
+      beforeEach(() => {
+        cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+        orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+      });
+
+      it('lets the error out instead of booking a 0.00 shipping cost', async () => {
+        deliveryServiceMock.estimateShipping.mockRejectedValue(
+          new DeliveryNotConfiguredException(),
+        );
+
+        await expect(service.createOrder(USER_ID, npDto)).rejects.toThrow(
+          'Nova Poshta is not configured',
+        );
+        // The order must not exist at all — a half-priced order is worse than none.
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      });
+
+      it('recognises it whichever base class the delivery module chose', async () => {
+        deliveryServiceMock.estimateShipping.mockRejectedValue(
+          new NamelessDeliveryNotConfiguredException(),
+        );
+
+        await expect(service.createOrder(USER_ID, npDto)).rejects.toBeInstanceOf(Error);
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      });
     });
 
     // ─── TASK-079 discount integration ────────────────────────────────────────
@@ -1419,6 +1475,292 @@ describe('OrderService', () => {
         ADMIN_ID,
         expect.anything(),
       );
+    });
+  });
+
+  // ─── applyPaymentEvent (TASK-330) ────────────────────────────────────────────
+  // The ONE door through which the payment module moves an order. Everything the
+  // provider says is translated by the adapter before it gets here; what is
+  // decided here is what that translation MEANS for this particular order.
+
+  describe('applyPaymentEvent', () => {
+    const PAYMENT_ID = 'payment-uuid-1';
+
+    const makePayment = (
+      order: Partial<PaymentWithOrderRow['order']> = {},
+      payment: Partial<PaymentWithOrderRow> = {},
+    ): PaymentWithOrderRow => ({
+      id: PAYMENT_ID,
+      orderId: 'order-uuid-1',
+      provider: 'liqpay',
+      providerPaymentId: null,
+      amount: { toString: () => '69.97' },
+      currency: 'UAH',
+      status: PaymentAttemptStatus.PENDING,
+      ...payment,
+      order: {
+        id: 'order-uuid-1',
+        status: OrderStatus.PENDING,
+        paymentStatus: PaymentStatus.PENDING,
+        paidAt: null,
+        reservationExpiresAt: new Date('2026-07-28T10:45:00.000Z'),
+        ...order,
+      },
+    });
+
+    const makeEvent = (overrides: Partial<PaymentEventInput> = {}): PaymentEventInput => ({
+      paymentId: PAYMENT_ID,
+      providerStatus: 'success',
+      providerPaymentId: 'liqpay-9001',
+      outcome: PaymentOutcome.SUCCEEDED,
+      amount: '69.97',
+      currency: 'UAH',
+      payload: { status: 'success' },
+      ...overrides,
+    });
+
+    const seed = (payment: PaymentWithOrderRow) => {
+      orderRepositoryMock.findPaymentWithOrder.mockResolvedValue(payment);
+      orderRepositoryMock.applyPaymentOutcome.mockResolvedValue(makeOrder());
+    };
+
+    /** The plan handed to the repository by the last accepted call. */
+    const lastPlan = () =>
+      orderRepositoryMock.applyPaymentOutcome.mock.calls[0][0] as PaymentApplyPlan;
+
+    it('throws NotFoundException when the payment does not exist', async () => {
+      orderRepositoryMock.findPaymentWithOrder.mockResolvedValue(null);
+
+      await expect(service.applyPaymentEvent(makeEvent())).rejects.toThrow(NotFoundException);
+      expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+    });
+
+    // ── Rule 2: verify the money before believing it ──────────────────────────
+
+    describe('amount verification', () => {
+      it('rejects an event that reports a different amount than was charged', async () => {
+        seed(makePayment());
+
+        await expect(service.applyPaymentEvent(makeEvent({ amount: '1.00' }))).rejects.toThrow(
+          BadRequestException,
+        );
+        // Rejected, NOT quietly ignored: a tampered amount is an attack, and
+        // `applied: false` would file it next to "still processing".
+        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+      });
+
+      it('rejects an event that reports a different currency', async () => {
+        seed(makePayment());
+
+        await expect(service.applyPaymentEvent(makeEvent({ currency: 'USD' }))).rejects.toThrow(
+          BadRequestException,
+        );
+      });
+
+      it('accepts the same money written differently ("69.970" vs "69.97")', async () => {
+        seed(makePayment());
+
+        const result = await service.applyPaymentEvent(makeEvent({ amount: '69.970' }));
+
+        expect(result.applied).toBe(true);
+      });
+
+      it('accepts a lower-case currency code', async () => {
+        seed(makePayment());
+
+        const result = await service.applyPaymentEvent(makeEvent({ currency: 'uah' }));
+
+        expect(result.applied).toBe(true);
+      });
+    });
+
+    // ── SUCCEEDED ─────────────────────────────────────────────────────────────
+
+    describe('SUCCEEDED', () => {
+      it('marks the order paid, stamps paidAt and lifts the reservation deadline', async () => {
+        seed(makePayment());
+
+        const result = await service.applyPaymentEvent(makeEvent());
+
+        expect(result).toEqual({ applied: true, orderId: 'order-uuid-1' });
+        const plan = lastPlan();
+        expect(plan.attemptStatus).toBe(PaymentAttemptStatus.SUCCEEDED);
+        expect(plan.paymentStatusChange).toEqual({
+          from: PaymentStatus.PENDING,
+          to: PaymentStatus.PAID,
+        });
+        expect(plan.paidAt).toBeInstanceOf(Date);
+        // A paid order's reservation is no longer provisional — leaving the
+        // deadline set would let the auto-cancel worker cancel a paid order.
+        expect(plan.clearReservation).toBe(true);
+      });
+
+      it('advances a still-PENDING order to CONFIRMED', async () => {
+        seed(makePayment());
+
+        await service.applyPaymentEvent(makeEvent());
+
+        expect(lastPlan().statusChange).toEqual({
+          from: OrderStatus.PENDING,
+          to: OrderStatus.CONFIRMED,
+        });
+      });
+
+      it('records the provider payment id it learned from the callback', async () => {
+        seed(makePayment());
+
+        await service.applyPaymentEvent(makeEvent());
+
+        expect(lastPlan().providerPaymentId).toBe('liqpay-9001');
+      });
+
+      // ── The reason the state machine had to land first ──────────────────────
+      it.each([OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.DELIVERED])(
+        'records the money but leaves a %s order where the operator put it',
+        async (status) => {
+          seed(makePayment({ status }));
+
+          await service.applyPaymentEvent(makeEvent());
+
+          const plan = lastPlan();
+          expect(plan.paymentStatusChange?.to).toBe(PaymentStatus.PAID);
+          // → CONFIRMED is not a legal move from here, so the callback must not
+          // drag the order backwards the way it would have before TASK-332.
+          expect(plan.statusChange).toBeUndefined();
+        },
+      );
+
+      it('changes nothing when the order is already PAID (a re-delivered callback)', async () => {
+        seed(makePayment({ paymentStatus: PaymentStatus.PAID, paidAt: new Date() }));
+
+        const result = await service.applyPaymentEvent(makeEvent());
+
+        expect(result).toEqual({ applied: false, orderId: 'order-uuid-1' });
+        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+      });
+    });
+
+    // ── FAILED ────────────────────────────────────────────────────────────────
+
+    describe('FAILED', () => {
+      const failure = makeEvent({
+        outcome: PaymentOutcome.FAILED,
+        providerStatus: 'failure',
+        failureCode: '4159',
+        failureMessage: 'Card declined',
+      });
+
+      it('marks an unpaid order FAILED and keeps the provider diagnostics', async () => {
+        seed(makePayment());
+
+        const result = await service.applyPaymentEvent(failure);
+
+        expect(result.applied).toBe(true);
+        const plan = lastPlan();
+        expect(plan.attemptStatus).toBe(PaymentAttemptStatus.FAILED);
+        expect(plan.paymentStatusChange).toEqual({
+          from: PaymentStatus.PENDING,
+          to: PaymentStatus.FAILED,
+        });
+        expect(plan.failureCode).toBe('4159');
+        expect(plan.failureMessage).toBe('Card declined');
+      });
+
+      it('never cancels the order or touches its stock (the customer may retry)', async () => {
+        seed(makePayment());
+
+        await service.applyPaymentEvent(failure);
+
+        const plan = lastPlan();
+        expect(plan.statusChange).toBeUndefined();
+        expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+      });
+
+      it('does NOT un-pay an already-PAID order (a late failure for a superseded attempt)', async () => {
+        seed(makePayment({ paymentStatus: PaymentStatus.PAID, paidAt: new Date() }));
+
+        await service.applyPaymentEvent(failure);
+
+        const plan = lastPlan();
+        // The attempt itself is still recorded as failed — the shopper's first
+        // card really was declined — but the order stays paid.
+        expect(plan.attemptStatus).toBe(PaymentAttemptStatus.FAILED);
+        expect(plan.paymentStatusChange).toBeUndefined();
+      });
+    });
+
+    // ── REFUNDED ──────────────────────────────────────────────────────────────
+
+    describe('REFUNDED', () => {
+      const refund = makeEvent({ outcome: PaymentOutcome.REFUNDED, providerStatus: 'reversed' });
+
+      it('refunds the payment and moves a DELIVERED order to REFUNDED', async () => {
+        seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
+
+        await service.applyPaymentEvent(refund);
+
+        const plan = lastPlan();
+        expect(plan.attemptStatus).toBe(PaymentAttemptStatus.REFUNDED);
+        expect(plan.paymentStatusChange).toEqual({
+          from: PaymentStatus.PAID,
+          to: PaymentStatus.REFUNDED,
+        });
+        expect(plan.statusChange).toEqual({
+          from: OrderStatus.DELIVERED,
+          to: OrderStatus.REFUNDED,
+        });
+      });
+
+      it('records the money without a status move when REFUNDED is not reachable', async () => {
+        // Nothing shipped, so the order cannot become REFUNDED — but the money
+        // really did go back and the ledger has to say so.
+        seed(makePayment({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PAID }));
+
+        await service.applyPaymentEvent(refund);
+
+        expect(lastPlan().paymentStatusChange?.to).toBe(PaymentStatus.REFUNDED);
+        expect(lastPlan().statusChange).toBeUndefined();
+      });
+
+      it('never auto-restocks — the goods have to come back first (TASK-124)', async () => {
+        seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
+
+        await service.applyPaymentEvent(refund);
+
+        expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+      });
+
+      it('changes nothing on a second refund callback', async () => {
+        seed(makePayment({ paymentStatus: PaymentStatus.REFUNDED }));
+
+        const result = await service.applyPaymentEvent(refund);
+
+        expect(result.applied).toBe(false);
+        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+      });
+    });
+
+    // ── IGNORED ───────────────────────────────────────────────────────────────
+
+    it('changes nothing for an IGNORED outcome ("still processing")', async () => {
+      seed(makePayment());
+
+      const result = await service.applyPaymentEvent(
+        makeEvent({ outcome: PaymentOutcome.IGNORED, providerStatus: 'wait_secure' }),
+      );
+
+      expect(result).toEqual({ applied: false, orderId: 'order-uuid-1' });
+      expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+    });
+
+    it('verifies the amount even on an outcome it will not act upon', async () => {
+      // Order matters: an "in progress" notification carrying the wrong money is
+      // still evidence of tampering, and reporting it as a boring no-op hides that.
+      seed(makePayment());
+
+      await expect(
+        service.applyPaymentEvent(makeEvent({ outcome: PaymentOutcome.IGNORED, amount: '0.01' })),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

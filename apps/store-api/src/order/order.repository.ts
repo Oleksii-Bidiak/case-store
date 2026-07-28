@@ -13,6 +13,8 @@ import type {
   OrderItemRow,
   OrderStatusHistoryRow,
   OrderAddonSnapshot,
+  PaymentWithOrderRow,
+  PaymentApplyPlan,
 } from './order.types';
 import type { OrderListQueryDto, AdminOrderListQueryDto } from './dto';
 import { staleOrderError } from './order.errors';
@@ -653,6 +655,114 @@ export class OrderRepository {
         },
       });
       return updated;
+    })) as OrderWithItems;
+  }
+
+  /**
+   * Read the Payment attempt a provider callback names, with the slice of its
+   * order needed to decide what the event means (TASK-330).
+   *
+   * The `payments` table belongs to the payment module, but this read lives here
+   * for the same reason `applyPaymentEvent` does: the order module is the only
+   * thing allowed to move an order, and it cannot make that decision without
+   * knowing what was originally charged. The payment module hands over an id and
+   * a translated outcome; it never reads or writes order rows itself.
+   *
+   * Deliberately slim on the order side — a webhook is a hot path, and the
+   * decision needs the current statuses, nothing more. No items, no images.
+   */
+  findPaymentWithOrder(paymentId: string): Promise<PaymentWithOrderRow | null> {
+    return this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      select: {
+        id: true,
+        orderId: true,
+        provider: true,
+        providerPaymentId: true,
+        amount: true,
+        currency: true,
+        status: true,
+        order: {
+          select: {
+            id: true,
+            status: true,
+            paymentStatus: true,
+            paidAt: true,
+            reservationExpiresAt: true,
+          },
+        },
+      },
+    }) as Promise<PaymentWithOrderRow | null>;
+  }
+
+  /**
+   * Write an already-decided payment application in ONE transaction (TASK-330).
+   *
+   * Every field of the plan was chosen by the service; nothing here branches on
+   * business meaning. That is the point: "a partial application is how stock,
+   * money and history drift apart" is only enforceable if there is exactly one
+   * place a partial application could be introduced, and it is this method.
+   *
+   * Up to five writes commit together — the attempt's own state, the order's
+   * payment status, `paidAt`, the lifted reservation deadline, the order status,
+   * and one history row per status kind that actually moved. `changedBy` is null
+   * on every history row: a callback has no acting user, and inventing one would
+   * put a lie in the audit trail.
+   */
+  async applyPaymentOutcome(plan: PaymentApplyPlan): Promise<OrderWithItems> {
+    return (await this.prisma.$transaction(async (tx) => {
+      await tx.payment.update({
+        where: { id: plan.paymentId },
+        data: {
+          status: plan.attemptStatus,
+          ...(plan.providerPaymentId ? { providerPaymentId: plan.providerPaymentId } : {}),
+          ...(plan.failureCode !== undefined ? { failureCode: plan.failureCode } : {}),
+          ...(plan.failureMessage !== undefined ? { failureMessage: plan.failureMessage } : {}),
+          ...(plan.settledAt !== undefined ? { settledAt: plan.settledAt } : {}),
+        },
+      });
+
+      const orderData: Prisma.OrderUpdateInput = {};
+      if (plan.paymentStatusChange) orderData.paymentStatus = plan.paymentStatusChange.to;
+      if (plan.statusChange) orderData.status = plan.statusChange.to;
+      if (plan.paidAt !== undefined) orderData.paidAt = plan.paidAt;
+      // Lifting the deadline is unconditional once payment settled: a paid order's
+      // reservation is no longer provisional, and leaving the column set would let
+      // the auto-cancel worker cancel an order the customer has already paid for.
+      if (plan.clearReservation) orderData.reservationExpiresAt = null;
+
+      if (Object.keys(orderData).length > 0) {
+        await tx.order.update({ where: { id: plan.orderId }, data: orderData });
+      }
+
+      if (plan.paymentStatusChange) {
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: plan.orderId,
+            changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+            fromPaymentStatus: plan.paymentStatusChange.from,
+            toPaymentStatus: plan.paymentStatusChange.to,
+            changedBy: null,
+          },
+        });
+      }
+
+      if (plan.statusChange) {
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: plan.orderId,
+            changeType: OrderHistoryChangeType.STATUS,
+            fromStatus: plan.statusChange.from,
+            toStatus: plan.statusChange.to,
+            changedBy: null,
+          },
+        });
+      }
+
+      return tx.order.findUniqueOrThrow({
+        where: { id: plan.orderId },
+        include: ORDERS_INCLUDE,
+      });
     })) as OrderWithItems;
   }
 

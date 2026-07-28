@@ -1,5 +1,10 @@
 import { ConflictException } from '@nestjs/common';
-import { OrderStatus, PaymentStatus, OrderHistoryChangeType } from '@prisma/client';
+import {
+  OrderStatus,
+  PaymentStatus,
+  PaymentAttemptStatus,
+  OrderHistoryChangeType,
+} from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { PrismaService } from '../prisma';
 import {
@@ -34,6 +39,10 @@ const makeTx = () => ({
   },
   product: {
     updateMany: jest.fn(),
+    update: jest.fn(),
+  },
+  // TASK-330: the payment attempt is settled in the same transaction as the order.
+  payment: {
     update: jest.fn(),
   },
   // TASK-251: history rows are written inside every mutation transaction.
@@ -787,6 +796,132 @@ describe('OrderRepository', () => {
           changedBy: 'admin-uuid-1',
         },
       });
+    });
+  });
+
+  // ─── applyPaymentOutcome — one transaction, no acting user (TASK-330) ───────
+  // The service decides; this method only writes. What matters here is that
+  // everything lands together and that the audit trail says "system", because a
+  // callback has no acting user and inventing one puts a lie in the record.
+
+  describe('applyPaymentOutcome', () => {
+    const seedTx = () => {
+      const tx = makeTx();
+      tx.order.findUniqueOrThrow.mockResolvedValue({ id: 'order-1', items: [] });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      return tx;
+    };
+
+    const successPlan = {
+      paymentId: 'payment-1',
+      orderId: 'order-1',
+      attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+      providerPaymentId: 'liqpay-9001',
+      settledAt: new Date('2026-07-28T10:30:00.000Z'),
+      paymentStatusChange: { from: PaymentStatus.PENDING, to: PaymentStatus.PAID },
+      paidAt: new Date('2026-07-28T10:30:00.000Z'),
+      clearReservation: true,
+      statusChange: { from: OrderStatus.PENDING, to: OrderStatus.CONFIRMED },
+    };
+
+    it('settles the attempt with the provider id it learned', async () => {
+      const tx = seedTx();
+
+      await repository.applyPaymentOutcome(successPlan);
+
+      expect(tx.payment.update).toHaveBeenCalledWith({
+        where: { id: 'payment-1' },
+        data: expect.objectContaining({
+          status: PaymentAttemptStatus.SUCCEEDED,
+          providerPaymentId: 'liqpay-9001',
+          settledAt: successPlan.settledAt,
+        }),
+      });
+    });
+
+    it('moves payment status, order status, paidAt and the reservation in ONE order update', async () => {
+      const tx = seedTx();
+
+      await repository.applyPaymentOutcome(successPlan);
+
+      expect(tx.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: {
+          paymentStatus: PaymentStatus.PAID,
+          status: OrderStatus.CONFIRMED,
+          paidAt: successPlan.paidAt,
+          // A paid order's reservation is no longer provisional — leaving this set
+          // would let the auto-cancel worker cancel an order that is already paid.
+          reservationExpiresAt: null,
+        },
+      });
+    });
+
+    it('writes both history rows with changedBy null (a callback has no acting user)', async () => {
+      const tx = seedTx();
+
+      await repository.applyPaymentOutcome(successPlan);
+
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: {
+          orderId: 'order-1',
+          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+          fromPaymentStatus: PaymentStatus.PENDING,
+          toPaymentStatus: PaymentStatus.PAID,
+          changedBy: null,
+        },
+      });
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: {
+          orderId: 'order-1',
+          changeType: OrderHistoryChangeType.STATUS,
+          fromStatus: OrderStatus.PENDING,
+          toStatus: OrderStatus.CONFIRMED,
+          changedBy: null,
+        },
+      });
+    });
+
+    it('writes no STATUS row when the plan carries no status move', async () => {
+      const tx = seedTx();
+      const planWithoutStatusMove = { ...successPlan, statusChange: undefined };
+
+      await repository.applyPaymentOutcome(planWithoutStatusMove);
+
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledTimes(1);
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ changeType: OrderHistoryChangeType.PAYMENT_STATUS }),
+        }),
+      );
+    });
+
+    it('touches the order at all only when the plan changes something on it', async () => {
+      const tx = seedTx();
+
+      // A failed attempt on an already-paid order: the attempt is recorded, the
+      // order is not touched.
+      await repository.applyPaymentOutcome({
+        paymentId: 'payment-1',
+        orderId: 'order-1',
+        attemptStatus: PaymentAttemptStatus.FAILED,
+        failureCode: '4159',
+        failureMessage: 'Card declined',
+      });
+
+      expect(tx.payment.update).toHaveBeenCalled();
+      expect(tx.order.update).not.toHaveBeenCalled();
+      expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+    });
+
+    it('rolls back everything when a write inside the transaction rejects', async () => {
+      const tx = makeTx();
+      tx.orderStatusHistory.create.mockRejectedValue(new Error('history insert failed'));
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+
+      await expect(repository.applyPaymentOutcome(successPlan)).rejects.toThrow(
+        'history insert failed',
+      );
     });
   });
 

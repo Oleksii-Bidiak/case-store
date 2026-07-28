@@ -1,13 +1,12 @@
 import {
   Injectable,
   NotFoundException,
-  NotImplementedException,
   BadRequestException,
   ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus, PaymentAttemptStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { CartRepository, type CartWithItems } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
@@ -20,8 +19,14 @@ import { allowedTransitions, canTransition } from './order-state-machine';
 import { invalidTransitionError, staleOrderError } from './order.errors';
 import { AddonApplicabilityResolver } from '../addon-service';
 import type { CreateOrderDto, OrderListQueryDto, AdminOrderListQueryDto } from './dto';
-import type { CreateOrderParams, OrderAddonSnapshot } from './order.types';
+import type {
+  CreateOrderParams,
+  OrderAddonSnapshot,
+  PaymentApplyPlan,
+  PaymentWithOrderRow,
+} from './order.types';
 import type { PaymentApplyResult, PaymentEventInput } from '../payment/payment.types';
+import { PaymentOutcome } from '../payment/payment.types';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
@@ -129,8 +134,9 @@ export class OrderService {
     }
 
     // Compute the Nova Poshta shipping cost when the order carries an NP city
-    // ref (TASK-080). estimateShipping never throws (it self-falls-back to 0),
-    // but we guard defensively so a delivery hiccup can never block an order.
+    // ref (TASK-080). A transient courier failure must never block an order, so
+    // the fallback to 0 stays — but it is a fallback for a BAD MINUTE, not for a
+    // bad deployment (TASK-337).
     let shippingCost: number | undefined;
     const npCityRef = dto.shippingAddress.npCityRef;
     if (npCityRef) {
@@ -138,6 +144,11 @@ export class OrderService {
         const estimate = await this.deliveryService.estimateShipping(npCityRef);
         shippingCost = Number(estimate.cost);
       } catch (err) {
+        // A missing NP_API_KEY is a deployment defect, not a courier hiccup.
+        // Swallowing it here would book a 0.00 shipping cost on every real order
+        // — the shop paying for delivery out of its own pocket, silently, with
+        // nothing in the logs louder than a warning. Let it out.
+        if (isDeliveryNotConfiguredError(err)) throw err;
         this.logger.warn({ err, npCityRef }, 'Shipping estimate failed at order creation; using 0');
         shippingCost = 0;
       }
@@ -558,12 +569,199 @@ export class OrderService {
    * reporting work still in progress); the caller answers 200 either way, because
    * a provider that does not get a 200 will simply retry forever.
    *
+   * ── HOW THE THREE RULES ARE HONOURED (TASK-332 implementation) ───────────────
+   *
+   *  1. *Idempotency.* Nothing here asks "have I seen this event?" — by the time
+   *     we are called, the caller's PaymentEvent insert has already survived the
+   *     unique constraint, which is the only trustworthy answer. What this method
+   *     does add is idempotency of MEANING: a second SUCCEEDED for an order that
+   *     is already PAID changes nothing and reports `applied: false`. Those are
+   *     different questions, and the second one cannot be delegated to an index.
+   *  2. *Verify the money.* {@link assertAmountMatches} compares the reported
+   *     amount and currency against what the Payment row was created with, in
+   *     integer cents. A mismatch THROWS rather than returning `applied: false`:
+   *     a tampered amount is not a no-op event, it is an attack, and swallowing
+   *     it quietly is how it goes unnoticed.
+   *  3. *One transaction.* The service decides; `applyPaymentOutcome` writes. Every
+   *     column and every history row moves together or not at all.
+   *
+   * The state machine is consulted, never bypassed: when a payment succeeds on an
+   * order the operator has already advanced to PROCESSING, the money is recorded
+   * and the STATUS is left alone, because PROCESSING → CONFIRMED is not a legal
+   * move. Before the state machine existed, that same callback would have dragged
+   * the order backwards.
+   *
    * @throws NotFoundException when the payment or its order does not exist.
+   * @throws BadRequestException when the reported amount/currency does not match
+   *   what was charged.
    */
-  applyPaymentEvent(_event: PaymentEventInput): Promise<PaymentApplyResult> {
-    throw new NotImplementedException(
-      'OrderService.applyPaymentEvent is a declared seam (plan 167) — implemented by TASK-330-A/332',
+  async applyPaymentEvent(event: PaymentEventInput): Promise<PaymentApplyResult> {
+    const payment = await this.orderRepository.findPaymentWithOrder(event.paymentId);
+
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+
+    const { order } = payment;
+    this.assertAmountMatches(payment, event);
+
+    const plan = this.planPaymentApplication(payment, event);
+
+    if (!plan) {
+      this.logger.info(
+        {
+          event: 'order.payment_event_ignored',
+          orderId: order.id,
+          paymentId: payment.id,
+          outcome: event.outcome,
+          providerStatus: event.providerStatus,
+        },
+        'Payment event recorded but not actionable',
+      );
+      return { applied: false, orderId: order.id };
+    }
+
+    await this.orderRepository.applyPaymentOutcome(plan);
+
+    this.logger.info(
+      {
+        event: 'order.payment_event_applied',
+        orderId: order.id,
+        paymentId: payment.id,
+        outcome: event.outcome,
+        providerStatus: event.providerStatus,
+        paymentStatus: plan.paymentStatusChange?.to,
+        status: plan.statusChange?.to,
+      },
+      'Payment event applied to order',
     );
+
+    return { applied: true, orderId: order.id };
+  }
+
+  /**
+   * Refuse an event whose money does not match what was charged.
+   *
+   * Compared in integer cents because the provider's "100.0" and our "100.00" are
+   * the same money and a string compare says otherwise; currency case-insensitively
+   * for the same reason. Both sides of the comparison are frozen values — the
+   * Payment row's amount was written when we created the attempt, before the
+   * customer ever reached the provider — so this is a genuine check and not a
+   * comparison of the callback against itself.
+   */
+  private assertAmountMatches(payment: PaymentWithOrderRow, event: PaymentEventInput): void {
+    const expectedCents = toCents(payment.amount.toString());
+    const reportedCents = toCents(event.amount);
+    const currencyMatches = payment.currency.toUpperCase() === event.currency.toUpperCase();
+
+    if (expectedCents === reportedCents && currencyMatches) {
+      return;
+    }
+
+    this.logger.error(
+      {
+        event: 'order.payment_event_amount_mismatch',
+        paymentId: payment.id,
+        orderId: payment.orderId,
+        expected: `${payment.amount.toString()} ${payment.currency}`,
+        reported: `${event.amount} ${event.currency}`,
+        providerStatus: event.providerStatus,
+      },
+      'Rejected a payment event whose amount or currency does not match the charge',
+    );
+
+    throw new BadRequestException('Payment amount or currency does not match the charge');
+  }
+
+  /**
+   * Turn a translated provider event into the write plan — or `null` when there is
+   * nothing to do.
+   *
+   * All the business judgement of the payment path lives in this one pure-ish
+   * function, so the rules can be read in one screen rather than reconstructed
+   * from a transaction body:
+   *
+   * - **SUCCEEDED** marks the money ours, stamps `paidAt`, lifts the reservation
+   *   deadline, and moves a still-PENDING order to CONFIRMED. Already PAID → null.
+   * - **FAILED** records the failed attempt and marks the order's payment FAILED,
+   *   but only while it is still unpaid: a late failure callback for a superseded
+   *   attempt must never un-pay a paid order. The order itself is NOT cancelled —
+   *   the customer may retry, and the reservation worker owns the deadline.
+   * - **REFUNDED** moves the order's payment to REFUNDED and, where the state
+   *   machine permits, the order to REFUNDED. Stock is deliberately NOT credited
+   *   back: the goods have to physically return first (TASK-124's rule, unchanged).
+   * - **IGNORED** — "still processing" — changes nothing. There is no PENDING
+   *   outcome for exactly this reason: treating "not finished yet" as an event to
+   *   act on is how an order flips to paid before the money exists.
+   */
+  private planPaymentApplication(
+    payment: PaymentWithOrderRow,
+    event: PaymentEventInput,
+  ): PaymentApplyPlan | null {
+    const { order } = payment;
+    const now = new Date();
+    const base = {
+      paymentId: payment.id,
+      orderId: order.id,
+      ...(event.providerPaymentId ? { providerPaymentId: event.providerPaymentId } : {}),
+    };
+
+    switch (event.outcome) {
+      case PaymentOutcome.SUCCEEDED: {
+        if (order.paymentStatus === PaymentStatus.PAID) return null;
+        return {
+          ...base,
+          attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+          settledAt: now,
+          failureCode: null,
+          failureMessage: null,
+          paymentStatusChange: { from: order.paymentStatus, to: PaymentStatus.PAID },
+          paidAt: order.paidAt ?? now,
+          clearReservation: true,
+          ...(canTransition(order.status, OrderStatus.CONFIRMED)
+            ? { statusChange: { from: order.status, to: OrderStatus.CONFIRMED } }
+            : {}),
+        };
+      }
+
+      case PaymentOutcome.FAILED: {
+        // An attempt that failed is worth recording even on a paid order (the
+        // customer's second card may have been declined before the third worked),
+        // but it must not touch the order's payment status.
+        const alreadySettled =
+          order.paymentStatus === PaymentStatus.PAID ||
+          order.paymentStatus === PaymentStatus.REFUNDED;
+        if (payment.status === PaymentAttemptStatus.FAILED && alreadySettled) return null;
+        return {
+          ...base,
+          attemptStatus: PaymentAttemptStatus.FAILED,
+          ...(event.failureCode !== undefined ? { failureCode: event.failureCode } : {}),
+          ...(event.failureMessage !== undefined ? { failureMessage: event.failureMessage } : {}),
+          ...(alreadySettled
+            ? {}
+            : {
+                paymentStatusChange: { from: order.paymentStatus, to: PaymentStatus.FAILED },
+              }),
+        };
+      }
+
+      case PaymentOutcome.REFUNDED: {
+        if (order.paymentStatus === PaymentStatus.REFUNDED) return null;
+        return {
+          ...base,
+          attemptStatus: PaymentAttemptStatus.REFUNDED,
+          settledAt: now,
+          paymentStatusChange: { from: order.paymentStatus, to: PaymentStatus.REFUNDED },
+          ...(canTransition(order.status, OrderStatus.REFUNDED)
+            ? { statusChange: { from: order.status, to: OrderStatus.REFUNDED } }
+            : {}),
+        };
+      }
+
+      case PaymentOutcome.IGNORED:
+      default:
+        return null;
+    }
   }
 
   /**
@@ -644,6 +842,46 @@ export class OrderService {
 
     return snapshots;
   }
+}
+
+/**
+ * Class name of the delivery module's "Nova Poshta was never configured" error.
+ * Declared as a string here — see {@link isDeliveryNotConfiguredError}.
+ */
+const DELIVERY_NOT_CONFIGURED = 'DeliveryNotConfiguredException';
+
+/**
+ * Whether a failed shipping estimate means "not configured" rather than "Nova
+ * Poshta had a bad minute" (TASK-337, WT-D seam).
+ *
+ * ── INTEGRATION NOTE (orchestrator, plan 167) ───────────────────────────────
+ * WT-D exports the canonical predicate for this. Once that branch is merged,
+ * DELETE this function and use it directly:
+ *
+ *     import { isDeliveryNotConfigured } from '../delivery';
+ *     if (isDeliveryNotConfigured(err)) throw err;
+ *
+ * It is duplicated by NAME here, and never as a copy of WT-D's exception class,
+ * because two competing definitions of the same failure is exactly the bug that
+ * would outlive this comment. The name check is deliberately belt-and-braces:
+ * `err.name` covers classes extending `HttpException` (which assigns
+ * `this.name = this.constructor.name`), and `err.constructor.name` covers a class
+ * extending plain `Error`, so it holds whichever base WT-D chose.
+ */
+function isDeliveryNotConfiguredError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return err.name === DELIVERY_NOT_CONFIGURED || err.constructor?.name === DELIVERY_NOT_CONFIGURED;
+}
+
+/**
+ * Parse a decimal money string into integer cents.
+ *
+ * Used to compare a provider's reported amount against the frozen charge. "100.0"
+ * and "100.00" are the same money; a string comparison disagrees, and a float
+ * comparison disagrees intermittently, which is worse.
+ */
+function toCents(value: string): number {
+  return Math.round(parseFloat(value) * 100);
 }
 
 /**

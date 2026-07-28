@@ -1,4 +1,11 @@
-import { Prisma, OrderStatus, PaymentStatus, OrderHistoryChangeType } from '@prisma/client';
+import {
+  Prisma,
+  OrderStatus,
+  PaymentStatus,
+  PaymentMethod,
+  PaymentAttemptStatus,
+  OrderHistoryChangeType,
+} from '@prisma/client';
 import type { CartWithItems } from '../cart/cart.repository';
 import type { AddressDto } from './dto';
 
@@ -121,6 +128,31 @@ export interface OrderWithItems {
    * consults it to re-reserve stock on revive and to prevent double restocks.
    */
   restockedAt: Date | null;
+  /**
+   * ── Stage-8 columns (TASK-330 / 332 / 335 / 336) ──────────────────────────
+   * Declared OPTIONAL even though every read path selects the whole order row.
+   * The fixtures across the unit and e2e suites predate these columns, and making
+   * them required would turn a purely additive change into a rewrite of a dozen
+   * unrelated test files for no gain in safety: every one of them is nullable in
+   * the schema, so `undefined` and `null` mean the same thing to every reader.
+   * This is the same treatment `addonsTotal` already gets in
+   * `OrderEntity.fromPrisma` (`?? '0'`).
+   */
+
+  /** How the customer chose to pay (TASK-330). */
+  paymentMethod?: PaymentMethod;
+  /** When money actually settled (TASK-330); null while unpaid. */
+  paidAt?: Date | null;
+  /** Deadline on an unpaid ONLINE order's stock reservation (TASK-330). */
+  reservationExpiresAt?: Date | null;
+  /** Nova Poshta waybill typed in by the operator (TASK-335). */
+  trackingNumber?: string | null;
+  /**
+   * Operator-only notes (TASK-336). Strictly distinct from `notes`, which is what
+   * the CUSTOMER typed at checkout — this one must never reach a customer-facing
+   * response.
+   */
+  internalNotes?: string | null;
   items: OrderItemRow[];
   /**
    * Owning user account, selected only by the admin read paths
@@ -176,4 +208,73 @@ export interface CreateOrderParams {
     /** Redeem callback bound to the discount + user; called with the new order id and the tx. */
     redeem: (orderId: string, tx: Prisma.TransactionClient) => Promise<void>;
   };
+}
+
+/**
+ * The Payment attempt a provider callback refers to, with just enough of its
+ * order attached to decide what the event means (TASK-330).
+ *
+ * Read by {@link OrderRepository.findPaymentWithOrder} and consumed by
+ * `OrderService.applyPaymentEvent`. The order side is deliberately minimal: the
+ * decision needs the current statuses and nothing else, and a slim row keeps a
+ * hot webhook path from dragging every order line and product image with it.
+ */
+export interface PaymentWithOrderRow {
+  id: string;
+  orderId: string;
+  provider: string;
+  providerPaymentId: string | null;
+  /** Frozen at creation — the figure a callback's amount is checked against. */
+  amount: { toString(): string };
+  currency: string;
+  status: PaymentAttemptStatus;
+  order: {
+    id: string;
+    status: OrderStatus;
+    paymentStatus: PaymentStatus;
+    paidAt: Date | null;
+    reservationExpiresAt: Date | null;
+  };
+}
+
+/**
+ * A fully-decided payment application, ready to be written (TASK-330).
+ *
+ * The SERVICE decides all of this — which attempt status, whether the order's
+ * payment status moves, whether the order status may follow, whether the
+ * reservation deadline is lifted. The REPOSITORY only writes it, in one
+ * transaction. That split is what keeps the "everything or nothing" rule
+ * enforceable: there is exactly one place where a partial application could be
+ * introduced, and it contains no branching on business meaning.
+ */
+export interface PaymentApplyPlan {
+  paymentId: string;
+  orderId: string;
+  /** New lifecycle state of THIS attempt. */
+  attemptStatus: PaymentAttemptStatus;
+  /** The provider's own id, learned from the callback; '' when it sent none. */
+  providerPaymentId?: string;
+  failureCode?: string | null;
+  failureMessage?: string | null;
+  /** Stamped on the attempt when it reached a final, money-moved state. */
+  settledAt?: Date | null;
+  /**
+   * Order payment-status move. Omitted when the event changes only the attempt
+   * (e.g. a late failure for a superseded attempt on an already-paid order).
+   */
+  paymentStatusChange?: { from: PaymentStatus; to: PaymentStatus };
+  /** Set when money settled; null leaves the column untouched. */
+  paidAt?: Date | null;
+  /**
+   * Lift the stock-reservation deadline. True exactly when payment succeeded:
+   * a paid order's reservation is no longer provisional, so the auto-cancel
+   * worker must never see it again.
+   */
+  clearReservation?: boolean;
+  /**
+   * Order status move, already validated against the state machine by the
+   * service. Absent when the operator has moved the order past the point where
+   * a payment event would have anything to say about it.
+   */
+  statusChange?: { from: OrderStatus; to: OrderStatus };
 }
