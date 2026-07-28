@@ -1,36 +1,16 @@
 import type { Metadata } from "next";
-import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
 import { InfoView, INFO_FAQS, type InfoFaq } from "@/widgets/info-support";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema, buildFaqPageSchema } from "@/shared/lib/schema";
 import { fetchFaqItems } from "@/shared/api/faq-server";
-import { serverFetch } from "@/shared/api/server-fetch";
+import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { SITE_URL, dict } from "@/shared/config";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 export const metadata: Metadata = {
   title: dict.info.heading,
   description: dict.info.deliveryIntro,
   alternates: { canonical: `${SITE_URL}/info` },
 };
-
-/**
- * Admin-managed contact details (TASK-154), fetched with ISR like the footer.
- * Returns null on any error — the view falls back to the localized defaults.
- */
-async function getContactSettings(): Promise<SiteContactSettingsEntity | null> {
-  try {
-    const res = await serverFetch(`${API_BASE_URL}/api/site-contact`, {
-      next: { revalidate: 3600 },
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { data?: SiteContactSettingsEntity };
-    return body.data ?? null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Load the admin-managed FAQ list (ISR-tagged `faq`) and map it onto the
@@ -46,7 +26,13 @@ async function getFaqs(): Promise<readonly InfoFaq[]> {
 }
 
 export default async function InfoPage() {
-  const [contact, faqs] = await Promise.all([getContactSettings(), getFaqs()]);
+  // Contacts come from the shared, `site-contact` tagged fetcher (TASK-345) —
+  // this page used to hold its own untagged copy, so admin edits took up to an
+  // hour to appear here while the footer updated at once.
+  const [contact, faqs] = await Promise.all([
+    fetchSiteContactSettings(),
+    getFaqs(),
+  ]);
 
   return (
     <div className="mx-auto w-full max-w-[1320px] px-4 pt-[22px] pb-16 sm:px-6">

@@ -1,12 +1,9 @@
 import type { Metadata } from "next";
-import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
 import { ContactView } from "@/widgets/contact";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
-import { serverFetch } from "@/shared/api/server-fetch";
+import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { SITE_URL, dict } from "@/shared/config";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 export const metadata: Metadata = {
   title: dict.meta.contactTitle,
@@ -14,25 +11,13 @@ export const metadata: Metadata = {
   alternates: { canonical: `${SITE_URL}/contact` },
 };
 
-/**
- * Admin-managed contact details (TASK-154), fetched with ISR like the footer.
- * Returns null on any error — the view falls back to the localized defaults.
- */
-async function getContactSettings(): Promise<SiteContactSettingsEntity | null> {
-  try {
-    const res = await serverFetch(`${API_BASE_URL}/api/site-contact`, {
-      next: { revalidate: 3600 },
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { data?: SiteContactSettingsEntity };
-    return body.data ?? null;
-  } catch {
-    return null;
-  }
-}
-
 export default async function ContactPage() {
-  const contact = await getContactSettings();
+  // Admin-managed contact details (TASK-154) through the shared, `site-contact`
+  // tagged fetcher (TASK-345). This page used to carry its own untagged copy, so
+  // an admin edit reached the footer instantly but left /contact stale for up to
+  // an hour — not acceptable for details a shopper is legally entitled to find
+  // current.
+  const contact = await fetchSiteContactSettings();
 
   return (
     <div className="mx-auto w-full max-w-[1320px] px-4 pt-[22px] pb-16 sm:px-6">
