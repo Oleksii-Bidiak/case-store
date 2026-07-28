@@ -102,6 +102,7 @@ const GROUPS = [
   ["oauth", "Вхід через Google"],
   ["mail", "Пошта (SMTP)"],
   ["delivery", "Доставка (Нова Пошта)"],
+  ["payments", "Онлайн-оплата (LiqPay)"],
   ["sentry", "Sentry (помилки)"],
   ["analytics", "Umami (аналітика)"],
   ["frontend", "Вітрина й адмінка (публічні, build-time)"],
@@ -767,6 +768,191 @@ const VARS = [
     effect:
       "Порожній → місто відправлення для розрахунку вартості вважається Києвом.",
     howTo: "UUID міста з довідника НП; далі редагується в адмінці.",
+  },
+  {
+    name: "NP_ALLOW_KEYLESS",
+    group: "delivery",
+    need: "optional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    code: "either",
+    effect:
+      "Лише dev/staging. `true` → клієнт НП ходить у справжнє API з порожнім ключем (перевірено 2026-07-28: усі методи, які викликає проєкт, так відповідають) — це дозволяє пройти живу перевірку LG-4 ще до видачі ключа замовником. У проді МУСИТЬ бути `false`: поведінка недокументована й анонімні запити лімітуються.",
+    howTo: "Не задавайте у проді. На стенді — `true`.",
+    gap: {
+      reason:
+        "declared ahead of its reader: NovaPoshtaClient starts honouring it in TASK-337, which lands in the Stage-8 backend wave",
+      task: "TASK-337",
+    },
+  },
+
+  // ─── Онлайн-оплата ────────────────────────────────────────────────────────
+  {
+    name: "LIQPAY_PUBLIC_KEY",
+    group: "payments",
+    need: "conditional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    code: "either",
+    effect:
+      "Порожній → онлайн-оплати немає взагалі, чекаут пропонує лише оплату при отриманні. Застосунок стартує.",
+    howTo:
+      "Кабінет мерчанта LiqPay (реєструє ВЛАСНИК на свій ФОП). Тестова пара має префікс `sandbox_`.",
+    gap: {
+      reason: "declared ahead of its reader: the LiqPay adapter lands in TASK-330-A",
+      task: "TASK-330",
+    },
+  },
+  {
+    name: "LIQPAY_PRIVATE_KEY",
+    group: "payments",
+    need: "conditional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    code: "either",
+    effect:
+      "Порожній → те саме, що й без публічного ключа. Ключ підпису: НІКОЛИ не потрапляє у фронт і не може бути build-arg.",
+    howTo: "Той самий кабінет; зберігати в менеджері паролів разом із рештою секретів.",
+    gap: {
+      reason: "declared ahead of its reader: the LiqPay adapter lands in TASK-330-A",
+      task: "TASK-330",
+    },
+  },
+  {
+    name: "LIQPAY_SANDBOX",
+    group: "payments",
+    need: "optional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    code: "either",
+    effect:
+      "У проді МУСИТЬ бути `false`. У пісочниці LiqPay віддає статус `sandbox`, який адаптер трактує як успішну оплату — залишений увімкненим у проді, він дозволяє будь-кому, хто знає публічний ключ, позначати замовлення оплаченими.",
+    howTo: "`true` лише на staging, разом із ключами `sandbox_*`.",
+    gap: {
+      reason: "declared ahead of its reader: the LiqPay adapter lands in TASK-330-A",
+      task: "TASK-330",
+    },
+  },
+  {
+    name: "LIQPAY_PAYTYPES",
+    group: "payments",
+    need: "optional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    code: "either",
+    effect:
+      "Порожній → дефолтний набір (картка, Apple/Google Pay, Privat24). `payparts`/`moment_part` (оплата частинами) потребують ОКРЕМОЇ угоди з ПриватБанком — без неї кнопка з'явиться і не спрацює.",
+    howTo: "Через кому. Розстрочку додавати лише після підписання угоди.",
+    gap: {
+      reason: "declared ahead of its reader: the LiqPay adapter lands in TASK-330-A",
+      task: "TASK-330",
+    },
+  },
+  {
+    name: "PAYMENT_RECONCILE_CRON",
+    group: "payments",
+    need: "optional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    code: "either",
+    effect:
+      "Порожній → щохвилини. Це страховка від callback-ів, які не дійшли: LiqPay не документує ретраї, тож без опитування покупець може заплатити, а замовлення лишиться неоплаченим назавжди.",
+    howTo: "Cron-вираз. Змінюйте лише якщо є причина.",
+    gap: {
+      reason: "declared ahead of its reader: the reconcile worker lands in TASK-330-A",
+      task: "TASK-330",
+    },
+  },
+  {
+    name: "ORDER_RESERVATION_TTL_MINUTES",
+    group: "payments",
+    need: "optional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    code: "either",
+    effect:
+      "Порожній → 30 хвилин. Скільки неоплачене онлайн-замовлення тримає резерв складу, перш ніж авто-скасуватись. На післяплату не діє — там резерв безстроковий.",
+    howTo: "Рішення власника; відкрите питання TASK-352. Тому змінна, а не константа.",
+    gap: {
+      reason: "declared ahead of its reader: the reservation deadline lands with TASK-330-A/332",
+      task: "TASK-352",
+    },
+  },
+  {
+    name: "ORDER_AUTOCANCEL_UNPAID",
+    group: "payments",
+    need: "optional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    code: "either",
+    effect:
+      "Порожній → `true`. `false` повністю вимикає авто-скасування: неоплачені замовлення тримають склад, доки не втрутиться оператор.",
+    howTo: "Рішення власника (TASK-352).",
+    gap: {
+      reason: "declared ahead of its reader: the auto-cancel worker lands with TASK-330-A",
+      task: "TASK-352",
+    },
+  },
+  {
+    name: "GUEST_ORDER_TOKEN_TTL_DAYS",
+    group: "payments",
+    need: "optional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    code: "either",
+    effect:
+      "Порожній → 60 днів. Скільки живе посилання зі статусом замовлення для гостя — єдиний спосіб побачити своє замовлення, коли cookie кошика вже немає.",
+    howTo: "Дні. Коротший строк безпечніший, але дратує покупця.",
+    gap: {
+      reason: "declared ahead of its reader: guest order access lands in TASK-338",
+      task: "TASK-338",
+    },
+  },
+  {
+    name: "TOTP_ENCRYPTION_KEY",
+    group: "payments",
+    need: "conditional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    code: "either",
+    effect:
+      "Потрібен лише коли ввімкнено 2FA адмінки. Шифрує TOTP-секрети (AES-256-GCM). ВТРАТА КЛЮЧА = кожен адмін із 2FA заблокований назавжди: секрети не відновлюються, лишаються тільки резервні коди.",
+    howTo:
+      "`openssl rand -base64 32`. Зберігати в менеджері паролів поруч із age-ключем бекапів.",
+    gap: {
+      reason: "declared ahead of its reader: TOTP enrolment lands in TASK-344",
+      task: "TASK-344",
+    },
   },
 
   // ─── Sentry ───────────────────────────────────────────────────────────────

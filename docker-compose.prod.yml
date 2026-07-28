@@ -215,6 +215,25 @@ services:
       MAIL_FROM: ${MAIL_FROM:-}
       NP_API_KEY: ${NP_API_KEY:-}
       NP_SENDER_CITY_REF: ${NP_SENDER_CITY_REF:-}
+      # Dev/staging only — see .env.production.example. Production must fail loudly
+      # on a missing NP key, not quietly ship at its own expense (TASK-337).
+      NP_ALLOW_KEYLESS: ${NP_ALLOW_KEYLESS:-false}
+      # Online payments (TASK-330). Empty keys = online payment unavailable and
+      # checkout offers cash on delivery only; the app still boots.
+      LIQPAY_PUBLIC_KEY: ${LIQPAY_PUBLIC_KEY:-}
+      LIQPAY_PRIVATE_KEY: ${LIQPAY_PRIVATE_KEY:-}
+      # Must stay false here: sandbox mode makes LiqPay report status "sandbox",
+      # which counts as a successful payment.
+      LIQPAY_SANDBOX: ${LIQPAY_SANDBOX:-false}
+      LIQPAY_PAYTYPES: ${LIQPAY_PAYTYPES:-card,apay,gpay,privat24}
+      PAYMENT_RECONCILE_CRON: ${PAYMENT_RECONCILE_CRON:-* * * * *}
+      # Unpaid-online-order policy (owner decision 2026-07-28, open TASK-352).
+      ORDER_RESERVATION_TTL_MINUTES: ${ORDER_RESERVATION_TTL_MINUTES:-30}
+      ORDER_AUTOCANCEL_UNPAID: ${ORDER_AUTOCANCEL_UNPAID:-true}
+      GUEST_ORDER_TOKEN_TTL_DAYS: ${GUEST_ORDER_TOKEN_TTL_DAYS:-60}
+      # Encrypts TOTP secrets at rest (TASK-344). Losing it locks out every
+      # enrolled admin — back it up with the age key.
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}

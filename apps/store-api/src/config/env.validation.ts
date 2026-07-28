@@ -317,6 +317,87 @@ export class EnvironmentVariables {
   @IsString()
   NP_SENDER_CITY_REF?: string;
 
+  // NP_ALLOW_KEYLESS: dev/staging escape hatch (TASK-337). Verified live on
+  // 2026-07-28 that every NP method this project calls answers with an EMPTY
+  // apiKey, so a stand can exercise the real API before the client issues a key.
+  // Undocumented behaviour NP could withdraw at any time, and certainly rate
+  // limited — production fails loudly on a missing key instead.
+  @IsOptional()
+  @IsString()
+  NP_ALLOW_KEYLESS?: string;
+
+  // ─── Online payments — LiqPay (TASK-330) ────────────────────────────────────
+  // All optional: with no keys the app boots and online payment is simply
+  // unavailable (checkout offers cash on delivery only). Both keys come from the
+  // merchant cabinet, which belongs to the shop owner, not the developer.
+  //
+  // LIQPAY_PRIVATE_KEY is the signing secret. It never leaves the server and must
+  // never be exposed as a NEXT_PUBLIC_* build arg.
+  //
+  // LIQPAY_SANDBOX must be false in production. Sandbox mode makes LiqPay report
+  // status "sandbox", which the adapter maps to a successful payment — left on in
+  // production, anyone who learns the public key could mark orders paid.
+
+  @IsOptional()
+  @IsString()
+  LIQPAY_PUBLIC_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  LIQPAY_PRIVATE_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  LIQPAY_SANDBOX?: string;
+
+  // Comma-separated LiqPay `paytypes`. `payparts` / `moment_part` (ПриватБанк
+  // instalments) require a separate agreement with the bank — listing them
+  // without one shows a button that fails.
+  @IsOptional()
+  @IsString()
+  LIQPAY_PAYTYPES?: string;
+
+  // Safety net for callbacks that never arrive: LiqPay does not document its
+  // retry behaviour, so without polling a customer can pay while the order stays
+  // unpaid forever.
+  @IsOptional()
+  @IsString()
+  PAYMENT_RECONCILE_CRON?: string;
+
+  // ─── Unpaid online orders (owner decision 2026-07-28) ───────────────────────
+  // Stock is reserved at order creation, before payment — two shoppers must not
+  // both be able to pay for the last unit. Card orders get a deadline on that
+  // reservation; cash-on-delivery orders keep theirs indefinitely.
+  //
+  // Both are settings rather than constants on purpose (TASK-352): the client has
+  // not confirmed the window, and the answer must be an env change, not a rewrite
+  // of the state machine.
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  ORDER_RESERVATION_TTL_MINUTES?: number;
+
+  @IsOptional()
+  @IsString()
+  ORDER_AUTOCANCEL_UNPAID?: string;
+
+  // How long a guest's order-status link stays valid (TASK-338) — the only way a
+  // guest reaches their own order once the cart cookie is gone.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  GUEST_ORDER_TOKEN_TTL_DAYS?: number;
+
+  // ─── Admin 2FA (TASK-344) ───────────────────────────────────────────────────
+  // Encrypts TOTP secrets at rest (AES-256-GCM). Required only once 2FA is
+  // enabled. Losing it locks every enrolled admin out — the secrets cannot be
+  // re-derived, only backup codes remain.
+  @IsOptional()
+  @IsString()
+  @MinLength(32)
+  TOTP_ENCRYPTION_KEY?: string;
+
   // ─── Meilisearch full-text search (TASK-075) ────────────────────────────────
   // ALL optional: the app boots without a search engine. When MEILI_HOST /
   // MEILI_MASTER_KEY are absent the search endpoints transparently fall back to
