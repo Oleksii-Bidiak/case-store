@@ -16,6 +16,8 @@ import { DeliveryService } from '../delivery';
 import { DiscountService } from '../discount';
 import { OrderEntity, OrderStatusHistoryEntity } from './entities';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
+import { allowedTransitions, canTransition } from './order-state-machine';
+import { invalidTransitionError, staleOrderError } from './order.errors';
 import { AddonApplicabilityResolver } from '../addon-service';
 import type { CreateOrderDto, OrderListQueryDto, AdminOrderListQueryDto } from './dto';
 import type { CreateOrderParams, OrderAddonSnapshot } from './order.types';
@@ -318,21 +320,58 @@ export class OrderService {
    *
    * @throws NotFoundException when the order does not exist (so admin callers
    *   get a clean 404 rather than a Prisma "record not found" 500).
+   * @throws ConflictException `ORDER_STALE` when `expectedUpdatedAt` no longer
+   *   matches the stored row, and `ORDER_TRANSITION_INVALID` when the state
+   *   machine forbids the move.
    *
    * TASK-251: `changedBy` is the acting user's id (the admin, supplied by the
    * controller via `@CurrentUser('id')`) or `null` for system-authored changes
    * (e.g. a future payment webhook). It is threaded, unchanged, into whichever
    * repository branch fires so the audit row records who made the change.
+   *
+   * TASK-332 adds two gates in front of every branch below, in this order:
+   *
+   *  1. **Staleness.** When the caller declares which version of the order it was
+   *     looking at (`expectedUpdatedAt`), a mismatch is refused. It comes FIRST
+   *     because a transition verdict computed against a status the client never
+   *     saw would be actively misleading — "cannot move DELIVERED → SHIPPED" when
+   *     the operator's screen said PROCESSING explains nothing.
+   *  2. **Transition validity.** The move is checked against
+   *     {@link canTransition}, and a refusal happens BEFORE any write — so no
+   *     OrderStatusHistory row is appended for a change that never took effect.
+   *     That is the whole point: history is evidence, and a rejected request is
+   *     not an event.
+   *
+   * `expectedUpdatedAt` is optional so system callers with no stale UI to guard
+   * against — the payment callback, the reconcile worker — are not forced to
+   * invent one.
    */
   async updateStatus(
     orderId: string,
     status: OrderStatus,
     changedBy: string | null,
+    options: { expectedUpdatedAt?: Date } = {},
   ): Promise<OrderEntity> {
     const existing = await this.orderRepository.findById(orderId);
 
     if (!existing) {
       throw new NotFoundException('Order not found');
+    }
+
+    this.assertFresh(existing, options.expectedUpdatedAt);
+
+    if (!canTransition(existing.status, status)) {
+      this.logger.warn(
+        {
+          event: 'order.transition_rejected',
+          orderId,
+          from: existing.status,
+          to: status,
+          changedBy,
+        },
+        'Rejected a status transition the state machine forbids',
+      );
+      throw invalidTransitionError(existing.status, status);
     }
 
     // TASK-228: reviving an order whose cancellation already credited its stock
@@ -355,6 +394,7 @@ export class OrderService {
         status,
         existing.paymentStatus,
         changedBy,
+        { expectedUpdatedAt: options.expectedUpdatedAt },
       );
       this.logger.info(
         { event: 'order.revived_reserved', orderId, from: existing.status, to: status },
@@ -371,7 +411,9 @@ export class OrderService {
     // has it set (revive clears it), so it only blocks double credits if a
     // status was edited outside the service.
     if (shouldAutoRestock(existing.status, status) && existing.restockedAt === null) {
-      const restocked = await this.orderRepository.cancelAndRestock(orderId, changedBy);
+      const restocked = await this.orderRepository.cancelAndRestock(orderId, changedBy, {
+        expectedUpdatedAt: options.expectedUpdatedAt,
+      });
       this.logger.info(
         { event: 'order.cancelled_restocked', orderId, from: existing.status },
         'Order cancelled before shipment; reserved stock returned to inventory',
@@ -399,9 +441,62 @@ export class OrderService {
       status,
       existing.paymentStatus,
       changedBy,
-      { evictProductStockCaches: crossesPreShipmentBoundary },
+      {
+        evictProductStockCaches: crossesPreShipmentBoundary,
+        expectedUpdatedAt: options.expectedUpdatedAt,
+      },
     );
     return OrderEntity.fromPrisma(order);
+  }
+
+  /**
+   * Admin — which statuses this order may move to right now (TASK-332).
+   *
+   * Exists so the admin panel offers exactly the legal targets. Before this, the
+   * UI offered "every status except the current one" and the operator learned the
+   * truth from a failed request — which is the worst possible moment to learn it,
+   * because by then they have already decided.
+   *
+   * `updatedAt` travels with the answer deliberately: it is the version token the
+   * client hands back on the subsequent PATCH, so the whole read-decide-write
+   * cycle is guarded by one round trip rather than two.
+   *
+   * @throws NotFoundException when the order does not exist or is soft-deleted.
+   */
+  async getAllowedTransitions(
+    orderId: string,
+  ): Promise<{ current: OrderStatus; allowed: OrderStatus[]; updatedAt: Date }> {
+    const existing = await this.orderRepository.findById(orderId);
+
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return {
+      current: existing.status,
+      allowed: allowedTransitions(existing.status),
+      updatedAt: existing.updatedAt,
+    };
+  }
+
+  /**
+   * Refuse the write when the caller was looking at an older version of the order
+   * (edge case E-11: two admins with the same order open).
+   *
+   * A no-op when the caller did not declare a version — system callers (payment
+   * callback, reconcile worker) have no stale screen to protect, and forcing them
+   * to invent a timestamp would only add a way to get it wrong.
+   *
+   * This is the FAST check, not the only one: it closes the human-scale window
+   * (minutes between loading a page and clicking) but not the millisecond one, so
+   * the same `expectedUpdatedAt` is threaded down into the repository, where the
+   * conditional write is the actual arbiter under concurrency.
+   */
+  private assertFresh(existing: { updatedAt: Date }, expectedUpdatedAt?: Date): void {
+    if (!expectedUpdatedAt) return;
+    if (existing.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+      throw staleOrderError();
+    }
   }
 
   /**

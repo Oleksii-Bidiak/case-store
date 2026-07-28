@@ -743,6 +743,184 @@ describe('OrderService', () => {
     });
   });
 
+  // ─── updateStatus — the state machine (TASK-332) ─────────────────────────────
+  // Until now this endpoint wrote whatever status it was handed. The table in
+  // order-state-machine.ts is unit-tested on its own; what matters HERE is that
+  // the service consults it, refuses with a 409 carrying a stable code, and —
+  // the part that actually protects the audit trail — writes nothing at all when
+  // it refuses.
+
+  describe('updateStatus — transition validation', () => {
+    const seed = (current: Partial<OrderWithItems>) => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder(current));
+    };
+
+    it.each([
+      [OrderStatus.DELIVERED, OrderStatus.SHIPPED, 'a backward move'],
+      [OrderStatus.SHIPPED, OrderStatus.PENDING, 'a rewind to the start'],
+      [OrderStatus.PENDING, OrderStatus.REFUNDED, 'refunding money that never moved'],
+      [OrderStatus.REFUNDED, OrderStatus.PROCESSING, 'resurrecting a refunded order'],
+    ])('rejects %s → %s (%s) with a 409', async (from, to) => {
+      seed({ status: from, paymentStatus: PaymentStatus.PAID });
+
+      await expect(service.updateStatus('order-uuid-1', to, ADMIN_ID)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('carries the stable ORDER_TRANSITION_INVALID code and names both ends', async () => {
+      seed({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID });
+
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID),
+      ).rejects.toMatchObject({
+        response: {
+          error: 'ORDER_TRANSITION_INVALID',
+          message: expect.stringContaining('DELIVERED'),
+        },
+      });
+    });
+
+    it('writes NOTHING when it refuses — no status write, no restock, no revive', async () => {
+      seed({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID });
+
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.PROCESSING, ADMIN_ID),
+      ).rejects.toThrow(ConflictException);
+
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
+    });
+
+    it('404s before it judges the transition when the order does not exist', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      // Not a 409: "you cannot do that to this order" is misleading when there is
+      // no such order in the first place.
+      await expect(service.updateStatus('missing', OrderStatus.SHIPPED, ADMIN_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  // ─── updateStatus — optimistic locking (TASK-332, edge case E-11) ────────────
+  // Two admins with the same order open used to produce last-write-wins plus two
+  // history rows describing changes only one of which survived.
+
+  describe('updateStatus — optimistic locking', () => {
+    const loadedAt = new Date('2026-07-28T10:15:30.000Z');
+
+    const seed = (updatedAt: Date) => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PENDING, updatedAt }),
+      );
+      orderRepositoryMock.updateStatus.mockImplementation(
+        (_id: string, _from: OrderStatus, status: OrderStatus, paymentStatus: PaymentStatus) =>
+          Promise.resolve(makeOrder({ status, paymentStatus })),
+      );
+    };
+
+    it('proceeds when the caller version matches the stored row', async () => {
+      seed(loadedAt);
+
+      await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED, ADMIN_ID, {
+        expectedUpdatedAt: new Date(loadedAt),
+      });
+
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.PENDING,
+        OrderStatus.CONFIRMED,
+        PaymentStatus.PENDING,
+        ADMIN_ID,
+        // The same token is threaded down so the repository's conditional write —
+        // not this comparison — is the arbiter under real concurrency.
+        expect.objectContaining({ expectedUpdatedAt: new Date(loadedAt) }),
+      );
+    });
+
+    it('rejects with ORDER_STALE when the order moved on underneath the caller', async () => {
+      seed(new Date('2026-07-28T10:20:00.000Z'));
+
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED, ADMIN_ID, {
+          expectedUpdatedAt: loadedAt,
+        }),
+      ).rejects.toMatchObject({ response: { error: 'ORDER_STALE' } });
+
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('checks staleness BEFORE the transition, so the operator is told the useful thing', async () => {
+      // The stored order has advanced to DELIVERED; the caller still believes it is
+      // PENDING and asks for CONFIRMED. Both gates would fire. Reporting "cannot go
+      // DELIVERED → CONFIRMED" would describe a starting point the operator never
+      // saw; "reload, it changed" is the fact they can act on.
+      seed(new Date('2026-07-28T10:20:00.000Z'));
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, updatedAt: new Date('2026-07-28T10:20:00Z') }),
+      );
+
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED, ADMIN_ID, {
+          expectedUpdatedAt: loadedAt,
+        }),
+      ).rejects.toMatchObject({ response: { error: 'ORDER_STALE' } });
+    });
+
+    it('skips the check entirely for system callers that declare no version', async () => {
+      seed(loadedAt);
+
+      await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED, null);
+
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalled();
+    });
+  });
+
+  // ─── getAllowedTransitions (TASK-332) ────────────────────────────────────────
+
+  describe('getAllowedTransitions', () => {
+    it('returns the current status, its legal targets, and the lock token', async () => {
+      const updatedAt = new Date('2026-07-28T10:15:30.000Z');
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PROCESSING, updatedAt }),
+      );
+
+      const result = await service.getAllowedTransitions('order-uuid-1');
+
+      expect(result.current).toBe(OrderStatus.PROCESSING);
+      expect(result.allowed).toEqual([
+        OrderStatus.SHIPPED,
+        OrderStatus.DELIVERED,
+        OrderStatus.CANCELLED,
+      ]);
+      expect(result.updatedAt).toEqual(updatedAt);
+    });
+
+    it('never offers the current status back (that write would be a no-op)', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.SHIPPED }));
+
+      const result = await service.getAllowedTransitions('order-uuid-1');
+
+      expect(result.allowed).not.toContain(OrderStatus.SHIPPED);
+    });
+
+    it('returns an empty-but-not-broken set for the most terminal status', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.REFUNDED }));
+
+      const result = await service.getAllowedTransitions('order-uuid-1');
+
+      expect(result.allowed).toEqual([OrderStatus.CANCELLED]);
+    });
+
+    it('throws NotFoundException when the order does not exist', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.getAllowedTransitions('missing')).rejects.toThrow(NotFoundException);
+    });
+  });
+
   // ─── updateStatus — decoupled (no auto-derive) (TASK-151) ─────────────────────
   // TASK-151: coupling removed — paymentStatus is no longer auto-derived from the
   // target order status. Advancing the order status leaves the existing payment
@@ -1001,7 +1179,12 @@ describe('OrderService', () => {
         const result = await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED, ADMIN_ID);
 
         // TASK-251: the acting admin is threaded as changedBy into the restock path.
-        expect(orderRepositoryMock.cancelAndRestock).toHaveBeenCalledWith('order-uuid-1', ADMIN_ID);
+        // TASK-332: the (here absent) optimistic-lock token rides along as the 3rd arg.
+        expect(orderRepositoryMock.cancelAndRestock).toHaveBeenCalledWith(
+          'order-uuid-1',
+          ADMIN_ID,
+          expect.anything(),
+        );
         expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
         expect(result.status).toBe(OrderStatus.CANCELLED);
       },
@@ -1056,20 +1239,20 @@ describe('OrderService', () => {
       );
     });
 
-    it('does NOT restock again when an already-CANCELLED order is set to CANCELLED (no double credit)', async () => {
+    // TASK-332 supersedes the old "CANCELLED → CANCELLED is a harmless no-op"
+    // behaviour: the state machine refuses a status writing over itself, so the
+    // double credit is now impossible one step earlier — the request never
+    // reaches a repository at all, and no history row is appended for a change
+    // that did not happen.
+    it('refuses to re-cancel an already-CANCELLED order (409) and touches no repository', async () => {
       seed({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED, ADMIN_ID);
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.CANCELLED, ADMIN_ID),
+      ).rejects.toThrow(ConflictException);
 
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
-      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
-        'order-uuid-1',
-        OrderStatus.CANCELLED,
-        OrderStatus.CANCELLED,
-        PaymentStatus.PAID,
-        ADMIN_ID,
-        expect.anything(),
-      );
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
 
     it('does NOT restock on a forward transition (PENDING → CONFIRMED)', async () => {
@@ -1116,13 +1299,11 @@ describe('OrderService', () => {
       );
     };
 
-    it.each([
-      OrderStatus.PENDING,
-      OrderStatus.CONFIRMED,
-      OrderStatus.PROCESSING,
-      OrderStatus.SHIPPED,
-      OrderStatus.DELIVERED,
-    ])(
+    // TASK-332 narrows the revive targets to the pre-shipment statuses — the ones
+    // whose stock this path re-reserves. CANCELLED → SHIPPED/DELIVERED is refused
+    // (see the case below): it would assert a parcel left the building in the same
+    // breath as re-reserving the stock that parcel supposedly contains.
+    it.each([OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
       're-reserves stock when reviving a restocked CANCELLED order (CANCELLED → %s)',
       async (to) => {
         seed({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID, restockedAt });
@@ -1130,15 +1311,32 @@ describe('OrderService', () => {
         const result = await service.updateStatus('order-uuid-1', to, ADMIN_ID);
 
         // TASK-251: changedBy is threaded into the revive path as the 4th arg.
+        // TASK-332: the optimistic-lock token follows as the 5th.
         expect(orderRepositoryMock.reviveAndReserve).toHaveBeenCalledWith(
           'order-uuid-1',
           to,
           PaymentStatus.PAID,
           ADMIN_ID,
+          expect.anything(),
         );
         expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
         expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
         expect(result.status).toBe(to);
+      },
+    );
+
+    it.each([OrderStatus.SHIPPED, OrderStatus.DELIVERED])(
+      'refuses to revive a CANCELLED order straight into %s (409, no stock touched)',
+      async (to) => {
+        seed({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID, restockedAt });
+
+        await expect(service.updateStatus('order-uuid-1', to, ADMIN_ID)).rejects.toThrow(
+          ConflictException,
+        );
+
+        expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
+        expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+        expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
       },
     );
 
@@ -1159,17 +1357,18 @@ describe('OrderService', () => {
       );
     });
 
-    it('re-reserves stock when reviving a restocked REFUNDED order (flag survived CANCELLED → REFUNDED)', async () => {
+    // TASK-332: REFUNDED is terminal but for its twin. The money is already back
+    // with the customer, so pulling the order into a live status would be a
+    // bookkeeping fiction — the operator's honest move is a NEW order. Only
+    // REFUNDED → CANCELLED remains, and that touches no stock.
+    it('refuses to revive a restocked REFUNDED order into a live status (409, no stock touched)', async () => {
       seed({ status: OrderStatus.REFUNDED, paymentStatus: PaymentStatus.REFUNDED, restockedAt });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.PENDING, ADMIN_ID);
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.PENDING, ADMIN_ID),
+      ).rejects.toThrow(ConflictException);
 
-      expect(orderRepositoryMock.reviveAndReserve).toHaveBeenCalledWith(
-        'order-uuid-1',
-        OrderStatus.PENDING,
-        PaymentStatus.REFUNDED,
-        ADMIN_ID,
-      );
+      expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
       expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
 

@@ -848,6 +848,53 @@ describe('OrderController (e2e)', () => {
     });
   });
 
+  // ─── GET /api/admin/orders/:orderId/allowed-transitions (TASK-332) ──────────────
+
+  describe('GET /api/admin/orders/:orderId/allowed-transitions', () => {
+    it('should return the legal targets and the optimistic-lock token (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.PROCESSING }));
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/allowed-transitions')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data.current).toBe(OrderStatus.PROCESSING);
+      expect(response.body.data.allowed).toEqual([
+        OrderStatus.SHIPPED,
+        OrderStatus.DELIVERED,
+        OrderStatus.CANCELLED,
+      ]);
+      expect(response.body.data.updatedAt).toBeDefined();
+    });
+
+    it('should return 404 when the order does not exist', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/nonexistent-uuid/allowed-transitions')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('should return 403 for a non-admin user', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/allowed-transitions')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('should return 401 without a JWT', async () => {
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/allowed-transitions')
+        .expect(401);
+    });
+  });
+
   // ─── PATCH /api/admin/orders/:orderId/status (admin) ────────────────────────────
 
   describe('PATCH /api/admin/orders/:orderId/status', () => {
@@ -880,8 +927,60 @@ describe('OrderController (e2e)', () => {
         OrderStatus.PROCESSING,
         PaymentStatus.PENDING,
         admin.id,
-        { evictProductStockCaches: false },
+        // TASK-332: the eviction flag now travels alongside the optimistic-lock
+        // token (absent here — the request declared no `expectedUpdatedAt`).
+        { evictProductStockCaches: false, expectedUpdatedAt: undefined },
       );
+    });
+
+    // ── TASK-332: the server, not the admin UI, decides what is legal ──────────
+    it('should return 409 ORDER_TRANSITION_INVALID for a backward move', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.DELIVERED }));
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.PROCESSING })
+        .expect(409);
+
+      expect(response.body.error).toBe('ORDER_TRANSITION_INVALID');
+      // The refusal must not reach any write path — a rejected request is not an
+      // event, and OrderStatusHistory is evidence of events.
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
+    });
+
+    it('should return 409 ORDER_STALE when another admin changed the order first', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PENDING, updatedAt: new Date('2026-07-28T10:20:00.000Z') }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          status: OrderStatus.CONFIRMED,
+          expectedUpdatedAt: '2026-07-28T10:15:30.000Z',
+        })
+        .expect(409);
+
+      expect(response.body.error).toBe('ORDER_STALE');
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 for a malformed expectedUpdatedAt (not a silent staleness)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.CONFIRMED, expectedUpdatedAt: 'yesterday' })
+        .expect(400);
+
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
 
     // TASK-228: reviving a restocked CANCELLED order must go through the
@@ -910,6 +1009,8 @@ describe('OrderController (e2e)', () => {
         OrderStatus.PENDING,
         PaymentStatus.PENDING,
         admin.id,
+        // TASK-332: the optimistic-lock token (absent here) rides as the 5th arg.
+        { expectedUpdatedAt: undefined },
       );
       expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });

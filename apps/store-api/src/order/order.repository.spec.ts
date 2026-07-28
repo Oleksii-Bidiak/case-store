@@ -604,11 +604,14 @@ describe('OrderRepository', () => {
     };
 
     // TASK-251: updateStatus is now a $transaction that persists the status AND
-    // writes a history row atomically. Seed a tx whose order.update resolves the
-    // updated order and drive the callback through $transaction.
+    // writes a history row atomically. TASK-332 split the write from the read —
+    // the write may be conditional on the caller's version — so the committed
+    // order comes from a findUniqueOrThrow at the end of the transaction.
     const seedTx = () => {
       const tx = makeTx();
       tx.order.update.mockResolvedValue(updatedOrder);
+      tx.order.updateMany.mockResolvedValue({ count: 1 });
+      tx.order.findUniqueOrThrow.mockResolvedValue(updatedOrder);
       prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
       return tx;
     };
@@ -627,11 +630,57 @@ describe('OrderRepository', () => {
       expect(tx.order.update).toHaveBeenCalledWith({
         where: { id: 'order-1' },
         data: { status: OrderStatus.SHIPPED, paymentStatus: PaymentStatus.PAID },
-        include: expect.any(Object),
       });
+      // No version supplied → the plain unconditional write, not the guarded one.
+      expect(tx.order.updateMany).not.toHaveBeenCalled();
       // Default (no options) leaves derived-stock caches untouched.
       expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
       expect(cacheMock.del).not.toHaveBeenCalled();
+    });
+
+    // ── TASK-332: optimistic locking on updatedAt (edge case E-11) ──────────────
+    // The service already compared versions before calling, but that read sits
+    // outside this transaction — two admins clicking at the same moment both pass
+    // it. Putting the version into the WHERE makes the row lock the arbiter.
+
+    it('guards the write with the caller version when expectedUpdatedAt is supplied', async () => {
+      const tx = seedTx();
+      const expectedUpdatedAt = new Date('2026-07-28T10:15:30.000Z');
+
+      await repository.updateStatus(
+        'order-1',
+        OrderStatus.PROCESSING,
+        OrderStatus.SHIPPED,
+        PaymentStatus.PAID,
+        'admin-uuid-1',
+        { expectedUpdatedAt },
+      );
+
+      expect(tx.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'order-1', updatedAt: expectedUpdatedAt },
+        data: { status: OrderStatus.SHIPPED, paymentStatus: PaymentStatus.PAID },
+      });
+      expect(tx.order.update).not.toHaveBeenCalled();
+    });
+
+    it('throws ORDER_STALE and writes no history when the guarded write matches no row', async () => {
+      const tx = seedTx();
+      tx.order.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        repository.updateStatus(
+          'order-1',
+          OrderStatus.PROCESSING,
+          OrderStatus.SHIPPED,
+          PaymentStatus.PAID,
+          'admin-uuid-1',
+          { expectedUpdatedAt: new Date('2026-07-28T10:15:30.000Z') },
+        ),
+      ).rejects.toThrow(ConflictException);
+
+      // The losing admin's click must leave no trace — a history row is evidence
+      // that a change happened, and this one did not.
+      expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
     });
 
     // ── TASK-251: the status transition and the history row commit together ──

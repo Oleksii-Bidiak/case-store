@@ -11,6 +11,7 @@ import {
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { OrderStatus } from '@prisma/client';
 import { OrderService } from './order.service';
 import {
   OrderEntity,
@@ -76,13 +77,46 @@ class AdminOrderHistoryResponse {
 }
 
 /**
+ * Response envelope for the transitions an order may currently make (TASK-332).
+ *
+ * `updatedAt` is part of the answer, not decoration: it is the optimistic-lock
+ * token the client hands straight back on the follow-up PATCH, so read-decide-write
+ * is guarded without a second round trip.
+ */
+class AdminOrderAllowedTransitions {
+  @ApiProperty({ description: "The order's current status", enum: OrderStatus })
+  current!: OrderStatus;
+
+  @ApiProperty({
+    description: 'Statuses the order may legally move to right now',
+    enum: OrderStatus,
+    isArray: true,
+  })
+  allowed!: OrderStatus[];
+
+  @ApiProperty({
+    description:
+      "The order's current `updatedAt` — send it back as `expectedUpdatedAt` on the " +
+      'status PATCH to detect a concurrent edit.',
+    example: '2026-07-28T10:15:30.000Z',
+  })
+  updatedAt!: Date;
+}
+
+class AdminOrderAllowedTransitionsResponse {
+  @ApiProperty({ type: AdminOrderAllowedTransitions })
+  data!: AdminOrderAllowedTransitions;
+}
+
+/**
  * Controller for admin order management endpoints.
  *
  * Admin endpoints (ADMIN role required):
- *   GET    /admin/orders                          — List all orders across all users
- *   GET    /admin/orders/:orderId                 — Get any order by ID
- *   PATCH  /admin/orders/:orderId/status          — Update an order's status
- *   PATCH  /admin/orders/:orderId/payment-status  — Update an order's payment status
+ *   GET    /admin/orders                              — List all orders across all users
+ *   GET    /admin/orders/:orderId                     — Get any order by ID
+ *   GET    /admin/orders/:orderId/allowed-transitions — Legal next statuses (TASK-332)
+ *   PATCH  /admin/orders/:orderId/status              — Update an order's status
+ *   PATCH  /admin/orders/:orderId/payment-status      — Update an order's payment status
  *
  * Separate from the customer-facing {@link OrderController} (`/api/orders`),
  * which scopes every route to the authenticated user. Mirrors the
@@ -98,6 +132,8 @@ class AdminOrderHistoryResponse {
   AdminOrderPaginationMeta,
   AdminOrderResponseEnvelope,
   AdminOrderHistoryResponse,
+  AdminOrderAllowedTransitions,
+  AdminOrderAllowedTransitionsResponse,
 )
 @Controller('admin/orders')
 @UseGuards(AdminGuard)
@@ -174,11 +210,42 @@ export class AdminOrderController {
   }
 
   /**
+   * GET /api/admin/orders/:orderId/allowed-transitions
+   *
+   * The statuses this order may legally move to right now (TASK-332), so the
+   * admin UI offers exactly those instead of "every status except the current
+   * one" and letting the operator discover the truth from a 409.
+   */
+  @Get(':orderId/allowed-transitions')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'List legal next statuses for an order (admin)',
+    operationId: 'adminOrderControllerGetAllowedTransitions',
+  })
+  @ApiParam({ name: 'orderId', description: 'Order UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Current status, the legal targets, and the optimistic-lock token',
+    type: AdminOrderAllowedTransitionsResponse,
+  })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async getAllowedTransitions(
+    @Param('orderId') orderId: string,
+  ): Promise<AdminOrderAllowedTransitionsResponse> {
+    const data = await this.orderService.getAllowedTransitions(orderId);
+
+    return { data };
+  }
+
+  /**
    * PATCH /api/admin/orders/:orderId/status
    *
-   * Update an order's status (any transition). Admin-only. Transition
-   * sensibility is enforced in the admin UI; the backend records the requested
-   * status directly.
+   * Update an order's status. Admin-only. TASK-332: the transition is validated
+   * against the server-side state machine — an illegal move is refused with 409
+   * `ORDER_TRANSITION_INVALID` and appends nothing to the order's history. Pass
+   * `expectedUpdatedAt` (from the order or the allowed-transitions read) to also
+   * detect a concurrent edit by another admin: 409 `ORDER_STALE`.
    */
   @Patch(':orderId/status')
   @ApiBearerAuth('access-token')
@@ -196,6 +263,12 @@ export class AdminOrderController {
     type: AdminOrderResponseEnvelope,
   })
   @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'ORDER_TRANSITION_INVALID — the state machine forbids this move; or ORDER_STALE — ' +
+      'another admin changed this order first',
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async updateStatus(
     @Param('orderId') orderId: string,
@@ -203,7 +276,11 @@ export class AdminOrderController {
     // TASK-251: the acting admin is recorded as the history row's changedBy.
     @CurrentUser('id') adminUserId: string,
   ): Promise<AdminOrderResponseEnvelope> {
-    const order = await this.orderService.updateStatus(orderId, dto.status, adminUserId);
+    const order = await this.orderService.updateStatus(orderId, dto.status, adminUserId, {
+      // The DTO carries an ISO string on purpose (see its docblock); this is the
+      // single, explicit conversion.
+      ...(dto.expectedUpdatedAt ? { expectedUpdatedAt: new Date(dto.expectedUpdatedAt) } : {}),
+    });
 
     return { data: order };
   }

@@ -15,6 +15,7 @@ import type {
   OrderAddonSnapshot,
 } from './order.types';
 import type { OrderListQueryDto, AdminOrderListQueryDto } from './dto';
+import { staleOrderError } from './order.errors';
 
 /**
  * Shared Prisma include clause for order queries. Always fetches the order
@@ -392,6 +393,16 @@ export class OrderRepository {
    * owns the boundary-crossing decision (it knows PRE_SHIPMENT_STATUSES); the
    * repository just reuses the same {@link evictProductCaches} helper the
    * restock/revive paths use.
+   *
+   * TASK-332: when `expectedUpdatedAt` is supplied the write becomes CONDITIONAL
+   * on the row still carrying that version — `updateMany ... WHERE updatedAt = ?`
+   * rather than a bare `update`. The service already compared versions before
+   * calling, but that read sits outside this transaction: two admins who click at
+   * the same moment both pass it. Making the version part of the WHERE moves the
+   * arbitration into the row lock, exactly as `cancelAndRestock` does with
+   * `restockedAt IS NULL`. The loser affects zero rows, throws, and appends no
+   * history — which is the point, since the history row is the evidence that a
+   * change happened.
    */
   async updateStatus(
     orderId: string,
@@ -399,18 +410,28 @@ export class OrderRepository {
     toStatus: OrderStatus,
     paymentStatus: PaymentStatus,
     changedBy: string | null,
-    options: { evictProductStockCaches?: boolean } = {},
+    options: { evictProductStockCaches?: boolean; expectedUpdatedAt?: Date } = {},
   ): Promise<OrderWithItems> {
     // TASK-251: converted from a bare update to a $transaction so the status
     // change and its audit-log row commit (or roll back) together. `fromStatus`
     // is supplied by the service (which already loaded it to decide this is a
     // plain transition), not re-read here — see plan 134 Design Decision 4.
+    const expectedUpdatedAt = options.expectedUpdatedAt;
     const updated = (await this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.update({
-        where: { id: orderId },
-        data: { status: toStatus, paymentStatus },
-        include: ORDERS_INCLUDE,
-      });
+      if (expectedUpdatedAt) {
+        const { count } = await tx.order.updateMany({
+          where: { id: orderId, updatedAt: expectedUpdatedAt },
+          data: { status: toStatus, paymentStatus },
+        });
+        if (count === 0) {
+          throw staleOrderError();
+        }
+      } else {
+        await tx.order.update({
+          where: { id: orderId },
+          data: { status: toStatus, paymentStatus },
+        });
+      }
       await tx.orderStatusHistory.create({
         data: {
           orderId,
@@ -420,7 +441,10 @@ export class OrderRepository {
           changedBy,
         },
       });
-      return order;
+      return tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: ORDERS_INCLUDE,
+      });
     })) as OrderWithItems;
 
     if (options.evictProductStockCaches) {
@@ -458,9 +482,15 @@ export class OrderRepository {
    * the WHERE after it commits, matches zero rows, and aborts before touching any
    * product. The loser never increments anything.
    *
-   * @throws ConflictException when the stock was already returned.
+   * @throws ConflictException when the stock was already returned, or (TASK-332)
+   *   when `expectedUpdatedAt` no longer matches the stored row.
    */
-  async cancelAndRestock(orderId: string, changedBy: string | null): Promise<OrderWithItems> {
+  async cancelAndRestock(
+    orderId: string,
+    changedBy: string | null,
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<OrderWithItems> {
+    const expectedUpdatedAt = options.expectedUpdatedAt;
     const updated = (await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
@@ -470,12 +500,25 @@ export class OrderRepository {
       // The arbiter. Runs BEFORE any stock write, so a losing concurrent cancel
       // cannot credit inventory on its way out. TASK-228: restockedAt also tells a
       // later revive that this order's stock was given back and must be re-reserved.
+      // TASK-332: the caller's version joins the condition, so a lost update loses
+      // here too rather than silently winning.
       const { count } = await tx.order.updateMany({
-        where: { id: orderId, restockedAt: null },
+        where: {
+          id: orderId,
+          restockedAt: null,
+          ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
+        },
         data: { status: OrderStatus.CANCELLED, restockedAt: new Date() },
       });
 
       if (count === 0) {
+        // Two different failures share one zero-row outcome, and the operator
+        // needs to be told which: "someone already cancelled this" and "someone
+        // edited this while you were deciding" call for different next moves. The
+        // freshly-read row above is inside this transaction, so it is authoritative.
+        if (expectedUpdatedAt && order.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+          throw staleOrderError();
+        }
         throw new ConflictException('This order’s stock has already been returned to inventory');
       }
 
@@ -525,12 +568,20 @@ export class OrderRepository {
     status: OrderStatus,
     paymentStatus: PaymentStatus,
     changedBy: string | null,
+    options: { expectedUpdatedAt?: Date } = {},
   ): Promise<OrderWithItems> {
+    const expectedUpdatedAt = options.expectedUpdatedAt;
     const updated = (await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: ORDERS_INCLUDE,
       });
+
+      // TASK-332: refuse a lost update BEFORE any stock is decremented — a revive
+      // that loses the race must not leave the warehouse short.
+      if (expectedUpdatedAt && order.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+        throw staleOrderError();
+      }
 
       for (const item of order.items) {
         const { count } = await tx.product.updateMany({
