@@ -188,6 +188,17 @@ export class OrderRepository {
       const created = await tx.order.create({
         data: {
           userId,
+          // TASK-338: exactly one of `userId` and this block is populated. The
+          // contact details are a snapshot of what was typed at checkout and are
+          // never rewritten, not even when an account later claims the order.
+          ...(params.guest
+            ? {
+                guestEmail: params.guest.email,
+                guestPhone: params.guest.phone,
+                guestName: params.guest.name,
+                accessTokenHash: params.guest.accessTokenHash,
+              }
+            : {}),
           status: OrderStatus.PENDING,
           paymentStatus: PaymentStatus.PENDING,
           subtotal,
@@ -656,6 +667,42 @@ export class OrderRepository {
       });
       return updated;
     })) as OrderWithItems;
+  }
+
+  /**
+   * Find a guest order by the SHA-256 of the token from its confirmation email
+   * (TASK-338).
+   *
+   * The raw token never reaches the database, so the caller hashes first and this
+   * is a single indexed hit on a unique column — the same shape as the refresh and
+   * password-reset token lookups. Soft-deleted orders are excluded like everywhere
+   * else.
+   */
+  findByAccessTokenHash(accessTokenHash: string): Promise<OrderWithItems | null> {
+    return this.prisma.order.findFirst({
+      where: { accessTokenHash, deletedAt: null },
+      include: ORDERS_INCLUDE,
+    }) as Promise<OrderWithItems | null>;
+  }
+
+  /**
+   * Attach previously-placed guest orders to a freshly-registered account
+   * (TASK-338).
+   *
+   * Matches on the guest email and only touches orders that are still unclaimed
+   * (`userId IS NULL`), so running it twice is harmless and a guest order already
+   * claimed by one account can never be re-pointed at another. The guest columns
+   * are deliberately LEFT IN PLACE: they are the snapshot of what was typed that
+   * day, and the emailed status link keeps working.
+   *
+   * @returns how many orders were claimed.
+   */
+  async claimGuestOrders(userId: string, email: string): Promise<number> {
+    const { count } = await this.prisma.order.updateMany({
+      where: { userId: null, guestEmail: email, deletedAt: null },
+      data: { userId },
+    });
+    return count;
   }
 
   /**

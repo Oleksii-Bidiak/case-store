@@ -50,6 +50,9 @@ describe('OrderController (e2e)', () => {
     reviveAndReserve: jest.fn(),
     updatePaymentStatus: jest.fn(),
     findHistoryByOrderId: jest.fn(),
+    // TASK-338: guest order access by emailed token, and claiming on registration.
+    findByAccessTokenHash: jest.fn(),
+    claimGuestOrders: jest.fn(),
   };
 
   // TASK-079: DiscountRepository is mocked so the order-with-discount path can
@@ -444,11 +447,96 @@ describe('OrderController (e2e)', () => {
       expect(response.body.data.total).toBe('53.98');
     });
 
-    it('should return 401 without a JWT', async () => {
-      await request(app.getHttpServer())
+    // ── TASK-338: the guard is gone from this route on purpose ────────────────
+    // A guest could always fill a cart; the barrier stood exactly here, which is
+    // what made the storefront's "order in two minutes, no registration" promise
+    // untrue. An anonymous request is no longer rejected for being anonymous —
+    // it is rejected only if it does not say who to deliver to.
+
+    it('should return 400, not 401, for an anonymous request with no contact details', async () => {
+      const response = await request(app.getHttpServer())
         .post('/api/orders')
         .send({ shippingAddress: validAddress })
-        .expect(401);
+        .expect(400);
+
+      expect(response.body.message).toMatch(/contact details/i);
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    it('should create a guest order from the cookie cart (201)', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue(makeCart(userA.id));
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+        .send({
+          shippingAddress: validAddress,
+          contact: {
+            email: 'guest@example.com',
+            phone: '+380671112233',
+            name: 'Гість Гостьович',
+          },
+        })
+        .expect(201);
+
+      // The guest's cart is found by the cookie, never by a user id, and no
+      // account lookup happens at all.
+      expect(cartRepositoryMock.findByToken).toHaveBeenCalledWith('guest-cart-token-e2e');
+      expect(userRepositoryMock.findById).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: null, guest: expect.any(Object) }),
+        expect.any(Function),
+      );
+    });
+
+    it('should reject guest contact details that are not a real email (400)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+        .send({
+          shippingAddress: validAddress,
+          contact: { email: 'not-an-email', phone: '+380671112233', name: 'Гість' },
+        })
+        .expect(400);
+
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    it('ignores a contact block from a SIGNED-IN shopper (no email redirection)', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
+      const createdOrder = makeOrder();
+      const txStub = { mailOutbox: { create: jest.fn() } };
+      orderRepositoryMock.createFromCart.mockImplementation(
+        async (
+          _params: unknown,
+          afterCreate?: (tx: unknown, created: OrderWithItems) => Promise<void>,
+        ) => {
+          if (afterCreate) await afterCreate(txStub, createdOrder);
+          return createdOrder;
+        },
+      );
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          shippingAddress: validAddress,
+          contact: { email: 'attacker@evil.example', phone: '+380671112233', name: 'X' },
+        })
+        .expect(201);
+
+      // The confirmation email — which carries an order-access link — must go to
+      // the ACCOUNT's address, never to one supplied in the request body.
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'usera@example.com' }),
+        txStub,
+      );
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: userA.id, guest: undefined }),
+        expect.any(Function),
+      );
     });
 
     it('should return 403 when the placing account is deactivated (banned)', async () => {
@@ -845,6 +933,51 @@ describe('OrderController (e2e)', () => {
 
     it('should return 401 without a JWT', async () => {
       await request(app.getHttpServer()).get('/api/admin/orders/order-e2e-1/history').expect(401);
+    });
+  });
+
+  // ─── GET /api/orders/guest/:token (TASK-338) ────────────────────────────────────
+  // Public by necessity — there is no account to authenticate against. The token
+  // IS the credential.
+
+  describe('GET /api/orders/guest/:token', () => {
+    const RAW_TOKEN = 'b'.repeat(64);
+
+    it('returns the order for a valid token, with no JWT at all (200)', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ userId: null, createdAt: new Date() }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/orders/guest/${RAW_TOKEN}`)
+        .expect(200);
+
+      expect(response.body.data.id).toBeDefined();
+      // The raw token must never be what we query with — only its SHA-256.
+      expect(orderRepositoryMock.findByAccessTokenHash).not.toHaveBeenCalledWith(RAW_TOKEN);
+    });
+
+    it('returns 404 for an unknown token', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(null);
+
+      await request(app.getHttpServer()).get(`/api/orders/guest/${RAW_TOKEN}`).expect(404);
+    });
+
+    it('never exposes operator-only internal notes to the guest', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({
+          userId: null,
+          createdAt: new Date(),
+          internalNotes: 'Suspected fraud — call before dispatch',
+        }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/orders/guest/${RAW_TOKEN}`)
+        .expect(200);
+
+      expect(response.body.data.internalNotes).toBeUndefined();
+      expect(JSON.stringify(response.body)).not.toContain('Suspected fraud');
     });
   });
 

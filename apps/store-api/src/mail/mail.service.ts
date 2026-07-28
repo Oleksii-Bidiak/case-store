@@ -22,6 +22,15 @@ export interface SendOrderConfirmationParams {
   to: string;
   order: OrderEntity;
   customerName?: string;
+  /**
+   * Absolute link to this order's status page (TASK-338).
+   *
+   * Present for GUEST orders, where it is the buyer's only route back to their own
+   * order — there is no account to sign into, and the cart cookie will not survive
+   * a new device. The order module builds it, because the order module is the only
+   * place that ever holds the raw token.
+   */
+  orderStatusUrl?: string;
 }
 
 /**
@@ -158,6 +167,7 @@ export class MailService {
     return {
       to: params.to,
       ...(params.customerName !== undefined ? { customerName: params.customerName } : {}),
+      ...(params.orderStatusUrl !== undefined ? { orderStatusUrl: params.orderStatusUrl } : {}),
       order: {
         id: order.id,
         createdAt: order.createdAt.toISOString(),

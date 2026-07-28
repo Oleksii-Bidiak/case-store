@@ -1,4 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import { createHash } from 'crypto';
 import {
   NotFoundException,
   BadRequestException,
@@ -17,7 +19,12 @@ import { DeliveryService } from '../delivery';
 import { DiscountService } from '../discount';
 import { AddonApplicabilityResolver } from '../addon-service';
 import type { User } from '@prisma/client';
-import type { OrderWithItems, PaymentApplyPlan, PaymentWithOrderRow } from './order.types';
+import type {
+  OrderActor,
+  OrderWithItems,
+  PaymentApplyPlan,
+  PaymentWithOrderRow,
+} from './order.types';
 import type { CreateOrderDto } from './dto';
 import { PaymentOutcome, type PaymentEventInput } from '../payment/payment.types';
 
@@ -29,6 +36,21 @@ const OTHER_USER_ID = 'user-uuid-2';
 // status/payment mutation.
 const ADMIN_ID = 'admin-uuid-1';
 const now = new Date('2026-06-11T12:00:00.000Z');
+
+// TASK-338: createOrder now takes an actor, not a bare user id — exactly one of
+// "an account" and "a guest with contact details" (see OrderActor).
+const userActor: OrderActor = { type: 'user', userId: USER_ID };
+const GUEST_CART_TOKEN = 'guest-cart-token-1';
+const guestContact = {
+  email: 'guest@example.com',
+  phone: '+380671112233',
+  name: 'Гість Гостьович',
+};
+const guestActor: OrderActor = {
+  type: 'guest',
+  cartToken: GUEST_CART_TOKEN,
+  contact: guestContact,
+};
 
 const address: CreateOrderDto['shippingAddress'] = {
   firstName: 'Olena',
@@ -148,6 +170,9 @@ const orderRepositoryMock = {
   findAll: jest.fn(),
   findById: jest.fn(),
   findByIdForAdmin: jest.fn(),
+  // TASK-338: guest order access + claiming on registration.
+  findByAccessTokenHash: jest.fn(),
+  claimGuestOrders: jest.fn(),
   updateStatus: jest.fn(),
   cancelAndRestock: jest.fn(),
   reviveAndReserve: jest.fn(),
@@ -160,6 +185,17 @@ const orderRepositoryMock = {
 
 const cartRepositoryMock = {
   findByUserId: jest.fn(),
+  // TASK-338: a guest's cart is found by the cookie token, not a user id.
+  findByToken: jest.fn(),
+};
+
+// TASK-338: GUEST_ORDER_TOKEN_TTL_DAYS and STORE_CLIENT_URL. Defaults to the
+// service's own fallback when a key is not seeded, mirroring ConfigService.
+const configValues = new Map<string, unknown>();
+const configServiceMock = {
+  get: jest.fn((key: string, fallback?: unknown) =>
+    configValues.has(key) ? configValues.get(key) : fallback,
+  ),
 };
 
 const userRepositoryMock = {
@@ -231,6 +267,7 @@ describe('OrderService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    configValues.clear();
     // Default: no add-on applies to anything (TASK-174). Individual add-on tests
     // override this.
     addonResolverMock.resolveForProducts.mockResolvedValue(new Map());
@@ -245,6 +282,7 @@ describe('OrderService', () => {
         { provide: AddonApplicabilityResolver, useValue: addonResolverMock },
         { provide: DeliveryService, useValue: deliveryServiceMock },
         { provide: DiscountService, useValue: discountServiceMock },
+        { provide: ConfigService, useValue: configServiceMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
       ],
     }).compile();
@@ -265,7 +303,7 @@ describe('OrderService', () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
-      const result = await service.createOrder(USER_ID, createDto);
+      const result = await service.createOrder(userActor, createDto);
 
       expect(result).toBeInstanceOf(OrderEntity);
       expect(result.userId).toBe(USER_ID);
@@ -276,7 +314,7 @@ describe('OrderService', () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
-      await service.createOrder(USER_ID, createDto);
+      await service.createOrder(userActor, createDto);
 
       expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
         {
@@ -299,7 +337,7 @@ describe('OrderService', () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
-      await service.createOrder(USER_ID, createDto);
+      await service.createOrder(userActor, createDto);
 
       expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
       expect(orderRepositoryMock.createFromCart.mock.calls[0][0]).not.toHaveProperty(
@@ -315,7 +353,7 @@ describe('OrderService', () => {
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
       deliveryServiceMock.estimateShipping.mockResolvedValue({ cost: '60.00', etaDays: 2 });
 
-      await service.createOrder(USER_ID, npDto);
+      await service.createOrder(userActor, npDto);
 
       expect(deliveryServiceMock.estimateShipping).toHaveBeenCalledWith('city-ref-1');
       expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
@@ -332,7 +370,7 @@ describe('OrderService', () => {
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
       deliveryServiceMock.estimateShipping.mockRejectedValue(new Error('NP down'));
 
-      await service.createOrder(USER_ID, npDto);
+      await service.createOrder(userActor, npDto);
 
       expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
         expect.objectContaining({ shippingCost: 0 }),
@@ -374,7 +412,7 @@ describe('OrderService', () => {
           new DeliveryNotConfiguredException(),
         );
 
-        await expect(service.createOrder(USER_ID, npDto)).rejects.toThrow(
+        await expect(service.createOrder(userActor, npDto)).rejects.toThrow(
           'Nova Poshta is not configured',
         );
         // The order must not exist at all — a half-priced order is worse than none.
@@ -386,7 +424,7 @@ describe('OrderService', () => {
           new NamelessDeliveryNotConfiguredException(),
         );
 
-        await expect(service.createOrder(USER_ID, npDto)).rejects.toBeInstanceOf(Error);
+        await expect(service.createOrder(userActor, npDto)).rejects.toBeInstanceOf(Error);
         expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
       });
     });
@@ -402,7 +440,7 @@ describe('OrderService', () => {
         amount: '3.00',
       });
 
-      await service.createOrder(USER_ID, discountDto);
+      await service.createOrder(userActor, discountDto);
 
       // Subtotal is computed server-side (29.99 × 2 + 9.99 × 1 = 69.97) and
       // passed to the authoritative recompute — never a client-sent amount.
@@ -430,7 +468,7 @@ describe('OrderService', () => {
         amount: '3.00',
       });
 
-      await service.createOrder(USER_ID, discountDto);
+      await service.createOrder(userActor, discountDto);
 
       const params = orderRepositoryMock.createFromCart.mock.calls[0][0];
       const fakeTx = {} as never;
@@ -442,7 +480,7 @@ describe('OrderService', () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
-      await service.createOrder(USER_ID, createDto);
+      await service.createOrder(userActor, createDto);
 
       expect(discountServiceMock.computeDiscount).not.toHaveBeenCalled();
       expect(orderRepositoryMock.createFromCart.mock.calls[0][0]).not.toHaveProperty('discount');
@@ -451,21 +489,21 @@ describe('OrderService', () => {
     it('should throw NotFoundException when the user has no cart', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(null);
 
-      await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(NotFoundException);
+      await expect(service.createOrder(userActor, createDto)).rejects.toThrow(NotFoundException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException when the cart is empty', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(emptyCart);
 
-      await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(BadRequestException);
+      await expect(service.createOrder(userActor, createDto)).rejects.toThrow(BadRequestException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException when a position has insufficient stock', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithLowStock);
 
-      await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(BadRequestException);
+      await expect(service.createOrder(userActor, createDto)).rejects.toThrow(BadRequestException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
@@ -487,7 +525,7 @@ describe('OrderService', () => {
       };
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithInactiveProduct);
 
-      await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(BadRequestException);
+      await expect(service.createOrder(userActor, createDto)).rejects.toThrow(BadRequestException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
@@ -508,7 +546,7 @@ describe('OrderService', () => {
       };
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithWithdrawnCategory);
 
-      await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(BadRequestException);
+      await expect(service.createOrder(userActor, createDto)).rejects.toThrow(BadRequestException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
   });
@@ -523,7 +561,7 @@ describe('OrderService', () => {
       userRepositoryMock.findById.mockResolvedValue(bannedUser);
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
 
-      await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(ForbiddenException);
+      await expect(service.createOrder(userActor, createDto)).rejects.toThrow(ForbiddenException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
@@ -531,7 +569,7 @@ describe('OrderService', () => {
       userRepositoryMock.findById.mockResolvedValue(null);
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
 
-      await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(ForbiddenException);
+      await expect(service.createOrder(userActor, createDto)).rejects.toThrow(ForbiddenException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
@@ -539,7 +577,7 @@ describe('OrderService', () => {
       userRepositoryMock.findById.mockResolvedValue(bannedUser);
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
 
-      await expect(service.createOrder(USER_ID, createDto)).rejects.toThrow(ForbiddenException);
+      await expect(service.createOrder(userActor, createDto)).rejects.toThrow(ForbiddenException);
       expect(cartRepositoryMock.findByUserId).not.toHaveBeenCalled();
     });
 
@@ -548,7 +586,7 @@ describe('OrderService', () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
-      await service.createOrder(USER_ID, createDto);
+      await service.createOrder(userActor, createDto);
 
       expect(userRepositoryMock.findById).toHaveBeenCalledTimes(1);
       expect(userRepositoryMock.findById).toHaveBeenCalledWith(USER_ID);
@@ -589,7 +627,7 @@ describe('OrderService', () => {
         new Map([['product-uuid-1', [{ ...warranty, price: '399.00', source: 'override' }]]]),
       );
 
-      await service.createOrder(USER_ID, createDto);
+      await service.createOrder(userActor, createDto);
 
       expect(addonResolverMock.resolveForProducts).toHaveBeenCalledTimes(1);
       expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
@@ -611,7 +649,7 @@ describe('OrderService', () => {
       // The service was deactivated / the template changed since add-to-cart.
       addonResolverMock.resolveForProducts.mockResolvedValue(new Map([['product-uuid-1', []]]));
 
-      await expect(service.createOrder(USER_ID, createDto)).resolves.toBeInstanceOf(OrderEntity);
+      await expect(service.createOrder(userActor, createDto)).resolves.toBeInstanceOf(OrderEntity);
 
       expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
         expect.objectContaining({ addonsByCartItemId: new Map() }),
@@ -630,7 +668,7 @@ describe('OrderService', () => {
     it('enqueues an order-confirmation outbox row for the recipient in the transaction', async () => {
       userRepositoryMock.findById.mockResolvedValue(recipient);
 
-      const result = await service.createOrder(USER_ID, createDto);
+      const result = await service.createOrder(userActor, createDto);
 
       expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
       const [params, tx] = mailOutboxServiceMock.enqueueOrderConfirmation.mock.calls[0];
@@ -647,7 +685,7 @@ describe('OrderService', () => {
     it('does NOT perform a synchronous SMTP send (no MailService instance call)', async () => {
       userRepositoryMock.findById.mockResolvedValue(recipient);
 
-      await service.createOrder(USER_ID, createDto);
+      await service.createOrder(userActor, createDto);
 
       // OrderService no longer depends on MailService at all — the only mail
       // interaction is the outbox enqueue above.
@@ -657,7 +695,7 @@ describe('OrderService', () => {
     it('reuses the guard-fetched user for the enqueue (no second lookup)', async () => {
       userRepositoryMock.findById.mockResolvedValue(recipient);
 
-      await service.createOrder(USER_ID, createDto);
+      await service.createOrder(userActor, createDto);
 
       expect(userRepositoryMock.findById).toHaveBeenCalledTimes(1);
       expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
@@ -1475,6 +1513,249 @@ describe('OrderService', () => {
         ADMIN_ID,
         expect.anything(),
       );
+    });
+  });
+
+  // ─── Guest checkout (TASK-338) ───────────────────────────────────────────────
+  // A guest could always FILL a cart; the barrier stood at order creation, which
+  // made the storefront's "order in two minutes, no registration" promise untrue.
+
+  describe('createOrder — guest', () => {
+    const guestCart: CartWithItems = { ...cartWithItems, userId: null, token: GUEST_CART_TOKEN };
+
+    beforeEach(() => {
+      cartRepositoryMock.findByToken.mockResolvedValue(guestCart);
+      resolveCreateWithHook(makeOrder({ userId: null, guestEmail: guestContact.email }));
+    });
+
+    it('loads the cart by its cookie token, never by a user id', async () => {
+      await service.createOrder(guestActor, createDto);
+
+      expect(cartRepositoryMock.findByToken).toHaveBeenCalledWith(GUEST_CART_TOKEN);
+      expect(cartRepositoryMock.findByUserId).not.toHaveBeenCalled();
+    });
+
+    it('never looks up a user (there is no account to ban-check)', async () => {
+      await service.createOrder(guestActor, createDto);
+
+      expect(userRepositoryMock.findById).not.toHaveBeenCalled();
+    });
+
+    it('writes the order with a null userId and the contact snapshot', async () => {
+      await service.createOrder(guestActor, createDto);
+
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: null,
+          guest: expect.objectContaining({
+            email: guestContact.email,
+            phone: guestContact.phone,
+            name: guestContact.name,
+          }),
+        }),
+        expect.any(Function),
+      );
+    });
+
+    it('stores only a SHA-256 of the access token, never the raw value', async () => {
+      await service.createOrder(guestActor, createDto);
+
+      const params = orderRepositoryMock.createFromCart.mock.calls[0][0] as {
+        guest: { accessTokenHash: string };
+      };
+      // 64 hex chars — a SHA-256 digest, not something a leaked dump can use.
+      expect(params.guest.accessTokenHash).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it('mints a different token for every order', async () => {
+      await service.createOrder(guestActor, createDto);
+      await service.createOrder(guestActor, createDto);
+
+      const first = orderRepositoryMock.createFromCart.mock.calls[0][0] as {
+        guest: { accessTokenHash: string };
+      };
+      const second = orderRepositoryMock.createFromCart.mock.calls[1][0] as {
+        guest: { accessTokenHash: string };
+      };
+      expect(first.guest.accessTokenHash).not.toBe(second.guest.accessTokenHash);
+    });
+
+    it('addresses the confirmation email from the ORDER, not from a user row', async () => {
+      await service.createOrder(guestActor, createDto);
+
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: guestContact.email,
+          customerName: guestContact.name,
+        }),
+        txMock,
+      );
+    });
+
+    it('puts the raw token in the emailed status link — the one place it exists', async () => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
+
+      await service.createOrder(guestActor, createDto);
+
+      const params = mailOutboxServiceMock.enqueueOrderConfirmation.mock.calls[0][0] as unknown as {
+        orderStatusUrl: string;
+      };
+      expect(params.orderStatusUrl).toMatch(
+        /^https:\/\/shop\.example\.com\/orders\/guest\/[a-f0-9]{64}$/,
+      );
+    });
+
+    it('does not double the slash when STORE_CLIENT_URL has a trailing one', async () => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com/');
+
+      await service.createOrder(guestActor, createDto);
+
+      const params = mailOutboxServiceMock.enqueueOrderConfirmation.mock.calls[0][0] as unknown as {
+        orderStatusUrl: string;
+      };
+      expect(params.orderStatusUrl).toContain('https://shop.example.com/orders/guest/');
+    });
+
+    it('sends no status link rather than a localhost one when STORE_CLIENT_URL is unset', async () => {
+      await service.createOrder(guestActor, createDto);
+
+      const params = mailOutboxServiceMock.enqueueOrderConfirmation.mock.calls[0][0] as unknown as {
+        orderStatusUrl?: string;
+      };
+      // A default of http://localhost:3000 is exactly the bug this project already
+      // paid for once — it works in dev and points real customers at their laptop.
+      expect(params.orderStatusUrl).toBeUndefined();
+    });
+
+    it('rejects a promo code, because a redemption needs an account it does not have', async () => {
+      await expect(
+        service.createOrder(guestActor, { ...createDto, discountCode: 'SUMMER10' }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(discountServiceMock.computeDiscount).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    it('404s when the guest cart cookie points at nothing', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue(null);
+
+      await expect(service.createOrder(guestActor, createDto)).rejects.toThrow(NotFoundException);
+    });
+
+    it('applies the same stock and availability gates as an account order', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue({
+        ...guestCart,
+        items: cartWithLowStock.items,
+      });
+
+      await expect(service.createOrder(guestActor, createDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('mints no token at all for an account order', async () => {
+      userRepositoryMock.findById.mockResolvedValue(recipient);
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      resolveCreateWithHook();
+
+      await service.createOrder(userActor, createDto);
+
+      const params = orderRepositoryMock.createFromCart.mock.calls[0][0] as { guest?: unknown };
+      expect(params.guest).toBeUndefined();
+    });
+  });
+
+  // ─── getGuestOrder (TASK-338) ────────────────────────────────────────────────
+  // Edge case E-17: without this a guest goes blind the moment the cart cookie is
+  // gone or they open the confirmation email on another device.
+
+  describe('getGuestOrder', () => {
+    const RAW_TOKEN = 'a'.repeat(64);
+    // SHA-256 of the raw token above — the value the repository is queried with.
+    const hashOf = (raw: string) => createHash('sha256').update(raw).digest('hex');
+
+    it('hashes the token before looking it up (the raw value never hits the DB)', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(makeOrder({ userId: null }));
+
+      await service.getGuestOrder(RAW_TOKEN);
+
+      expect(orderRepositoryMock.findByAccessTokenHash).toHaveBeenCalledWith(hashOf(RAW_TOKEN));
+      expect(orderRepositoryMock.findByAccessTokenHash).not.toHaveBeenCalledWith(RAW_TOKEN);
+    });
+
+    it('returns the order for a valid, unexpired token', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ userId: null, createdAt: new Date() }),
+      );
+
+      const result = await service.getGuestOrder(RAW_TOKEN);
+
+      expect(result).toBeInstanceOf(OrderEntity);
+    });
+
+    it('404s on an unknown token', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(null);
+
+      await expect(service.getGuestOrder(RAW_TOKEN)).rejects.toThrow(NotFoundException);
+    });
+
+    it('404s once the link is older than the configured window', async () => {
+      configValues.set('GUEST_ORDER_TOKEN_TTL_DAYS', 30);
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ userId: null, createdAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000) }),
+      );
+
+      await expect(service.getGuestOrder(RAW_TOKEN)).rejects.toThrow(NotFoundException);
+    });
+
+    it('still serves an order inside the configured window', async () => {
+      configValues.set('GUEST_ORDER_TOKEN_TTL_DAYS', 30);
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ userId: null, createdAt: new Date(Date.now() - 29 * 24 * 60 * 60 * 1000) }),
+      );
+
+      await expect(service.getGuestOrder(RAW_TOKEN)).resolves.toBeInstanceOf(OrderEntity);
+    });
+
+    it('defaults to 60 days when the TTL is not configured', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ userId: null, createdAt: new Date(Date.now() - 61 * 24 * 60 * 60 * 1000) }),
+      );
+
+      await expect(service.getGuestOrder(RAW_TOKEN)).rejects.toThrow(NotFoundException);
+    });
+
+    it('answers expired and unknown identically (no oracle for token guessing)', async () => {
+      configValues.set('GUEST_ORDER_TOKEN_TTL_DAYS', 1);
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ userId: null, createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) }),
+      );
+      const expired = await service.getGuestOrder(RAW_TOKEN).catch((err: Error) => err.message);
+
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(null);
+      const unknown = await service.getGuestOrder(RAW_TOKEN).catch((err: Error) => err.message);
+
+      expect(expired).toBe(unknown);
+    });
+  });
+
+  // ─── claimGuestOrders (TASK-338) ─────────────────────────────────────────────
+
+  describe('claimGuestOrders', () => {
+    it('claims by normalised email so a mixed-case registration still matches', async () => {
+      orderRepositoryMock.claimGuestOrders.mockResolvedValue(2);
+
+      const claimed = await service.claimGuestOrders(USER_ID, '  Guest@Example.COM ');
+
+      expect(orderRepositoryMock.claimGuestOrders).toHaveBeenCalledWith(
+        USER_ID,
+        'guest@example.com',
+      );
+      expect(claimed).toBe(2);
+    });
+
+    it('is a harmless no-op for an email with no guest orders behind it', async () => {
+      orderRepositoryMock.claimGuestOrders.mockResolvedValue(0);
+
+      await expect(service.claimGuestOrders(USER_ID, 'nobody@example.com')).resolves.toBe(0);
     });
   });
 

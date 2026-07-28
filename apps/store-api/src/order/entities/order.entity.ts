@@ -29,6 +29,24 @@ export class OrderCustomerData {
 }
 
 /**
+ * Contact details captured at guest checkout (TASK-338).
+ *
+ * Safe on customer-facing responses: a guest reaching their own order through the
+ * emailed token is being shown the address they themselves typed. It carries no
+ * account data because there is no account.
+ */
+export class OrderGuestData {
+  @ApiProperty({ description: 'Email given at checkout', example: 'olena@example.com' })
+  email!: string;
+
+  @ApiProperty({ description: 'Phone given at checkout', example: '+380501234567' })
+  phone!: string;
+
+  @ApiProperty({ description: 'Name given at checkout', example: 'Олена Шевченко' })
+  name!: string;
+}
+
+/**
  * Domain entity representing an order.
  *
  * This is a clean domain entity — not a Prisma model. All `Decimal` money
@@ -44,10 +62,25 @@ export class OrderEntity {
   id!: string;
 
   @ApiProperty({
-    description: 'Owning user ID',
+    description:
+      'Owning user ID, or null for a guest order (TASK-338). Exactly one of `userId` and ' +
+      '`guest` is populated.',
+    type: String,
+    nullable: true,
     example: '550e8400-e29b-41d4-a716-446655440001',
   })
-  userId!: string;
+  userId!: string | null;
+
+  @ApiProperty({
+    description:
+      'Contact details captured at guest checkout (TASK-338); absent on account orders. ' +
+      'Kept as a snapshot of what was actually typed, even after an account later claims ' +
+      'the order.',
+    type: () => OrderGuestData,
+    required: false,
+    nullable: true,
+  })
+  guest?: OrderGuestData;
 
   @ApiProperty({ description: 'Order status', enum: OrderStatus, example: OrderStatus.PENDING })
   status!: OrderStatus;
@@ -171,6 +204,17 @@ export class OrderEntity {
         email: order.user.email,
         firstName: order.user.firstName,
         lastName: order.user.lastName,
+      };
+    }
+    // TASK-338: a guest order has no user row, so the contact block IS the
+    // customer record. Keyed off the email because that is the field the order
+    // cannot be placed without; phone/name fall back to empty strings rather than
+    // making the whole block vanish on a partially-filled legacy row.
+    if (order.guestEmail) {
+      entity.guest = {
+        email: order.guestEmail,
+        phone: order.guestPhone ?? '',
+        name: order.guestName ?? '',
       };
     }
     entity.restockedAt = order.restockedAt;

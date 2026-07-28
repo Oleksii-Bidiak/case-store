@@ -5,7 +5,9 @@ import {
   ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
+import { createHash, randomBytes } from 'crypto';
 import { OrderStatus, PaymentStatus, PaymentAttemptStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { CartRepository, type CartWithItems } from '../cart/cart.repository';
@@ -21,6 +23,7 @@ import { AddonApplicabilityResolver } from '../addon-service';
 import type { CreateOrderDto, OrderListQueryDto, AdminOrderListQueryDto } from './dto';
 import type {
   CreateOrderParams,
+  OrderActor,
   OrderAddonSnapshot,
   PaymentApplyPlan,
   PaymentWithOrderRow,
@@ -30,6 +33,44 @@ import { PaymentOutcome } from '../payment/payment.types';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
+
+/**
+ * How long a guest's order-status link stays usable when
+ * `GUEST_ORDER_TOKEN_TTL_DAYS` is unset (TASK-338). Two months: long enough to
+ * cover a delivery, a return window and a forgotten inbox, short enough that a
+ * leaked old email is not a permanent key.
+ */
+const DEFAULT_GUEST_TOKEN_TTL_DAYS = 60;
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** Bytes of entropy in a guest order-access token. */
+const GUEST_TOKEN_BYTES = 32;
+
+/**
+ * Mint a guest's order-access token (TASK-338).
+ *
+ * 32 random bytes, hex — the same strength as the refresh and password-reset
+ * tokens, because it grants the same kind of thing: access to one person's data
+ * with no password in front of it. `randomUUID` would have been shorter to write
+ * and materially weaker (122 bits, structured).
+ */
+function generateGuestToken(): string {
+  return randomBytes(GUEST_TOKEN_BYTES).toString('hex');
+}
+
+/**
+ * SHA-256 of a guest token — what actually goes in the database.
+ *
+ * Identical to `auth.repository.ts`'s `hashToken`, and deliberately so: the raw
+ * token exists only in the outgoing email and the incoming request, so a dump of
+ * the orders table hands out nothing. Not salted/slow-hashed on purpose — this
+ * is a 256-bit random value, not a password, so there is nothing to brute-force
+ * and a per-request Argon2 on a public GET would be a denial-of-service lever.
+ */
+function hashGuestToken(rawToken: string): string {
+  return createHash('sha256').update(rawToken).digest('hex');
+}
 
 /**
  * Whether a status transition should automatically return reserved stock to
@@ -76,6 +117,9 @@ export class OrderService {
     private readonly deliveryService: DeliveryService,
     private readonly discountService: DiscountService,
     private readonly addonResolver: AddonApplicabilityResolver,
+    // TASK-338: reads GUEST_ORDER_TOKEN_TTL_DAYS — how long a guest's emailed
+    // status link stays usable.
+    private readonly configService: ConfigService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(OrderService.name);
@@ -89,19 +133,33 @@ export class OrderService {
    * @throws BadRequestException when the cart is empty or a variant has
    *   insufficient stock at order-creation time.
    */
-  async createOrder(userId: string, dto: CreateOrderDto): Promise<OrderEntity> {
+  async createOrder(actor: OrderActor, dto: CreateOrderDto): Promise<OrderEntity> {
+    // ─── TASK-338: resolve who is buying, and from which cart ──────────────────
+    // The two arms differ in exactly three things — the ban check, which cart to
+    // load, and where the confirmation email is addressed. Everything after this
+    // block (stock re-validation, add-ons, discounts, the transaction) is shared,
+    // because a guest order is a real order in every other respect.
+    const userId = actor.type === 'user' ? actor.userId : null;
+
     // Ban enforcement (TASK-150): a deactivated account must not place an order
     // even while it still holds a non-expired access token. Refresh tokens are
     // revoked the moment a user is banned, but the short-lived access token
     // remains valid until it expires — so re-check active status here, as the
     // first operation, before any cart lookup or inventory write. The same user
     // object is reused for the confirmation email below (single fetch).
-    const user = await this.userRepository.findById(userId);
-    if (!user || !user.isActive) {
-      throw new ForbiddenException('Account is deactivated');
+    // A guest has no account to deactivate, so this gate simply does not apply.
+    let user: Awaited<ReturnType<UserRepository['findById']>> = null;
+    if (actor.type === 'user') {
+      user = await this.userRepository.findById(actor.userId);
+      if (!user || !user.isActive) {
+        throw new ForbiddenException('Account is deactivated');
+      }
     }
 
-    const cart = await this.cartRepository.findByUserId(userId);
+    const cart =
+      actor.type === 'user'
+        ? await this.cartRepository.findByUserId(actor.userId)
+        : await this.cartRepository.findByToken(actor.cartToken);
 
     if (!cart) {
       throw new NotFoundException('Cart not found');
@@ -172,23 +230,60 @@ export class OrderService {
     // cap race rolls the whole order back. Kept as one localized block.
     let discount: CreateOrderParams['discount'];
     if (dto.discountCode) {
+      // TASK-338 limitation, stated out loud rather than discovered as a 500:
+      // `DiscountRedemption.userId` is a NOT NULL foreign key to User, and both
+      // the per-user cap and the redemption insert are built on it. Letting a
+      // guest through here would either crash inside the order transaction or
+      // require dropping the per-user cap — so guests are told plainly that the
+      // code needs an account. Lifting this is a schema change, not a patch.
+      if (actor.type === 'guest') {
+        throw new BadRequestException(
+          'Promo codes require an account — sign in or register to use this code',
+        );
+      }
       const subtotal = computeSubtotalString(cart.items);
       const { discount: applied, amount } = await this.discountService.computeDiscount(
         dto.discountCode,
         subtotal,
-        userId,
+        actor.userId,
       );
       discount = {
         amount,
         code: applied.code,
-        redeem: (orderId, tx) => this.discountService.redeem(applied.id, userId, orderId, tx),
+        redeem: (orderId, tx) => this.discountService.redeem(applied.id, actor.userId, orderId, tx),
       };
     }
     // ───────────────────────────────────────────────────────────────────────────
 
+    // ─── TASK-338: the guest's key to their own order ──────────────────────────
+    // Generated here so the RAW value exists only in this function and the
+    // outgoing email; only its SHA-256 is ever persisted (same at-rest pattern as
+    // RefreshToken / PasswordResetToken). Without it a guest is blind the moment
+    // the cart cookie is gone or they switch device — edge case E-17.
+    const guestToken = actor.type === 'guest' ? generateGuestToken() : null;
+    const guestStatusUrl = guestToken ? this.buildGuestStatusUrl(guestToken) : null;
+
+    // Where the confirmation letter goes. For a guest there is no user row, so it
+    // comes from what they typed at checkout — which is also why the email is the
+    // only proof we have that the address is theirs.
+    const recipient =
+      actor.type === 'guest'
+        ? { email: actor.contact.email, name: actor.contact.name }
+        : { email: user!.email, name: user!.firstName ?? undefined };
+
     const order = await this.orderRepository.createFromCart(
       {
         userId,
+        ...(actor.type === 'guest' && guestToken
+          ? {
+              guest: {
+                email: actor.contact.email,
+                phone: actor.contact.phone,
+                name: actor.contact.name,
+                accessTokenHash: hashGuestToken(guestToken),
+              },
+            }
+          : {}),
         cartId: cart.id,
         cartItems: cart.items,
         addonsByCartItemId,
@@ -204,21 +299,138 @@ export class OrderService {
       // MailOutboxWorker renders + sends it later, so the HTTP response no
       // longer blocks on SMTP and a transient mail failure can never be lost.
       // Runs alongside the TASK-079 discount redeem (same transaction).
+      //
+      // TASK-338: the recipient comes from the ORDER, never from a user row —
+      // for a guest there is no user row to read. The guest's raw status-link
+      // token travels with the payload and is written into the letter; it is the
+      // one and only time it leaves this process.
       async (tx, created) => {
         await this.mailOutbox.enqueueOrderConfirmation(
           {
-            to: user.email,
+            to: recipient.email,
             order: OrderEntity.fromPrisma(created),
-            customerName: user.firstName ?? undefined,
+            customerName: recipient.name,
+            ...(guestStatusUrl ? { orderStatusUrl: guestStatusUrl } : {}),
           },
           tx,
         );
       },
     );
 
-    this.logger.info({ event: 'order.created', orderId: order.id, userId }, 'Order created');
+    this.logger.info(
+      {
+        event: 'order.created',
+        orderId: order.id,
+        userId,
+        // Never the raw token, and never the guest's email — both are redacted
+        // from logs elsewhere and would defeat the point of hashing at rest.
+        guest: actor.type === 'guest',
+      },
+      'Order created',
+    );
 
     return OrderEntity.fromPrisma(order);
+  }
+
+  /**
+   * Build the absolute storefront link a guest opens to see their order
+   * (TASK-338).
+   *
+   * `STORE_CLIENT_URL` is read WITHOUT a fallback on purpose. Giving it a
+   * `http://localhost:3000` default is precisely the bug this codebase already
+   * paid for once (see the note at the top of `scripts/env-check.js`): the value
+   * silently works in dev and silently points production customers at their own
+   * laptop. Environment validation makes the variable mandatory in production, so
+   * the only case reaching the `null` branch is a dev box — where a warning and
+   * no button is the honest outcome.
+   */
+  private buildGuestStatusUrl(rawToken: string): string | null {
+    const storeUrl = this.configService.get<string>('STORE_CLIENT_URL');
+
+    if (!storeUrl) {
+      this.logger.warn(
+        { event: 'order.guest_status_url_unavailable' },
+        'STORE_CLIENT_URL is not set — the guest confirmation email will carry no status link',
+      );
+      return null;
+    }
+
+    return `${storeUrl.replace(/\/+$/, '')}/orders/guest/${rawToken}`;
+  }
+
+  /**
+   * Read a guest's own order using the token from their confirmation email
+   * (TASK-338).
+   *
+   * The ONLY way a guest reaches their order once the cart cookie is gone or they
+   * switch device (edge case E-17). The raw token is hashed before the lookup, so
+   * a database leak does not hand out order access.
+   *
+   * The link expires `GUEST_ORDER_TOKEN_TTL_DAYS` after the order was placed.
+   * There is no expiry COLUMN — `createdAt` plus the configured window is the
+   * same information, and inventing a column that must be kept in step with a
+   * setting is how the two drift apart.
+   *
+   * Every failure — unknown token, expired token, soft-deleted order — answers
+   * the same 404. A token that is merely expired must not be distinguishable
+   * from one that was never valid, or the endpoint becomes an oracle for
+   * guessing tokens.
+   */
+  async getGuestOrder(rawToken: string): Promise<OrderEntity> {
+    const order = await this.orderRepository.findByAccessTokenHash(hashGuestToken(rawToken));
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const ttlDays = this.configService.get<number>(
+      'GUEST_ORDER_TOKEN_TTL_DAYS',
+      DEFAULT_GUEST_TOKEN_TTL_DAYS,
+    );
+    const expiresAt = order.createdAt.getTime() + ttlDays * MS_PER_DAY;
+    if (Date.now() > expiresAt) {
+      this.logger.info(
+        { event: 'order.guest_token_expired', orderId: order.id },
+        'Guest order link used after it expired',
+      );
+      throw new NotFoundException('Order not found');
+    }
+
+    return OrderEntity.fromPrisma(order);
+  }
+
+  /**
+   * Attach a new account's earlier guest orders to it (TASK-338).
+   *
+   * Called after a registration whose email matches orders placed as a guest, so
+   * the shopper's history is not split in two by the act of signing up. The guest
+   * columns are deliberately kept: they record what was actually typed at
+   * checkout, and the emailed status link goes on working.
+   *
+   * Safe to call for any registration — an email with no guest orders behind it
+   * simply claims zero.
+   *
+   * ── INTEGRATION NOTE (orchestrator, plan 167) ───────────────────────────────
+   * The natural call site is the successful-registration path in
+   * `auth/auth.service.ts`, which belongs to WT-C in this wave. This branch
+   * therefore ships the capability and its tests but NOT the one-line call. Wire
+   * it after WT-C merges:
+   *     await this.orderService.claimGuestOrders(user.id, user.email);
+   * Until then a guest who registers keeps reaching their orders through the
+   * emailed link, so nothing is lost — the orders are simply not listed under
+   * the new account yet.
+   */
+  async claimGuestOrders(userId: string, email: string): Promise<number> {
+    const claimed = await this.orderRepository.claimGuestOrders(userId, email.trim().toLowerCase());
+
+    if (claimed > 0) {
+      this.logger.info(
+        { event: 'order.guest_orders_claimed', userId, claimed },
+        `Attached ${claimed} guest order(s) to the new account`,
+      );
+    }
+
+    return claimed;
   }
 
   /**
@@ -799,7 +1011,9 @@ export class OrderService {
    */
   private async snapshotAddons(
     cart: CartWithItems,
-    userId: string,
+    // Null for a guest order (TASK-338). Used only to attribute the "dropped a
+    // stale add-on" warning, so a guest simply has nothing to attribute it to.
+    userId: string | null,
   ): Promise<Map<string, OrderAddonSnapshot[]>> {
     const resolved = await this.addonResolver.resolveForProducts(
       cart.items.map((item) => ({ id: item.product.id, categoryId: item.product.categoryId })),

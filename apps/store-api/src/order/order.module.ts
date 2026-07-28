@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { CartModule } from '../cart';
+import { CartIdentityInterceptor } from '../cart/interceptors';
 import { UserModule } from '../user';
 import { DeliveryModule } from '../delivery';
 import { DiscountModule } from '../discount';
@@ -18,9 +20,22 @@ import { AdminOrderController } from './admin-order.controller';
   // AddonServiceModule provides AddonApplicabilityResolver — the order re-resolves
   // each line's add-ons fresh at creation time before freezing them into
   // OrderItemAddon snapshots (TASK-174).
-  imports: [CartModule, UserModule, DeliveryModule, DiscountModule, AddonServiceModule],
+  // ConfigModule: GUEST_ORDER_TOKEN_TTL_DAYS and STORE_CLIENT_URL (TASK-338).
+  imports: [
+    ConfigModule,
+    CartModule,
+    UserModule,
+    DeliveryModule,
+    DiscountModule,
+    AddonServiceModule,
+  ],
   controllers: [OrderController, AdminOrderController],
-  providers: [OrderRepository, OrderService],
+  // TASK-338: OrderController resolves the buyer's identity exactly as the cart
+  // does — a JWT when there is one, the `cartToken` cookie otherwise — so a guest
+  // converts the very cart they already own. CartIdentityInterceptor is listed
+  // here because a route-scoped enhancer is instantiated from the injector of the
+  // module that USES it, not the one that happens to declare it.
+  providers: [OrderRepository, OrderService, CartIdentityInterceptor],
   exports: [OrderService],
 })
 export class OrderModule {}

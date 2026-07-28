@@ -102,7 +102,16 @@ export interface OrderAddonSnapshot {
  */
 export interface OrderWithItems {
   id: string;
-  userId: string;
+  /**
+   * Null on a guest order (TASK-338). Exactly one of `userId` and the guest
+   * contact block below is populated; the application holds that invariant,
+   * because Prisma cannot express "one of these two".
+   */
+  userId: string | null;
+  /** Contact details captured at guest checkout (TASK-338); null on account orders. */
+  guestEmail?: string | null;
+  guestPhone?: string | null;
+  guestName?: string | null;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   subtotal: { toString(): string };
@@ -173,7 +182,25 @@ export interface OrderWithItems {
  * repository so the transactional write is a pure data apply.
  */
 export interface CreateOrderParams {
-  userId: string;
+  /** Null for a guest order (TASK-338) — see {@link OrderActor}. */
+  userId: string | null;
+  /**
+   * Guest checkout block (TASK-338). Present exactly when `userId` is null. The
+   * contact details are a SNAPSHOT of what was typed at checkout and are kept
+   * forever, even after the order is later claimed by an account: they are the
+   * record of what the buyer actually asked for that day.
+   */
+  guest?: {
+    email: string;
+    phone: string;
+    name: string;
+    /**
+     * SHA-256 of the token that goes in the confirmation email. The raw value
+     * NEVER reaches the database — same at-rest pattern as RefreshToken /
+     * PasswordResetToken.
+     */
+    accessTokenHash: string;
+  };
   cartId: string;
   cartItems: CartWithItems['items'];
   /**
@@ -278,3 +305,33 @@ export interface PaymentApplyPlan {
    */
   statusChange?: { from: OrderStatus; to: OrderStatus };
 }
+
+/**
+ * Contact details a guest types at checkout (TASK-338).
+ *
+ * There is no account behind a guest order, so these three fields are the only
+ * way to reach the buyer — the confirmation email, the courier's phone call, the
+ * name on the parcel. They are snapshotted onto the order and never rewritten,
+ * not even when an account later claims it.
+ */
+export interface GuestContact {
+  email: string;
+  phone: string;
+  name: string;
+}
+
+/**
+ * Who is placing an order (TASK-338).
+ *
+ * Before guest checkout, "who" was always a user id, so the signature could just
+ * take a string. It cannot any more, and an optional `userId?: string` would have
+ * been the wrong fix: it makes "neither" and "both" expressible, and the whole
+ * point is that exactly one of the two holds. A discriminated union makes the
+ * invariant the type system's job instead of a comment nobody reads.
+ *
+ * The guest arm carries the cart token rather than a user id because that cookie
+ * is the only thing identifying a guest's cart — the same identity the cart
+ * module has been resolving all along (`ResolvedCartIdentity`).
+ */
+export type OrderActor =
+  { type: 'user'; userId: string } | { type: 'guest'; cartToken: string; contact: GuestContact };
