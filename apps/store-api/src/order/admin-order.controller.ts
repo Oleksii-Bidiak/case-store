@@ -19,7 +19,7 @@ import {
   OrderStatusHistoryEntity,
 } from './entities';
 import { AdminOrderListQueryDto, UpdateOrderStatusDto, UpdateOrderPaymentStatusDto } from './dto';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /**
  * Pagination metadata for paginated admin order lists.
@@ -100,7 +100,8 @@ class AdminOrderHistoryResponse {
   AdminOrderHistoryResponse,
 )
 @Controller('admin/orders')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('orders:read')
 export class AdminOrderController {
   constructor(private readonly orderService: OrderService) {}
 
@@ -181,6 +182,7 @@ export class AdminOrderController {
    * status directly.
    */
   @Patch(':orderId/status')
+  @RequirePermission('orders:write')
   @ApiBearerAuth('access-token')
   // Admin-only state mutation; throttle to blunt scripted misuse even from an
   // authenticated admin token (mirrors the payment-status route).
@@ -216,6 +218,7 @@ export class AdminOrderController {
    * paid/unpaid/refunded; it never changes the order status. Admin-only.
    */
   @Patch(':orderId/payment-status')
+  @RequirePermission('orders:write')
   @ApiBearerAuth('access-token')
   // Admin-only state mutation; throttle to blunt scripted misuse even from an
   // authenticated admin token (mirrors the status route).

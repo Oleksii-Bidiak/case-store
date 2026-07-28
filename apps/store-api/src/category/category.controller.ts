@@ -12,7 +12,7 @@ import { CategoryService } from './category.service';
 import { CategoryListQueryDto } from './dto';
 import { CategoryEntity, CategoryTreeNodeEntity, CategoryWithCountEntity } from './entities';
 import { AdminCategoryTreeResponse } from './admin-category.controller';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /**
  * Pagination metadata for paginated category responses.
@@ -111,7 +111,7 @@ export class CategoryController {
    * with NO structural depth cap and with `parentId` / `productCount` / `depth`
    * on every node (TASK-291, plan 158 §3.3 — the flat admin read). Admin-only —
    * backs the admin category tree widget plus the product form's leaf-category
-   * picker. Same per-route `AdminGuard` bypass pattern as
+   * picker. Same per-route guard pattern as
    * `GET /products/admin/list` (TASK-230). Declared before `@Get(':slug')` so
    * the literal `admin/tree` path is never captured as a slug.
    *
@@ -120,7 +120,8 @@ export class CategoryController {
    * generated Orval model.
    */
   @Get('admin/tree')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('categories:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Get full category tree including inactive (admin)',

@@ -11,6 +11,8 @@ import { UserRepository } from '../src/user/user.repository';
 import { ProductRepository } from '../src/product/product.repository';
 import { CategoryRepository } from '../src/category/category.repository';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
  * E2E tests for the Product module.
@@ -175,6 +177,8 @@ describe('ProductController (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(UserRepository)

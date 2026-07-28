@@ -3,6 +3,7 @@ import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
+import { EmailVerificationService } from './email-verification.service';
 import { AuthController } from './auth.controller';
 import { RefreshTokenCleanupService } from './refresh-token-cleanup.service';
 import { JwtAccessStrategy, JwtRefreshStrategy, GoogleStrategy } from './strategies';
@@ -45,6 +46,7 @@ import { WishlistModule } from '../wishlist/wishlist.module';
   providers: [
     AuthRepository,
     AuthService,
+    EmailVerificationService,
     RefreshTokenCleanupService,
     JwtAccessStrategy,
     JwtRefreshStrategy,
@@ -55,6 +57,6 @@ import { WishlistModule } from '../wishlist/wishlist.module';
     GoogleStrategy,
     GoogleAuthGuard,
   ],
-  exports: [AuthRepository, AuthService],
+  exports: [AuthRepository, AuthService, EmailVerificationService],
 })
 export class AuthModule {}

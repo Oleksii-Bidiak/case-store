@@ -10,6 +10,8 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
 import type { DashboardSummary, NeedsAction } from '../src/dashboard/dashboard.types';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
  * E2E tests for the Admin Dashboard module.
@@ -137,6 +139,8 @@ describe('Admin Dashboard (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(DashboardRepository)

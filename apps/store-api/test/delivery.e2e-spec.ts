@@ -6,6 +6,8 @@ import { APP_GUARD } from '@nestjs/core';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 import { NovaPoshtaClient } from '../src/delivery';
 
 /**
@@ -64,6 +66,8 @@ describe('DeliveryController (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(NovaPoshtaClient)
       .useValue(novaPoshtaClientMock)
       .overrideProvider(APP_GUARD)

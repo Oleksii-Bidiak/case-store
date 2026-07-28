@@ -22,7 +22,7 @@ import {
 } from '@nestjs/swagger';
 import { PageService } from './pages.service';
 import { CreatePageDto, UpdatePageDto, AdminPageListQueryDto } from './dto';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import { PageEntity } from './entities';
 
 /**
@@ -78,7 +78,8 @@ class PageResponseEnvelope {
 @ApiTags('Pages')
 @ApiExtraModels(AdminPageListResponse, AdminPagePaginationMeta, PageEntity, PageResponseEnvelope)
 @Controller('admin/pages')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('pages:write')
 export class AdminPageController {
   constructor(private readonly pageService: PageService) {}
 

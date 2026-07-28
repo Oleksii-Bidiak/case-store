@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { PermissionGuard } from '../auth/permissions';
 import { BlogController } from './blog.controller';
 import { AdminBlogController } from './admin-blog.controller';
 import { BlogService } from './blog.service';
@@ -29,7 +30,10 @@ describe('Blog controllers', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [BlogController, AdminBlogController],
       providers: [{ provide: BlogService, useValue: serviceMock }],
-    }).compile();
+    })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     publicCtrl = module.get(BlogController);
     adminCtrl = module.get(AdminBlogController);

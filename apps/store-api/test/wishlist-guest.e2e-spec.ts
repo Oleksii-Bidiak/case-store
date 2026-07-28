@@ -12,6 +12,8 @@ import { UserRepository } from '../src/user/user.repository';
 import { WishlistRepository, WishlistWithItems } from '../src/wishlist/wishlist.repository';
 import { WishlistService } from '../src/wishlist/wishlist.service';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
  * E2E tests for the Wishlist module — GUEST path and merge-on-login flow.
@@ -151,6 +153,8 @@ describe('Wishlist — guest & merge (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(UserRepository)

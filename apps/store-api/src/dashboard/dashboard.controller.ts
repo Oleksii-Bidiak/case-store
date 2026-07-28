@@ -17,14 +17,15 @@ import {
   TopProductDto,
   UserMetricsDto,
 } from './dto';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /**
  * Admin dashboard endpoint.
  *
  *   GET /api/admin/dashboard/summary — all metrics in one read-only payload.
  *
- * Admin-only (ADMIN role required via {@link AdminGuard}). Mirrors the
+ * Admin-only, gated on `analytics:read` (TASK-334) — the revenue figures here
+ * are exactly what a limited role should not see by default. Mirrors the
  * `admin/orders` controller split: a flat response (no `{ data }` wrapper),
  * since the summary IS the resource and has no identity or pagination.
  */
@@ -46,7 +47,8 @@ import { AdminGuard } from '../auth/guards';
   NeedsActionResponse,
 )
 @Controller('admin/dashboard')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('analytics:read')
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
@@ -81,7 +83,7 @@ export class DashboardController {
    * A small, cache-friendly payload mirroring `GET /api/contact/admin/unread-count`
    * — the sidebar is mounted on every admin page, so it reads this narrow shape
    * rather than the heavy summary endpoint. Admin-only via the class-level
-   * {@link AdminGuard}.
+   * {@link PermissionGuard} (`analytics:read`).
    */
   @Get('needs-action')
   @ApiBearerAuth('access-token')

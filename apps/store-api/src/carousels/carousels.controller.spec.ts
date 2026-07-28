@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { PermissionGuard } from '../auth/permissions';
 import { CarouselPlacement, CarouselSource, PublishStatus } from '@prisma/client';
 import { CarouselController } from './carousels.controller';
 import { AdminCarouselController } from './admin-carousels.controller';
@@ -65,7 +66,10 @@ describe('Carousel controllers', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [CarouselController, AdminCarouselController],
       providers: [{ provide: CarouselService, useValue: serviceMock }],
-    }).compile();
+    })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     publicController = module.get<CarouselController>(CarouselController);
     adminController = module.get<AdminCarouselController>(AdminCarouselController);

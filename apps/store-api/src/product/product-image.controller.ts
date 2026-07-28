@@ -26,7 +26,7 @@ import {
 import { memoryStorage } from 'multer';
 import { ProductImageService } from './product-image.service';
 import { ReorderImagesDto, UploadImagesDto } from './dto';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import { ProductImageEntity } from './entities';
 
 /** MIME types accepted by the upload endpoint. */
@@ -74,7 +74,8 @@ export class ProductImageController {
    * List a product's images (admin management view).
    */
   @Get()
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:read')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'List product images (admin)',
@@ -95,7 +96,8 @@ export class ProductImageController {
    * Upload one or more images (multipart/form-data, field `files`). Admin-only.
    */
   @Post()
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:write')
   @UseInterceptors(FilesInterceptor('files', 10, imageMulterOptions))
   @ApiBearerAuth('access-token')
   @ApiConsumes('multipart/form-data')
@@ -133,7 +135,8 @@ export class ProductImageController {
    * Update sortOrder + primary flag for the product's images. Admin-only.
    */
   @Patch('reorder')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:write')
   @HttpCode(200)
   @ApiBearerAuth('access-token')
   @ApiOperation({
@@ -159,7 +162,8 @@ export class ProductImageController {
    * Remove one image (DB row + stored file). Admin-only.
    */
   @Delete(':imageId')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:write')
   @HttpCode(204)
   @ApiBearerAuth('access-token')
   @ApiOperation({

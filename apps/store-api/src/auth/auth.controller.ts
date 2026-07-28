@@ -22,13 +22,18 @@ import {
   ApiCookieAuth,
   ApiExcludeEndpoint,
   ApiExtraModels,
+  ApiProperty,
   getSchemaPath,
 } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { ConfirmEmailVerificationDto } from './dto/confirm-email-verification.dto';
+import { EmailVerificationService } from './email-verification.service';
 import { JwtRefreshGuard } from './guards';
 import { JwtAuthGuard } from './guards';
 import { GoogleAuthGuard } from './guards';
@@ -39,6 +44,7 @@ import { CartService } from '../cart/cart.service';
 import { CART_TOKEN_COOKIE } from '../cart/cart-identity.types';
 import { WishlistService } from '../wishlist/wishlist.service';
 import { WISHLIST_TOKEN_COOKIE } from '../wishlist/wishlist-identity.types';
+import { PermissionService, type EffectivePermissions } from './permissions';
 
 /**
  * Response envelope for auth operations.
@@ -54,6 +60,26 @@ class MessageResponseEnvelope {
   data!: { message: string };
 }
 
+/** Effective-permission payload for `GET /auth/me/permissions` (TASK-334). */
+class EffectivePermissionsEntity {
+  @ApiProperty({ enum: UserRole, example: UserRole.MANAGER })
+  role!: UserRole;
+
+  @ApiProperty({
+    example: false,
+    description: 'True for ADMIN — the owner, who always holds every permission',
+  })
+  isOwner!: boolean;
+
+  @ApiProperty({ type: [String], example: ['orders:read', 'products:write'] })
+  permissions!: string[];
+}
+
+class PermissionsResponseEnvelope {
+  @ApiProperty({ type: EffectivePermissionsEntity })
+  data!: EffectivePermissionsEntity;
+}
+
 /**
  * Type aliases for controller return types.
  */
@@ -61,7 +87,13 @@ type AuthResponse = { accessToken: string };
 type MessageResponse = { message: string };
 
 @ApiTags('Auth')
-@ApiExtraModels(AuthTokens, AuthResponseEnvelope, MessageResponseEnvelope)
+@ApiExtraModels(
+  AuthTokens,
+  AuthResponseEnvelope,
+  MessageResponseEnvelope,
+  EffectivePermissionsEntity,
+  PermissionsResponseEnvelope,
+)
 @Controller('auth')
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
@@ -72,6 +104,8 @@ export class AuthController {
     private readonly jwtService: JwtService,
     private readonly cartService: CartService,
     private readonly wishlistService: WishlistService,
+    private readonly permissionService: PermissionService,
+    private readonly emailVerificationService: EmailVerificationService,
   ) {}
 
   /**
@@ -211,6 +245,50 @@ export class AuthController {
   }
 
   /**
+   * POST /api/auth/password/change (TASK-333)
+   *
+   * Change the signed-in user's own password. ONE endpoint for both frontends —
+   * the storefront `/account` screen and the admin panel — because the mechanism
+   * is identical and a second copy is a second place to forget the session
+   * revocation.
+   *
+   * Requires the current password (a stolen access token alone must not be
+   * enough to take an account over permanently). On success every refresh token
+   * is revoked, so the refresh cookie is cleared here too: leaving a
+   * now-revoked cookie in the browser buys nothing and turns the next silent
+   * refresh into a confusing 401.
+   */
+  @Post('password/change')
+  @HttpCode(HttpStatus.OK)
+  // Same budget as the reset-confirm route: this is a credential-checking
+  // surface (it verifies `currentPassword`), so it must not become a place to
+  // guess passwords at an unlimited rate with a stolen token.
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Change your own password (requires the current one)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Password updated; all other sessions revoked',
+    type: MessageResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid input (weak new password / missing fields)' })
+  @ApiResponse({ status: 401, description: 'Not signed in, or the current password is wrong' })
+  async changePassword(
+    @CurrentUser('id') userId: string,
+    @Body() dto: ChangePasswordDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ data: MessageResponse }> {
+    await this.authService.changePassword(userId, dto.currentPassword, dto.newPassword);
+
+    this.clearRefreshCookie(response);
+
+    return {
+      data: { message: 'Password has been changed successfully.' },
+    };
+  }
+
+  /**
    * POST /api/auth/refresh
    *
    * Rotate the refresh token. Expects a valid refresh token in the cookie.
@@ -279,6 +357,99 @@ export class AuthController {
     return {
       data: { message: 'Logged out' },
     };
+  }
+
+  /**
+   * POST /api/auth/email/verify/request (TASK-342)
+   *
+   * Send a verification link to the signed-in user's current address. Always
+   * 200 with the same generic message — for an already-verified account, a
+   * banned one, or a missing one — so the response cannot be used to probe
+   * account state, and so hammering it cannot be turned into a mail sprayer.
+   */
+  @Post('email/verify/request')
+  @HttpCode(HttpStatus.OK)
+  // Tighter than most: every accepted call sends a real email to a real inbox.
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Send a verification link to your own email address' })
+  @ApiResponse({
+    status: 200,
+    description: 'Generic acknowledgement (identical whatever the account state)',
+    type: MessageResponseEnvelope,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async requestEmailVerification(
+    @CurrentUser('id') userId: string,
+  ): Promise<{ data: MessageResponse }> {
+    await this.emailVerificationService.requestVerification(userId);
+
+    return {
+      data: { message: 'If the address still needs verifying, a link has been sent.' },
+    };
+  }
+
+  /**
+   * POST /api/auth/email/verify/confirm (TASK-342)
+   *
+   * Complete verification with a single-use token. PUBLIC: the click arrives
+   * from an email client that carries no session, and requiring one would break
+   * the flow for anyone who opens their mail on a different device.
+   *
+   * The token proves ONE address, recorded on the token itself. If the account
+   * has changed address since the link was issued, the proof does not transfer
+   * and the request is refused.
+   */
+  @Post('email/verify/confirm')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @ApiOperation({ summary: 'Confirm an email address with a single-use token' })
+  @ApiResponse({ status: 200, description: 'Address verified', type: MessageResponseEnvelope })
+  @ApiResponse({ status: 400, description: 'Invalid, used, expired or superseded token' })
+  async confirmEmailVerification(
+    @Body() dto: ConfirmEmailVerificationDto,
+  ): Promise<{ data: MessageResponse }> {
+    await this.emailVerificationService.confirm(dto.token);
+
+    return {
+      data: { message: 'Email address verified.' },
+    };
+  }
+
+  /**
+   * GET /api/auth/me/permissions (TASK-334)
+   *
+   * What the signed-in caller may actually do — the admin frontend's single
+   * source of truth for which nav items, dashboard tiles and row actions to
+   * render.
+   *
+   * Deliberately NOT derived from the JWT the frontend already holds: the role
+   * in that token is a 15-minute-old snapshot, and the whole point of this
+   * design is that a permission revoked a moment ago is gone now. Any
+   * authenticated user may call it; a shopper simply gets an empty list.
+   *
+   * A hidden menu is a convenience, never a security boundary — the server
+   * guard is what actually protects the data. This endpoint exists so the two
+   * agree, not so one can replace the other.
+   */
+  @Get('me/permissions')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Effective permissions of the signed-in user (resolved from the database)',
+    operationId: 'getMyPermissions',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Effective permissions',
+    type: PermissionsResponseEnvelope,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getMyPermissions(
+    @CurrentUser('id') userId: string,
+  ): Promise<{ data: EffectivePermissions }> {
+    return { data: await this.permissionService.getEffectivePermissions(userId) };
   }
 
   /**

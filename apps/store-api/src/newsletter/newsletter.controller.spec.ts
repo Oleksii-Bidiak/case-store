@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { PermissionGuard } from '../auth/permissions';
 import type { Response } from 'express';
 import { THROTTLER_LIMIT } from '@nestjs/throttler/dist/throttler.constants';
 import { NewsletterService } from './newsletter.service';
@@ -21,7 +22,10 @@ describe('NewsletterController (public)', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [NewsletterController],
       providers: [{ provide: NewsletterService, useValue: serviceMock }],
-    }).compile();
+    })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<NewsletterController>(NewsletterController);
   });
@@ -62,7 +66,10 @@ describe('AdminNewsletterController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AdminNewsletterController],
       providers: [{ provide: NewsletterService, useValue: serviceMock }],
-    }).compile();
+    })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<AdminNewsletterController>(AdminNewsletterController);
   });

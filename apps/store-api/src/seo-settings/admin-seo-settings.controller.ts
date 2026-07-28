@@ -26,7 +26,7 @@ import { SeoSettingsService } from './seo-settings.service';
 import { StoreLogoService } from './store-logo.service';
 import { UpdateSeoSettingsDto, SeoHealthResponseEnvelope } from './dto';
 import { ALLOWED_LOGO_MIME, LOGO_MULTER_MAX_BYTES } from './store-logo.constants';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import { SeoSettingsEntity, SeoHealthEntity } from './entities';
 import { SeoSettingsResponseEnvelope } from './seo-settings.controller';
 
@@ -68,7 +68,8 @@ const logoMulterOptions = {
   SeoHealthResponseEnvelope,
 )
 @Controller('admin/seo-settings')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('settings:seo')
 export class AdminSeoSettingsController {
   constructor(
     private readonly service: SeoSettingsService,

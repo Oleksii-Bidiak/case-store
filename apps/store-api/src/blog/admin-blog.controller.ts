@@ -29,7 +29,7 @@ import {
   UpdateBlogCategoryDto,
   ReorderBlogCategoriesDto,
 } from './dto';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 // Direct file import, NOT the `../auth` barrel: the barrel pulls the auth module in and the
 // resulting require cycle leaves `CurrentUser` undefined at decorator-evaluation time.
 import { CurrentUser } from '../auth/decorators';
@@ -95,7 +95,8 @@ class BlogCategoryListResponse {
   BlogCategoryListResponse,
 )
 @Controller('admin/blog')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('blog:write')
 export class AdminBlogController {
   constructor(private readonly blogService: BlogService) {}
 

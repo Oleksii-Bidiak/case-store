@@ -5,6 +5,7 @@ import {
   User,
   RefreshToken,
   PasswordResetToken,
+  EmailVerificationToken,
   OAuthAccount,
   OAuthProvider,
   UserRole,
@@ -34,6 +35,10 @@ export interface RefreshTokenWithUser extends RefreshToken {
 }
 
 export interface PasswordResetTokenWithUser extends PasswordResetToken {
+  user: User;
+}
+
+export interface EmailVerificationTokenWithUser extends EmailVerificationToken {
   user: User;
 }
 
@@ -174,6 +179,66 @@ export class AuthRepository {
     await this.prisma.passwordResetToken.updateMany({
       where: { userId, usedAt: null, expiresAt: { gt: new Date() } },
       data: { usedAt: new Date() },
+    });
+  }
+
+  // ─── Email verification (TASK-342) ─────────────────────────────────────────
+  //
+  // Same at-rest shape as PasswordResetToken: SHA-256 of the raw token, an
+  // explicit expiry, and a `usedAt` stamp that makes it single-use. The one
+  // structural difference is `email` on the row — the address the link PROVES,
+  // captured at issue time. See EmailVerificationService.confirm for why that
+  // is not the same thing as the user's current address.
+
+  /**
+   * Persist a verification token for a specific address. The token is hashed
+   * before storage; the raw value only ever exists in the outgoing link.
+   */
+  saveEmailVerificationToken(
+    userId: string,
+    email: string,
+    rawToken: string,
+    expiresAt: Date,
+  ): Promise<EmailVerificationToken> {
+    return this.prisma.emailVerificationToken.create({
+      data: { token: this.hashToken(rawToken), userId, email, expiresAt },
+    });
+  }
+
+  /** Look up a verification token by its raw value, with the owning user. */
+  findEmailVerificationToken(rawToken: string): Promise<EmailVerificationTokenWithUser | null> {
+    return this.prisma.emailVerificationToken.findUnique({
+      where: { token: this.hashToken(rawToken) },
+      include: { user: true },
+    });
+  }
+
+  /** Mark one verification token used (single-use enforcement). */
+  async markEmailVerificationTokenUsed(id: string): Promise<void> {
+    await this.prisma.emailVerificationToken.update({
+      where: { id },
+      data: { usedAt: new Date() },
+    });
+  }
+
+  /**
+   * Invalidate every still-active verification token for a user, so only the
+   * most recent link is honorable. Called before issuing a fresh one — and, as
+   * a side effect, the reason a link for an old address stops working the
+   * moment a new one is requested.
+   */
+  async invalidateActiveEmailVerificationTokens(userId: string): Promise<void> {
+    await this.prisma.emailVerificationToken.updateMany({
+      where: { userId, usedAt: null, expiresAt: { gt: new Date() } },
+      data: { usedAt: new Date() },
+    });
+  }
+
+  /** Stamp the address as proven, at `verifiedAt`. */
+  async markEmailVerified(userId: string, verifiedAt: Date): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { emailVerifiedAt: verifiedAt },
     });
   }
 

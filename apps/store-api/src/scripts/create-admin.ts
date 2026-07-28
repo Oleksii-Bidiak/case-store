@@ -30,7 +30,7 @@
 import { randomBytes } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import argon2 from 'argon2';
+import { hashPassword } from '../common/security';
 
 type Args = { email: string; password: string; generated: boolean };
 
@@ -74,7 +74,9 @@ async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 
   try {
-    const passwordHash = await argon2.hash(password);
+    // Shared with the login path (TASK-333) — a hash produced by a second,
+    // drifted copy of argon2 options is a password that silently does not work.
+    const passwordHash = await hashPassword(password);
 
     const admin = await prisma.user.upsert({
       where: { email },
@@ -85,6 +87,14 @@ async function main() {
         // Clears the audit tombstone: a soft-deleted admin is otherwise invisible
         // to the login path, and the upsert alone would leave it that way.
         deletedAt: null,
+        // TASK-333: without these, an admin recovered here can still be inside
+        // the 15-minute TASK-314 lockout — and `login()` checks the lock BEFORE
+        // it checks the password, so the brand-new password this script just
+        // printed is rejected with the same generic "Invalid credentials". The
+        // operator, already in a lockout emergency, concludes the recovery tool
+        // is broken. Repeated failed logins are exactly how you get here.
+        failedLoginAttempts: 0,
+        lockedUntil: null,
       },
       create: {
         email,

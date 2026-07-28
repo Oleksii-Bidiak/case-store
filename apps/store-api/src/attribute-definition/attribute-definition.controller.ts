@@ -15,7 +15,7 @@ import {
   ReorderAttributeDefinitionsDto,
 } from './dto';
 import { AttributeDefinitionEntity } from './entities';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /** Response envelope for a single attribute definition. */
 class AttributeDefinitionResponse {
@@ -38,7 +38,8 @@ class AttributeDefinitionDeleteResponse {
 /**
  * Admin-only controller for per-category structured-spec TEMPLATES (TASK-191).
  * Templates are an authoring concern and never public — every route is behind
- * {@link AdminGuard}. The filled-in product VALUES live on the product module
+ * {@link PermissionGuard} requiring `attributes:write`. The filled-in product
+ * VALUES live on the product module
  * (`PUT /products/:id/specs`); this controller only manages the definitions.
  *
  * Routes span two base paths (category-scoped list/create + id-scoped
@@ -53,7 +54,8 @@ class AttributeDefinitionDeleteResponse {
   AttributeDefinitionDeleteResponse,
 )
 @Controller()
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('attributes:write')
 @ApiBearerAuth('access-token')
 export class AttributeDefinitionController {
   constructor(private readonly service: AttributeDefinitionService) {}

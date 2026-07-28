@@ -1,7 +1,7 @@
 import { Controller, Post, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiProperty } from '@nestjs/swagger';
 import { SearchService } from './search.service';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /** Response envelope for `POST /api/admin/search/reindex`. */
 class ReindexResponse {
@@ -28,7 +28,8 @@ export class AdminSearchController {
   constructor(private readonly searchService: SearchService) {}
 
   @Post('reindex')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('settings:search')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('access-token')
   @ApiOperation({

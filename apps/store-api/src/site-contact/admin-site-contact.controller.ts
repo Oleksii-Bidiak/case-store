@@ -2,7 +2,7 @@ import { Controller, Put, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiExtraModels } from '@nestjs/swagger';
 import { SiteContactService } from './site-contact.service';
 import { UpdateSiteContactDto } from './dto';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import { SiteContactSettingsEntity } from './entities';
 import { SiteContactResponseEnvelope } from './site-contact.controller';
 
@@ -14,7 +14,8 @@ import { SiteContactResponseEnvelope } from './site-contact.controller';
 @ApiTags('SiteContact')
 @ApiExtraModels(SiteContactSettingsEntity, SiteContactResponseEnvelope)
 @Controller('admin/site-contact')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('settings:contacts')
 export class AdminSiteContactController {
   constructor(private readonly service: SiteContactService) {}
 

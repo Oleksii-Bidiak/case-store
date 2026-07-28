@@ -4,6 +4,8 @@ import { ConfigModule } from '@nestjs/config';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication;
@@ -32,6 +34,8 @@ describe('AppController (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .compile();
 
     app = moduleFixture.createNestApplication();

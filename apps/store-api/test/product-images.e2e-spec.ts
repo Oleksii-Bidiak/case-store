@@ -11,6 +11,8 @@ import { ProductRepository } from '../src/product/product.repository';
 import { ProductImageRepository } from '../src/product/product-image.repository';
 import { ImageProcessor, STORAGE_SERVICE } from '../src/storage';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
  * E2E tests for the product image endpoints. Repositories and the storage
@@ -85,6 +87,8 @@ describe('ProductImageController (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(ProductRepository)

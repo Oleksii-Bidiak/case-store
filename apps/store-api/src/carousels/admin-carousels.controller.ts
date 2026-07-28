@@ -27,7 +27,7 @@ import {
   AdminCarouselListQueryDto,
   SetCarouselItemsDto,
 } from './dto';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import { CarouselEntity, CarouselItemEntity, CarouselItemProductEntity } from './entities';
 
 /**
@@ -84,7 +84,8 @@ class CarouselItemListResponse {
   CarouselItemListResponse,
 )
 @Controller('admin/carousels')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('carousels:write')
 export class AdminCarouselController {
   constructor(private readonly carouselService: CarouselService) {}
 

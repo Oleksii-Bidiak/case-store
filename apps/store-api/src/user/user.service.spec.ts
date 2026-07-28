@@ -6,6 +6,7 @@ import { UserService } from './user.service';
 import { UserEntity, UserAdminCardEntity } from './entities';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
 import { AuthRepository } from '../auth/auth.repository';
+import { AuthService } from '../auth/auth.service';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -42,7 +43,13 @@ const userRepositoryMock = {
   findById: jest.fn(),
   findByEmail: jest.fn(),
   findAll: jest.fn(),
+  create: jest.fn(),
   update: jest.fn(),
+  updateRole: jest.fn(),
+  // TASK-334: the "last admin" guard reads this before any demote/ban/delete of
+  // an ADMIN. Defaults to 1 so the pre-existing tests, which target CUSTOMERs,
+  // are unaffected.
+  countActiveAdmins: jest.fn().mockResolvedValue(1),
   deactivate: jest.fn(),
   activate: jest.fn(),
   softDelete: jest.fn(),
@@ -61,6 +68,13 @@ const authRepositoryMock = {
   revokeAllUserTokens: jest.fn(),
 };
 
+// AuthService is injected so an owner-initiated password reset is literally the
+// same operation as a self-service one (TASK-333) — same hash, same session
+// revocation, same lockout clearing.
+const authServiceMock = {
+  setPassword: jest.fn(),
+};
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('UserService', () => {
@@ -75,6 +89,7 @@ describe('UserService', () => {
         UserService,
         { provide: UserRepository, useValue: userRepositoryMock },
         { provide: AuthRepository, useValue: authRepositoryMock },
+        { provide: AuthService, useValue: authServiceMock },
       ],
     }).compile();
 
@@ -593,6 +608,130 @@ describe('UserService', () => {
 
       expect(result).not.toHaveProperty('deletedAt');
       expect(result).not.toHaveProperty('originalEmail');
+    });
+  });
+
+  // ─── Staff provisioning & the last-admin guard (TASK-333/334) ───────────────
+
+  describe('createUser', () => {
+    it('hashes the password before it ever reaches the repository', async () => {
+      repository.findByEmail.mockResolvedValue(null);
+      repository.create.mockResolvedValue({ ...mockUser, role: 'MANAGER' as UserRole });
+
+      await service.createUser({
+        email: 'manager@example.com',
+        password: 'StrongP@ss123',
+        role: 'MANAGER' as UserRole,
+      });
+
+      const written = userRepositoryMock.create.mock.calls[0][0] as { passwordHash: string };
+      expect(written.passwordHash).not.toBe('StrongP@ss123');
+      expect(written.passwordHash).toMatch(/^\$argon2/);
+    });
+
+    it('refuses an email that is already taken', async () => {
+      repository.findByEmail.mockResolvedValue(mockUser);
+
+      await expect(
+        service.createUser({
+          email: 'test@example.com',
+          password: 'StrongP@ss123',
+          role: 'MANAGER' as UserRole,
+        }),
+      ).rejects.toThrow(ConflictException);
+
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('setUserPassword', () => {
+    it('routes through AuthService so the reset revokes sessions exactly like a self-service change', async () => {
+      // A second implementation here would be the one that eventually forgets
+      // the revoke — and "the owner reset the password of a compromised
+      // account" is precisely when that matters.
+      repository.findById.mockResolvedValue(mockUser);
+
+      await service.setUserPassword('user-uuid-1', 'BrandNewPass1');
+
+      expect(authServiceMock.setPassword).toHaveBeenCalledWith('user-uuid-1', 'BrandNewPass1');
+    });
+
+    it('throws NotFoundException for a user that does not exist', async () => {
+      repository.findById.mockResolvedValue(null);
+
+      await expect(service.setUserPassword('ghost', 'BrandNewPass1')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(authServiceMock.setPassword).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the last-admin guard', () => {
+    const otherAdmin = { ...mockAdminUser, id: 'admin-uuid-2' };
+
+    it('refuses to demote the last active administrator', async () => {
+      // Locking the owner out of their own shop is only recoverable with shell
+      // access to the production database. The self-targeting guards are not
+      // enough on their own — two admins can lock each other out.
+      repository.findById.mockResolvedValue(otherAdmin);
+      repository.countActiveAdmins.mockResolvedValue(0);
+
+      await expect(
+        service.updateUserRole('admin-uuid-2', 'MANAGER' as UserRole, ADMIN_ID),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(repository.updateRole).not.toHaveBeenCalled();
+    });
+
+    it('allows a demotion while another active administrator remains', async () => {
+      repository.findById.mockResolvedValue(otherAdmin);
+      repository.countActiveAdmins.mockResolvedValue(1);
+      repository.updateRole.mockResolvedValue({ ...otherAdmin, role: 'MANAGER' as UserRole });
+
+      await service.updateUserRole('admin-uuid-2', 'MANAGER' as UserRole, ADMIN_ID);
+
+      expect(repository.updateRole).toHaveBeenCalledWith('admin-uuid-2', 'MANAGER');
+      // A demoted employee must not silently refresh into a new session.
+      expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith('admin-uuid-2');
+    });
+
+    it('refuses to deactivate the last active administrator', async () => {
+      repository.findById.mockResolvedValue(otherAdmin);
+      repository.countActiveAdmins.mockResolvedValue(0);
+
+      await expect(service.deactivateUser('admin-uuid-2', ADMIN_ID)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(repository.deactivate).not.toHaveBeenCalled();
+    });
+
+    it('refuses to delete the last active administrator', async () => {
+      repository.findById.mockResolvedValue(otherAdmin);
+      repository.countActiveAdmins.mockResolvedValue(0);
+
+      await expect(service.deleteUser('admin-uuid-2', ADMIN_ID)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(repository.softDelete).not.toHaveBeenCalled();
+    });
+
+    it('does not consult the guard when the target is not an administrator', async () => {
+      // A CUSTOMER or MANAGER can never be the last admin, so the extra COUNT
+      // would be pure waste on the common path.
+      repository.findById.mockResolvedValue(mockUser);
+      repository.deactivate.mockResolvedValue({ ...mockUser, isActive: false });
+
+      await service.deactivateUser('user-uuid-1', ADMIN_ID);
+
+      expect(repository.countActiveAdmins).not.toHaveBeenCalled();
+    });
+
+    it('refuses a self-inflicted role change outright', async () => {
+      await expect(
+        service.updateUserRole(ADMIN_ID, 'CUSTOMER' as UserRole, ADMIN_ID),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(repository.findById).not.toHaveBeenCalled();
     });
   });
 });

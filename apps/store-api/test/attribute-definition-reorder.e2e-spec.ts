@@ -18,6 +18,8 @@ import {
 } from '../src/common/reorder';
 import { HttpExceptionFilter } from '../src/common/filters';
 import { PrismaService } from '../src/prisma';
+import { PermissionRepository } from '../src/auth/permissions';
+import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
  * E2E tests for the attribute-definition FLAT reorder endpoint (TASK-298):
@@ -128,6 +130,8 @@ describe('Attribute-definition reorder (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
+      .overrideProvider(PermissionRepository)
+      .useValue(createPermissionRepositoryMock())
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(UserRepository)

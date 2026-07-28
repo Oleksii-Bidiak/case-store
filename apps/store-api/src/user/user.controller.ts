@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Put,
   Patch,
   Delete,
@@ -22,8 +23,15 @@ import {
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { UserService } from './user.service';
-import { UpdateProfileDto, UserListQueryDto } from './dto';
-import { JwtAuthGuard, AdminGuard } from '../auth/guards';
+import {
+  UpdateProfileDto,
+  UserListQueryDto,
+  CreateUserDto,
+  SetUserPasswordDto,
+  UpdateUserRoleDto,
+} from './dto';
+import { JwtAuthGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission, OwnerOnly } from '../auth/permissions';
 import { CurrentUser } from '../auth/decorators';
 import {
   UserEntity,
@@ -171,7 +179,8 @@ export class UserController {
    * Admin-only endpoint.
    */
   @Get()
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('customers:read')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'List all users (admin)' })
   @ApiQuery({ name: 'sortBy', required: false, description: 'Sort field: createdAt | email' })
@@ -188,13 +197,108 @@ export class UserController {
   }
 
   /**
+   * POST /api/users (TASK-333/317)
+   *
+   * Create an ADMIN or MANAGER account from the admin UI. Owner-only.
+   *
+   * Before this existed the only way to add staff was a developer running
+   * `scripts/create-admin.ts` on the server — and that script only makes
+   * ADMINs, so "hire someone to write the blog" meant handing over the orders,
+   * the prices and every customer's personal data.
+   */
+  @Post()
+  @UseGuards(PermissionGuard)
+  @OwnerOnly()
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Create a staff account (owner-only)', operationId: 'createUser' })
+  @ApiResponse({ status: 201, description: 'Staff account created', type: UserResponseEnvelope })
+  @ApiResponse({ status: 400, description: 'Invalid input (weak password / bad role)' })
+  @ApiResponse({ status: 403, description: 'Forbidden — owner-only' })
+  @ApiResponse({ status: 409, description: 'Email is already taken' })
+  async create(@Body() dto: CreateUserDto): Promise<UserResponse> {
+    const user = await this.userService.createUser(dto);
+
+    return { data: user };
+  }
+
+  /**
+   * POST /api/users/:id/password (TASK-333)
+   *
+   * Reset someone else's password. Owner-only.
+   *
+   * The employee-forgot-their-password path. Revokes every session the target
+   * held, exactly as a self-service change does — an owner resetting a password
+   * because an account may be compromised must not leave the intruder signed in.
+   */
+  @Post(':id/password')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(PermissionGuard)
+  @OwnerOnly()
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: "Reset another user's password (owner-only)",
+    operationId: 'setUserPassword',
+  })
+  @ApiParam({ name: 'id', description: 'User UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Password reset; target sessions revoked',
+    type: UserResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid input (weak password)' })
+  @ApiResponse({ status: 403, description: 'Forbidden — owner-only' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async setPassword(
+    @Param('id') id: string,
+    @Body() dto: SetUserPasswordDto,
+  ): Promise<UserResponse> {
+    const user = await this.userService.setUserPassword(id, dto.newPassword);
+
+    return { data: user };
+  }
+
+  /**
+   * PATCH /api/users/:id/role (TASK-317/334)
+   *
+   * Change a user's role. Owner-only, and refused when it would leave the shop
+   * without a single administrator who can sign in.
+   */
+  @Patch(':id/role')
+  @UseGuards(PermissionGuard)
+  @OwnerOnly()
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: "Change a user's role (owner-only)", operationId: 'updateUserRole' })
+  @ApiParam({ name: 'id', description: 'User UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Role updated; target sessions revoked',
+    type: UserResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid role' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — owner-only, your own account, or the last active administrator',
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async updateRole(
+    @Param('id') id: string,
+    @Body() dto: UpdateUserRoleDto,
+    @CurrentUser('id') adminId: string,
+  ): Promise<UserResponse> {
+    const user = await this.userService.updateUserRole(id, dto.role, adminId);
+
+    return { data: user };
+  }
+
+  /**
    * GET /api/users/:id
    *
    * Returns a specific user by ID.
    * Admin-only endpoint.
    */
   @Get(':id')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('customers:read')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get user by ID (admin)' })
   @ApiParam({ name: 'id', description: 'User UUID' })
@@ -219,7 +323,8 @@ export class UserController {
    * coupons, and contact-inbox messages matched by email. Admin-only.
    */
   @Get(':id/admin-card')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('customers:read')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Get enriched customer card (LTV, orders, reviews, coupons, contact messages)',
@@ -246,7 +351,8 @@ export class UserController {
    * Admin-only endpoint.
    */
   @Patch(':id/deactivate')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('customers:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Deactivate user (admin)' })
   @ApiParam({ name: 'id', description: 'User UUID' })
@@ -276,7 +382,8 @@ export class UserController {
    * Admin-only endpoint.
    */
   @Patch(':id/activate')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @RequirePermission('customers:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Activate user (admin)' })
   @ApiParam({ name: 'id', description: 'User UUID' })
@@ -301,7 +408,8 @@ export class UserController {
    * Admin-only; an admin cannot delete their own account. Returns 204 No Content.
    */
   @Delete(':id')
-  @UseGuards(AdminGuard)
+  @UseGuards(PermissionGuard)
+  @OwnerOnly()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Delete user (admin, soft-delete)', operationId: 'deleteUser' })

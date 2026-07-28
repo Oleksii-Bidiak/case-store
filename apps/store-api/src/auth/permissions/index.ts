@@ -14,3 +14,7 @@ export {
   REQUIRE_PERMISSION_KEY,
   OWNER_ONLY_KEY,
 } from './require-permission.decorator';
+export { PermissionGuard } from './permission.guard';
+export { PermissionService, type EffectivePermissions } from './permission.service';
+export { PermissionRepository, type PermissionActor } from './permission.repository';
+export { PermissionModule } from './permission.module';

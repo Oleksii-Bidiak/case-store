@@ -10,7 +10,7 @@ import {
 } from '@nestjs/swagger';
 import { ProductGroupService } from './product-group.service';
 import { CreateProductGroupDto, UpdateProductGroupDto } from './dto';
-import { AdminGuard } from '../auth/guards';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import { ProductGroupSummaryEntity, ProductGroupDetailEntity } from './entities';
 
 /**
@@ -47,7 +47,8 @@ class ProductGroupListResponse {
   ProductGroupListResponse,
 )
 @Controller('product-groups')
-@UseGuards(AdminGuard)
+@UseGuards(PermissionGuard)
+@RequirePermission('products:read')
 export class ProductGroupController {
   constructor(private readonly service: ProductGroupService) {}
 
@@ -82,6 +83,7 @@ export class ProductGroupController {
   }
 
   @Post()
+  @RequirePermission('products:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Create a product group (admin)' })
   @ApiResponse({
@@ -97,6 +99,7 @@ export class ProductGroupController {
   }
 
   @Patch(':id')
+  @RequirePermission('products:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Update a product group (admin)' })
   @ApiParam({ name: 'id', description: 'Product group UUID' })
