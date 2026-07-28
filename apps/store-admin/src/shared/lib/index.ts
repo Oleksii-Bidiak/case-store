@@ -2,6 +2,7 @@
 export { cn } from "./utils";
 export * from "./format";
 export { slugify } from "./slug";
+export { apiErrorMessage, apiErrorStatus } from "./api-error-message";
 
 // NOTE: `use-debounced-callback` is intentionally NOT re-exported here. It is a
 // "use client" hook; adding a client module to this barrel (which server

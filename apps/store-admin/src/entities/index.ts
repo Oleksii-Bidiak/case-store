@@ -13,3 +13,5 @@ export * from "./review";
 export * from "./contact";
 export * from "./discount";
 export * from "./newsletter";
+export * from "./permission";
+export * from "./audit";

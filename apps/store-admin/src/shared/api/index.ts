@@ -32,6 +32,9 @@ export * from "./generated/contact/contact";
 export * from "./generated/discounts/discounts";
 export * from "./generated/newsletter/newsletter";
 export * from "./generated/carousels/carousels";
+// TASK-334 / TASK-318 — the owner-only RBAC surfaces (permission matrix, log).
+export * from "./generated/permissions/permissions";
+export * from "./generated/audit/audit";
 
 // Generated DTO / entity types
 export * from "./generated/models";

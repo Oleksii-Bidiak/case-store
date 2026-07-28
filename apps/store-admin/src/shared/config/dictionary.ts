@@ -33,12 +33,21 @@ export const dict = {
     siteContact: "Контакти",
     seoSettings: "SEO",
     faq: "FAQ",
+    // TASK-334 / TASK-318 — owner-only sections.
+    permissions: "Права доступу",
+    auditLog: "Журнал дій",
   },
 
   header: {
     title: "Панель керування",
     adminLabel: "Адміністратор",
     openMenu: "Відкрити меню",
+    // Account menu (TASK-317) — the header used to be an email and a logout
+    // button, with no way to reach your own profile at all.
+    accountMenu: "Меню акаунта",
+    profile: "Мій профіль",
+    roleOwner: "Власник",
+    roleManager: "Менеджер",
   },
 
   login: {
@@ -1553,6 +1562,160 @@ export const dict = {
     cardMessages: "Звернення (за email)",
     cardNoMessages: "Звернень ще немає.",
     cardMessageNoTopic: "Без теми",
+
+    // --- Staff management (TASK-317 / TASK-334) -------------------------------
+    roleManager: "Менеджер",
+    roleUnknown: (role: string) => `Роль: ${role}`,
+    createHeading: "Новий співробітник",
+    create: "Створити співробітника",
+    createDescription:
+      "Акаунт для працівника магазину. Клієнти реєструються самі на вітрині — тут створюються лише адміністратори та менеджери.",
+    createEmail: "Електронна пошта",
+    createPassword: "Початковий пароль",
+    createPasswordHint:
+      "Мінімум 8 символів, з великою літерою, малою літерою та цифрою. Передайте його працівнику особисто — він зможе змінити пароль у своєму профілі.",
+    createFirstName: "Ім'я",
+    createLastName: "Прізвище",
+    createRole: "Роль",
+    createSubmit: "Створити",
+    createToastDone: (email: string) => `Акаунт ${email} створено`,
+    createToastFailed: "Не вдалося створити акаунт",
+    createEmailTaken: "Такий email уже зареєстрований.",
+    createEmailInvalid: "Введіть коректну електронну пошту",
+    createPasswordWeak:
+      "Пароль має містити щонайменше 8 символів, велику й малу літери та цифру",
+
+    staffHeading: "Керування акаунтом",
+    staffOwnerOnlyHint: "Ці дії доступні лише власнику магазину.",
+
+    roleChangeLabel: "Роль співробітника",
+    roleChangeAria: "Змінити роль користувача",
+    roleChangeSubmit: "Змінити роль",
+    roleChangeToastDone: (role: string) => `Роль змінено на «${role}»`,
+    roleChangeToastFailed: "Не вдалося змінити роль",
+    roleChangeSelf: "Не можна змінити власну роль.",
+    roleChangeHint:
+      "Після зміни ролі всі активні сесії користувача завершуються — йому доведеться увійти знову.",
+
+    passwordResetHeading: "Скинути пароль",
+    passwordResetDescription:
+      "Задає новий пароль для цього акаунта. Усі активні сесії буде завершено, а тимчасове блокування після невдалих спроб входу — знято.",
+    passwordResetNew: "Новий пароль",
+    passwordResetSubmit: "Скинути пароль",
+    passwordResetToastDone: "Пароль скинуто",
+    passwordResetToastFailed: "Не вдалося скинути пароль",
+
+    deleteHeading: "Видалити акаунт",
+    deleteDescription: (email: string) =>
+      `Акаунт ${email} буде позначено як видалений: користувач більше не зможе увійти, але його замовлення та історія залишаться. Дію не можна скасувати з панелі.`,
+    deleteConfirm: "Так, видалити акаунт",
+    deleteToastDone: "Акаунт видалено",
+    deleteToastFailed: "Не вдалося видалити акаунт",
+    deleteSelf: "Не можна видалити власний акаунт.",
+
+    // The API refuses to strip, deactivate or delete the last working admin —
+    // surface that refusal verbatim instead of a generic failure toast.
+    lastAdminRefusal:
+      "Це останній адміністратор магазину — інакше увійти буде нікому. Спочатку створіть ще одного адміністратора.",
+
+    lockoutHeading: "Блокування входу",
+    lockoutUnavailable:
+      "API поки не віддає стан блокування (`lockedUntil`, `failedLoginAttempts`), тож показати, чому користувач не може увійти, неможливо. Якщо працівник скаржиться на вхід — скиньте йому пароль: це знімає тимчасове блокування після невдалих спроб.",
+  },
+
+  // --- Permission matrix (TASK-334) -------------------------------------------
+  permissionsMatrix: {
+    metaTitle: "Права доступу — Адмін",
+    heading: "Права доступу",
+    intro:
+      "Хто що може робити в панелі. Перелік прав живе в коді — новий розділ панелі з'являється тут автоматично. Кому їх видано — ваше рішення, і воно діє з наступного запиту працівника.",
+    loadError: "Не вдалося завантажити матрицю прав. Спробуйте ще раз.",
+    empty: "У каталозі немає жодного права.",
+    roleColumn: (role: string) => `Роль: ${role}`,
+    roleManager: "Менеджер",
+    ownerNote:
+      "Адміністратор (власник) не входить у матрицю: він завжди має всі права. Інакше можна було б випадково замкнути себе поза власним магазином.",
+    zoneToggleAria: (zone: string) => `Видати всі права зони «${zone}»`,
+    zoneExpandAria: (zone: string) => `Показати окремі права зони «${zone}»`,
+    zoneCollapseAria: (zone: string) => `Згорнути права зони «${zone}»`,
+    zoneAll: "Уся зона",
+    zonePartial: (granted: number, total: number) => `${granted} з ${total}`,
+    zoneNone: "Немає доступу",
+    badgeNew: "Нове",
+    badgeNewTitle:
+      "Це право ще нікому не видано. Нові розділи панелі не роздаються автоматично — рішення за вами.",
+    badgeNoRoute: "Не діє",
+    badgeNoRouteTitle:
+      "У системі поки немає жодного ендпоінта, який вимагає це право. Позначка тут нічого не вмикає — це заготовка на майбутнє.",
+    newSummary: (n: number) =>
+      `${n} нових прав ще нікому не видано — перегляньте їх.`,
+    save: "Зберегти права",
+    saving: "Збереження…",
+    dirtyHint: "Є незбережені зміни.",
+    toastSaved: "Права оновлено",
+    toastFailed: "Не вдалося зберегти права",
+    toastLastAdmin:
+      "Не можна залишити магазин без жодного адміністратора. Спочатку створіть ще одного.",
+    reset: "Скасувати зміни",
+  },
+
+  // --- Action log (TASK-318) --------------------------------------------------
+  auditLog: {
+    metaTitle: "Журнал дій — Адмін",
+    heading: "Журнал дій",
+    intro:
+      "Хто, що і коли змінив у панелі. Записи не редагуються й не видаляються.",
+    loadError: "Не вдалося завантажити журнал. Спробуйте ще раз.",
+    empty: "Записів ще немає.",
+    emptyFiltered: "Немає записів за поточними фільтрами.",
+    colWhen: "Коли",
+    colWho: "Хто",
+    colAction: "Дія",
+    colEntity: "Об'єкт",
+    filterActionPlaceholder: "Дія (напр. product.update)",
+    filterActionAria: "Фільтр за дією",
+    filterEntityPlaceholder: "Тип об'єкта (напр. Product)",
+    filterEntityAria: "Фільтр за типом об'єкта",
+    filterReset: "Скинути фільтри",
+    systemActor: "Система",
+    // The log denormalises the actor's email on purpose, so an entry stays
+    // readable after the account is deleted. Show that, never a raw id.
+    deletedActor: (email: string) => `${email} (акаунт видалено)`,
+    noEntity: "—",
+    diffToggle: "Що змінилося",
+    diffFrom: "Було",
+    diffTo: "Стало",
+    noDiff: "Деталі змін не записані.",
+  },
+
+  // --- Own admin profile (TASK-317) -------------------------------------------
+  profile: {
+    metaTitle: "Мій профіль — Адмін",
+    heading: "Мій профіль",
+    accountSection: "Акаунт",
+    fieldEmail: "Електронна пошта",
+    fieldRole: "Роль",
+    fieldUserId: "ID",
+    permissionsSection: "Ваші права",
+    permissionsOwner:
+      "Ви власник магазину: усі права, включно з керуванням користувачами та журналом дій.",
+    permissionsEmpty:
+      "Вам поки не видано жодного права. Зверніться до власника магазину.",
+    permissionsLoading: "Завантаження прав…",
+    passwordSection: "Зміна пароля",
+    passwordDescription:
+      "Після зміни пароля всі інші ваші сесії буде завершено.",
+    currentPassword: "Поточний пароль",
+    newPassword: "Новий пароль",
+    confirmPassword: "Повторіть новий пароль",
+    passwordSubmit: "Змінити пароль",
+    passwordToastDone: "Пароль змінено",
+    passwordToastFailed: "Не вдалося змінити пароль",
+    passwordWrongCurrent: "Поточний пароль вказано невірно.",
+    passwordMismatch: "Паролі не збігаються",
+    passwordWeak:
+      "Пароль має містити щонайменше 8 символів, велику й малу літери та цифру",
+    passwordRequired: "Вкажіть пароль",
   },
 
   // --- Newsletter subscribers (TASK-188) --------------------------------------

@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { renderWithProviders, screen } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
+import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { dict } from "@/shared/config";
 import { AdminSidebar } from "./admin-sidebar";
 
@@ -38,9 +39,22 @@ function stubLogo(logoUrl: string | null) {
 // admin-nav-list.test.tsx; this is a thin smoke test that the desktop rail still
 // renders the brand and delegates to AdminNavList. Counter endpoints fall back
 // to the shared MSW handlers (all-clear), so no per-test stub is needed.
+/**
+ * The rail delegates to AdminNavList, which reads the session context to filter
+ * itself (TASK-334). An owner session keeps the complete menu this suite already
+ * asserted before the filter existed.
+ */
+function renderSidebar() {
+  return renderWithProviders(
+    <WithAuth isOwner>
+      <AdminSidebar />
+    </WithAuth>,
+  );
+}
+
 describe("AdminSidebar", () => {
   it("renders the brand and reaches the nav through AdminNavList", async () => {
-    renderWithProviders(<AdminSidebar />);
+    renderSidebar();
 
     expect(screen.getByText("MobileStore")).toBeInTheDocument();
     expect(
@@ -55,7 +69,7 @@ describe("AdminSidebar", () => {
     it("shows the uploaded store logo when one is set", async () => {
       stubLogo(LOGO_URL);
 
-      renderWithProviders(<AdminSidebar />);
+      renderSidebar();
 
       const logo = await screen.findByAltText(dict.brand);
       expect(logo).toHaveAttribute("src", LOGO_URL);
@@ -66,7 +80,7 @@ describe("AdminSidebar", () => {
     it("falls back to the icon + wordmark when no logo is uploaded", async () => {
       stubLogo(null);
 
-      renderWithProviders(<AdminSidebar />);
+      renderSidebar();
 
       expect(
         await screen.findByRole("link", { name: dict.nav.dashboard }),
