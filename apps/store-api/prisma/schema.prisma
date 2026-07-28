@@ -11,9 +11,53 @@ datasource db {
 
 // Enums
 
+/// CUSTOMER shops; ADMIN is the owner and is deliberately NOT subject to the
+/// permission matrix (a matrix that can revoke the owner's own access is a lockout
+/// waiting to happen). MANAGER (TASK-334) is the employee role: it can sign into
+/// the admin panel, and everything it may actually do comes from RolePermission
+/// rows the owner ticks. A MANAGER with no rows granted can log in and see nothing
+/// — that is the intended default, not a broken state.
 enum UserRole {
   CUSTOMER
   ADMIN
+  MANAGER
+}
+
+/// How the customer chose to pay (TASK-330). Distinct from PaymentStatus, which
+/// says whether money actually moved: an ON_DELIVERY order stays PENDING until the
+/// operator settles it by hand, an ONLINE one until the provider's callback says
+/// otherwise. Drives one behaviour beyond bookkeeping — only ONLINE and
+/// INSTALLMENTS orders get a `reservationExpiresAt` deadline.
+enum PaymentMethod {
+  ONLINE
+  ON_DELIVERY
+  INSTALLMENTS
+}
+
+/// Lifecycle of ONE attempt to collect money (TASK-330). Deliberately not the same
+/// enum as PaymentStatus: an order carries a single payment status but may
+/// accumulate many Payment rows, because a failed attempt cannot be retried under
+/// the same provider order id. EXPIRED is ours, not the provider's — it marks an
+/// attempt the reconcile worker gave up on after the reservation deadline passed.
+enum PaymentAttemptStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  EXPIRED
+  REFUNDED
+}
+
+/// Return (RMA) lifecycle (TASK-340). Ukrainian law gives 14 days to return, and
+/// until now the system had no record of a return at all. RECEIVED and REFUNDED
+/// are separate on purpose: the goods coming back and the money going out are two
+/// events that routinely happen days apart, and conflating them is how a shop
+/// refunds twice.
+enum ReturnStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  RECEIVED
+  REFUNDED
 }
 
 enum OrderStatus {
@@ -84,37 +128,53 @@ enum PublishStatus {
 // Models
 
 model User {
-  id            String    @id @default(uuid())
-  email         String    @unique
+  id                  String    @id @default(uuid())
+  email               String    @unique
   // Nullable since TASK-168: a Google-only account has genuinely no password.
   // login() treats `passwordHash: null` exactly like "no such user" (generic
   // rejection + timing burn) — see AuthService.login.
-  passwordHash  String?   @map("password_hash")
-  firstName     String?   @map("first_name")
-  lastName      String?   @map("last_name")
-  phone         String?
-  role          UserRole  @default(CUSTOMER)
-  isActive      Boolean   @default(true) @map("is_active")
+  passwordHash        String?   @map("password_hash")
+  firstName           String?   @map("first_name")
+  lastName            String?   @map("last_name")
+  phone               String?
+  role                UserRole  @default(CUSTOMER)
+  isActive            Boolean   @default(true) @map("is_active")
   // Audit tombstone (TASK-104). NULL = live row; non-null = soft-deleted and
   // excluded from every read path. On soft-delete the unique `email` is mangled
   // and the original preserved in `originalEmail`. Distinct from `isActive`,
   // which is a reversible admin visibility toggle.
-  originalEmail String?   @map("original_email")
-  deletedAt     DateTime? @map("deleted_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-  failedLoginAttempts Int @default(0) @map("failed_login_attempts")
-  lockedUntil   DateTime? @map("locked_until")
+  originalEmail       String?   @map("original_email")
+  deletedAt           DateTime? @map("deleted_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime? @map("locked_until")
+  /// Null = this address has never been proven (TASK-342). Every account created
+  /// before verification existed is therefore null, which is honest: we genuinely
+  /// do not know whether those addresses belong to their owners. Deliberately a
+  /// timestamp rather than a boolean — "verified when" answers support questions
+  /// that "verified true" cannot.
+  emailVerifiedAt     DateTime? @map("email_verified_at")
+  /// TOTP shared secret, AES-256-GCM ciphertext under TOTP_ENCRYPTION_KEY
+  /// (TASK-344) — never the raw base32. A leaked database must not hand out
+  /// working second factors.
+  totpSecret          String?   @map("totp_secret")
+  /// Null = enrolment started but never confirmed. Only a non-null value makes the
+  /// second factor mandatory at login, so an abandoned enrolment cannot lock
+  /// anyone out.
+  totpEnabledAt       DateTime? @map("totp_enabled_at")
 
-  cart                Cart?
-  wishlist            Wishlist?
-  orders              Order[]
-  addresses           Address[]
-  reviews             Review[]
-  refreshTokens       RefreshToken[]
-  passwordResetTokens PasswordResetToken[]
-  discountRedemptions DiscountRedemption[]
-  oauthAccounts       OAuthAccount[]
+  cart                    Cart?
+  wishlist                Wishlist?
+  orders                  Order[]
+  addresses               Address[]
+  reviews                 Review[]
+  refreshTokens           RefreshToken[]
+  passwordResetTokens     PasswordResetToken[]
+  discountRedemptions     DiscountRedemption[]
+  oauthAccounts           OAuthAccount[]
+  emailVerificationTokens EmailVerificationToken[]
+  totpBackupCodes         TotpBackupCode[]
 
   @@index([deletedAt])
   @@map("users")
@@ -333,37 +393,58 @@ model CartItem {
 }
 
 model Order {
-  id     String @id @default(uuid())
-  userId String @map("user_id")
+  id                   String        @id @default(uuid())
+  // Nullable since TASK-338: a guest checkout produces a real order with no
+  // account behind it. Exactly one of `userId` and the guest contact block is
+  // populated — the application enforces that, since Prisma cannot express "one
+  // of these two". Guest orders are claimed by an account later by setting
+  // `userId`; the guest columns are kept as the snapshot of what was actually
+  // typed at checkout.
+  userId               String?       @map("user_id")
   // onDelete: Restrict is EXPLICIT, not left to Prisma's default. An order is the
   // record of money taken; it must outlive anything it references. Spelling the
   // rule out here means a future "tidy up the relations" edit that adds Cascade
   // has to consciously delete this line, rather than silently changing behaviour
   // by adding one. Users are soft-deleted (deletedAt) for exactly this reason.
-  user            User          @relation(fields: [userId], references: [id], onDelete: Restrict)
-  status          OrderStatus   @default(PENDING)
-  paymentStatus   PaymentStatus @default(PENDING) @map("payment_status")
-  subtotal        Decimal       @db.Decimal(10, 2)
-  discount        Decimal       @default(0) @db.Decimal(10, 2)
+  user                 User?         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  /// Contact details for a guest order (TASK-338). Null on account orders, where
+  /// the user row is the source of truth.
+  guestEmail           String?       @map("guest_email")
+  guestPhone           String?       @map("guest_phone")
+  guestName            String?       @map("guest_name")
+  /// SHA-256 of the token in the guest's confirmation-email link (same at-rest
+  /// pattern as RefreshToken / PasswordResetToken). It is the ONLY way a guest can
+  /// reach their own order status — without it they are blind the moment the cart
+  /// cookie is gone or they switch device (edge case E-17). Unique so a lookup by
+  /// token is a single indexed hit rather than a scan.
+  accessTokenHash      String?       @unique @map("access_token_hash")
+  status               OrderStatus   @default(PENDING)
+  paymentStatus        PaymentStatus @default(PENDING) @map("payment_status")
+  /// Defaults to ON_DELIVERY because that is what every pre-TASK-330 order
+  /// actually was — the storefront offered no other method, so backfilling
+  /// anything else would invent history.
+  paymentMethod        PaymentMethod @default(ON_DELIVERY) @map("payment_method")
+  subtotal             Decimal       @db.Decimal(10, 2)
+  discount             Decimal       @default(0) @db.Decimal(10, 2)
   // Snapshot of the redeemed promo code (TASK-079), for admin order readability.
-  discountCode    String?       @map("discount_code")
-  shippingCost    Decimal       @default(0) @map("shipping_cost") @db.Decimal(10, 2)
-  tax             Decimal       @default(0) @db.Decimal(10, 2)
+  discountCode         String?       @map("discount_code")
+  shippingCost         Decimal       @default(0) @map("shipping_cost") @db.Decimal(10, 2)
+  tax                  Decimal       @default(0) @db.Decimal(10, 2)
   // Sum of the frozen OrderItemAddon prices across every line (TASK-174).
   // Like `shippingCost`, it is NEVER part of the discount base — the invariant
   // is `total = subtotal + shippingCost + addonsTotal - discount`, with
   // `discount` computed and clamped against `subtotal` alone (plan 150, owner
   // decision 4).
-  addonsTotal     Decimal       @default(0) @map("addons_total") @db.Decimal(10, 2)
-  total           Decimal       @db.Decimal(10, 2)
-  shippingAddress Json?         @map("shipping_address") // {city, warehouse, address, ref}
-  billingAddress  Json?         @map("billing_address") // Same structure
-  notes           String?
-  createdAt       DateTime      @default(now()) @map("created_at")
-  updatedAt       DateTime      @updatedAt @map("updated_at")
+  addonsTotal          Decimal       @default(0) @map("addons_total") @db.Decimal(10, 2)
+  total                Decimal       @db.Decimal(10, 2)
+  shippingAddress      Json?         @map("shipping_address") // {city, warehouse, address, ref}
+  billingAddress       Json?         @map("billing_address") // Same structure
+  notes                String?
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
   // Audit tombstone (TASK-104). NULL = live; non-null = soft-deleted and hidden
   // from every read path. Child OrderItems are left in place.
-  deletedAt       DateTime?     @map("deleted_at")
+  deletedAt            DateTime?     @map("deleted_at")
   // TASK-228: stamped when an automatic cancellation returned this order's
   // reserved stock to inventory; cleared when the order is revived and the
   // stock is re-reserved. NULL = the order still "owns" its items (reserved in
@@ -371,13 +452,39 @@ model Order {
   // credited back to sellable stock, so reviving the order must decrement
   // stock again first (or 409 if it is gone). Tracks only automatic restocks —
   // manual stock adjustments after a physical return are invisible to it.
-  restockedAt     DateTime?     @map("restocked_at")
+  restockedAt          DateTime?     @map("restocked_at")
+  /// Stamped when a payment actually settled (TASK-330). `paymentStatus = PAID`
+  /// says the state; this says when, which is what reconciliation against the
+  /// provider's payout register needs.
+  paidAt               DateTime?     @map("paid_at")
+  /// Deadline after which an unpaid ONLINE order is auto-cancelled and its stock
+  /// returned (TASK-330; owner decision 2026-07-28). Null for ON_DELIVERY orders,
+  /// which hold their reservation indefinitely, and cleared the moment payment
+  /// settles. Stock is decremented at order creation regardless of method — two
+  /// shoppers must not be able to pay for the same last unit — so this column is
+  /// what stops an abandoned card payment from holding inventory forever.
+  reservationExpiresAt DateTime?     @map("reservation_expires_at")
+  /// Nova Poshta waybill (ТТН), typed in by the operator (TASK-335). Not created
+  /// through the API: `InternetDocument/save` needs a counterparty in the client's
+  /// NP account, so waybill creation stays out of scope — but the number belongs
+  /// on the order so the "Відправлено" email and the customer's tracking view have
+  /// something to quote.
+  trackingNumber       String?       @map("tracking_number")
+  /// Operator-only notes (TASK-336). Strictly distinct from `notes`, which is what
+  /// the CUSTOMER typed at checkout and is shown back to them — mixing the two
+  /// would leak internal remarks to the buyer.
+  internalNotes        String?       @map("internal_notes")
 
   items         OrderItem[]
   statusHistory OrderStatusHistory[]
+  payments      Payment[]
+  returns       Return[]
 
   @@index([userId])
   @@index([status])
+  /// The reconcile worker scans for online orders whose deadline has passed; without
+  /// this it is a full table scan every minute, forever.
+  @@index([reservationExpiresAt])
   // The admin dashboard filters revenue/aggregate queries by paymentStatus on
   // every load. Unindexed, that is a sequential scan of the whole orders table on
   // the busiest admin page — fine at launch, a slow-motion outage once the table
@@ -422,7 +529,7 @@ model OrderItem {
   id        String   @id @default(uuid())
   orderId   String   @map("order_id")
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId String @map("product_id")
+  productId String   @map("product_id")
   // Explicit Restrict for the same reason as Order.user: an order line is a
   // financial record and must survive its product being removed from the catalogue.
   // Products are soft-deleted (deletedAt + isActive:false), never hard-deleted.
@@ -432,7 +539,10 @@ model OrderItem {
   createdAt DateTime @default(now()) @map("created_at")
 
   // Frozen snapshots of the add-on services bought with this line (TASK-174).
-  addons OrderItemAddon[]
+  addons      OrderItemAddon[]
+  // Return lines referencing this order line (TASK-340). A line can appear in more
+  // than one return: a customer may send back one of three units now and another later.
+  returnItems ReturnItem[]
 
   @@index([orderId])
   @@map("order_items")
@@ -1258,4 +1368,272 @@ model CarouselItem {
   @@unique([carouselId, productId])
   @@index([carouselId, sortOrder])
   @@map("carousel_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Online payments (TASK-330, Етап 8). Provider-agnostic on purpose: nothing here
+// names LiqPay. The adapter owns the provider's vocabulary; these two tables own
+// the facts we must be able to defend later — what we asked for, and every answer
+// we got.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One attempt to collect money for an order.
+///
+/// A single order can have MANY of these, and that is the whole reason the table
+/// exists rather than a few columns on Order. Providers refuse a second payment
+/// under an order id they have already seen, so a customer whose card was declined
+/// can only retry under a fresh identifier. `Payment.id` IS that identifier — it is
+/// what goes to the provider as its `order_id`. Do not send `Order.id` instead: the
+/// first failed attempt would burn it and the customer could never pay.
+model Payment {
+  id                String               @id @default(uuid())
+  orderId           String               @map("order_id")
+  /// Restrict, like every other financial relation here — a payment record must
+  /// outlive tidy-ups of the order it belongs to.
+  order             Order                @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  /// Adapter key ("liqpay"), not a display name. Present from day one so a second
+  /// provider is a new row value rather than a migration.
+  provider          String
+  /// The provider's own id for this payment, learned from the first callback. Null
+  /// until then — we always speak first.
+  providerPaymentId String?              @map("provider_payment_id")
+  /// Frozen at creation. The callback handler compares against it and rejects a
+  /// mismatch: without this check a tampered amount would be accepted as payment
+  /// in full.
+  amount            Decimal              @db.Decimal(10, 2)
+  currency          String               @default("UAH")
+  status            PaymentAttemptStatus @default(PENDING)
+  /// Provider error code/message, kept verbatim for support. "Why was my card
+  /// declined" is unanswerable without them.
+  failureCode       String?              @map("failure_code")
+  failureMessage    String?              @map("failure_message")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+  settledAt         DateTime?            @map("settled_at")
+
+  events PaymentEvent[]
+
+  @@index([orderId])
+  /// The reconcile worker polls attempts still PENDING past a grace period.
+  @@index([status, createdAt])
+  @@map("payments")
+}
+
+/// Append-only log of every provider notification, and the idempotency guard.
+///
+/// Callbacks arrive more than once — retries are normal operation for every UA
+/// provider, not a fault. The `@@unique` below is what makes a repeat harmless: the
+/// second insert violates the constraint, the handler treats that as "already seen"
+/// and does nothing. Idempotency therefore lives in the DATABASE, not in an `if`
+/// that two concurrent callbacks can both pass.
+///
+/// `providerPaymentId` is NOT NULL with an empty-string default for exactly that
+/// reason: in Postgres two NULLs are distinct inside a unique index, so a nullable
+/// column here would silently let duplicates through — the one shape of bug this
+/// table exists to prevent.
+model PaymentEvent {
+  id                String   @id @default(uuid())
+  paymentId         String   @map("payment_id")
+  payment           Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  /// The provider's raw status string, stored unmapped. Mapping it onto our enum is
+  /// the adapter's job and may change; what actually arrived must not.
+  providerStatus    String   @map("provider_status")
+  providerPaymentId String   @default("") @map("provider_payment_id")
+  /// The decoded callback body. Never the signature and never the raw `data` blob —
+  /// those are secrets-adjacent and are redacted from logs too.
+  payload           Json
+  receivedAt        DateTime @default(now()) @map("received_at")
+
+  @@unique([paymentId, providerStatus, providerPaymentId])
+  @@index([paymentId, receivedAt])
+  @@map("payment_events")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RBAC and audit (TASK-334 / TASK-318, Етап 8)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Which permissions a role holds. The CATALOGUE of possible permissions lives in
+/// code (`permission.catalog.ts`), not here — a permission exists because an
+/// endpoint exists, so it is a property of the code and gets type-checking and diff
+/// review. This table only records the owner's decisions about who gets what, which
+/// is business data and must be changeable without a release.
+///
+/// Absence means DENIED. A permission with no row is granted to nobody but the
+/// owner, so a newly shipped admin section is never silently handed to an existing
+/// MANAGER. `allowed` exists so a deliberate revocation reads differently from
+/// "never configured" in the UI.
+model RolePermission {
+  id         String   @id @default(uuid())
+  role       UserRole
+  /// Matches a key from the code catalogue, e.g. "orders:write". Text rather than an
+  /// enum so adding a permission is a code change plus a data row, never a schema
+  /// migration.
+  permission String
+  allowed    Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([role, permission])
+  @@index([role])
+  @@map("role_permissions")
+}
+
+/// Who did what, in the database rather than in ephemeral logs.
+///
+/// Until now the only persisted actor anywhere was OrderStatusHistory.changedBy;
+/// prices, stock and content changed anonymously, and `deletedAt` recorded when but
+/// never who. With one employee that was tolerable — with two it makes "who deleted
+/// the catalogue" unanswerable.
+///
+/// `actorId` is a bare String with NO foreign key, deliberately and for the same
+/// reason as OrderStatusHistory.changedBy: system actions (a payment callback, a
+/// cron job) have no user at all, and the log must survive the user row being
+/// removed. `actorEmail` and `actorRole` are denormalised snapshots so an entry
+/// stays readable after the account is gone or its role changes — an audit trail
+/// that rewrites itself when the present changes is not an audit trail.
+model AuditLog {
+  id         String    @id @default(uuid())
+  actorId    String?   @map("actor_id")
+  actorEmail String?   @map("actor_email")
+  actorRole  UserRole? @map("actor_role")
+  /// Verb-shaped and stable, e.g. "product.update", "user.role_change".
+  action     String
+  entityType String?   @map("entity_type")
+  entityId   String?   @map("entity_id")
+  /// Human-readable one-liner for the admin list, so rendering a row never needs to
+  /// interpret `diff`.
+  summary    String?
+  /// Changed fields only ({ field: { from, to } }). Never a whole entity, and never
+  /// password hashes, tokens or secrets.
+  diff       Json?
+  ip         String?
+  userAgent  String?   @map("user_agent")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+  @@index([entityType, entityId])
+  @@map("audit_log")
+}
+
+/// Proof-of-ownership token for an email address (TASK-342), at registration and
+/// when the address is changed. Mirrors PasswordResetToken exactly: SHA-256 at
+/// rest, single-use via `usedAt`, explicit expiry.
+///
+/// `email` is stored on the token rather than read from the user at confirm time: an
+/// address change must verify the address that was actually requested, otherwise a
+/// second change while the first mail is in flight would verify the wrong one.
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email     String
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("email_verification_tokens")
+}
+
+/// Single-use TOTP recovery codes (TASK-344). Argon2-hashed with the same helper as
+/// passwords — a recovery code IS a credential, and a database leak must not yield
+/// working ones. `usedAt` rather than deletion, so "someone burned a backup code"
+/// stays visible in the audit trail.
+model TotpBackupCode {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String    @map("code_hash")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("totp_backup_codes")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Returns / RMA (TASK-340, Етап 8)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A customer's request to send goods back, and its resolution.
+///
+/// The law requires accepting returns for 14 days; the system had no record of one
+/// at all, and REFUNDED on an order was a label with no money and no stock behind
+/// it. `restockedAt` and `refundedAmount` are separate fields because goods and
+/// money move independently — and `restockedAt` mirrors Order.restockedAt so the
+/// same "already credited back" guard prevents a double restock here too.
+model Return {
+  id             String       @id @default(uuid())
+  orderId        String       @map("order_id")
+  order          Order        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  status         ReturnStatus @default(REQUESTED)
+  /// What the customer said, in their words.
+  reason         String?
+  /// Operator-only, never shown to the customer (same split as Order.internalNotes).
+  operatorNotes  String?      @map("operator_notes")
+  requestedAt    DateTime     @default(now()) @map("requested_at")
+  resolvedAt     DateTime?    @map("resolved_at")
+  /// Non-null once these lines were credited back to sellable stock. Guards against
+  /// restocking the same return twice.
+  restockedAt    DateTime?    @map("restocked_at")
+  /// What was actually refunded — may be less than the line total (shipping is not
+  /// always refundable, and partial returns are normal).
+  refundedAmount Decimal?     @map("refunded_amount") @db.Decimal(10, 2)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  items ReturnItem[]
+
+  @@index([orderId])
+  @@index([status, requestedAt])
+  @@map("returns")
+}
+
+/// One order line coming back, in whole or in part. `quantity` is separate from the
+/// order line's own quantity because a customer who bought three may return one.
+model ReturnItem {
+  id          String    @id @default(uuid())
+  returnId    String    @map("return_id")
+  return      Return    @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  orderItemId String    @map("order_item_id")
+  /// Restrict: the order line is the financial record this return points at.
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  quantity    Int
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([returnId])
+  @@index([orderItemId])
+  @@map("return_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Delivery configuration (TASK-337 / the un-parked TASK-080-E)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Singleton holding the Nova Poshta dispatch origin, editable by the operator.
+///
+/// Today the origin comes from NP_SENDER_CITY_REF or falls back to a hard-coded Kyiv
+/// ref, which means moving the shop is a redeploy. Resolution order once this ships:
+/// this row, then the env var, then the Kyiv default.
+///
+/// Follows the id convention of the two existing singletons (SiteContactSettings,
+/// SeoSettings) — a plain String id set to a well-known constant by the repository —
+/// rather than the `@default("singleton")` sketched in plan 068, so all three
+/// singletons in this schema behave the same way.
+model DeliverySetting {
+  id                 String   @id
+  senderCityRef      String?  @map("sender_city_ref")
+  /// Human-readable, shown in the admin form so the operator never faces a bare UUID.
+  senderCityName     String?  @map("sender_city_name")
+  senderWarehouseRef String?  @map("sender_warehouse_ref")
+  /// Used when a parcel's real weight is unknown; the NP price estimate demands one.
+  defaultWeightKg    Float    @default(0.5) @map("default_weight_kg")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("delivery_settings")
 }

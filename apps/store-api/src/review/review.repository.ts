@@ -210,7 +210,12 @@ export class ReviewRepository {
       select: { userId: true },
       distinct: ['userId'],
     });
-    return new Set(orders.map((order) => order.userId));
+    // `Order.userId` is nullable since TASK-338 (guest orders), so the select is typed
+    // `string | null`. A null cannot actually reach here — SQL `IN` never matches NULL,
+    // so the `userIds` filter already excludes guest orders — but it is dropped rather
+    // than cast, because that is also the correct behaviour: a guest purchase carries no
+    // account to attach a verified-purchase badge to.
+    return new Set(orders.flatMap((order) => (order.userId === null ? [] : [order.userId])));
   }
 
   /**

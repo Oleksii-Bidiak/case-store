@@ -233,18 +233,32 @@ export class DashboardRepository {
    * relationship) — deliberately narrower than {@link unrealizedOrderWhere}'s
    * two-status exclusion (plan 120 Design Decision 3). When `since` is provided,
    * both numerator and denominator are windowed to orders created on/after it.
+   *
+   * Guest orders (`userId IS NULL`, TASK-338) are excluded from BOTH numerator and
+   * denominator, and the exclusion is load-bearing rather than cosmetic: `groupBy`
+   * collapses every guest order in the shop into ONE row keyed `null`, which the
+   * formula would then read as a single customer who bought N times — the metric
+   * would climb towards 100% as guest checkout got more popular. There is no
+   * honest alternative, because two guest orders cannot be told apart: repeat
+   * buying is only observable where there is an account to observe it on.
    */
   private async getRepeatBuyerRate(since?: Date): Promise<number> {
     const grouped = await this.prisma.order.groupBy({
       by: ['userId'],
       where: {
+        userId: { not: null },
         status: { not: OrderStatus.CANCELLED },
         ...(since ? { createdAt: { gte: since } } : {}),
       },
       _count: { id: true },
     });
+    // flatMap, not map + cast: the `where` above already removed the nulls, but
+    // Prisma's groupBy return type does not narrow from a filter, and a cast here
+    // would silently hide a real null if that filter were ever dropped.
     return computeRepeatBuyerRate(
-      grouped.map((row) => ({ userId: row.userId, count: row._count.id })),
+      grouped.flatMap((row) =>
+        row.userId === null ? [] : [{ userId: row.userId, count: row._count.id }],
+      ),
     );
   }
 
