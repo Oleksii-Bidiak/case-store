@@ -329,6 +329,28 @@ export class OrderRepository {
       ...(query.dateFrom || query.dateTo ? { createdAt } : {}),
     };
 
+    // TASK-336: free-text search. An operator taking a phone call has an order
+    // number, an email or a phone — never a UUID — and since TASK-338 the
+    // customer's details may live on the ORDER (guest) rather than on a user row,
+    // so both places have to be searched or half the orders become unfindable.
+    //
+    // The id arm is `startsWith` on a LOWERCASED term because the storefront and
+    // every email show the order number as the first 8 characters of the uuid,
+    // uppercased — the operator reads back "ABC12345" and the column holds
+    // "abc12345…". Emails and phones use case-insensitive `contains`: a customer
+    // reads their number aloud as "067 111 22 33" or "+380671112233", and a
+    // prefix match would find neither.
+    if (query.search) {
+      const term = query.search;
+      where.OR = [
+        { id: { startsWith: term.toLowerCase() } },
+        { guestEmail: { contains: term, mode: 'insensitive' } },
+        { guestPhone: { contains: term } },
+        { user: { email: { contains: term, mode: 'insensitive' } } },
+        { user: { phone: { contains: term } } },
+      ];
+    }
+
     // TASK-248: active-but-unpaid ("in-transit") deep-link filter — the same
     // compound condition as DashboardRepository's unrealized-revenue figure
     // (paymentStatus != PAID AND status NOT IN (CANCELLED, REFUNDED)). Additive:
@@ -667,6 +689,88 @@ export class OrderRepository {
       });
       return updated;
     })) as OrderWithItems;
+  }
+
+  /**
+   * Update the operator-editable, lifecycle-neutral fields of an order
+   * (TASK-335 / TASK-336).
+   *
+   * Only keys the caller actually supplied are written, so "set a waybill" never
+   * silently clears the internal notes. An explicit `null` DOES clear — that is
+   * the difference between an absent key and a null one, and the DTO turns an
+   * empty string into null precisely so a cleared field reads as cleared.
+   *
+   * No history row: `OrderStatusHistory` records STATUS and PAYMENT_STATUS
+   * changes, and stretching it to cover free-text edits would blur what the
+   * timeline means.
+   *
+   * @throws ConflictException `ORDER_STALE` when `expectedUpdatedAt` no longer
+   *   matches.
+   */
+  async updateDetails(
+    orderId: string,
+    fields: { trackingNumber?: string | null; internalNotes?: string | null },
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<OrderWithItems> {
+    const data: Prisma.OrderUpdateInput = {};
+    if (fields.trackingNumber !== undefined) data.trackingNumber = fields.trackingNumber;
+    if (fields.internalNotes !== undefined) data.internalNotes = fields.internalNotes;
+
+    const expectedUpdatedAt = options.expectedUpdatedAt;
+
+    if (expectedUpdatedAt) {
+      const { count } = await this.prisma.order.updateMany({
+        where: { id: orderId, updatedAt: expectedUpdatedAt },
+        data,
+      });
+      if (count === 0) {
+        throw staleOrderError();
+      }
+    } else if (Object.keys(data).length > 0) {
+      await this.prisma.order.update({ where: { id: orderId }, data });
+    }
+
+    return this.prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: ADMIN_ORDERS_INCLUDE,
+    }) as Promise<OrderWithItems>;
+  }
+
+  /**
+   * Who to email about an order, and what to call them (TASK-335).
+   *
+   * One narrow read rather than widening `findById`, which is on the hot path of
+   * every status change: the recipient is only needed on the rare transition that
+   * actually notifies someone.
+   *
+   * Guest details win when present because a guest order HAS no user row; an
+   * order later claimed by an account keeps both, and the address the buyer
+   * actually gave at checkout is the one that reached them the first time.
+   */
+  async findRecipient(orderId: string): Promise<{ email: string; name?: string } | null> {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, deletedAt: null },
+      select: {
+        guestEmail: true,
+        guestName: true,
+        user: { select: { email: true, firstName: true } },
+      },
+    });
+
+    if (!order) return null;
+
+    if (order.guestEmail) {
+      return { email: order.guestEmail, ...(order.guestName ? { name: order.guestName } : {}) };
+    }
+
+    if (order.user?.email) {
+      return {
+        email: order.user.email,
+        ...(order.user.firstName ? { name: order.user.firstName } : {}),
+      };
+    }
+
+    return null;
   }
 
   /**

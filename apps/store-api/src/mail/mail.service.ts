@@ -16,6 +16,10 @@ import {
   buildAccountLockedEmail,
   type AccountLockedMailPayload,
 } from './templates/account-locked.template';
+import {
+  buildOrderShippedEmail,
+  type OrderShippedMailPayload,
+} from './templates/order-shipped.template';
 
 /** Parameters accepted by {@link MailService.sendOrderConfirmation}. */
 export interface SendOrderConfirmationParams {
@@ -91,6 +95,8 @@ export class MailService {
 
     const template = buildOrderConfirmationEmail({
       customerName: payload.customerName,
+      // TASK-338: the guest's order-status link. Absent on account orders.
+      orderStatusUrl: payload.orderStatusUrl,
       // `createdAt` is stored as an ISO string in the outbox payload; the pure
       // template builder expects a `Date`, so rehydrate it here.
       order: { ...payload.order, createdAt: new Date(payload.order.createdAt) },
@@ -143,6 +149,29 @@ export class MailService {
     }
 
     const template = buildAccountLockedEmail(payload);
+
+    await this.getTransporter().sendMail({
+      from: this.from,
+      to: payload.to,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    });
+  }
+
+  /**
+   * Render and send the "your order has shipped" notice from the JSON-safe payload
+   * stored in a `MailOutbox` row (TASK-335). Same contract as the other payload
+   * senders: a logged no-op when mail is disabled, throwing on transport failure
+   * so the outbox worker applies its retry/backoff policy.
+   */
+  async sendOrderShippedPayload(payload: OrderShippedMailPayload): Promise<void> {
+    if (!this.enabled) {
+      this.logger.info(`Mail disabled — skipping shipped notice to ${payload.to}`);
+      return;
+    }
+
+    const template = buildOrderShippedEmail(payload);
 
     await this.getTransporter().sendMail({
       from: this.from,

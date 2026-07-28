@@ -25,6 +25,7 @@ import type {
   CreateOrderParams,
   OrderActor,
   OrderAddonSnapshot,
+  OrderWithItems,
   PaymentApplyPlan,
   PaymentWithOrderRow,
 } from './order.types';
@@ -466,7 +467,8 @@ export class OrderService {
     const { orders, total } = await this.orderRepository.findAll(query);
 
     return {
-      data: orders.map((order) => OrderEntity.fromPrisma(order)),
+      // TASK-336: admin reads opt into the operator-only fields.
+      data: orders.map((order) => OrderEntity.fromPrisma(order, { includeInternal: true })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -486,7 +488,8 @@ export class OrderService {
       throw new NotFoundException('Order not found');
     }
 
-    return OrderEntity.fromPrisma(order);
+    // TASK-336: the admin card is the one place internalNotes belongs.
+    return OrderEntity.fromPrisma(order, { includeInternal: true });
   }
 
   /**
@@ -669,7 +672,125 @@ export class OrderService {
         expectedUpdatedAt: options.expectedUpdatedAt,
       },
     );
+
+    // TASK-335: the parcel has left the warehouse — tell the customer, with the
+    // waybill if the operator has already entered one. If they enter it later,
+    // adminUpdateDetails sends the follow-up.
+    if (status === OrderStatus.SHIPPED) {
+      await this.notifyShipped(order);
+    }
+
     return OrderEntity.fromPrisma(order);
+  }
+
+  /**
+   * Admin — update the operator-editable fields that are not part of the order's
+   * lifecycle: the Nova Poshta waybill and the internal notes
+   * (TASK-335 / TASK-336).
+   *
+   * Deliberately separate from {@link updateStatus}. A waybill number and a status
+   * change are different decisions with different consequences — one of them
+   * emails the customer — and merging them would make "fix a typo in the ТТН"
+   * capable of moving the order.
+   *
+   * @throws NotFoundException when the order does not exist.
+   * @throws ConflictException `ORDER_STALE` on a concurrent edit.
+   */
+  async adminUpdateDetails(
+    orderId: string,
+    fields: { trackingNumber?: string | null; internalNotes?: string | null },
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<OrderEntity> {
+    const existing = await this.orderRepository.findById(orderId);
+
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+
+    this.assertFresh(existing, options.expectedUpdatedAt);
+
+    // A waybill appearing on an order that ALREADY shipped is the second half of
+    // the common workflow: the operator marks the parcel gone, then the courier
+    // hands over the number. The customer was told "on its way" without a number,
+    // so tell them the number now. Only null → value triggers it; correcting a
+    // typo does not re-notify, and neither does clearing the field.
+    const gainedTracking =
+      fields.trackingNumber !== undefined &&
+      fields.trackingNumber !== null &&
+      !existing.trackingNumber;
+
+    const order = await this.orderRepository.updateDetails(orderId, fields, options);
+
+    if (gainedTracking && order.status === OrderStatus.SHIPPED) {
+      await this.notifyShipped(order);
+    }
+
+    this.logger.info(
+      {
+        event: 'order.details_updated',
+        orderId,
+        // Never the note text itself — it is operator-private by definition.
+        fields: Object.keys(fields),
+      },
+      'Order details updated',
+    );
+
+    return OrderEntity.fromPrisma(order, { includeInternal: true });
+  }
+
+  /**
+   * Tell the customer their parcel is on its way (TASK-335).
+   *
+   * Enqueued through the existing outbox rather than sent inline, so a flaky SMTP
+   * cannot fail an operator's status change — the same reasoning as the
+   * order-confirmation email.
+   *
+   * NOT enqueued inside the status transaction: by the time this runs the
+   * shipment is already committed and irreversible from the customer's point of
+   * view (the parcel is physically gone). Losing the notice to a crash here is
+   * recoverable by re-saving the waybill; rolling back a real shipment because an
+   * outbox insert failed is not.
+   *
+   * Never throws. A failure to notify must not turn into a failed status change,
+   * because the operator would then retry the transition — and the state machine
+   * would refuse it, leaving them stuck with a shipped parcel and an order that
+   * says otherwise.
+   */
+  private async notifyShipped(order: OrderWithItems): Promise<void> {
+    try {
+      const recipient = await this.orderRepository.findRecipient(order.id);
+
+      if (!recipient) {
+        this.logger.warn(
+          { event: 'order.shipped_notice_no_recipient', orderId: order.id },
+          'Order shipped but no email address is on file — no notice sent',
+        );
+        return;
+      }
+
+      await this.mailOutbox.enqueueOrderShipped({
+        to: recipient.email,
+        ...(recipient.name ? { customerName: recipient.name } : {}),
+        order: {
+          id: order.id,
+          trackingNumber: order.trackingNumber ?? null,
+        },
+      });
+
+      this.logger.info(
+        {
+          event: 'order.shipped_notice_enqueued',
+          orderId: order.id,
+          hasTracking: Boolean(order.trackingNumber),
+        },
+        'Shipment notice enqueued',
+      );
+    } catch (err) {
+      this.logger.error(
+        { err, event: 'order.shipped_notice_failed', orderId: order.id },
+        'Failed to enqueue the shipment notice; the order status change stands',
+      );
+    }
   }
 
   /**

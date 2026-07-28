@@ -7,10 +7,12 @@ import { MailService, type SendOrderConfirmationParams } from '../mail/mail.serv
 import type { OrderConfirmationMailPayload } from '../mail/templates/order-confirmation.template';
 import type { PasswordResetMailPayload } from '../mail/templates/password-reset.template';
 import type { AccountLockedMailPayload } from '../mail/templates/account-locked.template';
+import type { OrderShippedMailPayload } from '../mail/templates/order-shipped.template';
 import { Clock, MAIL_OUTBOX_CLOCK } from './mail-outbox.clock';
 import {
   ACCOUNT_LOCKED_MAIL_TYPE,
   ORDER_CONFIRMATION_MAIL_TYPE,
+  ORDER_SHIPPED_MAIL_TYPE,
   PASSWORD_RESET_MAIL_TYPE,
   type DispatchResult,
 } from './mail-outbox.types';
@@ -113,6 +115,27 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: ACCOUNT_LOCKED_MAIL_TYPE,
+        recipient: payload.to,
+        payload: payload as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Enqueue the "your order has shipped" notice (TASK-335).
+   *
+   * Takes an optional `tx` like its siblings so a caller that ships an order and
+   * notifies the customer can commit both together — a notice for a shipment that
+   * rolled back is worse than none.
+   */
+  async enqueueOrderShipped(
+    payload: OrderShippedMailPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.repository.enqueue(
+      {
+        type: ORDER_SHIPPED_MAIL_TYPE,
         recipient: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
@@ -237,6 +260,11 @@ export class MailOutboxService {
       case PASSWORD_RESET_MAIL_TYPE:
         await this.mailService.sendPasswordResetPayload(
           row.payload as unknown as PasswordResetMailPayload,
+        );
+        return;
+      case ORDER_SHIPPED_MAIL_TYPE:
+        await this.mailService.sendOrderShippedPayload(
+          row.payload as unknown as OrderShippedMailPayload,
         );
         return;
       case ACCOUNT_LOCKED_MAIL_TYPE:

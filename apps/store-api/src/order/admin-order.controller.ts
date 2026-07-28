@@ -19,7 +19,12 @@ import {
   OrderCustomerData,
   OrderStatusHistoryEntity,
 } from './entities';
-import { AdminOrderListQueryDto, UpdateOrderStatusDto, UpdateOrderPaymentStatusDto } from './dto';
+import {
+  AdminOrderListQueryDto,
+  UpdateOrderStatusDto,
+  UpdateOrderPaymentStatusDto,
+  UpdateOrderDetailsDto,
+} from './dto';
 import { AdminGuard } from '../auth/guards';
 
 /**
@@ -115,6 +120,7 @@ class AdminOrderAllowedTransitionsResponse {
  *   GET    /admin/orders                              — List all orders across all users
  *   GET    /admin/orders/:orderId                     — Get any order by ID
  *   GET    /admin/orders/:orderId/allowed-transitions — Legal next statuses (TASK-332)
+ *   PATCH  /admin/orders/:orderId                     — Waybill / internal notes (335, 336)
  *   PATCH  /admin/orders/:orderId/status              — Update an order's status
  *   PATCH  /admin/orders/:orderId/payment-status      — Update an order's payment status
  *
@@ -281,6 +287,53 @@ export class AdminOrderController {
       // single, explicit conversion.
       ...(dto.expectedUpdatedAt ? { expectedUpdatedAt: new Date(dto.expectedUpdatedAt) } : {}),
     });
+
+    return { data: order };
+  }
+
+  /**
+   * PATCH /api/admin/orders/:orderId
+   *
+   * Update the operator-editable fields that are not part of the order's
+   * lifecycle: the Nova Poshta waybill (TASK-335) and the internal notes
+   * (TASK-336). Admin-only.
+   *
+   * Entering a waybill on an order that has already SHIPPED sends the customer
+   * their tracking notice — the second half of the "mark it gone, then get the
+   * number from the courier" workflow.
+   */
+  @Patch(':orderId')
+  @ApiBearerAuth('access-token')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Update order tracking number / internal notes (admin)',
+    operationId: 'adminOrderControllerUpdateDetails',
+  })
+  @ApiParam({ name: 'orderId', description: 'Order UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Order updated',
+    type: AdminOrderResponseEnvelope,
+  })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({ status: 409, description: 'ORDER_STALE — another admin changed this order first' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async updateDetails(
+    @Param('orderId') orderId: string,
+    @Body() dto: UpdateOrderDetailsDto,
+  ): Promise<AdminOrderResponseEnvelope> {
+    const order = await this.orderService.adminUpdateDetails(
+      orderId,
+      {
+        // Only forward keys the caller actually sent: an absent key leaves the
+        // field alone, an explicit null clears it.
+        ...(dto.trackingNumber !== undefined ? { trackingNumber: dto.trackingNumber } : {}),
+        ...(dto.internalNotes !== undefined ? { internalNotes: dto.internalNotes } : {}),
+      },
+      {
+        ...(dto.expectedUpdatedAt ? { expectedUpdatedAt: new Date(dto.expectedUpdatedAt) } : {}),
+      },
+    );
 
     return { data: order };
   }

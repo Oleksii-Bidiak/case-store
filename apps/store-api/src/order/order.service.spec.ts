@@ -172,6 +172,9 @@ const orderRepositoryMock = {
   findByIdForAdmin: jest.fn(),
   // TASK-338: guest order access + claiming on registration.
   findByAccessTokenHash: jest.fn(),
+  // TASK-335/336: waybill + internal notes, and who to email about a shipment.
+  updateDetails: jest.fn(),
+  findRecipient: jest.fn(),
   claimGuestOrders: jest.fn(),
   updateStatus: jest.fn(),
   cancelAndRestock: jest.fn(),
@@ -206,6 +209,8 @@ const userRepositoryMock = {
 // (TASK-103-F) INSIDE the order's transaction — no synchronous SMTP send.
 const mailOutboxServiceMock = {
   enqueueOrderConfirmation: jest.fn(),
+  // TASK-335: the "your parcel is on its way" notice.
+  enqueueOrderShipped: jest.fn(),
 };
 
 /** Fake transaction client handed to the createFromCart afterCreate hook. */
@@ -1513,6 +1518,232 @@ describe('OrderService', () => {
         ADMIN_ID,
         expect.anything(),
       );
+    });
+  });
+
+  // ─── Tracking number + shipment notice (TASK-335) ────────────────────────────
+  // Until now a parcel left the warehouse and the customer found out by
+  // refreshing the site, if they thought to.
+
+  describe('shipment notice', () => {
+    const seedShipped = (current: Partial<OrderWithItems>, updated: Partial<OrderWithItems>) => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder(current));
+      orderRepositoryMock.updateStatus.mockResolvedValue(makeOrder(updated));
+      orderRepositoryMock.findRecipient.mockResolvedValue({
+        email: 'buyer@example.com',
+        name: 'Olena',
+      });
+    };
+
+    it('enqueues the notice when the order reaches SHIPPED, with the waybill', async () => {
+      seedShipped(
+        { status: OrderStatus.PROCESSING },
+        { status: OrderStatus.SHIPPED, trackingNumber: '20450000000001' },
+      );
+
+      await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID);
+
+      expect(mailOutboxServiceMock.enqueueOrderShipped).toHaveBeenCalledWith({
+        to: 'buyer@example.com',
+        customerName: 'Olena',
+        order: { id: 'order-uuid-1', trackingNumber: '20450000000001' },
+      });
+    });
+
+    it('still tells the customer when no waybill has been entered yet', async () => {
+      seedShipped(
+        { status: OrderStatus.PROCESSING },
+        { status: OrderStatus.SHIPPED, trackingNumber: null },
+      );
+
+      await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID);
+
+      // "On its way" with no number still beats silence.
+      expect(mailOutboxServiceMock.enqueueOrderShipped).toHaveBeenCalledWith(
+        expect.objectContaining({ order: { id: 'order-uuid-1', trackingNumber: null } }),
+      );
+    });
+
+    it('sends nothing on a transition that is not a shipment', async () => {
+      seedShipped({ status: OrderStatus.PENDING }, { status: OrderStatus.CONFIRMED });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED, ADMIN_ID);
+
+      expect(mailOutboxServiceMock.enqueueOrderShipped).not.toHaveBeenCalled();
+    });
+
+    it('does NOT fail the status change when the notice cannot be enqueued', async () => {
+      seedShipped({ status: OrderStatus.PROCESSING }, { status: OrderStatus.SHIPPED });
+      mailOutboxServiceMock.enqueueOrderShipped.mockRejectedValue(new Error('outbox down'));
+
+      // The parcel is physically gone. Failing the transition would leave the
+      // operator retrying a move the state machine then refuses — stuck with a
+      // shipped parcel and an order that says otherwise.
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID),
+      ).resolves.toBeInstanceOf(OrderEntity);
+    });
+
+    it('warns and sends nothing when the order has no email on file', async () => {
+      seedShipped({ status: OrderStatus.PROCESSING }, { status: OrderStatus.SHIPPED });
+      orderRepositoryMock.findRecipient.mockResolvedValue(null);
+
+      await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID);
+
+      expect(mailOutboxServiceMock.enqueueOrderShipped).not.toHaveBeenCalled();
+      expect(pinoLoggerMock.warn).toHaveBeenCalled();
+    });
+  });
+
+  // ─── adminUpdateDetails (TASK-335 / TASK-336) ────────────────────────────────
+
+  describe('adminUpdateDetails', () => {
+    const seed = (current: Partial<OrderWithItems>, updated: Partial<OrderWithItems> = {}) => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder(current));
+      orderRepositoryMock.updateDetails.mockResolvedValue(makeOrder({ ...current, ...updated }));
+      orderRepositoryMock.findRecipient.mockResolvedValue({ email: 'buyer@example.com' });
+    };
+
+    it('forwards only the fields the caller supplied', async () => {
+      seed({ status: OrderStatus.PROCESSING });
+
+      await service.adminUpdateDetails('order-uuid-1', { internalNotes: 'Call before dispatch' });
+
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
+        'order-uuid-1',
+        { internalNotes: 'Call before dispatch' },
+        expect.anything(),
+      );
+    });
+
+    it('exposes internalNotes on the response (this is the admin card)', async () => {
+      seed({ status: OrderStatus.PROCESSING }, { internalNotes: 'Suspected fraud' });
+
+      const result = await service.adminUpdateDetails('order-uuid-1', {
+        internalNotes: 'Suspected fraud',
+      });
+
+      expect(result.internalNotes).toBe('Suspected fraud');
+    });
+
+    it('notifies the customer when a waybill first appears on an already-SHIPPED order', async () => {
+      seed(
+        { status: OrderStatus.SHIPPED, trackingNumber: null },
+        { trackingNumber: '20450000000001' },
+      );
+
+      await service.adminUpdateDetails('order-uuid-1', { trackingNumber: '20450000000001' });
+
+      expect(mailOutboxServiceMock.enqueueOrderShipped).toHaveBeenCalledWith(
+        expect.objectContaining({
+          order: { id: 'order-uuid-1', trackingNumber: '20450000000001' },
+        }),
+      );
+    });
+
+    it('does NOT re-notify when an existing waybill is corrected', async () => {
+      seed(
+        { status: OrderStatus.SHIPPED, trackingNumber: '20450000000000' },
+        { trackingNumber: '20450000000001' },
+      );
+
+      await service.adminUpdateDetails('order-uuid-1', { trackingNumber: '20450000000001' });
+
+      // Fixing a typo is not news.
+      expect(mailOutboxServiceMock.enqueueOrderShipped).not.toHaveBeenCalled();
+    });
+
+    it('does NOT notify when the waybill is entered before the parcel ships', async () => {
+      seed(
+        { status: OrderStatus.PROCESSING, trackingNumber: null },
+        { trackingNumber: '20450000000001' },
+      );
+
+      await service.adminUpdateDetails('order-uuid-1', { trackingNumber: '20450000000001' });
+
+      // The SHIPPED transition carries the number when it happens.
+      expect(mailOutboxServiceMock.enqueueOrderShipped).not.toHaveBeenCalled();
+    });
+
+    it('does NOT notify when a waybill is cleared', async () => {
+      seed({ status: OrderStatus.SHIPPED, trackingNumber: '20450000000001' });
+
+      await service.adminUpdateDetails('order-uuid-1', { trackingNumber: null });
+
+      expect(mailOutboxServiceMock.enqueueOrderShipped).not.toHaveBeenCalled();
+    });
+
+    it('rejects a stale edit with ORDER_STALE before writing anything', async () => {
+      seed({ status: OrderStatus.SHIPPED, updatedAt: new Date('2026-07-28T10:20:00.000Z') });
+
+      await expect(
+        service.adminUpdateDetails(
+          'order-uuid-1',
+          { trackingNumber: '1' },
+          { expectedUpdatedAt: new Date('2026-07-28T10:15:30.000Z') },
+        ),
+      ).rejects.toMatchObject({ response: { error: 'ORDER_STALE' } });
+
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when the order does not exist', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.adminUpdateDetails('missing', { trackingNumber: '1' })).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  // ─── internalNotes containment (TASK-336) ────────────────────────────────────
+  // `notes` is the customer's field; `internalNotes` is the operator's. Mixing
+  // them leaks internal remarks to the buyer.
+
+  describe('internalNotes is admin-only', () => {
+    const withNotes = () =>
+      makeOrder({ internalNotes: 'Suspected fraud — call before dispatch', userId: USER_ID });
+
+    it('is absent from a customer order read', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(withNotes());
+
+      const result = await service.getOrder(USER_ID, 'order-uuid-1');
+
+      expect(result.internalNotes).toBeUndefined();
+    });
+
+    it('is absent from the customer order list', async () => {
+      orderRepositoryMock.findByUserId.mockResolvedValue({ orders: [withNotes()], total: 1 });
+
+      const result = await service.getOrders(USER_ID, {});
+
+      expect(result.data[0].internalNotes).toBeUndefined();
+    });
+
+    it('is absent from a guest order read', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ userId: null, createdAt: new Date(), internalNotes: 'Do not ship' }),
+      );
+
+      const result = await service.getGuestOrder('c'.repeat(64));
+
+      expect(result.internalNotes).toBeUndefined();
+    });
+
+    it('IS present on the admin order read', async () => {
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(withNotes());
+
+      const result = await service.adminGetOrder('order-uuid-1');
+
+      expect(result.internalNotes).toBe('Suspected fraud — call before dispatch');
+    });
+
+    it('IS present on every row of the admin list', async () => {
+      orderRepositoryMock.findAll.mockResolvedValue({ orders: [withNotes()], total: 1 });
+
+      const result = await service.adminGetAllOrders({});
+
+      expect(result.data[0].internalNotes).toBe('Suspected fraud — call before dispatch');
     });
   });
 

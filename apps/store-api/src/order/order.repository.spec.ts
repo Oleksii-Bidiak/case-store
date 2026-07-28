@@ -1111,6 +1111,58 @@ describe('OrderRepository', () => {
       expect(where.paymentStatus).toBeUndefined();
       expect(where.status).toBeUndefined();
     });
+
+    // ── TASK-336: free-text search across account AND guest orders ────────────
+    // An operator on the phone has an order number, an email or a phone. Since
+    // guest checkout the customer's details may live on the ORDER rather than on
+    // a user row, so both places must be searched or half the orders vanish.
+
+    describe('search', () => {
+      const whereFor = async (query: Parameters<typeof repository.findAll>[0]) => {
+        prismaMock.$transaction.mockResolvedValue([0, []]);
+        await repository.findAll(query);
+        return prismaMock.order.count.mock.calls[0][0].where;
+      };
+
+      it('matches the order number as a lower-cased id prefix', async () => {
+        // Every email and screen shows the order number as the first 8 chars of
+        // the uuid, UPPERCASED. The operator reads back "ABC12345"; the column
+        // holds "abc12345…".
+        const where = await whereFor({ search: 'ABC12345' });
+
+        expect(where.OR).toContainEqual({ id: { startsWith: 'abc12345' } });
+      });
+
+      it('searches the guest email and the account email, case-insensitively', async () => {
+        const where = await whereFor({ search: 'Olena@Example.com' });
+
+        expect(where.OR).toContainEqual({
+          guestEmail: { contains: 'Olena@Example.com', mode: 'insensitive' },
+        });
+        expect(where.OR).toContainEqual({
+          user: { email: { contains: 'Olena@Example.com', mode: 'insensitive' } },
+        });
+      });
+
+      it('searches the guest phone and the account phone', async () => {
+        const where = await whereFor({ search: '0671112233' });
+
+        expect(where.OR).toContainEqual({ guestPhone: { contains: '0671112233' } });
+        expect(where.OR).toContainEqual({ user: { phone: { contains: '0671112233' } } });
+      });
+
+      it('adds no OR clause at all when nothing was searched for', async () => {
+        const where = await whereFor({});
+
+        expect(where.OR).toBeUndefined();
+      });
+
+      it('still excludes soft-deleted orders while searching', async () => {
+        const where = await whereFor({ search: 'anything' });
+
+        expect(where.deletedAt).toBeNull();
+      });
+    });
   });
 
   describe('findAll — multi-status filter (TASK-250)', () => {

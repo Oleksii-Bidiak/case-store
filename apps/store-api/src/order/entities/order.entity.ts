@@ -175,11 +175,40 @@ export class OrderEntity {
   @ApiProperty({ description: 'Last update timestamp', example: '2024-01-01T00:00:00.000Z' })
   updatedAt!: Date;
 
+  @ApiProperty({
+    description:
+      'Nova Poshta waybill (ТТН) entered by the operator (TASK-335), or null. Shown to the ' +
+      'customer so they can track the parcel.',
+    type: String,
+    nullable: true,
+    example: '20450000000001',
+  })
+  trackingNumber!: string | null;
+
+  @ApiProperty({
+    description:
+      'Operator-only notes (TASK-336). Present ONLY on admin responses — distinct from ' +
+      '`notes`, which is what the customer typed and is shown back to them.',
+    type: String,
+    required: false,
+    nullable: true,
+  })
+  internalNotes?: string | null;
+
   /**
    * Create an OrderEntity from a repository order. Converts all Decimal money
    * fields to strings and maps each line into an {@link OrderItemEntity}.
+   *
+   * `includeInternal` is OPT-IN, and defaults to off, because the read paths that
+   * feed customer responses select the whole order row — `internalNotes` is
+   * sitting right there in the object. Making the caller ask for it means the
+   * failure mode of a forgotten flag is "the admin misses a field", not "the
+   * buyer reads the fraud note about themselves" (TASK-336).
    */
-  static fromPrisma(order: OrderWithItems): OrderEntity {
+  static fromPrisma(
+    order: OrderWithItems,
+    options: { includeInternal?: boolean } = {},
+  ): OrderEntity {
     const entity = new OrderEntity();
     entity.id = order.id;
     entity.userId = order.userId;
@@ -218,6 +247,11 @@ export class OrderEntity {
       };
     }
     entity.restockedAt = order.restockedAt;
+    entity.trackingNumber = order.trackingNumber ?? null;
+    // TASK-336: opt-in, never automatic — see the docblock above.
+    if (options.includeInternal) {
+      entity.internalNotes = order.internalNotes ?? null;
+    }
     entity.createdAt = order.createdAt;
     entity.updatedAt = order.updatedAt;
     return entity;
