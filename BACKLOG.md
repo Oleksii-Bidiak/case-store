@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-370**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-371**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -410,6 +410,8 @@
 | TASK-368 | Презентація продукту замовнику (UA): `docs/presentation.md` — вітрина очима покупця, адмінка очима власника, під капотом, **чесний розділ «чого поки немає»**; `docs/demo-script.md` — сценарій живого показу на ~25 хв (4 акти). Скріншоти плейсхолдерами, справжні — після ручного QA | ⬜ | [170](docs/plans/170-seed-content-and-presentation.md) |
 | TASK-369 | Переписати `docs/user-stories.md` (після Етапу 8 він описує як ⬜/🎭 те, що вже працює; К і О стають реальними персонами, бо `MANAGER` і матриця з 33 прав існують; `E-NN` не перенумеровувати — на них є посилання) + новий `docs/qa-manual-full.md`: ~470 перевірок «Зроби:/Має бути:» зі схемою `ЗОНА-nn` і двома додатками-доказами повноти (маршрут → перевірка на 32 маршрути вітрини й 62 адмінки; дозвіл RBAC → перевірка на всі 33). `manual-qa-master.md` і `manual-qa-progress.md` — в архів, `manual-qa-pending.md` лишається Launch Gate'ом | ⬜ | [170](docs/plans/170-seed-content-and-presentation.md) |
 
+| TASK-370 | [🟡 до запуску] Черга повернень `/returns` **недосяжна з інтерфейсу адмінки**: сторінки списку й деталей, машина станів і форма рішення реалізовані й покриті тестами (TASK-340), але в `admin-nav-list.tsx` немає пункту меню, а `PERM.returnsRead` оголошений у `permission-keys.ts` і **ніде не використовується** — тобто дійти до RMA можна лише вписавши URL руками. Наслідок: заявку на повернення, яку покупець подав із вітрини, оператор просто не побачить. Виявлено при написанні презентації (TASK-368) | ⬜ | — |
+
 ## Зручність адмін-таблиць (епік TASK-292)
 
 > Розпарковано й **перецілено 2026-07-29**. Memo [157](docs/plans/157-admin-datatable-rescope.md)
@@ -451,6 +453,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-370**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-371**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
