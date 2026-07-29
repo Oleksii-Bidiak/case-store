@@ -56,6 +56,30 @@ describe('ProductVariantSummaryEntity.fromSiblings', () => {
     expect(summary.colors[0].value).toBe('Red');
   });
 
+  // TASK-364: the seeded catalogue names its axes in Ukrainian (plan 170), and the
+  // storefront's swatch renderer already accepted `колір`. Before this, only the
+  // literal `color` matched here, so a Ukrainian-named axis produced zero colours
+  // and the cards lost their dots while the PDP still showed swatches.
+  it.each([
+    ['колір', 'Чорний'],
+    ['Колір', 'Синій'],
+    [' colour ', 'Green'],
+  ])('recognises %j as the colour axis', (axis, value) => {
+    const summary = ProductVariantSummaryEntity.fromSiblings('grp-1', [
+      sibling({ id: 'a', attributes: { [axis]: value, "пам'ять": '128 ГБ' } }),
+    ]);
+
+    expect(summary.colors.map((c) => c.value)).toEqual([value]);
+  });
+
+  it('does not treat a non-colour axis as the colour axis', () => {
+    const summary = ProductVariantSummaryEntity.fromSiblings('grp-1', [
+      sibling({ id: 'a', attributes: { "пам'ять": '128 ГБ', довжина: '1 м' } }),
+    ]);
+
+    expect(summary.colors).toEqual([]);
+  });
+
   it('reports defaultInStock based on the cheapest position stock', () => {
     const summary = ProductVariantSummaryEntity.fromSiblings('grp-1', [
       sibling({ id: 'a', price: { toString: () => '5.00' }, stock: 0 }),

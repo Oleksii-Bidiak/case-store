@@ -13,20 +13,35 @@ export interface VariantSiblingInput {
   positionOrder: number;
 }
 
-/** Axis key (case-insensitive) that holds a position's colour value. */
-const COLOR_AXIS_KEY = 'color';
+/**
+ * Axis keys (case-insensitive) that hold a position's colour value. Axis names
+ * are free-text admin data, so the same axis is spelled differently depending on
+ * who authored the group — hence a set rather than one literal.
+ *
+ * Deliberately mirrors `COLOR_AXES` in the storefront's
+ * `widgets/product-detail/ui/product-sibling-navigator.tsx`, which decides
+ * whether to render swatches or text chips. The two must agree: the storefront
+ * already accepted `колір`, so a Ukrainian-named axis rendered as swatches on the
+ * PDP while this entity reported zero colours — colour dots silently vanished
+ * from every card and quick-view. Keep both lists in sync (plan 170, TASK-364).
+ */
+const COLOR_AXIS_KEYS = new Set(['color', 'colour', 'колір']);
 
 /**
  * Read the colour value from a position's `attributes` JSON. The axis is keyed
- * by name (case-insensitive `color`); returns `null` when there is no colour
- * axis or the value is not a non-empty string.
+ * by name (case-insensitive, see {@link COLOR_AXIS_KEYS}); returns `null` when
+ * there is no colour axis or the value is not a non-empty string.
  */
 function readColor(attributes: unknown): string | null {
   if (attributes == null || typeof attributes !== 'object') {
     return null;
   }
   for (const [key, value] of Object.entries(attributes as Record<string, unknown>)) {
-    if (key.toLowerCase() === COLOR_AXIS_KEY && typeof value === 'string' && value.trim() !== '') {
+    if (
+      COLOR_AXIS_KEYS.has(key.trim().toLowerCase()) &&
+      typeof value === 'string' &&
+      value.trim() !== ''
+    ) {
       return value;
     }
   }
