@@ -4,7 +4,7 @@ import { ProductRepository, ProductIndexSource } from '../product/product.reposi
 import { CategoryRepository } from '../category/category.repository';
 import { PublicProductEntity } from '../product/entities';
 import { MeiliClient, ProductSearchDocument, IndexSettings } from './meili.client';
-import { UA_EN_SYNONYMS, extractUaSearchTerms } from './search-synonyms';
+import { UA_EN_SYNONYMS, extractSearchSynonymTerms } from './search-synonyms';
 import { SearchSuggestionEntity } from './entities';
 
 /** Default page size for the `/search` results grid. */
@@ -16,15 +16,17 @@ const REINDEX_BATCH = 100;
 
 /**
  * Index configuration applied on bootstrap. Searchable across name, description,
- * category and the injected UA `searchTerms` (last, so direct name/description
- * matches rank higher); filterable by visibility + category; sortable by
- * price/recency.
+ * category and the injected cross-script `searchTerms` (last, so direct
+ * name/description matches rank higher); filterable by visibility + category;
+ * sortable by price/recency.
  *
  * UA↔EN support (TASK-200) is two-fold because Meilisearch synonym expansion
  * is exact-word only (not typo tolerant): `synonyms` covers correctly-typed
  * cross-script queries («айфон» → iphone), while the per-document `searchTerms`
- * attribute (see `toDocument`) puts the UA tokens into the index so typo
- * tolerance itself covers misspellings («афйон» → «айфон»).
+ * attribute (see `toDocument`) puts the missing-script tokens into the index so
+ * typo tolerance itself covers misspellings («афйон» → «айфон»). Since the
+ * catalogue is Ukrainian (TASK-366/367) that injection mostly runs the other way
+ * — «Чохол …» gains `case`/`cases` — see `search-synonyms.ts`.
  */
 export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
   searchableAttributes: ['name', 'description', 'categoryName', 'brandName', 'searchTerms'],
@@ -283,7 +285,7 @@ export class SearchService implements OnModuleInit {
       inStock: source.stock > 0,
       isActive: source.isActive,
       createdAt: source.createdAt.getTime(),
-      searchTerms: extractUaSearchTerms(
+      searchTerms: extractSearchSynonymTerms(
         `${source.name} ${source.categoryName} ${source.brandName ?? ''}`,
       ),
     };

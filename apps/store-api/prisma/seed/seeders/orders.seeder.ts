@@ -1,7 +1,49 @@
 import { PrismaClient } from '@prisma/client';
+import { cataloguePositions } from '../data/catalogue';
 import { orderSpecs, paymentOffsetHours, statusOffsetHours } from '../data/orders.data';
 import { deterministicUuid } from '../lib/ids';
 import type { OrderStatus, PaymentStatus, SeededUser } from '../types';
+
+/**
+ * Check EVERY line item before writing anything, and report all the problems in
+ * one message.
+ *
+ * The point is the "all at once" part. Resolving SKUs lazily inside the write
+ * loop threw on the first miss, so re-pointing this file at a new catalogue
+ * (TASK-366 replaced the whole assortment) meant one seed run per broken SKU —
+ * eleven runs to discover eleven renames, each one a minute of rebuilding
+ * everything upstream of orders. It also left the database half-seeded each
+ * time.
+ *
+ * Out-of-stock is an error too, not just unknown. A seeded order whose item the
+ * storefront shows as «Немає в наявності» is a demo that contradicts itself —
+ * the reviewer clicks through from the order to a product they cannot buy. Real
+ * shops do sell their last unit, so this is a rule about demo data rather than
+ * about orders; if a future scenario deliberately needs a sold-out line item,
+ * this is the one place to relax.
+ */
+function assertOrderSkusResolve(bySku: Map<string, { id: string; price: number }>) {
+  const stockBySku = new Map(cataloguePositions().map((p) => [p.sku, p.stock]));
+  const unknown: string[] = [];
+  const soldOut: string[] = [];
+
+  for (const sku of new Set(orderSpecs.flatMap((spec) => spec.items.map((i) => i.sku)))) {
+    if (!bySku.has(sku)) unknown.push(sku);
+    else if (stockBySku.get(sku) === 0) soldOut.push(sku);
+  }
+
+  const problems = [
+    unknown.length && `unknown SKU(s): ${unknown.sort().join(', ')}`,
+    soldOut.length && `out-of-stock SKU(s): ${soldOut.sort().join(', ')}`,
+  ].filter(Boolean);
+
+  if (problems.length) {
+    throw new Error(
+      `seedOrders: orders.data.ts does not match the catalogue — ${problems.join('; ')}. ` +
+        'Every order line must name a SKU that data/catalogue/** actually creates, with stock > 0.',
+    );
+  }
+}
 
 /**
  * Seed a spread of orders (TASK-020/028/251) covering EVERY OrderStatus and
@@ -39,6 +81,8 @@ export async function seedOrders(
   // code → { id } for discounts used by the orders below.
   const discounts = await prisma.discount.findMany({ select: { id: true, code: true } });
   const discountByCode = new Map(discounts.map((d) => [d.code, d.id]));
+
+  assertOrderSkusResolve(bySku);
 
   const hour = 60 * 60 * 1000;
   const redemptionCountByCode = new Map<string, number>();

@@ -265,39 +265,39 @@ password `Reviewer123!` and are not configurable.
 
 A clean seed produces:
 
-| Entity                 | Count        | Notes                                                                                                      |
-| ---------------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
-| Users                  | 30           | 1 admin + 6 customers + 20 reviewers + 3 pending-review accounts                                           |
-| Brands                 | 6            | Apple, Samsung, Xiaomi, Baseus, Anker, Spigen (product manufacturers, TASK-189)                            |
-| Categories             | 15           | 5 root (Cases, Chargers, Cables, Screen Protectors, **Смартфони**) + 10 subcategories (incl. **iPhone**)   |
-| Product groups         | 14           | Multi-variant entries become groups (variant-as-position, TASK-142); incl. iPhone 15 Pro (storage × color) |
-| Product positions      | 40           | Group members + standalone; incl. 6 iPhone 15 Pro positions + iPhone 14 / iPhone 13 standalone             |
-| Product images         | 69           | Generated locally into `UPLOAD_DEST/products/` as WebP + LQIP (TASK-365) — see below                       |
-| Attribute definitions  | 4            | Екран / Пам'ять / Камера / Акумулятор on **Смартфони** (inherited by iPhone), TASK-191                     |
-| Attribute values       | 32           | 4 structured specs filled on each of the 8 iPhone positions                                                |
-| Addon services         | 4            | + 3 category templates on «Смартфони» and 3 product deltas (ADD / REMOVE / OVERRIDE)                       |
-| Device brands          | 3            | Compatible-device taxonomy (Apple / Samsung / Xiaomi) — distinct from product Brands, TASK-190             |
-| Device models          | 40           | Grouped by `series` for the storefront ModelPicker cascade                                                 |
-| Device compat links    | 30           | Accessories ↔ Apple device models (`ProductDeviceCompat`, TASK-190)                                        |
-| Banners                | 6            | PUBLISHED, across the homepage placements (HERO_SLIDE / PROMO_TILE / …), TASK-186                          |
-| **Carousels**          | **5**        | **3 `HOME_TABS` + 2 `HOME_RAILS`, all PUBLISHED — see below (TASK-139, TASK-288)**                         |
-| Carousel items         | 4            | Hand-picked products on the MANUAL rail; replaced wholesale on re-run                                      |
-| Reviews (approved)     | 5–20/product | Pre-approved (`isActive = true`), deterministic, ratings skewed positive                                   |
-| Reviews (pending)      | 6            | `isActive = false` with UA comments — populate the admin moderation queue                                  |
-| Discounts              | 5            | WELCOME10, SUMMER500 (minSpend), VIP20, EXPIRED15 (past), OLDPROMO (inactive)                              |
-| Orders                 | 12           | Cover **every** OrderStatus + PaymentStatus; deterministic ids                                             |
-| Order items            | 17           | Price captured at purchase                                                                                 |
-| Discount redemptions   | 2            | WELCOME10 + SUMMER500 (unique per order)                                                                   |
-| Order status history   | 53           | Append-only STATUS + PAYMENT_STATUS trails (admin/system `changedBy`)                                      |
-| Contact messages       | 5            | NEW / READ / ARCHIVED (TASK-177)                                                                           |
-| Newsletter subscribers | 6            | Mix of SUBSCRIBED / UNSUBSCRIBED (TASK-188)                                                                |
-| Pages                  | 6            | UA PUBLISHED info pages (about, delivery, returns, warranty, privacy-policy, terms), TASK-187              |
-| Blog categories        | 5            | UA; upsert on `slug`                                                                                       |
-| Blog posts             | 12           | UA, PUBLISHED; ≥2 featured                                                                                 |
-| FAQ items              | 6            | UA Q&A migrated from the storefront's former static list (TASK-242)                                        |
-| Site contact settings  | 1            | Singleton row (fixed id `…0001`), TASK-154                                                                 |
-| SEO settings           | 1            | Singleton row (fixed id `…0002`) with zero-config defaults, TASK-239                                       |
-| Addresses              | 8            | `seed-address-1` (John) + 1–2 UA addresses per new customer (deterministic ids)                            |
+| Entity                 | Count | Notes                                                                                                                                        |
+| ---------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Users                  | 30    | 1 admin + 6 customers + 20 reviewers + 3 pending-review accounts                                                                             |
+| Brands                 | 16    | Apple, Samsung, Xiaomi, Huawei, Sony, JBL, Anker, Baseus, Belkin, Spigen, Nillkin, Hoco, Borofone, UGREEN, SanDisk, Remax (TASK-189/366)     |
+| Categories             | 43    | 11 Ukrainian roots + 32 subcategories (TASK-366). Only `iPhone` and `Samsung Galaxy` are Latin — proper nouns                                |
+| Product groups         | 58    | Multi-variant entries become groups (variant-as-position, TASK-142); axes are Ukrainian — «Колір», «Пам'ять», «Довжина», «Комплект», «Об'єм» |
+| Product positions      | 178   | Group members + standalone. 14 with `stock = 0` (sold-out UI), 23 with 1–4 (low-stock widget), 79 with a `compareAtPrice`                    |
+| Product images         | 381   | Generated locally into `UPLOAD_DEST/products/` as WebP + LQIP (TASK-365) — see §8                                                            |
+| Attribute definitions  | 46    | Declared on all 11 ROOT categories, inherited down each subtree; the first two per root are filterable (TASK-191/366)                        |
+| Attribute values       | 728   | Every one of the 178 positions carries at least 3 filled specs — fewer and the facets read empty                                             |
+| Addon services         | 4     | + 3 category templates on «Смартфони» and 3 product deltas on **named** iPhone positions (ADD / REMOVE / OVERRIDE)                           |
+| Device brands          | 3     | Compatible-device taxonomy (Apple / Samsung / Xiaomi) — distinct from product Brands, TASK-190                                               |
+| Device models          | 40    | Grouped by `series` for the storefront ModelPicker cascade                                                                                   |
+| Device compat links    | 143   | Accessories ↔ Apple / Samsung / Xiaomi models across 30 catalogue entries (`ProductDeviceCompat`, TASK-190)                                  |
+| Banners                | 6     | PUBLISHED, across the homepage placements (HERO_SLIDE / PROMO_TILE / …), TASK-186                                                            |
+| **Carousels**          | **5** | **3 `HOME_TABS` + 2 `HOME_RAILS`, all PUBLISHED — see below (TASK-139, TASK-288)**                                                           |
+| Carousel items         | 4     | Hand-picked products on the MANUAL rail; replaced wholesale on re-run                                                                        |
+| Reviews (approved)     | 2 203 | 5–20 per position, pre-approved (`isActive = true`), deterministic, ratings skewed positive                                                  |
+| Reviews (pending)      | 6     | `isActive = false` with UA comments, on six **named** positions — the admin moderation queue is always exactly these six                     |
+| Discounts              | 5     | WELCOME10, SUMMER500 (minSpend), VIP20, EXPIRED15 (past), OLDPROMO (inactive)                                                                |
+| Orders                 | 12    | Cover **every** OrderStatus + PaymentStatus; deterministic ids                                                                               |
+| Order items            | 17    | Price captured at purchase                                                                                                                   |
+| Discount redemptions   | 2     | WELCOME10 + SUMMER500 (unique per order)                                                                                                     |
+| Order status history   | 53    | Append-only STATUS + PAYMENT_STATUS trails (admin/system `changedBy`)                                                                        |
+| Contact messages       | 5     | NEW / READ / ARCHIVED (TASK-177)                                                                                                             |
+| Newsletter subscribers | 6     | Mix of SUBSCRIBED / UNSUBSCRIBED (TASK-188)                                                                                                  |
+| Pages                  | 7     | UA PUBLISHED info pages (about, delivery, returns, warranty, privacy-policy, terms, offer), TASK-187                                         |
+| Blog categories        | 5     | UA; upsert on `slug`                                                                                                                         |
+| Blog posts             | 12    | UA, PUBLISHED; ≥2 featured                                                                                                                   |
+| FAQ items              | 6     | UA Q&A migrated from the storefront's former static list (TASK-242)                                                                          |
+| Site contact settings  | 1     | Singleton row (fixed id `…0001`), TASK-154                                                                                                   |
+| SEO settings           | 1     | Singleton row (fixed id `…0002`) with zero-config defaults, TASK-239                                                                         |
+| Addresses              | 8     | `seed-address-1` (John) + 1–2 UA addresses per new customer (deterministic ids)                                                              |
 
 ### Homepage carousels (TASK-288)
 

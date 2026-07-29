@@ -31,54 +31,74 @@ export async function seedAddonServices(
   console.log(`  ✓ AddonServices: ${servicesData.length} services`);
 
   // Template on the PARENT category — the `iphone` subcategory inherits it.
-  for (const name of templateServiceNames) {
-    await prisma.categoryAddonTemplate.upsert({
-      where: {
-        categoryId_addonServiceId: {
-          categoryId: categories['smartphones'].id,
-          addonServiceId: services[name].id,
-        },
-      },
-      update: {},
-      create: {
-        categoryId: categories['smartphones'].id,
-        addonServiceId: services[name].id,
-      },
-    });
-  }
+  // Replaced wholesale for the same reason as the deltas below: dropping a name
+  // from `templateServiceNames` has to actually remove the row, or «Смартфони»
+  // keeps offering a service the data stopped declaring.
+  await prisma.categoryAddonTemplate.deleteMany({
+    where: {
+      categoryId: categories['smartphones'].id,
+      addonServiceId: { in: Object.values(services).map((s) => s.id) },
+    },
+  });
+  await prisma.categoryAddonTemplate.createMany({
+    data: templateServiceNames.map((name) => ({
+      categoryId: categories['smartphones'].id,
+      addonServiceId: services[name].id,
+    })),
+  });
 
   console.log(
     `  ✓ CategoryAddonTemplate: ${templateServiceNames.length} services on «Смартфони» (inherited by «iPhone»)`,
   );
 
-  // One delta of each type, on three distinct iPhone products.
-  const iphoneProducts = await prisma.product.findMany({
-    where: { category: { slug: 'iphone' } },
-    orderBy: { createdAt: 'asc' },
-    take: 3,
-    select: { id: true, name: true },
-  });
+  // One delta of each type, on the three iPhone positions named in the data.
+  const productIdBySlug = new Map(
+    (
+      await prisma.product.findMany({
+        where: { slug: { in: deltas.map((d) => d.positionSlug) } },
+        select: { id: true, slug: true },
+      })
+    ).map((p) => [p.slug, p.id]),
+  );
 
-  for (let i = 0; i < Math.min(deltas.length, iphoneProducts.length); i++) {
-    const d = deltas[i];
-    await prisma.addonServiceDelta.upsert({
-      where: {
-        productId_addonServiceId: {
-          productId: iphoneProducts[i].id,
-          addonServiceId: services[d.serviceName].id,
-        },
-      },
-      update: { type: d.type, price: d.price ?? null },
-      create: {
-        productId: iphoneProducts[i].id,
-        addonServiceId: services[d.serviceName].id,
-        type: d.type,
-        price: d.price ?? null,
-      },
-    });
+  const missing = deltas.map((d) => d.positionSlug).filter((slug) => !productIdBySlug.has(slug));
+  if (missing.length) {
+    throw new Error(
+      `seedAddonServices: addons.data.ts targets position(s) that do not exist: ${missing.join(', ')}. ` +
+        'Position slugs come from data/catalogue/** (entry slug + variant slugPart).',
+    );
   }
 
-  console.log(
-    `  ✓ AddonServiceDelta: ${Math.min(deltas.length, iphoneProducts.length)} deltas (ADD / REMOVE / OVERRIDE)`,
-  );
+  // Replace the deltas on the seeded services wholesale, rather than upserting
+  // the three the data names.
+  //
+  // Upserting alone is not enough. The targets used to be picked
+  // non-deterministically (`orderBy: createdAt, take: 3` over positions that share
+  // a millisecond), so a dev database seeded before this change carries deltas on
+  // whichever products happened to come back on each earlier run — five rows where
+  // the data declares three, sitting on products nobody can explain. Same trap the
+  // moderation queue fell into (see `reviews.seeder.ts`): moving from an implicit
+  // target to an explicit one has to clean up after the implicit one. Deleting only
+  // by `productId` would not do it either — a stale row on a *planned* product but a
+  // different service survives that filter. The pair is the identity, so the whole
+  // set goes.
+  //
+  // Scoped to the four seeded services, so an add-on an admin created in the panel
+  // keeps its deltas. A delta an admin attached to a *seeded* service counts as
+  // seed-owned demo data and is replaced — the same wholesale rule the seed already
+  // applies to group axes, images and reviews.
+  const seededServiceIds = Object.values(services).map((s) => s.id);
+  await prisma.addonServiceDelta.deleteMany({
+    where: { addonServiceId: { in: seededServiceIds } },
+  });
+  await prisma.addonServiceDelta.createMany({
+    data: deltas.map((d) => ({
+      productId: productIdBySlug.get(d.positionSlug)!,
+      addonServiceId: services[d.serviceName].id,
+      type: d.type,
+      price: d.price ?? null,
+    })),
+  });
+
+  console.log(`  ✓ AddonServiceDelta: ${deltas.length} deltas (ADD / REMOVE / OVERRIDE)`);
 }
