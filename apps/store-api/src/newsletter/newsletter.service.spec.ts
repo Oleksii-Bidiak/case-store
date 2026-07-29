@@ -79,6 +79,18 @@ describe('NewsletterService', () => {
       expect(result.data[0].email).toBe('user@example.com');
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
     });
+
+    it('forwards the requested sort to the repository (TASK-356)', async () => {
+      // The DTO validating sortBy proves nothing on its own — a service that
+      // drops it renders a sorted header over rows that never moved.
+      repositoryMock.findAll.mockResolvedValue({ subscriptions: [], total: 0 });
+
+      await service.findAll({ page: 1, limit: 20, sortBy: 'email', sortOrder: 'asc' });
+
+      expect(repositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ sortBy: 'email', sortOrder: 'asc' }),
+      );
+    });
   });
 
   describe('exportCsv', () => {

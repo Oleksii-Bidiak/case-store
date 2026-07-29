@@ -50,7 +50,8 @@ export class NewsletterService {
   }
 
   /**
-   * List subscribers (admin) with pagination, status filter, and email search.
+   * List subscribers (admin) with pagination, status filter, email search, and
+   * sort.
    */
   async findAll(query: NewsletterListQueryDto): Promise<PaginatedSubscriptionsResponse> {
     const page = query.page ?? 1;
@@ -61,6 +62,8 @@ export class NewsletterService {
       limit,
       status: query.status,
       search: query.search,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
     });
 
     return {

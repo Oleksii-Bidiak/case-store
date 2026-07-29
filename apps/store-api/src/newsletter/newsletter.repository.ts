@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { NewsletterStatus, NewsletterSubscription, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { NEWSLETTER_SORT_FIELDS } from './dto/newsletter-list-query.dto';
 
 /**
  * Parameters for the admin subscriber list.
@@ -10,6 +11,8 @@ export interface FindAllParams {
   limit: number;
   status?: NewsletterStatus;
   search?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
 }
 
 /**
@@ -18,6 +21,35 @@ export interface FindAllParams {
 export interface PaginatedSubscriptionsResult {
   subscriptions: NewsletterSubscription[];
   total: number;
+}
+
+/**
+ * Translate the requested sort into a Prisma `orderBy` (TASK-356).
+ *
+ * The unknown-field fallback duplicates the DTO's `@IsIn` on purpose: the DTO
+ * guards the HTTP boundary, this guards every other caller, and a `sortBy`
+ * string reaching Prisma unchecked is a query-shape injection.
+ *
+ * The `id` tiebreaker is not cosmetic. `status` has two distinct values, so with
+ * LIMIT/OFFSET a page boundary lands inside a tie group where Postgres promises
+ * no order at all — the same subscriber can appear on page 1 and again on page 2
+ * while another never appears. Ties fall back to newest-first (the operator
+ * sorting by status still wants recent sign-ups on top), then to `id`, because
+ * `createdAt` is not unique either — the seed writes a batch at one timestamp.
+ */
+function buildSubscriberOrderBy(
+  sortBy: string | undefined,
+  sortOrder: 'asc' | 'desc' = 'desc',
+): Prisma.NewsletterSubscriptionOrderByWithRelationInput[] {
+  const field = (NEWSLETTER_SORT_FIELDS as readonly string[]).includes(sortBy ?? '')
+    ? (sortBy as (typeof NEWSLETTER_SORT_FIELDS)[number])
+    : 'createdAt';
+
+  return [
+    { [field]: sortOrder },
+    ...(field === 'createdAt' ? [] : [{ createdAt: 'desc' as const }]),
+    { id: 'asc' },
+  ];
 }
 
 /**
@@ -78,8 +110,9 @@ export class NewsletterRepository {
   }
 
   /**
-   * List subscribers with pagination, an optional status filter, and an optional
-   * case-insensitive email search. Ordered newest first.
+   * List subscribers with pagination, an optional status filter, an optional
+   * case-insensitive email search, and an allow-listed sort. Newest first by
+   * default.
    */
   async findAll(params: FindAllParams): Promise<PaginatedSubscriptionsResult> {
     const { page, limit, status, search } = params;
@@ -94,7 +127,7 @@ export class NewsletterRepository {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: buildSubscriberOrderBy(params.sortBy, params.sortOrder),
       }),
       this.prisma.newsletterSubscription.count({ where }),
     ]);
