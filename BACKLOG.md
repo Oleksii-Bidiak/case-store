@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-371**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-372**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -362,7 +362,7 @@
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
 | TASK-329 | Аудит готовності до запуску: 4 артефакти — звіт, `docs/user-stories.md` (5 персон + граничні випадки), переписаний `docs/manual-qa-pending.md` (Частина I — Launch Gate), оновлення BACKLOG (прецедент discovery 219–226) | ✅ | [звіт](docs/reviews/2026-07-24-launch-readiness-audit.md) |
-| TASK-330 | [🔴 запуск] Епік онлайн-оплати UA: провайдеро-агностичний порт + callback/webhook + зв'язка зі статусами замовлення (TDD money-path); адаптер після вибору провайдера власником (порівняння — звіт §9); етапи A порт/бек → B чекаут UI → C адмінка (платежі/повернення); розпарковує TASK-034/081 **Закрито 2026-07-29:** провайдеро-агностичний `payment.port.ts` + LiqPay-адаптер (підпис sha3-256, зафіксований тест-вектором), webhook-контролер, ідемпотентність через унікальний індекс `PaymentEvent(paymentId, providerStatus, providerPaymentId)`, refund, крон-звірка `action:"status"` і авто-скасування прострочених; вибір способу оплати на чекауті + картка платежу з історією спроб в адмінці. Живий прогін на sandbox-ключах лишається ручним — LG-3 у `manual-qa-pending.md`. | ✅ | [163](docs/plans/163-online-payments-liqpay.md) |
+| TASK-330 | [🔴 запуск] Епік онлайн-оплати UA: провайдеро-агностичний порт + callback/webhook + зв'язка зі статусами замовлення (TDD money-path); адаптер після вибору провайдера власником (порівняння — звіт §9); етапи A порт/бек → B чекаут UI → C адмінка (платежі/повернення); розпарковує TASK-034/081 **Закрито 2026-07-29:** провайдеро-агностичний `payment.port.ts` + LiqPay-адаптер (підпис sha3-256, зафіксований тест-вектором), webhook-контролер, ідемпотентність через унікальний індекс `PaymentEvent(paymentId, providerStatus, providerPaymentId)`, refund, крон-звірка `action:"status"` і авто-скасування прострочених; вибір способу оплати на чекауті + картка платежу з історією спроб в адмінці. Живий прогін на sandbox-ключах лишається ручним — LG-3 у `manual-qa-pending.md`. **Уточнення 2026-07-29 (при написанні TASK-368):** формулювання «картка платежу з історією спроб в адмінці» **перебільшує** — `order-detail-view.tsx` показує лише суму й селект статусу оплати, а на місці історії спроб і кнопки повернення рендериться `paymentAttemptsUnavailable`; коментар у самому файлі пояснює, що йому бракує `Order.paymentMethod` на сутності й адмінських платіжних ендпоінтів, яких змержений бекенд не віддає. Тобто гроші через панель не повертаються — див. TASK-371 | ✅ | [163](docs/plans/163-online-payments-liqpay.md) |
 | TASK-331 | [🔴 запуск] Зняти муляж оплати/доставки з `/cart` (квік-фікс): default-checked «Оплата онлайн» + мертві селекти міста/способу доставки (`cart-delivery-payment.tsx` — presentational-only). **Закрито 2026-07-28:** файл видалено, знято імпорт і рендер у `cart-view.tsx` (коментар на місці пояснює, чому блоку більше немає), прибрано 9 словникових ключів і запис на 10 eslint-suppressions. **Муляж брехав більше, ніж зафіксовано в рядку:** `deliveryMethods` пропонував поштомат, кур'єра і самовивіз — бекенд не підтримує **жодного**, `ServiceType` захардкоджений `WarehouseWarehouse`; `deliveryCities` був статичним списком із 5 міст. Тестів на муляжі не було; store-client 112/112 наборів, 729 тестів зелені | ✅ | — |
 | TASK-332 | [🔴 запуск] Серверна машина станів замовлення (зараз бекенд записує будь-який статус «як є» — `admin-order.controller.ts:183`) — передумова коректних webhook-ів оплати TASK-330; адмін-UI пропонує лише валідні переходи **Закрито 2026-07-29:** машина станів у `OrderService` — єдине місце, де взагалі змінюється статус; заборонений перехід → 409; селект в адмінці отримує перелік дозволених переходів із сервера замість «усе, крім поточного». | ✅ | [163](docs/plans/163-online-payments-liqpay.md) |
 | TASK-333 | [🔴 запуск] Мінімальний зріз user-mgmt: зміна власного пароля (спільний ендпоінт для вітрини — кнопка в `/account` зараз тост-муляж — і адмінки) + створення адміна з UI + скидання чужого пароля; стартовий етап A RBAC-епіка TASK-334 **Закрито 2026-07-29:** спільний ендпоінт зміни власного пароля (тост-муляж у профілі замінено справжнім запитом), створення адміністратора з UI, скидання чужого пароля. | ✅ | [164](docs/plans/164-rbac-manager-user-mgmt.md) |
@@ -412,6 +412,8 @@
 
 | TASK-370 | [🟡 до запуску] Черга повернень `/returns` **недосяжна з інтерфейсу адмінки**: сторінки списку й деталей, машина станів і форма рішення реалізовані й покриті тестами (TASK-340), але в `admin-nav-list.tsx` немає пункту меню, а `PERM.returnsRead` оголошений у `permission-keys.ts` і **ніде не використовується** — тобто дійти до RMA можна лише вписавши URL руками. Наслідок: заявку на повернення, яку покупець подав із вітрини, оператор просто не побачить. Виявлено при написанні презентації (TASK-368) | ⬜ | — |
 
+| TASK-371 | [🟡 до запуску] Підключити картку платежу в адмінці: історія спроб оплати + кнопка повернення грошей. Серверна частина готова (`AdminPaymentController` — `GET /admin/payments/orders/:orderId`, `POST /admin/payments/:id/refund`, згенеровані хуки в `store-admin` уже лежать), але екран до неї не підключений — `order-detail-view.tsx` рендерить `paymentAttemptsUnavailable`, і власний коментар у файлі називає причину: сутності замовлення бракує `paymentMethod`. Поки цього немає, `REFUNDED` в адмінці — знову лейбл без руху грошей, тобто повертається дефект E-12 з аудиту. Виявлено при написанні презентації (TASK-368), уточнює рядок TASK-330 | ⬜ | [163](docs/plans/163-online-payments-liqpay.md) |
+
 ## Зручність адмін-таблиць (епік TASK-292)
 
 > Розпарковано й **перецілено 2026-07-29**. Memo [157](docs/plans/157-admin-datatable-rescope.md)
@@ -453,6 +455,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-371**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-372**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
