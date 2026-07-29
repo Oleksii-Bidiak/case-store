@@ -265,39 +265,39 @@ password `Reviewer123!` and are not configurable.
 
 A clean seed produces:
 
-| Entity                 | Count        | Notes                                                                                                      |
-| ---------------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
-| Users                  | 30           | 1 admin + 6 customers + 20 reviewers + 3 pending-review accounts                                           |
-| Brands                 | 6            | Apple, Samsung, Xiaomi, Baseus, Anker, Spigen (product manufacturers, TASK-189)                            |
-| Categories             | 15           | 5 root (Cases, Chargers, Cables, Screen Protectors, **Смартфони**) + 10 subcategories (incl. **iPhone**)   |
-| Product groups         | 14           | Multi-variant entries become groups (variant-as-position, TASK-142); incl. iPhone 15 Pro (storage × color) |
-| Product positions      | 40           | Group members + standalone; incl. 6 iPhone 15 Pro positions + iPhone 14 / iPhone 13 standalone             |
-| Product images         | 69           | Deterministic `picsum.photos` URLs per position                                                            |
-| Attribute definitions  | 4            | Екран / Пам'ять / Камера / Акумулятор on **Смартфони** (inherited by iPhone), TASK-191                     |
-| Attribute values       | 32           | 4 structured specs filled on each of the 8 iPhone positions                                                |
-| Addon services         | 4            | + 3 category templates on «Смартфони» and 3 product deltas (ADD / REMOVE / OVERRIDE)                       |
-| Device brands          | 3            | Compatible-device taxonomy (Apple / Samsung / Xiaomi) — distinct from product Brands, TASK-190             |
-| Device models          | 40           | Grouped by `series` for the storefront ModelPicker cascade                                                 |
-| Device compat links    | 30           | Accessories ↔ Apple device models (`ProductDeviceCompat`, TASK-190)                                        |
-| Banners                | 6            | PUBLISHED, across the homepage placements (HERO_SLIDE / PROMO_TILE / …), TASK-186                          |
-| **Carousels**          | **5**        | **3 `HOME_TABS` + 2 `HOME_RAILS`, all PUBLISHED — see below (TASK-139, TASK-288)**                         |
-| Carousel items         | 4            | Hand-picked products on the MANUAL rail; replaced wholesale on re-run                                      |
-| Reviews (approved)     | 5–20/product | Pre-approved (`isActive = true`), deterministic, ratings skewed positive                                   |
-| Reviews (pending)      | 6            | `isActive = false` with UA comments — populate the admin moderation queue                                  |
-| Discounts              | 5            | WELCOME10, SUMMER500 (minSpend), VIP20, EXPIRED15 (past), OLDPROMO (inactive)                              |
-| Orders                 | 12           | Cover **every** OrderStatus + PaymentStatus; deterministic ids                                             |
-| Order items            | 17           | Price captured at purchase                                                                                 |
-| Discount redemptions   | 2            | WELCOME10 + SUMMER500 (unique per order)                                                                   |
-| Order status history   | 53           | Append-only STATUS + PAYMENT_STATUS trails (admin/system `changedBy`)                                      |
-| Contact messages       | 5            | NEW / READ / ARCHIVED (TASK-177)                                                                           |
-| Newsletter subscribers | 6            | Mix of SUBSCRIBED / UNSUBSCRIBED (TASK-188)                                                                |
-| Pages                  | 6            | UA PUBLISHED info pages (about, delivery, returns, warranty, privacy-policy, terms), TASK-187              |
-| Blog categories        | 5            | UA; upsert on `slug`                                                                                       |
-| Blog posts             | 12           | UA, PUBLISHED; ≥2 featured                                                                                 |
-| FAQ items              | 6            | UA Q&A migrated from the storefront's former static list (TASK-242)                                        |
-| Site contact settings  | 1            | Singleton row (fixed id `…0001`), TASK-154                                                                 |
-| SEO settings           | 1            | Singleton row (fixed id `…0002`) with zero-config defaults, TASK-239                                       |
-| Addresses              | 8            | `seed-address-1` (John) + 1–2 UA addresses per new customer (deterministic ids)                            |
+| Entity                 | Count | Notes                                                                                                                                        |
+| ---------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Users                  | 30    | 1 admin + 6 customers + 20 reviewers + 3 pending-review accounts                                                                             |
+| Brands                 | 16    | Apple, Samsung, Xiaomi, Huawei, Sony, JBL, Anker, Baseus, Belkin, Spigen, Nillkin, Hoco, Borofone, UGREEN, SanDisk, Remax (TASK-189/366)     |
+| Categories             | 43    | 11 Ukrainian roots + 32 subcategories (TASK-366). Only `iPhone` and `Samsung Galaxy` are Latin — proper nouns                                |
+| Product groups         | 58    | Multi-variant entries become groups (variant-as-position, TASK-142); axes are Ukrainian — «Колір», «Пам'ять», «Довжина», «Комплект», «Об'єм» |
+| Product positions      | 178   | Group members + standalone. 14 with `stock = 0` (sold-out UI), 23 with 1–4 (low-stock widget), 79 with a `compareAtPrice`                    |
+| Product images         | 381   | Generated locally into `UPLOAD_DEST/products/` as WebP + LQIP (TASK-365) — see §8                                                            |
+| Attribute definitions  | 46    | Declared on all 11 ROOT categories, inherited down each subtree; the first two per root are filterable (TASK-191/366)                        |
+| Attribute values       | 728   | Every one of the 178 positions carries at least 3 filled specs — fewer and the facets read empty                                             |
+| Addon services         | 4     | + 3 category templates on «Смартфони» and 3 product deltas on **named** iPhone positions (ADD / REMOVE / OVERRIDE)                           |
+| Device brands          | 3     | Compatible-device taxonomy (Apple / Samsung / Xiaomi) — distinct from product Brands, TASK-190                                               |
+| Device models          | 40    | Grouped by `series` for the storefront ModelPicker cascade                                                                                   |
+| Device compat links    | 143   | Accessories ↔ Apple / Samsung / Xiaomi models across 30 catalogue entries (`ProductDeviceCompat`, TASK-190)                                  |
+| Banners                | 6     | PUBLISHED, across the homepage placements (HERO_SLIDE / PROMO_TILE / …), TASK-186                                                            |
+| **Carousels**          | **5** | **3 `HOME_TABS` + 2 `HOME_RAILS`, all PUBLISHED — see below (TASK-139, TASK-288)**                                                           |
+| Carousel items         | 4     | Hand-picked products on the MANUAL rail; replaced wholesale on re-run                                                                        |
+| Reviews (approved)     | 2 203 | 5–20 per position, pre-approved (`isActive = true`), deterministic, ratings skewed positive                                                  |
+| Reviews (pending)      | 6     | `isActive = false` with UA comments, on six **named** positions — the admin moderation queue is always exactly these six                     |
+| Discounts              | 5     | WELCOME10, SUMMER500 (minSpend), VIP20, EXPIRED15 (past), OLDPROMO (inactive)                                                                |
+| Orders                 | 12    | Cover **every** OrderStatus + PaymentStatus; deterministic ids                                                                               |
+| Order items            | 17    | Price captured at purchase                                                                                                                   |
+| Discount redemptions   | 2     | WELCOME10 + SUMMER500 (unique per order)                                                                                                     |
+| Order status history   | 53    | Append-only STATUS + PAYMENT_STATUS trails (admin/system `changedBy`)                                                                        |
+| Contact messages       | 5     | NEW / READ / ARCHIVED (TASK-177)                                                                                                             |
+| Newsletter subscribers | 6     | Mix of SUBSCRIBED / UNSUBSCRIBED (TASK-188)                                                                                                  |
+| Pages                  | 7     | UA PUBLISHED info pages (about, delivery, returns, warranty, privacy-policy, terms, offer), TASK-187                                         |
+| Blog categories        | 5     | UA; upsert on `slug`                                                                                                                         |
+| Blog posts             | 12    | UA, PUBLISHED; ≥2 featured                                                                                                                   |
+| FAQ items              | 6     | UA Q&A migrated from the storefront's former static list (TASK-242)                                                                          |
+| Site contact settings  | 1     | Singleton row (fixed id `…0001`), TASK-154                                                                                                   |
+| SEO settings           | 1     | Singleton row (fixed id `…0002`) with zero-config defaults, TASK-239                                                                         |
+| Addresses              | 8     | `seed-address-1` (John) + 1–2 UA addresses per new customer (deterministic ids)                                                              |
 
 ### Homepage carousels (TASK-288)
 
@@ -323,11 +323,39 @@ standalone "Хіти продажів" rail, which would now render the same pro
 heading. Re-seeding an existing dev DB flips that row's `placement` to `HOME_TABS` in place (same
 deterministic id).
 
-Images use deterministic `https://picsum.photos/seed/{positionSlug}-{sortOrder}/800/800` URLs so the
-storefront looks populated without real uploads. The first image (`sortOrder === 0`) of each
-position is the primary/cover. Positions seeded from a multi-image entry render the
+### Imagery (TASK-365)
+
+Product images and category tiles are **generated on the machine running the seed** — no network,
+no third-party placeholder host. Each picture is an SVG (a palette gradient, a rounded plinth on
+products, and a category icon) rasterised with `sharp` and then handed to the very same
+`ImageProcessor` the admin upload flow uses, so a seeded image gets WebP q80 **and a real base64
+LQIP** — seeded rows blur up exactly like uploaded photos instead of popping in.
+
+Files land in `UPLOAD_DEST/products/` (default `apps/store-api/uploads/products/`, which
+`ServeStaticModule` serves at `/uploads`). Category tiles share that directory deliberately: both
+storefront allowlists match the `/uploads/` **prefix**, not the sub-directory. The resulting URL —
+`${PUBLIC_BASE_URL}/uploads/products/seed-<hash>.webp` — is identical in shape to one the admin
+panel produces, which is why seeded data needs no special case in `next/image`, in the blur-up
+placeholder, or in the admin thumbnail column.
+
+Products are 800×800, category tiles 512×512 (a 2× render of `CategoryTileImage`'s 256 px
+intrinsic). The first image (`sortOrder === 0`) of each position is the primary/cover; later sort
+orders shift the gradient angle, rotate the icon and add an accent disc, so a three-image gallery
+is three visibly different pictures. Positions seeded from a multi-image entry render the
 `ProductImageGallery` thumbnail strip (gated on `images.length > 1`), which is what TASK-128-B
 enabled for QA.
+
+Filenames are a sha1 of the render recipe, so **re-seeding overwrites identical bytes rather than
+accumulating files**; identical icon × palette × sort-order combinations are also encoded only
+once per run. A final prune pass then deletes any `seed-<16 hex>.webp` this run did not write.
+That pattern cannot match a real upload — `LocalDiskStorageService` names those `<uuid>.<ext>`.
+
+The seed prints the origin it baked into the URLs, once:
+`ℹ Seed images: http://localhost:3001/uploads/products/ → <directory>`. **Compare that line with
+the storefront's `NEXT_PUBLIC_API_URL` whenever tiles fall back to icons**: `next/image` builds its
+allowlist from that variable at build time, and `localhost` is not the same origin as `127.0.0.1`
+to it. Under `NODE_ENV=production` an unset `PUBLIC_BASE_URL` is a hard error instead of a default,
+so a staging database can never be seeded with `localhost` URLs.
 
 ---
 
@@ -335,8 +363,11 @@ enabled for QA.
 
 - **`seed-address-1`** is a hard-coded address id used for idempotency. Do not reuse that id for
   test data outside the seed, or the upsert will overwrite your row.
-- **picsum.photos** placeholder URLs require network access; in a fully offline environment the
-  storefront images will not load, but the seed itself still succeeds (no images are fetched at
-  seed time). Real product images go through the admin upload flow, not the seed.
+- **Imagery needs no network.** Seed images are rendered locally (§8), so an offline machine gets
+  exactly the same pictures as a connected one. What they do need is a **writable `UPLOAD_DEST`**
+  and an API served from the `PUBLIC_BASE_URL` the seed logged — in Docker that means running the
+  seed via `docker compose exec` so the files land in the mounted `uploads_data` volume rather
+  than inside a throwaway container. Real product photos still go through the admin upload flow,
+  not the seed.
 - The seed assumes an empty or already-seeded DB. It does **not** delete unrelated rows you may
   have created manually — only seed-owned axes and images are replaced wholesale.

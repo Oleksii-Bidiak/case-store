@@ -3,13 +3,6 @@
 import { useState, type ReactNode } from "react";
 import Image from "next/image";
 
-/**
- * Placeholder host used by the dev seed for product imagery. Whitelisted in
- * `next.config.ts` already, so an admin who pastes one of those URLs into
- * `Category.image` gets a working (optimized) tile rather than a fallback.
- */
-const SEED_PLACEHOLDER_HOST = "picsum.photos";
-
 /** Uploads path prefix — the only path store-api serves images from. */
 const UPLOADS_PREFIX = "/uploads/";
 
@@ -58,7 +51,9 @@ export function isOptimizableImageSrc(src: string): boolean {
   const host = url.hostname.toLowerCase();
 
   // store-api uploads: same protocol/port as the configured API origin, and only
-  // under /uploads/ (the pathname the remote pattern pins).
+  // under /uploads/ (the pathname the remote pattern pins). This is also where
+  // the dev seed's generated tiles live since TASK-365 — it writes real files to
+  // `${PUBLIC_BASE_URL}/uploads/products/`, so demo data needs no host of its own.
   if (
     host === apiOrigin.hostname.toLowerCase() &&
     url.protocol === apiOrigin.protocol &&
@@ -73,7 +68,7 @@ export function isOptimizableImageSrc(src: string): boolean {
   // image optimizer into an open proxy fetching arbitrary origins).
   if (url.protocol !== "https:") return false;
 
-  return host === SEED_PLACEHOLDER_HOST || extraImageHosts().includes(host);
+  return extraImageHosts().includes(host);
 }
 
 interface CategoryTileImageProps {

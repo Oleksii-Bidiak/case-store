@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // Typecheck island for the database seed (plan 170, TASK-363). The seed lives
+  // outside the app's `rootDir: ./src`, so `npm run typecheck` never saw it — a
+  // 3 000-line file compiled by nobody. This project re-uses the app's compiler
+  // options (same strictness) and only widens `rootDir` far enough to cover both
+  // `prisma/` and the `src/common/*` helpers the seed imports. Emit-free: the
+  // seed is executed by `tsx`, never built.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".."
+  },
+  "include": ["seed.ts", "seed/**/*"]
+}
