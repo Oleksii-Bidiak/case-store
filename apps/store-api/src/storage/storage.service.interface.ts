@@ -19,6 +19,17 @@ export interface IStorageService {
   save(buffer: Buffer, ext: string, subdir: StorageSubdir): Promise<string>;
 
   /**
+   * Read a previously-saved file back by its storage-relative path.
+   *
+   * Added for the catalogue import (TASK-360), which keeps the uploaded workbook
+   * and re-reads it when the operator confirms the plan — the reviewable plan
+   * carries value PREVIEWS, not 1300 full descriptions. Implementations MUST
+   * throw when the file is missing: unlike a failed delete, a failed read means
+   * the caller is about to act on data it does not have.
+   */
+  read(relativePath: string): Promise<Buffer>;
+
+  /**
    * Remove a previously-saved file by its storage-relative path. Implementations
    * MUST NOT throw when the file is already gone — disk and DB can legitimately
    * diverge after a partial failure.

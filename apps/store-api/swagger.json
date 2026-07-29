@@ -5538,6 +5538,218 @@
         ]
       }
     },
+    "/api/catalog-import": {
+      "post": {
+        "description": "Parses the workbook and diffs it against the import ledger. Writes NOTHING to the catalogue — the returned run has to be confirmed via /apply.",
+        "operationId": "CatalogImportController_upload",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogImportRunEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not an .xlsx file, or it could not be parsed"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Upload a supplier catalogue and compute its import plan (dry run)",
+        "tags": [
+          "Catalog import"
+        ]
+      },
+      "get": {
+        "operationId": "CatalogImportController_list",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogImportRunListEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List recent import runs (without their plans)",
+        "tags": [
+          "Catalog import"
+        ]
+      }
+    },
+    "/api/catalog-import/{id}": {
+      "get": {
+        "operationId": "CatalogImportController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogImportRunEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Read one run with its full plan and progress",
+        "tags": [
+          "Catalog import"
+        ]
+      }
+    },
+    "/api/catalog-import/{id}/apply": {
+      "post": {
+        "description": "Marks the run APPLYING and returns immediately; a background worker writes it in chunks. Poll GET /:id for progress.",
+        "operationId": "CatalogImportController_apply",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyImportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogImportRunEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The run has already been applied or cancelled"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Confirm a plan and queue it for writing",
+        "tags": [
+          "Catalog import"
+        ]
+      }
+    },
+    "/api/catalog-import/{id}/cancel": {
+      "post": {
+        "operationId": "CatalogImportController_cancel",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogImportRunEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The run has already been applied"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Discard a plan without applying it",
+        "tags": [
+          "Catalog import"
+        ]
+      }
+    },
     "/api/product-groups": {
       "get": {
         "operationId": "ProductGroupController_findAll",
@@ -15735,6 +15947,155 @@
         "required": [
           "role"
         ]
+      },
+      "CatalogImportRunEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "filename": {
+            "type": "string",
+            "example": "ncaseua.xlsx"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PARSED",
+              "APPLYING",
+              "APPLIED",
+              "FAILED",
+              "CANCELLED"
+            ],
+            "example": "PARSED"
+          },
+          "totalRows": {
+            "type": "number",
+            "description": "Rows the plan acts on",
+            "example": 1304
+          },
+          "createCount": {
+            "type": "number",
+            "description": "Products that will be created as hidden drafts",
+            "example": 1297
+          },
+          "updateCount": {
+            "type": "number",
+            "description": "Products with at least one proposed field change",
+            "example": 12
+          },
+          "missingCount": {
+            "type": "number",
+            "description": "Products that will be hidden — gone from the file",
+            "example": 3
+          },
+          "errorCount": {
+            "type": "number",
+            "description": "Source rows rejected during parsing",
+            "example": 7
+          },
+          "appliedRows": {
+            "type": "number",
+            "description": "Rows written so far (progress while APPLYING)",
+            "example": 250
+          },
+          "plan": {
+            "type": "object",
+            "description": "The reviewable plan. Present on the detail read, omitted from the list.",
+            "additionalProperties": true
+          },
+          "error": {
+            "type": "object",
+            "description": "Why the run failed",
+            "nullable": true
+          },
+          "actorEmail": {
+            "type": "object",
+            "nullable": true,
+            "example": "operator@example.com"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "appliedAt": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "status",
+          "totalRows",
+          "createCount",
+          "updateCount",
+          "missingCount",
+          "errorCount",
+          "appliedRows",
+          "createdAt"
+        ]
+      },
+      "CatalogImportRunEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CatalogImportRunEntity"
+          },
+          "duplicateOf": {
+            "type": "object",
+            "description": "Id of an earlier APPLIED run parsed from byte-identical content, when there is one.",
+            "nullable": true
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CatalogImportRunListEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogImportRunEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ApplyImportDto": {
+        "type": "object",
+        "properties": {
+          "excludedSkus": {
+            "description": "Supplier article numbers to skip entirely",
+            "example": [
+              "614510003"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excludedFields": {
+            "type": "object",
+            "description": "Per-article field names to leave untouched. Keys are article numbers, values are field names from the plan (e.g. \"price\", \"description\").",
+            "example": {
+              "614510003": [
+                "price"
+              ]
+            },
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
       },
       "ProductGroupSummaryEntity": {
         "type": "object",

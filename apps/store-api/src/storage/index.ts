@@ -3,6 +3,7 @@ export { type IStorageService, STORAGE_SERVICE } from './storage.service.interfa
 export {
   PRODUCTS_SUBDIR,
   BRANDING_SUBDIR,
+  IMPORTS_SUBDIR,
   STORAGE_SUBDIRS,
   type StorageSubdir,
   isStorageSubdir,
