@@ -13,6 +13,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { MAX_DESCRIPTION_LENGTH } from '../product.constants';
 
 /**
  * DTO for updating an existing product.
@@ -46,14 +47,23 @@ export class UpdateProductDto {
   slug?: string;
 
   @ApiProperty({
-    description: 'Product description',
-    example: 'Updated product description...',
+    description: 'Product description — rich-text HTML, sanitized on write (TASK-361)',
+    example: '<p>Updated product description…</p>',
     required: false,
+    nullable: true,
+    type: String,
   })
   @IsOptional()
+  // Allow an explicit `null` (clear the description); only string-validate a
+  // real value. Without this the field could never be emptied: `undefined` means
+  // "no change" to Prisma, so a cleared editor silently kept the old text
+  // (TASK-361 — same clear-semantics gap TASK-245 fixed for the SEO overrides).
+  @ValidateIf((o: UpdateProductDto) => o.description !== null)
   @IsString()
-  @MaxLength(5000, { message: 'Description must be at most 5000 characters' })
-  description?: string;
+  @MaxLength(MAX_DESCRIPTION_LENGTH, {
+    message: `Description must be at most ${MAX_DESCRIPTION_LENGTH} characters`,
+  })
+  description?: string | null;
 
   @ApiProperty({
     description: 'Product price (must be positive)',

@@ -13654,8 +13654,8 @@
           },
           "description": {
             "type": "string",
-            "description": "Product description (supports markdown)",
-            "example": "Premium clear case with MagSafe compatibility..."
+            "description": "Product description — rich-text HTML, sanitized on write (TASK-361)",
+            "example": "<p>Premium clear case with MagSafe compatibility…</p>"
           },
           "price": {
             "type": "number",
@@ -13712,9 +13712,9 @@
           },
           "isActive": {
             "type": "boolean",
-            "description": "Whether the product is active and visible in the store",
-            "example": true,
-            "default": true
+            "description": "Whether the product is active and visible in the store. Omitted means FALSE (TASK-361): a new product is a hidden draft until someone publishes it.",
+            "example": false,
+            "default": false
           },
           "metaTitle": {
             "type": "string",
@@ -13748,8 +13748,9 @@
           },
           "description": {
             "type": "string",
-            "description": "Product description",
-            "example": "Updated product description..."
+            "description": "Product description — rich-text HTML, sanitized on write (TASK-361)",
+            "example": "<p>Updated product description…</p>",
+            "nullable": true
           },
           "price": {
             "type": "number",

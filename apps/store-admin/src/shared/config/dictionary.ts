@@ -288,6 +288,9 @@ export const dict = {
     loadOneError: "Не вдалося завантажити товар. Спробуйте ще раз.",
     imagesHeading: "Зображення товару",
     toastCreated: "Товар створено",
+    // TASK-361: creation now yields a hidden draft and lands on the edit page.
+    toastDraftCreated:
+      "Чернетку створено. Додайте фото й характеристики, тоді опублікуйте.",
     toastCreateFailed: "Не вдалося створити товар",
     toastUpdated: "Товар оновлено",
     toastUpdateFailed: "Не вдалося оновити товар",
@@ -318,12 +321,42 @@ export const dict = {
     previewInactive: "Деактивований",
   },
 
+  // TASK-361: publication is its own action, separate from saving the fields.
+  productPublish: {
+    heading: "Публікація",
+    draftBadge: "Чернетка — покупці її не бачать",
+    liveBadge: "Опубліковано — товар на вітрині",
+    publish: "Опублікувати",
+    unpublish: "Зняти з публікації",
+    readyHint: "Товар готовий до публікації.",
+    blockersHint: "Щоб опублікувати товар, заповніть обов'язкові пункти:",
+    advisoryNote:
+      "Пункти без позначки «обов'язково» публікацію не блокують, але без них " +
+      "картка товару виглядає порожньою для покупця.",
+    requiredMark: "обов'язково",
+    checks: {
+      name: "Вказана назва",
+      category: "Обрана категорія",
+      price: "Ціна більша за 0",
+      photo: "Є хоча б одне фото",
+      description: "Заповнений опис",
+      stock: "Залишок більший за 0",
+      specs: "Заповнені характеристики",
+      compat: "Вказана сумісність із пристроями",
+    },
+    toastPublished: "Товар опубліковано — він з'явився на вітрині",
+    toastUnpublished: "Товар знято з публікації",
+    toastFailed: "Не вдалося змінити статус публікації",
+  },
+
   productForm: {
     name: "Назва",
     slug: "Slug",
     slugPlaceholder: "Залиште порожнім для авто-генерації з назви",
     slugPreview: (slug: string) => `Буде згенеровано: ${slug}`,
     description: "Опис",
+    descriptionPlaceholder:
+      "Опишіть товар: для чого він, з чого зроблений, що в комплекті",
     price: "Ціна",
     compareAtPrice: "Стара ціна",
     sku: "Артикул",
@@ -368,7 +401,7 @@ export const dict = {
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
       slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
-      descriptionMax: "Опис має містити не більше 5000 символів",
+      descriptionMax: "Опис має містити не більше 20000 символів",
       priceRequired: "Вкажіть ціну",
       priceNumber: "Ціна має бути числом",
       pricePositive: "Ціна має бути більшою за 0",

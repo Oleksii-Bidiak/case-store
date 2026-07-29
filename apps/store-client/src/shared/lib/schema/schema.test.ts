@@ -246,6 +246,32 @@ describe("buildProductSchema", () => {
     expect(schema.image).toEqual(["https://cdn/a.jpg", "https://cdn/x.jpg"]);
   });
 
+  // Descriptions are rich text since TASK-361; Schema.org `description` is
+  // plain text, so the markup must be stripped rather than shipped to Google.
+  it("strips markup out of a rich-text description", () => {
+    const schema = buildProductSchema({
+      product: {
+        ...baseProduct,
+        description:
+          "<p>Протиударний чохол</p><ul><li>Матовий</li><li>MagSafe</li></ul>",
+      },
+      images: [],
+      ...opts,
+    });
+
+    expect(schema.description).toBe("Протиударний чохол Матовий MagSafe");
+  });
+
+  it("omits the description when the rich text carries no words", () => {
+    const schema = buildProductSchema({
+      product: { ...baseProduct, description: "<p></p>" },
+      images: [],
+      ...opts,
+    });
+
+    expect(schema.description).toBeUndefined();
+  });
+
   it("builds an InStock offer with currency and the position price", () => {
     const schema = buildProductSchema({
       product: baseProduct,

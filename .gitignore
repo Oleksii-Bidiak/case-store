@@ -74,3 +74,9 @@ ds-bundle/
 .design-sync/node_modules
 apps/store-client/.ds-sync-css/
 .design-sync/build/.generated/
+
+# Supplier catalogue source files (TASK-360). Real business data belongs to the
+# client, changes daily, and has nothing to do with a code revision — it is
+# uploaded through the admin import page, never committed.
+*.xlsx
+*.xls

@@ -28,6 +28,7 @@ import {
 } from './entities';
 import { ProductListQueryDto, parseSpecFilter } from './dto';
 import { generateSlug } from '../common/utils';
+import { sanitizeRichText } from '../common/sanitize';
 import {
   CacheService,
   buildProductListKey,
@@ -409,6 +410,15 @@ export class ProductService {
    * Validates slug and SKU uniqueness before creating.
    * Auto-generates slug from name if not provided.
    * Throws ConflictException if slug or SKU is already taken.
+   *
+   * A product created WITHOUT an explicit `isActive` is a hidden DRAFT
+   * (TASK-361). Publishing is a separate, deliberate act: images, structured
+   * specs and device compatibility all live on endpoints that need a product id,
+   * so a product that went live on create was always live in its most incomplete
+   * state — no photo, no specs, no compat. The Prisma column default stays
+   * `true` (it is the right default for a row that someone deliberately writes);
+   * this service is the single door every admin write comes through, so the
+   * draft policy belongs here.
    */
   async create(input: CreateProductInput): Promise<ProductEntity> {
     // Auto-generate slug from name if not provided
@@ -434,6 +444,8 @@ export class ProductService {
     const product = await this.productRepository.create({
       ...input,
       slug,
+      description: this.sanitizeDescription(input.description),
+      isActive: input.isActive ?? false,
     });
 
     // A new product may appear on any list page — bust every list cache entry.
@@ -489,7 +501,20 @@ export class ProductService {
         ? { oldSlug: product.slug, newSlug: input.slug }
         : undefined;
 
-    const updatedProduct = await this.productRepository.update(id, input, slugRename);
+    const updatedProduct = await this.productRepository.update(
+      id,
+      {
+        ...input,
+        // `description` is rich text since TASK-361 — sanitize on the write path,
+        // exactly as Page.content and BlogPost.content already do. `undefined`
+        // means "not being updated" and must stay undefined, or a partial update
+        // would blank the description.
+        ...(input.description !== undefined
+          ? { description: this.sanitizeDescription(input.description) }
+          : {}),
+      },
+      slugRename,
+    );
 
     // Evict list pages and both detail variants. The slug may have changed, so
     // evict the OLD slug captured above; if it changed, also evict the new one.
@@ -605,6 +630,20 @@ export class ProductService {
     await this.syncSearchIndex(deleted);
 
     return ProductEntity.fromPrisma(deleted);
+  }
+
+  /**
+   * Run a product description through the shared rich-text allow-list
+   * (TASK-361). The description became real HTML when the admin form swapped its
+   * plain textarea for the same Tiptap editor pages/blog use, and the supplier
+   * catalogue import feeds HTML straight from the source file — neither may
+   * reach the storefront unsanitized, since the PDP now renders it as markup.
+   *
+   * `null`/`undefined` pass through untouched so "no description" and "clear the
+   * description" both keep meaning what they meant.
+   */
+  private sanitizeDescription<T extends string | null | undefined>(description: T): T {
+    return (typeof description === 'string' ? sanitizeRichText(description) : description) as T;
   }
 
   /**

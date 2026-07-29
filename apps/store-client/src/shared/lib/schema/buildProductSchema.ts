@@ -2,6 +2,12 @@ import type {
   PublicProductEntity,
   ProductImageEntity,
 } from "@/shared/api/generated/models";
+// Imported from the MODULE, not the `@/shared/lib/seo` barrel: that barrel also
+// re-exports `indexnow`, which pulls in `@sentry/nextjs`. `shared/lib/index.ts`
+// re-exports this schema module, so a barrel import here would drag Sentry into
+// every component that touches `@/shared/lib` — and under Jest, where
+// `@sentry/nextjs` does not resolve, that takes down the whole suite.
+import { stripFormatting } from "@/shared/lib/seo/resolveSeo";
 
 /** Inputs for {@link buildProductSchema}. */
 export interface BuildProductSchemaInput {
@@ -47,11 +53,17 @@ export function buildProductSchema(
     brand: { "@type": "Brand", name: brandName },
   };
 
-  if (
-    typeof product.description === "string" &&
-    product.description.length > 0
-  ) {
-    schema.description = product.description;
+  // Schema.org `description` is plain text, and product descriptions are rich
+  // text since TASK-361 — emit the stripped form, or the JSON-LD Google reads
+  // would be a soup of <p>/<br> tags. Reuses the same `stripFormatting` the
+  // meta-description tier-3 fallback and the merchant feed already use, so all
+  // three derive identical prose from one description.
+  const descriptionText =
+    typeof product.description === "string"
+      ? stripFormatting(product.description)
+      : "";
+  if (descriptionText.length > 0) {
+    schema.description = descriptionText;
   }
   if (typeof product.sku === "string" && product.sku.length > 0) {
     schema.sku = product.sku;

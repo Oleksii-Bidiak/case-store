@@ -5,6 +5,18 @@ import { dict } from "@/shared/config";
 const e = dict.productForm.errors;
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * Is this rich-text value visually empty? Tiptap serializes a cleared document
+ * as `<p></p>`, which is 7 non-blank characters that render as nothing. Without
+ * this check a description the admin never typed would be persisted as markup,
+ * and the storefront — which decides between the HTML and legacy plain-text
+ * renderer by looking for tags — would draw an empty paragraph instead of its
+ * "no description" state. Mirrors the same test in `RichTextPreview`.
+ */
+function isBlankRichText(html: string): boolean {
+  return !html.replace(/<[^>]*>/g, "").trim();
+}
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -30,10 +42,12 @@ export const productSchema = z.object({
     .optional()
     .or(z.literal("")),
 
+  // Rich-text HTML since TASK-361. The cap counts MARKUP as well as prose and
+  // mirrors the API's MAX_DESCRIPTION_LENGTH — keep the two in step.
   description: z
     .string()
     .trim()
-    .max(5000, e.descriptionMax)
+    .max(20000, e.descriptionMax)
     .optional()
     .or(z.literal("")),
 
@@ -103,7 +117,9 @@ export const productSchema = z.object({
     .array(z.object({ key: z.string().trim(), value: z.string().trim() }))
     .optional(),
 
-  isActive: z.boolean().optional(),
+  // No `isActive` field (TASK-361). Product visibility is not a form field any
+  // more — `ProductPublishPanel` owns it through the activate/deactivate
+  // endpoints, so a stale checkbox can never unpublish a product on save.
 
   // SEO overrides (TASK-241). Optional free text; blank is dropped on map so the
   // storefront PDP falls back to the auto-derived title/description (resolveSeo).
@@ -150,6 +166,7 @@ export function productFormValuesToDto(
 ): CreateProductDto | UpdateProductDto {
   const slug = values.slug?.trim();
   const description = values.description?.trim();
+  const hasDescription = Boolean(description) && !isBlankRichText(description!);
   const sku = values.sku?.trim();
   const groupId = values.groupId?.trim();
   const brandId = values.brandId?.trim();
@@ -169,7 +186,14 @@ export function productFormValuesToDto(
   return {
     name: values.name,
     slug: slug ? slug : undefined,
-    description: description ? description : undefined,
+    // Same clear-semantics as the SEO overrides below: blank means "clear it" on
+    // UPDATE (explicit null, or Prisma would read `undefined` as "no change" and
+    // the old text would survive) and "omit it" on CREATE.
+    description: hasDescription
+      ? description
+      : options.isUpdate
+        ? null
+        : undefined,
     price: values.price,
     compareAtPrice: values.compareAtPrice,
     sku: sku ? sku : undefined,
@@ -179,7 +203,8 @@ export function productFormValuesToDto(
     brandId: brandId ? brandId : undefined,
     attributes,
     positionOrder: values.positionOrder,
-    isActive: values.isActive,
+    // `isActive` is deliberately absent: omitted on CREATE the backend makes a
+    // hidden draft, and omitted on UPDATE Prisma leaves the flag alone.
     // Blank clears the override on UPDATE (explicit null so Prisma writes it,
     // reverting to auto-derived SEO), and is simply omitted on CREATE (same
     // rule as parentId on the category form, TASK-245).

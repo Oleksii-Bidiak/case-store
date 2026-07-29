@@ -631,7 +631,66 @@ describe('ProductService', () => {
 
       expect(result).toBeInstanceOf(ProductEntity);
       expect(result.name).toBe('iPhone 15 Pro Case — Clear MagSafe');
-      expect(productRepositoryMock.create).toHaveBeenCalledWith(createInput);
+      expect(productRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining(createInput),
+      );
+    });
+
+    // TASK-361: a new product is a hidden DRAFT unless the caller says otherwise.
+    // Images, structured specs and device compat all need a product id, so a
+    // product that went live on create was always live in its most incomplete
+    // state.
+    it('creates a hidden draft when isActive is omitted', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockResolvedValue({ ...mockProduct, isActive: false });
+
+      await service.create(createInput);
+
+      expect(productRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: false }),
+      );
+    });
+
+    it('honours an explicit isActive=true (publishing straight from the API)', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockResolvedValue(mockProduct);
+
+      await service.create({ ...createInput, isActive: true });
+
+      expect(productRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: true }),
+      );
+    });
+
+    it('sanitizes the description before persisting it (TASK-361)', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockResolvedValue(mockProduct);
+
+      await service.create({
+        ...createInput,
+        description: '<p>Safe</p><script>alert(1)</script>',
+      });
+
+      const persisted = productRepositoryMock.create.mock.calls[0][0] as {
+        description?: string | null;
+      };
+      expect(persisted.description).toBe('<p>Safe</p>');
+    });
+
+    it('leaves an absent description absent rather than turning it into empty HTML', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockResolvedValue(mockProduct);
+
+      await service.create(createInput);
+
+      const persisted = productRepositoryMock.create.mock.calls[0][0] as {
+        description?: string | null;
+      };
+      expect(persisted.description).toBeUndefined();
     });
 
     it('should throw ConflictException when slug is already taken', async () => {
@@ -725,6 +784,36 @@ describe('ProductService', () => {
         NotFoundException,
       );
       expect(productRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it('sanitizes the description on update (TASK-361)', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.update.mockResolvedValue(mockProduct);
+
+      await service.update('product-uuid-1', {
+        description: '<p>Kept</p><script>alert(1)</script>',
+      });
+
+      expect(productRepositoryMock.update).toHaveBeenCalledWith(
+        'product-uuid-1',
+        { description: '<p>Kept</p>' },
+        undefined,
+      );
+    });
+
+    // A partial update that does not mention `description` must not blank it —
+    // `undefined` has to survive the sanitize step as `undefined`, not "".
+    it('leaves the description untouched when the update omits it', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.update.mockResolvedValue(mockProduct);
+
+      await service.update('product-uuid-1', { price: 24.99 });
+
+      expect(productRepositoryMock.update).toHaveBeenCalledWith(
+        'product-uuid-1',
+        { price: 24.99 },
+        undefined,
+      );
     });
 
     it('should throw ConflictException when updating slug to one already taken', async () => {

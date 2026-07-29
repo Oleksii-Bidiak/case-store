@@ -21,12 +21,18 @@ import {
   FormActionsBar,
   Input,
   Label,
+  RichTextEditor,
+  RichTextPreview,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
   SeoSnippetPreview,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   Textarea,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -108,7 +114,6 @@ const EMPTY_VALUES: ProductFormInput = {
   brandId: "",
   positionOrder: "0",
   attributes: [],
-  isActive: true,
   metaTitle: "",
   metaDescription: "",
 };
@@ -245,11 +250,43 @@ export function ProductForm({
         <Label htmlFor="product-description">
           {dict.productForm.description}
         </Label>
-        <Textarea
-          id="product-description"
-          rows={5}
-          {...register("description")}
-        />
+        {/* Rich text since TASK-361, using the very same editor/preview pair the
+            blog and static pages already use (see `blog-post-form.tsx`). The
+            description reaches the storefront as HTML, so the operator must be
+            able to see what they are shipping — and the supplier catalogue
+            import writes HTML into this same column. Radix unmounts the
+            inactive panel, which is safe: the editor is fully controlled by the
+            RHF field, so tabbing back re-seeds it from the current value. */}
+        <Tabs defaultValue="edit">
+          <TabsList>
+            <TabsTrigger value="edit">
+              {dict.contentPreview.tabEdit}
+            </TabsTrigger>
+            <TabsTrigger value="preview">
+              {dict.contentPreview.tabPreview}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="edit">
+            <Controller
+              control={control}
+              name="description"
+              render={({ field }) => (
+                <RichTextEditor
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  placeholder={dict.productForm.descriptionPlaceholder}
+                  disabled={isPending}
+                />
+              )}
+            />
+          </TabsContent>
+          <TabsContent value="preview">
+            <RichTextPreview
+              html={descriptionValue}
+              emptyLabel={dict.contentPreview.emptyContent}
+            />
+          </TabsContent>
+        </Tabs>
         {errors.description && (
           <p role="alert" className="text-sm text-destructive">
             {errors.description.message}
@@ -592,15 +629,11 @@ export function ProductForm({
         rawDescriptionLength={metaDescriptionValue.trim().length}
       />
 
-      <div className="flex items-center gap-2">
-        <input
-          id="product-active"
-          type="checkbox"
-          className="size-4 rounded border-border accent-primary"
-          {...register("isActive")}
-        />
-        <Label htmlFor="product-active">{dict.productForm.active}</Label>
-      </div>
+      {/* No `isActive` control here on purpose (TASK-361). Visibility is owned by
+          `ProductPublishPanel`, which drives the activate/deactivate endpoints
+          and gates going live on a readiness checklist. Leaving a checkbox here
+          too would give two sources of truth for one flag — and the stale one
+          would silently unpublish a product the moment someone pressed Save. */}
 
       {/* Structured-spec editor slot (TASK-191). Its own save action targets the
           separate specs endpoint; receives the live category so its inputs

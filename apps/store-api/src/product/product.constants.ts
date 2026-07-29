@@ -19,3 +19,14 @@ export const LOW_STOCK_THRESHOLD = 5;
  * filterable definitions a category declares.
  */
 export const MAX_HIGHLIGHTS = 4;
+
+/**
+ * Max accepted length of a product description, in characters (TASK-361).
+ *
+ * Raised from the original 5000 when the description became rich text: the
+ * limit now counts MARKUP as well as prose, and a supplier catalogue row can
+ * legitimately carry a long spec write-up (the reference import file has one
+ * description of 12 259 characters). 5000 silently rejected real products.
+ * Shared by the create and update DTOs so the two can never drift.
+ */
+export const MAX_DESCRIPTION_LENGTH = 20_000;
