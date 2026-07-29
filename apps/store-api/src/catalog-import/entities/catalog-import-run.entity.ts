@@ -46,16 +46,30 @@ export class CatalogImportRunEntity {
   })
   plan?: unknown;
 
-  @ApiProperty({ description: 'Why the run failed', required: false, nullable: true })
+  // `type` is spelled out on every nullable property here (the convention the
+  // product DTOs already follow): without it @nestjs/swagger emits a bare
+  // `nullable: true` with no type, which Orval turns into an untyped object —
+  // and the admin then cannot render the value as text.
+  @ApiProperty({
+    description: 'Why the run failed',
+    required: false,
+    nullable: true,
+    type: String,
+  })
   error!: string | null;
 
-  @ApiProperty({ required: false, nullable: true, example: 'operator@example.com' })
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    type: String,
+    example: 'operator@example.com',
+  })
   actorEmail!: string | null;
 
   @ApiProperty()
   createdAt!: Date;
 
-  @ApiProperty({ required: false, nullable: true })
+  @ApiProperty({ required: false, nullable: true, type: Date })
   appliedAt!: Date | null;
 
   /**

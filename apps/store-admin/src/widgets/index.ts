@@ -113,3 +113,5 @@ export { OrderCreateView } from "./order-create-view";
 // Returns / RMA (TASK-340)
 export { AdminReturnTable, AdminReturnTableSkeleton } from "./return-list";
 export { ReturnDetailView, ReturnDetailSkeleton } from "./return-detail";
+// Supplier-catalogue import (TASK-360)
+export { CatalogImportView } from "./catalog-import-view";

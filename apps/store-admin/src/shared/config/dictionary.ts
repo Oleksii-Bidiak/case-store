@@ -16,6 +16,7 @@ export const dict = {
     dashboard: "Панель",
     products: "Товари",
     productGroups: "Групи товарів",
+    catalogImport: "Імпорт каталогу",
     categories: "Категорії",
     brands: "Бренди",
     addonServices: "Додаткові послуги",
@@ -319,6 +320,100 @@ export const dict = {
     previewNoDescription: "Опис відсутній",
     previewActive: "Активний",
     previewInactive: "Деактивований",
+  },
+
+  // TASK-360: supplier-catalogue import.
+  catalogImport: {
+    heading: "Імпорт каталогу з файлу",
+    intro:
+      "Завантажте .xlsx від постачальника. Спершу покажемо, що саме зміниться — " +
+      "і нічого не запишемо, доки ви не підтвердите.",
+    pickFile: "Оберіть файл .xlsx",
+    upload: "Розібрати файл",
+    uploading: "Розбираємо файл…",
+    uploadFailed: "Не вдалося розібрати файл",
+    duplicateWarning:
+      "Такий самий файл уже імпортували раніше. Якщо він не змінювався, змін не буде.",
+
+    // Summary tiles
+    tileCreate: "Створити",
+    tileUpdate: "Оновити",
+    tileMissing: "Приховати",
+    tileUnchanged: "Без змін",
+    tileErrors: "Помилок у файлі",
+    tileConflicts: "Ручних правок під загрозою",
+
+    // Reference data the import will create
+    referencesHeading: "Довідники з файлу",
+    refCategories: "Категорії",
+    refBrands: "Бренди",
+    refDeviceBrands: "Марки пристроїв",
+    refDeviceModels: "Моделі пристроїв",
+    refAttributes: "Характеристики",
+    refGroups: "Групи варіантів",
+    refHint:
+      "Створимо ті, яких ще немає. Характеристики додаємо як текстові — зробити " +
+      "їх фільтрами можна пізніше, у налаштуваннях категорії.",
+
+    // Rows
+    createsHeading: (n: number) => `Нові товари (${n})`,
+    createsHint:
+      "Кожен створюється прихованим і з нульовим залишком — у файлі немає залишків. " +
+      "Опублікуєте їх самі, коли перевірите.",
+    updatesHeading: (n: number) => `Зміни в наявних товарах (${n})`,
+    missingHeading: (n: number) => `Зникли з файлу (${n})`,
+    missingHint:
+      "Ці товари приховаємо — не видалимо. Якщо постачальник поверне їх у файл, " +
+      "вони знову зʼявляться.",
+    issuesHeading: (n: number) => `Рядки, які пропустимо (${n})`,
+    rowNumber: (n: number) => `рядок ${n}`,
+    conflictBadge: "змінено вручну",
+    conflictHint:
+      "Це поле хтось правив в адмінці. За замовчуванням переможе файл — зніміть " +
+      "галочку, щоб зберегти вашу правку.",
+    uncheckConflicts: "Зняти всі ручні правки",
+    checkAll: "Позначити все",
+    colField: "Поле",
+    colFrom: "Зараз",
+    colTo: "Стане",
+    showMore: (n: number) => `Показати ще ${n}`,
+
+    // Apply
+    apply: "Застосувати",
+    applying: "Записуємо…",
+    applyConfirm: (n: number) =>
+      `Застосувати ${n} змін? Товари створюються прихованими, тож на вітрині нічого не зміниться, ` +
+      `доки ви їх не опублікуєте.`,
+    cancel: "Відхилити",
+    cancelConfirm: "Відхилити цей розбір? Файл доведеться завантажити заново.",
+    applyFailed: "Не вдалося застосувати імпорт",
+    cancelled: "Розбір відхилено",
+
+    // Progress / result
+    progress: (done: number, total: number) => `Записано ${done} з ${total}`,
+    doneHeading: "Імпорт завершено",
+    doneHint:
+      "Нові товари лежать прихованими у списку товарів. Проставте залишки й " +
+      "опублікуйте те, що готове до продажу.",
+    failedHeading: "Імпорт зупинився",
+    toStore: "До списку товарів",
+    startOver: "Імпортувати інший файл",
+
+    // History
+    historyHeading: "Попередні імпорти",
+    historyEmpty: "Імпортів ще не було.",
+    colFile: "Файл",
+    colStatus: "Статус",
+    colWhen: "Коли",
+    colWho: "Хто",
+    status: {
+      PARSED: "Очікує підтвердження",
+      APPLYING: "Записується",
+      APPLIED: "Застосовано",
+      FAILED: "Помилка",
+      CANCELLED: "Відхилено",
+    } as Record<string, string>,
+    loadError: "Не вдалося завантажити дані імпорту.",
   },
 
   // TASK-361: publication is its own action, separate from saving the fields.

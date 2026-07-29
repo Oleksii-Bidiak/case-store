@@ -16006,12 +16006,12 @@
             "additionalProperties": true
           },
           "error": {
-            "type": "object",
+            "type": "string",
             "description": "Why the run failed",
             "nullable": true
           },
           "actorEmail": {
-            "type": "object",
+            "type": "string",
             "nullable": true,
             "example": "operator@example.com"
           },
@@ -16020,7 +16020,8 @@
             "type": "string"
           },
           "appliedAt": {
-            "type": "object",
+            "format": "date-time",
+            "type": "string",
             "nullable": true
           }
         },
@@ -16044,7 +16045,7 @@
             "$ref": "#/components/schemas/CatalogImportRunEntity"
           },
           "duplicateOf": {
-            "type": "object",
+            "type": "string",
             "description": "Id of an earlier APPLIED run parsed from byte-identical content, when there is one.",
             "nullable": true
           }

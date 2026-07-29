@@ -139,11 +139,26 @@ export class CatalogImportService {
         `Цей запуск уже має статус «${run.status}» — застосувати можна лише щойно розібраний файл.`,
       );
     }
+    // Narrow `totalRows` to what this run will ACTUALLY write. The column means
+    // "rows this run acts on": at parse time that is the whole plan, and here it
+    // becomes the subset the operator authorised. Without this the progress bar
+    // divides by the full plan — confirming four rows out of 1297 renders as 0%
+    // and looks stuck, which is exactly what it did on the first live run.
+    const actionable = this.countActionable(run.plan as unknown as CatalogImportPlan, decisions);
+
     return this.repository.updateRun(id, {
       status: CatalogImportStatus.APPLYING,
       decisions: decisions as unknown as Prisma.InputJsonValue,
       appliedRows: 0,
+      totalRows: actionable,
     });
+  }
+
+  /** Rows a run will write: everything that changes, minus what was unticked. */
+  private countActionable(plan: CatalogImportPlan, decisions: ImportDecisions): number {
+    const excluded = new Set(decisions.excludedSkus ?? []);
+    return plan.rows.filter((row) => row.action !== 'unchanged' && !excluded.has(row.sourceSku))
+      .length;
   }
 
   async cancel(id: string): Promise<CatalogImportRun> {

@@ -156,7 +156,28 @@ describe('CatalogImportService', () => {
         status: CatalogImportStatus.APPLYING,
         decisions: { excludedSkus: ['A2'] },
         appliedRows: 0,
+        totalRows: 1,
       });
+    });
+
+    // Caught on the first live run: confirming 4 rows out of a 1297-row plan
+    // showed "4 / 1297", i.e. 0% — a progress bar that looks stuck.
+    it('narrows totalRows to the rows the operator actually authorised', async () => {
+      const rows = [
+        plannedRow({ sourceSku: 'A1' }),
+        plannedRow({ sourceSku: 'A2' }),
+        plannedRow({ sourceSku: 'A3', action: 'unchanged' }),
+      ];
+      repositoryMock.findRun.mockResolvedValue(run({ plan: plan(rows), totalRows: 3 }));
+      repositoryMock.updateRun.mockResolvedValue(run());
+
+      await service.apply('run-1', { excludedSkus: ['A2'] });
+
+      // A1 only: A2 was unticked and A3 was never going to be written.
+      expect(repositoryMock.updateRun).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({ totalRows: 1 }),
+      );
     });
 
     // Without this, a double-click on «Застосувати» would rewind appliedRows to

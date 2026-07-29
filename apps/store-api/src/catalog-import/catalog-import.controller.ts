@@ -67,6 +67,7 @@ class CatalogImportRunEnvelope {
       'Id of an earlier APPLIED run parsed from byte-identical content, when there is one.',
     required: false,
     nullable: true,
+    type: String,
   })
   duplicateOf?: string | null;
 }
