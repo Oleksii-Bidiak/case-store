@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsBoolean, IsUUID } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
+  ArrayUnique,
+  IsArray,
+  IsBoolean,
+  IsUUID,
+} from 'class-validator';
 import { MAX_REORDER_IDS } from '../../common/dto';
 
 /**
@@ -25,6 +32,13 @@ export class BulkProductStatusDto {
   @IsArray()
   @ArrayNotEmpty()
   @ArrayMaxSize(MAX_REORDER_IDS)
+  // A repeated id would be rejected as if it did not exist. The repository's
+  // all-or-nothing check compares found-vs-asked counts, and Prisma's `id: { in: }`
+  // collapses duplicates — so `[X, X]` finds one row for two asked and aborts the
+  // batch with a 404 naming no ids at all. The panel's Set-backed selection cannot
+  // produce that today; this makes it a clear 400 rather than a confusing 404 if a
+  // future caller does.
+  @ArrayUnique({ message: 'ids must not contain duplicates' })
   @IsUUID('4', { each: true })
   ids!: string[];
 

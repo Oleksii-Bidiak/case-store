@@ -183,6 +183,35 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       expect(countArgs.where).toEqual(expect.objectContaining({ deletedAt: null }));
     });
 
+    it('appends id as the last sort key so pages cannot overlap (TASK-292)', async () => {
+      // None of the sortable columns is unique — an import writes many products
+      // with the same createdAt, and stock repeats constantly. Without a unique
+      // last key Postgres may order tied rows differently on every query, so a
+      // product comes back on page 1 AND page 2 while another never appears,
+      // with the totals still adding up.
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20 });
+
+      expect(prismaMock.product.findMany.mock.calls[0][0].orderBy).toEqual([
+        { createdAt: 'desc' },
+        { id: 'asc' },
+      ]);
+    });
+
+    it('keeps the id tiebreaker on an explicit sort field (TASK-292)', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20, sortBy: 'price', sortOrder: 'asc' });
+
+      expect(prismaMock.product.findMany.mock.calls[0][0].orderBy).toEqual([
+        { price: 'asc' },
+        { id: 'asc' },
+      ]);
+    });
+
     it('should keep deletedAt: null alongside other filters', async () => {
       prismaMock.product.findMany.mockResolvedValue([]);
       prismaMock.product.count.mockResolvedValue(0);

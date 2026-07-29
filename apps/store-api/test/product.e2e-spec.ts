@@ -705,6 +705,22 @@ describe('ProductController (e2e)', () => {
       expect(productRepositoryMock.setActiveMany).not.toHaveBeenCalled();
     });
 
+    it('rejects a repeated id instead of 404ing on a product that exists', async () => {
+      // Prisma's `id: { in: }` collapses duplicates, so the repository's
+      // found-vs-asked count check would read `[X, X]` as one missing id and
+      // abort the whole batch with a 404 that names no ids at all.
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      const id = '11111111-1111-4111-8111-111111111111';
+
+      await request(app.getHttpServer())
+        .patch(bulkUrl)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: [id, id], isActive: true })
+        .expect(400);
+
+      expect(productRepositoryMock.setActiveMany).not.toHaveBeenCalled();
+    });
+
     it('rejects non-UUID ids', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 

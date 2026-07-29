@@ -337,6 +337,20 @@ describe('ReviewController (e2e)', () => {
       expect(reviewRepositoryMock.moderateMany).not.toHaveBeenCalled();
     });
 
+    it('rejects a repeated id instead of 404ing on a review that exists', async () => {
+      // Prisma's `id: { in: }` collapses duplicates, so the repository's
+      // found-vs-asked count check would read `[X, X]` as one missing id and
+      // abort with a 404 naming nothing. On a deleting endpoint that leaves the
+      // operator unable to tell whether anything was removed.
+      const token = generateAccessToken(admin.id, admin.role);
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', 'Bearer ' + token)
+        .send({ ids: [ids[0], ids[0]], action: 'approve' })
+        .expect(400);
+      expect(reviewRepositoryMock.moderateMany).not.toHaveBeenCalled();
+    });
+
     it('rejects an unknown action rather than guessing what was meant', async () => {
       const token = generateAccessToken(admin.id, admin.role);
       await request(app.getHttpServer())

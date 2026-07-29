@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsIn, IsUUID } from 'class-validator';
+import { ArrayMaxSize, ArrayNotEmpty, ArrayUnique, IsArray, IsIn, IsUUID } from 'class-validator';
 import { MAX_REORDER_IDS } from '../../common/dto';
 
 /**
@@ -22,6 +22,13 @@ export class BulkReviewModerationDto {
   @IsArray()
   @ArrayNotEmpty()
   @ArrayMaxSize(MAX_REORDER_IDS)
+  // A repeated id would be rejected as if it did not exist: the repository's
+  // all-or-nothing check compares found-vs-asked counts, and Prisma's `id: { in: }`
+  // collapses duplicates, so `[X, X]` aborts the batch with a 404 that names no
+  // ids at all. It matters more here than elsewhere — this endpoint deletes, and
+  // an operator who is told "not found" about a review that plainly exists has no
+  // way to tell whether anything was removed.
+  @ArrayUnique({ message: 'ids must not contain duplicates' })
   @IsUUID('4', { each: true })
   ids!: string[];
 

@@ -604,7 +604,15 @@ export class ProductRepository {
         where,
         skip,
         take: limit,
-        orderBy: { [effectiveSortField]: sortOrder },
+        // `id` is always the last key. None of the sortable columns is unique:
+        // an import writes many products with the same `createdAt`, a price list
+        // repeats prices, and `stock` repeats constantly. Postgres is free to
+        // return tied rows in a different order on every query, so paginating
+        // over an unstable ordering makes a product appear on two pages and
+        // another on none — with the totals still adding up, so nothing looks
+        // wrong until someone counts. Same defect this wave fixed in
+        // `user.repository.ts` (plan 168 §10.4).
+        orderBy: [{ [effectiveSortField]: sortOrder }, { id: 'asc' }],
         include: { brand: { select: BRAND_SUMMARY_SELECT } },
       }),
       this.prisma.product.count({ where }),
