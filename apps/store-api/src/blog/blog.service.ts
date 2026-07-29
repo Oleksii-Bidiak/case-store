@@ -12,6 +12,7 @@ import {
   UpdateBlogPostInput,
   FindAllPostsParams,
   FindAllAdminPostsParams,
+  FindAllAdminCategoriesParams,
 } from './blog.repository';
 import { BlogPostEntity, BlogCategoryEntity } from './entities';
 import {
@@ -22,6 +23,7 @@ import {
   CreateBlogCategoryDto,
   UpdateBlogCategoryDto,
   ReorderBlogCategoriesDto,
+  AdminBlogCategoryListQueryDto,
 } from './dto';
 import { generateSlug } from '../common/utils';
 import { sanitizeRichText } from '../common/sanitize';
@@ -37,6 +39,17 @@ interface PaginationMeta {
 
 interface PaginatedPostsResponse {
   data: BlogPostEntity[];
+  meta: PaginationMeta;
+}
+
+/**
+ * Admin category list envelope. `meta` is present even for an unpaginated read so
+ * the panel can show a truthful row count without branching on the query — and so
+ * the reorder response, which the panel writes straight into the list cache, can
+ * carry the identical shape.
+ */
+interface AdminCategoriesResponse {
+  data: BlogCategoryEntity[];
   meta: PaginationMeta;
 }
 
@@ -277,10 +290,34 @@ export class BlogService {
 
   // ─── categories ─────────────────────────────────────────────────────────────
 
-  /** List all categories (public + admin). */
+  /**
+   * List all categories — PUBLIC blog hub. Never paginated: the hub renders the
+   * complete filter strip, so a page size here would amputate it.
+   */
   async findAllCategories(): Promise<BlogCategoryEntity[]> {
     const categories = await this.blogRepository.findAllCategories();
     return categories.map((c) => BlogCategoryEntity.fromPrisma(c));
+  }
+
+  /**
+   * List categories for the ADMIN panel with an optional name search and opt-in
+   * pagination (TASK-357). Omitting `page`/`limit` returns the complete list —
+   * the mode the drag-and-drop reorder UI requires.
+   */
+  async findAllCategoriesAdmin(
+    query: AdminBlogCategoryListQueryDto = {},
+  ): Promise<AdminCategoriesResponse> {
+    const params: FindAllAdminCategoriesParams = {
+      page: query.page,
+      limit: query.limit,
+      search: query.search,
+    };
+    const { categories, total } = await this.blogRepository.findAllCategoriesAdmin(params);
+
+    return {
+      data: categories.map((c) => BlogCategoryEntity.fromPrisma(c)),
+      meta: this.buildOptionalMeta(total, query.page, query.limit),
+    };
   }
 
   async findCategoryById(id: string): Promise<BlogCategoryEntity> {
@@ -347,7 +384,7 @@ export class BlogService {
   async reorderCategories(
     dto: ReorderBlogCategoriesDto,
     actorId?: string,
-  ): Promise<BlogCategoryEntity[]> {
+  ): Promise<AdminCategoriesResponse> {
     let categories;
     try {
       categories = await this.blogRepository.reorderCategories(dto.orderedIds);
@@ -362,7 +399,15 @@ export class BlogService {
       'Blog categories reordered',
     );
 
-    return categories.map((category) => BlogCategoryEntity.fromPrisma(category));
+    // The reorder always answers with the COMPLETE list, so its `meta` is the unpaginated
+    // one. Shape parity with `findAllCategoriesAdmin` is load-bearing: the admin panel
+    // writes this response straight into the list query's cache (`useReorderLifecycle` →
+    // `setQueryData`), and an envelope missing `meta` would blank the row counter the
+    // moment someone drags a row.
+    return {
+      data: categories.map((category) => BlogCategoryEntity.fromPrisma(category)),
+      meta: this.buildOptionalMeta(categories.length),
+    };
   }
 
   async deleteCategory(id: string): Promise<void> {
@@ -397,6 +442,24 @@ export class BlogService {
 
   private buildMeta(total: number, page: number, limit: number): PaginationMeta {
     return { total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  /**
+   * Metadata for a list whose pagination is OPT-IN (TASK-357). With no `limit` the
+   * whole list came back in one response, so it is reported as a single page of size
+   * `total` rather than inventing a page size the caller never asked for. An EMPTY
+   * unpaginated list makes that size 0, so `totalPages` is short-circuited instead of
+   * dividing by zero.
+   */
+  private buildOptionalMeta(total: number, page?: number, limit?: number): PaginationMeta {
+    const effectiveLimit = limit ?? total;
+
+    return {
+      total,
+      page: page ?? 1,
+      limit: effectiveLimit,
+      totalPages: effectiveLimit === 0 ? 0 : Math.ceil(total / effectiveLimit),
+    };
   }
 
   private parseScheduledAt(value?: string | null): Date | null {

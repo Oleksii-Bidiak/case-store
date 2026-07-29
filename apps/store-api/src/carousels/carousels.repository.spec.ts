@@ -23,6 +23,7 @@ const transactionMock = jest.fn();
 const prismaMock = {
   carousel: {
     findMany: jest.fn(),
+    count: jest.fn(),
     findUnique: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
@@ -91,7 +92,7 @@ describe('CarouselRepository', () => {
 
       const result = await repository.findAllAdmin();
 
-      expect(result).toEqual([mockCarousel]);
+      expect(result).toEqual({ carousels: [mockCarousel], total: 1 });
       expect(prismaMock.carousel.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: {} }),
       );
@@ -122,6 +123,43 @@ describe('CarouselRepository', () => {
             status: PublishStatus.PUBLISHED,
           },
         }),
+      );
+    });
+
+    it('matches the title case-insensitively when searching', async () => {
+      prismaMock.carousel.findMany.mockResolvedValue([]);
+
+      await repository.findAllAdmin({ search: 'НоВиН' });
+
+      expect(prismaMock.carousel.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { title: { contains: 'НоВиН', mode: 'insensitive' } },
+        }),
+      );
+    });
+
+    // TASK-357: absence of page/limit is the "return everything" signal — no skip/take, and
+    // no second round-trip just to count rows we already hold.
+    it('skips both pagination and the count query when page and limit are absent', async () => {
+      prismaMock.carousel.findMany.mockResolvedValue([mockCarousel]);
+
+      await repository.findAllAdmin();
+
+      expect(prismaMock.carousel.findMany).toHaveBeenCalledWith(
+        expect.not.objectContaining({ take: expect.anything() }),
+      );
+      expect(prismaMock.carousel.count).not.toHaveBeenCalled();
+    });
+
+    it('paginates and counts once either page or limit is present', async () => {
+      prismaMock.carousel.findMany.mockResolvedValue([mockCarousel]);
+      prismaMock.carousel.count.mockResolvedValue(9);
+
+      const result = await repository.findAllAdmin({ page: 2, limit: 4 });
+
+      expect(result).toEqual({ carousels: [mockCarousel], total: 9 });
+      expect(prismaMock.carousel.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 4, take: 4 }),
       );
     });
   });

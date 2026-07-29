@@ -45,7 +45,8 @@ export class AuditController {
   /**
    * GET /api/admin/audit-log
    *
-   * Newest first, paginated, filterable by actor / action / entity / time range.
+   * Newest first, paginated, filterable by actor / action / entity / time range
+   * and sortable by time, actor or action.
    */
   @Get()
   @ApiBearerAuth('access-token')
@@ -69,6 +70,8 @@ export class AuditController {
       entityId: query.entityId,
       from: query.from,
       to: query.to,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
     });
   }
 }

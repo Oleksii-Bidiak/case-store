@@ -18,6 +18,24 @@ export interface SlugRenameInput {
 }
 
 /**
+ * Raised by {@link ProductRepository.setActiveMany} when the batch names a
+ * product that does not exist (or is soft-deleted), so the transaction rolls
+ * back instead of half-applying.
+ *
+ * A domain error rather than a `NotFoundException`: repositories do not speak
+ * HTTP in this codebase. `ProductService` maps it — the same split the category
+ * module makes with `CategoryNotFoundError` (`category.errors.ts`), kept local
+ * here because it is the product module's only one and a whole error hierarchy
+ * for it would be ceremony.
+ */
+export class ProductsNotFoundError extends Error {
+  constructor(readonly missingIds: string[]) {
+    super(`Unknown product id(s): ${missingIds.join(', ')}`);
+    this.name = 'ProductsNotFoundError';
+  }
+}
+
+/**
  * Parameters for paginated product queries with filtering.
  */
 export interface FindAllParams {
@@ -586,7 +604,15 @@ export class ProductRepository {
         where,
         skip,
         take: limit,
-        orderBy: { [effectiveSortField]: sortOrder },
+        // `id` is always the last key. None of the sortable columns is unique:
+        // an import writes many products with the same `createdAt`, a price list
+        // repeats prices, and `stock` repeats constantly. Postgres is free to
+        // return tied rows in a different order on every query, so paginating
+        // over an unstable ordering makes a product appear on two pages and
+        // another on none — with the totals still adding up, so nothing looks
+        // wrong until someone counts. Same defect this wave fixed in
+        // `user.repository.ts` (plan 168 §10.4).
+        orderBy: [{ [effectiveSortField]: sortOrder }, { id: 'asc' }],
         include: { brand: { select: BRAND_SUMMARY_SELECT } },
       }),
       this.prisma.product.count({ where }),
@@ -1031,6 +1057,46 @@ export class ProductRepository {
     return this.prisma.product.update({
       where: { id },
       data: { isActive: true },
+    });
+  }
+
+  /**
+   * Bulk set `isActive` on exactly the named products (TASK-355).
+   *
+   * All-or-nothing, in one transaction: an id that does not exist — or that
+   * points at a soft-deleted row, which `findMany` here excludes the same way
+   * every other read does — aborts the whole batch rather than silently applying
+   * the rest. A partial write would leave the operator's selection and the store
+   * disagreeing with no indication of which half landed.
+   *
+   * Returns the updated rows (id, slug, isActive) because the service needs the
+   * slug to evict each product's detail cache entry and the id to re-sync the
+   * search index — the same side effects the per-row toggle performs.
+   */
+  async setActiveMany(
+    ids: string[],
+    isActive: boolean,
+  ): Promise<Array<Pick<Product, 'id' | 'slug' | 'isActive'>>> {
+    return this.prisma.$transaction(async (tx) => {
+      const found = await tx.product.findMany({
+        where: { id: { in: ids }, deletedAt: null },
+        select: { id: true },
+      });
+
+      if (found.length !== ids.length) {
+        const known = new Set(found.map((row) => row.id));
+        throw new ProductsNotFoundError(ids.filter((id) => !known.has(id)));
+      }
+
+      await tx.product.updateMany({
+        where: { id: { in: ids }, deletedAt: null },
+        data: { isActive },
+      });
+
+      return tx.product.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, slug: true, isActive: true },
+      });
     });
   }
 

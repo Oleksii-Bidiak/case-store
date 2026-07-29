@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -9,9 +9,8 @@ import {
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { FaqService } from './faq.service';
-import { CreateFaqItemDto, UpdateFaqItemDto } from './dto';
+import { CreateFaqItemDto, UpdateFaqItemDto, AdminFaqListQueryDto } from './dto';
 import { FaqItemEntity } from './entities';
-import { FaqListResponse } from './faq.controller';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /**
@@ -20,6 +19,38 @@ import { PermissionGuard, RequirePermission } from '../auth/permissions';
 export class FaqItemResponseEnvelope {
   @ApiProperty({ type: FaqItemEntity })
   data!: FaqItemEntity;
+}
+
+/**
+ * Pagination metadata for the admin FAQ list (TASK-357).
+ */
+class AdminFaqPaginationMeta {
+  @ApiProperty({ description: 'Total number of items matching the filters', example: 8 })
+  total!: number;
+
+  @ApiProperty({ description: 'Current page (1-based)', example: 1 })
+  page!: number;
+
+  @ApiProperty({ description: 'Items per page — equals `total` for an unpaginated read' })
+  limit!: number;
+
+  @ApiProperty({ description: 'Total number of pages', example: 1 })
+  totalPages!: number;
+}
+
+/**
+ * Response envelope for the admin FAQ list.
+ *
+ * Its own class rather than the public `FaqListResponse`: the admin list carries
+ * `meta`, the public one must not — reusing one class for both would have made
+ * the generated OpenAPI schema promise the storefront a field it never receives.
+ */
+export class AdminFaqListResponse {
+  @ApiProperty({ type: [FaqItemEntity], description: 'FAQ items (any status)' })
+  data!: FaqItemEntity[];
+
+  @ApiProperty({ type: AdminFaqPaginationMeta })
+  meta!: AdminFaqPaginationMeta;
 }
 
 /**
@@ -50,7 +81,13 @@ export class DeleteFaqResponseEnvelope {
  * Every write triggers a storefront `faq` revalidation via the service.
  */
 @ApiTags('FAQ')
-@ApiExtraModels(FaqItemEntity, FaqItemResponseEnvelope, FaqListResponse, DeleteFaqResponseEnvelope)
+@ApiExtraModels(
+  FaqItemEntity,
+  FaqItemResponseEnvelope,
+  AdminFaqListResponse,
+  AdminFaqPaginationMeta,
+  DeleteFaqResponseEnvelope,
+)
 @Controller('admin/faq')
 @UseGuards(PermissionGuard)
 @RequirePermission('faq:write')
@@ -58,15 +95,22 @@ export class AdminFaqController {
   constructor(private readonly faqService: FaqService) {}
 
   /**
-   * GET /api/admin/faq — all items (any status). Admin-only.
+   * GET /api/admin/faq — all items (any status), with optional search and
+   * pagination. Omitting `page`/`limit` returns the complete list. Admin-only.
    */
   @Get()
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'List all FAQ items including inactive (admin)' })
-  @ApiResponse({ status: 200, description: 'All FAQ items', type: FaqListResponse })
+  @ApiOperation({
+    summary: 'List all FAQ items including inactive, optional search + pagination (admin)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'FAQ items (complete list when page/limit are omitted)',
+    type: AdminFaqListResponse,
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  async findAll(): Promise<FaqListResponse> {
-    return this.faqService.findAllAdmin();
+  async findAll(@Query() query: AdminFaqListQueryDto): Promise<AdminFaqListResponse> {
+    return this.faqService.findAllAdmin(query);
   }
 
   /**

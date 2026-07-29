@@ -8,7 +8,7 @@ import { ContactMessageStatus } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
-import { ContactRepository } from '../src/contact/contact.repository';
+import { ContactMessagesNotFoundError, ContactRepository } from '../src/contact/contact.repository';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
@@ -55,6 +55,7 @@ describe('Contact admin inbox (e2e)', () => {
     findAll: jest.fn(),
     findById: jest.fn(),
     update: jest.fn(),
+    setStatusMany: jest.fn(),
     countByStatus: jest.fn(),
     findMatchingUserId: jest.fn(),
     findMatchingUserIds: jest.fn(),
@@ -194,6 +195,45 @@ describe('Contact admin inbox (e2e)', () => {
         .expect(400);
     });
 
+    it('passes ?sortBy/?sortOrder through to the repository (TASK-354)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      contactRepositoryMock.findAll.mockResolvedValue({ messages: [], total: 0 });
+      contactRepositoryMock.countByStatus.mockResolvedValue(0);
+      contactRepositoryMock.findMatchingUserIds.mockResolvedValue(new Map());
+
+      await request(app.getHttpServer())
+        .get('/api/contact/admin')
+        .query({ sortBy: 'name', sortOrder: 'asc' })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(contactRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ sortBy: 'name', sortOrder: 'asc' }),
+      );
+    });
+
+    it('rejects an unknown sortBy with 400 rather than falling back or 500ing', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .get('/api/contact/admin')
+        .query({ sortBy: 'adminNote' })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+
+      expect(contactRepositoryMock.findAll).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown sortOrder with 400', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .get('/api/contact/admin')
+        .query({ sortOrder: 'sideways' })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+    });
+
     it('populates matchedUserId per row from the batched email match', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
       contactRepositoryMock.findAll.mockResolvedValue({
@@ -219,6 +259,109 @@ describe('Contact admin inbox (e2e)', () => {
       expect(response.body.data).toHaveLength(2);
       expect(response.body.data[0].matchedUserId).toBe('user-uuid-1');
       expect(response.body.data[1].matchedUserId).toBeNull();
+    });
+  });
+
+  // ─── Bulk status change (TASK-354) ────────────────────────────────────────────
+
+  describe('PATCH /api/contact/admin/status', () => {
+    const url = '/api/contact/admin/status';
+    const ids = ['550e8400-e29b-41d4-a716-446655440000', '550e8400-e29b-41d4-a716-446655440001'];
+
+    it('is not shadowed by GET/PATCH :id — status reaches the bulk handler', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      contactRepositoryMock.setStatusMany.mockResolvedValue(2);
+
+      const response = await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids, status: 'READ' })
+        .expect(200);
+
+      expect(response.body.data.updatedCount).toBe(2);
+      expect(contactRepositoryMock.setStatusMany).toHaveBeenCalledWith(
+        ids,
+        ContactMessageStatus.READ,
+      );
+      // The literal "status" never reached the per-row handler as an id.
+      expect(contactRepositoryMock.findById).not.toHaveBeenCalled();
+      expect(contactRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it('returns 401 without a token', async () => {
+      await request(app.getHttpServer()).patch(url).send({ ids, status: 'READ' }).expect(401);
+    });
+
+    it('returns 403 for a customer token', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids, status: 'READ' })
+        .expect(403);
+    });
+
+    it('rejects an empty selection with 400', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: [], status: 'READ' })
+        .expect(400);
+
+      expect(contactRepositoryMock.setStatusMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-UUID id with 400', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: ['not-a-uuid'], status: 'READ' })
+        .expect(400);
+
+      expect(contactRepositoryMock.setStatusMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown status with 400', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids, status: 'BOGUS' })
+        .expect(400);
+    });
+
+    it('rejects an unexpected body field with 400', async () => {
+      // The global pipe runs `forbidNonWhitelisted`. `adminNote` is deliberately
+      // absent from the bulk DTO, and this is what proves a caller cannot smuggle
+      // one sentence onto every selected conversation.
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids, status: 'READ', adminNote: 'bulk note' })
+        .expect(400);
+
+      expect(contactRepositoryMock.setStatusMany).not.toHaveBeenCalled();
+    });
+
+    it('404s on an unknown id — the batch is all-or-nothing', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      contactRepositoryMock.setStatusMany.mockRejectedValue(
+        new ContactMessagesNotFoundError([ids[1]]),
+      );
+
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids, status: 'READ' })
+        .expect(404);
     });
   });
 

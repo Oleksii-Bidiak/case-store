@@ -8,7 +8,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
-import { ProductRepository } from '../src/product/product.repository';
+import { ProductRepository, ProductsNotFoundError } from '../src/product/product.repository';
 import { CategoryRepository } from '../src/category/category.repository';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
@@ -68,6 +68,7 @@ describe('ProductController (e2e)', () => {
     update: jest.fn(),
     deactivate: jest.fn(),
     activate: jest.fn(),
+    setActiveMany: jest.fn(),
     // TASK-254: adminFindAll/findById/preview enrich with the derived reserved
     // aggregate; default to an empty map (no reservations) for these mocked reads.
     getReservedQtyByProductId: jest.fn().mockResolvedValue(new Map<string, number>()),
@@ -653,6 +654,115 @@ describe('ProductController (e2e)', () => {
   });
 
   // ─── PATCH /api/products/:id/deactivate (admin) ─────────────────────────────
+
+  // ─── PATCH /api/products/status (bulk, admin, TASK-355) ─────────────────────
+
+  describe('PATCH /api/products/status', () => {
+    const bulkUrl = '/api/products/status';
+
+    it('is not shadowed by the :id routes — `status` reaches the bulk handler', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.setActiveMany.mockResolvedValue([
+        { id: '11111111-1111-4111-8111-111111111111', slug: 'a', isActive: false },
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .patch(bulkUrl)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: ['11111111-1111-4111-8111-111111111111'], isActive: false })
+        .expect(200);
+
+      expect(response.body.data.updatedCount).toBe(1);
+      expect(productRepositoryMock.setActiveMany).toHaveBeenCalled();
+    });
+
+    it('returns 401 without a token', async () => {
+      await request(app.getHttpServer())
+        .patch(bulkUrl)
+        .send({ ids: ['11111111-1111-4111-8111-111111111111'], isActive: true })
+        .expect(401);
+    });
+
+    it('returns 403 for a customer', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .patch(bulkUrl)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: ['11111111-1111-4111-8111-111111111111'], isActive: true })
+        .expect(403);
+    });
+
+    it('rejects an empty id list rather than writing nothing silently', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch(bulkUrl)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: [], isActive: true })
+        .expect(400);
+
+      expect(productRepositoryMock.setActiveMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects a repeated id instead of 404ing on a product that exists', async () => {
+      // Prisma's `id: { in: }` collapses duplicates, so the repository's
+      // found-vs-asked count check would read `[X, X]` as one missing id and
+      // abort the whole batch with a 404 that names no ids at all.
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      const id = '11111111-1111-4111-8111-111111111111';
+
+      await request(app.getHttpServer())
+        .patch(bulkUrl)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: [id, id], isActive: true })
+        .expect(400);
+
+      expect(productRepositoryMock.setActiveMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-UUID ids', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch(bulkUrl)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: ['not-a-uuid'], isActive: true })
+        .expect(400);
+
+      expect(productRepositoryMock.setActiveMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown id with 404 — the batch is all-or-nothing', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.setActiveMany.mockRejectedValue(
+        new ProductsNotFoundError(['22222222-2222-4222-8222-222222222222']),
+      );
+
+      await request(app.getHttpServer())
+        .patch(bulkUrl)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          ids: ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'],
+          isActive: false,
+        })
+        .expect(404);
+    });
+
+    it('rejects an unexpected extra field (global forbidNonWhitelisted)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch(bulkUrl)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          ids: ['11111111-1111-4111-8111-111111111111'],
+          isActive: true,
+          cascade: true,
+        })
+        .expect(400);
+    });
+  });
 
   describe('PATCH /api/products/:id/deactivate', () => {
     it('should return 401 without auth token', async () => {

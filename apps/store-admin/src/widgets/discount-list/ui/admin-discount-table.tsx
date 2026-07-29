@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   useAdminListDiscounts,
   type DiscountEntity,
@@ -11,13 +11,18 @@ import { DiscountStatusToggle } from "@/features/discount-status-toggle";
 import {
   Button,
   Input,
+  LiveAnnouncer,
+  SortableColumnHeader,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  TableToolbar,
 } from "@/shared/ui";
+import { useUrlParams } from "@/shared/lib/use-url-params";
+import { useTableSort } from "@/shared/lib/use-table-sort";
 import { dict } from "@/shared/config";
 import { AdminDiscountTableSkeleton } from "./admin-discount-table-skeleton";
 
@@ -37,14 +42,34 @@ function formatExpiry(expiresAt: string | null): string {
 }
 
 /**
- * Paginated, searchable discount table for the admin panel.
+ * Paginated, searchable, sortable discount table for the admin panel.
  *
- * Search (by code) and page state live in the URL (`?search=`, `?page=`). Shows
- * the redeemed count vs. the global cap and a one-click deactivate action.
+ * Search, page and sort state all live in the URL (`?search=`, `?page=`,
+ * `?sortBy=&sortOrder=`), so a view survives a refresh and can be pasted to a
+ * colleague.
+ *
+ * The sort is SERVER-side and was already implemented: `DiscountListQueryDto`
+ * has accepted `sortBy`/`sortOrder` since TASK-147, but this table hard-coded
+ * `createdAt desc` and never offered the control (TASK-355). Only the four keys
+ * the DTO's `@IsIn` allows are wired — `code`, `redeemedCount`, `expiresAt` are
+ * visible columns; `createdAt` stays the default and has no column of its own.
+ *
+ * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
+ * calls `useAnnouncer()` to confirm a finished refresh, and a hook called in the
+ * same component that renders the provider would read the default no-op context.
+ * TASK-355 shipped the toolbar here without a provider anywhere in the tree, so
+ * the confirmation was dropped silently: the refetch still ran, nothing on screen
+ * differed, and only a screen-reader user was left without feedback (TASK-357).
  */
 export function AdminDiscountTable() {
-  const router = useRouter();
-  const pathname = usePathname();
+  return (
+    <LiveAnnouncer>
+      <AdminDiscountView />
+    </LiveAnnouncer>
+  );
+}
+
+function AdminDiscountView() {
   const searchParams = useSearchParams();
 
   const searchParam = searchParams.get("search") ?? "";
@@ -52,29 +77,24 @@ export function AdminDiscountTable() {
 
   const [searchInput, setSearchInput] = useState(searchParam);
 
-  const { data, isLoading, isError } = useAdminListDiscounts({
-    page,
-    limit: PAGE_SIZE,
-    search: searchParam || undefined,
-    sortBy: "createdAt",
-    sortOrder: "desc",
-  });
+  const updateParams = useUrlParams();
+
+  const { sortBy, sortOrder, onSort } = useTableSort(
+    searchParams,
+    updateParams,
+  );
+
+  const { data, isLoading, isError, isFetching, refetch } =
+    useAdminListDiscounts({
+      page,
+      limit: PAGE_SIZE,
+      search: searchParam || undefined,
+      sortBy,
+      sortOrder,
+    });
 
   const discounts = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
-
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.push(queryString ? `${pathname}?${queryString}` : pathname);
-  };
 
   const handleSearchSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -83,19 +103,30 @@ export function AdminDiscountTable() {
 
   return (
     <div className="flex flex-col gap-4">
-      <form onSubmit={handleSearchSubmit} className="flex gap-2" role="search">
-        <Input
-          type="search"
-          placeholder={dict.discounts.searchPlaceholder}
-          value={searchInput}
-          onChange={(event) => setSearchInput(event.target.value)}
-          className="max-w-xs"
-          aria-label={dict.discounts.searchAria}
-        />
-        <Button type="submit" variant="outline">
-          {dict.common.search}
-        </Button>
-      </form>
+      <TableToolbar
+        className="mb-0"
+        onRefresh={() => void refetch()}
+        isRefreshing={isFetching}
+        search={
+          <form
+            onSubmit={handleSearchSubmit}
+            className="flex gap-2"
+            role="search"
+          >
+            <Input
+              type="search"
+              placeholder={dict.discounts.searchPlaceholder}
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              className="max-w-xs"
+              aria-label={dict.discounts.searchAria}
+            />
+            <Button type="submit" variant="outline">
+              {dict.common.search}
+            </Button>
+          </form>
+        }
+      />
 
       {isLoading ? (
         <AdminDiscountTableSkeleton />
@@ -114,11 +145,30 @@ export function AdminDiscountTable() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{dict.discounts.colCode}</TableHead>
+                <SortableColumnHeader
+                  field="code"
+                  label={dict.discounts.colCode}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
                 <TableHead hideOnMobile>{dict.discounts.colType}</TableHead>
                 <TableHead>{dict.discounts.colValue}</TableHead>
-                <TableHead hideOnMobile>{dict.discounts.colRedeemed}</TableHead>
-                <TableHead>{dict.discounts.colExpires}</TableHead>
+                <SortableColumnHeader
+                  field="redeemedCount"
+                  label={dict.discounts.colRedeemed}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                  hideOnMobile
+                />
+                <SortableColumnHeader
+                  field="expiresAt"
+                  label={dict.discounts.colExpires}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
                 <TableHead>{dict.discounts.colStatus}</TableHead>
                 <TableHead className="text-right">
                   {dict.common.actions}

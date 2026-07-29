@@ -1,5 +1,10 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { AdminOrderTable } from "./admin-order-table";
@@ -222,6 +227,44 @@ describe("AdminOrderTable — column sorting (TASK-147)", () => {
     expect(mockReplace).toHaveBeenCalledWith(
       expect.stringContaining("sortBy=createdAt"),
     );
+  });
+});
+
+describe("AdminOrderTable — toolbar refresh (TASK-354)", () => {
+  it("refetches the queue when Оновити is pressed", async () => {
+    let calls = 0;
+    server.use(
+      http.get("*/api/admin/orders", () => {
+        calls += 1;
+        return HttpResponse.json({
+          data: [makeOrderRow(null)],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        });
+      }),
+    );
+
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText("user-uui…");
+    expect(calls).toBe(1);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.table.refreshAria }),
+    );
+
+    await waitFor(() => expect(calls).toBe(2));
+  });
+
+  it("keeps the lifecycle tabs working from inside the toolbar", async () => {
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.orders.empty);
+
+    // The tabs moved into the toolbar's `filters` slot; the deep-link contract
+    // (TASK-250) is unchanged, so the same click writes the same URL.
+    await userEvent.click(
+      screen.getByRole("tab", { name: dict.orders.tabShipped }),
+    );
+
+    expect(mockReplace).toHaveBeenCalledWith("/orders?status=SHIPPED");
   });
 });
 

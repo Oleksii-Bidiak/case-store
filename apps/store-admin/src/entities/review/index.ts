@@ -7,6 +7,8 @@ export {
   useAdminReviewControllerList,
   useAdminReviewControllerApprove,
   useAdminReviewControllerReject,
+  // Bulk approve / reject over the on-screen selection (TASK-356)
+  useAdminReviewControllerModerateMany,
   getAdminReviewControllerListQueryKey,
   AdminReviewControllerListStatus,
 } from "@/shared/api";

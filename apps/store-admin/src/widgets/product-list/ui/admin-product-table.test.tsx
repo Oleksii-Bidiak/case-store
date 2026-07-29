@@ -1,5 +1,10 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { AdminProductTable } from "./admin-product-table";
@@ -129,5 +134,30 @@ describe("AdminProductTable — mobile card layout (TASK-258)", () => {
     expect(
       container.querySelector(`[data-label="${dict.common.actions}"]`),
     ).toBeInTheDocument();
+  });
+
+  it("announces the selection into the live region (TASK-292)", async () => {
+    const user = userEvent.setup();
+    stubEndpoints();
+
+    renderWithProviders(<AdminProductTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    // Regression guard. `useRowSelection` and `useProductBulkStatus` both call
+    // `useAnnouncer()`, so they have to run BELOW the `<LiveAnnouncer>`. A hook
+    // called in the very component that renders the provider silently gets the
+    // default no-op context, and every announcement disappears with nothing on
+    // screen looking wrong.
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: dict.products.bulk.selectRow("iPhone 15 Pro Case"),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
+        dict.common.table.announceSelected("iPhone 15 Pro Case", 1),
+      ),
+    );
   });
 });

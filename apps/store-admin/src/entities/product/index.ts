@@ -12,6 +12,8 @@ export {
   useProductControllerUpdate,
   useProductControllerDeactivate,
   useProductControllerActivate,
+  // Bulk activate / deactivate over the on-screen selection (TASK-355)
+  useProductControllerSetStatusMany,
   useProductControllerPreviewProductBySlug,
   // Structured specs (TASK-191)
   useUpdateProductSpecs,

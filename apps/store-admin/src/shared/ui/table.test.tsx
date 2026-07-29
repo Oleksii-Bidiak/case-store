@@ -1,4 +1,4 @@
-import { render, screen, within } from "@/shared/test/render";
+import { render, screen, within, fireEvent } from "@/shared/test/render";
 import {
   Table,
   TableBody,
@@ -6,6 +6,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableSelectCell,
+  TableSelectHead,
 } from "./table";
 import { SortableColumnHeader } from "./sortable-column-header";
 
@@ -358,5 +360,146 @@ describe("SortableColumnHeader hideOnMobile pass-through", () => {
     );
     const head = container.querySelector('[data-slot="table-head"]');
     expect(head?.className).not.toContain("hidden");
+  });
+});
+
+/**
+ * Row-selection column (TASK-353).
+ *
+ * The risk this guards is specific: card mode (TASK-258) turns every cell into a
+ * stacked, captioned line and `TableRow` swaps its ARIA role on a live media
+ * query (TASK-276). A checkbox column added naively re-enters exactly that
+ * plumbing. These tests hold the two properties that must not regress — the
+ * group semantics survive, and the checkbox does not become a captioned field.
+ */
+describe("Table row selection", () => {
+  const onSelect = jest.fn();
+  beforeEach(() => onSelect.mockClear());
+
+  const selectionTable = (layout: "scroll" | "card") => (
+    <Table layout={layout}>
+      <TableHeader>
+        <TableRow>
+          <TableSelectHead
+            checked="indeterminate"
+            onCheckedChange={jest.fn()}
+            label="Вибрати всі рядки на сторінці"
+          />
+          <TableHead>Назва</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        <TableRow rowLabel="iPhone 15 Pro" data-state="selected">
+          <TableSelectCell
+            checked
+            onSelect={onSelect}
+            label={"Вибрати „iPhone 15 Pro“"}
+          />
+          <TableCell label="Назва">iPhone 15 Pro</TableCell>
+        </TableRow>
+      </TableBody>
+    </Table>
+  );
+
+  it("names the row, not the column, on the per-row checkbox", () => {
+    setCardViewport(false);
+    render(selectionTable("scroll"));
+    expect(
+      screen.getByRole("checkbox", { name: "Вибрати „iPhone 15 Pro“" }),
+    ).toBeInTheDocument();
+  });
+
+  it("exposes the header checkbox as mixed while a partial selection is held", () => {
+    setCardViewport(false);
+    render(selectionTable("scroll"));
+    const header = screen.getByRole("checkbox", {
+      name: "Вибрати всі рядки на сторінці",
+    });
+    // Radix maps "indeterminate" to aria-checked="mixed" — the distinction the
+    // dash icon makes visible.
+    expect(header).toHaveAttribute("aria-checked", "mixed");
+  });
+
+  it("keeps the card row's group semantics with a select cell present", () => {
+    setCardViewport(true);
+    const { container } = render(selectionTable("card"));
+    const row = container.querySelector(
+      '[data-slot="table-body"] [data-slot="table-row"]',
+    ) as HTMLElement;
+    expect(row).toHaveAttribute("role", "group");
+    expect(row).toHaveAttribute("aria-label", "iPhone 15 Pro");
+  });
+
+  it("lifts the checkbox out of the card stack instead of captioning it", () => {
+    setCardViewport(true);
+    const { container } = render(selectionTable("card"));
+    const cell = container.querySelector(
+      '[data-slot="table-select-cell"]',
+    ) as HTMLElement;
+
+    // Pinned to the card corner…
+    expect(cell).toHaveClass("max-md:absolute");
+    // …and never dressed as a stacked field: no data-label, so no
+    // `before:content-[attr(data-label)]` caption and no sr-only prefix.
+    expect(cell).not.toHaveAttribute("data-label");
+    expect(cell.className).not.toContain("max-md:flex");
+    expect(within(cell).queryByText(/:/)).not.toBeInTheDocument();
+  });
+
+  it("gives the card row a positioning context for the pinned checkbox", () => {
+    setCardViewport(true);
+    const { container } = render(selectionTable("card"));
+    const row = container.querySelector(
+      '[data-slot="table-body"] [data-slot="table-row"]',
+    ) as HTMLElement;
+    expect(row).toHaveClass("max-md:relative");
+  });
+
+  it("does not pin the checkbox in scroll layout", () => {
+    setCardViewport(false);
+    const { container } = render(selectionTable("scroll"));
+    const cell = container.querySelector(
+      '[data-slot="table-select-cell"]',
+    ) as HTMLElement;
+    expect(cell.className).not.toContain("absolute");
+  });
+
+  describe("modifier reporting", () => {
+    it("reports a plain activation as shiftKey: false", () => {
+      setCardViewport(false);
+      render(selectionTable("scroll"));
+
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Вибрати „iPhone 15 Pro“" }),
+      );
+
+      expect(onSelect).toHaveBeenCalledWith({ shiftKey: false });
+    });
+
+    it("reports Shift+click so the table can extend a range", () => {
+      setCardViewport(false);
+      render(selectionTable("scroll"));
+
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Вибрати „iPhone 15 Pro“" }),
+        { shiftKey: true },
+      );
+
+      expect(onSelect).toHaveBeenCalledWith({ shiftKey: true });
+    });
+
+    it("reports Shift+Space too — one handler covers mouse and keyboard", () => {
+      setCardViewport(false);
+      render(selectionTable("scroll"));
+
+      // A <button> raises `click` for Space, carrying the modifier state, which
+      // is why the cell listens for click rather than keydown.
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Вибрати „iPhone 15 Pro“" }),
+        { shiftKey: true, detail: 0 },
+      );
+
+      expect(onSelect).toHaveBeenCalledWith({ shiftKey: true });
+    });
   });
 });

@@ -1,5 +1,6 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
-import { AuditLogView } from "@/widgets";
+import { AuditLogSkeleton, AuditLogView } from "@/widgets";
 import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
@@ -18,7 +19,13 @@ export default function AuditLogPage() {
         </p>
       </div>
 
-      <AuditLogView />
+      {/* TASK-356: the view reads its filters, page and sort from the query
+          string, and `useSearchParams` opts a client component out of static
+          prerendering unless it sits behind a boundary. Same shape as the users
+          and subscribers pages. */}
+      <Suspense fallback={<AuditLogSkeleton />}>
+        <AuditLogView />
+      </Suspense>
     </div>
   );
 }

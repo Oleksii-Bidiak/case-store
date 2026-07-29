@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ContactMessage, ContactMessageStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
-import { ContactRepository } from './contact.repository';
+import { ContactMessagesNotFoundError, ContactRepository } from './contact.repository';
+import { CONTACT_MESSAGE_SORT_FIELDS } from './dto';
 
 const now = new Date('2026-07-05T10:00:00.000Z');
 
@@ -26,13 +27,20 @@ const prismaMock = {
     findMany: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
     count: jest.fn(),
   },
   user: {
     findFirst: jest.fn(),
     findMany: jest.fn(),
   },
+  // The bulk path uses the CALLBACK form of $transaction — the mock hands the
+  // same client back, so a `tx.` call inside is the same spy as a `prisma.` one.
+  $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prismaMock)),
 };
+
+const orderByOfLastFindMany = (): unknown =>
+  (prismaMock.contactMessage.findMany.mock.calls.at(-1)?.[0] as { orderBy: unknown }).orderBy;
 
 describe('ContactRepository', () => {
   let repository: ContactRepository;
@@ -86,7 +94,7 @@ describe('ContactRepository', () => {
           where: {},
           skip: 0,
           take: 20,
-          orderBy: { createdAt: 'desc' },
+          orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
         }),
       );
     });
@@ -106,6 +114,41 @@ describe('ContactRepository', () => {
       );
       expect(prismaMock.contactMessage.count).toHaveBeenCalledWith({
         where: { status: ContactMessageStatus.ARCHIVED },
+      });
+    });
+
+    describe('sorting (TASK-354)', () => {
+      beforeEach(() => {
+        prismaMock.contactMessage.findMany.mockResolvedValue([]);
+        prismaMock.contactMessage.count.mockResolvedValue(0);
+      });
+
+      it('sorts by the requested column and direction', async () => {
+        await repository.findAll({ page: 1, limit: 20, sortBy: 'name', sortOrder: 'asc' });
+
+        expect(orderByOfLastFindMany()).toEqual([{ name: 'asc' }, { id: 'asc' }]);
+      });
+
+      it('always appends id as the final tiebreaker so pagination is stable', async () => {
+        // Without it, ties on a non-unique column are ordered arbitrarily per
+        // query and a message can appear on two pages while another appears on
+        // none — which reads as a message vanishing from the inbox.
+        for (const field of CONTACT_MESSAGE_SORT_FIELDS) {
+          await repository.findAll({ page: 1, limit: 20, sortBy: field, sortOrder: 'desc' });
+          expect(orderByOfLastFindMany()).toEqual([expect.anything(), { id: 'asc' }]);
+        }
+      });
+
+      it('falls back to newest-first for an unrecognised column', async () => {
+        // Defence in depth behind the DTO's `@IsIn` — an internal caller that
+        // hands over rubbish gets the previous behaviour, not a Prisma error.
+        await repository.findAll({
+          page: 1,
+          limit: 20,
+          sortBy: 'adminNote' as never,
+        });
+
+        expect(orderByOfLastFindMany()).toEqual([{ createdAt: 'desc' }, { id: 'asc' }]);
       });
     });
   });
@@ -163,6 +206,42 @@ describe('ContactRepository', () => {
         where: { id: 'msg-uuid-1' },
         data: {},
       });
+    });
+  });
+
+  describe('setStatusMany (TASK-354)', () => {
+    const ids = ['msg-uuid-1', 'msg-uuid-2'];
+
+    it('writes the status onto every named message inside one transaction', async () => {
+      prismaMock.contactMessage.findMany.mockResolvedValue([
+        { id: 'msg-uuid-1' },
+        { id: 'msg-uuid-2' },
+      ]);
+      prismaMock.contactMessage.updateMany.mockResolvedValue({ count: 2 });
+
+      const result = await repository.setStatusMany(ids, ContactMessageStatus.READ);
+
+      expect(result).toBe(2);
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.contactMessage.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ids } },
+        data: { status: ContactMessageStatus.READ },
+      });
+    });
+
+    it('aborts the whole batch when an id is unknown, naming the missing ones', async () => {
+      // A colleague archiving the same message a second earlier is exactly this
+      // case on a shared inbox — nothing is written, so the operator's selection
+      // and the inbox cannot end up half-agreeing.
+      prismaMock.contactMessage.findMany.mockResolvedValue([{ id: 'msg-uuid-1' }]);
+
+      await expect(repository.setStatusMany(ids, ContactMessageStatus.READ)).rejects.toThrow(
+        ContactMessagesNotFoundError,
+      );
+      await expect(repository.setStatusMany(ids, ContactMessageStatus.READ)).rejects.toThrow(
+        'msg-uuid-2',
+      );
+      expect(prismaMock.contactMessage.updateMany).not.toHaveBeenCalled();
     });
   });
 

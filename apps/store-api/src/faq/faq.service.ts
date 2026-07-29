@@ -1,7 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { FaqRepository, CreateFaqItemInput, UpdateFaqItemInput } from './faq.repository';
+import {
+  FaqRepository,
+  CreateFaqItemInput,
+  UpdateFaqItemInput,
+  FindAllAdminParams,
+} from './faq.repository';
 import { FaqItemEntity } from './entities';
-import { CreateFaqItemDto, UpdateFaqItemDto } from './dto';
+import { CreateFaqItemDto, UpdateFaqItemDto, AdminFaqListQueryDto } from './dto';
 import { RevalidationNotifier } from '../publishing';
 
 /**
@@ -16,6 +21,24 @@ const FAQ_TAG = 'faq';
  */
 interface FaqListResponse {
   data: FaqItemEntity[];
+}
+
+/** Pagination metadata carried by the admin FAQ list response. */
+interface PaginationMeta {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+/**
+ * Response envelope for the ADMIN FAQ list. `meta` is present even for an
+ * unpaginated read so the panel can show a truthful row count without branching
+ * on whether it asked for pages.
+ */
+interface AdminFaqListResponse {
+  data: FaqItemEntity[];
+  meta: PaginationMeta;
 }
 
 /**
@@ -39,11 +62,22 @@ export class FaqService {
   }
 
   /**
-   * List every FAQ item, any status (admin). Ordered by sortOrder.
+   * List every FAQ item, any status (admin). Ordered by sortOrder, optionally
+   * searched by question and paginated. Omitting `page`/`limit` returns the
+   * complete list (TASK-357).
    */
-  async findAllAdmin(): Promise<FaqListResponse> {
-    const items = await this.repository.findAllAdmin();
-    return { data: items.map((item) => FaqItemEntity.fromPrisma(item)) };
+  async findAllAdmin(query: AdminFaqListQueryDto = {}): Promise<AdminFaqListResponse> {
+    const params: FindAllAdminParams = {
+      page: query.page,
+      limit: query.limit,
+      search: query.search,
+    };
+    const { items, total } = await this.repository.findAllAdmin(params);
+
+    return {
+      data: items.map((item) => FaqItemEntity.fromPrisma(item)),
+      meta: this.buildMeta(total, query.page, query.limit),
+    };
   }
 
   /**
@@ -108,5 +142,22 @@ export class FaqService {
     await this.repository.delete(id);
     await this.revalidation.revalidate({ tags: [FAQ_TAG] });
     return { id };
+  }
+
+  /**
+   * Pagination metadata. With no `limit` the whole list came back in one response,
+   * so it is reported as a single page of size `total` rather than inventing a page
+   * size the caller never asked for. An EMPTY unpaginated list would make that size
+   * 0, so `totalPages` is short-circuited instead of dividing by zero.
+   */
+  private buildMeta(total: number, page?: number, limit?: number): PaginationMeta {
+    const effectiveLimit = limit ?? total;
+
+    return {
+      total,
+      page: page ?? 1,
+      limit: effectiveLimit,
+      totalPages: effectiveLimit === 0 ? 0 : Math.ceil(total / effectiveLimit),
+    };
   }
 }

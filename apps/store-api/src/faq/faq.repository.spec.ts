@@ -16,6 +16,7 @@ const prismaMock = {
   faqItem: {
     findUnique: jest.fn(),
     findMany: jest.fn(),
+    count: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
@@ -55,10 +56,51 @@ describe('FaqRepository', () => {
 
       const result = await repository.findAllAdmin();
 
-      expect(result).toEqual([mockFaq]);
+      expect(result).toEqual({ items: [mockFaq], total: 1 });
       expect(prismaMock.faqItem.findMany).toHaveBeenCalledWith({
+        where: {},
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       });
+    });
+
+    it('matches the question case-insensitively when searching', async () => {
+      prismaMock.faqItem.findMany.mockResolvedValue([]);
+
+      await repository.findAllAdmin({ search: 'ДоСтАв' });
+
+      expect(prismaMock.faqItem.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { question: { contains: 'ДоСтАв', mode: 'insensitive' } },
+        }),
+      );
+    });
+
+    // TASK-357: absence of page/limit is the "return everything" signal — no skip/take, and
+    // no second round-trip just to count rows we already hold.
+    it('skips both pagination and the count query when page and limit are absent', async () => {
+      prismaMock.faqItem.findMany.mockResolvedValue([mockFaq]);
+
+      await repository.findAllAdmin();
+
+      expect(prismaMock.faqItem.count).not.toHaveBeenCalled();
+    });
+
+    it('paginates and counts once either page or limit is present', async () => {
+      prismaMock.faqItem.findMany.mockResolvedValue([mockFaq]);
+      prismaMock.faqItem.count.mockResolvedValue(31);
+
+      const result = await repository.findAllAdmin({ page: 2, limit: 10 });
+
+      expect(result).toEqual({ items: [mockFaq], total: 31 });
+      expect(prismaMock.faqItem.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 10,
+          take: 10,
+          // A paginated page must slice the operator's own sortOrder sequence, not
+          // some other ordering the storefront would never honour.
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        }),
+      );
     });
   });
 

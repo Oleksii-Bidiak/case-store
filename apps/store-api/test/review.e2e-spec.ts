@@ -9,7 +9,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
-import { ReviewRepository } from '../src/review/review.repository';
+import { ReviewRepository, ReviewsNotFoundError } from '../src/review/review.repository';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
@@ -47,6 +47,7 @@ describe('ReviewController (e2e)', () => {
     findById: jest.fn(),
     approve: jest.fn(),
     delete: jest.fn(),
+    moderateMany: jest.fn(),
     isVerifiedPurchase: jest.fn(),
     findVerifiedPurchaserIds: jest.fn(),
     findExisting: jest.fn(),
@@ -293,6 +294,84 @@ describe('ReviewController (e2e)', () => {
   });
 
   // ─── PATCH /api/admin/reviews/:id/approve ─────────────────────────────────────
+
+  // ─── PATCH /api/admin/reviews/moderate (bulk, TASK-356) ─────────────────────
+
+  describe('PATCH /api/admin/reviews/moderate', () => {
+    const url = '/api/admin/reviews/moderate';
+    const ids = ['11111111-1111-4111-8111-111111111111'];
+
+    it('is not swallowed by the :id routes — moderate reaches the bulk handler', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      reviewRepositoryMock.moderateMany.mockResolvedValue(1);
+
+      const response = await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', 'Bearer ' + token)
+        .send({ ids, action: 'approve' })
+        .expect(200);
+
+      expect(response.body.data.updatedCount).toBe(1);
+    });
+
+    it('returns 401 without a token', async () => {
+      await request(app.getHttpServer()).patch(url).send({ ids, action: 'approve' }).expect(401);
+    });
+
+    it('returns 403 for a customer', async () => {
+      const token = generateAccessToken(customer.id, customer.role);
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', 'Bearer ' + token)
+        .send({ ids, action: 'approve' })
+        .expect(403);
+    });
+
+    it('rejects an empty selection', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', 'Bearer ' + token)
+        .send({ ids: [], action: 'approve' })
+        .expect(400);
+      expect(reviewRepositoryMock.moderateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects a repeated id instead of 404ing on a review that exists', async () => {
+      // Prisma's `id: { in: }` collapses duplicates, so the repository's
+      // found-vs-asked count check would read `[X, X]` as one missing id and
+      // abort with a 404 naming nothing. On a deleting endpoint that leaves the
+      // operator unable to tell whether anything was removed.
+      const token = generateAccessToken(admin.id, admin.role);
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', 'Bearer ' + token)
+        .send({ ids: [ids[0], ids[0]], action: 'approve' })
+        .expect(400);
+      expect(reviewRepositoryMock.moderateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown action rather than guessing what was meant', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', 'Bearer ' + token)
+        .send({ ids, action: 'delete' })
+        .expect(400);
+      expect(reviewRepositoryMock.moderateMany).not.toHaveBeenCalled();
+    });
+
+    it('404s on an unknown id — the batch is all-or-nothing, and reject deletes', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      reviewRepositoryMock.moderateMany.mockRejectedValue(new ReviewsNotFoundError(['gone']));
+
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', 'Bearer ' + token)
+        .send({ ids, action: 'reject' })
+        .expect(404);
+    });
+  });
 
   describe('PATCH /api/admin/reviews/:id/approve', () => {
     it('should return 200 for an ADMIN', async () => {

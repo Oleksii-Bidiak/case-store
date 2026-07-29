@@ -139,6 +139,26 @@ describe('PageRepository', () => {
         expect.objectContaining({ where: { status: PublishStatus.DRAFT } }),
       );
     });
+
+    // TASK-357: an operator hunting for a legal page usually remembers its URL, not its
+    // exact heading — so the search spans slug as well as title.
+    it('searches title AND slug case-insensitively', async () => {
+      prismaMock.page.findMany.mockResolvedValue([]);
+      prismaMock.page.count.mockResolvedValue(0);
+
+      await repository.findAllAdmin({ page: 1, limit: 20, search: 'ДоСтАв' });
+
+      expect(prismaMock.page.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [
+              { title: { contains: 'ДоСтАв', mode: 'insensitive' } },
+              { slug: { contains: 'ДоСтАв', mode: 'insensitive' } },
+            ],
+          },
+        }),
+      );
+    });
   });
 
   describe('create', () => {

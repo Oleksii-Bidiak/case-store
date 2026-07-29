@@ -1,4 +1,4 @@
-import { IsOptional, IsInt, IsEnum, Min, Max } from 'class-validator';
+import { IsOptional, IsInt, IsEnum, IsString, MaxLength, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { PublishStatus } from '@prisma/client';
@@ -30,7 +30,12 @@ export class PageListQueryDto {
 
 /**
  * Query DTO for the admin page list (all statuses), with an optional status
- * filter.
+ * filter and a title/slug search (TASK-357).
+ *
+ * The search lives ONLY on the admin subclass: the public `GET /api/pages` backs
+ * the `/legal` hub, which lists everything published and has nothing to search.
+ * Pagination was already here — the admin list was never truncating silently on
+ * the server side, only in the panel (TASK-357 frontend half).
  */
 export class AdminPageListQueryDto extends PageListQueryDto {
   @ApiProperty({
@@ -44,4 +49,14 @@ export class AdminPageListQueryDto extends PageListQueryDto {
     message: `status must be one of: ${Object.values(PublishStatus).join(', ')}`,
   })
   status?: PublishStatus;
+
+  @ApiProperty({
+    description: 'Search by page title or slug',
+    example: 'достав',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200, { message: 'Search query must be at most 200 characters' })
+  search?: string;
 }

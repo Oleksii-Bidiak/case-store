@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { AttributeDefinition, AttributeType } from '@prisma/client';
 import {
   ProductRepository,
+  ProductsNotFoundError,
   CreateProductInput,
   UpdateProductInput,
   FindAllParams,
@@ -540,6 +541,41 @@ export class ProductService {
     await this.syncSearchIndex(activatedProduct);
 
     return ProductEntity.fromPrisma(activatedProduct);
+  }
+
+  /**
+   * Bulk activate / deactivate (TASK-355) — the per-row toggle applied to N
+   * products, in one transaction.
+   *
+   * The side effects are deliberately the SAME ones {@link activate} and
+   * {@link deactivate} perform, per product: list-cache eviction, detail-cache
+   * eviction by id AND slug, and a Meilisearch sync. TASK-293 was bitten by the
+   * opposite — the category per-row toggles skipped their side effects entirely,
+   * and nobody noticed until a bulk path made the divergence visible. So the
+   * rule for every bulk endpoint here is that it must be indistinguishable from
+   * running the single-row action N times, side effects included.
+   *
+   * The list prefix is evicted once rather than per product: it is one key
+   * space, and N identical `delByPrefix` scans would be pure waste.
+   */
+  async setStatusMany(ids: string[], isActive: boolean): Promise<number> {
+    let updated;
+    try {
+      updated = await this.productRepository.setActiveMany(ids, isActive);
+    } catch (error) {
+      if (error instanceof ProductsNotFoundError) {
+        throw new NotFoundException(error.message);
+      }
+      throw error;
+    }
+
+    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    for (const product of updated) {
+      await this.evictProductDetail(product.id, product.slug);
+      await this.syncSearchIndex(product);
+    }
+
+    return updated.length;
   }
 
   /**

@@ -4,6 +4,7 @@ import * as React from "react";
 
 import { cn } from "@/shared/lib/utils";
 import { useMediaQuery } from "@/shared/lib/use-media-query";
+import { Checkbox } from "./checkbox";
 
 /**
  * Table layout mode (TASK-258).
@@ -147,8 +148,11 @@ function TableRow({ className, rowLabel, ...props }: TableRowProps) {
       data-slot="table-row"
       className={cn(
         "border-b transition-colors hover:bg-accent has-aria-expanded:bg-accent data-[state=selected]:bg-muted",
+        // `relative` is what `TableSelectCell` anchors to below `md`: in card
+        // mode the checkbox is pinned to the card's corner instead of stacking
+        // as one more labelled field. See TableSelectCell.
         layout === "card" &&
-          "max-md:mb-3 max-md:flex max-md:flex-col max-md:gap-0 max-md:rounded-lg max-md:border max-md:border-border max-md:p-4 max-md:shadow-card max-md:last:mb-0",
+          "max-md:relative max-md:mb-3 max-md:flex max-md:flex-col max-md:gap-0 max-md:rounded-lg max-md:border max-md:border-border max-md:p-4 max-md:shadow-card max-md:last:mb-0",
         className,
       )}
       {...props}
@@ -230,6 +234,119 @@ function TableCell({
   );
 }
 
+/* ── row selection (TASK-353) ─────────────────────────────────────────────── */
+
+interface TableSelectHeadProps extends Omit<
+  React.ComponentProps<"th">,
+  "children"
+> {
+  /** Tri-state over the rows on the current page. */
+  checked: boolean | "indeterminate";
+  onCheckedChange: () => void;
+  disabled?: boolean;
+  /** Accessible name, e.g. "Вибрати всі рядки на сторінці". */
+  label: string;
+}
+
+/**
+ * The select-all header cell.
+ *
+ * Note it disappears below `md` in card mode along with the whole `<thead>`
+ * (`TableHeader` is `max-md:hidden`). That is not an oversight — a card list has
+ * no header row to put it in. Widgets that must offer select-all on a phone
+ * mirror the same control in `TableToolbar`, which is why `TableToolbar` takes a
+ * `selectAll` slot rendered `md:hidden`.
+ */
+function TableSelectHead({
+  checked,
+  onCheckedChange,
+  disabled,
+  label,
+  className,
+  ...props
+}: TableSelectHeadProps) {
+  return (
+    <TableHead className={cn("w-10", className)} {...props}>
+      <Checkbox
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={disabled}
+        aria-label={label}
+      />
+    </TableHead>
+  );
+}
+
+interface TableSelectCellProps extends Omit<
+  React.ComponentProps<"td">,
+  "children" | "onSelect"
+> {
+  checked: boolean;
+  /**
+   * Called with the modifier state of the activating event.
+   *
+   * `shiftKey` is reported rather than interpreted, so the cell stays dumb — the
+   * table decides whether that means "toggle" or "extend the range". It is read
+   * from the CLICK event on purpose: a `<button>` fires `click` for Space and
+   * Enter as well as for a mouse press, so one handler covers Shift+click AND
+   * Shift+Space without a second keyboard path to keep in step with it.
+   */
+  onSelect: (modifiers: { shiftKey: boolean }) => void;
+  disabled?: boolean;
+  /** Accessible name naming the ROW, e.g. `Вибрати „iPhone 15 Pro“`. */
+  label: string;
+}
+
+/**
+ * The per-row checkbox cell.
+ *
+ * ── Why this is not just a `TableCell` with a `Checkbox` in it ───────────────
+ * In card mode every cell becomes a stacked, captioned line
+ * (`before:content-[attr(data-label)]`). A checkbox rendered that way turns into
+ * a full-width "ВИБІР ☐" strip sitting above the record's name — visually it
+ * reads as data about the row rather than a control on it.
+ *
+ * So below `md` this cell is lifted out of the stack and pinned to the card's
+ * top-right corner (the row supplies `max-md:relative`). It carries no caption:
+ * its `aria-label` already names the row, which is the same string `rowLabel`
+ * gives the card's `role="group"` — so a screen reader hears the record named
+ * once by the group and once by the control, and nothing is left anonymous.
+ */
+function TableSelectCell({
+  checked,
+  onSelect,
+  disabled,
+  label,
+  className,
+  ...props
+}: TableSelectCellProps) {
+  const layout = React.useContext(TableLayoutContext);
+  return (
+    <td
+      data-slot="table-select-cell"
+      className={cn(
+        "px-4 py-3 align-middle [&:has([role=checkbox])]:pr-0",
+        layout === "card" &&
+          "max-md:absolute max-md:top-3 max-md:right-3 max-md:z-10 max-md:block max-md:p-0",
+        className,
+      )}
+      {...props}
+    >
+      <Checkbox
+        checked={checked}
+        // Selection is driven from `onClick`, not `onCheckedChange`, because
+        // only the DOM event carries `shiftKey`. `checked` is controlled by the
+        // caller either way, so the box still shows exactly what the selection
+        // model says — including a Shift+click that lands on an already-checked
+        // row and must stay checked rather than toggle off.
+        onClick={(event) => onSelect({ shiftKey: event.shiftKey })}
+        disabled={disabled}
+        aria-label={label}
+      />
+    </td>
+  );
+}
+
 function TableCaption({
   className,
   ...props
@@ -252,4 +369,6 @@ export {
   TableRow,
   TableCell,
   TableCaption,
+  TableSelectHead,
+  TableSelectCell,
 };

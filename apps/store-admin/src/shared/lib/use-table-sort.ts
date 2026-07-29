@@ -16,9 +16,9 @@ export interface TableSort {
  * useTableSort — drives admin-table column sorting from the URL (TASK-147).
  *
  * `sortBy`/`sortOrder` live in the query string so sort survives refresh and is
- * shareable. Writes go through the table's own `updateParams` (which merges into
- * the existing params and chooses push vs replace), and always reset `page` so
- * the user lands on page 1 after re-sorting.
+ * shareable. Writes go through the caller's `updateParams` — in every table
+ * that is `useUrlParams`, which merges the patch into the params already in the
+ * URL — and always reset `page` so the user lands on page 1 after re-sorting.
  *
  * Not barrel-exported from `shared/lib/index.ts` — like `use-debounced-callback`,
  * it is a `"use client"` hook and must be imported directly from this file.

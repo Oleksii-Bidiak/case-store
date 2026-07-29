@@ -77,9 +77,10 @@ describe('UserRepository (soft-delete behaviour)', () => {
 
       await repository.findAll({ page: 1, limit: 20 });
 
-      expect(prismaMock.user.findMany.mock.calls[0][0].orderBy).toEqual({
-        createdAt: 'desc',
-      });
+      expect(prismaMock.user.findMany.mock.calls[0][0].orderBy).toEqual([
+        { createdAt: 'desc' },
+        { id: 'asc' },
+      ]);
     });
 
     it('sorts by an allow-listed field + order (TASK-147)', async () => {
@@ -93,9 +94,25 @@ describe('UserRepository (soft-delete behaviour)', () => {
         sortOrder: 'asc',
       });
 
-      expect(prismaMock.user.findMany.mock.calls[0][0].orderBy).toEqual({
-        email: 'asc',
-      });
+      expect(prismaMock.user.findMany.mock.calls[0][0].orderBy).toEqual([
+        { email: 'asc' },
+        { id: 'asc' },
+      ]);
+    });
+
+    it('appends id so a paginated sort cannot repeat or skip an account (TASK-356)', async () => {
+      // The default sort is `createdAt`, which is not unique: a seed batch or a
+      // bulk import stamps many accounts with one timestamp. Without a total
+      // order, a page boundary inside a tie group is arbitrary per query, and
+      // the same account can come back on page 1 and page 2 while another never
+      // appears — with the totals still adding up, so nothing looks wrong.
+      prismaMock.user.findMany.mockResolvedValue([]);
+      prismaMock.user.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 3, limit: 20, sortBy: 'createdAt', sortOrder: 'asc' });
+
+      const { orderBy } = prismaMock.user.findMany.mock.calls[0][0];
+      expect(orderBy[orderBy.length - 1]).toEqual({ id: 'asc' });
     });
 
     it('falls back to createdAt for an unknown sort field (TASK-147)', async () => {
@@ -109,9 +126,10 @@ describe('UserRepository (soft-delete behaviour)', () => {
         sortOrder: 'asc',
       });
 
-      expect(prismaMock.user.findMany.mock.calls[0][0].orderBy).toEqual({
-        createdAt: 'asc',
-      });
+      expect(prismaMock.user.findMany.mock.calls[0][0].orderBy).toEqual([
+        { createdAt: 'asc' },
+        { id: 'asc' },
+      ]);
     });
 
     // ── isActive filter (TASK-150 B5) ──

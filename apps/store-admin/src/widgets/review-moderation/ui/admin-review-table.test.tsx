@@ -151,4 +151,43 @@ describe("AdminReviewTable", () => {
       container.querySelector(`[data-label="${dict.common.actions}"]`),
     ).toBeInTheDocument();
   });
+
+  it("announces the selection into the live region (TASK-292)", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("*/api/admin/reviews", () =>
+        listResponse([
+          makeReviewRow(),
+          makeReviewRow({
+            id: "review-uuid-2",
+            userEmail: "ivan@example.com",
+            productName: "Screen Protector",
+          }),
+        ]),
+      ),
+    );
+
+    renderWithProviders(<AdminReviewTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    // Regression guard. `useRowSelection` and `useReviewBulkModeration` both
+    // call `useAnnouncer()`, so they have to run BELOW the `<LiveAnnouncer>`.
+    // A hook called in the very component that renders the provider silently
+    // gets the default no-op context, and every announcement disappears with
+    // nothing on screen looking wrong.
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: dict.reviews.bulk.selectRow("iPhone 15 Pro Case", "olena"),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
+        dict.common.table.announceSelected(
+          dict.reviews.rowAria("iPhone 15 Pro Case", "olena"),
+          1,
+        ),
+      ),
+    );
+  });
 });

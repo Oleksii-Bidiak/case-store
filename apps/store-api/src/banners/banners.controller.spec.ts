@@ -69,11 +69,12 @@ describe('Banner controllers', () => {
 
   describe('AdminBannerController', () => {
     it('list forwards the query to the service', async () => {
-      serviceMock.findAllAdmin.mockResolvedValue({ data: [entity] });
+      const meta = { total: 1, page: 1, limit: 1, totalPages: 1 };
+      serviceMock.findAllAdmin.mockResolvedValue({ data: [entity], meta });
 
       const result = await adminController.findAll({ status: PublishStatus.DRAFT });
 
-      expect(result).toEqual({ data: [entity] });
+      expect(result).toEqual({ data: [entity], meta });
       expect(serviceMock.findAllAdmin).toHaveBeenCalledWith({ status: PublishStatus.DRAFT });
     });
 

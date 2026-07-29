@@ -1,5 +1,10 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { dict } from "@/shared/config";
@@ -198,5 +203,63 @@ describe("AdminUserTable — staff management affordances", () => {
 
     expect(screen.getByText(dict.users.roleManager)).toBeInTheDocument();
     expect(screen.queryByText(dict.users.roleCustomer)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-356 — the panel pins `staleTime` to five minutes, so before the toolbar
+ * there was no way to see an account another admin had just deactivated.
+ */
+describe("AdminUserTable — toolbar refresh", () => {
+  beforeEach(() => {
+    mockReplace.mockClear();
+    mockSearchParamsRef.current = new URLSearchParams("");
+  });
+
+  function stubCountingUsers() {
+    const state = { calls: 0 };
+    server.use(
+      http.get("*/api/users", () => {
+        state.calls += 1;
+        return HttpResponse.json({
+          data: [makeUserRow()],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        });
+      }),
+    );
+    return state;
+  }
+
+  it("refetches the list when «Оновити» is pressed", async () => {
+    const state = stubCountingUsers();
+    renderTable();
+    await screen.findByText("buyer@example.com");
+    expect(state.calls).toBe(1);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.table.refreshAria }),
+    );
+
+    await waitFor(() => expect(state.calls).toBe(2));
+  });
+
+  it("announces completion — i.e. the tree really is inside a LiveAnnouncer", async () => {
+    // The toolbar calls `useAnnouncer()` unconditionally and that hook silently
+    // no-ops outside the provider, so forgetting the wrapper costs the refresh
+    // its only feedback for a screen-reader user without breaking anything
+    // visible. Assert the announcement, not the wrapper.
+    stubCountingUsers();
+    renderTable();
+    await screen.findByText("buyer@example.com");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.table.refreshAria }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
+        dict.common.table.refreshed,
+      ),
+    );
   });
 });

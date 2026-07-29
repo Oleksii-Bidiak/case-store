@@ -3,26 +3,39 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   useAdminContactList,
   AdminContactListStatus,
+  BulkContactMessageStatusDtoStatus,
   type ContactMessageEntity,
 } from "@/entities/contact";
+import { useMessageBulkStatus } from "@/features/message-bulk-status";
+import { useUrlParams } from "@/shared/lib/use-url-params";
+import { useTableSort } from "@/shared/lib/use-table-sort";
+import { useRowSelection } from "@/shared/lib/use-row-selection";
+import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import {
   Badge,
+  BulkActionsBar,
   Button,
+  Checkbox,
+  LiveAnnouncer,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SortableColumnHeader,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  TableSelectCell,
+  TableSelectHead,
+  TableToolbar,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { MessageInboxSkeleton } from "./message-inbox-skeleton";
@@ -55,15 +68,35 @@ function parseStatus(raw: string | null): AdminContactListStatus | undefined {
 
 /**
  * MessageInbox — admin inbox for customer contact messages. The status filter
- * (`?status=NEW|IN_PROGRESS|READ|ARCHIVED`, default all) and page (`?page=`)
- * live in the URL. Each row opens a detail dialog with the full message,
- * contact info, and status/admin-note controls. When the sender's email matches
- * a registered user (`matchedUserId`, TASK-256), the sender name links to that
- * customer's profile.
+ * (`?status=NEW|IN_PROGRESS|READ|ARCHIVED`, default all), sort
+ * (`?sortBy=&sortOrder=`) and page (`?page=`) live in the URL. Each row opens a
+ * detail dialog with the full message, contact info, and status/admin-note
+ * controls. When the sender's email matches a registered user (`matchedUserId`,
+ * TASK-256), the sender name links to that customer's profile.
+ *
+ * TASK-354 turned this from a read-only list into a queue two people can work:
+ * server-side sorting, a refresh control, a short `staleTime`, and a bulk status
+ * change over the on-screen selection. The sort default (`createdAt` desc)
+ * mirrors the backend DTO's default — sending it explicitly keeps the query key
+ * stable rather than having "no param" and "the default param" be two caches of
+ * the same page.
+ *
+ * `LiveAnnouncer` MUST wrap the inbox rather than sit inside it — the same split
+ * `AdminCategoryTree` makes, for the same reason. `useRowSelection` and
+ * `useMessageBulkStatus` both call `useAnnouncer()`, and a hook called in the
+ * very component that renders the provider reads the context from ABOVE it,
+ * which is the default no-op. Every selection and bulk-save announcement would
+ * be silently dropped, and nothing on screen would look wrong.
  */
 export function MessageInbox() {
-  const router = useRouter();
-  const pathname = usePathname();
+  return (
+    <LiveAnnouncer>
+      <MessageInboxView />
+    </LiveAnnouncer>
+  );
+}
+
+function MessageInboxView() {
   const searchParams = useSearchParams();
 
   const status = parseStatus(searchParams.get("status"));
@@ -71,24 +104,27 @@ export function MessageInbox() {
 
   const [selected, setSelected] = useState<ContactMessageEntity | null>(null);
 
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
-  };
+  const updateParams = useUrlParams();
 
-  const { data, isLoading, isFetching, isError } = useAdminContactList({
-    ...(status !== undefined && { status }),
-    page,
-    limit: PAGE_SIZE,
-  });
+  // Sorting by `status` orders on the enum's declaration order — NEW,
+  // IN_PROGRESS, READ, ARCHIVED — which is the triage order, not the alphabet.
+  const { sortBy, sortOrder, onSort } = useTableSort(
+    searchParams,
+    updateParams,
+  );
+
+  const { data, isLoading, isFetching, isError, refetch } = useAdminContactList(
+    {
+      ...(status !== undefined && { status }),
+      page,
+      limit: PAGE_SIZE,
+      sortBy,
+      sortOrder,
+    },
+    // An inbox is worked by more than one operator; five-minute-old rows mean
+    // two people answering the same customer.
+    { query: OPERATIONAL_LIST_QUERY },
+  );
 
   const messages = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
@@ -100,33 +136,98 @@ export function MessageInbox() {
     });
   };
 
+  const senderOf = new Map(
+    messages.map((message) => [message.id, message.name]),
+  );
+  const selection = useRowSelection({
+    rowIds: messages.map((message) => message.id),
+    getLabel: (id) => senderOf.get(id) ?? id,
+    messages: {
+      selected: dict.common.table.announceSelected,
+      deselected: dict.common.table.announceDeselected,
+      selectedAll: dict.common.table.announceSelectedAll,
+      cleared: dict.common.table.announceCleared,
+    },
+  });
+
+  const bulk = useMessageBulkStatus({ onSuccess: selection.clear });
+
+  const selectedIds = [...selection.selectedIds];
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <Select value={status ?? ALL} onValueChange={handleStatusChange}>
-          <SelectTrigger
-            className="w-48"
-            aria-label={dict.messages.filterStatusAria}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>{dict.messages.filterAll}</SelectItem>
-            <SelectItem value={AdminContactListStatus.NEW}>
-              {dict.messages.filterNew}
-            </SelectItem>
-            <SelectItem value={AdminContactListStatus.IN_PROGRESS}>
-              {dict.messages.filterInProgress}
-            </SelectItem>
-            <SelectItem value={AdminContactListStatus.READ}>
-              {dict.messages.filterRead}
-            </SelectItem>
-            <SelectItem value={AdminContactListStatus.ARCHIVED}>
-              {dict.messages.filterArchived}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <TableToolbar
+        className="mb-0"
+        onRefresh={() => void refetch()}
+        isRefreshing={isFetching}
+        filters={
+          <Select value={status ?? ALL} onValueChange={handleStatusChange}>
+            <SelectTrigger
+              className="w-48"
+              aria-label={dict.messages.filterStatusAria}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>{dict.messages.filterAll}</SelectItem>
+              <SelectItem value={AdminContactListStatus.NEW}>
+                {dict.messages.filterNew}
+              </SelectItem>
+              <SelectItem value={AdminContactListStatus.IN_PROGRESS}>
+                {dict.messages.filterInProgress}
+              </SelectItem>
+              <SelectItem value={AdminContactListStatus.READ}>
+                {dict.messages.filterRead}
+              </SelectItem>
+              <SelectItem value={AdminContactListStatus.ARCHIVED}>
+                {dict.messages.filterArchived}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        }
+        selectAll={
+          messages.length > 0 ? (
+            <Checkbox
+              checked={selection.headerChecked}
+              onCheckedChange={selection.toggleAll}
+              disabled={bulk.isPending}
+              aria-label={dict.common.table.selectAll}
+            />
+          ) : null
+        }
+      />
+
+      <BulkActionsBar
+        selectedCount={selection.selectedCount}
+        isPending={bulk.isPending}
+        onClear={selection.clear}
+        actions={[
+          {
+            label: dict.messages.bulk.markInProgress(selection.selectedCount),
+            onClick: () =>
+              bulk.setStatus(
+                selectedIds,
+                BulkContactMessageStatusDtoStatus.IN_PROGRESS,
+              ),
+          },
+          {
+            label: dict.messages.bulk.markRead(selection.selectedCount),
+            onClick: () =>
+              bulk.setStatus(
+                selectedIds,
+                BulkContactMessageStatusDtoStatus.READ,
+              ),
+          },
+          {
+            label: dict.messages.bulk.markArchived(selection.selectedCount),
+            onClick: () =>
+              bulk.setStatus(
+                selectedIds,
+                BulkContactMessageStatusDtoStatus.ARCHIVED,
+              ),
+          },
+        ]}
+      />
 
       {isLoading ? (
         <MessageInboxSkeleton />
@@ -151,11 +252,35 @@ export function MessageInbox() {
           <Table layout="card">
             <TableHeader>
               <TableRow>
-                <TableHead>{dict.messages.colName}</TableHead>
+                <TableSelectHead
+                  checked={selection.headerChecked}
+                  onCheckedChange={selection.toggleAll}
+                  disabled={bulk.isPending}
+                  label={dict.common.table.selectAll}
+                />
+                <SortableColumnHeader
+                  field="name"
+                  label={dict.messages.colName}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
                 <TableHead>{dict.messages.colTopic}</TableHead>
                 <TableHead>{dict.messages.colMessage}</TableHead>
-                <TableHead>{dict.messages.colStatus}</TableHead>
-                <TableHead>{dict.messages.colDate}</TableHead>
+                <SortableColumnHeader
+                  field="status"
+                  label={dict.messages.colStatus}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
+                <SortableColumnHeader
+                  field="createdAt"
+                  label={dict.messages.colDate}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={onSort}
+                />
                 <TableHead className="text-right">
                   {dict.common.actions}
                 </TableHead>
@@ -166,12 +291,25 @@ export function MessageInbox() {
                 <TableRow
                   key={message.id}
                   rowLabel={dict.messages.rowAria(message.name)}
+                  data-state={
+                    selection.isSelected(message.id) ? "selected" : undefined
+                  }
                   className={
                     message.status === AdminContactListStatus.NEW
                       ? "font-medium"
                       : undefined
                   }
                 >
+                  <TableSelectCell
+                    checked={selection.isSelected(message.id)}
+                    onSelect={({ shiftKey }) =>
+                      shiftKey
+                        ? selection.extendTo(message.id)
+                        : selection.toggle(message.id)
+                    }
+                    disabled={bulk.isPending}
+                    label={dict.messages.bulk.selectRow(message.name)}
+                  />
                   <TableCell label={dict.messages.colName}>
                     {message.matchedUserId ? (
                       <Link

@@ -3,9 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import {
   getBrandControllerAdminFindAllQueryKey,
@@ -17,6 +18,7 @@ import {
   Badge,
   Button,
   Input,
+  LiveAnnouncer,
   Select,
   SelectContent,
   SelectItem,
@@ -28,6 +30,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableToolbar,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { AdminBrandTableSkeleton } from "./admin-brand-table-skeleton";
@@ -44,10 +47,24 @@ const SEARCH_DEBOUNCE_MS = 300;
  * `?page=`) so the view is shareable and refresh-safe. The search input is
  * debounced before it touches the URL. Status is a reversible visibility toggle
  * (TASK-189) — no delete.
+ *
+ * TASK-357 moved the existing search + status filter into the shared
+ * `TableToolbar` and added the refresh control this table never had. Nothing
+ * about the query changed; the toolbar is a container, not a rewrite.
+ *
+ * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
+ * calls `useAnnouncer()` to confirm a refresh, and a hook called in the same
+ * component that renders the provider would read the default no-op context.
  */
 export function AdminBrandTable() {
-  const router = useRouter();
-  const pathname = usePathname();
+  return (
+    <LiveAnnouncer>
+      <AdminBrandView />
+    </LiveAnnouncer>
+  );
+}
+
+function AdminBrandView() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
@@ -57,18 +74,7 @@ export function AdminBrandTable() {
 
   const [searchInput, setSearchInput] = useState(searchParam);
 
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
-  };
+  const updateParams = useUrlParams();
 
   const debouncedSearch = useDebouncedCallback((value: string) => {
     const trimmed = value.trim();
@@ -83,7 +89,7 @@ export function AdminBrandTable() {
         ? false
         : undefined;
 
-  const { data, isLoading, isFetching, isError } =
+  const { data, isLoading, isFetching, isError, refetch } =
     useBrandControllerAdminFindAll({
       page,
       limit: PAGE_SIZE,
@@ -127,41 +133,48 @@ export function AdminBrandTable() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          type="search"
-          placeholder={dict.brands.searchPlaceholder}
-          value={searchInput}
-          onChange={(event) => {
-            setSearchInput(event.target.value);
-            debouncedSearch(event.target.value);
-          }}
-          className="w-64"
-          aria-label={dict.brands.searchAria}
-        />
-        <Select
-          value={statusParam || ALL_OPTION}
-          onValueChange={handleStatusChange}
-        >
-          <SelectTrigger
-            className="w-48"
-            aria-label={dict.brands.filterStatusAria}
+      <TableToolbar
+        className="mb-0"
+        onRefresh={() => void refetch()}
+        isRefreshing={isFetching}
+        search={
+          <Input
+            type="search"
+            placeholder={dict.brands.searchPlaceholder}
+            value={searchInput}
+            onChange={(event) => {
+              setSearchInput(event.target.value);
+              debouncedSearch(event.target.value);
+            }}
+            className="w-64"
+            aria-label={dict.brands.searchAria}
+          />
+        }
+        filters={
+          <Select
+            value={statusParam || ALL_OPTION}
+            onValueChange={handleStatusChange}
           >
-            <SelectValue placeholder={dict.brands.allStatuses} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_OPTION}>
-              {dict.brands.allStatuses}
-            </SelectItem>
-            <SelectItem value={ACTIVE_OPTION}>
-              {dict.brands.statusActive}
-            </SelectItem>
-            <SelectItem value={INACTIVE_OPTION}>
-              {dict.brands.statusInactive}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+            <SelectTrigger
+              className="w-48"
+              aria-label={dict.brands.filterStatusAria}
+            >
+              <SelectValue placeholder={dict.brands.allStatuses} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_OPTION}>
+                {dict.brands.allStatuses}
+              </SelectItem>
+              <SelectItem value={ACTIVE_OPTION}>
+                {dict.brands.statusActive}
+              </SelectItem>
+              <SelectItem value={INACTIVE_OPTION}>
+                {dict.brands.statusInactive}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        }
+      />
 
       {isLoading ? (
         <AdminBrandTableSkeleton />

@@ -28,6 +28,7 @@ import {
   CreateBlogCategoryDto,
   UpdateBlogCategoryDto,
   ReorderBlogCategoriesDto,
+  AdminBlogCategoryListQueryDto,
 } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 // Direct file import, NOT the `../auth` barrel: the barrel pulls the auth module in and the
@@ -71,10 +72,20 @@ class BlogCategoryResponseEnvelope {
   data!: BlogCategoryEntity;
 }
 
-/** Response envelope for the category list. */
-class BlogCategoryListResponse {
+/**
+ * Response envelope for the admin category list (TASK-357).
+ *
+ * Shared with the reorder route on purpose — the admin panel writes the reorder
+ * response into the list query's cache, so the two must not drift. Distinct from
+ * the PUBLIC `BlogCategoryListResponse` in `blog.controller.ts`, which carries no
+ * `meta` because the storefront hub always reads the complete strip.
+ */
+class AdminBlogCategoryListResponse {
   @ApiProperty({ type: [BlogCategoryEntity] })
   data!: BlogCategoryEntity[];
+
+  @ApiProperty({ type: AdminBlogPaginationMeta })
+  meta!: AdminBlogPaginationMeta;
 }
 
 /**
@@ -92,7 +103,7 @@ class BlogCategoryListResponse {
   BlogCategoryEntity,
   BlogPostResponseEnvelope,
   BlogCategoryResponseEnvelope,
-  BlogCategoryListResponse,
+  AdminBlogCategoryListResponse,
 )
 @Controller('admin/blog')
 @UseGuards(PermissionGuard)
@@ -104,12 +115,20 @@ export class AdminBlogController {
 
   @Get('categories')
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'List all blog categories (admin)' })
-  @ApiResponse({ status: 200, description: 'All categories', type: BlogCategoryListResponse })
+  @ApiOperation({
+    summary: 'List all blog categories, optional search + pagination (admin)',
+    operationId: 'adminBlogControllerFindCategories',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Categories (complete list when page/limit are omitted)',
+    type: AdminBlogCategoryListResponse,
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  async findCategories(): Promise<BlogCategoryListResponse> {
-    const data = await this.blogService.findAllCategories();
-    return { data };
+  async findCategories(
+    @Query() query: AdminBlogCategoryListQueryDto,
+  ): Promise<AdminBlogCategoryListResponse> {
+    return this.blogService.findAllCategoriesAdmin(query);
   }
 
   /**
@@ -130,7 +149,7 @@ export class AdminBlogController {
   @ApiResponse({
     status: 200,
     description: 'The refreshed blog-category list',
-    type: BlogCategoryListResponse,
+    type: AdminBlogCategoryListResponse,
   })
   @ApiResponse({ status: 400, description: 'Validation error, or REORDER_DUPLICATE_ID' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
@@ -142,9 +161,8 @@ export class AdminBlogController {
   async reorderCategories(
     @Body() dto: ReorderBlogCategoriesDto,
     @CurrentUser('id') adminUserId: string,
-  ): Promise<BlogCategoryListResponse> {
-    const data = await this.blogService.reorderCategories(dto, adminUserId);
-    return { data };
+  ): Promise<AdminBlogCategoryListResponse> {
+    return this.blogService.reorderCategories(dto, adminUserId);
   }
 
   @Get('categories/:id')

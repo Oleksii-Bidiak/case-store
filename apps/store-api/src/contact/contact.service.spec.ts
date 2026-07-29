@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { ContactMessage, ContactMessageStatus } from '@prisma/client';
-import { ContactRepository } from './contact.repository';
+import { ContactMessagesNotFoundError, ContactRepository } from './contact.repository';
 import { ContactService } from './contact.service';
 
 const now = new Date('2026-07-05T10:00:00.000Z');
@@ -27,6 +27,7 @@ const contactRepositoryMock = {
   findAll: jest.fn(),
   findById: jest.fn(),
   update: jest.fn(),
+  setStatusMany: jest.fn(),
   countByStatus: jest.fn(),
   findMatchingUserId: jest.fn(),
   findMatchingUserIds: jest.fn(),
@@ -139,7 +140,20 @@ describe('ContactService', () => {
         page: 2,
         limit: 10,
         status: ContactMessageStatus.READ,
+        sortBy: undefined,
+        sortOrder: undefined,
       });
+    });
+
+    it('passes the sort through to the repository (TASK-354)', async () => {
+      contactRepositoryMock.findAll.mockResolvedValue({ messages: [], total: 0 });
+      contactRepositoryMock.countByStatus.mockResolvedValue(0);
+
+      await service.findAllAdmin({ page: 1, limit: 20, sortBy: 'name', sortOrder: 'asc' });
+
+      expect(contactRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ sortBy: 'name', sortOrder: 'asc' }),
+      );
     });
 
     it('attaches matchedUserId per row via ONE batched lookup over distinct emails (TASK-256)', async () => {
@@ -256,6 +270,78 @@ describe('ContactService', () => {
         service.update('missing', { status: ContactMessageStatus.READ }),
       ).rejects.toThrow(NotFoundException);
       expect(contactRepositoryMock.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateStatusMany (TASK-354)', () => {
+    const ids = ['msg-uuid-1', 'msg-uuid-2'];
+
+    it('writes the status onto the whole selection and reports what was written', async () => {
+      contactRepositoryMock.setStatusMany.mockResolvedValue(2);
+
+      const result = await service.updateStatusMany(ids, ContactMessageStatus.READ);
+
+      expect(result).toBe(2);
+      expect(contactRepositoryMock.setStatusMany).toHaveBeenCalledWith(
+        ids,
+        ContactMessageStatus.READ,
+      );
+    });
+
+    it('maps the repository domain error to a 404 — nothing was written', async () => {
+      contactRepositoryMock.setStatusMany.mockRejectedValue(
+        new ContactMessagesNotFoundError(['msg-uuid-2']),
+      );
+
+      await expect(service.updateStatusMany(ids, ContactMessageStatus.READ)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('lets an unrelated repository failure through untouched', async () => {
+      // Only the missing-id case is a 404. Swallowing everything else here would
+      // report a dead database as "message not found".
+      contactRepositoryMock.setStatusMany.mockRejectedValue(new Error('connection reset'));
+
+      await expect(service.updateStatusMany(ids, ContactMessageStatus.READ)).rejects.toThrow(
+        'connection reset',
+      );
+    });
+
+    it('collapses a repeated id instead of turning it into a spurious 404', async () => {
+      // The repository's all-or-nothing check compares found-vs-asked counts, so
+      // a duplicate would look exactly like an id that does not exist.
+      contactRepositoryMock.setStatusMany.mockResolvedValue(1);
+
+      await service.updateStatusMany(
+        ['msg-uuid-1', 'msg-uuid-1'],
+        ContactMessageStatus.IN_PROGRESS,
+      );
+
+      expect(contactRepositoryMock.setStatusMany).toHaveBeenCalledWith(
+        ['msg-uuid-1'],
+        ContactMessageStatus.IN_PROGRESS,
+      );
+    });
+
+    it('performs the same side effects as the per-row update — no more, no less', async () => {
+      // Parity check (plan 168 §5.1): the per-row path writes the row and logs.
+      // The unread badge is a live COUNT with no cache in front of it, so this
+      // path must not need to touch it either — if that ever changes, both paths
+      // have to change together and this test is where it shows up.
+      contactRepositoryMock.setStatusMany.mockResolvedValue(2);
+
+      await service.updateStatusMany(ids, ContactMessageStatus.ARCHIVED);
+
+      expect(pinoLoggerMock.info).toHaveBeenCalledWith(
+        expect.objectContaining({ status: ContactMessageStatus.ARCHIVED, count: 2 }),
+        expect.any(String),
+      );
+      expect(contactRepositoryMock.update).not.toHaveBeenCalled();
+      expect(contactRepositoryMock.findById).not.toHaveBeenCalled();
+      // No per-row email→user lookup: the bulk response is a count, not entities.
+      expect(contactRepositoryMock.findMatchingUserId).not.toHaveBeenCalled();
+      expect(contactRepositoryMock.findMatchingUserIds).not.toHaveBeenCalled();
     });
   });
 

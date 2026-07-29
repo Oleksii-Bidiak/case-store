@@ -2915,6 +2915,52 @@
         ]
       }
     },
+    "/api/products/status": {
+      "patch": {
+        "operationId": "productControllerSetStatusMany",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkProductStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Number of products updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkProductStatusResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — empty, oversized or non-UUID ids"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Unknown product id — nothing was written"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Bulk activate / deactivate products (admin)",
+        "tags": [
+          "Products"
+        ]
+      }
+    },
     "/api/products/{id}/deactivate": {
       "patch": {
         "operationId": "ProductController_deactivate",
@@ -3616,10 +3662,41 @@
     "/api/admin/devices/brands": {
       "get": {
         "operationId": "adminDeviceControllerFindBrands",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (1-based). Omit both page and limit to get the complete list.",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page. Omit both page and limit to get the complete list.",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Search by device brand name",
+            "schema": {
+              "example": "appl",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Device brands",
+            "description": "Device brands (complete list when page/limit are omitted)",
             "content": {
               "application/json": {
                 "schema": {
@@ -3637,7 +3714,7 @@
             "access-token": []
           }
         ],
-        "summary": "List device brands with model counts (admin)",
+        "summary": "List device brands with model counts, optional search + pagination (admin)",
         "tags": [
           "Devices"
         ]
@@ -4865,6 +4942,28 @@
               "format": "date-time",
               "type": "string"
             }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Sort field (createdAt, actorEmail, action)",
+            "schema": {
+              "default": "createdAt",
+              "example": "createdAt",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "description": "Sort order (asc or desc)",
+            "schema": {
+              "default": "desc",
+              "example": "desc",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -5442,10 +5541,41 @@
     "/api/product-groups": {
       "get": {
         "operationId": "ProductGroupController_findAll",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (1-based). Omit both page and limit to get the complete list.",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page. Omit both page and limit to get the complete list.",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Search by group name",
+            "schema": {
+              "example": "iphone",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "List of product groups",
+            "description": "List of product groups (complete list when page/limit are omitted)",
             "content": {
               "application/json": {
                 "schema": {
@@ -5463,7 +5593,7 @@
             "access-token": []
           }
         ],
-        "summary": "List all product groups (admin)",
+        "summary": "List product groups, optional search + pagination (admin)",
         "tags": [
           "Product Groups"
         ]
@@ -5727,6 +5857,16 @@
                 "PUBLISHED"
               ]
             }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Search by page title or slug",
+            "schema": {
+              "example": "достав",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -5749,7 +5889,7 @@
             "access-token": []
           }
         ],
-        "summary": "List all pages — published + drafts (admin)",
+        "summary": "List all pages — published + drafts, paginated, optional search (admin)",
         "tags": [
           "Pages"
         ]
@@ -6143,15 +6283,46 @@
     },
     "/api/admin/blog/categories": {
       "get": {
-        "operationId": "AdminBlogController_findCategories",
-        "parameters": [],
+        "operationId": "adminBlogControllerFindCategories",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (1-based). Omit both page and limit to get the complete list.",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page. Omit both page and limit to get the complete list.",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Search by category name",
+            "schema": {
+              "example": "гайд",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "All categories",
+            "description": "Categories (complete list when page/limit are omitted)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BlogCategoryListResponse"
+                  "$ref": "#/components/schemas/AdminBlogCategoryListResponse"
                 }
               }
             }
@@ -6165,7 +6336,7 @@
             "access-token": []
           }
         ],
-        "summary": "List all blog categories (admin)",
+        "summary": "List all blog categories, optional search + pagination (admin)",
         "tags": [
           "Blog"
         ]
@@ -6229,7 +6400,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BlogCategoryListResponse"
+                  "$ref": "#/components/schemas/AdminBlogCategoryListResponse"
                 }
               }
             }
@@ -6790,11 +6961,41 @@
                 "PUBLISHED"
               ]
             }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (1-based). Omit both page and limit to get the complete list.",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page. Omit both page and limit to get the complete list.",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Search by banner title",
+            "schema": {
+              "example": "знижк",
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "List of banners",
+            "description": "List of banners (complete list when page/limit are omitted)",
             "content": {
               "application/json": {
                 "schema": {
@@ -6812,7 +7013,7 @@
             "access-token": []
           }
         ],
-        "summary": "List all banners — all statuses (admin)",
+        "summary": "List all banners — all statuses, optional search + pagination (admin)",
         "tags": [
           "Banners"
         ]
@@ -7194,11 +7395,41 @@
                 "PUBLISHED"
               ]
             }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (1-based). Omit both page and limit to get the complete list.",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page. Omit both page and limit to get the complete list.",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Search by carousel title",
+            "schema": {
+              "example": "новин",
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "List of carousels",
+            "description": "List of carousels (complete list when page/limit are omitted)",
             "content": {
               "application/json": {
                 "schema": {
@@ -7216,7 +7447,7 @@
             "access-token": []
           }
         ],
-        "summary": "List all carousels — all statuses, optionally filtered by placement / status (admin)",
+        "summary": "List all carousels — all statuses, optional placement / status filters, search and pagination (admin)",
         "tags": [
           "Carousels"
         ]
@@ -7866,14 +8097,45 @@
     "/api/admin/faq": {
       "get": {
         "operationId": "AdminFaqController_findAll",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (1-based). Omit both page and limit to get the complete list.",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page. Omit both page and limit to get the complete list.",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Search by question text",
+            "schema": {
+              "example": "доставк",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "All FAQ items",
+            "description": "FAQ items (complete list when page/limit are omitted)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FaqListResponse"
+                  "$ref": "#/components/schemas/AdminFaqListResponse"
                 }
               }
             }
@@ -7887,7 +8149,7 @@
             "access-token": []
           }
         ],
-        "summary": "List all FAQ items including inactive (admin)",
+        "summary": "List all FAQ items including inactive, optional search + pagination (admin)",
         "tags": [
           "FAQ"
         ]
@@ -8151,6 +8413,28 @@
                 "ARCHIVED"
               ]
             }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Sort: createdAt | status | name",
+            "schema": {
+              "default": "createdAt",
+              "example": "createdAt",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "description": "asc | desc",
+            "schema": {
+              "default": "desc",
+              "example": "desc",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -8207,6 +8491,52 @@
           }
         ],
         "summary": "Unread (NEW) message count (admin)",
+        "tags": [
+          "Contact"
+        ]
+      }
+    },
+    "/api/contact/admin/status": {
+      "patch": {
+        "operationId": "adminContactUpdateStatusMany",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkContactMessageStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Number of messages written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkContactMessageStatusResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — empty, oversized or non-UUID ids"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Unknown message id — nothing was written"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Set the status of many contact messages (admin)",
         "tags": [
           "Contact"
         ]
@@ -9189,6 +9519,28 @@
               "default": 10,
               "type": "number"
             }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Sort field (requestedAt, status, refundedAmount)",
+            "schema": {
+              "default": "requestedAt",
+              "example": "requestedAt",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "description": "Sort order (asc or desc)",
+            "schema": {
+              "default": "desc",
+              "example": "desc",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -10154,6 +10506,52 @@
         ]
       }
     },
+    "/api/admin/reviews/moderate": {
+      "patch": {
+        "operationId": "adminReviewControllerModerateMany",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkReviewModerationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Number of reviews written (for `reject`, deleted)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkReviewModerationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — empty, oversized or non-UUID ids"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Unknown review id — nothing was written"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Approve or reject reviews in bulk (admin)",
+        "tags": [
+          "Reviews"
+        ]
+      }
+    },
     "/api/admin/reviews/{id}/approve": {
       "patch": {
         "operationId": "adminReviewControllerApprove",
@@ -10445,6 +10843,28 @@
             "schema": {
               "maxLength": 255,
               "example": "john",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Sort field (createdAt, email, status)",
+            "schema": {
+              "default": "createdAt",
+              "example": "createdAt",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "description": "Sort order (asc or desc)",
+            "schema": {
+              "default": "desc",
+              "example": "desc",
               "type": "string"
             }
           }
@@ -13461,6 +13881,50 @@
           "specs"
         ]
       },
+      "BulkProductStatusDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "description": "Ids of the products whose status is being set.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "The status to write: `true` activates every listed product, `false` deactivates."
+          }
+        },
+        "required": [
+          "ids",
+          "isActive"
+        ]
+      },
+      "BulkProductStatusResult": {
+        "type": "object",
+        "properties": {
+          "updatedCount": {
+            "type": "number",
+            "description": "Products whose isActive was written",
+            "example": 12
+          }
+        },
+        "required": [
+          "updatedCount"
+        ]
+      },
+      "BulkProductStatusResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkProductStatusResult"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ProductImageListEnvelope": {
         "type": "object",
         "properties": {
@@ -13847,6 +14311,36 @@
           "data"
         ]
       },
+      "AdminDeviceBrandPaginationMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "Total number of items matching the filters",
+            "example": 6
+          },
+          "page": {
+            "type": "number",
+            "description": "Current page (1-based)",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "description": "Items per page — equals `total` for an unpaginated read"
+          },
+          "totalPages": {
+            "type": "number",
+            "description": "Total number of pages",
+            "example": 1
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit",
+          "totalPages"
+        ]
+      },
       "AdminDeviceBrandListResponse": {
         "type": "object",
         "properties": {
@@ -13856,10 +14350,14 @@
             "items": {
               "$ref": "#/components/schemas/DeviceBrandEntity"
             }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/AdminDeviceBrandPaginationMeta"
           }
         },
         "required": [
-          "data"
+          "data",
+          "meta"
         ]
       },
       "DeviceModelResponseEnvelope": {
@@ -15323,6 +15821,36 @@
           "data"
         ]
       },
+      "ProductGroupPaginationMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "Total number of items matching the filters",
+            "example": 5
+          },
+          "page": {
+            "type": "number",
+            "description": "Current page (1-based)",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "description": "Items per page — equals `total` for an unpaginated read"
+          },
+          "totalPages": {
+            "type": "number",
+            "description": "Total number of pages",
+            "example": 1
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit",
+          "totalPages"
+        ]
+      },
       "ProductGroupListResponse": {
         "type": "object",
         "properties": {
@@ -15331,10 +15859,14 @@
             "items": {
               "$ref": "#/components/schemas/ProductGroupSummaryEntity"
             }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ProductGroupPaginationMeta"
           }
         },
         "required": [
-          "data"
+          "data",
+          "meta"
         ]
       },
       "ProductGroupAxisInputDto": {
@@ -16053,6 +16585,24 @@
           "data"
         ]
       },
+      "AdminBlogCategoryListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlogCategoryEntity"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/AdminBlogPaginationMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
       "ReorderBlogCategoriesDto": {
         "type": "object",
         "properties": {
@@ -16377,6 +16927,36 @@
           "data"
         ]
       },
+      "AdminBannerPaginationMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "Total number of items matching the filters",
+            "example": 7
+          },
+          "page": {
+            "type": "number",
+            "description": "Current page (1-based)",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "description": "Items per page — equals `total` for an unpaginated read"
+          },
+          "totalPages": {
+            "type": "number",
+            "description": "Total number of pages",
+            "example": 1
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit",
+          "totalPages"
+        ]
+      },
       "AdminBannerListResponse": {
         "type": "object",
         "properties": {
@@ -16386,10 +16966,14 @@
             "items": {
               "$ref": "#/components/schemas/BannerEntity"
             }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/AdminBannerPaginationMeta"
           }
         },
         "required": [
-          "data"
+          "data",
+          "meta"
         ]
       },
       "BannerResponseEnvelope": {
@@ -16736,6 +17320,36 @@
           "updatedAt"
         ]
       },
+      "AdminCarouselPaginationMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "Total number of items matching the filters",
+            "example": 4
+          },
+          "page": {
+            "type": "number",
+            "description": "Current page (1-based)",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "description": "Items per page — equals `total` for an unpaginated read"
+          },
+          "totalPages": {
+            "type": "number",
+            "description": "Total number of pages",
+            "example": 1
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit",
+          "totalPages"
+        ]
+      },
       "AdminCarouselListResponse": {
         "type": "object",
         "properties": {
@@ -16745,10 +17359,14 @@
             "items": {
               "$ref": "#/components/schemas/CarouselEntity"
             }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/AdminCarouselPaginationMeta"
           }
         },
         "required": [
-          "data"
+          "data",
+          "meta"
         ]
       },
       "CarouselResponseEnvelope": {
@@ -17429,6 +18047,55 @@
           "data"
         ]
       },
+      "AdminFaqPaginationMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "Total number of items matching the filters",
+            "example": 8
+          },
+          "page": {
+            "type": "number",
+            "description": "Current page (1-based)",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "description": "Items per page — equals `total` for an unpaginated read"
+          },
+          "totalPages": {
+            "type": "number",
+            "description": "Total number of pages",
+            "example": 1
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit",
+          "totalPages"
+        ]
+      },
+      "AdminFaqListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "FAQ items (any status)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FaqItemEntity"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/AdminFaqPaginationMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
       "DeletedFaqId": {
         "type": "object",
         "properties": {
@@ -17749,6 +18416,57 @@
         },
         "required": [
           "data"
+        ]
+      },
+      "BulkContactMessageStatusResult": {
+        "type": "object",
+        "properties": {
+          "updatedCount": {
+            "type": "number",
+            "description": "Messages written",
+            "example": 15
+          }
+        },
+        "required": [
+          "updatedCount"
+        ]
+      },
+      "BulkContactMessageStatusResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkContactMessageStatusResult"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "BulkContactMessageStatusDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "description": "Ids of the messages whose status is being set.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "description": "The status to write onto every listed message.",
+            "enum": [
+              "NEW",
+              "IN_PROGRESS",
+              "READ",
+              "ARCHIVED"
+            ],
+            "example": "READ"
+          }
+        },
+        "required": [
+          "ids",
+          "status"
         ]
       },
       "UpdateContactMessageDto": {
@@ -20044,6 +20762,54 @@
         },
         "required": [
           "data"
+        ]
+      },
+      "BulkReviewModerationResult": {
+        "type": "object",
+        "properties": {
+          "updatedCount": {
+            "type": "number",
+            "description": "Reviews written (for reject, deleted)",
+            "example": 7
+          }
+        },
+        "required": [
+          "updatedCount"
+        ]
+      },
+      "BulkReviewModerationResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkReviewModerationResult"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "BulkReviewModerationDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "description": "Ids of the reviews being moderated.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "action": {
+            "type": "string",
+            "description": "`approve` publishes the reviews to the storefront. `reject` DELETES them permanently.",
+            "enum": [
+              "approve",
+              "reject"
+            ]
+          }
+        },
+        "required": [
+          "ids",
+          "action"
         ]
       },
       "DailyDataPointDto": {

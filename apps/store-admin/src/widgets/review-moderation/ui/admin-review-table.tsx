@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, Star } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -12,8 +12,14 @@ import {
   useAdminReviewControllerReject,
 } from "@/entities/review";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
+import { useReviewBulkModeration } from "@/features/review-bulk-moderation";
+import { useUrlParams } from "@/shared/lib/use-url-params";
+import { useRowSelection } from "@/shared/lib/use-row-selection";
 import {
+  BulkActionsBar,
   Button,
+  Checkbox,
+  LiveAnnouncer,
   Select,
   SelectContent,
   SelectItem,
@@ -25,6 +31,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableSelectCell,
+  TableSelectHead,
+  TableToolbar,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { AdminReviewTableSkeleton } from "./admin-review-table-skeleton";
@@ -72,10 +81,24 @@ function truncate(value: string | null | undefined): string {
  * (`?status=pending|approved`, default `pending`) and page (`?page=`) live in
  * the URL. Pending rows expose Approve / Reject actions; approved rows are
  * read-only. Mutations invalidate the list so the queue refreshes in place.
+ *
+ * `LiveAnnouncer` MUST wrap the queue rather than sit inside it — the same split
+ * `AdminCategoryTree` and `MessageInbox` make, for the same reason.
+ * `useRowSelection` and `useReviewBulkModeration` both call `useAnnouncer()`,
+ * and a hook called in the very component that renders the provider reads the
+ * context from ABOVE it, which is the default no-op. Every selection and
+ * bulk-moderation announcement would be silently dropped, and nothing on screen
+ * would look wrong.
  */
 export function AdminReviewTable() {
-  const router = useRouter();
-  const pathname = usePathname();
+  return (
+    <LiveAnnouncer>
+      <AdminReviewTableView />
+    </LiveAnnouncer>
+  );
+}
+
+function AdminReviewTableView() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
@@ -85,26 +108,14 @@ export function AdminReviewTable() {
       : AdminReviewControllerListStatus.pending;
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
 
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
-  };
+  const updateParams = useUrlParams();
 
-  const { data, isLoading, isFetching, isError } = useAdminReviewControllerList(
-    {
+  const { data, isLoading, isFetching, isError, refetch } =
+    useAdminReviewControllerList({
       status: statusParam,
       page,
       limit: PAGE_SIZE,
-    },
-  );
+    });
 
   const approve = useAdminReviewControllerApprove();
   const reject = useAdminReviewControllerReject();
@@ -154,26 +165,90 @@ export function AdminReviewTable() {
     updateParams({ status: value, page: undefined });
   };
 
+  // Selection is offered only on the PENDING queue, matching the per-row
+  // buttons: approved rows are read-only here, and a checkbox column with
+  // nothing to apply to it is worse than no column.
+  const selectableIds = isPending ? reviews.map((review) => review.id) : [];
+  const authorOf = (email: string) => email.split("@")[0];
+  const reviewById = new Map(reviews.map((review) => [review.id, review]));
+
+  const selection = useRowSelection({
+    rowIds: selectableIds,
+    getLabel: (id) => {
+      const review = reviewById.get(id);
+      return review
+        ? dict.reviews.rowAria(review.productName, authorOf(review.userEmail))
+        : id;
+    },
+    messages: {
+      selected: dict.common.table.announceSelected,
+      deselected: dict.common.table.announceDeselected,
+      selectedAll: dict.common.table.announceSelectedAll,
+      cleared: dict.common.table.announceCleared,
+    },
+  });
+
+  const bulk = useReviewBulkModeration({
+    onSuccess: () => {
+      selection.clear();
+      invalidateList();
+    },
+  });
+
+  const selectedIds = [...selection.selectedIds];
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <Select value={statusParam} onValueChange={handleStatusChange}>
-          <SelectTrigger
-            className="w-48"
-            aria-label={dict.reviews.filterStatusAria}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={AdminReviewControllerListStatus.pending}>
-              {dict.reviews.filterPending}
-            </SelectItem>
-            <SelectItem value={AdminReviewControllerListStatus.approved}>
-              {dict.reviews.filterApproved}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <TableToolbar
+        className="mb-0"
+        onRefresh={() => void refetch()}
+        isRefreshing={isFetching}
+        filters={
+          <Select value={statusParam} onValueChange={handleStatusChange}>
+            <SelectTrigger
+              className="w-48"
+              aria-label={dict.reviews.filterStatusAria}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={AdminReviewControllerListStatus.pending}>
+                {dict.reviews.filterPending}
+              </SelectItem>
+              <SelectItem value={AdminReviewControllerListStatus.approved}>
+                {dict.reviews.filterApproved}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        }
+        selectAll={
+          selectableIds.length > 0 ? (
+            <Checkbox
+              checked={selection.headerChecked}
+              onCheckedChange={selection.toggleAll}
+              disabled={bulk.isPending}
+              aria-label={dict.common.table.selectAll}
+            />
+          ) : null
+        }
+      />
+
+      <BulkActionsBar
+        selectedCount={selection.selectedCount}
+        isPending={bulk.isPending}
+        onClear={selection.clear}
+        actions={[
+          {
+            label: dict.reviews.bulk.approve(selection.selectedCount),
+            onClick: () => bulk.moderate(selectedIds, "approve"),
+          },
+          {
+            label: dict.reviews.bulk.reject(selection.selectedCount),
+            variant: "destructive",
+            onClick: () => bulk.moderate(selectedIds, "reject"),
+          },
+        ]}
+      />
 
       {isLoading ? (
         <AdminReviewTableSkeleton />
@@ -198,6 +273,14 @@ export function AdminReviewTable() {
           <Table layout="card">
             <TableHeader>
               <TableRow>
+                {isPending && (
+                  <TableSelectHead
+                    checked={selection.headerChecked}
+                    onCheckedChange={selection.toggleAll}
+                    disabled={bulk.isPending}
+                    label={dict.common.table.selectAll}
+                  />
+                )}
                 <TableHead>{dict.reviews.colProduct}</TableHead>
                 <TableHead>{dict.reviews.colAuthor}</TableHead>
                 <TableHead>{dict.reviews.colRating}</TableHead>
@@ -224,7 +307,25 @@ export function AdminReviewTable() {
                       review.productName,
                       review.userEmail.split("@")[0],
                     )}
+                    data-state={
+                      selection.isSelected(review.id) ? "selected" : undefined
+                    }
                   >
+                    {isPending && (
+                      <TableSelectCell
+                        checked={selection.isSelected(review.id)}
+                        onSelect={({ shiftKey }) =>
+                          shiftKey
+                            ? selection.extendTo(review.id)
+                            : selection.toggle(review.id)
+                        }
+                        disabled={bulk.isPending || busy}
+                        label={dict.reviews.bulk.selectRow(
+                          review.productName,
+                          review.userEmail.split("@")[0],
+                        )}
+                      />
+                    )}
                     <TableCell
                       label={dict.reviews.colProduct}
                       className="font-medium"

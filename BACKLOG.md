@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-353**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-358**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -386,6 +386,28 @@
 | TASK-352 | [🟡 до запуску — рішення власника] Політика неоплачених онлайн-замовлень. Стік резервується при створенні замовлення, **до** оплати (інакше двоє покупців можуть обидва оплатити останню одиницю), тож для карткових замовлень резерв має дедлайн. Ухвалено 2026-07-28 гібрид: післяплата тримає резерв безстроково, картка — 30 хв, далі авто-скасування з поверненням стоку. **Потребує підтвердження замовником:** чи 30 хвилин правильне вікно, чи слати лист-нагадування за 5 хв до скасування, чи дозволяти оплату вже скасованого замовлення. **Запуск не блокує** — дефолти безпечні, а `ORDER_RESERVATION_TTL_MINUTES` і `ORDER_AUTOCANCEL_UNPAID` навмисно винесені в env, щоб відповідь була зміною змінної, а не переписуванням машини станів | ⬜ | [163](docs/plans/163-online-payments-liqpay.md) |
 | TASK-347 | Забазлайнити локальну `store_dev` під історію міграцій: 44 таблиці з ери `db push`, таблиці `_prisma_migrations` немає взагалі, `migrate status` каже «жодна з 16 не застосована». Через це `migrate dev` непридатний локально — міграцію TASK-314 довелось генерувати дифом моделей і накочувати прицільно. Перевірити еквівалентність схем через shadow-БД, потім `migrate resolve --applied` по кожній. **Закрито 2026-07-28:** міграцій виявилось 17 (додалась `add_login_lockout`). Обидва дифи через тіньову БД — `--from-migrations` і `--from-schema` — дали **однакову** різницю, тобто історія міграцій і `schema.prisma` між собою еквівалентні, а жива база відставала від них рівно на один індекс `orders_payment_status_idx` (з `20260714141139`): останній `db push` передував його появі. **Порядок був критичний:** якби спершу позначили все застосованим, ця прогалина замерзла б назавжди — жодна майбутня міграція індекс уже не додала б. Тому спершу `db execute` того самого `migration.sql` (щоб результат був байт-ідентичний міграції), потім обидва дифи → «No difference detected», і лише тоді `resolve --applied` × 17. Підсумок: `migrate status` = «up to date», `_prisma_migrations` — 17 рядків, 0 незавершених, 0 відкочених; роль має `CREATEDB`, тож `migrate dev` сам підніме свою shadow-БД. Процедура (з попередженням «не починати з resolve») — `docs/seed-guide.md` §4. **Пастка Prisma 7:** `migrate diff --from-migrations` вимагає `datasource.shadowDatabaseUrl` у конфізі, а `--from-schema-datamodel`/`--to-url` прибрані; exit 1 — це помилка виклику, а не «схеми різні» | ✅ | — |
 
+## Зручність адмін-таблиць (епік TASK-292)
+
+> Розпарковано й **перецілено 2026-07-29**. Memo [157](docs/plans/157-admin-datatable-rescope.md)
+> запаркувало TASK-292 як «пілот TanStack, розблокувати на підтвердженій потребі в масовому
+> виділенні». Потреба зʼявилась — і TASK-293 закрив її **без TanStack**, із кращою a11y, ніж
+> дав би generic row-model. Але головне: задум задачі був інший від початку — не масове
+> виділення, а зручність (фільтри, сортування, кнопка оновлення), і memo 157 його підмінило.
+> План виконання: [168](docs/plans/168-admin-table-usability.md).
+> Виміряно 2026-07-29 по 21 таблиці: сортування — у 3, кнопка оновлення — у 0, пагінації немає
+> в 6, блог і сторінки мовчки обрізані на 100 рядків. Причина «немає оновлення» — глобальний
+> `staleTime: 5 хв` у `providers.tsx` плюс відсутність ручного refetch будь-де.
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-292 | **Епік: зручність адмін-таблиць.** Був «пілот TanStack Table на 1–2 таблицях» (memo 157, Option B) — перецілено 2026-07-29 на **власний примітив**: TanStack не беремо, бо сортування/пагінація/фільтри вже серверні, комірки нетипові, а card-mode + `rowLabel`-a11y (TASK-258/276) довелося б перепрошивати через column-defs. Обсяг за рівнями (рішення власника): гарячі таблиці — повний набір, довідники — пагінація + пошук + refresh. Розбито на TASK-353…357 **Закрито 2026-07-29** хвилею з трьох worktree-ів: 21 таблиця-список має тулбар і «Оновити», довідники — пагінацію й пошук, три таблиці — масові дії. Найцінніший улов не з ТЗ: **чотири таблиці були німими для скрінрідера** — у трьох хуки, що озвучують, стояли в тому ж компоненті, що рендерить `LiveAnnouncer` (тобто читали no-op-контекст згори), а в таблиці знижок провайдера не було зовсім. Живі перевірки — блок `### TASK-292` у [manual-qa-pending](docs/manual-qa-pending.md) | ✅ | [168](docs/plans/168-admin-table-usability.md) |
+| TASK-353 | Спільний шар примітивів таблиці в `shared/`: `table-toolbar.tsx` (слоти пошуку/фільтрів + кнопка «Оновити» зі станом `isFetching`), точкова політика `staleTime` для операційних списків (глобальні 5 хв лишаються дефолтом довідників), `use-row-selection.ts` — плоска версія механіки виділення з дерева категорій (`Shift+↑/↓` від якоря, tri-state заголовок, фільтрація вибраного проти поточної сторінки), чекбокс-колонка в `table.tsx` **із коректною поведінкою в card-mode** (у картці чекбокс у шапці, а не стікається підписаною коміркою), узагальнений `bulk-actions-bar.tsx`. Блокує всі чотири гілки Фази 2 | ✅ | [168](docs/plans/168-admin-table-usability.md) |
+| TASK-354 | Операційні таблиці: `order-list`, `return-list`, `message-inbox` — тулбар + refresh; `sortBy`/`sortOrder` у `return-list-query.dto.ts` і `contact-message-list-query.dto.ts` (сьогодні приймають лише `status/page/limit`); масова зміна статусу звернень + батч-ендпоінт за зразком `PATCH /admin/categories/status` **Закрито 2026-07-29:** додано `test/returns.e2e-spec.ts` (черга повернень не мала e2e взагалі); у скриньці звернень знайдено й виправлено дефект, за якого **жоден анонс для скрінрідера не доходив** — хуки виділення й масової дії викликались у тому ж компоненті, що рендерить `LiveAnnouncer`, тож читали no-op-контекст згори | ✅ | [168](docs/plans/168-admin-table-usability.md) |
+| TASK-355 | Каталог: `product-list`, `discount-list` — тулбар + refresh; **підключити наявне серверне сортування знижок** (DTO готовий, фронт його не використовує — безкоштовна перемога); масова активація/деактивація товарів + батч-ендпоінт | ✅ | [168](docs/plans/168-admin-table-usability.md) |
+| TASK-356 | Спільнота й дані: `review-moderation`, `user-list`, `subscriber-list`, `audit-log` — тулбар + refresh; сортування для відгуків/підписників/журналу (нові поля DTO); масове схвалення/відхилення відгуків + батч-ендпоінт. ⚠️ Відхилення відгуку — **hard delete** (`admin-review.controller.ts:139`, звільняє унікальний слот для повторної подачі), тож масове відхилення йде через blast-radius-підтвердження з кількістю, а не `window.confirm` **Закрито 2026-07-29:** попутно виправлено `user.repository.ts` — пагінований список акаунтів сортувався одним неунікальним ключем (`createdAt`), тож межа сторінки всередині групи однакових міток часу зсувалась від запиту до запиту: акаунт міг вернутись і на першій сторінці, і на другій, а інший — ніде. Кнопка «Оновити» це підсилювала: натиск, що мав бути no-op, перетасовував рядки | ✅ | [168](docs/plans/168-admin-table-usability.md) |
+| TASK-358 | Витягти спільний `updateParams` у `shared/lib/use-url-params.ts`: той самий 11-рядковий хелпер запису URL-стану був скопійований у 17 віджетів, до того ж непослідовно — 10 робили `router.replace`, 7 `router.push`, і поділ був випадковий. Уніфіковано на `replace`: це стан подання (пошук, фільтр, сортування, сторінка), а не навігація, тож із `push` пʼять правок фільтра означали пʼять натисків «Назад», щоб піти зі сторінки. Клієнтський хук — імпорт **прямий**, не через барель `shared/lib` (його тягнуть серверні компоненти) | ✅ | [168](docs/plans/168-admin-table-usability.md) |
+| TASK-357 | Довідники (10 таблиць): пагінація для 6, що її не мають — `banner-list`, `carousel-list`, `faq-list`, `device-brand-list`, `blog-category-list`, `product-group-list` (+ `page`/`limit` у `banner-list-query.dto.ts` і `carousel-list-query.dto.ts`, які їх не приймають); зняти мовчазне обрізання `blog-post-list` і `page-list` на `limit: 100` без жодної ознаки; пошук + refresh. Сортування навмисно не додаємо — рішення «за рівнями» **Закрито 2026-07-29 з відхиленням:** пагінацію отримали **три** таблиці, а не шість — `banner-list`, `blog-category-list` і `device-brand-list` лишились повними списками, бо це reorder-гріди: PATCH порядку має називати всі рядки, тож сторінка дала б зіпсований порядок. Пошук у них **блокує** перетягування, а не мовчки переставляє відфільтровану підмножину. Додано `addon-service-list` (21-ша таблиця, яку план проґавив) і перший тест для `discount-list`, що виявив у ній відсутній `LiveAnnouncer` | ✅ | [168](docs/plans/168-admin-table-usability.md) |
+
 ### Parked
 
 | Task ID | Description | Status | Plan |
@@ -396,7 +418,6 @@
 | TASK-050 | GA4 + Facebook Pixel — blocked on TASK-090 (consent must land first) | 🅿️ | — |
 | TASK-085 | Product comparison — PDP/account stubs already reference it | 🅿️ | — |
 | TASK-090 | Cookie consent + compliant marketing signup — bundled with the marketing push | 🅿️ | — |
-| TASK-292 | TanStack Table pilot on 1–2 tables (orders/products) — parked per plan 157 (Option B): unblocks only on a confirmed bulk selection / bulk-actions requirement; never as a mass rewrite of the ~21 admin tables | 🅿️ | 157 |
 
 ---
 
@@ -406,6 +427,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-353**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-359**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.

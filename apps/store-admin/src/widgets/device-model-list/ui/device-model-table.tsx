@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -15,13 +15,16 @@ import {
   Badge,
   Button,
   Input,
+  LiveAnnouncer,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  TableToolbar,
 } from "@/shared/ui";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { dict } from "@/shared/config";
 import { DeviceModelTableSkeleton } from "./device-model-table-skeleton";
 
@@ -30,10 +33,25 @@ const PAGE_SIZE = 20;
 /**
  * Admin device-model table (TASK-190). Paginated + searchable (name), across all
  * statuses, with a per-row visibility toggle. Search/page state live in the URL.
+ *
+ * TASK-357 moved the search form into the shared `TableToolbar`, added the
+ * refresh control, and gave the input its own placeholder/label — it used to
+ * borrow the section heading ("Моделі пристроїв"), which read to a screen reader
+ * as a field named after the page it sits on.
+ *
+ * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
+ * calls `useAnnouncer()` to confirm a refresh, and a hook called in the same
+ * component that renders the provider would read the default no-op context.
  */
 export function DeviceModelTable() {
-  const router = useRouter();
-  const pathname = usePathname();
+  return (
+    <LiveAnnouncer>
+      <DeviceModelView />
+    </LiveAnnouncer>
+  );
+}
+
+function DeviceModelView() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
@@ -41,11 +59,12 @@ export function DeviceModelTable() {
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const [searchInput, setSearchInput] = useState(searchParam);
 
-  const { data, isLoading, isError } = useAdminDeviceControllerFindModels({
-    page,
-    limit: PAGE_SIZE,
-    search: searchParam || undefined,
-  });
+  const { data, isLoading, isFetching, isError, refetch } =
+    useAdminDeviceControllerFindModels({
+      page,
+      limit: PAGE_SIZE,
+      search: searchParam || undefined,
+    });
   const activate = useAdminDeviceControllerActivateModel();
   const deactivate = useAdminDeviceControllerDeactivateModel();
   const pending = activate.isPending || deactivate.isPending;
@@ -53,18 +72,7 @@ export function DeviceModelTable() {
   const models = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
 
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.push(queryString ? `${pathname}?${queryString}` : pathname);
-  };
+  const updateParams = useUrlParams();
 
   const handleSearchSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -88,19 +96,30 @@ export function DeviceModelTable() {
 
   return (
     <div className="flex flex-col gap-4">
-      <form onSubmit={handleSearchSubmit} className="flex gap-2" role="search">
-        <Input
-          type="search"
-          placeholder={dict.devices.modelsHeading}
-          value={searchInput}
-          onChange={(event) => setSearchInput(event.target.value)}
-          className="max-w-xs"
-          aria-label={dict.devices.modelsHeading}
-        />
-        <Button type="submit" variant="outline">
-          {dict.common.search}
-        </Button>
-      </form>
+      <TableToolbar
+        className="mb-0"
+        onRefresh={() => void refetch()}
+        isRefreshing={isFetching}
+        search={
+          <form
+            onSubmit={handleSearchSubmit}
+            className="flex gap-2"
+            role="search"
+          >
+            <Input
+              type="search"
+              placeholder={dict.devices.modelsSearchPlaceholder}
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              className="max-w-xs"
+              aria-label={dict.devices.modelsSearchAria}
+            />
+            <Button type="submit" variant="outline">
+              {dict.common.search}
+            </Button>
+          </form>
+        }
+      />
 
       {isLoading ? (
         <DeviceModelTableSkeleton />
@@ -110,7 +129,9 @@ export function DeviceModelTable() {
         </p>
       ) : models.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {dict.devices.modelsEmpty}
+          {searchParam
+            ? dict.devices.modelsEmptyMatch(searchParam)
+            : dict.devices.modelsEmpty}
         </div>
       ) : (
         <div className="rounded-lg border border-border shadow-card overflow-hidden">

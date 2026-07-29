@@ -11,6 +11,11 @@
  *
  * A category that still has posts is refused by the API (409 on delete) — surfaced
  * as an error toast.
+ *
+ * THE GRID IS DELIBERATELY NOT PAGINATED, and TASK-357 did not change that even
+ * though the endpoint now accepts `page`/`limit`. Same reason as the search lock:
+ * a page is a partial view, and a reorder computed on a partial view is a partial
+ * ordering. What TASK-357 adds here is the toolbar and the refresh control.
  */
 
 import { useMemo, useState } from "react";
@@ -45,6 +50,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableToolbar,
   type SortableTreeRowRenderProps,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -71,7 +77,8 @@ export function BlogCategoryTable() {
 function BlogCategoryGrid() {
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError } = useAdminBlogControllerFindCategories();
+  const { data, isLoading, isFetching, isError, refetch } =
+    useAdminBlogControllerFindCategories();
   const remove = useAdminBlogControllerDeleteCategory();
 
   const categories = useMemo(() => data?.data ?? [], [data]);
@@ -120,26 +127,6 @@ function BlogCategoryGrid() {
     );
   };
 
-  if (isLoading) {
-    return <BlogCategoryTableSkeleton />;
-  }
-
-  if (isError) {
-    return (
-      <p role="alert" className="text-sm text-destructive">
-        {dict.blogCategories.loadError}
-      </p>
-    );
-  }
-
-  if (categories.length === 0) {
-    return (
-      <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-        {dict.blogCategories.empty}
-      </div>
-    );
-  }
-
   const renderRow = (props: SortableTreeRowRenderProps) => {
     const row = grid.rows.find((r) => r.item.id === props.item.id);
     const category = byId.get(props.item.id);
@@ -164,21 +151,28 @@ function BlogCategoryGrid() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder={dict.reorderList.searchPlaceholder}
-          aria-label={dict.reorderList.searchLabel}
-          className="max-w-xs"
-        />
-        <ReorderUndoButton
-          canUndo={reorder.canUndo}
-          onUndo={reorder.undo}
-          label={dict.reorderList.undo}
-        />
-      </div>
+      <TableToolbar
+        className="mb-0"
+        onRefresh={() => void refetch()}
+        isRefreshing={isFetching}
+        search={
+          <Input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={dict.reorderList.searchPlaceholder}
+            aria-label={dict.reorderList.searchLabel}
+            className="max-w-xs"
+          />
+        }
+        actions={
+          <ReorderUndoButton
+            canUndo={reorder.canUndo}
+            onUndo={reorder.undo}
+            label={dict.reorderList.undo}
+          />
+        }
+      />
 
       {searchActive && (
         <p className="text-sm text-muted-foreground">
@@ -193,7 +187,17 @@ function BlogCategoryGrid() {
         {dict.reorderList.instructionsShort}
       </div>
 
-      {grid.rows.length === 0 ? (
+      {isLoading ? (
+        <BlogCategoryTableSkeleton />
+      ) : isError ? (
+        <p role="alert" className="text-sm text-destructive">
+          {dict.blogCategories.loadError}
+        </p>
+      ) : categories.length === 0 ? (
+        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
+          {dict.blogCategories.empty}
+        </div>
+      ) : grid.rows.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
           {dict.reorderList.emptyMatch(search.trim())}
         </div>

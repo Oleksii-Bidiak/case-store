@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { Prisma } from '@prisma/client';
-import { ReviewRepository } from './review.repository';
+import { ReviewRepository, ReviewsNotFoundError } from './review.repository';
 import { ReviewEntity, ReviewAggregateEntity, AdminReviewEntity } from './entities';
 import { ReviewModerationStatus } from './dto';
 import type { CreateReviewDto, ReviewListQueryDto, AdminReviewQueryDto } from './dto';
@@ -186,5 +186,34 @@ export class ReviewService {
 
     await this.reviewRepository.delete(id);
     this.logger.info({ reviewId: id }, 'Review rejected (deleted)');
+  }
+
+  /**
+   * Approve or reject many reviews at once (TASK-356) — the moderation queue's
+   * per-row buttons applied to a selection, in one transaction.
+   *
+   * `reject` deletes. The log line says so, and says how many, because this is
+   * the one bulk action in the panel that destroys data: if an operator later
+   * asks "where did those reviews go", this is the record.
+   *
+   * @throws NotFoundException when any id is unknown — nothing is written.
+   */
+  async moderateMany(ids: string[], action: 'approve' | 'reject'): Promise<number> {
+    let count: number;
+    try {
+      count = await this.reviewRepository.moderateMany(ids, action);
+    } catch (error) {
+      if (error instanceof ReviewsNotFoundError) {
+        throw new NotFoundException(error.message);
+      }
+      throw error;
+    }
+
+    this.logger.info(
+      { action, count, reviewIds: ids },
+      action === 'reject' ? 'Reviews rejected in bulk (deleted)' : 'Reviews approved in bulk',
+    );
+
+    return count;
   }
 }

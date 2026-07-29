@@ -195,6 +195,27 @@ export const dict = {
     sortAsc: "за зростанням",
     sortDesc: "за спаданням",
     sortNone: "не відсортовано",
+
+    // Shared table chrome: toolbar, refresh, row selection (TASK-353).
+    // Lives in `common` because every admin table uses the same strings —
+    // a per-widget copy would drift the moment one of them is reworded.
+    table: {
+      refresh: "Оновити",
+      refreshing: "Оновлення…",
+      refreshed: "Дані оновлено",
+      refreshAria: "Оновити дані таблиці",
+      searchPlaceholder: "Пошук…",
+      selectRow: (name: string) => `Вибрати „${name}“`,
+      selectAll: "Вибрати всі рядки на сторінці",
+      selectedCount: (count: number) => `Вибрано: ${count}`,
+      clearSelection: "Зняти вибір",
+      announceSelected: (name: string, count: number) =>
+        `„${name}“ вибрано. Усього вибрано: ${count}`,
+      announceDeselected: (name: string, count: number) =>
+        `„${name}“ знято. Усього вибрано: ${count}`,
+      announceSelectedAll: (count: number) => `Вибрано рядків: ${count}`,
+      announceCleared: "Вибір знято",
+    },
   },
 
   // --- Products (TASK-115) ----------------------------------------------------
@@ -244,6 +265,22 @@ export const dict = {
     // (tied up in unshipped orders) / physical (on the shelf = available + reserved).
     // The sortable header uses the generic dict.common.sortByAria(label) helper.
     colStock: "Вільно / Резерв / Фізично",
+    // Bulk activate / deactivate over the on-screen selection (TASK-355).
+    bulk: {
+      activate: (count: number) => `Активувати (${count})`,
+      deactivate: (count: number) => `Деактивувати (${count})`,
+      selectRow: (name: string) => `Вибрати „${name}“`,
+      // Blast radius spelled out: deactivating hides the products from the
+      // storefront, and the count is the reason this prompt exists.
+      deactivateConfirm: (count: number) =>
+        `Деактивувати ${count} тов. — вони зникнуть із вітрини. Продовжити?`,
+      announceSaving: (count: number) => `Збереження ${count} тов.…`,
+      announceDone: (count: number, isActive: boolean) =>
+        isActive
+          ? `Активовано товарів: ${count}`
+          : `Деактивовано товарів: ${count}`,
+      announceFailed: "Не вдалося змінити статус товарів",
+    },
     back: "← Назад до товарів",
     createHeading: "Створення товару",
     editHeading: "Редагування товару",
@@ -512,6 +549,9 @@ export const dict = {
     loadOneError: "Не вдалося завантажити запис. Спробуйте ще раз.",
     brandsEmpty: "Брендів пристроїв ще немає. Створіть перший.",
     modelsEmpty: "Моделей пристроїв ще немає. Створіть першу.",
+    modelsSearchPlaceholder: "Пошук за назвою моделі…",
+    modelsSearchAria: "Пошук моделей пристроїв",
+    modelsEmptyMatch: (q: string) => `Немає моделей за запитом «${q}».`,
     colName: "Назва",
     colSlug: "Slug",
     colBrand: "Бренд",
@@ -746,6 +786,11 @@ export const dict = {
     add: "Додати сторінку",
     loadError: "Не вдалося завантажити сторінки. Спробуйте ще раз.",
     empty: "Сторінок ще немає. Створіть свою першу сторінку.",
+    // TASK-357: the table used to ask for `limit: 100` and show no page
+    // controls — page 101 simply did not exist for the operator.
+    searchPlaceholder: "Пошук за заголовком або slug…",
+    searchAria: "Пошук сторінок",
+    emptyMatch: (q: string) => `Немає сторінок за запитом «${q}».`,
     colTitle: "Заголовок",
     colSlug: "Slug",
     colStatus: "Статус",
@@ -827,6 +872,11 @@ export const dict = {
     manageCategories: "Категорії",
     loadError: "Не вдалося завантажити статті. Спробуйте ще раз.",
     empty: "Статей ще немає. Створіть свою першу статтю.",
+    // TASK-357: the table used to ask for `limit: 100` and show no page
+    // controls — article 101 simply did not exist for the operator.
+    searchPlaceholder: "Пошук за заголовком або описом…",
+    searchAria: "Пошук статей",
+    emptyMatch: (q: string) => `Немає статей за запитом «${q}».`,
     colTitle: "Заголовок",
     colCategory: "Категорія",
     colStatus: "Статус",
@@ -1320,6 +1370,9 @@ export const dict = {
     statusInactive: "Приховано",
     activate: "Показати",
     deactivate: "Приховати",
+    searchPlaceholder: "Пошук за текстом запитання…",
+    searchAria: "Пошук запитань",
+    emptyMatch: (q: string) => `Немає запитань за запитом «${q}».`,
     loadError: "Не вдалося завантажити запитання. Спробуйте ще раз.",
     loadOneError: "Не вдалося завантажити запитання. Спробуйте ще раз.",
     empty: "Запитань ще немає. Додайте перше запитання.",
@@ -1512,6 +1565,21 @@ export const dict = {
     // TASK-276: names the card-mode row group for screen readers.
     rowAria: (product: string, author: string) =>
       `Відгук на «${product}» від ${author}`,
+    // Bulk moderation over the on-screen selection (TASK-356).
+    bulk: {
+      approve: (count: number) => `Схвалити (${count})`,
+      reject: (count: number) => `Відхилити (${count})`,
+      selectRow: (product: string, author: string) =>
+        `Вибрати відгук на «${product}» від ${author}`,
+      // Rejecting DELETES the reviews permanently — the prompt says so, and
+      // says how many, because nothing can undo it.
+      rejectConfirm: (count: number) =>
+        `Відхилити ${count} відг.? Їх буде видалено назавжди — скасувати цю дію неможливо.`,
+      announceSaving: (count: number) => `Обробка ${count} відг.…`,
+      announceApproved: (count: number) => `Схвалено відгуків: ${count}`,
+      announceRejected: (count: number) => `Видалено відгуків: ${count}`,
+      announceFailed: "Не вдалося виконати масову дію",
+    },
   },
 
   // --- Contact messages (TASK-177) --------------------------------------------
@@ -1562,6 +1630,21 @@ export const dict = {
     statusInProgress: "В роботі",
     markInProgress: "Взяти в роботу",
     viewProfile: "Профіль клієнта",
+
+    // Bulk status change over the on-screen selection (TASK-354).
+    //
+    // Only three of the four statuses are offered. "Повернути в нові" is
+    // per-row only: it is an undo for one mis-click, and in bulk it would push
+    // conversations back into the unread badge that someone has already worked.
+    bulk: {
+      markInProgress: (count: number) => `В роботу (${count})`,
+      markRead: (count: number) => `Прочитано (${count})`,
+      markArchived: (count: number) => `В архів (${count})`,
+      selectRow: (name: string) => `Вибрати повідомлення від ${name}`,
+      announceSaving: (count: number) => `Оновлення ${count} повідомл.…`,
+      announceDone: (count: number) => `Оновлено повідомлень: ${count}`,
+      announceFailed: "Не вдалося виконати масову дію",
+    },
   },
 
   orderStatus: {
@@ -1998,6 +2081,9 @@ export const dict = {
     add: "Додати групу",
     loadError: "Не вдалося завантажити групи товарів. Спробуйте ще раз.",
     empty: "Груп товарів ще немає. Створіть свою першу групу.",
+    searchPlaceholder: "Пошук за назвою групи…",
+    searchAria: "Пошук груп товарів",
+    emptyMatch: (q: string) => `Немає груп за запитом «${q}».`,
     colName: "Назва",
     colAxes: "Осі",
     colPositions: "Позиції",
@@ -2214,6 +2300,9 @@ export const dict = {
     add: "Додати карусель",
     loadError: "Не вдалося завантажити каруселі. Спробуйте ще раз.",
     empty: "Каруселей ще немає. Створіть свою першу карусель.",
+    searchPlaceholder: "Пошук за заголовком…",
+    searchAria: "Пошук каруселей",
+    emptyMatch: (q: string) => `Немає каруселей за запитом «${q}».`,
     colTitle: "Заголовок",
     colSource: "Джерело",
     colPlacement: "Місце на сайті",

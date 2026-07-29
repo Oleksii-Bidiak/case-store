@@ -98,6 +98,19 @@ export class UserRepository {
     const sortField = ALLOWED_SORT[params.sortBy ?? 'createdAt'] ?? 'createdAt';
     const sortOrder = params.sortOrder ?? 'desc';
 
+    // `id` is appended as a last key so the sort is total (TASK-356). The
+    // default sort is `createdAt`, which is NOT unique — a seed batch or a bulk
+    // import writes many accounts on the same timestamp — and within a tie group
+    // Postgres promises no order at all. Under LIMIT/OFFSET that means a page
+    // boundary landing inside a tie can hand back the same account on two pages
+    // while another is never returned, with the totals still adding up. Sorting
+    // by `email` does not need the key (it is unique), but a total order that
+    // depends on which column was picked is a footgun for the next field added.
+    const orderBy: Prisma.UserOrderByWithRelationInput[] = [
+      { [sortField]: sortOrder },
+      { id: 'asc' },
+    ];
+
     // Build the where clause from optional filters. Soft-deleted users
     // (tombstoned) must never appear in any admin listing.
     const where: Prisma.UserWhereInput = { deletedAt: null };
@@ -123,7 +136,7 @@ export class UserRepository {
         where,
         skip,
         take: limit,
-        orderBy: { [sortField]: sortOrder },
+        orderBy,
       }),
       this.prisma.user.count({ where }),
     ]);

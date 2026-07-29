@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { Prisma, Review } from '@prisma/client';
-import { ReviewRepository } from './review.repository';
+import { ReviewRepository, ReviewsNotFoundError } from './review.repository';
 import { ReviewService } from './review.service';
 import { ReviewModerationStatus } from './dto';
 
@@ -34,6 +34,7 @@ const reviewRepositoryMock = {
   findById: jest.fn(),
   approve: jest.fn(),
   delete: jest.fn(),
+  moderateMany: jest.fn(),
   isVerifiedPurchase: jest.fn(),
   findVerifiedPurchaserIds: jest.fn(),
   findExisting: jest.fn(),
@@ -265,6 +266,46 @@ describe('ReviewService', () => {
       await service.rejectReview('review-uuid-1');
 
       expect(reviewRepositoryMock.delete).toHaveBeenCalledWith('review-uuid-1');
+    });
+  });
+
+  // ─── moderateMany (bulk, TASK-356) ────────────────────────────────────────────
+
+  describe('moderateMany', () => {
+    it('approves the whole selection and reports the DB count', async () => {
+      reviewRepositoryMock.moderateMany.mockResolvedValue(3);
+
+      const count = await service.moderateMany(['a', 'b', 'c'], 'approve');
+
+      expect(count).toBe(3);
+      expect(reviewRepositoryMock.moderateMany).toHaveBeenCalledWith(['a', 'b', 'c'], 'approve');
+    });
+
+    it('passes reject through as reject — it is a delete, not an inverse approve', async () => {
+      reviewRepositoryMock.moderateMany.mockResolvedValue(2);
+
+      await service.moderateMany(['a', 'b'], 'reject');
+
+      expect(reviewRepositoryMock.moderateMany).toHaveBeenCalledWith(['a', 'b'], 'reject');
+    });
+
+    it('maps the repository domain error to 404', async () => {
+      reviewRepositoryMock.moderateMany.mockRejectedValue(new ReviewsNotFoundError(['gone']));
+
+      await expect(service.moderateMany(['a', 'gone'], 'reject')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('logs the destructive path with its count — this is the only record of a bulk delete', async () => {
+      reviewRepositoryMock.moderateMany.mockResolvedValue(5);
+
+      await service.moderateMany(['a', 'b', 'c', 'd', 'e'], 'reject');
+
+      expect(pinoLoggerMock.info).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'reject', count: 5 }),
+        expect.stringContaining('deleted'),
+      );
     });
   });
 });

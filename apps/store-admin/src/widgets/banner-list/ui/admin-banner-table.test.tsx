@@ -40,10 +40,7 @@ beforeEach(() => {
 });
 
 type Placement =
-  | "HERO_SLIDE"
-  | "PROMO_TILE"
-  | "PROMO_BANNER"
-  | "ANNOUNCEMENT_BAR";
+  "HERO_SLIDE" | "PROMO_TILE" | "PROMO_BANNER" | "ANNOUNCEMENT_BAR";
 type Status = "DRAFT" | "SCHEDULED" | "PUBLISHED";
 
 function makeBannerRow(
@@ -494,5 +491,61 @@ describe("AdminBannerTable — the payload can never be partial (TASK-295)", () 
       placement: "HERO_SLIDE",
       orderedIds: [H1, H3, H2],
     });
+  });
+});
+
+/**
+ * TASK-357 gave every reference table a toolbar with a refresh control — but
+ * deliberately did NOT paginate this view. The reorder payload has to name EVERY
+ * banner of a placement, and a page is a partial view; paging here would have
+ * traded a missing button for a corrupt PATCH.
+ */
+describe("AdminBannerTable — toolbar (TASK-357)", () => {
+  it("refetches on demand without ever asking for a page", async () => {
+    const urls: URL[] = [];
+    server.use(
+      http.get("*/api/admin/banners", ({ request }) => {
+        urls.push(new URL(request.url));
+        return HttpResponse.json({
+          data: [
+            makeBannerRow("banner-1", "Summer Hero", "HERO_SLIDE", "PUBLISHED"),
+          ],
+        });
+      }),
+    );
+
+    renderWithProviders(<AdminBannerTable />);
+    await screen.findByText("Summer Hero");
+    expect(urls).toHaveLength(1);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.table.refreshAria }),
+    );
+
+    await waitFor(() => expect(urls).toHaveLength(2));
+    for (const url of urls) {
+      expect(url.searchParams.get("page")).toBeNull();
+      expect(url.searchParams.get("limit")).toBeNull();
+    }
+    expect(
+      screen.queryByRole("button", { name: dict.common.next }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the refresh control reachable when the list failed to load", async () => {
+    server.use(
+      http.get(
+        "*/api/admin/banners",
+        () => new HttpResponse(null, { status: 500 }),
+      ),
+    );
+
+    renderWithProviders(<AdminBannerTable />);
+
+    expect(await screen.findByText(dict.banners.loadError)).toBeInTheDocument();
+    // The state where a refresh matters most used to hide the whole toolbar.
+    expect(
+      screen.getByRole("button", { name: dict.common.table.refreshAria }),
+    ).toBeInTheDocument();
   });
 });

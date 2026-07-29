@@ -85,7 +85,9 @@ export class AdminPageController {
 
   @Get()
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'List all pages — published + drafts (admin)' })
+  @ApiOperation({
+    summary: 'List all pages — published + drafts, paginated, optional search (admin)',
+  })
   @ApiResponse({ status: 200, description: 'Paginated list of pages', type: AdminPageListResponse })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: AdminPageListQueryDto): Promise<AdminPageListResponse> {

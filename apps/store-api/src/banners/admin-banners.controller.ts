@@ -34,11 +34,34 @@ import { CurrentUser } from '../auth/decorators';
 import { BannerEntity } from './entities';
 
 /**
+ * Pagination metadata for the admin banner list (TASK-357).
+ */
+class AdminBannerPaginationMeta {
+  @ApiProperty({ description: 'Total number of items matching the filters', example: 7 })
+  total!: number;
+
+  @ApiProperty({ description: 'Current page (1-based)', example: 1 })
+  page!: number;
+
+  @ApiProperty({ description: 'Items per page — equals `total` for an unpaginated read' })
+  limit!: number;
+
+  @ApiProperty({ description: 'Total number of pages', example: 1 })
+  totalPages!: number;
+}
+
+/**
  * Response envelope for an admin banner list (published + drafts).
+ *
+ * Shared with the reorder route on purpose — the admin panel writes the reorder
+ * response into the list query's cache, so the two must not drift.
  */
 class AdminBannerListResponse {
   @ApiProperty({ type: [BannerEntity], description: 'Banners (all statuses, optionally filtered)' })
   data!: BannerEntity[];
+
+  @ApiProperty({ type: AdminBannerPaginationMeta })
+  meta!: AdminBannerPaginationMeta;
 }
 
 /**
@@ -62,7 +85,12 @@ class BannerResponseEnvelope {
  *   DELETE /api/admin/banners/:id          — hard delete
  */
 @ApiTags('Banners')
-@ApiExtraModels(AdminBannerListResponse, BannerEntity, BannerResponseEnvelope)
+@ApiExtraModels(
+  AdminBannerListResponse,
+  AdminBannerPaginationMeta,
+  BannerEntity,
+  BannerResponseEnvelope,
+)
 @Controller('admin/banners')
 @UseGuards(PermissionGuard)
 @RequirePermission('banners:write')
@@ -71,8 +99,14 @@ export class AdminBannerController {
 
   @Get()
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'List all banners — all statuses (admin)' })
-  @ApiResponse({ status: 200, description: 'List of banners', type: AdminBannerListResponse })
+  @ApiOperation({
+    summary: 'List all banners — all statuses, optional search + pagination (admin)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of banners (complete list when page/limit are omitted)',
+    type: AdminBannerListResponse,
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: AdminBannerListQueryDto): Promise<AdminBannerListResponse> {
     return this.bannerService.findAllAdmin(query);

@@ -15,6 +15,9 @@ const LOCK_RESOURCE = 'blog-categories';
 /** Blog categories are ONE global list — a single, null-keyed bucket. */
 const BUCKET_LOCK_KEY = lockKey(LOCK_RESOURCE, null);
 
+/** Page size used when the admin asks for a page but names no `limit` (TASK-357). */
+const DEFAULT_ADMIN_PAGE_SIZE = 20;
+
 /**
  * Slugs of a rename being persisted by this update — when present, the write
  * additionally records a 301 redirect `oldSlug → newSlug` in the SlugRedirect
@@ -48,6 +51,23 @@ export interface FindAllPostsParams {
 /** Parameters for the admin post list (all statuses). */
 export interface FindAllAdminPostsParams extends FindAllPostsParams {
   status?: PublishStatus;
+}
+
+/**
+ * Parameters for the admin CATEGORY list. `page` / `limit` are OPTIONAL and
+ * jointly opt-in: with both absent the read returns the complete list, which is
+ * what the drag-and-drop reorder UI requires.
+ */
+export interface FindAllAdminCategoriesParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+}
+
+/** Result of an admin category query — `total` counts rows matching the filters. */
+export interface PaginatedBlogCategoriesResult {
+  categories: BlogCategory[];
+  total: number;
 }
 
 /** Allowed fields for creating a post. Publish fields are pre-resolved by the service. */
@@ -295,11 +315,49 @@ export class BlogRepository implements PublishablePort {
    *
    * Accepts a transaction client (TASK-295) so the reorder endpoint can re-read the
    * refreshed list inside its own transaction.
+   *
+   * Backs the PUBLIC `GET /api/blog/categories` — deliberately left un-paginated and
+   * un-searchable; the admin list has its own method below.
    */
   findAllCategories(client: PrismaService | ReorderTx = this.prisma): Promise<BlogCategory[]> {
     return client.blogCategory.findMany({
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
+  }
+
+  /**
+   * Admin category list with an optional name search and opt-in pagination (TASK-357).
+   *
+   * With neither `page` nor `limit` this is `findAllCategories` plus a row count — no
+   * `skip`/`take` and no second `count` round-trip. Ordering stays `sortOrder` ASC in
+   * every mode: it is the operator's own hand-set order and the only one the blog hub
+   * renders, so a paginated page must slice that same sequence.
+   */
+  async findAllCategoriesAdmin(
+    params: FindAllAdminCategoriesParams = {},
+  ): Promise<PaginatedBlogCategoriesResult> {
+    const where: Prisma.BlogCategoryWhereInput = {
+      ...(params.search && { name: { contains: params.search, mode: 'insensitive' } }),
+    };
+    const orderBy: Prisma.BlogCategoryOrderByWithRelationInput[] = [
+      { sortOrder: 'asc' },
+      { name: 'asc' },
+    ];
+
+    if (params.page === undefined && params.limit === undefined) {
+      const categories = await this.prisma.blogCategory.findMany({ where, orderBy });
+      return { categories, total: categories.length };
+    }
+
+    const limit = params.limit ?? DEFAULT_ADMIN_PAGE_SIZE;
+    const skip = ((params.page ?? 1) - 1) * limit;
+
+    const [categories, total] = await Promise.all([
+      this.prisma.blogCategory.findMany({ where, orderBy, skip, take: limit }),
+      this.prisma.blogCategory.count({ where }),
+    ]);
+
+    return { categories, total };
   }
 
   /**
