@@ -323,11 +323,39 @@ standalone "Хіти продажів" rail, which would now render the same pro
 heading. Re-seeding an existing dev DB flips that row's `placement` to `HOME_TABS` in place (same
 deterministic id).
 
-Images use deterministic `https://picsum.photos/seed/{positionSlug}-{sortOrder}/800/800` URLs so the
-storefront looks populated without real uploads. The first image (`sortOrder === 0`) of each
-position is the primary/cover. Positions seeded from a multi-image entry render the
+### Imagery (TASK-365)
+
+Product images and category tiles are **generated on the machine running the seed** — no network,
+no third-party placeholder host. Each picture is an SVG (a palette gradient, a rounded plinth on
+products, and a category icon) rasterised with `sharp` and then handed to the very same
+`ImageProcessor` the admin upload flow uses, so a seeded image gets WebP q80 **and a real base64
+LQIP** — seeded rows blur up exactly like uploaded photos instead of popping in.
+
+Files land in `UPLOAD_DEST/products/` (default `apps/store-api/uploads/products/`, which
+`ServeStaticModule` serves at `/uploads`). Category tiles share that directory deliberately: both
+storefront allowlists match the `/uploads/` **prefix**, not the sub-directory. The resulting URL —
+`${PUBLIC_BASE_URL}/uploads/products/seed-<hash>.webp` — is identical in shape to one the admin
+panel produces, which is why seeded data needs no special case in `next/image`, in the blur-up
+placeholder, or in the admin thumbnail column.
+
+Products are 800×800, category tiles 512×512 (a 2× render of `CategoryTileImage`'s 256 px
+intrinsic). The first image (`sortOrder === 0`) of each position is the primary/cover; later sort
+orders shift the gradient angle, rotate the icon and add an accent disc, so a three-image gallery
+is three visibly different pictures. Positions seeded from a multi-image entry render the
 `ProductImageGallery` thumbnail strip (gated on `images.length > 1`), which is what TASK-128-B
 enabled for QA.
+
+Filenames are a sha1 of the render recipe, so **re-seeding overwrites identical bytes rather than
+accumulating files**; identical icon × palette × sort-order combinations are also encoded only
+once per run. A final prune pass then deletes any `seed-<16 hex>.webp` this run did not write.
+That pattern cannot match a real upload — `LocalDiskStorageService` names those `<uuid>.<ext>`.
+
+The seed prints the origin it baked into the URLs, once:
+`ℹ Seed images: http://localhost:3001/uploads/products/ → <directory>`. **Compare that line with
+the storefront's `NEXT_PUBLIC_API_URL` whenever tiles fall back to icons**: `next/image` builds its
+allowlist from that variable at build time, and `localhost` is not the same origin as `127.0.0.1`
+to it. Under `NODE_ENV=production` an unset `PUBLIC_BASE_URL` is a hard error instead of a default,
+so a staging database can never be seeded with `localhost` URLs.
 
 ---
 
@@ -335,8 +363,11 @@ enabled for QA.
 
 - **`seed-address-1`** is a hard-coded address id used for idempotency. Do not reuse that id for
   test data outside the seed, or the upsert will overwrite your row.
-- **picsum.photos** placeholder URLs require network access; in a fully offline environment the
-  storefront images will not load, but the seed itself still succeeds (no images are fetched at
-  seed time). Real product images go through the admin upload flow, not the seed.
+- **Imagery needs no network.** Seed images are rendered locally (§8), so an offline machine gets
+  exactly the same pictures as a connected one. What they do need is a **writable `UPLOAD_DEST`**
+  and an API served from the `PUBLIC_BASE_URL` the seed logged — in Docker that means running the
+  seed via `docker compose exec` so the files land in the mounted `uploads_data` volume rather
+  than inside a throwaway container. Real product photos still go through the admin upload flow,
+  not the seed.
 - The seed assumes an empty or already-seeded DB. It does **not** delete unrelated rows you may
   have created manually — only seed-owned axes and images are replaced wholesale.

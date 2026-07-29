@@ -107,14 +107,6 @@ const nextConfig: NextConfig = {
         port: apiUrl.port,
         pathname: "/uploads/**",
       },
-      // Placeholder imagery used by the dev seed (`picsum.photos/seed/...`).
-      // Real product images are served from the store-api uploads host above;
-      // this entry only exists so seeded demo data renders locally.
-      {
-        protocol: "https",
-        hostname: "picsum.photos",
-        pathname: "/**",
-      },
       // Operator-configured CDN hosts for admin-entered `Category.image` URLs.
       // https only — see the note on `extraImageHosts`.
       ...extraImageHosts.map((hostname) => ({

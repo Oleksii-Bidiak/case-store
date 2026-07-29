@@ -22,6 +22,7 @@ import { seedProducts } from './seed/seeders/products.seeder';
 import { seedReviews } from './seed/seeders/reviews.seeder';
 import { seedSeoSettings, seedSiteContactSettings } from './seed/seeders/site-settings.seeder';
 import { seedUsers } from './seed/seeders/users.seeder';
+import { pruneSeedImages } from './seed/lib/images/seed-image.generator';
 
 // ─── Guard ──────────────────────────────────────────────────────────────────
 
@@ -89,6 +90,15 @@ async function main() {
     await seedAddresses(prisma, customers);
     await seedPages(prisma);
     await seedBlog(prisma);
+
+    // Last, once every seeder that draws imagery has run: drop the generated
+    // image files nothing points at any more (a renamed category, a dropped
+    // product). Only this generator's own `seed-<hash>.webp` names are eligible,
+    // so real uploads sharing the directory are untouchable.
+    const prunedImages = await pruneSeedImages();
+    if (prunedImages > 0) {
+      console.log(`  ✓ Seed images: ${prunedImages} orphaned file(s) removed`);
+    }
 
     console.log('\n✅ Seed completed successfully!\n');
   } catch (error) {

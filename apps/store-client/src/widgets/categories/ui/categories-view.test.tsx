@@ -109,8 +109,11 @@ describe("CategoriesView", () => {
   it("renders a child tile image when Category.image is set (TASK-083)", async () => {
     // Since TASK-289 the tile renders through next/image: only hosts in
     // `images.remotePatterns` are drawn (anything else takes the gradient
-    // fallback), and `src` becomes the optimizer route.
-    const image = "https://picsum.photos/seed/cases/800/800";
+    // fallback), and `src` becomes the optimizer route. The store-api uploads
+    // origin is the only entry that needs no operator config — and since
+    // TASK-365 it is also what the seed writes into `Category.image`.
+    const image =
+      "http://localhost:3001/uploads/products/seed-0f1e2d3c4b5a6978.webp";
     server.use(
       http.get("*/api/categories/tree", () =>
         HttpResponse.json({
