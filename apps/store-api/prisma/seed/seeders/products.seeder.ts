@@ -122,10 +122,9 @@ export async function seedProducts(
       positionCount++;
 
       // Clone the entry's images onto each position (shared gallery). Delete
-      // existing first for idempotency. The URLs / bytes come from the seed-image
-      // seam, which today reproduces the deterministic picsum.photos URLs keyed
-      // on the position slug; TASK-365 swaps the stub for locally generated WebP
-      // without touching this call. The first image is the primary (cover).
+      // existing first for idempotency. The URLs and the bytes behind them come
+      // from the seed-image seam, which renders WebP + LQIP locally into
+      // `UPLOAD_DEST/products/` (TASK-365). The first image is the primary (cover).
       await prisma.productImage.deleteMany({ where: { productId: position.id } });
       const iconId = pickIcon(categorySlugById.get(p.categoryId) ?? '', p.slug);
       const paletteId = pickPalette(positionSlug);
