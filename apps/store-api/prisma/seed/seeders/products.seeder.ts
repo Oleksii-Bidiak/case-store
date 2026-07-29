@@ -4,8 +4,8 @@ import { deterministicUuid } from '../lib/ids';
 import { pickIcon } from '../lib/images/icon-set';
 import { pickPalette } from '../lib/images/palettes';
 import { renderSeedImages } from '../lib/images/seed-image.generator';
-import { assertLatinSlug, assertUniqueSlugs, slugify } from '../lib/slug';
-import type { ProductSeed } from '../types';
+import { positionSlugsOf } from '../lib/position-slug';
+import { assertLatinSlug, assertUniqueSlugs } from '../lib/slug';
 
 export async function seedProducts(
   prisma: PrismaClient,
@@ -15,37 +15,28 @@ export async function seedProducts(
   const productsData = buildProductsData(categories);
   const categorySlugById = new Map(Object.entries(categories).map(([slug, c]) => [c.id, slug]));
 
-  /**
-   * Per-entry position slugs. Normally derived from the variant name
-   * (e.g. "Black" -> "black"). If those parts are ambiguous — empty or
-   * duplicated, which happens when Cyrillic variant names slugify to the same
-   * latin token (e.g. "128 ГБ / …" -> "128") — fall back to the unique, latin
-   * SKU for ALL variants of the entry so position slugs never collide. Entries
-   * with latin variant names keep their existing name-based slugs unchanged.
-   * A single-variant entry is a standalone position and reuses the entry slug.
-   */
-  const positionSlugsOf = (p: ProductSeed): string[] => {
-    if (p.variants.length <= 1) return p.variants.map(() => p.slug);
-    const nameParts = p.variants.map((v) => slugify(v.name));
-    const nameAmbiguous = nameParts.some((s, idx) => !s || nameParts.indexOf(s) !== idx);
-    const slugParts = nameAmbiguous
-      ? p.variants.map((v, idx) => slugify(v.sku ?? String(idx)))
-      : nameParts;
-    return slugParts.map((part) => `${p.slug}-${part}`);
-  };
-
-  // Slug guards (plan 170): every slug that reaches the DB must be a latin
-  // kebab-case token, and position slugs must be unique across the catalogue.
-  // Runs BEFORE the first write, so a bad entry fails the seed, not the DB.
+  // Pre-flight guards (plan 170). Every slug that reaches the DB must be a latin
+  // kebab-case token; position slugs and SKUs must both be unique across the
+  // whole catalogue, because `slug` and `sku` are UNIQUE columns and a collision
+  // would otherwise surface as an opaque Prisma error mid-write. All of this
+  // runs BEFORE the first insert, so a bad entry fails the seed, not the DB.
   const allPositionSlugs: string[] = [];
+  const allSkus: string[] = [];
   for (const p of productsData) {
     assertLatinSlug(p.slug, `product entry "${p.name}"`);
     for (const positionSlug of positionSlugsOf(p)) {
       assertLatinSlug(positionSlug, `product position of "${p.name}"`);
       allPositionSlugs.push(positionSlug);
     }
+    for (const variant of p.variants) {
+      allSkus.push(variant.sku ?? p.sku);
+    }
+    if (p.brandSlug && !brands[p.brandSlug]) {
+      throw new Error(`Seed: entry "${p.slug}" names unknown brand "${p.brandSlug}"`);
+    }
   }
   assertUniqueSlugs(allPositionSlugs, 'product positions');
+  assertUniqueSlugs(allSkus, 'product SKUs');
 
   let groupCount = 0;
   let positionCount = 0;
@@ -65,7 +56,10 @@ export async function seedProducts(
       groupId = id;
 
       // Axis names are the distinct attribute keys across the variants, in
-      // first-seen order (e.g. ["color"] or ["pack"]).
+      // first-seen order. They are UKRAINIAN («Колір», «Пам'ять»): the axis name
+      // is rendered raw by `product-sibling-navigator.tsx`, so it has to read as
+      // a label. Attribute-definition KEYS stay latin for the opposite reason —
+      // see `data/attributes.data.ts`.
       const axisNames: string[] = [];
       for (const v of p.variants) {
         for (const key of Object.keys(v.attributes ?? {})) {

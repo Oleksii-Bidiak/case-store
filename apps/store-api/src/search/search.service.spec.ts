@@ -207,15 +207,21 @@ describe('SearchService', () => {
       expect(docs[0].deviceModelIds).toEqual(['dm-1', 'dm-2']);
     });
 
-    it('injects Cyrillic search terms derived from name + category (TASK-200)', async () => {
+    it('injects cross-script search terms derived from name + category + brand (TASK-200/367)', async () => {
       repo.findOneForIndex.mockResolvedValue(makeIndexSource() as never);
 
       await service.indexProduct('product-1');
 
       const [docs] = meili.indexDocuments.mock.calls[0];
-      // "iPhone 15 Case" + "Cases" → айфон (brand) + чохол/чохли (case nouns),
-      // so a typo'd UA query («афйон») matches via ordinary typo tolerance.
-      expect(docs[0].searchTerms).toEqual(['айфон', 'чохол', 'чохли']);
+      // "iPhone 15 Case" + "Cases" + brand → айфон + чохол/чохли + спіген, so a
+      // typo'd UA query («афйон») matches via ordinary typo tolerance.
+      //
+      // `toContain`, not `toEqual`: the dictionary is meant to grow, and asserting
+      // the exact list makes every new synonym group a failing test in a file that
+      // is not about the dictionary. `search-synonyms.spec.ts` owns its contents.
+      for (const term of ['айфон', 'чохол', 'чохли']) {
+        expect(docs[0].searchTerms).toContain(term);
+      }
     });
 
     // A null source means "not on sale" — missing, soft-deleted, deactivated, or

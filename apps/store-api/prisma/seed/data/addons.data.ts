@@ -28,13 +28,41 @@ export const templateServiceNames = [
   'Налаштування пристрою',
 ];
 
-/** One delta of each type, applied to three distinct iPhone products. */
+/**
+ * One delta of each type, on three named iPhone positions.
+ *
+ * `positionSlug` is explicit for a reason. The previous revision picked its
+ * targets with `findMany({ where: { category: { slug: 'iphone' } }, orderBy:
+ * { createdAt: 'asc' }, take: 3 })`, which was already fragile and stopped being
+ * deterministic outright once TASK-366 inserted 178 positions inside one loop:
+ * they share a `createdAt` to the millisecond, so «the first three» became
+ * whatever order Postgres felt like returning. The deltas then wandered between
+ * products from one seed to the next — and a QA step that says «open the iPhone
+ * with the OVERRIDE» cannot be written against a moving target.
+ *
+ * Three different entries rather than three positions of one, so the admin
+ * screen shows the deltas on visibly different products.
+ */
 export const deltas: Array<{
   type: 'ADD' | 'REMOVE' | 'OVERRIDE';
   serviceName: string;
+  positionSlug: string;
   price?: number;
 }> = [
-  { type: 'ADD', serviceName: 'Trade-in оцінка на місці' },
-  { type: 'REMOVE', serviceName: 'Налаштування пристрою' },
-  { type: 'OVERRIDE', serviceName: 'Страхування від пошкоджень', price: 1299 },
+  {
+    type: 'ADD',
+    serviceName: 'Trade-in оцінка на місці',
+    positionSlug: 'apple-iphone-16-pro-128gb-black',
+  },
+  {
+    type: 'REMOVE',
+    serviceName: 'Налаштування пристрою',
+    positionSlug: 'apple-iphone-15-pro-128gb-titanium',
+  },
+  {
+    type: 'OVERRIDE',
+    serviceName: 'Страхування від пошкоджень',
+    positionSlug: 'apple-iphone-14-128gb',
+    price: 1299,
+  },
 ];
