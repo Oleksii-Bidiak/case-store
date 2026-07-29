@@ -14,9 +14,11 @@ import {
   useAdminOrderControllerFindAll,
 } from "@/entities/order";
 import { useTableSort } from "@/shared/lib/use-table-sort";
+import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import {
   Badge,
   Button,
+  LiveAnnouncer,
   Select,
   SelectContent,
   SelectItem,
@@ -30,6 +32,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableToolbar,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -85,6 +88,12 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
  *
  * Status filter and page state live in the URL (`?status=`, `?page=`). The order
  * and customer IDs are shown truncated; full detail is one click away.
+ *
+ * TASK-354 moved the controls into `TableToolbar` and added the refresh button.
+ * The lifecycle Tabs sit in the toolbar's `filters` slot next to the Select,
+ * inside their own wrapper so the two wrap against each other instead of
+ * fighting the toolbar's `md:flex-nowrap` row. Their deep-link contract is
+ * untouched — this is a relayout, not a rework.
  */
 export function AdminOrderTable() {
   const router = useRouter();
@@ -141,22 +150,27 @@ export function AdminOrderTable() {
     updateParams({ search: trimmed || undefined, page: undefined });
   }, SEARCH_DEBOUNCE_MS);
 
-  const { data, isLoading, isFetching, isError } =
-    useAdminOrderControllerFindAll({
-      page,
-      limit: PAGE_SIZE,
-      // The generated `status` param is a plain string (CSV) since TASK-250, so
-      // single (`PENDING`) and multi (`CONFIRMED,PROCESSING`) values pass straight
-      // through — no enum cast needed.
-      status: statusParam || undefined,
-      // TASK-336: matches order-number prefix, email and phone, for account AND
-      // guest orders alike.
-      search: searchParam || undefined,
-      // TASK-248 deep-link: active-but-unpaid ("in-transit") filter.
-      unpaidInTransit: unpaidInTransit || undefined,
-      sortBy,
-      sortOrder,
-    });
+  const { data, isLoading, isFetching, isError, refetch } =
+    useAdminOrderControllerFindAll(
+      {
+        page,
+        limit: PAGE_SIZE,
+        // The generated `status` param is a plain string (CSV) since TASK-250, so
+        // single (`PENDING`) and multi (`CONFIRMED,PROCESSING`) values pass straight
+        // through — no enum cast needed.
+        status: statusParam || undefined,
+        // TASK-336: matches order-number prefix, email and phone, for account AND
+        // guest orders alike.
+        search: searchParam || undefined,
+        // TASK-248 deep-link: active-but-unpaid ("in-transit") filter.
+        unpaidInTransit: unpaidInTransit || undefined,
+        sortBy,
+        sortOrder,
+      },
+      // The order queue is the table two operators stare at simultaneously —
+      // the one place where the panel-wide five-minute `staleTime` is wrong.
+      { query: OPERATIONAL_LIST_QUERY },
+    );
 
   const orders = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
@@ -179,226 +193,243 @@ export function AdminOrderTable() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList aria-label={dict.orders.tabsAria}>
-          {STATUS_TABS.map((tab) => (
-            <TabsTrigger key={tab.value || "all"} value={tab.value}>
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          type="search"
-          value={searchInput}
-          onChange={(event) => {
-            setSearchInput(event.target.value);
-            debouncedSearch(event.target.value);
-          }}
-          placeholder={dict.orders.searchPlaceholder}
-          aria-label={dict.orders.searchAria}
-          className="w-72"
-        />
-        <Select
-          value={statusParam || ALL_OPTION}
-          onValueChange={handleStatusChange}
-        >
-          <SelectTrigger
-            className="w-48"
-            aria-label={dict.orders.filterStatusAria}
-          >
-            <SelectValue placeholder={dict.orders.allStatuses} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_OPTION}>
-              {dict.orders.allStatuses}
-            </SelectItem>
-            {STATUS_FILTER_OPTIONS.map((status) => (
-              <SelectItem key={status} value={status}>
-                {orderStatusLabel(status)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {/* TASK-341: a phone order starts here. */}
-        <Button asChild className="ml-auto">
-          <Link href="/orders/new">{dict.orders.createCta}</Link>
-        </Button>
-      </div>
-
-      {isLoading ? (
-        <AdminOrderTableSkeleton />
-      ) : isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.orders.loadError}
-        </p>
-      ) : orders.length === 0 ? (
-        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {/* A search miss names the query, not the status filter: "no PENDING
-              orders" would be a lie when the operator typed a phone number. */}
-          {searchParam
-            ? dict.orders.emptySearch(searchParam)
-            : statusParam
-              ? dict.orders.emptyStatus(orderStatusLabel(statusParam))
-              : dict.orders.empty}
-        </div>
-      ) : (
-        <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
-          {isFetching && !isLoading && (
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60"
-            >
-              <Loader2 className="size-6 animate-spin text-primary" />
-            </div>
-          )}
-          <Table layout="card">
-            <TableHeader>
-              <TableRow>
-                <TableHead>{dict.orders.colOrder}</TableHead>
-                <TableHead>{dict.orders.colCustomer}</TableHead>
-                <SortableColumnHeader
-                  field="status"
-                  label={dict.orders.colStatus}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={onSort}
-                />
-                <TableHead>{dict.orders.colPayment}</TableHead>
-                <SortableColumnHeader
-                  field="total"
-                  label={dict.orders.colTotal}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={onSort}
-                />
-                <TableHead>{dict.orders.colItems}</TableHead>
-                <SortableColumnHeader
-                  field="createdAt"
-                  label={dict.orders.colCreated}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={onSort}
-                />
-                <TableHead className="text-right">
-                  {dict.common.actions}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {orders.map((order) => (
-                <TableRow
-                  key={order.id}
-                  rowLabel={dict.orders.rowAria(order.id.slice(0, 8))}
+    <LiveAnnouncer>
+      <div className="flex flex-col gap-4">
+        <TableToolbar
+          className="mb-0"
+          onRefresh={() => void refetch()}
+          isRefreshing={isFetching}
+          search={
+            <Input
+              type="search"
+              value={searchInput}
+              onChange={(event) => {
+                setSearchInput(event.target.value);
+                debouncedSearch(event.target.value);
+              }}
+              placeholder={dict.orders.searchPlaceholder}
+              aria-label={dict.orders.searchAria}
+              className="w-72 max-w-full"
+            />
+          }
+          filters={
+            <div className="flex flex-wrap items-center gap-2">
+              <Tabs value={activeTab} onValueChange={handleTabChange}>
+                <TabsList aria-label={dict.orders.tabsAria}>
+                  {STATUS_TABS.map((tab) => (
+                    <TabsTrigger key={tab.value || "all"} value={tab.value}>
+                      {tab.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+              <Select
+                value={statusParam || ALL_OPTION}
+                onValueChange={handleStatusChange}
+              >
+                <SelectTrigger
+                  className="w-48"
+                  aria-label={dict.orders.filterStatusAria}
                 >
-                  <TableCell
-                    label={dict.orders.colOrder}
-                    className="font-mono text-xs"
-                  >
-                    {order.id.slice(0, 8)}…
-                  </TableCell>
-                  <TableCell label={dict.orders.colCustomer}>
-                    {order.customer ? (
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-sm">{order.customer.email}</span>
-                        {(order.customer.firstName ||
-                          order.customer.lastName) && (
-                          <span className="text-xs text-muted-foreground">
-                            {[order.customer.firstName, order.customer.lastName]
-                              .filter(Boolean)
-                              .join(" ")}
-                          </span>
-                        )}
-                      </div>
-                    ) : order.guest ? (
-                      // Guest order (TASK-338): the contact typed at checkout is
-                      // the only way to reach this buyer, so show it rather than
-                      // an id that does not exist.
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-sm">{order.guest.email}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {order.guest.name} · {dict.orders.guestBadge}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {order.userId ? `${order.userId.slice(0, 8)}…` : "—"}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell label={dict.orders.colStatus}>
-                    <Badge variant={orderStatusBadgeVariant(order.status)}>
-                      {orderStatusLabel(order.status)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell label={dict.orders.colPayment}>
-                    <Badge
-                      variant={paymentStatusBadgeVariant(order.paymentStatus)}
-                    >
-                      {paymentStatusLabel(order.paymentStatus)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell label={dict.orders.colTotal}>
-                    {formatCurrency(order.total)}
-                  </TableCell>
-                  <TableCell label={dict.orders.colItems}>
-                    {order.items.length}
-                  </TableCell>
-                  <TableCell
-                    label={dict.orders.colCreated}
-                    className="text-muted-foreground"
-                  >
-                    {dateFormatter.format(new Date(order.createdAt))}
-                  </TableCell>
-                  <TableCell
-                    label={dict.common.actions}
-                    className="text-right max-md:text-left"
-                  >
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/orders/${order.id}`}>
-                        {dict.common.view}
-                      </Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+                  <SelectValue placeholder={dict.orders.allStatuses} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_OPTION}>
+                    {dict.orders.allStatuses}
+                  </SelectItem>
+                  {STATUS_FILTER_OPTIONS.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {orderStatusLabel(status)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          }
+          actions={
+            /* TASK-341: a phone order starts here. */
+            <Button asChild>
+              <Link href="/orders/new">{dict.orders.createCta}</Link>
+            </Button>
+          }
+        />
 
-      {!isLoading && !isError && orders.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {dict.common.pageOf(page, totalPages)}
+        {isLoading ? (
+          <AdminOrderTableSkeleton />
+        ) : isError ? (
+          <p role="alert" className="text-sm text-destructive">
+            {dict.orders.loadError}
           </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() =>
-                updateParams({
-                  page: page - 1 <= 1 ? undefined : String(page - 1),
-                })
-              }
-            >
-              {dict.common.previous}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: String(page + 1) })}
-            >
-              {dict.common.next}
-            </Button>
+        ) : orders.length === 0 ? (
+          <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
+            {/* A search miss names the query, not the status filter: "no PENDING
+              orders" would be a lie when the operator typed a phone number. */}
+            {searchParam
+              ? dict.orders.emptySearch(searchParam)
+              : statusParam
+                ? dict.orders.emptyStatus(orderStatusLabel(statusParam))
+                : dict.orders.empty}
           </div>
-        </div>
-      )}
-    </div>
+        ) : (
+          <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
+            {isFetching && !isLoading && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60"
+              >
+                <Loader2 className="size-6 animate-spin text-primary" />
+              </div>
+            )}
+            <Table layout="card">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{dict.orders.colOrder}</TableHead>
+                  <TableHead>{dict.orders.colCustomer}</TableHead>
+                  <SortableColumnHeader
+                    field="status"
+                    label={dict.orders.colStatus}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={onSort}
+                  />
+                  <TableHead>{dict.orders.colPayment}</TableHead>
+                  <SortableColumnHeader
+                    field="total"
+                    label={dict.orders.colTotal}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={onSort}
+                  />
+                  <TableHead>{dict.orders.colItems}</TableHead>
+                  <SortableColumnHeader
+                    field="createdAt"
+                    label={dict.orders.colCreated}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={onSort}
+                  />
+                  <TableHead className="text-right">
+                    {dict.common.actions}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {orders.map((order) => (
+                  <TableRow
+                    key={order.id}
+                    rowLabel={dict.orders.rowAria(order.id.slice(0, 8))}
+                  >
+                    <TableCell
+                      label={dict.orders.colOrder}
+                      className="font-mono text-xs"
+                    >
+                      {order.id.slice(0, 8)}…
+                    </TableCell>
+                    <TableCell label={dict.orders.colCustomer}>
+                      {order.customer ? (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-sm">
+                            {order.customer.email}
+                          </span>
+                          {(order.customer.firstName ||
+                            order.customer.lastName) && (
+                            <span className="text-xs text-muted-foreground">
+                              {[
+                                order.customer.firstName,
+                                order.customer.lastName,
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                            </span>
+                          )}
+                        </div>
+                      ) : order.guest ? (
+                        // Guest order (TASK-338): the contact typed at checkout is
+                        // the only way to reach this buyer, so show it rather than
+                        // an id that does not exist.
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-sm">{order.guest.email}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {order.guest.name} · {dict.orders.guestBadge}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {order.userId ? `${order.userId.slice(0, 8)}…` : "—"}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell label={dict.orders.colStatus}>
+                      <Badge variant={orderStatusBadgeVariant(order.status)}>
+                        {orderStatusLabel(order.status)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell label={dict.orders.colPayment}>
+                      <Badge
+                        variant={paymentStatusBadgeVariant(order.paymentStatus)}
+                      >
+                        {paymentStatusLabel(order.paymentStatus)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell label={dict.orders.colTotal}>
+                      {formatCurrency(order.total)}
+                    </TableCell>
+                    <TableCell label={dict.orders.colItems}>
+                      {order.items.length}
+                    </TableCell>
+                    <TableCell
+                      label={dict.orders.colCreated}
+                      className="text-muted-foreground"
+                    >
+                      {dateFormatter.format(new Date(order.createdAt))}
+                    </TableCell>
+                    <TableCell
+                      label={dict.common.actions}
+                      className="text-right max-md:text-left"
+                    >
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/orders/${order.id}`}>
+                          {dict.common.view}
+                        </Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {!isLoading && !isError && orders.length > 0 && (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {dict.common.pageOf(page, totalPages)}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() =>
+                  updateParams({
+                    page: page - 1 <= 1 ? undefined : String(page - 1),
+                  })
+                }
+              >
+                {dict.common.previous}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                onClick={() => updateParams({ page: String(page + 1) })}
+              >
+                {dict.common.next}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </LiveAnnouncer>
   );
 }

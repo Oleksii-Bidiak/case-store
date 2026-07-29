@@ -8,12 +8,15 @@ export {
   useAdminContactGet,
   useAdminContactUnreadCount,
   useAdminContactUpdate,
+  // Batch status write behind the inbox's bulk bar (TASK-354).
+  useAdminContactUpdateStatusMany,
   getAdminContactListQueryKey,
   getAdminContactUnreadCountQueryKey,
   getAdminContactGetQueryKey,
   AdminContactListStatus,
   ContactMessageEntityStatus,
   UpdateContactMessageDtoStatus,
+  BulkContactMessageStatusDtoStatus,
 } from "@/shared/api";
 
 export type {
@@ -24,4 +27,6 @@ export type {
   ContactUnreadResponse,
   UpdateContactMessageDto,
   AdminContactListParams,
+  BulkContactMessageStatusDto,
+  BulkContactMessageStatusResponse,
 } from "@/shared/api";

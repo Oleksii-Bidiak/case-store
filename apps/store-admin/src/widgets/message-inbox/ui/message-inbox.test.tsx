@@ -229,6 +229,198 @@ describe("MessageInbox", () => {
     ).toBeInTheDocument();
   });
 
+  it("sends the default sort and rewrites the URL when a header is clicked (TASK-354)", async () => {
+    const user = userEvent.setup();
+    let captured: URLSearchParams | null = null;
+    server.use(
+      http.get("*/api/contact/admin", ({ request }) => {
+        captured = new URL(request.url).searchParams;
+        return listResponse([makeMessageRow()]);
+      }),
+    );
+
+    renderWithProviders(<MessageInbox />);
+    await screen.findByText("Ivan Petrenko");
+
+    // The DTO default is sent explicitly, so "no param" and "the default param"
+    // are not two cache entries for the same page.
+    expect(captured!.get("sortBy")).toBe("createdAt");
+    expect(captured!.get("sortOrder")).toBe("desc");
+
+    await user.click(
+      screen.getByRole("button", {
+        name: dict.common.sortByAria(dict.messages.colName),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("sortBy=name"),
+      ),
+    );
+  });
+
+  it("refetches the inbox when Оновити is pressed (TASK-354)", async () => {
+    const user = userEvent.setup();
+    let calls = 0;
+    server.use(
+      http.get("*/api/contact/admin", () => {
+        calls += 1;
+        return listResponse([makeMessageRow()]);
+      }),
+    );
+
+    renderWithProviders(<MessageInbox />);
+    await screen.findByText("Ivan Petrenko");
+    expect(calls).toBe(1);
+
+    await user.click(
+      screen.getByRole("button", { name: dict.common.table.refreshAria }),
+    );
+
+    await waitFor(() => expect(calls).toBe(2));
+  });
+
+  it("bulk-archives the selected messages through the batch endpoint (TASK-354)", async () => {
+    const user = userEvent.setup();
+    let body: unknown = null;
+    server.use(
+      http.get("*/api/contact/admin", () =>
+        listResponse([
+          makeMessageRow(),
+          makeMessageRow({ id: "msg-uuid-2", name: "Olena Koval" }),
+        ]),
+      ),
+      http.patch("*/api/contact/admin/status", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ data: { updatedCount: 1 } });
+      }),
+    );
+
+    renderWithProviders(<MessageInbox />);
+    await screen.findByText("Ivan Petrenko");
+
+    // No selection ⇒ no bar at all; its appearance IS the feedback.
+    expect(
+      screen.queryByText(dict.common.table.selectedCount(1)),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: dict.messages.bulk.selectRow("Ivan Petrenko"),
+      }),
+    );
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: dict.messages.bulk.markArchived(1),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(body).toEqual({ ids: ["msg-uuid-1"], status: "ARCHIVED" }),
+    );
+  });
+
+  it("acts only on rows still on the page, and Shift+click sweeps a range (TASK-354)", async () => {
+    const user = userEvent.setup();
+    let body: unknown = null;
+    server.use(
+      http.get("*/api/contact/admin", () =>
+        listResponse([
+          makeMessageRow(),
+          makeMessageRow({ id: "msg-uuid-2", name: "Olena Koval" }),
+          makeMessageRow({ id: "msg-uuid-3", name: "Petro Shevchuk" }),
+        ]),
+      ),
+      http.patch("*/api/contact/admin/status", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ data: { updatedCount: 3 } });
+      }),
+    );
+
+    renderWithProviders(<MessageInbox />);
+    await screen.findByText("Ivan Petrenko");
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: dict.messages.bulk.selectRow("Ivan Petrenko"),
+      }),
+    );
+    await user.keyboard("{Shift>}");
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: dict.messages.bulk.selectRow("Petro Shevchuk"),
+      }),
+    );
+    await user.keyboard("{/Shift}");
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: dict.messages.bulk.markRead(3),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(body).toEqual({
+        ids: ["msg-uuid-1", "msg-uuid-2", "msg-uuid-3"],
+        status: "READ",
+      }),
+    );
+  });
+
+  it("announces the selection into the live region (TASK-354)", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("*/api/contact/admin", () =>
+        listResponse([
+          makeMessageRow(),
+          makeMessageRow({ id: "msg-uuid-2", name: "Olena Koval" }),
+        ]),
+      ),
+    );
+
+    renderWithProviders(<MessageInbox />);
+    await screen.findByText("Ivan Petrenko");
+
+    // Regression guard. `useRowSelection` calls `useAnnouncer()`, so it has to
+    // run BELOW the `<LiveAnnouncer>` — a hook called in the same component
+    // that renders the provider silently gets the default no-op context, and
+    // every announcement disappears with nothing on screen looking wrong.
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: dict.messages.bulk.selectRow("Ivan Petrenko"),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
+        dict.common.table.announceSelected("Ivan Petrenko", 1),
+      ),
+    );
+  });
+
+  it("pins the row checkbox to the card corner instead of stacking it as a labelled field (TASK-354)", async () => {
+    server.use(
+      http.get("*/api/contact/admin", () => listResponse([makeMessageRow()])),
+    );
+
+    const { container } = renderWithProviders(<MessageInbox />);
+    await screen.findByText("Ivan Petrenko");
+
+    const cell = container.querySelector('[data-slot="table-select-cell"]');
+    // No `data-label` ⇒ no "ВИБІР ☐" caption strip above the sender's name.
+    expect(cell).not.toHaveAttribute("data-label");
+    expect(cell).toHaveClass("max-md:absolute");
+    // …and the control is still named after the record it acts on, so nothing
+    // in the card is anonymous once the caption is gone.
+    expect(
+      screen.getByRole("checkbox", {
+        name: dict.messages.bulk.selectRow("Ivan Petrenko"),
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("links the sender name to the customer profile when matchedUserId is present (TASK-256)", async () => {
     server.use(
       http.get("*/api/contact/admin", () =>

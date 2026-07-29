@@ -7,6 +7,8 @@ import {
   productDetailSlugKey,
   PRODUCT_LIST_PREFIX,
 } from '../../cache';
+import { RETURN_SORT_FIELDS } from './dto';
+import type { ReturnSortField } from './dto';
 import type { CreateReturnParams, ReturnWithItems } from './return.types';
 
 /**
@@ -37,6 +39,40 @@ const ADMIN_RETURNS_INCLUDE = {
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
+const DEFAULT_SORT_BY: ReturnSortField = 'requestedAt';
+
+/**
+ * Translate the DTO's sort choice into a Prisma `orderBy` (TASK-354).
+ *
+ * Two things it does that a one-liner would not:
+ *
+ * 1. **`id` is always the last tiebreaker.** `status` and `refundedAmount` are
+ *    massively non-unique, and Postgres is free to return tied rows in a
+ *    different order on every query. Paginating over an unstable ordering makes
+ *    rows appear on two pages and others on none — an operator working a queue
+ *    would see a return vanish without anyone having touched it.
+ * 2. **NULL refunds sort last in both directions.** Postgres puts NULLs first on
+ *    DESC, so "sort by refunded, biggest first" would otherwise open with a wall
+ *    of unresolved returns that have no amount at all — the opposite of what the
+ *    click asked for.
+ *
+ * The `sortBy` value is already allow-listed by `@IsIn` at the boundary; the
+ * fallback here is the defensive default for internal callers.
+ */
+function buildReturnOrderBy(
+  sortBy: ReturnSortField | undefined,
+  sortOrder: 'asc' | 'desc' | undefined,
+): Prisma.ReturnOrderByWithRelationInput[] {
+  const order = sortOrder ?? 'desc';
+  const field = sortBy && RETURN_SORT_FIELDS.includes(sortBy) ? sortBy : DEFAULT_SORT_BY;
+
+  const primary: Prisma.ReturnOrderByWithRelationInput =
+    field === 'refundedAmount'
+      ? { refundedAmount: { sort: order, nulls: 'last' } }
+      : { [field]: order };
+
+  return [primary, { id: 'asc' }];
+}
 
 @Injectable()
 export class ReturnRepository {
@@ -78,11 +114,16 @@ export class ReturnRepository {
     }) as Promise<ReturnWithItems[]>;
   }
 
-  /** Admin — paginated list, newest request first, optionally filtered by status. */
+  /**
+   * Admin — paginated list, newest request first by default, optionally filtered
+   * by status and sorted on one of {@link RETURN_SORT_FIELDS} (TASK-354).
+   */
   async findAll(query: {
     status?: ReturnStatus;
     page?: number;
     limit?: number;
+    sortBy?: ReturnSortField;
+    sortOrder?: 'asc' | 'desc';
   }): Promise<{ returns: ReturnWithItems[]; total: number }> {
     const page = query.page ?? DEFAULT_PAGE;
     const limit = query.limit ?? DEFAULT_LIMIT;
@@ -93,7 +134,7 @@ export class ReturnRepository {
       this.prisma.return.findMany({
         where,
         include: ADMIN_RETURNS_INCLUDE,
-        orderBy: { requestedAt: 'desc' },
+        orderBy: buildReturnOrderBy(query.sortBy, query.sortOrder),
         skip: (page - 1) * limit,
         take: limit,
       }),
