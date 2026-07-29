@@ -1,6 +1,6 @@
 # Form State Sync Conventions
 
-> **Why this exists:** A manual-QA finding (`docs/manual-qa-master.md:236`) described "проблема
+> **Why this exists:** A manual-QA finding (`docs/archive/manual-qa-master.md:236`) described "проблема
 > усіх форм на сайті" — a stale-local-state pattern affecting forms across the storefront and
 > admin. The root cause is local state (`useState` or RHF `defaultValues`) that is seeded once
 > from async server data and never re-synchronised when that data changes after a refetch.

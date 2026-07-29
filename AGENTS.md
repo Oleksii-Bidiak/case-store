@@ -236,8 +236,21 @@ When working on this project, read these files for additional context:
 - `docs/design-system.md` — Storefront design tokens & UI conventions
 - `docs/conventions/forms.md` — Form state-sync rules (async-seeded forms)
 - `docs/seed-guide.md` — Seeding the dev database: reset, admin credentials, what gets seeded
-- `docs/manual-qa-pending.md` — Outstanding manual checks on a running stack
+- `docs/user-stories.md` — **What the system actually does (UA)**: journeys of five personas
+  (guest, customer, owner, content manager, order operator) with per-step readiness states,
+  the stable `E-NN` edge-case catalogue and a gap → TASK traceability table. Revised
+  2026-07-29 after Етап 8. Read it before claiming a feature is missing — several are not
+- `docs/manual-qa-pending.md` — **Launch Gate (UA)**: the narrow, risk-ordered "we do not
+  launch without this" run (LG-1…LG-9), plus accepted 🟡 risks and per-TASK tails
+- `docs/qa-manual-full.md` — **Exhaustive manual regression (UA)**: every storefront and
+  admin route and every RBAC permission, `ZONE-nn` ids, two completeness appendices
+  (route → check, permission → check). Use for regression; use `manual-qa-pending.md`
+  before launch
 - `docs/admin-guide.md` — Admin-panel onboarding guide (UA, for non-technical operators)
+- `docs/presentation.md` — Product presentation for the client (UA): what the storefront
+  does, what the admin panel does, and an honest "not there yet" section
+- `docs/demo-script.md` — ~25-minute live demo script (UA): what to open, what to say, which
+  demo accounts to use
 - `docs/README.md` — Map of all documentation; start here when you don't know what to open
 - `docs/deploy/` — **Deploy & operations, in order** (UA, for non-technical operators). Numbered: the number is the step, not a chapter. Entry point `docs/deploy/00-start-here.md`. The canonical path is self-hosted VPS + Docker + Caddy; the old Vercel/Railway runbook is superseded and parked in `docs/archive/`
   - `01-accounts-access.md` — who owns which account (developer vs business client), password manager, 2FA + recovery codes, who holds the `age`/SSH keys, access recovery, handover. Read before spending money
