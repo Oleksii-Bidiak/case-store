@@ -13,6 +13,7 @@ describe('DeviceRepository', () => {
    */
   const deviceBrandDelegate = {
     findMany: jest.fn(),
+    count: jest.fn(),
     findUnique: jest.fn(),
     aggregate: jest.fn(),
     create: jest.fn(),
@@ -101,10 +102,13 @@ describe('DeviceRepository', () => {
 
       const result = await repo.reorderBrands([b, a]);
 
-      expect(result).toEqual([
-        { brand: { id: b, name: 'Samsung' }, modelCount: 4 },
-        { brand: { id: a, name: 'Apple' }, modelCount: 7 },
-      ]);
+      expect(result).toEqual({
+        brands: [
+          { brand: { id: b, name: 'Samsung' }, modelCount: 4 },
+          { brand: { id: a, name: 'Apple' }, modelCount: 7 },
+        ],
+        total: 2,
+      });
       expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
       expect(deviceBrandDelegate.updateMany).toHaveBeenNthCalledWith(1, {
         where: { id: b },
@@ -182,24 +186,57 @@ describe('DeviceRepository', () => {
   });
 
   describe('findBrandsWithCount', () => {
+    const brandRow = {
+      id: 'b1',
+      name: 'Apple',
+      slug: 'apple',
+      isActive: true,
+      sortOrder: 0,
+      _count: { models: 5 },
+    };
+
     it('maps the _count relation into a flat modelCount', async () => {
-      prismaMock.deviceBrand.findMany.mockResolvedValue([
-        {
-          id: 'b1',
-          name: 'Apple',
-          slug: 'apple',
-          isActive: true,
-          sortOrder: 0,
-          _count: { models: 5 },
-        },
-      ]);
+      prismaMock.deviceBrand.findMany.mockResolvedValue([brandRow]);
 
-      const result = await repo.findBrandsWithCount(false);
+      const result = await repo.findBrandsWithCount();
 
-      expect(result[0]).toEqual({
+      expect(result.brands[0]).toEqual({
         brand: { id: 'b1', name: 'Apple', slug: 'apple', isActive: true, sortOrder: 0 },
         modelCount: 5,
       });
+      expect(result.total).toBe(1);
+    });
+
+    it('matches the name case-insensitively when searching', async () => {
+      prismaMock.deviceBrand.findMany.mockResolvedValue([]);
+
+      await repo.findBrandsWithCount({ search: 'ApPl' });
+
+      expect(prismaMock.deviceBrand.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { name: { contains: 'ApPl', mode: 'insensitive' } } }),
+      );
+    });
+
+    // TASK-357: absence of page/limit is the "return everything" signal the reorder UI
+    // depends on — no skip/take, and no second round-trip to count rows we already hold.
+    it('skips both pagination and the count query when page and limit are absent', async () => {
+      prismaMock.deviceBrand.findMany.mockResolvedValue([brandRow]);
+
+      await repo.findBrandsWithCount();
+
+      expect(prismaMock.deviceBrand.count).not.toHaveBeenCalled();
+    });
+
+    it('paginates and counts once either page or limit is present', async () => {
+      prismaMock.deviceBrand.findMany.mockResolvedValue([brandRow]);
+      prismaMock.deviceBrand.count.mockResolvedValue(18);
+
+      const result = await repo.findBrandsWithCount({ page: 2, limit: 5 });
+
+      expect(result.total).toBe(18);
+      expect(prismaMock.deviceBrand.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 5, take: 5 }),
+      );
     });
   });
 });

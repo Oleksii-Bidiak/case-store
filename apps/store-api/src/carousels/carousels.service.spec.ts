@@ -269,7 +269,10 @@ describe('CarouselService', () => {
 
   describe('findAllAdmin / findByIdAdmin', () => {
     it('forwards the status filter and maps to entities', async () => {
-      carouselRepositoryMock.findAllAdmin.mockResolvedValue([baseCarousel, draftCarousel]);
+      carouselRepositoryMock.findAllAdmin.mockResolvedValue({
+        carousels: [baseCarousel, draftCarousel],
+        total: 2,
+      });
 
       const result = await service.findAllAdmin({ status: undefined });
 
@@ -278,21 +281,53 @@ describe('CarouselService', () => {
       expect(carouselRepositoryMock.findAllAdmin).toHaveBeenCalledWith({
         placement: undefined,
         status: undefined,
+        page: undefined,
+        limit: undefined,
+        search: undefined,
       });
     });
 
     it('forwards the placement filter and exposes placement on the admin row', async () => {
-      carouselRepositoryMock.findAllAdmin.mockResolvedValue([
-        { ...baseCarousel, placement: CarouselPlacement.HOME_TABS },
-      ]);
+      carouselRepositoryMock.findAllAdmin.mockResolvedValue({
+        carousels: [{ ...baseCarousel, placement: CarouselPlacement.HOME_TABS }],
+        total: 1,
+      });
 
       const result = await service.findAllAdmin({ placement: CarouselPlacement.HOME_TABS });
 
-      expect(carouselRepositoryMock.findAllAdmin).toHaveBeenCalledWith({
-        placement: CarouselPlacement.HOME_TABS,
-        status: undefined,
-      });
+      expect(carouselRepositoryMock.findAllAdmin).toHaveBeenCalledWith(
+        expect.objectContaining({
+          placement: CarouselPlacement.HOME_TABS,
+          status: undefined,
+        }),
+      );
       expect(result.data[0].placement).toBe(CarouselPlacement.HOME_TABS);
+    });
+
+    // TASK-357: an unpaginated read still reports a truthful count.
+    it('reports the whole list as one page when page/limit are omitted', async () => {
+      carouselRepositoryMock.findAllAdmin.mockResolvedValue({
+        carousels: [baseCarousel, draftCarousel],
+        total: 2,
+      });
+
+      const result = await service.findAllAdmin({});
+
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
+    });
+
+    it('forwards pagination and search, and reports the page the caller asked for', async () => {
+      carouselRepositoryMock.findAllAdmin.mockResolvedValue({
+        carousels: [baseCarousel],
+        total: 7,
+      });
+
+      const result = await service.findAllAdmin({ page: 2, limit: 3, search: 'хіт' });
+
+      expect(carouselRepositoryMock.findAllAdmin).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 2, limit: 3, search: 'хіт' }),
+      );
+      expect(result.meta).toEqual({ total: 7, page: 2, limit: 3, totalPages: 3 });
     });
 
     it('findByIdAdmin throws NotFoundException when not found', async () => {

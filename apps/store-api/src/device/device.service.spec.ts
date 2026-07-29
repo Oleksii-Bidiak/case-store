@@ -75,6 +75,43 @@ describe('DeviceService', () => {
     });
   });
 
+  describe('getBrandsWithCount', () => {
+    // TASK-357: an unpaginated read still reports a truthful count, so the panel can show
+    // "N записів" without branching on whether it asked for pages.
+    it('reports the whole list as one page when page/limit are omitted', async () => {
+      deviceRepositoryMock.findBrandsWithCount.mockResolvedValue({
+        brands: [{ brand: mockBrand, modelCount: 3 }],
+        total: 1,
+      });
+
+      const result = await service.getBrandsWithCount();
+
+      expect(deviceRepositoryMock.findBrandsWithCount).toHaveBeenCalledWith({
+        page: undefined,
+        limit: undefined,
+        search: undefined,
+      });
+      expect(result.data[0]).toMatchObject({ id: 'brand-1', modelCount: 3 });
+      expect(result.meta).toEqual({ total: 1, page: 1, limit: 1, totalPages: 1 });
+    });
+
+    it('forwards pagination and search, and reports the page the caller asked for', async () => {
+      deviceRepositoryMock.findBrandsWithCount.mockResolvedValue({
+        brands: [{ brand: mockBrand, modelCount: 3 }],
+        total: 11,
+      });
+
+      const result = await service.getBrandsWithCount({ page: 2, limit: 5, search: 'app' });
+
+      expect(deviceRepositoryMock.findBrandsWithCount).toHaveBeenCalledWith({
+        page: 2,
+        limit: 5,
+        search: 'app',
+      });
+      expect(result.meta).toEqual({ total: 11, page: 2, limit: 5, totalPages: 3 });
+    });
+  });
+
   describe('createBrand', () => {
     it('auto-generates the slug and rejects duplicates', async () => {
       deviceRepositoryMock.findBrandBySlug.mockResolvedValue(null);
@@ -156,16 +193,21 @@ describe('DeviceService', () => {
     const b = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
     it('returns the refreshed ADMIN list (with model counts) and logs the write', async () => {
-      deviceRepositoryMock.reorderBrands.mockResolvedValue([
-        { brand: { ...mockBrand, id: b, name: 'Samsung', slug: 'samsung' }, modelCount: 4 },
-        { brand: { ...mockBrand, id: a }, modelCount: 7 },
-      ]);
+      deviceRepositoryMock.reorderBrands.mockResolvedValue({
+        brands: [
+          { brand: { ...mockBrand, id: b, name: 'Samsung', slug: 'samsung' }, modelCount: 4 },
+          { brand: { ...mockBrand, id: a }, modelCount: 7 },
+        ],
+        total: 2,
+      });
 
       const result = await service.reorderBrands({ orderedIds: [b, a] }, 'admin-1');
 
       expect(deviceRepositoryMock.reorderBrands).toHaveBeenCalledWith([b, a]);
       expect(result.data).toHaveLength(2);
       expect(result.data[0]).toMatchObject({ id: b, modelCount: 4 });
+      // Shape parity with the admin list — the panel writes this straight into its cache.
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
       expect(pinoLoggerMock.info).toHaveBeenCalledWith(
         expect.objectContaining({ event: 'device-brand.reorder', actorId: 'admin-1' }),
         expect.any(String),

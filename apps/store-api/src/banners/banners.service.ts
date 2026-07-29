@@ -20,10 +20,32 @@ import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from
 import { reorderErrorToHttp } from '../common/reorder';
 
 /**
- * Response envelope for a banner list.
+ * Response envelope for the PUBLIC banner list — no `meta`: the storefront reads
+ * the complete published set and groups it by placement itself.
  */
 interface BannerListResponse {
   data: BannerEntity[];
+}
+
+/** Pagination metadata carried by every ADMIN banner list response. */
+interface PaginationMeta {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+/**
+ * Response envelope for the admin banner list.
+ *
+ * `meta` is present even when the caller asked for no pagination — the admin
+ * panel needs an honest row count to render "N записів" and to decide whether a
+ * pager is warranted at all, and an envelope that changes shape depending on the
+ * query would force the client to branch on it.
+ */
+interface AdminBannerListResponse {
+  data: BannerEntity[];
+  meta: PaginationMeta;
 }
 
 @Injectable()
@@ -53,16 +75,24 @@ export class BannerService {
   }
 
   /**
-   * List all banners including drafts (admin), optionally filtered.
+   * List all banners including drafts (admin), optionally filtered, searched and
+   * paginated. Omitting `page`/`limit` returns the complete list — the mode the
+   * reorder UI requires (TASK-357).
    */
-  async findAllAdmin(query: AdminBannerListQueryDto): Promise<BannerListResponse> {
+  async findAllAdmin(query: AdminBannerListQueryDto): Promise<AdminBannerListResponse> {
     const params: FindAllAdminParams = {
       placement: query.placement,
       status: query.status,
+      page: query.page,
+      limit: query.limit,
+      search: query.search,
     };
-    const banners = await this.bannerRepository.findAllAdmin(params);
+    const { banners, total } = await this.bannerRepository.findAllAdmin(params);
 
-    return { data: banners.map((banner) => BannerEntity.fromPrisma(banner)) };
+    return {
+      data: banners.map((banner) => BannerEntity.fromPrisma(banner)),
+      meta: this.buildMeta(total, query.page, query.limit),
+    };
   }
 
   /**
@@ -209,10 +239,17 @@ export class BannerService {
    * The repository's domain errors are mapped to HTTP here, so the wire body carries the
    * stable `error` code the admin panel keys its UA announcements off.
    */
-  async reorderPlacement(dto: ReorderBannersDto, actorId?: string): Promise<BannerListResponse> {
+  async reorderPlacement(
+    dto: ReorderBannersDto,
+    actorId?: string,
+  ): Promise<AdminBannerListResponse> {
     let banners;
+    let total;
     try {
-      banners = await this.bannerRepository.reorderPlacement(dto.placement, dto.orderedIds);
+      ({ banners, total } = await this.bannerRepository.reorderPlacement(
+        dto.placement,
+        dto.orderedIds,
+      ));
     } catch (error) {
       throw reorderErrorToHttp(error);
     }
@@ -238,10 +275,35 @@ export class BannerService {
       'Banners reordered',
     );
 
-    return { data: banners.map((banner) => BannerEntity.fromPrisma(banner)) };
+    // The reorder always answers with the COMPLETE admin list, so its `meta` is the
+    // unpaginated one. Shape parity with `findAllAdmin` is load-bearing: the admin panel
+    // writes this response straight into the list query's cache
+    // (`useReorderLifecycle` → `setQueryData`), and an envelope missing `meta` would blank
+    // the list's row counter the moment someone drags a row.
+    return {
+      data: banners.map((banner) => BannerEntity.fromPrisma(banner)),
+      meta: this.buildMeta(total),
+    };
   }
 
   // ─── helpers ──────────────────────────────────────────────────────────────
+
+  /**
+   * Pagination metadata. With no `limit` the whole list came back in one response,
+   * so it is reported as a single page of size `total` rather than inventing a page
+   * size the caller never asked for. An EMPTY unpaginated list would make that size
+   * 0, so `totalPages` is short-circuited instead of dividing by zero.
+   */
+  private buildMeta(total: number, page?: number, limit?: number): PaginationMeta {
+    const effectiveLimit = limit ?? total;
+
+    return {
+      total,
+      page: page ?? 1,
+      limit: effectiveLimit,
+      totalPages: effectiveLimit === 0 ? 0 : Math.ceil(total / effectiveLimit),
+    };
+  }
 
   private async ensureExists(id: string): Promise<void> {
     const banner = await this.bannerRepository.findById(id);

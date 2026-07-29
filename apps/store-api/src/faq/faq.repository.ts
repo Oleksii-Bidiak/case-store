@@ -1,6 +1,29 @@
 import { Injectable } from '@nestjs/common';
-import { FaqItem } from '@prisma/client';
+import { FaqItem, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma';
+
+/** Page size used when the admin asks for a page but names no `limit` (TASK-357). */
+const DEFAULT_ADMIN_PAGE_SIZE = 20;
+
+/**
+ * Filter params for the admin FAQ list. `page` / `limit` are OPTIONAL and
+ * jointly opt-in: with both absent the read returns the complete list, exactly
+ * as it did before TASK-357.
+ */
+export interface FindAllAdminParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+}
+
+/**
+ * Result of an admin FAQ query. `total` counts the rows matching the FILTERS,
+ * not the rows returned, so the caller can build honest pagination metadata.
+ */
+export interface PaginatedFaqItemsResult {
+  items: FaqItem[];
+  total: number;
+}
 
 /**
  * Allowed fields for creating a FAQ item. `sortOrder`/`isActive` fall back to
@@ -43,12 +66,38 @@ export class FaqRepository {
   }
 
   /**
-   * List every FAQ item (any status) ordered by sortOrder. Backs the admin list.
+   * List every FAQ item (any status) ordered by sortOrder, with an optional
+   * question search and opt-in pagination. Backs the admin list.
+   *
+   * With neither `page` nor `limit` the query keeps its pre-TASK-357 shape — no
+   * `skip`/`take`, and `total` comes from the rows we already hold rather than a
+   * second `count` round-trip. Ordering stays `sortOrder` ASC in every mode:
+   * `sortOrder` is the operator's own hand-set order and the only ordering the
+   * storefront honours, so a paginated admin page must slice that same sequence.
    */
-  findAllAdmin(): Promise<FaqItem[]> {
-    return this.prisma.faqItem.findMany({
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-    });
+  async findAllAdmin(params: FindAllAdminParams = {}): Promise<PaginatedFaqItemsResult> {
+    const where: Prisma.FaqItemWhereInput = {
+      ...(params.search && { question: { contains: params.search, mode: 'insensitive' } }),
+    };
+    const orderBy: Prisma.FaqItemOrderByWithRelationInput[] = [
+      { sortOrder: 'asc' },
+      { createdAt: 'asc' },
+    ];
+
+    if (params.page === undefined && params.limit === undefined) {
+      const items = await this.prisma.faqItem.findMany({ where, orderBy });
+      return { items, total: items.length };
+    }
+
+    const limit = params.limit ?? DEFAULT_ADMIN_PAGE_SIZE;
+    const skip = ((params.page ?? 1) - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.prisma.faqItem.findMany({ where, orderBy, skip, take: limit }),
+      this.prisma.faqItem.count({ where }),
+    ]);
+
+    return { items, total };
   }
 
   /**

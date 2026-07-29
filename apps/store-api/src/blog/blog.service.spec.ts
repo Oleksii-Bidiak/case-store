@@ -49,6 +49,7 @@ const repositoryMock = {
   update: jest.fn(),
   delete: jest.fn(),
   findAllCategories: jest.fn(),
+  findAllCategoriesAdmin: jest.fn(),
   findCategoryById: jest.fn(),
   findCategoryBySlugAny: jest.fn(),
   createCategory: jest.fn(),
@@ -403,6 +404,37 @@ describe('BlogService', () => {
       expect(result[0]).toBeInstanceOf(BlogCategoryEntity);
     });
 
+    // TASK-357: the ADMIN list is a separate read — the public one must stay unpaginated
+    // and unsearchable, because the storefront hub renders the complete filter strip.
+    it('lists categories for the admin with an opt-in page and search', async () => {
+      repositoryMock.findAllCategoriesAdmin.mockResolvedValue({
+        categories: [{ ...category, sortOrder: 0, createdAt: new Date(), updatedAt: new Date() }],
+        total: 12,
+      });
+
+      const result = await service.findAllCategoriesAdmin({ page: 2, limit: 5, search: 'гайд' });
+
+      expect(repositoryMock.findAllCategoriesAdmin).toHaveBeenCalledWith({
+        page: 2,
+        limit: 5,
+        search: 'гайд',
+      });
+      expect(result.data[0]).toBeInstanceOf(BlogCategoryEntity);
+      expect(result.meta).toEqual({ total: 12, page: 2, limit: 5, totalPages: 3 });
+      expect(repositoryMock.findAllCategories).not.toHaveBeenCalled();
+    });
+
+    it('reports the admin list as one page when page/limit are omitted', async () => {
+      repositoryMock.findAllCategoriesAdmin.mockResolvedValue({
+        categories: [{ ...category, sortOrder: 0, createdAt: new Date(), updatedAt: new Date() }],
+        total: 1,
+      });
+
+      const result = await service.findAllCategoriesAdmin({});
+
+      expect(result.meta).toEqual({ total: 1, page: 1, limit: 1, totalPages: 1 });
+    });
+
     it('creates a category with an auto slug', async () => {
       repositoryMock.findCategoryBySlugAny.mockResolvedValue(null);
       repositoryMock.createCategory.mockResolvedValue({
@@ -476,9 +508,11 @@ describe('BlogService', () => {
       const result = await service.reorderCategories({ orderedIds: [b, a] }, 'admin-1');
 
       expect(repositoryMock.reorderCategories).toHaveBeenCalledWith([b, a]);
-      expect(result).toHaveLength(2);
-      expect(result[0]).toBeInstanceOf(BlogCategoryEntity);
-      expect(result[0].id).toBe(b);
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0]).toBeInstanceOf(BlogCategoryEntity);
+      expect(result.data[0].id).toBe(b);
+      // Shape parity with the admin list — the panel writes this straight into its cache.
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
       expect(revalidationMock.revalidate).toHaveBeenCalledWith({
         tags: ['blog'],
         paths: ['/blog'],

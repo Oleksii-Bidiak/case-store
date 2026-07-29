@@ -300,7 +300,10 @@ describe('Carousel placement (e2e)', () => {
   describe('GET /api/admin/carousels', () => {
     it('exposes placement on every admin row and forwards the placement filter', async () => {
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
-      carouselRepositoryMock.findAllAdmin.mockResolvedValue([tabsCarousel]);
+      carouselRepositoryMock.findAllAdmin.mockResolvedValue({
+        carousels: [tabsCarousel],
+        total: 1,
+      });
 
       const response = await request(app.getHttpServer())
         .get('/api/admin/carousels?placement=HOME_TABS')
@@ -310,10 +313,78 @@ describe('Carousel placement (e2e)', () => {
       expect(carouselRepositoryMock.findAllAdmin).toHaveBeenCalledWith({
         placement: CarouselPlacement.HOME_TABS,
         status: undefined,
+        page: undefined,
+        limit: undefined,
+        search: undefined,
       });
       expect(response.body.data[0]).toMatchObject({
         id: tabsId,
         placement: CarouselPlacement.HOME_TABS,
+      });
+    });
+
+    // ─── TASK-357 ─────────────────────────────────────────────────────────────
+
+    it('reports the complete list as one page when page/limit are omitted', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+      carouselRepositoryMock.findAllAdmin.mockResolvedValue({
+        carousels: [tabsCarousel],
+        total: 1,
+      });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/carousels')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.meta).toEqual({ total: 1, page: 1, limit: 1, totalPages: 1 });
+    });
+
+    it('forwards page, limit and search to the repository', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+      carouselRepositoryMock.findAllAdmin.mockResolvedValue({
+        carousels: [tabsCarousel],
+        total: 7,
+      });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/carousels?page=2&limit=3&search=xit')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(carouselRepositoryMock.findAllAdmin).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 2, limit: 3, search: 'xit' }),
+      );
+      expect(response.body.meta).toEqual({ total: 7, page: 2, limit: 3, totalPages: 3 });
+    });
+
+    it('rejects a non-integer page with a 400 rather than silently defaulting', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+
+      await request(app.getHttpServer())
+        .get('/api/admin/carousels?page=abc')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+
+      expect(carouselRepositoryMock.findAllAdmin).not.toHaveBeenCalled();
+    });
+
+    // The storefront homepage reads the PUBLIC route and groups the WHOLE published set by
+    // placement. Pagination lives only on the admin subclass, so `forbidNonWhitelisted`
+    // makes this a 400 — the mechanical proof that path cannot start paging by accident.
+    it('leaves the PUBLIC carousel route free of pagination — ?page= is rejected there', async () => {
+      await request(app.getHttpServer()).get('/api/carousels?page=2').expect(400);
+
+      expect(carouselRepositoryMock.findAllPublished).not.toHaveBeenCalled();
+    });
+
+    it('still returns every published carousel on the default public request', async () => {
+      carouselRepositoryMock.findAllPublished.mockResolvedValue([]);
+
+      await request(app.getHttpServer()).get('/api/carousels').expect(200);
+
+      expect(carouselRepositoryMock.findAllPublished).toHaveBeenCalledWith({
+        placement: undefined,
       });
     });
   });

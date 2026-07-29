@@ -29,6 +29,7 @@ const mockBanner = {
  */
 const bannerDelegate = {
   findMany: jest.fn(),
+  count: jest.fn(),
   findUnique: jest.fn(),
   aggregate: jest.fn(),
   create: jest.fn(),
@@ -93,7 +94,7 @@ describe('BannerRepository', () => {
 
       const result = await repository.findAllAdmin();
 
-      expect(result).toEqual([mockBanner]);
+      expect(result).toEqual({ banners: [mockBanner], total: 1 });
       expect(prismaMock.banner.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: {} }),
       );
@@ -114,6 +115,54 @@ describe('BannerRepository', () => {
             status: PublishStatus.DRAFT,
           },
         }),
+      );
+    });
+
+    it('matches the title case-insensitively when searching', async () => {
+      prismaMock.banner.findMany.mockResolvedValue([]);
+
+      await repository.findAllAdmin({ search: 'ЗнИж' });
+
+      expect(prismaMock.banner.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { title: { contains: 'ЗнИж', mode: 'insensitive' } },
+        }),
+      );
+    });
+
+    // TASK-357: absence of page/limit is the "return everything" signal the reorder UI
+    // depends on — no skip/take, and no second round-trip just to count what we already hold.
+    it('skips both pagination and the count query when page and limit are absent', async () => {
+      prismaMock.banner.findMany.mockResolvedValue([mockBanner]);
+
+      await repository.findAllAdmin();
+
+      expect(prismaMock.banner.findMany).toHaveBeenCalledWith(
+        expect.not.objectContaining({ take: expect.anything() }),
+      );
+      expect(prismaMock.banner.count).not.toHaveBeenCalled();
+    });
+
+    it('paginates and counts once either page or limit is present', async () => {
+      prismaMock.banner.findMany.mockResolvedValue([mockBanner]);
+      prismaMock.banner.count.mockResolvedValue(42);
+
+      const result = await repository.findAllAdmin({ page: 3, limit: 5 });
+
+      expect(result).toEqual({ banners: [mockBanner], total: 42 });
+      expect(prismaMock.banner.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 10, take: 5 }),
+      );
+    });
+
+    it('falls back to a default page size when only page is given', async () => {
+      prismaMock.banner.findMany.mockResolvedValue([]);
+      prismaMock.banner.count.mockResolvedValue(0);
+
+      await repository.findAllAdmin({ page: 2 });
+
+      expect(prismaMock.banner.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 20, take: 20 }),
       );
     });
 
@@ -229,7 +278,7 @@ describe('BannerRepository', () => {
 
       const result = await repository.reorderPlacement(BannerPlacement.HERO_SLIDE, [b, a]);
 
-      expect(result).toEqual([mockBanner]);
+      expect(result).toEqual({ banners: [mockBanner], total: 1 });
       expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
 
       // `scope: { placement }` — an id forged from another placement updates nothing.

@@ -3,6 +3,9 @@ import { Carousel, CarouselPlacement, CarouselSource, Prisma, PublishStatus } fr
 import { PrismaService } from '../prisma';
 import type { PublishablePort, RevalidateTarget } from '../publishing';
 
+/** Page size used when the admin asks for a page but names no `limit` (TASK-357). */
+const DEFAULT_ADMIN_PAGE_SIZE = 20;
+
 /**
  * Filter params for the public carousel list (PUBLISHED only).
  */
@@ -12,10 +15,25 @@ export interface FindPublishedParams {
 
 /**
  * Filter params for the admin carousel list (all statuses).
+ *
+ * `page` / `limit` are OPTIONAL and jointly opt-in: with both absent the read
+ * returns the complete list, exactly as it did before TASK-357.
  */
 export interface FindAllAdminParams {
   placement?: CarouselPlacement;
   status?: PublishStatus;
+  page?: number;
+  limit?: number;
+  search?: string;
+}
+
+/**
+ * Result of an admin carousel query. `total` counts the rows matching the
+ * FILTERS, not the rows returned, so the caller can build honest metadata.
+ */
+export interface PaginatedCarouselsResult {
+  carousels: Carousel[];
+  total: number;
 }
 
 /**
@@ -121,19 +139,38 @@ export class CarouselRepository implements PublishablePort {
   }
 
   /**
-   * Find all carousels (any status) with optional placement / status filters.
-   * Admin listing.
+   * Find all carousels (any status) with optional placement / status filters,
+   * a title search and opt-in pagination. Admin listing.
+   *
+   * With neither `page` nor `limit` the query keeps its pre-TASK-357 shape — no
+   * `skip`/`take`, and `total` comes from the rows we already hold rather than a
+   * second `count` round-trip.
    */
-  findAllAdmin(params: FindAllAdminParams = {}): Promise<Carousel[]> {
+  async findAllAdmin(params: FindAllAdminParams = {}): Promise<PaginatedCarouselsResult> {
     const where: Prisma.CarouselWhereInput = {
       ...(params.placement !== undefined && { placement: params.placement }),
       ...(params.status !== undefined && { status: params.status }),
+      ...(params.search && { title: { contains: params.search, mode: 'insensitive' } }),
     };
+    const orderBy: Prisma.CarouselOrderByWithRelationInput[] = [
+      { sortOrder: 'asc' },
+      { createdAt: 'desc' },
+    ];
 
-    return this.prisma.carousel.findMany({
-      where,
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-    });
+    if (params.page === undefined && params.limit === undefined) {
+      const carousels = await this.prisma.carousel.findMany({ where, orderBy });
+      return { carousels, total: carousels.length };
+    }
+
+    const limit = params.limit ?? DEFAULT_ADMIN_PAGE_SIZE;
+    const skip = ((params.page ?? 1) - 1) * limit;
+
+    const [carousels, total] = await Promise.all([
+      this.prisma.carousel.findMany({ where, orderBy, skip, take: limit }),
+      this.prisma.carousel.count({ where }),
+    ]);
+
+    return { carousels, total };
   }
 
   /**

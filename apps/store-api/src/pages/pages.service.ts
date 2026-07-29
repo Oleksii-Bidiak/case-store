@@ -77,6 +77,7 @@ export class PageService {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
       status: query.status,
+      search: query.search,
     };
 
     const { pages, total } = await this.pageRepository.findAllAdmin(params);

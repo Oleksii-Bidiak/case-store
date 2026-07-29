@@ -13,6 +13,9 @@ const LOCK_RESOURCE = 'device-brands';
 /** Device brands are ONE global list — a single, null-keyed bucket. */
 const BUCKET_LOCK_KEY = lockKey(LOCK_RESOURCE, null);
 
+/** Page size used when the admin asks for a page but names no `limit` (TASK-357). */
+const DEFAULT_ADMIN_PAGE_SIZE = 20;
+
 /**
  * Parameters for querying device models with optional filtering + pagination.
  */
@@ -78,6 +81,23 @@ export interface DeviceBrandWithCount {
 }
 
 /**
+ * Filter params for the ADMIN device-brand list. `page` / `limit` are OPTIONAL
+ * and jointly opt-in: with both absent the read returns the complete list, which
+ * is what the drag-and-drop reorder UI requires.
+ */
+export interface FindAdminBrandsParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+}
+
+/** Result of an admin brand query — `total` counts rows matching the filters. */
+export interface PaginatedDeviceBrandsResult {
+  brands: DeviceBrandWithCount[];
+  total: number;
+}
+
+/**
  * DeviceRepository — all Prisma access for the device-compatibility taxonomy
  * (TASK-190). Covers BOTH `DeviceBrand` and `DeviceModel` — a small,
  * tightly-coupled taxonomy owned by one repository (like `CategoryRepository`
@@ -98,24 +118,51 @@ export class DeviceRepository {
   }
 
   /**
-   * List device brands with their model counts (admin listing).
+   * List device brands with their model counts, any status — the ADMIN listing, with an
+   * optional name search and opt-in pagination (TASK-357).
    *
    * Accepts a transaction client (TASK-295) so the reorder endpoint can re-read the
    * refreshed list inside its own transaction.
+   *
+   * With neither `page` nor `limit` the query keeps its pre-TASK-357 shape — no `skip`/
+   * `take`, and `total` comes from the rows we already hold rather than a second `count`
+   * round-trip. Ordering stays `sortOrder` ASC in every mode: it is the operator's own
+   * hand-set order, so a paginated page must slice that same sequence.
    */
   async findBrandsWithCount(
-    activeOnly: boolean,
+    params: FindAdminBrandsParams = {},
     client: PrismaService | ReorderTx = this.prisma,
-  ): Promise<DeviceBrandWithCount[]> {
-    const brands = await client.deviceBrand.findMany({
-      where: activeOnly ? { isActive: true } : {},
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+  ): Promise<PaginatedDeviceBrandsResult> {
+    const where: Prisma.DeviceBrandWhereInput = {
+      ...(params.search && { name: { contains: params.search, mode: 'insensitive' } }),
+    };
+    const query = {
+      where,
+      orderBy: [{ sortOrder: 'asc' as const }, { name: 'asc' as const }],
       include: { _count: { select: { models: true } } },
-    });
-    return brands.map((b) => {
-      const { _count, ...brand } = b;
-      return { brand, modelCount: _count.models };
-    });
+    };
+
+    const withCount = (rows: { _count: { models: number } }[]): DeviceBrandWithCount[] =>
+      rows.map((row) => {
+        const { _count, ...brand } = row;
+        return { brand: brand as DeviceBrand, modelCount: _count.models };
+      });
+
+    if (params.page === undefined && params.limit === undefined) {
+      const rows = await client.deviceBrand.findMany(query);
+      const brands = withCount(rows);
+      return { brands, total: brands.length };
+    }
+
+    const limit = params.limit ?? DEFAULT_ADMIN_PAGE_SIZE;
+    const skip = ((params.page ?? 1) - 1) * limit;
+
+    const [rows, total] = await Promise.all([
+      client.deviceBrand.findMany({ ...query, skip, take: limit }),
+      client.deviceBrand.count({ where }),
+    ]);
+
+    return { brands: withCount(rows), total };
   }
 
   /**
@@ -124,14 +171,14 @@ export class DeviceRepository {
    *
    * Throws the domain errors of `common/reorder/reorder.errors.ts`; the service maps them.
    */
-  reorderBrands(orderedIds: readonly string[]): Promise<DeviceBrandWithCount[]> {
-    return reorderBucket<DeviceBrandWithCount[]>(this.prisma, {
+  reorderBrands(orderedIds: readonly string[]): Promise<PaginatedDeviceBrandsResult> {
+    return reorderBucket<PaginatedDeviceBrandsResult>(this.prisma, {
       resource: LOCK_RESOURCE,
       bucket: null,
       orderedIds,
       snapshot: (tx) => tx.deviceBrand.findMany({ select: { id: true } }),
       delegate: (tx) => tx.deviceBrand,
-      result: (tx) => this.findBrandsWithCount(false, tx),
+      result: (tx) => this.findBrandsWithCount({}, tx),
     });
   }
 

@@ -31,6 +31,23 @@ import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import { CarouselEntity, CarouselItemEntity, CarouselItemProductEntity } from './entities';
 
 /**
+ * Pagination metadata for the admin carousel list (TASK-357).
+ */
+class AdminCarouselPaginationMeta {
+  @ApiProperty({ description: 'Total number of items matching the filters', example: 4 })
+  total!: number;
+
+  @ApiProperty({ description: 'Current page (1-based)', example: 1 })
+  page!: number;
+
+  @ApiProperty({ description: 'Items per page — equals `total` for an unpaginated read' })
+  limit!: number;
+
+  @ApiProperty({ description: 'Total number of pages', example: 1 })
+  totalPages!: number;
+}
+
+/**
  * Response envelope for an admin carousel list (published + drafts).
  */
 class AdminCarouselListResponse {
@@ -39,6 +56,9 @@ class AdminCarouselListResponse {
     description: 'Carousels (all statuses, optionally filtered)',
   })
   data!: CarouselEntity[];
+
+  @ApiProperty({ type: AdminCarouselPaginationMeta })
+  meta!: AdminCarouselPaginationMeta;
 }
 
 /**
@@ -77,6 +97,7 @@ class CarouselItemListResponse {
 @ApiTags('Carousels')
 @ApiExtraModels(
   AdminCarouselListResponse,
+  AdminCarouselPaginationMeta,
   CarouselEntity,
   CarouselResponseEnvelope,
   CarouselItemEntity,
@@ -92,9 +113,14 @@ export class AdminCarouselController {
   @Get()
   @ApiBearerAuth('access-token')
   @ApiOperation({
-    summary: 'List all carousels — all statuses, optionally filtered by placement / status (admin)',
+    summary:
+      'List all carousels — all statuses, optional placement / status filters, search and pagination (admin)',
   })
-  @ApiResponse({ status: 200, description: 'List of carousels', type: AdminCarouselListResponse })
+  @ApiResponse({
+    status: 200,
+    description: 'List of carousels (complete list when page/limit are omitted)',
+    type: AdminCarouselListResponse,
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: AdminCarouselListQueryDto): Promise<AdminCarouselListResponse> {
     return this.carouselService.findAllAdmin(query);

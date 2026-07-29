@@ -21,11 +21,24 @@ import { PublicProductEntity } from '../product/entities';
 import { CategoryRepository } from '../category';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
 
+/** Pagination metadata carried by the admin carousel list response. */
+interface PaginationMeta {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 /**
  * Response envelope for an admin carousel list.
+ *
+ * `meta` is present even for an unpaginated read: the admin panel needs an
+ * honest row count, and an envelope that changes shape with the query would
+ * force the client to branch on it.
  */
 interface CarouselListResponse {
   data: CarouselEntity[];
+  meta: PaginationMeta;
 }
 
 /**
@@ -74,13 +87,23 @@ export class CarouselService {
 
   /**
    * List all carousels including drafts (admin), optionally filtered by
-   * placement and/or status.
+   * placement and/or status, searched by title and paginated. Omitting
+   * `page`/`limit` returns the complete list (TASK-357).
    */
   async findAllAdmin(query: AdminCarouselListQueryDto): Promise<CarouselListResponse> {
-    const params: FindAllAdminParams = { placement: query.placement, status: query.status };
-    const carousels = await this.carouselRepository.findAllAdmin(params);
+    const params: FindAllAdminParams = {
+      placement: query.placement,
+      status: query.status,
+      page: query.page,
+      limit: query.limit,
+      search: query.search,
+    };
+    const { carousels, total } = await this.carouselRepository.findAllAdmin(params);
 
-    return { data: carousels.map((carousel) => CarouselEntity.fromPrisma(carousel)) };
+    return {
+      data: carousels.map((carousel) => CarouselEntity.fromPrisma(carousel)),
+      meta: this.buildMeta(total, query.page, query.limit),
+    };
   }
 
   /**
@@ -268,6 +291,23 @@ export class CarouselService {
   }
 
   // ─── helpers ──────────────────────────────────────────────────────────────
+
+  /**
+   * Pagination metadata. With no `limit` the whole list came back in one response,
+   * so it is reported as a single page of size `total` rather than inventing a page
+   * size the caller never asked for. An EMPTY unpaginated list would make that size
+   * 0, so `totalPages` is short-circuited instead of dividing by zero.
+   */
+  private buildMeta(total: number, page?: number, limit?: number): PaginationMeta {
+    const effectiveLimit = limit ?? total;
+
+    return {
+      total,
+      page: page ?? 1,
+      limit: effectiveLimit,
+      totalPages: effectiveLimit === 0 ? 0 : Math.ceil(total / effectiveLimit),
+    };
+  }
 
   /**
    * Turn one carousel row into an ordered public product list — entirely by

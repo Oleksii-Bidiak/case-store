@@ -59,11 +59,33 @@ describe('FaqService', () => {
 
   describe('findAllAdmin', () => {
     it('maps all items into entities', async () => {
-      repositoryMock.findAllAdmin.mockResolvedValue([mockFaq]);
+      repositoryMock.findAllAdmin.mockResolvedValue({ items: [mockFaq], total: 1 });
 
       const result = await service.findAllAdmin();
 
       expect(result.data[0]).toBeInstanceOf(FaqItemEntity);
+    });
+
+    // TASK-357: an unpaginated read still reports a truthful count.
+    it('reports the whole list as one page when page/limit are omitted', async () => {
+      repositoryMock.findAllAdmin.mockResolvedValue({ items: [mockFaq], total: 1 });
+
+      const result = await service.findAllAdmin({});
+
+      expect(result.meta).toEqual({ total: 1, page: 1, limit: 1, totalPages: 1 });
+    });
+
+    it('forwards pagination and search, and reports the page the caller asked for', async () => {
+      repositoryMock.findAllAdmin.mockResolvedValue({ items: [mockFaq], total: 25 });
+
+      const result = await service.findAllAdmin({ page: 3, limit: 10, search: 'достав' });
+
+      expect(repositoryMock.findAllAdmin).toHaveBeenCalledWith({
+        page: 3,
+        limit: 10,
+        search: 'достав',
+      });
+      expect(result.meta).toEqual({ total: 25, page: 3, limit: 10, totalPages: 3 });
     });
   });
 
