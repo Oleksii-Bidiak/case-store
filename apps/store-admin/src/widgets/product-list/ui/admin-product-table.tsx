@@ -82,6 +82,12 @@ function AdminProductTableView() {
 
   // TASK-230: the guarded admin listing — includes deactivated products (the
   // public GET /products is active-only now) and bypasses the server cache.
+  // TASK-362: status and stock filters live in the URL alongside search/sort, so
+  // a restock worklist («приховані», «немає в наявності») is a shareable link
+  // rather than a set of clicks the operator repeats every morning.
+  const statusParam = searchParams.get("status") ?? "";
+  const stockParam = searchParams.get("stock") ?? "";
+
   const { data, isLoading, isFetching, isError, refetch } =
     useProductControllerAdminFindAll({
       page,
@@ -89,6 +95,13 @@ function AdminProductTableView() {
       search: searchParam || undefined,
       sortBy,
       sortOrder,
+      isActive:
+        statusParam === "active"
+          ? true
+          : statusParam === "hidden"
+            ? false
+            : undefined,
+      outOfStock: stockParam === "out" ? true : undefined,
     });
 
   const categoriesQuery = useCategoryControllerGetRootCategories({
@@ -148,6 +161,35 @@ function AdminProductTableView() {
             <Button type="submit" variant="outline">
               {dict.common.search}
             </Button>
+            <select
+              value={statusParam}
+              aria-label={dict.products.filterStatus}
+              onChange={(event) =>
+                updateParams({
+                  status: event.target.value || undefined,
+                  page: undefined,
+                })
+              }
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+            >
+              <option value="">{dict.products.filterStatusAll}</option>
+              <option value="active">{dict.products.filterStatusActive}</option>
+              <option value="hidden">{dict.products.filterStatusHidden}</option>
+            </select>
+            <select
+              value={stockParam}
+              aria-label={dict.products.filterStock}
+              onChange={(event) =>
+                updateParams({
+                  stock: event.target.value || undefined,
+                  page: undefined,
+                })
+              }
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+            >
+              <option value="">{dict.products.filterStockAll}</option>
+              <option value="out">{dict.products.filterStockOut}</option>
+            </select>
           </form>
         }
         selectAll={
@@ -209,6 +251,7 @@ function AdminProductTableView() {
                   disabled={bulk.isPending}
                   label={dict.common.table.selectAll}
                 />
+                <TableHead className="w-16">{dict.products.colPhoto}</TableHead>
                 <SortableColumnHeader
                   field="name"
                   label={dict.products.colName}
@@ -263,11 +306,36 @@ function AdminProductTableView() {
                     disabled={bulk.isPending}
                     label={dict.products.bulk.selectRow(product.name)}
                   />
+                  {/* Thumbnail + a «без фото» chip (TASK-362). `primaryImage`
+                      is already hydrated by the list query's enrichment step, so
+                      this costs no extra request — and after a catalogue import,
+                      which deliberately brings no photos, this column IS the
+                      operator's worklist. */}
+                  <TableCell label={dict.products.colPhoto}>
+                    {product.primaryImage?.url ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- admin thumbnail off arbitrary upload hosts; next/image would need every one allowlisted
+                      <img
+                        src={product.primaryImage.url}
+                        alt=""
+                        loading="lazy"
+                        className="size-10 rounded border border-border object-cover"
+                      />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        {dict.products.noPhoto}
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell
                     label={dict.products.colName}
                     className="font-medium"
                   >
-                    {product.name}
+                    <span className="block">{product.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {[product.sku, product.brand?.name]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
+                    </span>
                   </TableCell>
                   <TableCell
                     label={dict.products.colCategory}

@@ -160,6 +160,16 @@ export class ProductService {
       // Not part of the cache key: it is a CONSTANT on this path (and absent on
       // the uncached admin path), so it can never fragment or collide keys.
       categoryActiveOnly: true,
+      // Sold-out products sort to the back of every public listing (TASK-362).
+      // Also a CONSTANT on this path, for the same reason. Deliberately NOT
+      // applied to `adminFindAll`: the operator is often hunting for exactly the
+      // zero-stock rows.
+      inStockFirst: true,
+      // The restock worklist filter is admin-only, and forcing it off here is
+      // not just tidiness: it is absent from `buildProductListKey`, so honouring
+      // it publicly would serve a sold-out-only page from — and into — the cache
+      // entry for the unfiltered listing. Constant means it can never collide.
+      outOfStock: undefined,
       categoryIds: await this.resolveSubtreeIds(query.categoryId),
     };
     const response = await this.listFromDb(params);
@@ -223,6 +233,7 @@ export class ProductService {
       brandId: query.brandId,
       deviceModelId: query.deviceModelId,
       isActive: query.isActive,
+      outOfStock: query.outOfStock,
       minPrice: query.minPrice,
       maxPrice: query.maxPrice,
       search: query.search,

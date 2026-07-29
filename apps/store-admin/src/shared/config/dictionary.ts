@@ -288,6 +288,16 @@ export const dict = {
     createSubmit: "Створити товар",
     loadOneError: "Не вдалося завантажити товар. Спробуйте ще раз.",
     imagesHeading: "Зображення товару",
+    // TASK-362: photo column + status/stock filters for the restock worklist.
+    colPhoto: "Фото",
+    noPhoto: "без фото",
+    filterStatus: "Фільтр за статусом",
+    filterStatusAll: "Усі статуси",
+    filterStatusActive: "Лише активні",
+    filterStatusHidden: "Лише приховані",
+    filterStock: "Фільтр за залишком",
+    filterStockAll: "Будь-який залишок",
+    filterStockOut: "Немає в наявності",
     toastCreated: "Товар створено",
     // TASK-361: creation now yields a hidden draft and lands on the edit page.
     toastDraftCreated:

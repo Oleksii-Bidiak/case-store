@@ -2204,6 +2204,16 @@
             }
           },
           {
+            "name": "outOfStock",
+            "required": false,
+            "in": "query",
+            "description": "Filter to positions with zero free-to-sell stock (TASK-362). Admin-only in practice: the restock worklist. Composes with every other filter.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
             "name": "onSale",
             "required": false,
             "in": "query",
@@ -2396,6 +2406,16 @@
             "required": false,
             "in": "query",
             "description": "Filter by active status — honoured only on the admin listing; the public list is always active-only (TASK-230)",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "outOfStock",
+            "required": false,
+            "in": "query",
+            "description": "Filter to positions with zero free-to-sell stock (TASK-362). Admin-only in practice: the restock worklist. Composes with every other filter.",
             "schema": {
               "example": true,
               "type": "boolean"

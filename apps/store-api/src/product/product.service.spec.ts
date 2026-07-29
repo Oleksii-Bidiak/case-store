@@ -227,6 +227,8 @@ describe('ProductService', () => {
         isActive: true,
         // TASK-297: …and always drops the products of withdrawn categories.
         categoryActiveOnly: true,
+        // TASK-362: sold-out products sort to the back of every public page.
+        inStockFirst: true,
         minPrice: undefined,
         maxPrice: undefined,
         search: undefined,
@@ -271,6 +273,8 @@ describe('ProductService', () => {
         categoryIds: ['cat-uuid-1'],
         isActive: true,
         categoryActiveOnly: true,
+        // TASK-362: sold-out products sort to the back of every public page.
+        inStockFirst: true,
         minPrice: 10,
         maxPrice: 50,
         search: 'iphone',
@@ -302,6 +306,18 @@ describe('ProductService', () => {
 
     // TASK-230: the leak — a public caller asking for inactive products (or
     // sending no filter) must still get only active ones.
+    // TASK-362: sold-out products sort behind everything in stock, so page 1 is
+    // not led by things nobody can buy.
+    it('pushes out-of-stock products to the back of the public listing', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.findAll(query);
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ inStockFirst: true }),
+      );
+    });
+
     it('overrides an explicit isActive=false from a public caller with true', async () => {
       productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
 
@@ -328,6 +344,19 @@ describe('ProductService', () => {
   // ─── adminFindAll (admin, TASK-230) ─────────────────────────────────────────
 
   describe('adminFindAll', () => {
+    // TASK-362: the admin listing must NOT reorder by availability — restocking
+    // means going looking for exactly the zero-stock rows.
+    it('leaves the ordering alone rather than pushing out-of-stock rows back', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.adminFindAll({ page: 1, limit: 20 });
+
+      const params = productRepositoryMock.findAll.mock.calls[0][0] as {
+        inStockFirst?: boolean;
+      };
+      expect(params.inStockFirst).toBeFalsy();
+    });
+
     it('respects the isActive filter as sent (undefined = all products) and skips the cache', async () => {
       productRepositoryMock.findAll.mockResolvedValue({ products: [mockProduct], total: 1 });
 

@@ -96,6 +96,26 @@ export class ProductListQueryDto {
 
   @ApiProperty({
     description:
+      'Filter to positions with zero free-to-sell stock (TASK-362). Admin-only in ' +
+      'practice: the restock worklist. Composes with every other filter.',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  // Same `obj[key]` read as `isActive` above, for the same reason: the global
+  // ValidationPipe's `enableImplicitConversion` turns 'false' into `true` before
+  // this transform ever sees it.
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
+    return undefined;
+  })
+  @IsBoolean({ message: 'outOfStock must be true or false' })
+  outOfStock?: boolean;
+
+  @ApiProperty({
+    description:
       'Filter to products currently on sale (compareAtPrice set and greater than price). ' +
       'Composes with every other filter and with sortBy=bestselling (TASK-179).',
     example: true,

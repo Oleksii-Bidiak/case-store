@@ -73,6 +73,16 @@ export interface FindAllParams {
    * owner decision), so neither does this filter.
    */
   categoryActiveOnly?: boolean;
+  /**
+   * Push everything out of stock behind everything in stock, ahead of the
+   * requested sort (TASK-362). Set on the PUBLIC listing only: a shopper sorting
+   * by price still wants the things they can actually buy first, whereas the
+   * admin is often looking for exactly the zero-stock rows and must not have
+   * them shuffled to the back.
+   */
+  inStockFirst?: boolean;
+  /** Keep only positions with zero free-to-sell stock (TASK-362). */
+  outOfStock?: boolean;
   minPrice?: number;
   maxPrice?: number;
   search?: string;
@@ -506,6 +516,11 @@ export class ProductRepository {
       where.isActive = isActive;
     }
 
+    // Restock worklist (TASK-362): positions with nothing free to sell.
+    if (params.outOfStock) {
+      where.stock = { lte: 0 };
+    }
+
     // Withdraw the products of deactivated categories (TASK-297). A relation
     // filter, so it composes with the `categoryIds` subtree rollup above rather
     // than replacing it: a parent-category rollup still returns only the
@@ -556,7 +571,7 @@ export class ProductRepository {
     const { products, total } =
       sortBy === 'bestselling'
         ? await this.findPageByBestselling(where, skip, limit)
-        : await this.findPageByColumn(where, skip, limit, sortBy, sortOrder);
+        : await this.findPageByColumn(where, skip, limit, sortBy, sortOrder, params.inStockFirst);
 
     const enriched = await this.enrichProducts(products);
     return { products: enriched, total };
@@ -585,6 +600,7 @@ export class ProductRepository {
     limit: number,
     sortBy: string | undefined,
     sortOrder: 'asc' | 'desc',
+    inStockFirst = false,
   ): Promise<{ products: ProductWithBrand[]; total: number }> {
     const allowedSortFields: Record<string, string> = {
       createdAt: 'createdAt',
@@ -599,25 +615,98 @@ export class ProductRepository {
     }
     const effectiveSortField = sortField ?? 'createdAt';
 
+    // `id` is always the last key. None of the sortable columns is unique: an
+    // import writes many products with the same `createdAt`, a price list
+    // repeats prices, and `stock` repeats constantly. Postgres is free to
+    // return tied rows in a different order on every query, so paginating over
+    // an unstable ordering makes a product appear on two pages and another on
+    // none — with the totals still adding up, so nothing looks wrong until
+    // someone counts. Same defect this wave fixed in `user.repository.ts`
+    // (plan 168 §10.4).
+    const orderBy: Prisma.ProductOrderByWithRelationInput[] = [
+      { [effectiveSortField]: sortOrder },
+      { id: 'asc' },
+    ];
+
+    if (inStockFirst) {
+      return this.findPageInStockFirst(where, skip, limit, orderBy);
+    }
+
     const [products, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
         skip,
         take: limit,
-        // `id` is always the last key. None of the sortable columns is unique:
-        // an import writes many products with the same `createdAt`, a price list
-        // repeats prices, and `stock` repeats constantly. Postgres is free to
-        // return tied rows in a different order on every query, so paginating
-        // over an unstable ordering makes a product appear on two pages and
-        // another on none — with the totals still adding up, so nothing looks
-        // wrong until someone counts. Same defect this wave fixed in
-        // `user.repository.ts` (plan 168 §10.4).
-        orderBy: [{ [effectiveSortField]: sortOrder }, { id: 'asc' }],
+        orderBy,
         include: { brand: { select: BRAND_SUMMARY_SELECT } },
       }),
       this.prisma.product.count({ where }),
     ]);
     return { products, total };
+  }
+
+  /**
+   * The same page, but with everything out of stock pushed behind everything in
+   * stock (TASK-362).
+   *
+   * Prisma cannot order by an expression, and ordering by `stock` itself is not
+   * the same thing — that would rank a product with 100 units above one with 5,
+   * reshuffling the whole catalogue instead of just moving the zeroes to the
+   * end. So the page is assembled from two independently-ordered partitions,
+   * which also keeps each partition's ordering as stable as the single-query
+   * path above.
+   *
+   * Requesting a page wholly inside one partition costs the same two queries as
+   * before; only a page that straddles the boundary needs a third.
+   */
+  private async findPageInStockFirst(
+    where: Prisma.ProductWhereInput,
+    skip: number,
+    limit: number,
+    orderBy: Prisma.ProductOrderByWithRelationInput[],
+  ): Promise<{ products: ProductWithBrand[]; total: number }> {
+    const inStockWhere: Prisma.ProductWhereInput = { ...where, stock: { gt: 0 } };
+    const outOfStockWhere: Prisma.ProductWhereInput = { ...where, stock: { lte: 0 } };
+    const include = { brand: { select: BRAND_SUMMARY_SELECT } };
+
+    const [inStockTotal, total] = await Promise.all([
+      this.prisma.product.count({ where: inStockWhere }),
+      this.prisma.product.count({ where }),
+    ]);
+
+    // Entirely past the in-stock partition: page the remainder directly.
+    if (skip >= inStockTotal) {
+      const products = await this.prisma.product.findMany({
+        where: outOfStockWhere,
+        skip: skip - inStockTotal,
+        take: limit,
+        orderBy,
+        include,
+      });
+      return { products, total };
+    }
+
+    const inStock = await this.prisma.product.findMany({
+      where: inStockWhere,
+      skip,
+      take: limit,
+      orderBy,
+      include,
+    });
+
+    // Entirely inside the in-stock partition.
+    if (inStock.length === limit) {
+      return { products: inStock, total };
+    }
+
+    // Straddling the boundary: top the page up from the start of the tail.
+    const tail = await this.prisma.product.findMany({
+      where: outOfStockWhere,
+      take: limit - inStock.length,
+      orderBy,
+      include,
+    });
+    return { products: [...inStock, ...tail], total };
   }
 
   /**
