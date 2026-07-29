@@ -9,7 +9,8 @@ import {
 import { dict } from "@/shared/config";
 
 const SKELETON_ROWS = 4;
-const COLUMN_COUNT = 6;
+// Select column + the six data columns.
+const COLUMN_COUNT = 7;
 
 /**
  * Loading placeholder matching the MessageInbox column structure.
@@ -20,6 +21,9 @@ export function MessageInboxSkeleton() {
       <Table>
         <TableHeader>
           <TableRow>
+            {/* Placeholder for the select column (TASK-354): without it the
+                header shifts left by one cell the moment the rows arrive. */}
+            <TableHead className="w-10" />
             <TableHead>{dict.messages.colName}</TableHead>
             <TableHead>{dict.messages.colTopic}</TableHead>
             <TableHead>{dict.messages.colMessage}</TableHead>
