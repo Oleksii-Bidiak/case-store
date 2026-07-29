@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { Download, Loader2 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import {
@@ -59,8 +60,6 @@ type SubscriberStatus =
  * a CSV better than we can.
  */
 export function AdminSubscriberTable() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const searchParam = searchParams.get("search") ?? "";
@@ -70,18 +69,7 @@ export function AdminSubscriberTable() {
   const [searchInput, setSearchInput] = useState(searchParam);
   const [isExporting, setIsExporting] = useState(false);
 
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
-  };
+  const updateParams = useUrlParams();
 
   const { sortBy, sortOrder, onSort } = useTableSort(
     searchParams,

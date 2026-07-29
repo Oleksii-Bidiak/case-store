@@ -11,16 +11,16 @@ import { AdminCarouselTable } from "./admin-carousel-table";
 
 // jsdom mounts no app router, and since TASK-357 this table reads page + search
 // from the URL and writes them back — so both ends need a stub.
-const mockPush = jest.fn();
+const mockReplace = jest.fn();
 let mockSearchParams = new URLSearchParams("");
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
   usePathname: () => "/carousels",
   useSearchParams: () => mockSearchParams,
 }));
 
 beforeEach(() => {
-  mockPush.mockClear();
+  mockReplace.mockClear();
   mockSearchParams = new URLSearchParams("");
 });
 
@@ -310,7 +310,7 @@ describe("AdminCarouselTable", () => {
         screen.getByRole("button", { name: dict.common.next }),
       );
 
-      expect(mockPush).toHaveBeenCalledWith("/carousels?page=2");
+      expect(mockReplace).toHaveBeenCalledWith("/carousels?page=2");
     });
 
     it("refetches on demand — the point of the refresh control", async () => {
@@ -346,7 +346,7 @@ describe("AdminCarouselTable", () => {
         screen.getByRole("button", { name: dict.common.search }),
       );
 
-      expect(mockPush).toHaveBeenCalledWith(
+      expect(mockReplace).toHaveBeenCalledWith(
         "/carousels?search=%D1%85%D1%96%D1%82%D0%B8",
       );
     });

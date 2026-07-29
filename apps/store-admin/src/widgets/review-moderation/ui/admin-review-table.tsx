@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, Star } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -13,6 +13,7 @@ import {
 } from "@/entities/review";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
 import { useReviewBulkModeration } from "@/features/review-bulk-moderation";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useRowSelection } from "@/shared/lib/use-row-selection";
 import {
   BulkActionsBar,
@@ -98,8 +99,6 @@ export function AdminReviewTable() {
 }
 
 function AdminReviewTableView() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
@@ -109,18 +108,7 @@ function AdminReviewTableView() {
       : AdminReviewControllerListStatus.pending;
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
 
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
-  };
+  const updateParams = useUrlParams();
 
   const { data, isLoading, isFetching, isError, refetch } =
     useAdminReviewControllerList({

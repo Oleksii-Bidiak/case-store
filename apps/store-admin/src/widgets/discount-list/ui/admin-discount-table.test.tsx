@@ -24,18 +24,20 @@ import { dict } from "@/shared/config";
 import { AdminDiscountTable } from "./admin-discount-table";
 
 // jsdom mounts no app router; this table reads search/page/sort from the URL and
-// writes them back, so both ends need a stub. Sort and page use `push` (they are
-// navigations a colleague may share), which is what the assertions below read.
-const mockPush = jest.fn();
+// writes them back, so both ends need a stub. Since TASK-358 every table writes
+// through `useUrlParams`, i.e. `replace` — search, sort and page are view state,
+// not history — so the assertions below read the replaced URL. Still shareable:
+// the URL carries the whole view either way.
+const mockReplace = jest.fn();
 let mockSearchParams = new URLSearchParams("");
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
   usePathname: () => "/discounts",
   useSearchParams: () => mockSearchParams,
 }));
 
 beforeEach(() => {
-  mockPush.mockClear();
+  mockReplace.mockClear();
   mockSearchParams = new URLSearchParams("");
 });
 
@@ -160,7 +162,7 @@ describe("AdminDiscountTable", () => {
         }),
       );
 
-      expect(mockPush).toHaveBeenCalledWith(
+      expect(mockReplace).toHaveBeenCalledWith(
         "/discounts?sortBy=code&sortOrder=desc",
       );
     });
@@ -178,7 +180,7 @@ describe("AdminDiscountTable", () => {
         }),
       );
 
-      expect(mockPush).toHaveBeenCalledWith(
+      expect(mockReplace).toHaveBeenCalledWith(
         "/discounts?sortBy=code&sortOrder=asc",
       );
     });
@@ -203,7 +205,7 @@ describe("AdminDiscountTable", () => {
         }),
       );
 
-      expect(mockPush).toHaveBeenCalledWith(
+      expect(mockReplace).toHaveBeenCalledWith(
         "/discounts?sortBy=expiresAt&sortOrder=desc",
       );
     });
@@ -307,7 +309,7 @@ describe("AdminDiscountTable", () => {
         screen.getByRole("button", { name: dict.common.search }),
       );
 
-      expect(mockPush).toHaveBeenCalledWith("/discounts?search=summer");
+      expect(mockReplace).toHaveBeenCalledWith("/discounts?search=summer");
     });
 
     it("forwards the URL search to the server", async () => {

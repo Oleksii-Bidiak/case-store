@@ -18,16 +18,16 @@ import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { DeviceModelTable } from "./device-model-table";
 
-const mockPush = jest.fn();
+const mockReplace = jest.fn();
 let mockSearchParams = new URLSearchParams("");
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
   usePathname: () => "/devices",
   useSearchParams: () => mockSearchParams,
 }));
 
 beforeEach(() => {
-  mockPush.mockClear();
+  mockReplace.mockClear();
   mockSearchParams = new URLSearchParams("");
 });
 

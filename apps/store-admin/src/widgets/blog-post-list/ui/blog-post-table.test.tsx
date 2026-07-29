@@ -11,16 +11,16 @@ import { BlogPostTable } from "./blog-post-table";
 
 // jsdom mounts no app router, and since TASK-357 this table reads page + search
 // from the URL and writes them back — so both ends need a stub.
-const mockPush = jest.fn();
+const mockReplace = jest.fn();
 let mockSearchParams = new URLSearchParams("");
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
   usePathname: () => "/blog",
   useSearchParams: () => mockSearchParams,
 }));
 
 beforeEach(() => {
-  mockPush.mockClear();
+  mockReplace.mockClear();
   mockSearchParams = new URLSearchParams("");
 });
 
@@ -192,7 +192,7 @@ describe("BlogPostTable", () => {
 
       await userEvent.click(next);
 
-      expect(mockPush).toHaveBeenCalledWith("/blog?page=2");
+      expect(mockReplace).toHaveBeenCalledWith("/blog?page=2");
     });
 
     it("refetches on demand — the point of the refresh control", async () => {

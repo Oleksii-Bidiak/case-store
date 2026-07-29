@@ -13,4 +13,5 @@ export { apiErrorMessage, apiErrorStatus } from "./api-error-message";
 //
 // The same applies to the other client hooks in this folder — import each from
 // its own module, never from here:
-//   use-table-sort, use-media-query, use-row-selection, list-reorder/*
+//   use-table-sort, use-url-params, use-media-query, use-row-selection,
+//   list-reorder/*

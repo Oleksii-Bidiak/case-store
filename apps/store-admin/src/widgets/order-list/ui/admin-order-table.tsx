@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import {
   OrderEntityStatus,
@@ -96,8 +97,6 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
  * untouched — this is a relayout, not a rework.
  */
 export function AdminOrderTable() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const statusParam = searchParams.get("status") ?? "";
@@ -110,18 +109,7 @@ export function AdminOrderTable() {
   const unpaidInTransit = searchParams.get("unpaidInTransit") === "true";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
 
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
-  };
+  const updateParams = useUrlParams();
 
   // Column sort lives in the URL (TASK-147).
   const { sortBy, sortOrder, onSort } = useTableSort(

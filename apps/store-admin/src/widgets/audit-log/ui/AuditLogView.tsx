@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   toAuditEntry,
   useGetAuditLog,
@@ -24,6 +24,7 @@ import {
   TableRow,
   TableToolbar,
 } from "@/shared/ui";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
@@ -133,8 +134,6 @@ function DiffCell({ entry }: { entry: AuditEntry }) {
  * exactly like "it never happened".
  */
 export function AuditLogView() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const action = searchParams.get("action") ?? "";
@@ -144,18 +143,7 @@ export function AuditLogView() {
   const [actionInput, setActionInput] = useState(action);
   const [entityInput, setEntityInput] = useState(entityType);
 
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
-  };
+  const updateParams = useUrlParams();
 
   const { sortBy, sortOrder, onSort } = useTableSort(
     searchParams,

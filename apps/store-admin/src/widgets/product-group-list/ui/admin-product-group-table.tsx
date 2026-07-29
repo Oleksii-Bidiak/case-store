@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useProductGroupControllerFindAll } from "@/entities/product-group";
 import {
   Button,
@@ -16,6 +16,7 @@ import {
   TableRow,
   TableToolbar,
 } from "@/shared/ui";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { dict } from "@/shared/config";
 import { AdminProductGroupTableSkeleton } from "./admin-product-group-table-skeleton";
 
@@ -44,8 +45,6 @@ export function AdminProductGroupTable() {
 }
 
 function AdminProductGroupView() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const searchParam = searchParams.get("search") ?? "";
@@ -53,18 +52,7 @@ function AdminProductGroupView() {
 
   const [searchInput, setSearchInput] = useState(searchParam);
 
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.push(queryString ? `${pathname}?${queryString}` : pathname);
-  };
+  const updateParams = useUrlParams();
 
   const { data, isLoading, isFetching, isError, refetch } =
     useProductGroupControllerFindAll({

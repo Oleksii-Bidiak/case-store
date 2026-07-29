@@ -21,16 +21,16 @@ import { AdminProductGroupTable } from "./admin-product-group-table";
 
 // jsdom mounts no app router; the table reads page + search from the URL and
 // writes them back, so both ends need a stub.
-const mockPush = jest.fn();
+const mockReplace = jest.fn();
 let mockSearchParams = new URLSearchParams("");
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
   usePathname: () => "/product-groups",
   useSearchParams: () => mockSearchParams,
 }));
 
 beforeEach(() => {
-  mockPush.mockClear();
+  mockReplace.mockClear();
   mockSearchParams = new URLSearchParams("");
 });
 
@@ -132,7 +132,7 @@ describe("AdminProductGroupTable", () => {
         screen.getByRole("button", { name: dict.common.next }),
       );
 
-      expect(mockPush).toHaveBeenCalledWith("/product-groups?page=2");
+      expect(mockReplace).toHaveBeenCalledWith("/product-groups?page=2");
     });
 
     it("refetches on demand — the point of the refresh control", async () => {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   ReturnEntityStatus,
   returnStatusBadgeVariant,
@@ -10,6 +10,7 @@ import {
   useAdminReturnControllerFindAll,
   type AdminReturnControllerFindAllParams,
 } from "@/entities/return";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import {
@@ -68,25 +69,12 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
  * by how many lines are on them.
  */
 export function AdminReturnTable() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const statusParam = searchParams.get("status") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
 
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
-  };
+  const updateParams = useUrlParams();
 
   // `requestedAt`, not the shared `createdAt` default — that column does not
   // exist on this endpoint and would come back a 400 from the `@IsIn` guard.

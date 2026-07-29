@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -26,6 +26,7 @@ import {
   TableRow,
   TableToolbar,
 } from "@/shared/ui";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { dict } from "@/shared/config";
 import { AdminFaqTableSkeleton } from "./faq-table-skeleton";
 
@@ -54,8 +55,6 @@ export function AdminFaqTable() {
 }
 
 function AdminFaqView() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
@@ -64,18 +63,7 @@ function AdminFaqView() {
 
   const [searchInput, setSearchInput] = useState(searchParam);
 
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.push(queryString ? `${pathname}?${queryString}` : pathname);
-  };
+  const updateParams = useUrlParams();
 
   const { data, isLoading, isFetching, isError, refetch } =
     useAdminFaqControllerFindAll({

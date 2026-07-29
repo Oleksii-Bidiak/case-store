@@ -3,11 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useCategoryControllerGetRootCategories } from "@/shared/api";
 import { useProductControllerAdminFindAll } from "@/entities/product";
 import { ProductStatusToggle } from "@/features/product-status-toggle";
 import { useProductBulkStatus } from "@/features/product-bulk-status";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { useRowSelection } from "@/shared/lib/use-row-selection";
 import {
@@ -63,8 +64,6 @@ export function AdminProductTable() {
 }
 
 function AdminProductTableView() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const searchParam = searchParams.get("search") ?? "";
@@ -72,18 +71,7 @@ function AdminProductTableView() {
 
   const [searchInput, setSearchInput] = useState(searchParam);
 
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
-  };
+  const updateParams = useUrlParams();
 
   // Column sort lives in the URL (TASK-147); replaces the previously hardcoded
   // createdAt/desc.

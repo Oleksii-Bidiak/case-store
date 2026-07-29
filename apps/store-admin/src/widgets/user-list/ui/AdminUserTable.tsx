@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import {
@@ -83,8 +84,6 @@ function roleOf(user: UserEntity): string {
  * mistake there is no undo for.
  */
 export function AdminUserTable() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const searchParam = searchParams.get("search") ?? "";
@@ -99,18 +98,7 @@ export function AdminUserTable() {
   const { isOwner } = useAuth();
   const [createOpen, setCreateOpen] = useState(false);
 
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
-  };
+  const updateParams = useUrlParams();
 
   const { sortBy, sortOrder, onSort } = useTableSort(
     searchParams,

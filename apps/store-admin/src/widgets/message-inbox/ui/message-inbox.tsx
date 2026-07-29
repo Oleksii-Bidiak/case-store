@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   useAdminContactList,
   AdminContactListStatus,
@@ -11,6 +11,7 @@ import {
   type ContactMessageEntity,
 } from "@/entities/contact";
 import { useMessageBulkStatus } from "@/features/message-bulk-status";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { useRowSelection } from "@/shared/lib/use-row-selection";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
@@ -96,8 +97,6 @@ export function MessageInbox() {
 }
 
 function MessageInboxView() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const status = parseStatus(searchParams.get("status"));
@@ -105,18 +104,7 @@ function MessageInboxView() {
 
   const [selected, setSelected] = useState<ContactMessageEntity | null>(null);
 
-  const updateParams = (next: Record<string, string | undefined>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(next)) {
-      if (value === undefined || value === "") {
-        params.delete(key);
-      } else {
-        params.set(key, value);
-      }
-    }
-    const queryString = params.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
-  };
+  const updateParams = useUrlParams();
 
   // Sorting by `status` orders on the enum's declaration order — NEW,
   // IN_PROGRESS, READ, ARCHIVED — which is the triage order, not the alphabet.
