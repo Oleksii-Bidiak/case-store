@@ -106,7 +106,18 @@ describe('PageService', () => {
         page: 1,
         limit: 20,
         status: undefined,
+        search: undefined,
       });
+    });
+
+    it('forwards the search term to the repository', async () => {
+      pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [mockPage], total: 1 });
+
+      await service.findAllAdmin({ page: 1, limit: 20, search: 'достав' });
+
+      expect(pageRepositoryMock.findAllAdmin).toHaveBeenCalledWith(
+        expect.objectContaining({ search: 'достав' }),
+      );
     });
   });
 

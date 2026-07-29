@@ -9,7 +9,11 @@
  * search — which hides rows — LOCKS reordering rather than sending a partial
  * ordering.
  *
- * The taxonomy is small, so the list is not paginated.
+ * THE LIST IS DELIBERATELY NOT PAGINATED, and TASK-357 did not change that even
+ * though the endpoint now accepts `page`/`limit`. Same reason as the search
+ * lock: a page is a partial view, and a reorder computed on a partial view is a
+ * partial ordering. The refresh control and the toolbar are what TASK-357 adds
+ * here; paging this grid would trade a missing button for a corrupt PATCH.
  */
 
 import { useMemo, useState } from "react";
@@ -46,6 +50,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableToolbar,
   type SortableTreeRowRenderProps,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -72,7 +77,8 @@ export function DeviceBrandTable() {
 function DeviceBrandGrid() {
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError } = useAdminDeviceControllerFindBrands();
+  const { data, isLoading, isFetching, isError, refetch } =
+    useAdminDeviceControllerFindBrands();
   const activate = useAdminDeviceControllerActivateBrand();
   const deactivate = useAdminDeviceControllerDeactivateBrand();
 
@@ -123,24 +129,6 @@ function DeviceBrandGrid() {
     );
   };
 
-  if (isLoading) {
-    return <DeviceBrandTableSkeleton />;
-  }
-  if (isError) {
-    return (
-      <p role="alert" className="text-sm text-destructive">
-        {dict.devices.brandsLoadError}
-      </p>
-    );
-  }
-  if (brands.length === 0) {
-    return (
-      <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-        {dict.devices.brandsEmpty}
-      </div>
-    );
-  }
-
   const renderRow = (props: SortableTreeRowRenderProps) => {
     const row = grid.rows.find((r) => r.item.id === props.item.id);
     const brand = byId.get(props.item.id);
@@ -165,21 +153,28 @@ function DeviceBrandGrid() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder={dict.reorderList.searchPlaceholder}
-          aria-label={dict.reorderList.searchLabel}
-          className="max-w-xs"
-        />
-        <ReorderUndoButton
-          canUndo={reorder.canUndo}
-          onUndo={reorder.undo}
-          label={dict.reorderList.undo}
-        />
-      </div>
+      <TableToolbar
+        className="mb-0"
+        onRefresh={() => void refetch()}
+        isRefreshing={isFetching}
+        search={
+          <Input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={dict.reorderList.searchPlaceholder}
+            aria-label={dict.reorderList.searchLabel}
+            className="max-w-xs"
+          />
+        }
+        actions={
+          <ReorderUndoButton
+            canUndo={reorder.canUndo}
+            onUndo={reorder.undo}
+            label={dict.reorderList.undo}
+          />
+        }
+      />
 
       {searchActive && (
         <p className="text-sm text-muted-foreground">
@@ -194,7 +189,17 @@ function DeviceBrandGrid() {
         {dict.reorderList.instructionsShort}
       </div>
 
-      {grid.rows.length === 0 ? (
+      {isLoading ? (
+        <DeviceBrandTableSkeleton />
+      ) : isError ? (
+        <p role="alert" className="text-sm text-destructive">
+          {dict.devices.brandsLoadError}
+        </p>
+      ) : brands.length === 0 ? (
+        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
+          {dict.devices.brandsEmpty}
+        </div>
+      ) : grid.rows.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
           {dict.reorderList.emptyMatch(search.trim())}
         </div>

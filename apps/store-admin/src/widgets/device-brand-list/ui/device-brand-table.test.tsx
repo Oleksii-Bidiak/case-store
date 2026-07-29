@@ -243,3 +243,58 @@ describe("DeviceBrandTable — the payload can never be partial", () => {
     expect(bodies).toHaveLength(0);
   });
 });
+
+/**
+ * TASK-357 gave every reference table a toolbar with a refresh control — but
+ * deliberately did NOT paginate this one. The reorder payload has to name EVERY
+ * brand, and a page is a partial view; paging here would have traded a missing
+ * button for a corrupt PATCH.
+ */
+describe("DeviceBrandTable — toolbar (TASK-357)", () => {
+  it("refetches on demand without ever asking for a page", async () => {
+    const urls: URL[] = [];
+    server.use(
+      http.get("*/api/admin/devices/brands", ({ request }) => {
+        urls.push(new URL(request.url));
+        return HttpResponse.json(listResponse());
+      }),
+    );
+
+    renderWithProviders(<DeviceBrandTable />);
+    await waitFor(() => expect(rowIds()).toHaveLength(3));
+    expect(urls).toHaveLength(1);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.table.refreshAria }),
+    );
+
+    await waitFor(() => expect(urls).toHaveLength(2));
+    for (const url of urls) {
+      expect(url.searchParams.get("page")).toBeNull();
+      expect(url.searchParams.get("limit")).toBeNull();
+    }
+    // No page controls either — there is no page to move to.
+    expect(
+      screen.queryByRole("button", { name: dict.common.next }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the refresh control reachable when the list failed to load", async () => {
+    server.use(
+      http.get(
+        "*/api/admin/devices/brands",
+        () => new HttpResponse(null, { status: 500 }),
+      ),
+    );
+
+    renderWithProviders(<DeviceBrandTable />);
+
+    expect(
+      await screen.findByText(dict.devices.brandsLoadError),
+    ).toBeInTheDocument();
+    // The state where a refresh matters most used to hide the whole toolbar.
+    expect(
+      screen.getByRole("button", { name: dict.common.table.refreshAria }),
+    ).toBeInTheDocument();
+  });
+});

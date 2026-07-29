@@ -12,6 +12,7 @@ import { ReorderNotFoundError } from '../common/reorder';
  */
 const blogCategoryDelegate = {
   findMany: jest.fn(),
+  count: jest.fn(),
   findUnique: jest.fn(),
   aggregate: jest.fn(),
   create: jest.fn(),
@@ -241,6 +242,45 @@ describe('BlogRepository', () => {
       expect(blogCategoryDelegate.create).toHaveBeenCalledWith({
         data: { slug: 'news', name: 'Новини', sortOrder: 7 },
       });
+    });
+  });
+
+  // TASK-357 — the ADMIN category read. The public `findAllCategories` is untouched: the
+  // blog hub renders the complete filter strip and must never be paged.
+  describe('findAllCategoriesAdmin', () => {
+    it('returns the whole list and counts it in-process when page and limit are absent', async () => {
+      blogCategoryDelegate.findMany.mockResolvedValue([{ id: 'cat-1' }]);
+
+      const result = await repository.findAllCategoriesAdmin();
+
+      expect(result).toEqual({ categories: [{ id: 'cat-1' }], total: 1 });
+      expect(blogCategoryDelegate.findMany).toHaveBeenCalledWith({
+        where: {},
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      });
+      expect(blogCategoryDelegate.count).not.toHaveBeenCalled();
+    });
+
+    it('matches the name case-insensitively when searching', async () => {
+      blogCategoryDelegate.findMany.mockResolvedValue([]);
+
+      await repository.findAllCategoriesAdmin({ search: 'ГаЙд' });
+
+      expect(blogCategoryDelegate.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { name: { contains: 'ГаЙд', mode: 'insensitive' } } }),
+      );
+    });
+
+    it('paginates and counts once either page or limit is present', async () => {
+      blogCategoryDelegate.findMany.mockResolvedValue([{ id: 'cat-1' }]);
+      blogCategoryDelegate.count.mockResolvedValue(14);
+
+      const result = await repository.findAllCategoriesAdmin({ page: 2, limit: 5 });
+
+      expect(result).toEqual({ categories: [{ id: 'cat-1' }], total: 14 });
+      expect(blogCategoryDelegate.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 5, take: 5 }),
+      );
     });
   });
 

@@ -185,10 +185,10 @@ describe('FAQ (e2e)', () => {
   describe('admin FAQ CRUD (admin)', () => {
     it('lists all items (any status)', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
-      faqRepositoryMock.findAllAdmin.mockResolvedValue([
-        faqRow,
-        { ...faqRow, id: 'faq-e2e-2', isActive: false },
-      ]);
+      faqRepositoryMock.findAllAdmin.mockResolvedValue({
+        items: [faqRow, { ...faqRow, id: 'faq-e2e-2', isActive: false }],
+        total: 2,
+      });
 
       const response = await request(app.getHttpServer())
         .get('/api/admin/faq')
@@ -196,6 +196,51 @@ describe('FAQ (e2e)', () => {
         .expect(200);
 
       expect(response.body.data).toHaveLength(2);
+      // TASK-357: the default (unpaginated) response reports the whole list as one page,
+      // so the panel gets a truthful count without asking for pages.
+      expect(response.body.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
+    });
+
+    it('forwards page, limit and search to the repository', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      faqRepositoryMock.findAllAdmin.mockResolvedValue({ items: [faqRow], total: 25 });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/faq?page=3&limit=10&search=dostavka')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(faqRepositoryMock.findAllAdmin).toHaveBeenCalledWith({
+        page: 3,
+        limit: 10,
+        search: 'dostavka',
+      });
+      expect(response.body.meta).toEqual({ total: 25, page: 3, limit: 10, totalPages: 3 });
+    });
+
+    it('rejects limit above the cap with a 400 rather than clamping it silently', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .get('/api/admin/faq?limit=500')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+
+      expect(faqRepositoryMock.findAllAdmin).not.toHaveBeenCalled();
+    });
+
+    // The storefront renders the COMPLETE active FAQ (/info hub + PDP FAQPage JSON-LD).
+    // The new query DTO is bound to the ADMIN route only, and the public handler declares
+    // no `@Query()` at all — so a stray `?page=` reaches nothing and the public read still
+    // returns everything. This is the proof the storefront path is untouched.
+    it('leaves the PUBLIC FAQ route unpaginated — a stray ?page= changes nothing', async () => {
+      faqRepositoryMock.findAllActive.mockResolvedValue([faqRow]);
+
+      const response = await request(app.getHttpServer()).get('/api/faq?page=2').expect(200);
+
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.meta).toBeUndefined();
+      expect(faqRepositoryMock.findAllActive).toHaveBeenCalledWith();
     });
 
     it('creates an item and returns the created entity', async () => {

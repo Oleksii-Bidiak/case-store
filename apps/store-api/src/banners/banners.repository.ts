@@ -11,6 +11,9 @@ import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../comm
  */
 const LOCK_RESOURCE = 'banners';
 
+/** Page size used when the admin asks for a page but names no `limit` (TASK-357). */
+const DEFAULT_ADMIN_PAGE_SIZE = 20;
+
 /** Banners are bucketed by `placement` — each placement is its own independent list. */
 const placementLockKey = (placement: BannerPlacement): string => lockKey(LOCK_RESOURCE, placement);
 
@@ -26,10 +29,26 @@ export interface FindPublishedParams {
 
 /**
  * Filter params for the admin banner list (all statuses).
+ *
+ * `page` / `limit` are OPTIONAL and jointly opt-in: when both are absent the
+ * read returns the complete list, which is the mode the reorder UI depends on
+ * (its payload must name every banner in a placement).
  */
 export interface FindAllAdminParams {
   placement?: BannerPlacement;
   status?: PublishStatus;
+  page?: number;
+  limit?: number;
+  search?: string;
+}
+
+/**
+ * Result of an admin banner query. `total` counts the rows matching the FILTERS,
+ * not the rows returned, so the caller can build honest pagination metadata.
+ */
+export interface PaginatedBannersResult {
+  banners: Banner[];
+  total: number;
 }
 
 /**
@@ -116,20 +135,40 @@ export class BannerRepository implements PublishablePort {
    *
    * Accepts a transaction client so the reorder endpoint can re-read the refreshed list
    * inside its own transaction.
+   *
+   * Pagination is OPT-IN (TASK-357): with neither `page` nor `limit` the query keeps its
+   * pre-TASK-357 shape — no `skip`/`take`, and `total` comes from the returned rows instead
+   * of a second `count` round-trip.
    */
-  findAllAdmin(
+  async findAllAdmin(
     params: FindAllAdminParams = {},
     client: BannerDbClient = this.prisma,
-  ): Promise<Banner[]> {
+  ): Promise<PaginatedBannersResult> {
     const where: Prisma.BannerWhereInput = {
       ...(params.placement !== undefined && { placement: params.placement }),
       ...(params.status !== undefined && { status: params.status }),
+      ...(params.search && { title: { contains: params.search, mode: 'insensitive' } }),
     };
+    const orderBy: Prisma.BannerOrderByWithRelationInput[] = [
+      { placement: 'asc' },
+      { sortOrder: 'asc' },
+      { createdAt: 'asc' },
+    ];
 
-    return client.banner.findMany({
-      where,
-      orderBy: [{ placement: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
-    });
+    if (params.page === undefined && params.limit === undefined) {
+      const banners = await client.banner.findMany({ where, orderBy });
+      return { banners, total: banners.length };
+    }
+
+    const limit = params.limit ?? DEFAULT_ADMIN_PAGE_SIZE;
+    const skip = ((params.page ?? 1) - 1) * limit;
+
+    const [banners, total] = await Promise.all([
+      client.banner.findMany({ where, orderBy, skip, take: limit }),
+      client.banner.count({ where }),
+    ]);
+
+    return { banners, total };
   }
 
   /**
@@ -143,8 +182,11 @@ export class BannerRepository implements PublishablePort {
    *
    * Throws the domain errors of `common/reorder/reorder.errors.ts`; the service maps them.
    */
-  reorderPlacement(placement: BannerPlacement, orderedIds: readonly string[]): Promise<Banner[]> {
-    return reorderBucket<Banner[]>(this.prisma, {
+  reorderPlacement(
+    placement: BannerPlacement,
+    orderedIds: readonly string[],
+  ): Promise<PaginatedBannersResult> {
+    return reorderBucket<PaginatedBannersResult>(this.prisma, {
       resource: LOCK_RESOURCE,
       bucket: placement,
       orderedIds,

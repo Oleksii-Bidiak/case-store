@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -9,7 +9,7 @@ import {
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { ProductGroupService } from './product-group.service';
-import { CreateProductGroupDto, UpdateProductGroupDto } from './dto';
+import { CreateProductGroupDto, UpdateProductGroupDto, ProductGroupListQueryDto } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import { ProductGroupSummaryEntity, ProductGroupDetailEntity } from './entities';
 
@@ -22,11 +22,31 @@ class ProductGroupResponseEnvelope {
 }
 
 /**
+ * Pagination metadata for the product-group list (TASK-357).
+ */
+class ProductGroupPaginationMeta {
+  @ApiProperty({ description: 'Total number of items matching the filters', example: 5 })
+  total!: number;
+
+  @ApiProperty({ description: 'Current page (1-based)', example: 1 })
+  page!: number;
+
+  @ApiProperty({ description: 'Items per page — equals `total` for an unpaginated read' })
+  limit!: number;
+
+  @ApiProperty({ description: 'Total number of pages', example: 1 })
+  totalPages!: number;
+}
+
+/**
  * Response envelope for the product group list.
  */
 class ProductGroupListResponse {
   @ApiProperty({ type: [ProductGroupSummaryEntity] })
   data!: ProductGroupSummaryEntity[];
+
+  @ApiProperty({ type: ProductGroupPaginationMeta })
+  meta!: ProductGroupPaginationMeta;
 }
 
 /**
@@ -44,6 +64,7 @@ class ProductGroupListResponse {
   ProductGroupSummaryEntity,
   ProductGroupDetailEntity,
   ProductGroupResponseEnvelope,
+  ProductGroupPaginationMeta,
   ProductGroupListResponse,
 )
 @Controller('product-groups')
@@ -54,16 +75,15 @@ export class ProductGroupController {
 
   @Get()
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'List all product groups (admin)' })
+  @ApiOperation({ summary: 'List product groups, optional search + pagination (admin)' })
   @ApiResponse({
     status: 200,
-    description: 'List of product groups',
+    description: 'List of product groups (complete list when page/limit are omitted)',
     type: ProductGroupListResponse,
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  async findAll(): Promise<ProductGroupListResponse> {
-    const data = await this.service.findAll();
-    return { data };
+  async findAll(@Query() query: ProductGroupListQueryDto): Promise<ProductGroupListResponse> {
+    return this.service.findAll(query);
   }
 
   @Get(':id')

@@ -17,6 +17,7 @@ import {
   Badge,
   Button,
   Input,
+  LiveAnnouncer,
   Select,
   SelectContent,
   SelectItem,
@@ -28,6 +29,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableToolbar,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { AddonServiceTableSkeleton } from "./addon-service-table-skeleton";
@@ -47,8 +49,27 @@ const SEARCH_DEBOUNCE_MS = 300;
  * Status is a reversible visibility toggle — there is NO delete: a deactivated
  * service disappears from every template and delta at once, but the orders that
  * already bought it keep their frozen snapshots.
+ *
+ * TASK-357 moved the existing search + status filter into the shared
+ * `TableToolbar` and added the refresh control this table never had. Plan 168 §5
+ * split 21 list tables across four branches and this one fell through the gap —
+ * it was not named in any group, which is an accounting slip rather than a
+ * decision, so it gets the same treatment as the other reference tables. Nothing
+ * about the query changed; the toolbar is a container, not a rewrite.
+ *
+ * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
+ * calls `useAnnouncer()` to confirm a refresh, and a hook called in the same
+ * component that renders the provider would read the default no-op context.
  */
 export function AddonServiceTable() {
+  return (
+    <LiveAnnouncer>
+      <AddonServiceView />
+    </LiveAnnouncer>
+  );
+}
+
+function AddonServiceView() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -86,7 +107,7 @@ export function AddonServiceTable() {
         ? false
         : undefined;
 
-  const { data, isLoading, isFetching, isError } =
+  const { data, isLoading, isFetching, isError, refetch } =
     useAddonServiceControllerAdminFindAll({
       page,
       limit: PAGE_SIZE,
@@ -130,41 +151,48 @@ export function AddonServiceTable() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          type="search"
-          placeholder={dict.addonServices.searchPlaceholder}
-          value={searchInput}
-          onChange={(event) => {
-            setSearchInput(event.target.value);
-            debouncedSearch(event.target.value);
-          }}
-          className="w-64"
-          aria-label={dict.addonServices.searchAria}
-        />
-        <Select
-          value={statusParam || ALL_OPTION}
-          onValueChange={handleStatusChange}
-        >
-          <SelectTrigger
-            className="w-48"
-            aria-label={dict.addonServices.filterStatusAria}
+      <TableToolbar
+        className="mb-0"
+        onRefresh={() => void refetch()}
+        isRefreshing={isFetching}
+        search={
+          <Input
+            type="search"
+            placeholder={dict.addonServices.searchPlaceholder}
+            value={searchInput}
+            onChange={(event) => {
+              setSearchInput(event.target.value);
+              debouncedSearch(event.target.value);
+            }}
+            className="w-64"
+            aria-label={dict.addonServices.searchAria}
+          />
+        }
+        filters={
+          <Select
+            value={statusParam || ALL_OPTION}
+            onValueChange={handleStatusChange}
           >
-            <SelectValue placeholder={dict.addonServices.allStatuses} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_OPTION}>
-              {dict.addonServices.allStatuses}
-            </SelectItem>
-            <SelectItem value={ACTIVE_OPTION}>
-              {dict.addonServices.statusActive}
-            </SelectItem>
-            <SelectItem value={INACTIVE_OPTION}>
-              {dict.addonServices.statusInactive}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+            <SelectTrigger
+              className="w-48"
+              aria-label={dict.addonServices.filterStatusAria}
+            >
+              <SelectValue placeholder={dict.addonServices.allStatuses} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_OPTION}>
+                {dict.addonServices.allStatuses}
+              </SelectItem>
+              <SelectItem value={ACTIVE_OPTION}>
+                {dict.addonServices.statusActive}
+              </SelectItem>
+              <SelectItem value={INACTIVE_OPTION}>
+                {dict.addonServices.statusInactive}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        }
+      />
 
       {isLoading ? (
         <AddonServiceTableSkeleton />

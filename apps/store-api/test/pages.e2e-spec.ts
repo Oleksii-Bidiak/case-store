@@ -245,6 +245,47 @@ describe('Pages (e2e)', () => {
     });
   });
 
+  // ─── Admin listing (TASK-357) ─────────────────────────────────────────────────
+
+  describe('GET /api/admin/pages', () => {
+    it('paginates with honest meta so the panel can render a pager instead of truncating', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [publishedPage], total: 42 });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/pages?page=3&limit=20')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(pageRepositoryMock.findAllAdmin).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 3, limit: 20 }),
+      );
+      expect(response.body.meta).toEqual({ total: 42, page: 3, limit: 20, totalPages: 3 });
+    });
+
+    it('forwards the search term', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [publishedPage], total: 1 });
+
+      await request(app.getHttpServer())
+        .get('/api/admin/pages?search=privacy')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(pageRepositoryMock.findAllAdmin).toHaveBeenCalledWith(
+        expect.objectContaining({ search: 'privacy' }),
+      );
+    });
+
+    // `search` is declared on the ADMIN subclass only; the public /legal hub has nothing to
+    // search, and `forbidNonWhitelisted` keeps that boundary mechanical.
+    it('rejects ?search= on the PUBLIC page list', async () => {
+      await request(app.getHttpServer()).get('/api/pages?search=privacy').expect(400);
+
+      expect(pageRepositoryMock.findAll).not.toHaveBeenCalled();
+    });
+  });
+
   // ─── Admin mutations ──────────────────────────────────────────────────────────
 
   describe('admin updates / status / delete', () => {

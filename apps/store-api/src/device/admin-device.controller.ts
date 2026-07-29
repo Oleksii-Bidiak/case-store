@@ -26,6 +26,7 @@ import {
   CreateDeviceModelDto,
   UpdateDeviceModelDto,
   DeviceModelListQueryDto,
+  DeviceBrandListQueryDto,
   ReorderDeviceBrandsDto,
 } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
@@ -40,10 +41,33 @@ class DeviceBrandResponseEnvelope {
   data!: DeviceBrandEntity;
 }
 
-/** Envelope for the admin device-brand list (with model counts). */
+/** Pagination metadata for the admin device-brand list (TASK-357). */
+class AdminDeviceBrandPaginationMeta {
+  @ApiProperty({ description: 'Total number of items matching the filters', example: 6 })
+  total!: number;
+
+  @ApiProperty({ description: 'Current page (1-based)', example: 1 })
+  page!: number;
+
+  @ApiProperty({ description: 'Items per page — equals `total` for an unpaginated read' })
+  limit!: number;
+
+  @ApiProperty({ description: 'Total number of pages', example: 1 })
+  totalPages!: number;
+}
+
+/**
+ * Envelope for the admin device-brand list (with model counts).
+ *
+ * Shared with the reorder route on purpose — the admin panel writes the reorder
+ * response into the list query's cache, so the two must not drift.
+ */
 class AdminDeviceBrandListResponse {
   @ApiProperty({ type: [DeviceBrandEntity], description: 'Device brands with model counts' })
   data!: DeviceBrandEntity[];
+
+  @ApiProperty({ type: AdminDeviceBrandPaginationMeta })
+  meta!: AdminDeviceBrandPaginationMeta;
 }
 
 /** Envelope for a single device model. */
@@ -86,6 +110,7 @@ class AdminDeviceModelListResponse {
   DeviceBrandEntity,
   DeviceModelEntity,
   DeviceBrandResponseEnvelope,
+  AdminDeviceBrandPaginationMeta,
   AdminDeviceBrandListResponse,
   DeviceModelResponseEnvelope,
   AdminDeviceModelPaginationMeta,
@@ -102,13 +127,17 @@ export class AdminDeviceController {
 
   @Get('brands')
   @ApiOperation({
-    summary: 'List device brands with model counts (admin)',
+    summary: 'List device brands with model counts, optional search + pagination (admin)',
     operationId: 'adminDeviceControllerFindBrands',
   })
-  @ApiResponse({ status: 200, description: 'Device brands', type: AdminDeviceBrandListResponse })
+  @ApiResponse({
+    status: 200,
+    description: 'Device brands (complete list when page/limit are omitted)',
+    type: AdminDeviceBrandListResponse,
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  async findBrands(): Promise<AdminDeviceBrandListResponse> {
-    return this.deviceService.getBrandsWithCount();
+  async findBrands(@Query() query: DeviceBrandListQueryDto): Promise<AdminDeviceBrandListResponse> {
+    return this.deviceService.getBrandsWithCount(query);
   }
 
   /**

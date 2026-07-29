@@ -7,9 +7,10 @@ import {
   CreateDeviceModelInput,
   UpdateDeviceModelInput,
   FindModelsParams,
+  FindAdminBrandsParams,
 } from './device.repository';
 import { DeviceBrandEntity, DeviceModelEntity } from './entities';
-import { DeviceModelListQueryDto, ReorderDeviceBrandsDto } from './dto';
+import { DeviceModelListQueryDto, DeviceBrandListQueryDto, ReorderDeviceBrandsDto } from './dto';
 import { generateSlug } from '../common/utils';
 import { reorderErrorToHttp } from '../common/reorder';
 
@@ -22,6 +23,17 @@ interface PaginationMeta {
 
 interface DeviceBrandListResponse {
   data: DeviceBrandEntity[];
+}
+
+/**
+ * Admin brand list envelope. `meta` is present even for an unpaginated read so the
+ * panel can show a truthful row count without branching on the query — and so the
+ * reorder response, which the panel writes straight into the list cache, can carry
+ * the identical shape.
+ */
+interface AdminDeviceBrandListResponse {
+  data: DeviceBrandEntity[];
+  meta: PaginationMeta;
 }
 
 interface DeviceModelListResponse {
@@ -56,10 +68,25 @@ export class DeviceService {
     return { data: brands.map((b) => DeviceBrandEntity.fromPrisma(b)) };
   }
 
-  /** Admin — list all device brands with their model counts. */
-  async getBrandsWithCount(): Promise<DeviceBrandListResponse> {
-    const rows = await this.deviceRepository.findBrandsWithCount(false);
-    return { data: rows.map((r) => DeviceBrandEntity.fromPrisma(r.brand, r.modelCount)) };
+  /**
+   * Admin — list all device brands with their model counts, optionally searched by
+   * name and paginated. Omitting `page`/`limit` returns the complete list — the mode
+   * the drag-and-drop reorder UI requires (TASK-357).
+   */
+  async getBrandsWithCount(
+    query: DeviceBrandListQueryDto = {},
+  ): Promise<AdminDeviceBrandListResponse> {
+    const params: FindAdminBrandsParams = {
+      page: query.page,
+      limit: query.limit,
+      search: query.search,
+    };
+    const { brands, total } = await this.deviceRepository.findBrandsWithCount(params);
+
+    return {
+      data: brands.map((r) => DeviceBrandEntity.fromPrisma(r.brand, r.modelCount)),
+      meta: this.buildOptionalMeta(total, query.page, query.limit),
+    };
   }
 
   async findBrandById(id: string): Promise<DeviceBrandEntity> {
@@ -111,10 +138,11 @@ export class DeviceService {
   async reorderBrands(
     dto: ReorderDeviceBrandsDto,
     actorId?: string,
-  ): Promise<DeviceBrandListResponse> {
-    let rows;
+  ): Promise<AdminDeviceBrandListResponse> {
+    let brands;
+    let total;
     try {
-      rows = await this.deviceRepository.reorderBrands(dto.orderedIds);
+      ({ brands, total } = await this.deviceRepository.reorderBrands(dto.orderedIds));
     } catch (error) {
       throw reorderErrorToHttp(error);
     }
@@ -124,7 +152,13 @@ export class DeviceService {
       'Device brands reordered',
     );
 
-    return { data: rows.map((r) => DeviceBrandEntity.fromPrisma(r.brand, r.modelCount)) };
+    // The reorder always answers with the COMPLETE list, so its `meta` is the unpaginated
+    // one — shape parity with `getBrandsWithCount`, which the panel relies on when it writes
+    // this response straight into the list query's cache.
+    return {
+      data: brands.map((r) => DeviceBrandEntity.fromPrisma(r.brand, r.modelCount)),
+      meta: this.buildOptionalMeta(total),
+    };
   }
 
   /** Toggle a brand's visibility (admin). */
@@ -228,5 +262,23 @@ export class DeviceService {
 
   private buildMeta(total: number, page: number, limit: number): PaginationMeta {
     return { total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  /**
+   * Metadata for a list whose pagination is OPT-IN (TASK-357). With no `limit` the
+   * whole list came back in one response, so it is reported as a single page of size
+   * `total` rather than inventing a page size the caller never asked for. An EMPTY
+   * unpaginated list makes that size 0, so `totalPages` is short-circuited instead of
+   * dividing by zero.
+   */
+  private buildOptionalMeta(total: number, page?: number, limit?: number): PaginationMeta {
+    const effectiveLimit = limit ?? total;
+
+    return {
+      total,
+      page: page ?? 1,
+      limit: effectiveLimit,
+      totalPages: effectiveLimit === 0 ? 0 : Math.ceil(total / effectiveLimit),
+    };
   }
 }

@@ -297,7 +297,7 @@ describe('Flat reorder endpoints (e2e)', () => {
     // the reorder handler — never `GET/PUT :id` with `id = 'reorder'`.
     it('is matched by the reorder handler, NOT captured as an :id route', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
-      bannerRepositoryMock.reorderPlacement.mockResolvedValue([bannerRow]);
+      bannerRepositoryMock.reorderPlacement.mockResolvedValue({ banners: [bannerRow], total: 1 });
 
       await request(app.getHttpServer())
         .patch('/api/admin/banners/reorder')
@@ -312,7 +312,7 @@ describe('Flat reorder endpoints (e2e)', () => {
 
     it('returns 200 with the refreshed full admin banner list', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
-      bannerRepositoryMock.reorderPlacement.mockResolvedValue([bannerRow]);
+      bannerRepositoryMock.reorderPlacement.mockResolvedValue({ banners: [bannerRow], total: 1 });
 
       const response = await request(app.getHttpServer())
         .patch('/api/admin/banners/reorder')
@@ -465,7 +465,7 @@ describe('Flat reorder endpoints (e2e)', () => {
     // Route-order regression guard — `brands/reorder` must not hit `brands/:id`.
     it('is matched by the reorder handler, NOT captured as a brands/:id route', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
-      deviceRepositoryMock.reorderBrands.mockResolvedValue([brandRow]);
+      deviceRepositoryMock.reorderBrands.mockResolvedValue({ brands: [brandRow], total: 1 });
 
       await request(app.getHttpServer())
         .patch('/api/admin/devices/brands/reorder')
@@ -480,7 +480,7 @@ describe('Flat reorder endpoints (e2e)', () => {
 
     it('returns 200 with the refreshed admin brand list (model counts included)', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
-      deviceRepositoryMock.reorderBrands.mockResolvedValue([brandRow]);
+      deviceRepositoryMock.reorderBrands.mockResolvedValue({ brands: [brandRow], total: 1 });
 
       const response = await request(app.getHttpServer())
         .patch('/api/admin/devices/brands/reorder')

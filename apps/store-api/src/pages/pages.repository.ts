@@ -32,6 +32,7 @@ export interface FindAllAdminParams {
   page: number;
   limit: number;
   status?: PublishStatus;
+  search?: string;
 }
 
 /**
@@ -148,14 +149,23 @@ export class PageRepository implements PublishablePort {
   }
 
   /**
-   * Find all pages (any status) with pagination and an optional status filter.
-   * Admin listing.
+   * Find all pages (any status) with pagination, an optional status filter and a
+   * title/slug search. Admin listing.
+   *
+   * The search spans BOTH title and slug (TASK-357): an operator hunting for a legal
+   * page usually remembers its URL (`/legal/dostavka`) rather than its exact heading.
    */
   async findAllAdmin(params: FindAllAdminParams): Promise<PaginatedPagesResult> {
-    const { page, limit, status } = params;
+    const { page, limit, status, search } = params;
     const skip = (page - 1) * limit;
     const where: Prisma.PageWhereInput = {
       ...(status !== undefined && { status }),
+      ...(search && {
+        OR: [
+          { title: { contains: search, mode: 'insensitive' } },
+          { slug: { contains: search, mode: 'insensitive' } },
+        ],
+      }),
     };
 
     const [pages, total] = await Promise.all([

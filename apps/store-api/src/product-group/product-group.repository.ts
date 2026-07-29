@@ -1,5 +1,20 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma';
+
+/** Page size used when the caller asks for a page but names no `limit` (TASK-357). */
+const DEFAULT_ADMIN_PAGE_SIZE = 20;
+
+/**
+ * Filter params for the group list. `page` / `limit` are OPTIONAL and jointly
+ * opt-in: with both absent the read returns the complete list, which is what the
+ * product form's group picker needs.
+ */
+export interface FindAllGroupsParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+}
 
 /** Axis input when creating/replacing a group's axes. */
 export interface AxisInput {
@@ -51,18 +66,44 @@ const GROUP_DETAIL_INCLUDE = {
 export class ProductGroupRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** List all groups with their axes and a count of member positions. */
-  findAll() {
-    return this.prisma.productGroup.findMany({
-      orderBy: { createdAt: 'desc' },
+  /**
+   * List groups with their axes and a count of member positions, with an optional
+   * name search and opt-in pagination (TASK-357).
+   *
+   * With neither `page` nor `limit` the query keeps its pre-TASK-357 shape — no
+   * `skip`/`take`, and `total` comes from the rows we already hold rather than a
+   * second `count` round-trip.
+   */
+  async findAll(params: FindAllGroupsParams = {}) {
+    const where: Prisma.ProductGroupWhereInput = {
+      ...(params.search && { name: { contains: params.search, mode: 'insensitive' } }),
+    };
+    const query = {
+      where,
+      orderBy: { createdAt: 'desc' as const },
       include: {
         axes: {
-          orderBy: { sortOrder: 'asc' },
+          orderBy: { sortOrder: 'asc' as const },
           select: { name: true, sortOrder: true },
         },
         _count: { select: { positions: true } },
       },
-    });
+    };
+
+    if (params.page === undefined && params.limit === undefined) {
+      const groups = await this.prisma.productGroup.findMany(query);
+      return { groups, total: groups.length };
+    }
+
+    const limit = params.limit ?? DEFAULT_ADMIN_PAGE_SIZE;
+    const skip = ((params.page ?? 1) - 1) * limit;
+
+    const [groups, total] = await Promise.all([
+      this.prisma.productGroup.findMany({ ...query, skip, take: limit }),
+      this.prisma.productGroup.count({ where }),
+    ]);
+
+    return { groups, total };
   }
 
   /** Get a single group with its axes and positions, or null. */

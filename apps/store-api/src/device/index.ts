@@ -13,6 +13,8 @@ export {
   PaginatedDeviceModelsResult,
   DeviceModelWithBrand,
   DeviceBrandWithCount,
+  FindAdminBrandsParams,
+  PaginatedDeviceBrandsResult,
 } from './device.repository';
 export { DeviceBrandEntity, DeviceModelEntity } from './entities';
 export {
@@ -21,4 +23,5 @@ export {
   CreateDeviceModelDto,
   UpdateDeviceModelDto,
   DeviceModelListQueryDto,
+  DeviceBrandListQueryDto,
 } from './dto';

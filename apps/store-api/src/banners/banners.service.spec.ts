@@ -90,7 +90,10 @@ describe('BannerService', () => {
 
   describe('findAllAdmin', () => {
     it('forwards placement + status filters and returns drafts + published', async () => {
-      bannerRepositoryMock.findAllAdmin.mockResolvedValue([mockBanner, draftBanner]);
+      bannerRepositoryMock.findAllAdmin.mockResolvedValue({
+        banners: [mockBanner, draftBanner],
+        total: 2,
+      });
 
       const result = await service.findAllAdmin({ placement: undefined, status: undefined });
 
@@ -98,7 +101,42 @@ describe('BannerService', () => {
       expect(bannerRepositoryMock.findAllAdmin).toHaveBeenCalledWith({
         placement: undefined,
         status: undefined,
+        page: undefined,
+        limit: undefined,
+        search: undefined,
       });
+    });
+
+    // TASK-357: an unpaginated read still reports a truthful count, so the admin panel can
+    // show "N записів" without having to branch on whether it asked for pages.
+    it('reports the whole list as one page when page/limit are omitted', async () => {
+      bannerRepositoryMock.findAllAdmin.mockResolvedValue({
+        banners: [mockBanner, draftBanner],
+        total: 2,
+      });
+
+      const result = await service.findAllAdmin({});
+
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
+    });
+
+    it('reports an empty unpaginated list without dividing by zero', async () => {
+      bannerRepositoryMock.findAllAdmin.mockResolvedValue({ banners: [], total: 0 });
+
+      const result = await service.findAllAdmin({});
+
+      expect(result.meta).toEqual({ total: 0, page: 1, limit: 0, totalPages: 0 });
+    });
+
+    it('forwards pagination and search, and reports the page the caller asked for', async () => {
+      bannerRepositoryMock.findAllAdmin.mockResolvedValue({ banners: [mockBanner], total: 12 });
+
+      const result = await service.findAllAdmin({ page: 2, limit: 5, search: 'sale' });
+
+      expect(bannerRepositoryMock.findAllAdmin).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 2, limit: 5, search: 'sale' }),
+      );
+      expect(result.meta).toEqual({ total: 12, page: 2, limit: 5, totalPages: 3 });
     });
   });
 
@@ -295,7 +333,10 @@ describe('BannerService', () => {
     const b = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
     it('returns the refreshed FULL admin list and revalidates a bucket with a live banner', async () => {
-      bannerRepositoryMock.reorderPlacement.mockResolvedValue([mockBanner, draftBanner]);
+      bannerRepositoryMock.reorderPlacement.mockResolvedValue({
+        banners: [mockBanner, draftBanner],
+        total: 2,
+      });
 
       const result = await service.reorderPlacement(
         { placement: BannerPlacement.HERO_SLIDE, orderedIds: [b, a] },
@@ -304,6 +345,8 @@ describe('BannerService', () => {
 
       expect(result.data).toHaveLength(2);
       expect(result.data[0]).toBeInstanceOf(BannerEntity);
+      // Shape parity with `findAllAdmin` — the panel writes this straight into the list cache.
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
       expect(bannerRepositoryMock.reorderPlacement).toHaveBeenCalledWith(
         BannerPlacement.HERO_SLIDE,
         [b, a],
@@ -314,11 +357,14 @@ describe('BannerService', () => {
     // A pure DRAFT shuffle changes nothing the shopper can see — same visibility gate the
     // rest of this service applies to create / update / delete.
     it('does NOT revalidate when the reordered bucket holds no PUBLISHED banner', async () => {
-      bannerRepositoryMock.reorderPlacement.mockResolvedValue([
-        draftBanner,
-        // A live banner in ANOTHER placement must not trigger a revalidation of THIS drag.
-        { ...mockBanner, placement: BannerPlacement.ANNOUNCEMENT_BAR },
-      ]);
+      bannerRepositoryMock.reorderPlacement.mockResolvedValue({
+        banners: [
+          draftBanner,
+          // A live banner in ANOTHER placement must not trigger a revalidation of THIS drag.
+          { ...mockBanner, placement: BannerPlacement.ANNOUNCEMENT_BAR },
+        ],
+        total: 2,
+      });
 
       await service.reorderPlacement(
         { placement: BannerPlacement.HERO_SLIDE, orderedIds: [b] },
