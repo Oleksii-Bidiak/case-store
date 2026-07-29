@@ -10200,6 +10200,52 @@
         ]
       }
     },
+    "/api/admin/reviews/moderate": {
+      "patch": {
+        "operationId": "adminReviewControllerModerateMany",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkReviewModerationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Number of reviews written (for `reject`, deleted)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkReviewModerationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — empty, oversized or non-UUID ids"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Unknown review id — nothing was written"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Approve or reject reviews in bulk (admin)",
+        "tags": [
+          "Reviews"
+        ]
+      }
+    },
     "/api/admin/reviews/{id}/approve": {
       "patch": {
         "operationId": "adminReviewControllerApprove",
@@ -20134,6 +20180,54 @@
         },
         "required": [
           "data"
+        ]
+      },
+      "BulkReviewModerationResult": {
+        "type": "object",
+        "properties": {
+          "updatedCount": {
+            "type": "number",
+            "description": "Reviews written (for reject, deleted)",
+            "example": 7
+          }
+        },
+        "required": [
+          "updatedCount"
+        ]
+      },
+      "BulkReviewModerationResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkReviewModerationResult"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "BulkReviewModerationDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "description": "Ids of the reviews being moderated.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "action": {
+            "type": "string",
+            "description": "`approve` publishes the reviews to the storefront. `reject` DELETES them permanently.",
+            "enum": [
+              "approve",
+              "reject"
+            ]
+          }
+        },
+        "required": [
+          "ids",
+          "action"
         ]
       },
       "DailyDataPointDto": {

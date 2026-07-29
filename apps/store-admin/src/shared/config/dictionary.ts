@@ -1549,6 +1549,21 @@ export const dict = {
     // TASK-276: names the card-mode row group for screen readers.
     rowAria: (product: string, author: string) =>
       `Відгук на «${product}» від ${author}`,
+    // Bulk moderation over the on-screen selection (TASK-356).
+    bulk: {
+      approve: (count: number) => `Схвалити (${count})`,
+      reject: (count: number) => `Відхилити (${count})`,
+      selectRow: (product: string, author: string) =>
+        `Вибрати відгук на «${product}» від ${author}`,
+      // Rejecting DELETES the reviews permanently — the prompt says so, and
+      // says how many, because nothing can undo it.
+      rejectConfirm: (count: number) =>
+        `Відхилити ${count} відг.? Їх буде видалено назавжди — скасувати цю дію неможливо.`,
+      announceSaving: (count: number) => `Обробка ${count} відг.…`,
+      announceApproved: (count: number) => `Схвалено відгуків: ${count}`,
+      announceRejected: (count: number) => `Видалено відгуків: ${count}`,
+      announceFailed: "Не вдалося виконати масову дію",
+    },
   },
 
   // --- Contact messages (TASK-177) --------------------------------------------

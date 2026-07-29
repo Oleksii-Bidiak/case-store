@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -21,7 +22,7 @@ import {
 } from '@nestjs/swagger';
 import { ReviewService } from './review.service';
 import { ReviewEntity, AdminReviewEntity } from './entities';
-import { AdminReviewQueryDto } from './dto';
+import { AdminReviewQueryDto, BulkReviewModerationDto } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /**
@@ -70,6 +71,21 @@ class AdminReviewResponseEnvelope {
  * Separate from the public {@link import('./review.controller').ReviewController}
  * — mirrors the AdminOrderController vs OrderController split.
  */
+/**
+ * What a bulk moderation call reports back: how many rows the database actually
+ * wrote. For `reject` that is how many were DELETED — which is the number the
+ * operator's confirmation should quote, not the number they asked for.
+ */
+class BulkReviewModerationResult {
+  @ApiProperty({ description: 'Reviews written (for reject, deleted)', example: 7 })
+  updatedCount!: number;
+}
+
+class BulkReviewModerationResponse {
+  @ApiProperty({ type: BulkReviewModerationResult })
+  data!: BulkReviewModerationResult;
+}
+
 @ApiTags('Reviews')
 @ApiExtraModels(
   AdminReviewEntity,
@@ -77,6 +93,8 @@ class AdminReviewResponseEnvelope {
   AdminReviewPaginationMeta,
   AdminReviewListResponseEnvelope,
   AdminReviewResponseEnvelope,
+  BulkReviewModerationResult,
+  BulkReviewModerationResponse,
 )
 @Controller('admin/reviews')
 @UseGuards(PermissionGuard)
@@ -108,6 +126,46 @@ export class AdminReviewController {
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async list(@Query() query: AdminReviewQueryDto): Promise<AdminReviewListResponseEnvelope> {
     return this.reviewService.getReviewsForModeration(query);
+  }
+
+  /**
+   * PATCH /api/admin/reviews/moderate
+   *
+   * Approve or reject many reviews at once (TASK-356) — the per-row buttons
+   * below, applied to the operator's selection, in one transaction.
+   *
+   * **`action: "reject"` DELETES.** It is the bulk form of `DELETE :id`, which
+   * hard-deletes so the author's unique `(userId, productId)` slot is freed.
+   * That is why the payload names the action instead of carrying an `isActive`
+   * boolean: a flag would have made an irreversible operation look like a
+   * toggle, and the admin UI gates it behind a count-bearing confirmation.
+   *
+   * DECLARED BEFORE the `:id` routes. `moderate` is one segment and `:id/approve`
+   * is two, so nothing shadows it today — but that holds only until someone adds
+   * a single-segment `@Patch(':id')`, and by then the failure would look like a
+   * validation error about a malformed UUID.
+   *
+   * Inherits `PermissionGuard` + `reviews:moderate` from the controller, which
+   * is also what makes the global `AuditInterceptor` record the call.
+   */
+  @Patch('moderate')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Approve or reject reviews in bulk (admin)',
+    operationId: 'adminReviewControllerModerateMany',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Number of reviews written (for `reject`, deleted)',
+    type: BulkReviewModerationResponse,
+  })
+  @ApiResponse({ status: 400, description: 'Validation error — empty, oversized or non-UUID ids' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({ status: 404, description: 'Unknown review id — nothing was written' })
+  async moderateMany(@Body() dto: BulkReviewModerationDto): Promise<BulkReviewModerationResponse> {
+    const updatedCount = await this.reviewService.moderateMany(dto.ids, dto.action);
+
+    return { data: { updatedCount } };
   }
 
   /**

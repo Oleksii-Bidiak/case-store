@@ -3,6 +3,20 @@ import { Review } from '@prisma/client';
 import { PrismaService } from '../prisma';
 
 /**
+ * Raised by {@link ReviewRepository.moderateMany} when the batch names a review
+ * that no longer exists, so the transaction rolls back instead of half-applying.
+ *
+ * A domain error, not a `NotFoundException`: repositories in this codebase do
+ * not speak HTTP. `ReviewService` maps it.
+ */
+export class ReviewsNotFoundError extends Error {
+  constructor(readonly missingIds: string[]) {
+    super(`Unknown review id(s): ${missingIds.join(', ')}`);
+    this.name = 'ReviewsNotFoundError';
+  }
+}
+
+/**
  * Allowed fields for creating a review. The review is always inserted with
  * `isActive: false` (moderation gate) — that is enforced in the repository, not
  * passed in by callers.
@@ -173,6 +187,44 @@ export class ReviewRepository {
    */
   async delete(id: string): Promise<void> {
     await this.prisma.review.delete({ where: { id } });
+  }
+
+  /**
+   * Approve or reject many reviews at once (TASK-356), in one transaction.
+   *
+   * All-or-nothing on purpose, and it matters more here than elsewhere: `reject`
+   * is a hard delete, so a partial batch would destroy an unknown subset of the
+   * operator's selection with no way to tell which. Missing ids abort before any
+   * write — including the case where a colleague moderated the same queue a
+   * second earlier, which is exactly when two people are working a review
+   * backlog together.
+   *
+   * Returns how many rows were written, which for `reject` is how many were
+   * deleted.
+   */
+  async moderateMany(ids: string[], action: 'approve' | 'reject'): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      const found = await tx.review.findMany({
+        where: { id: { in: ids } },
+        select: { id: true },
+      });
+
+      if (found.length !== ids.length) {
+        const known = new Set(found.map((row) => row.id));
+        throw new ReviewsNotFoundError(ids.filter((id) => !known.has(id)));
+      }
+
+      if (action === 'reject') {
+        const { count } = await tx.review.deleteMany({ where: { id: { in: ids } } });
+        return count;
+      }
+
+      const { count } = await tx.review.updateMany({
+        where: { id: { in: ids } },
+        data: { isActive: true },
+      });
+      return count;
+    });
   }
 
   /**
