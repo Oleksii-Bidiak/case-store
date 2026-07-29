@@ -591,6 +591,44 @@ describe('CategoryController (e2e)', () => {
         .send({})
         .expect(400);
     });
+
+    // TASK-364. `@IsUrl()` defaults to `require_tld: true`, which rejects any host
+    // without a dot — including `localhost`, the origin store-api serves its own
+    // uploads from in dev. Since the seed now writes `Category.image` as
+    // `http://localhost:3001/uploads/...`, the admin form (which PUTs the whole
+    // entity back) got a 400 on every save, even for an unrelated field.
+    it('should accept an image URL on the store-api uploads origin (localhost, no TLD)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+      categoryRepositoryMock.create.mockResolvedValue(testCategory);
+
+      await request(app.getHttpServer())
+        .post('/api/admin/categories')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'Phone Cases',
+          slug: 'phone-cases',
+          image: 'http://localhost:3001/uploads/products/seed-0123456789abcdef.webp',
+        })
+        .expect(201);
+    });
+
+    it.each([
+      ['a javascript: URL', 'javascript:alert(1)'],
+      ['a relative path', '/uploads/products/seed.webp'],
+      ['plain text', 'not a url'],
+    ])('should still return 400 for %s as the image', async (_label, image) => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .post('/api/admin/categories')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Phone Cases', slug: 'phone-cases', image })
+        .expect(400);
+    });
   });
 
   // ─── PUT /api/admin/categories/:id (admin) ───────────────────────────────────
@@ -634,6 +672,27 @@ describe('CategoryController (e2e)', () => {
 
       expect(response.body).toHaveProperty('data');
       expect(response.body.data.name).toBe('Updated Category Name');
+    });
+
+    // TASK-364 — the exact shape the admin category form submits: the whole entity
+    // echoed back, including the seeded local `image`, with only the name changed.
+    it('should update a category whose image is a seeded uploads URL', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      categoryRepositoryMock.findById.mockResolvedValue(testCategory);
+      categoryRepositoryMock.update.mockResolvedValue({
+        category: { ...testCategory, name: 'Чохли' },
+        reparented: false,
+      });
+
+      await request(app.getHttpServer())
+        .put('/api/admin/categories/cat-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'Чохли',
+          image: 'http://localhost:3001/uploads/products/seed-0123456789abcdef.webp',
+        })
+        .expect(200);
     });
 
     it('should return 404 when category is not found', async () => {

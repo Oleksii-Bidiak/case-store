@@ -56,7 +56,12 @@ export class CreateCategoryDto {
     required: false,
   })
   @IsOptional()
-  @IsUrl({}, { message: 'Image must be a valid URL' })
+  // `require_tld: false` so a host without a dot passes — `http://localhost:3001/uploads/…`
+  // is what store-api itself serves in dev, and the seeded tiles use exactly that origin.
+  // The default (`require_tld: true`) rejected it, which made saving ANY field of a
+  // seeded category fail with 400. Everything dangerous is still rejected: `javascript:`
+  // and bare relative paths do not validate either way (TASK-364).
+  @IsUrl({ require_tld: false }, { message: 'Image must be a valid URL' })
   image?: string;
 
   @ApiProperty({

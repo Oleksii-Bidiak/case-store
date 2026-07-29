@@ -59,7 +59,10 @@ export class UpdateCategoryDto {
     required: false,
   })
   @IsOptional()
-  @IsUrl({}, { message: 'Image must be a valid URL' })
+  // See the note on CreateCategoryDto.image — `require_tld: false` admits the
+  // store-api uploads origin (`http://localhost:3001/…`) while still rejecting
+  // `javascript:` and relative paths (TASK-364).
+  @IsUrl({ require_tld: false }, { message: 'Image must be a valid URL' })
   image?: string;
 
   @ApiProperty({
