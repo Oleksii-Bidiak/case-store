@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { IStorageService } from './storage.service.interface';
 import { isStorageSubdir, StorageSubdir } from './storage-subdirs';
@@ -45,21 +45,21 @@ export class LocalDiskStorageService implements IStorageService {
     return `${subdir}/${filename}`;
   }
 
-  async delete(relativePath: string): Promise<void> {
-    // Guard against path traversal — only ever touch files inside a whitelisted
-    // sub-directory of uploadRoot.
-    const [subdir] = relativePath.split('/');
-    if (!isStorageSubdir(subdir)) {
-      this.logger.warn(`Refusing to delete path outside a known sub-directory: ${relativePath}`);
-      return;
+  async read(relativePath: string): Promise<Buffer> {
+    // Same traversal guard as `delete`, but a violation THROWS rather than
+    // warning: a read that silently returns nothing would let the caller act on
+    // data it never actually loaded.
+    const absolute = this.resolveInsideRoot(relativePath);
+    if (!absolute) {
+      throw new Error(`Refusing to read path outside a known sub-directory: ${relativePath}`);
     }
+    return readFile(absolute);
+  }
 
-    const subdirRoot = join(this.uploadRoot, subdir);
-    const absolute = resolve(this.uploadRoot, relativePath);
-    // The trailing separator matters: a bare `startsWith(subdirRoot)` would also
-    // accept a sibling directory such as `<uploadRoot>/products-evil`.
-    if (!absolute.startsWith(subdirRoot + sep)) {
-      this.logger.warn(`Refusing to delete path outside upload root: ${relativePath}`);
+  async delete(relativePath: string): Promise<void> {
+    const absolute = this.resolveInsideRoot(relativePath);
+    if (!absolute) {
+      this.logger.warn(`Refusing to delete path outside a known sub-directory: ${relativePath}`);
       return;
     }
 
@@ -69,5 +69,23 @@ export class LocalDiskStorageService implements IStorageService {
       // File already gone (disk/DB divergence) is not an error worth failing on.
       this.logger.warn(`Could not delete file ${relativePath}: ${(err as Error).message}`);
     }
+  }
+
+  /**
+   * Resolve a storage-relative path to an absolute one, or null when it escapes
+   * the whitelisted sub-directories. Shared by `read` and `delete` so the two
+   * can never drift on what counts as a safe path.
+   */
+  private resolveInsideRoot(relativePath: string): string | null {
+    const [subdir] = relativePath.split('/');
+    if (!isStorageSubdir(subdir)) {
+      return null;
+    }
+
+    const subdirRoot = join(this.uploadRoot, subdir);
+    const absolute = resolve(this.uploadRoot, relativePath);
+    // The trailing separator matters: a bare `startsWith(subdirRoot)` would also
+    // accept a sibling directory such as `<uploadRoot>/products-evil`.
+    return absolute.startsWith(subdirRoot + sep) ? absolute : null;
   }
 }

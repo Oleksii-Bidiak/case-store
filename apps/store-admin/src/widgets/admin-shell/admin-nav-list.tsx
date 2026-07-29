@@ -3,6 +3,7 @@
 import {
   LayoutDashboard,
   Package,
+  FileUp,
   Layers,
   Tag,
   Award,
@@ -70,6 +71,12 @@ const navItems: readonly NavItem[] = [
     href: "/products",
     icon: Package,
     permission: PERM.productsRead,
+  },
+  {
+    label: dict.nav.catalogImport,
+    href: "/catalog-import",
+    icon: FileUp,
+    permission: PERM.catalogImport,
   },
   {
     label: dict.nav.productGroups,

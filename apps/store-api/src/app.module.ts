@@ -17,6 +17,7 @@ import { AuditModule } from './audit';
 import { AuditInterceptor } from './audit/audit.interceptor';
 import { UserModule } from './user';
 import { ProductModule } from './product';
+import { CatalogImportModule } from './catalog-import';
 import { ProductGroupModule } from './product-group';
 import { CategoryModule } from './category';
 import { BrandModule } from './brand';
@@ -137,6 +138,7 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Product catalog
     ProductModule,
+    CatalogImportModule,
 
     // Product groups (sibling positions + attribute axes, TASK-142)
     ProductGroupModule,

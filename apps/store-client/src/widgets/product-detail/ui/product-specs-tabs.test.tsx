@@ -58,6 +58,49 @@ describe("ProductSpecsTabs — specs tab (TASK-191)", () => {
   });
 });
 
+describe("ProductSpecsTabs — description tab (TASK-361)", () => {
+  it("renders a rich-text description as real markup, not literal tags", () => {
+    renderWithProviders(
+      <ProductSpecsTabs
+        description="<p>Захист <strong>360°</strong></p><ul><li>Матовий</li></ul>"
+        productId="p1"
+        specs={[]}
+      />,
+    );
+
+    // The tag text itself must never reach the shopper.
+    expect(screen.queryByText(/<p>/)).toBeNull();
+    expect(screen.getByRole("list")).toBeInTheDocument();
+    expect(screen.getByText("360°").tagName).toBe("STRONG");
+    expect(screen.getByText("Матовий").tagName).toBe("LI");
+  });
+
+  // Descriptions written before the rich-text switch are plain text whose only
+  // structure is their line breaks — rendering them as HTML would collapse them
+  // into one paragraph.
+  it("keeps a legacy plain-text description in a pre-line block", () => {
+    renderWithProviders(
+      <ProductSpecsTabs
+        description={"Перший рядок\nДругий рядок"}
+        productId="p1"
+        specs={[]}
+      />,
+    );
+
+    const block = screen.getByText(/Перший рядок/);
+    expect(block).toHaveClass("whitespace-pre-line");
+    expect(block.querySelector("p")).toBeNull();
+  });
+
+  it("shows the empty-state copy when there is no description", () => {
+    renderWithProviders(
+      <ProductSpecsTabs description={null} productId="p1" specs={[]} />,
+    );
+
+    expect(screen.getByText(dict.product.specsEmpty)).toBeInTheDocument();
+  });
+});
+
 describe("ProductHighlights (TASK-191)", () => {
   it("renders the highlights strip with BOOLEAN formatted as Так/Ні", () => {
     renderWithProviders(

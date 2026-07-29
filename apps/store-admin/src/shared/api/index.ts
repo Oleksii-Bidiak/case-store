@@ -18,6 +18,7 @@ export * from "./generated/brands/brands";
 export * from "./generated/addon-services/addon-services";
 export * from "./generated/devices/devices";
 export * from "./generated/attribute-definitions/attribute-definitions";
+export * from "./generated/catalog-import/catalog-import";
 export * from "./generated/pages/pages";
 export * from "./generated/blog/blog";
 export * from "./generated/banners/banners";

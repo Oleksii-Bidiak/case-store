@@ -227,6 +227,8 @@ describe('ProductService', () => {
         isActive: true,
         // TASK-297: …and always drops the products of withdrawn categories.
         categoryActiveOnly: true,
+        // TASK-362: sold-out products sort to the back of every public page.
+        inStockFirst: true,
         minPrice: undefined,
         maxPrice: undefined,
         search: undefined,
@@ -271,6 +273,8 @@ describe('ProductService', () => {
         categoryIds: ['cat-uuid-1'],
         isActive: true,
         categoryActiveOnly: true,
+        // TASK-362: sold-out products sort to the back of every public page.
+        inStockFirst: true,
         minPrice: 10,
         maxPrice: 50,
         search: 'iphone',
@@ -302,6 +306,18 @@ describe('ProductService', () => {
 
     // TASK-230: the leak — a public caller asking for inactive products (or
     // sending no filter) must still get only active ones.
+    // TASK-362: sold-out products sort behind everything in stock, so page 1 is
+    // not led by things nobody can buy.
+    it('pushes out-of-stock products to the back of the public listing', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.findAll(query);
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ inStockFirst: true }),
+      );
+    });
+
     it('overrides an explicit isActive=false from a public caller with true', async () => {
       productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
 
@@ -328,6 +344,19 @@ describe('ProductService', () => {
   // ─── adminFindAll (admin, TASK-230) ─────────────────────────────────────────
 
   describe('adminFindAll', () => {
+    // TASK-362: the admin listing must NOT reorder by availability — restocking
+    // means going looking for exactly the zero-stock rows.
+    it('leaves the ordering alone rather than pushing out-of-stock rows back', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.adminFindAll({ page: 1, limit: 20 });
+
+      const params = productRepositoryMock.findAll.mock.calls[0][0] as {
+        inStockFirst?: boolean;
+      };
+      expect(params.inStockFirst).toBeFalsy();
+    });
+
     it('respects the isActive filter as sent (undefined = all products) and skips the cache', async () => {
       productRepositoryMock.findAll.mockResolvedValue({ products: [mockProduct], total: 1 });
 
@@ -631,7 +660,66 @@ describe('ProductService', () => {
 
       expect(result).toBeInstanceOf(ProductEntity);
       expect(result.name).toBe('iPhone 15 Pro Case — Clear MagSafe');
-      expect(productRepositoryMock.create).toHaveBeenCalledWith(createInput);
+      expect(productRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining(createInput),
+      );
+    });
+
+    // TASK-361: a new product is a hidden DRAFT unless the caller says otherwise.
+    // Images, structured specs and device compat all need a product id, so a
+    // product that went live on create was always live in its most incomplete
+    // state.
+    it('creates a hidden draft when isActive is omitted', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockResolvedValue({ ...mockProduct, isActive: false });
+
+      await service.create(createInput);
+
+      expect(productRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: false }),
+      );
+    });
+
+    it('honours an explicit isActive=true (publishing straight from the API)', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockResolvedValue(mockProduct);
+
+      await service.create({ ...createInput, isActive: true });
+
+      expect(productRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: true }),
+      );
+    });
+
+    it('sanitizes the description before persisting it (TASK-361)', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockResolvedValue(mockProduct);
+
+      await service.create({
+        ...createInput,
+        description: '<p>Safe</p><script>alert(1)</script>',
+      });
+
+      const persisted = productRepositoryMock.create.mock.calls[0][0] as {
+        description?: string | null;
+      };
+      expect(persisted.description).toBe('<p>Safe</p>');
+    });
+
+    it('leaves an absent description absent rather than turning it into empty HTML', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockResolvedValue(mockProduct);
+
+      await service.create(createInput);
+
+      const persisted = productRepositoryMock.create.mock.calls[0][0] as {
+        description?: string | null;
+      };
+      expect(persisted.description).toBeUndefined();
     });
 
     it('should throw ConflictException when slug is already taken', async () => {
@@ -725,6 +813,36 @@ describe('ProductService', () => {
         NotFoundException,
       );
       expect(productRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it('sanitizes the description on update (TASK-361)', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.update.mockResolvedValue(mockProduct);
+
+      await service.update('product-uuid-1', {
+        description: '<p>Kept</p><script>alert(1)</script>',
+      });
+
+      expect(productRepositoryMock.update).toHaveBeenCalledWith(
+        'product-uuid-1',
+        { description: '<p>Kept</p>' },
+        undefined,
+      );
+    });
+
+    // A partial update that does not mention `description` must not blank it —
+    // `undefined` has to survive the sanitize step as `undefined`, not "".
+    it('leaves the description untouched when the update omits it', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.update.mockResolvedValue(mockProduct);
+
+      await service.update('product-uuid-1', { price: 24.99 });
+
+      expect(productRepositoryMock.update).toHaveBeenCalledWith(
+        'product-uuid-1',
+        { price: 24.99 },
+        undefined,
+      );
     });
 
     it('should throw ConflictException when updating slug to one already taken', async () => {

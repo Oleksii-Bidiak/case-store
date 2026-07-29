@@ -112,7 +112,6 @@ describe("ProductForm — live slug preview (TASK-136)", () => {
       price: "99",
       stock: "10",
       categoryId: CATEGORY_UUID,
-      isActive: true,
     };
     renderWithProviders(
       <ProductForm
@@ -133,7 +132,6 @@ describe("ProductForm — live slug preview (TASK-136)", () => {
       price: "99",
       stock: "10",
       categoryId: CATEGORY_UUID,
-      isActive: true,
     };
     renderWithProviders(
       <ProductForm
@@ -201,7 +199,6 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
     stock: "10",
     categoryId: CATEGORY_UUID,
     groupId: GROUP_UUID,
-    isActive: true,
   };
 
   const categoryTrigger = () =>
@@ -317,7 +314,6 @@ describe("productFormValuesToDto — SEO meta mapping (TASK-241)", () => {
     brandId: "",
     positionOrder: 0,
     attributes: [],
-    isActive: true,
     metaTitle: "",
     metaDescription: "",
   };
@@ -365,7 +361,6 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
     price: "29.99",
     stock: "5",
     categoryId: CATEGORY_UUID,
-    isActive: true,
   };
 
   const metaTitleField = () =>
@@ -438,7 +433,6 @@ describe("ProductForm — stock hint & breakdown (TASK-253 / TASK-254)", () => {
     price: "29.99",
     stock: "5",
     categoryId: CATEGORY_UUID,
-    isActive: true,
   };
 
   it("always renders the static «Вільний залишок» hint", () => {
@@ -477,7 +471,6 @@ describe("ProductForm — SERP snippet preview (TASK-268)", () => {
     price: "29.99",
     stock: "5",
     categoryId: CATEGORY_UUID,
-    isActive: true,
   };
 
   const previewTitle = () => screen.getByTestId("seo-snippet-title");
@@ -604,7 +597,6 @@ describe("ProductForm — leaf-only category picker (TASK-236)", () => {
           slug: "clear-case",
           price: "29.99",
           stock: "5",
-          isActive: true,
         }}
         onSubmit={onSubmit}
         isPending={false}

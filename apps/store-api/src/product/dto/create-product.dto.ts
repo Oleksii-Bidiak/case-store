@@ -12,6 +12,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { MAX_DESCRIPTION_LENGTH } from '../product.constants';
 
 /**
  * DTO for creating a new product.
@@ -43,13 +44,15 @@ export class CreateProductDto {
   slug?: string;
 
   @ApiProperty({
-    description: 'Product description (supports markdown)',
-    example: 'Premium clear case with MagSafe compatibility...',
+    description: 'Product description — rich-text HTML, sanitized on write (TASK-361)',
+    example: '<p>Premium clear case with MagSafe compatibility…</p>',
     required: false,
   })
   @IsOptional()
   @IsString()
-  @MaxLength(5000, { message: 'Description must be at most 5000 characters' })
+  @MaxLength(MAX_DESCRIPTION_LENGTH, {
+    message: `Description must be at most ${MAX_DESCRIPTION_LENGTH} characters`,
+  })
   description?: string;
 
   @ApiProperty({
@@ -149,10 +152,12 @@ export class CreateProductDto {
   positionOrder?: number;
 
   @ApiProperty({
-    description: 'Whether the product is active and visible in the store',
-    example: true,
+    description:
+      'Whether the product is active and visible in the store. Omitted means FALSE ' +
+      '(TASK-361): a new product is a hidden draft until someone publishes it.',
+    example: false,
     required: false,
-    default: true,
+    default: false,
   })
   @IsOptional()
   @IsBoolean({ message: 'isActive must be true or false' })

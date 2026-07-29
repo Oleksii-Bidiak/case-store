@@ -161,3 +161,107 @@ describe("AdminProductTable — mobile card layout (TASK-258)", () => {
     );
   });
 });
+
+describe("AdminProductTable — photo column and filters (TASK-362)", () => {
+  beforeEach(() => mockReplace.mockClear());
+
+  // After a catalogue import — which deliberately brings no photos — this
+  // column IS the operator's worklist.
+  it("flags a product with no photo instead of showing an empty cell", async () => {
+    stubEndpoints();
+    renderWithProviders(<AdminProductTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(screen.getByText(dict.products.noPhoto)).toBeInTheDocument();
+  });
+
+  it("renders the primary image as a thumbnail when the product has one", async () => {
+    server.use(
+      http.get("*/api/products/admin/list", () =>
+        HttpResponse.json({
+          data: [
+            {
+              ...makeProductRow(),
+              primaryImage: {
+                id: "img-1",
+                url: "https://cdn.example.com/a.jpg",
+                alt: null,
+                blurDataUrl: null,
+                sortOrder: 0,
+                isPrimary: true,
+              },
+            },
+          ],
+          meta: { total: 1, page: 1, limit: 10, totalPages: 1 },
+        }),
+      ),
+      http.get("*/api/categories", () =>
+        HttpResponse.json({
+          data: [{ id: "cat-1", name: "Cases" }],
+          meta: { total: 1, page: 1, limit: 100, totalPages: 1 },
+        }),
+      ),
+    );
+    renderWithProviders(<AdminProductTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(screen.queryByText(dict.products.noPhoto)).toBeNull();
+  });
+
+  it("shows the article number and brand under the name", async () => {
+    server.use(
+      http.get("*/api/products/admin/list", () =>
+        HttpResponse.json({
+          data: [
+            {
+              ...makeProductRow(),
+              sku: "IP15-CLR",
+              brand: { id: "b1", name: "Spigen", slug: "spigen" },
+            },
+          ],
+          meta: { total: 1, page: 1, limit: 10, totalPages: 1 },
+        }),
+      ),
+      http.get("*/api/categories", () =>
+        HttpResponse.json({
+          data: [{ id: "cat-1", name: "Cases" }],
+          meta: { total: 1, page: 1, limit: 100, totalPages: 1 },
+        }),
+      ),
+    );
+    renderWithProviders(<AdminProductTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    // After an import, 274 products share a name — the article number is what
+    // tells two rows apart.
+    expect(screen.getByText("IP15-CLR · Spigen")).toBeInTheDocument();
+  });
+
+  it("puts the status filter in the URL so a worklist is a shareable link", async () => {
+    stubEndpoints();
+    renderWithProviders(<AdminProductTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    await userEvent.selectOptions(
+      screen.getByLabelText(dict.products.filterStatus),
+      "hidden",
+    );
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+    expect(mockReplace.mock.calls.at(-1)?.[0]).toContain("status=hidden");
+  });
+
+  it("puts the stock filter in the URL too", async () => {
+    stubEndpoints();
+    renderWithProviders(<AdminProductTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    await userEvent.selectOptions(
+      screen.getByLabelText(dict.products.filterStock),
+      "out",
+    );
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+    expect(mockReplace.mock.calls.at(-1)?.[0]).toContain("stock=out");
+  });
+});

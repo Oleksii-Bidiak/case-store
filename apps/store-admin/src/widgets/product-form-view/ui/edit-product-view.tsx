@@ -21,6 +21,7 @@ import { ProductImageManager } from "@/features/product-image-manager";
 import { ProductDeviceCompatManager } from "@/features/product-device-compat";
 import { ProductAddonDeltaPanel } from "@/features/product-addon-delta-panel";
 import { ProductSpecsEditor } from "@/features/product-specs-editor";
+import { ProductPublishPanel } from "@/features/product-publish-panel";
 import { Separator } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
@@ -127,6 +128,21 @@ export function EditProductView({ productId }: EditProductViewProps) {
         </p>
       ) : product ? (
         <div className="flex max-w-2xl flex-col gap-6">
+          {/* Publication first (TASK-361): whether this product is on sale is
+              the operator's most consequential question, and after the
+              create → edit hand-off it is also the only step left. */}
+          <ProductPublishPanel
+            productId={productId}
+            isActive={product.isActive}
+            name={product.name}
+            categoryId={product.categoryId}
+            price={product.price}
+            stock={product.stock}
+            description={product.description}
+            specCount={product.specs?.length ?? 0}
+            compatCount={product.compatibleDeviceModels?.length ?? 0}
+          />
+
           <ProductForm
             defaultValues={mapProductToFormValues(product)}
             onSubmit={handleSubmit}
@@ -199,7 +215,6 @@ function mapProductToFormValues(product: {
   brand?: { id: string } | null;
   attributes?: Record<string, unknown> | null;
   positionOrder: number;
-  isActive: boolean;
   metaTitle?: string | null;
   metaDescription?: string | null;
 }): Partial<ProductFormInput> {
@@ -221,7 +236,7 @@ function mapProductToFormValues(product: {
         value: typeof value === "string" ? value : String(value ?? ""),
       }),
     ),
-    isActive: product.isActive,
+    // `isActive` is not a form field (TASK-361) — see ProductPublishPanel.
     metaTitle: product.metaTitle ?? "",
     metaDescription: product.metaDescription ?? "",
   };

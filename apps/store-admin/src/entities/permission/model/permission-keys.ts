@@ -24,6 +24,7 @@ export const PERM = {
   brandsWrite: "brands:write",
   devicesWrite: "devices:write",
   addonsWrite: "addons:write",
+  catalogImport: "catalog:import",
 
   blogWrite: "blog:write",
   pagesWrite: "pages:write",

@@ -200,6 +200,101 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       ]);
     });
 
+    // TASK-362: on the PUBLIC listing, sold-out products sort behind everything
+    // in stock. Prisma cannot order by an expression, so the page is assembled
+    // from two independently-ordered partitions.
+    describe('inStockFirst (TASK-362)', () => {
+      const args = { page: 1, limit: 20, inStockFirst: true };
+
+      /** Rows the page-enrichment step can chew through without extra queries. */
+      const rows = (prefix: string, count: number) =>
+        Array.from({ length: count }, (_, i) => ({
+          id: `${prefix}${i}`,
+          groupId: null,
+          brand: null,
+        }));
+
+      /** Only the calls that actually partition — enrichment issues its own. */
+      const partitionCalls = () =>
+        prismaMock.product.findMany.mock.calls.filter(
+          (call) => call[0]?.where?.stock !== undefined,
+        );
+
+      beforeEach(() => {
+        // Enrichment runs whenever a page returns rows; give it empty results so
+        // these tests stay about the ordering.
+        prismaMock.review.groupBy.mockResolvedValue([]);
+        prismaMock.productImage.findMany.mockResolvedValue([]);
+      });
+
+      it('does not partition unless asked — the admin keeps one flat query', async () => {
+        prismaMock.product.findMany.mockResolvedValue([]);
+        prismaMock.product.count.mockResolvedValue(0);
+
+        await repository.findAll({ page: 1, limit: 20 });
+
+        expect(prismaMock.product.findMany).toHaveBeenCalledTimes(1);
+        expect(prismaMock.product.findMany.mock.calls[0][0].where.stock).toBeUndefined();
+      });
+
+      it('serves a full page from the in-stock partition alone', async () => {
+        prismaMock.product.count
+          .mockResolvedValueOnce(100) // in stock
+          .mockResolvedValueOnce(140); // total
+        prismaMock.product.findMany.mockResolvedValueOnce(rows('p', 20));
+
+        const result = await repository.findAll(args);
+
+        expect(partitionCalls()).toHaveLength(1);
+        expect(partitionCalls()[0][0].where.stock).toEqual({ gt: 0 });
+        expect(result.total).toBe(140);
+      });
+
+      // The page that straddles the boundary is the one worth pinning: it has to
+      // top up from the START of the out-of-stock tail, not from the same offset.
+      it('tops a straddling page up from the head of the out-of-stock tail', async () => {
+        prismaMock.product.count.mockResolvedValueOnce(5).mockResolvedValueOnce(40);
+        prismaMock.product.findMany
+          .mockResolvedValueOnce(rows('in', 5))
+          .mockResolvedValueOnce(rows('out', 15));
+
+        const result = await repository.findAll(args);
+
+        expect(partitionCalls()).toHaveLength(2);
+        const tailArgs = partitionCalls()[1][0];
+        expect(tailArgs.where.stock).toEqual({ lte: 0 });
+        expect(tailArgs.take).toBe(15);
+        expect(tailArgs.skip).toBeUndefined();
+        expect(result.products).toHaveLength(20);
+        expect(result.total).toBe(40);
+      });
+
+      it('pages wholly past the boundary against the tail, offset by the in-stock count', async () => {
+        prismaMock.product.count.mockResolvedValueOnce(5).mockResolvedValueOnce(40);
+        prismaMock.product.findMany.mockResolvedValueOnce([]);
+
+        // page 2 of 20 ⇒ skip 20, which is past the 5 in-stock rows.
+        await repository.findAll({ page: 2, limit: 20, inStockFirst: true });
+
+        expect(prismaMock.product.findMany).toHaveBeenCalledTimes(1);
+        const tailArgs = prismaMock.product.findMany.mock.calls[0][0];
+        expect(tailArgs.where.stock).toEqual({ lte: 0 });
+        expect(tailArgs.skip).toBe(15);
+      });
+
+      it('keeps the id tiebreaker inside each partition', async () => {
+        prismaMock.product.count.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+        prismaMock.product.findMany.mockResolvedValueOnce([]);
+
+        await repository.findAll({ ...args, sortBy: 'price', sortOrder: 'asc' });
+
+        expect(prismaMock.product.findMany.mock.calls[0][0].orderBy).toEqual([
+          { price: 'asc' },
+          { id: 'asc' },
+        ]);
+      });
+    });
+
     it('keeps the id tiebreaker on an explicit sort field (TASK-292)', async () => {
       prismaMock.product.findMany.mockResolvedValue([]);
       prismaMock.product.count.mockResolvedValue(0);

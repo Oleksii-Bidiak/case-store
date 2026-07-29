@@ -91,6 +91,15 @@ export const PERMISSIONS = [
   { key: 'devices:write', zone: PERMISSION_ZONES.CATALOG, label: 'Пристрої та сумісність' },
   { key: 'attributes:write', zone: PERMISSION_ZONES.CATALOG, label: 'Характеристики' },
   { key: 'addons:write', zone: PERMISSION_ZONES.CATALOG, label: 'Додаткові послуги' },
+  // Its own permission rather than a fold into `products:write` (TASK-360): one
+  // confirmed import rewrites the whole catalogue and creates categories,
+  // brands, devices and characteristics along the way. That is a different
+  // blast radius from editing one product, and it deserves a separate tick.
+  {
+    key: 'catalog:import',
+    zone: PERMISSION_ZONES.CATALOG,
+    label: 'Імпорт каталогу з файлу',
+  },
 
   // ── Контент і блог ────────────────────────────────────────────────────────
   { key: 'blog:write', zone: PERMISSION_ZONES.CONTENT, label: 'Блог' },

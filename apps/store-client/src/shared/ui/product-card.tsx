@@ -88,6 +88,11 @@ export function ProductCard({
       <div
         className={`relative aspect-square w-full overflow-hidden bg-gradient-to-br [&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105 ${gradient}`}
       >
+        {/* Sold-out products are dimmed rather than hidden (TASK-362): they stay
+            browsable and indexable, but a shopper can tell at a glance across a
+            grid, instead of only finding out on the product page. The card is
+            `shared/ui` and already receives the whole entity, so this needs no
+            new prop — `inStock` is derived server-side from the position row. */}
         <ProductCardImage
           src={product.primaryImage?.url}
           alt={product.primaryImage?.alt ?? product.name}
@@ -96,14 +101,25 @@ export function ProductCard({
           priority={priority}
           sizes={imageSizes}
         />
+        {!product.inStock && (
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 z-10 bg-card/55"
+          />
+        )}
 
         <div className="absolute left-2.5 top-2.5 z-20 flex flex-col gap-1">
+          {!product.inStock && (
+            <Badge variant="secondary" className="shadow-sm">
+              {dict.product.outOfStock}
+            </Badge>
+          )}
           {onSale && (
             <Badge variant="sale" className="shadow-sm">
               −{discountPercent}%
             </Badge>
           )}
-          {isNew && !onSale && (
+          {isNew && !onSale && product.inStock && (
             <Badge variant="success" className="shadow-sm">
               {dict.product.newBadge}
             </Badge>

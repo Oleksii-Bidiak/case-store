@@ -16,6 +16,7 @@ export const dict = {
     dashboard: "Панель",
     products: "Товари",
     productGroups: "Групи товарів",
+    catalogImport: "Імпорт каталогу",
     categories: "Категорії",
     brands: "Бренди",
     addonServices: "Додаткові послуги",
@@ -287,7 +288,20 @@ export const dict = {
     createSubmit: "Створити товар",
     loadOneError: "Не вдалося завантажити товар. Спробуйте ще раз.",
     imagesHeading: "Зображення товару",
+    // TASK-362: photo column + status/stock filters for the restock worklist.
+    colPhoto: "Фото",
+    noPhoto: "без фото",
+    filterStatus: "Фільтр за статусом",
+    filterStatusAll: "Усі статуси",
+    filterStatusActive: "Лише активні",
+    filterStatusHidden: "Лише приховані",
+    filterStock: "Фільтр за залишком",
+    filterStockAll: "Будь-який залишок",
+    filterStockOut: "Немає в наявності",
     toastCreated: "Товар створено",
+    // TASK-361: creation now yields a hidden draft and lands on the edit page.
+    toastDraftCreated:
+      "Чернетку створено. Додайте фото й характеристики, тоді опублікуйте.",
     toastCreateFailed: "Не вдалося створити товар",
     toastUpdated: "Товар оновлено",
     toastUpdateFailed: "Не вдалося оновити товар",
@@ -318,12 +332,136 @@ export const dict = {
     previewInactive: "Деактивований",
   },
 
+  // TASK-360: supplier-catalogue import.
+  catalogImport: {
+    heading: "Імпорт каталогу з файлу",
+    intro:
+      "Завантажте .xlsx від постачальника. Спершу покажемо, що саме зміниться — " +
+      "і нічого не запишемо, доки ви не підтвердите.",
+    pickFile: "Оберіть файл .xlsx",
+    upload: "Розібрати файл",
+    uploading: "Розбираємо файл…",
+    uploadFailed: "Не вдалося розібрати файл",
+    duplicateWarning:
+      "Такий самий файл уже імпортували раніше. Якщо він не змінювався, змін не буде.",
+
+    // Summary tiles
+    tileCreate: "Створити",
+    tileUpdate: "Оновити",
+    tileMissing: "Приховати",
+    tileUnchanged: "Без змін",
+    tileErrors: "Помилок у файлі",
+    tileConflicts: "Ручних правок під загрозою",
+
+    // Reference data the import will create
+    referencesHeading: "Довідники з файлу",
+    refCategories: "Категорії",
+    refBrands: "Бренди",
+    refDeviceBrands: "Марки пристроїв",
+    refDeviceModels: "Моделі пристроїв",
+    refAttributes: "Характеристики",
+    refGroups: "Групи варіантів",
+    refHint:
+      "Створимо ті, яких ще немає. Характеристики додаємо як текстові — зробити " +
+      "їх фільтрами можна пізніше, у налаштуваннях категорії.",
+
+    // Rows
+    createsHeading: (n: number) => `Нові товари (${n})`,
+    createsHint:
+      "Кожен створюється прихованим і з нульовим залишком — у файлі немає залишків. " +
+      "Опублікуєте їх самі, коли перевірите.",
+    updatesHeading: (n: number) => `Зміни в наявних товарах (${n})`,
+    missingHeading: (n: number) => `Зникли з файлу (${n})`,
+    missingHint:
+      "Ці товари приховаємо — не видалимо. Якщо постачальник поверне їх у файл, " +
+      "вони знову зʼявляться.",
+    issuesHeading: (n: number) => `Рядки, які пропустимо (${n})`,
+    rowNumber: (n: number) => `рядок ${n}`,
+    conflictBadge: "змінено вручну",
+    conflictHint:
+      "Це поле хтось правив в адмінці. За замовчуванням переможе файл — зніміть " +
+      "галочку, щоб зберегти вашу правку.",
+    uncheckConflicts: "Зняти всі ручні правки",
+    checkAll: "Позначити все",
+    colField: "Поле",
+    colFrom: "Зараз",
+    colTo: "Стане",
+    showMore: (n: number) => `Показати ще ${n}`,
+
+    // Apply
+    apply: "Застосувати",
+    applying: "Записуємо…",
+    applyConfirm: (n: number) =>
+      `Застосувати ${n} змін? Товари створюються прихованими, тож на вітрині нічого не зміниться, ` +
+      `доки ви їх не опублікуєте.`,
+    cancel: "Відхилити",
+    cancelConfirm: "Відхилити цей розбір? Файл доведеться завантажити заново.",
+    applyFailed: "Не вдалося застосувати імпорт",
+    cancelled: "Розбір відхилено",
+
+    // Progress / result
+    progress: (done: number, total: number) => `Записано ${done} з ${total}`,
+    doneHeading: "Імпорт завершено",
+    doneHint:
+      "Нові товари лежать прихованими у списку товарів. Проставте залишки й " +
+      "опублікуйте те, що готове до продажу.",
+    failedHeading: "Імпорт зупинився",
+    toStore: "До списку товарів",
+    startOver: "Імпортувати інший файл",
+
+    // History
+    historyHeading: "Попередні імпорти",
+    historyEmpty: "Імпортів ще не було.",
+    colFile: "Файл",
+    colStatus: "Статус",
+    colWhen: "Коли",
+    colWho: "Хто",
+    status: {
+      PARSED: "Очікує підтвердження",
+      APPLYING: "Записується",
+      APPLIED: "Застосовано",
+      FAILED: "Помилка",
+      CANCELLED: "Відхилено",
+    } as Record<string, string>,
+    loadError: "Не вдалося завантажити дані імпорту.",
+  },
+
+  // TASK-361: publication is its own action, separate from saving the fields.
+  productPublish: {
+    heading: "Публікація",
+    draftBadge: "Чернетка — покупці її не бачать",
+    liveBadge: "Опубліковано — товар на вітрині",
+    publish: "Опублікувати",
+    unpublish: "Зняти з публікації",
+    readyHint: "Товар готовий до публікації.",
+    blockersHint: "Щоб опублікувати товар, заповніть обов'язкові пункти:",
+    advisoryNote:
+      "Пункти без позначки «обов'язково» публікацію не блокують, але без них " +
+      "картка товару виглядає порожньою для покупця.",
+    requiredMark: "обов'язково",
+    checks: {
+      name: "Вказана назва",
+      category: "Обрана категорія",
+      price: "Ціна більша за 0",
+      photo: "Є хоча б одне фото",
+      description: "Заповнений опис",
+      stock: "Залишок більший за 0",
+      specs: "Заповнені характеристики",
+      compat: "Вказана сумісність із пристроями",
+    },
+    toastPublished: "Товар опубліковано — він з'явився на вітрині",
+    toastUnpublished: "Товар знято з публікації",
+    toastFailed: "Не вдалося змінити статус публікації",
+  },
+
   productForm: {
     name: "Назва",
     slug: "Slug",
     slugPlaceholder: "Залиште порожнім для авто-генерації з назви",
     slugPreview: (slug: string) => `Буде згенеровано: ${slug}`,
     description: "Опис",
+    descriptionPlaceholder:
+      "Опишіть товар: для чого він, з чого зроблений, що в комплекті",
     price: "Ціна",
     compareAtPrice: "Стара ціна",
     sku: "Артикул",
@@ -368,7 +506,7 @@ export const dict = {
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
       slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
-      descriptionMax: "Опис має містити не більше 5000 символів",
+      descriptionMax: "Опис має містити не більше 20000 символів",
       priceRequired: "Вкажіть ціну",
       priceNumber: "Ціна має бути числом",
       pricePositive: "Ціна має бути більшою за 0",

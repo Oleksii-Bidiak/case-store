@@ -1,7 +1,13 @@
 "use client";
 
 import { Truck, Package, MapPin } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
+import {
+  RichText,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/shared/ui";
 import { dict } from "@/shared/config";
 import type { ProductSpecEntity } from "@/entities/product";
 import { ProductReviewsWidget } from "@/widgets/product-reviews";
@@ -38,13 +44,19 @@ export function ProductSpecsTabs({
         <TabsTrigger value="delivery">{dict.product.tabDelivery}</TabsTrigger>
       </TabsList>
 
-      <TabsContent
-        value="description"
-        className="max-w-3xl pt-5 text-[15px] leading-[1.7] whitespace-pre-line text-foreground"
-      >
-        {description && description.length > 0
-          ? description
-          : dict.product.specsEmpty}
+      {/* The description is rich text since TASK-361 (the admin edits it in the
+          same Tiptap editor pages/blog use, and the catalogue import feeds HTML
+          from the supplier file). `RichText` renders API-sanitized markup and
+          falls back to a pre-line block for descriptions written before the
+          switch, whose line breaks are their only structure. */}
+      <TabsContent value="description" className="max-w-3xl pt-5">
+        {description && description.length > 0 ? (
+          <RichText content={description} />
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {dict.product.specsEmpty}
+          </p>
+        )}
       </TabsContent>
 
       <TabsContent value="specs" className="pt-5">

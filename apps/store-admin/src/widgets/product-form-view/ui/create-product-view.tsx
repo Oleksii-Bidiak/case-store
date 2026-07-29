@@ -18,6 +18,14 @@ import { dict } from "@/shared/config";
 /**
  * Create-product page body: renders the product form and wires the create
  * mutation, list-cache invalidation, success/error toasts, and redirect.
+ *
+ * On success the operator lands on the product's EDIT page rather than back on
+ * the list (TASK-361). Photos, structured specs, device compatibility and
+ * add-on deltas all live on endpoints keyed by a product id, so none of them can
+ * exist before the first save — bouncing to the list at that exact moment left
+ * the operator's job half done, with no signpost telling them the other half
+ * was on another screen. The product is created HIDDEN, so nothing is on sale
+ * while it is being finished.
  */
 export function CreateProductView() {
   const router = useRouter();
@@ -28,12 +36,12 @@ export function CreateProductView() {
     create.mutate(
       { data: productFormValuesToDto(values) },
       {
-        onSuccess: () => {
+        onSuccess: (response) => {
           void queryClient.invalidateQueries({
             queryKey: getProductControllerAdminFindAllQueryKey(),
           });
-          toast.success(dict.products.toastCreated);
-          router.push("/products");
+          toast.success(dict.products.toastDraftCreated);
+          router.push(`/products/${response.data.id}/edit`);
         },
         onError: () => {
           toast.error(dict.products.toastCreateFailed);

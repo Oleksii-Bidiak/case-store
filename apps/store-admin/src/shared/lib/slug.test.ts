@@ -30,4 +30,30 @@ describe("slugify", () => {
       "samsung-galaxy-s24-ultra",
     );
   });
+
+  // Parity with the backend's `generateSlug` (TASK-360). These expectations are
+  // copied verbatim from `transliterate.util.spec.ts` — if the two ever disagree
+  // the admin's live slug preview is lying about what the server will store.
+  describe("Ukrainian names", () => {
+    it.each([
+      ["Чохли", "chokhly"],
+      ["Захисне скло", "zakhysne-sklo"],
+      ["Кабелі / перехідники", "kabeli-perekhidnyky"],
+      ["Зарядні пристрої", "zariadni-prystroi"],
+      ["Аксесуари для автомобіля", "aksesuary-dlia-avtomobilia"],
+      ["Плотери та плівки", "plotery-ta-plivky"],
+      ["Для дому та офісу", "dlia-domu-ta-ofisu"],
+      ["Геймінг", "heiminh"],
+      ["Освітлення", "osvitlennia"],
+      ["Дитячі товари", "dytiachi-tovary"],
+    ])("slugifies %p to %p", (input, expected) => {
+      expect(slugify(input)).toBe(expected);
+    });
+
+    it("handles a mixed Latin/Cyrillic product name", () => {
+      expect(slugify("Чохол Armor Magnetic Samsung Galaxy A35")).toBe(
+        "chokhol-armor-magnetic-samsung-galaxy-a35",
+      );
+    });
+  });
 });
