@@ -302,6 +302,9 @@ model Product {
   addonDeltas   AddonServiceDelta[]
   // Hand-picked membership rows on MANUAL recommendation carousels (TASK-139).
   carouselItems CarouselItem[]
+  // Ledger row tying this product back to its supplier-catalogue article, when
+  // it came from an import (TASK-360). Absent for hand-created products.
+  importItem    CatalogImportItem?
 
   @@index([slug])
   @@index([categoryId])
@@ -1636,4 +1639,102 @@ model DeliverySetting {
   updatedAt          DateTime @updatedAt @map("updated_at")
 
   @@map("delivery_settings")
+}
+
+/// Lifecycle of one catalogue import run (TASK-360).
+enum CatalogImportStatus {
+  /// Parsed and diffed; waiting for the operator to review and confirm.
+  PARSED
+  /// Confirmed — the worker is writing it, in chunks.
+  APPLYING
+  /// Every planned row has been written.
+  APPLIED
+  /// Parsing or writing failed; `error` says how far it got.
+  FAILED
+  /// The operator discarded the plan without applying it.
+  CANCELLED
+}
+
+/// One upload of the supplier's catalogue workbook (TASK-360).
+///
+/// The uploaded file is kept in storage rather than inlined here, and `plan`
+/// holds only the DECISION-GRADE diff (which rows change, which fields, short
+/// previews of the values). Full values are re-read from the stored file when
+/// the run is applied: descriptions alone would otherwise push a single plan
+/// into the megabytes, and the file is the honest source for them anyway.
+model CatalogImportRun {
+  id         String              @id @default(uuid())
+  filename   String
+  /// sha256 of the uploaded bytes — lets the UI warn "this is the file you
+  /// already imported" instead of silently producing an empty diff.
+  fileHash   String              @map("file_hash")
+  /// Storage-relative path of the kept workbook, under the `imports` subdir.
+  storedPath String              @map("stored_path")
+  status     CatalogImportStatus @default(PARSED)
+
+  /// Counters for the preview header. Denormalized on purpose: the admin list
+  /// renders them without opening `plan`, which is a large JSON blob.
+  totalRows    Int @map("total_rows")
+  createCount  Int @map("create_count")
+  updateCount  Int @map("update_count")
+  missingCount Int @map("missing_count")
+  errorCount   Int @map("error_count")
+  /// Rows written so far — the progress bar while status is APPLYING.
+  appliedRows  Int @default(0) @map("applied_rows")
+
+  /// The computed diff (see CatalogImportPlan in catalog-import.types.ts).
+  plan      Json
+  /// The operator's per-change selections, captured at confirm time.
+  decisions Json?
+  /// Failure detail when status is FAILED.
+  error     String?
+
+  /// Who uploaded it. Nullable so a deleted staff account cannot orphan the run.
+  actorId    String?   @map("actor_id")
+  actorEmail String?   @map("actor_email")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  appliedAt  DateTime? @map("applied_at")
+
+  @@index([status, createdAt])
+  @@index([createdAt(sort: Desc)])
+  @@map("catalog_import_runs")
+}
+
+/// The import ledger: what the importer last wrote for one supplier article
+/// (TASK-360).
+///
+/// This is what makes a REPEAT import possible. Comparing the new file against
+/// the previous FILE cannot distinguish "the supplier changed the price" from
+/// "an operator corrected it by hand" — comparing against this row can, because
+/// it records exactly what the import itself put in the database last time:
+///
+///   file ≠ lastImported          → the source changed; propose the update
+///   database ≠ lastImported      → a human edited it; flag the change as a conflict
+///
+/// Keyed on the supplier's article number rather than on `Product.sku`: the two
+/// start out equal, but an operator may edit the SKU, and the link back to the
+/// source row has to survive that.
+model CatalogImportItem {
+  sourceSku String   @id @map("source_sku")
+  productId String?  @unique @map("product_id")
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  /// The exact field values the importer last wrote — the diff base.
+  lastImported Json @map("last_imported")
+
+  /// Supplier image URLs from the «Фото» column. RECORDED, NEVER FETCHED (owner
+  /// decision 2026-07-29): the bulk re-hosting job runs on the client's staging
+  /// server, which does not exist yet. Keeping them means that job will not have
+  /// to re-parse the source workbook.
+  sourceImageUrls String[] @map("source_image_urls")
+
+  /// Set when a run stops finding this article in the file — the product is
+  /// hidden, never deleted, so it comes straight back if the supplier restores it.
+  missingSinceRunId String?  @map("missing_since_run_id")
+  lastSeenRunId     String   @map("last_seen_run_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([lastSeenRunId])
+  @@map("catalog_import_items")
 }

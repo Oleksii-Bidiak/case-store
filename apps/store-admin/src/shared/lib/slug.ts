@@ -1,5 +1,10 @@
+import { transliterate } from "./transliterate";
+
 /**
  * Generate a URL-friendly slug from a name string.
+ *
+ * Cyrillic is transliterated first (TASK-360) — the special-character strip is
+ * ASCII-only, so a Ukrainian name used to slugify to the empty string.
  *
  * Direct port of the backend's `generateSlug`
  * (`apps/store-api/src/common/utils/slug.util.ts`) so the admin's live preview
@@ -8,7 +13,7 @@
  * barrel-export from `shared/lib`.
  */
 export function slugify(name: string): string {
-  return name
+  return transliterate(name)
     .toLowerCase()
     .trim()
     .replace(/[^\w\s-]/g, "") // strip special characters
