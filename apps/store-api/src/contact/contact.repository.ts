@@ -1,6 +1,47 @@
 import { Injectable } from '@nestjs/common';
 import { ContactMessage, ContactMessageStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { CONTACT_MESSAGE_SORT_FIELDS } from './dto';
+import type { ContactMessageSortField } from './dto';
+
+/**
+ * Raised by {@link ContactRepository.setStatusMany} when the batch names a
+ * message that no longer exists, so the transaction rolls back instead of
+ * half-applying.
+ *
+ * A domain error, not a `NotFoundException`: repositories in this codebase do
+ * not speak HTTP. `ContactService` maps it.
+ */
+export class ContactMessagesNotFoundError extends Error {
+  constructor(readonly missingIds: string[]) {
+    super(`Unknown contact message id(s): ${missingIds.join(', ')}`);
+    this.name = 'ContactMessagesNotFoundError';
+  }
+}
+
+const DEFAULT_SORT_BY: ContactMessageSortField = 'createdAt';
+
+/**
+ * Translate the DTO's sort choice into a Prisma `orderBy` (TASK-354).
+ *
+ * `id` is always the last tiebreaker. `status` and `name` are non-unique, and
+ * Postgres is free to return tied rows in a different order on every query;
+ * paginating over an unstable ordering makes rows show up on two pages and
+ * others on none — a message would appear to vanish from the inbox without
+ * anyone having touched it.
+ *
+ * The `sortBy` value is already allow-listed by `@IsIn` at the boundary; the
+ * fallback here is the defensive default for internal callers.
+ */
+function buildContactOrderBy(
+  sortBy: ContactMessageSortField | undefined,
+  sortOrder: 'asc' | 'desc' | undefined,
+): Prisma.ContactMessageOrderByWithRelationInput[] {
+  const order = sortOrder ?? 'desc';
+  const field = sortBy && CONTACT_MESSAGE_SORT_FIELDS.includes(sortBy) ? sortBy : DEFAULT_SORT_BY;
+
+  return [{ [field]: order }, { id: 'asc' }];
+}
 
 /**
  * Allowed fields for creating a contact message. `status` is always NEW on
@@ -31,6 +72,8 @@ export interface FindAllParams {
   page: number;
   limit: number;
   status?: ContactMessageStatus;
+  sortBy?: ContactMessageSortField;
+  sortOrder?: 'asc' | 'desc';
 }
 
 /**
@@ -66,8 +109,9 @@ export class ContactRepository {
   }
 
   /**
-   * List messages for the admin inbox, newest first, paginated, with an optional
-   * status filter. Returns the page of rows plus the total for pagination.
+   * List messages for the admin inbox — paginated, optional status filter,
+   * newest first unless the caller asks otherwise (TASK-354). Returns the page
+   * of rows plus the total for pagination.
    */
   async findAll(params: FindAllParams): Promise<PaginatedContactMessagesResult> {
     const { page, limit, status } = params;
@@ -81,7 +125,7 @@ export class ContactRepository {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: buildContactOrderBy(params.sortBy, params.sortOrder),
       }),
       this.prisma.contactMessage.count({ where }),
     ]);
@@ -106,6 +150,42 @@ export class ContactRepository {
         ...(data.status !== undefined && { status: data.status }),
         ...(data.adminNote !== undefined && { adminNote: data.adminNote }),
       },
+    });
+  }
+
+  /**
+   * Write one status onto exactly the named messages (TASK-354), in one
+   * transaction.
+   *
+   * All-or-nothing: an id that no longer exists aborts the batch before any
+   * write. That case is not hypothetical on a shared inbox — it is what a
+   * colleague archiving the same message a second earlier looks like — and a
+   * partial write would leave the operator's selection and the inbox disagreeing
+   * with nothing on screen to say which half landed.
+   *
+   * Assumes `ids` is already distinct (the service dedupes): the missing-id check
+   * compares counts, so a repeated id would read as an unknown one.
+   *
+   * Returns how many rows the database wrote.
+   */
+  async setStatusMany(ids: string[], status: ContactMessageStatus): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      const found = await tx.contactMessage.findMany({
+        where: { id: { in: ids } },
+        select: { id: true },
+      });
+
+      if (found.length !== ids.length) {
+        const known = new Set(found.map((row) => row.id));
+        throw new ContactMessagesNotFoundError(ids.filter((id) => !known.has(id)));
+      }
+
+      const { count } = await tx.contactMessage.updateMany({
+        where: { id: { in: ids } },
+        data: { status },
+      });
+
+      return count;
     });
   }
 

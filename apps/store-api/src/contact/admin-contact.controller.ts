@@ -10,7 +10,11 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ContactService } from './contact.service';
-import { ContactMessageListQueryDto, UpdateContactMessageDto } from './dto';
+import {
+  BulkContactMessageStatusDto,
+  ContactMessageListQueryDto,
+  UpdateContactMessageDto,
+} from './dto';
 import { ContactMessageEntity } from './entities';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
@@ -55,6 +59,21 @@ class ContactMessageResponse {
 }
 
 /**
+ * What a bulk status call reports back: how many rows the database actually
+ * wrote — which is the number the operator's confirmation should quote, not the
+ * number they selected.
+ */
+class BulkContactMessageStatusResult {
+  @ApiProperty({ description: 'Messages written', example: 15 })
+  updatedCount!: number;
+}
+
+class BulkContactMessageStatusResponse {
+  @ApiProperty({ type: BulkContactMessageStatusResult })
+  data!: BulkContactMessageStatusResult;
+}
+
+/**
  * Unread-count payload for the sidebar badge.
  */
 class ContactUnreadData {
@@ -74,8 +93,9 @@ class ContactUnreadResponse {
  * Admin-only contact-inbox endpoints. `messages:read` at class level; the one
  * mutating route overrides to `messages:write` (TASK-334).
  *
- *   GET   /api/contact/admin              — inbox list (status filter, newest first)
+ *   GET   /api/contact/admin              — inbox list (status filter, sorting)
  *   GET   /api/contact/admin/unread-count — unread (NEW) count for the sidebar badge
+ *   PATCH /api/contact/admin/status       — bulk status change over a selection
  *   GET   /api/contact/admin/:id          — single message
  *   PATCH /api/contact/admin/:id          — change status / set admin note
  */
@@ -87,6 +107,8 @@ class ContactUnreadResponse {
   ContactMessageResponse,
   ContactUnreadData,
   ContactUnreadResponse,
+  BulkContactMessageStatusResult,
+  BulkContactMessageStatusResponse,
 )
 @Controller('contact/admin')
 @UseGuards(PermissionGuard)
@@ -104,6 +126,8 @@ export class AdminContactController {
   })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (1-based)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Items per page (max 100)' })
+  @ApiQuery({ name: 'sortBy', required: false, description: 'Sort: createdAt | status | name' })
+  @ApiQuery({ name: 'sortOrder', required: false, description: 'asc | desc' })
   @ApiResponse({ status: 200, description: 'Paginated inbox', type: ContactInboxResponse })
   @ApiResponse({ status: 401, description: 'Authentication required' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
@@ -122,6 +146,46 @@ export class AdminContactController {
   async unreadCount(): Promise<ContactUnreadResponse> {
     const unread = await this.contactService.unreadCount();
     return { data: { unread } };
+  }
+
+  /**
+   * PATCH /api/contact/admin/status
+   *
+   * Write one status onto the operator's whole selection (TASK-354) — the bulk
+   * form of `PATCH :id` below, in one transaction. Not destructive: every status
+   * is reachable again from the same control, so no confirmation gate.
+   *
+   * DECLARED BEFORE the `:id` routes. Express resolves in declaration order, so
+   * a `@Patch(':id')` above this one would swallow `status` as an id — and the
+   * failure would surface as a 404 about a message that was never requested.
+   *
+   * Overrides to `messages:write` for the same reason the per-row PATCH does:
+   * the class-level grant is read-only, and a batch write must not be reachable
+   * with it. (Auditing does NOT depend on this override — `AuditInterceptor`
+   * fires on any mutating request whose handler OR class carries
+   * `@RequirePermission`, and the class-level one already qualifies.)
+   */
+  @Patch('status')
+  @RequirePermission('messages:write')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Set the status of many contact messages (admin)',
+    operationId: 'adminContactUpdateStatusMany',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Number of messages written',
+    type: BulkContactMessageStatusResponse,
+  })
+  @ApiResponse({ status: 400, description: 'Validation error — empty, oversized or non-UUID ids' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({ status: 404, description: 'Unknown message id — nothing was written' })
+  async updateStatusMany(
+    @Body() dto: BulkContactMessageStatusDto,
+  ): Promise<BulkContactMessageStatusResponse> {
+    const updatedCount = await this.contactService.updateStatusMany(dto.ids, dto.status);
+
+    return { data: { updatedCount } };
   }
 
   @Get(':id')

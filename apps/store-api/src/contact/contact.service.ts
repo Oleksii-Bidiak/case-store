@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { ContactMessageStatus } from '@prisma/client';
-import { ContactRepository } from './contact.repository';
+import { ContactMessagesNotFoundError, ContactRepository } from './contact.repository';
 import { ContactMessageEntity } from './entities';
 import {
   CreateContactMessageDto,
@@ -79,7 +79,13 @@ export class ContactService {
     const limit = query.limit ?? DEFAULT_LIMIT;
 
     const [{ messages, total }, unread] = await Promise.all([
-      this.contactRepository.findAll({ page, limit, status: query.status }),
+      this.contactRepository.findAll({
+        page,
+        limit,
+        status: query.status,
+        sortBy: query.sortBy,
+        sortOrder: query.sortOrder,
+      }),
       this.contactRepository.countByStatus(ContactMessageStatus.NEW),
     ]);
 
@@ -135,5 +141,43 @@ export class ContactService {
     // TASK-256: the email is immutable on update — resolve the match for the response.
     const matchedUserId = await this.contactRepository.findMatchingUserId(updated.email);
     return ContactMessageEntity.fromPrisma(updated, matchedUserId);
+  }
+
+  /**
+   * Write one status onto many messages at once (TASK-354) — the per-row status
+   * change applied to the operator's selection, in one transaction.
+   *
+   * Side-effect parity with {@link update} is what makes this safe to ship: that
+   * path writes the row and logs, and nothing else. The unread badge is a live
+   * `COUNT(*)` (see {@link unreadCount}) with no cache in front of it, so there
+   * is nothing to evict here — the next badge read is already correct. If a cache
+   * is ever put in front of that count, it has to be evicted from BOTH paths.
+   *
+   * Returns how many rows were written, not how many were asked for.
+   *
+   * @throws NotFoundException when any id is unknown — nothing is written.
+   */
+  async updateStatusMany(ids: string[], status: ContactMessageStatus): Promise<number> {
+    // The selection comes from a checkbox grid, so a repeated id is a UI slip,
+    // not a request to write twice — and the repository's all-or-nothing check
+    // compares counts, which a duplicate would turn into a spurious 404.
+    const uniqueIds = [...new Set(ids)];
+
+    let count: number;
+    try {
+      count = await this.contactRepository.setStatusMany(uniqueIds, status);
+    } catch (error) {
+      if (error instanceof ContactMessagesNotFoundError) {
+        throw new NotFoundException(error.message);
+      }
+      throw error;
+    }
+
+    this.logger.info(
+      { contactMessageIds: uniqueIds, status, count },
+      'Contact messages updated in bulk',
+    );
+
+    return count;
   }
 }
