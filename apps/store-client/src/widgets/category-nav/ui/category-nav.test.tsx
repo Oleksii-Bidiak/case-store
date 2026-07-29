@@ -46,9 +46,12 @@ function tileImg(): HTMLImageElement | null {
 /**
  * `Category.image` is a free-text admin URL, but since TASK-289 the tile renders
  * it through next/image — only hosts in `images.remotePatterns` are drawn at all
- * (anything else takes the icon fallback). Use an allowlisted host here.
+ * (anything else takes the icon fallback). Use an allowlisted origin here: the
+ * store-api uploads host, which needs no operator config and is exactly what the
+ * seed writes into `Category.image` since TASK-365.
  */
-const TILE_IMAGE = "https://picsum.photos/seed/cases/800/800";
+const TILE_IMAGE =
+  "http://localhost:3001/uploads/products/seed-0f1e2d3c4b5a6978.webp";
 
 describe("CategoryNav — tile images (TASK-083)", () => {
   it("renders the icon fallback (no <img>) when image is null", async () => {

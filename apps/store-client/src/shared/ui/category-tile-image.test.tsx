@@ -4,8 +4,16 @@ import {
   isOptimizableImageSrc,
 } from "./category-tile-image";
 
-/** An allowlisted host that needs no env setup (dev-seed placeholder origin). */
-const ALLOWED = "https://picsum.photos/seed/cases/800/800";
+/**
+ * An allowlisted URL that needs no env setup: the store-api uploads origin,
+ * derived from the `NEXT_PUBLIC_API_URL` default. This is the exact shape the
+ * dev seed writes into `Category.image` (TASK-365) and the exact shape the admin
+ * upload pipeline produces — since the seed stopped borrowing a third-party
+ * placeholder host, the uploads origin is the *only* allowlist entry that
+ * exists without operator configuration.
+ */
+const ALLOWED =
+  "http://localhost:3001/uploads/products/seed-0f1e2d3c4b5a6978.webp";
 
 describe("CategoryTileImage", () => {
   it("routes an allowlisted image through the next/image optimizer", () => {
@@ -69,12 +77,12 @@ describe("CategoryTileImage", () => {
     render(
       <>
         <CategoryTileImage
-          src="https://picsum.photos/seed/a/800/800"
+          src="http://localhost:3001/uploads/products/seed-aaaaaaaaaaaaaaaa.webp"
           alt="A"
           fallback={<span data-testid="fallback-a" />}
         />
         <CategoryTileImage
-          src="https://picsum.photos/seed/b/800/800"
+          src="http://localhost:3001/uploads/products/seed-bbbbbbbbbbbbbbbb.webp"
           alt="B"
           fallback={<span data-testid="fallback-b" />}
         />
@@ -123,6 +131,12 @@ describe("isOptimizableImageSrc", () => {
     expect(
       isOptimizableImageSrc("http://localhost:3001/uploads/branding/logo.webp"),
     ).toBe(true);
+    // Seeded imagery is written to the same origin, under products/ (TASK-365).
+    expect(
+      isOptimizableImageSrc(
+        "http://localhost:3001/uploads/products/seed-0f1e2d3c4b5a6978.webp",
+      ),
+    ).toBe(true);
   });
 
   it("rejects other paths on the API origin (the remote pattern pins /uploads/)", () => {
@@ -131,13 +145,28 @@ describe("isOptimizableImageSrc", () => {
     );
   });
 
-  it("allows the dev-seed placeholder host over https", () => {
-    expect(isOptimizableImageSrc("https://picsum.photos/seed/x/800/800")).toBe(
-      true,
-    );
-    expect(isOptimizableImageSrc("http://picsum.photos/seed/x/800/800")).toBe(
+  it("rejects the uploads path on a different port or scheme than the API origin", () => {
+    expect(
+      isOptimizableImageSrc("http://localhost:3000/uploads/products/a.webp"),
+    ).toBe(false);
+    expect(
+      isOptimizableImageSrc("https://localhost:3001/uploads/products/a.webp"),
+    ).toBe(false);
+  });
+
+  /**
+   * With no `NEXT_PUBLIC_IMAGE_HOSTS`, the uploads origin is the whole allowlist.
+   * There is deliberately no built-in third-party host any more: the dev seed
+   * generates its own files under /uploads/, so nothing needs one, and every
+   * standing entry is an origin the image optimizer can be told to fetch.
+   */
+  it("rejects an https host that the operator has not configured", () => {
+    delete process.env.NEXT_PUBLIC_IMAGE_HOSTS;
+
+    expect(isOptimizableImageSrc("https://images.example.com/x/800/800")).toBe(
       false,
     );
+    expect(isOptimizableImageSrc("https://cdn.jsdelivr.net/a.png")).toBe(false);
   });
 
   it("allows an operator-configured host, https only", () => {
