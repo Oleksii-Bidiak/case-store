@@ -11,6 +11,7 @@ import { DiscountStatusToggle } from "@/features/discount-status-toggle";
 import {
   Button,
   Input,
+  LiveAnnouncer,
   SortableColumnHeader,
   Table,
   TableBody,
@@ -51,8 +52,23 @@ function formatExpiry(expiresAt: string | null): string {
  * `createdAt desc` and never offered the control (TASK-355). Only the four keys
  * the DTO's `@IsIn` allows are wired — `code`, `redeemedCount`, `expiresAt` are
  * visible columns; `createdAt` stays the default and has no column of its own.
+ *
+ * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
+ * calls `useAnnouncer()` to confirm a finished refresh, and a hook called in the
+ * same component that renders the provider would read the default no-op context.
+ * TASK-355 shipped the toolbar here without a provider anywhere in the tree, so
+ * the confirmation was dropped silently: the refetch still ran, nothing on screen
+ * differed, and only a screen-reader user was left without feedback (TASK-357).
  */
 export function AdminDiscountTable() {
+  return (
+    <LiveAnnouncer>
+      <AdminDiscountView />
+    </LiveAnnouncer>
+  );
+}
+
+function AdminDiscountView() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
