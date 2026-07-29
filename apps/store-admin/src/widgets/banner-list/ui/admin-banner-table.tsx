@@ -12,6 +12,11 @@
  * `?placement=` deep link therefore narrows which SECTIONS render, never the
  * query, and the free-text search — which hides ROWS — LOCKS reordering instead of
  * silently sending a partial ordering.
+ *
+ * That same rule is why TASK-357 left this view UNPAGINATED even though
+ * `GET /api/admin/banners` now accepts `page`/`limit`: a page is a partial view,
+ * and a reorder computed on a partial view is a partial ordering. TASK-357's
+ * contribution here is the toolbar and the refresh control.
  */
 
 import { useMemo, useState } from "react";
@@ -48,6 +53,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableToolbar,
   type SortableTreeRowRenderProps,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -107,7 +113,8 @@ function AdminBannerView() {
   const needle = search.trim().toLowerCase();
   const searchActive = needle.length > 0;
 
-  const { data, isLoading, isError } = useAdminBannerControllerFindAll();
+  const { data, isLoading, isFetching, isError, refetch } =
+    useAdminBannerControllerFindAll();
   const publish = useAdminBannerControllerPublish();
   const unpublish = useAdminBannerControllerUnpublish();
   const remove = useAdminBannerControllerDelete();
@@ -151,26 +158,6 @@ function AdminBannerView() {
     );
   };
 
-  if (isLoading) {
-    return <AdminBannerTableSkeleton />;
-  }
-
-  if (isError) {
-    return (
-      <p role="alert" className="text-sm text-destructive">
-        {dict.banners.loadError}
-      </p>
-    );
-  }
-
-  if (banners.length === 0) {
-    return (
-      <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-        {dict.banners.empty}
-      </div>
-    );
-  }
-
   const isMutating =
     publish.isPending || unpublish.isPending || remove.isPending;
 
@@ -181,16 +168,21 @@ function AdminBannerView() {
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder={dict.reorderList.searchPlaceholder}
-          aria-label={dict.reorderList.searchLabel}
-          className="max-w-xs"
-        />
-      </div>
+      <TableToolbar
+        className="mb-0"
+        onRefresh={() => void refetch()}
+        isRefreshing={isFetching}
+        search={
+          <Input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={dict.reorderList.searchPlaceholder}
+            aria-label={dict.reorderList.searchLabel}
+            className="max-w-xs"
+          />
+        }
+      />
 
       {searchActive && (
         <p className="text-sm text-muted-foreground">
@@ -205,7 +197,17 @@ function AdminBannerView() {
         {dict.reorderList.instructionsShort}
       </div>
 
-      {searchActive && !anyMatch ? (
+      {isLoading ? (
+        <AdminBannerTableSkeleton />
+      ) : isError ? (
+        <p role="alert" className="text-sm text-destructive">
+          {dict.banners.loadError}
+        </p>
+      ) : banners.length === 0 ? (
+        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
+          {dict.banners.empty}
+        </div>
+      ) : searchActive && !anyMatch ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
           {dict.reorderList.emptyMatch(search.trim())}
         </div>
