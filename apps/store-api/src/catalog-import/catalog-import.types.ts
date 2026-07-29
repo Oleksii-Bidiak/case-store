@@ -35,12 +35,6 @@ export interface ParsedProductRow {
   manufacturerCode: string | null;
   /** `Відео` — only sometimes an actual URL. */
   videoUrl: string | null;
-  /**
-   * `Фото` — the supplier's image URLs, recorded but never fetched (owner
-   * decision, 2026-07-29). A later staging-only job re-hosts them; keeping the
-   * list here means that job never has to re-parse the source file.
-   */
-  imageUrls: string[];
   /** `Марка пристрою` — device brand, or null for "Універсальний"/blank. */
   deviceBrandName: string | null;
   /** `Модель`, comma-separated in the source, split here. */

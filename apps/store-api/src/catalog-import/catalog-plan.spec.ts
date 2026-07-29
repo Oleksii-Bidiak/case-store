@@ -1,6 +1,6 @@
 import {
   buildImportPlan,
-  snapshotOf,
+  fingerprintOf,
   type CurrentProductSnapshot,
   type LedgerEntry,
 } from './catalog-plan';
@@ -20,7 +20,6 @@ function row(over: Partial<ParsedProductRow> = {}): ParsedProductRow {
     barcode: null,
     manufacturerCode: null,
     videoUrl: null,
-    imageUrls: [],
     deviceBrandName: 'Samsung',
     deviceModelNames: ['Samsung Galaxy A35'],
     attributes: { styl: 'Протиударні' },
@@ -60,7 +59,7 @@ function ledgerFor(parsed: ParsedProductRow, productId: string | null = 'p1'): L
   return {
     sourceSku: parsed.sourceSku,
     productId,
-    lastImported: snapshotOf(parsed, 'chehol-armor'),
+    lastImported: fingerprintOf(parsed, 'chehol-armor'),
   };
 }
 
@@ -68,6 +67,63 @@ const ledgerMap = (...entries: LedgerEntry[]) =>
   new Map(entries.map((entry) => [entry.sourceSku, entry]));
 const currentMap = (...products: CurrentProductSnapshot[]) =>
   new Map(products.map((p) => [p.id, p]));
+
+describe('fingerprintOf — the ledger keeps no supplier data', () => {
+  // The whole point of the ledger being hashes: the shop must not end up
+  // holding a second permanent copy of the supplier's catalogue.
+  it('stores no recognisable value from the row', () => {
+    const parsed = row({
+      name: 'Чохол Armor',
+      description: '<p>Дуже характерний опис</p>',
+      brandName: 'PRC',
+    });
+
+    const serialized = JSON.stringify(fingerprintOf(parsed, 'chehol-armor'));
+
+    for (const secret of ['Чохол Armor', 'характерний', 'PRC', '299', 'chehol-armor']) {
+      expect(serialized).not.toContain(secret);
+    }
+  });
+
+  it('records one short digest per diffable field', () => {
+    const fingerprints = fingerprintOf(row(), 'chehol-armor');
+
+    expect(Object.keys(fingerprints).sort()).toEqual([
+      'attributes',
+      'brandName',
+      'categoryName',
+      'description',
+      'design',
+      'deviceModels',
+      'name',
+      'price',
+      'sku',
+      'slug',
+    ]);
+    for (const digest of Object.values(fingerprints)) {
+      expect(digest).toMatch(/^[0-9a-f]{16}$/);
+    }
+  });
+
+  it('is stable for equal values and different for changed ones', () => {
+    const base = fingerprintOf(row(), 'chehol-armor');
+
+    expect(fingerprintOf(row(), 'chehol-armor').price).toBe(base.price);
+    // Whitespace and null/blank are not changes; a real edit is.
+    expect(fingerprintOf(row({ name: '  Чохол Armor  ' }), 'chehol-armor').name).toBe(base.name);
+    expect(fingerprintOf(row({ description: null }), 'chehol-armor').description).toBe(
+      fingerprintOf(row({ description: '   ' }), 'chehol-armor').description,
+    );
+    expect(fingerprintOf(row({ price: 349 }), 'chehol-armor').price).not.toBe(base.price);
+  });
+
+  it('ignores ordering inside the set-valued fields', () => {
+    const a = fingerprintOf(row({ deviceModelNames: ['iPhone 16', 'iPhone 17'] }), 's');
+    const b = fingerprintOf(row({ deviceModelNames: ['iPhone 17', 'iPhone 16'] }), 's');
+
+    expect(a.deviceModels).toBe(b.deviceModels);
+  });
+});
 
 describe('buildImportPlan — first import', () => {
   it('plans every unknown article as a create', () => {
@@ -202,7 +258,9 @@ describe('buildImportPlan — updates and conflicts', () => {
 
     const fields = plan.rows[0].changes.map((c) => c.field);
     expect(fields).toEqual(['attributes', 'deviceModels']);
-    expect(plan.rows[0].changes[0]).toMatchObject({ from: '1 знач.', to: '3 знач.' });
+    // Set-valued changes carry no 'from': the ledger keeps hashes, not values.
+    expect(plan.rows[0].changes[0]).toMatchObject({ to: '3 знач.' });
+    expect(plan.rows[0].changes[0].from).toBeUndefined();
   });
 
   it('ignores device-model ordering', () => {

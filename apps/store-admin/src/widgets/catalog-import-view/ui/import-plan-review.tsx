@@ -258,12 +258,19 @@ function UpdateRow({
             <span className="min-w-32 font-medium text-foreground">
               {change.label}
             </span>
-            <span className="text-muted-foreground line-through">
-              {change.from}
-            </span>
-            <span aria-hidden="true" className="text-muted-foreground">
-              →
-            </span>
+            {/* Set-valued changes arrive without a `from` — the ledger stores
+                hashes, not a copy of the supplier's data. Render just the new
+                value rather than an arrow out of nowhere. */}
+            {change.from !== undefined && (
+              <>
+                <span className="text-muted-foreground line-through">
+                  {change.from}
+                </span>
+                <span aria-hidden="true" className="text-muted-foreground">
+                  →
+                </span>
+              </>
+            )}
             <span className="text-foreground">{change.to}</span>
             {change.conflict && (
               <Badge variant="secondary" className="gap-1">

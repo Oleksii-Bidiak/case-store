@@ -16,7 +16,13 @@ export type RowAction = "create" | "update" | "unchanged" | "missing";
 export interface FieldChange {
   field: string;
   label: string;
-  from: string;
+  /**
+   * Current value. Absent for the set-valued fields (characteristics,
+   * compatibility) — the import ledger keeps only hashes of what it last wrote,
+   * not a copy of the supplier's data, so there is no "before" to show. The
+   * decision there is a yes/no anyway, not a line-by-line comparison.
+   */
+  from?: string;
   to: string;
   conflict: boolean;
 }

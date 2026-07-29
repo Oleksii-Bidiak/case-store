@@ -12,7 +12,7 @@ import { CatalogImportRepository } from './catalog-import.repository';
 import { parseXlsxCatalog } from './xlsx-catalog.parser';
 import {
   buildImportPlan,
-  snapshotOf,
+  fingerprintOf,
   type CatalogImportPlan,
   type ChangeField,
   type PlannedRow,
@@ -166,7 +166,35 @@ export class CatalogImportService {
     if (run.status !== CatalogImportStatus.PARSED) {
       throw new ConflictException('Скасувати можна лише запуск, який ще не застосовано.');
     }
-    return this.repository.updateRun(id, { status: CatalogImportStatus.CANCELLED });
+    const cancelled = await this.repository.updateRun(id, {
+      status: CatalogImportStatus.CANCELLED,
+    });
+    await this.discardWorkbook(run);
+    return cancelled;
+  }
+
+  /**
+   * Delete the uploaded workbook once a run can no longer need it.
+   *
+   * The file is the supplier's whole catalogue. It is kept only because
+   * APPLYING re-reads it for the values the plan deliberately does not copy, so
+   * the moment a run reaches a terminal state that reason is gone — and a shop
+   * that quietly accumulates its supplier's price list on disk, one copy per
+   * upload, is hoarding someone else's data for nothing.
+   *
+   * Best-effort: a run is not "less finished" because a file could not be
+   * removed, and the history row keeps the path for the record either way.
+   */
+  private async discardWorkbook(run: CatalogImportRun): Promise<void> {
+    try {
+      await this.storage.delete(run.storedPath);
+    } catch (error) {
+      this.logger.warn(
+        `Could not delete workbook ${run.storedPath}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   /**
@@ -194,6 +222,7 @@ export class CatalogImportService {
         status: CatalogImportStatus.APPLIED,
         appliedAt: new Date(),
       });
+      await this.discardWorkbook(run);
       return false;
     }
 
@@ -353,8 +382,7 @@ export class CatalogImportService {
     await this.repository.recordImported({
       sourceSku: source.sourceSku,
       productId,
-      lastImported: snapshotOf(source, planned.slug),
-      sourceImageUrls: source.imageUrls,
+      lastImported: fingerprintOf(source, planned.slug),
       lastSeenRunId: runId,
     });
   }
@@ -454,7 +482,11 @@ export class CatalogImportService {
 
   /** Record a run as failed, with the reason the operator will see. */
   async failRun(id: string, error: string): Promise<void> {
-    await this.repository.updateRun(id, { status: CatalogImportStatus.FAILED, error });
+    const run = await this.repository.updateRun(id, {
+      status: CatalogImportStatus.FAILED,
+      error,
+    });
+    await this.discardWorkbook(run);
   }
 
   findNextApplying(): Promise<CatalogImportRun | null> {

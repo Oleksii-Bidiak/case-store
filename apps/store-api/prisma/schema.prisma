@@ -1719,14 +1719,15 @@ model CatalogImportItem {
   productId String?  @unique @map("product_id")
   product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
-  /// The exact field values the importer last wrote — the diff base.
+  /// One HASH PER FIELD of what the importer last wrote — the diff base.
+  ///
+  /// Hashes, not values, because the comparison only ever asks "is this still
+  /// the same?" — never "what was it?". The review's `from` comes from the
+  /// products table and its `to` from the uploaded file, so nothing is lost.
+  /// Storing the values would mean this shop keeping a second, permanent copy
+  /// of the supplier's entire catalogue — every description, every price — to
+  /// answer a question a 16-character digest answers.
   lastImported Json @map("last_imported")
-
-  /// Supplier image URLs from the «Фото» column. RECORDED, NEVER FETCHED (owner
-  /// decision 2026-07-29): the bulk re-hosting job runs on the client's staging
-  /// server, which does not exist yet. Keeping them means that job will not have
-  /// to re-parse the source workbook.
-  sourceImageUrls String[] @map("source_image_urls")
 
   /// Set when a run stops finding this article in the file — the product is
   /// hidden, never deleted, so it comes straight back if the supplier restores it.

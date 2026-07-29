@@ -1,12 +1,12 @@
 export { CatalogImportModule } from './catalog-import.module';
 export { CatalogImportService, type ImportDecisions } from './catalog-import.service';
 export { parseXlsxCatalog, parseCatalogRows, type SheetRow } from './xlsx-catalog.parser';
-export { buildImportPlan, snapshotOf } from './catalog-plan';
+export { buildImportPlan, fingerprintOf } from './catalog-plan';
 export type {
   CatalogImportPlan,
   PlannedRow,
   FieldChange,
-  ImportedSnapshot,
+  ImportedFingerprint,
   CurrentProductSnapshot,
   LedgerEntry,
 } from './catalog-plan';

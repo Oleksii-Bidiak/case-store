@@ -78,7 +78,6 @@ describe('parseCatalogRows — sheet shape', () => {
       barcode: '2003000208399',
       deviceBrandName: 'Samsung',
       deviceModelNames: ['Samsung Galaxy A35'],
-      imageUrls: ['https://img/a.jpg', 'https://img/b.jpg'],
     });
     expect(result.issues).toHaveLength(0);
   });
@@ -232,9 +231,16 @@ describe('parseCatalogRows — attributes and devices', () => {
     expect(result.rows[0].deviceModelNames).toEqual([]);
   });
 
-  it('handles a row with no images without inventing an empty entry', () => {
-    const result = parse([separatorRow('Чохли'), productRow({ 0: null })]);
+  // The «Фото» column is recognised but never read (owner decision): the shop
+  // does not keep the supplier's image URLs. It must stay RECOGNISED, though —
+  // an unknown header becomes a characteristic column, and a wall of foreign
+  // URLs would end up on the storefront under «Характеристики».
+  it('recognises the photo column without turning it into a characteristic', () => {
+    const result = parse([separatorRow('Чохли'), productRow()]);
 
-    expect(result.rows[0].imageUrls).toEqual([]);
+    expect(result.attributeColumns.map((c) => c.label)).not.toContain('Фото');
+    expect(Object.values(result.rows[0].attributes)).not.toContain(
+      'https://img/a.jpg,https://img/b.jpg',
+    );
   });
 });

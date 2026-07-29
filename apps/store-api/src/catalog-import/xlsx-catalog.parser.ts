@@ -17,6 +17,11 @@ import {
  * here is treated as a product-characteristic column.
  */
 type FixedField =
+  // `Фото` is recognised but its value is never read (owner decision,
+  // 2026-07-29: the shop does not keep the supplier's image URLs). It must stay
+  // on this list all the same — an unrecognised header becomes a CHARACTERISTIC
+  // column, which would file a comma-separated wall of foreign URLs as a
+  // product spec, on the storefront, under «Характеристики».
   | 'imageUrls'
   | 'sourceSku'
   | 'barcode'
@@ -346,8 +351,6 @@ export function parseCatalogRows(rows: SheetRow[], filename: string): ParsedCata
       barcode: text(at(row, 'barcode')),
       manufacturerCode: text(at(row, 'manufacturerCode')),
       videoUrl: text(at(row, 'videoUrl')),
-      // Image URLs are comma-separated and never contain a comma themselves.
-      imageUrls: splitList(text(at(row, 'imageUrls')), /\s*,\s*/),
       deviceBrandName,
       // Device models are comma-separated too, e.g. "iPhone 16 Pro, iPhone 17".
       deviceModelNames: deviceBrandName
