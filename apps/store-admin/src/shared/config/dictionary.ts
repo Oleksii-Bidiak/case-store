@@ -549,6 +549,9 @@ export const dict = {
     loadOneError: "Не вдалося завантажити запис. Спробуйте ще раз.",
     brandsEmpty: "Брендів пристроїв ще немає. Створіть перший.",
     modelsEmpty: "Моделей пристроїв ще немає. Створіть першу.",
+    modelsSearchPlaceholder: "Пошук за назвою моделі…",
+    modelsSearchAria: "Пошук моделей пристроїв",
+    modelsEmptyMatch: (q: string) => `Немає моделей за запитом «${q}».`,
     colName: "Назва",
     colSlug: "Slug",
     colBrand: "Бренд",
@@ -783,6 +786,11 @@ export const dict = {
     add: "Додати сторінку",
     loadError: "Не вдалося завантажити сторінки. Спробуйте ще раз.",
     empty: "Сторінок ще немає. Створіть свою першу сторінку.",
+    // TASK-357: the table used to ask for `limit: 100` and show no page
+    // controls — page 101 simply did not exist for the operator.
+    searchPlaceholder: "Пошук за заголовком або slug…",
+    searchAria: "Пошук сторінок",
+    emptyMatch: (q: string) => `Немає сторінок за запитом «${q}».`,
     colTitle: "Заголовок",
     colSlug: "Slug",
     colStatus: "Статус",
@@ -864,6 +872,11 @@ export const dict = {
     manageCategories: "Категорії",
     loadError: "Не вдалося завантажити статті. Спробуйте ще раз.",
     empty: "Статей ще немає. Створіть свою першу статтю.",
+    // TASK-357: the table used to ask for `limit: 100` and show no page
+    // controls — article 101 simply did not exist for the operator.
+    searchPlaceholder: "Пошук за заголовком або описом…",
+    searchAria: "Пошук статей",
+    emptyMatch: (q: string) => `Немає статей за запитом «${q}».`,
     colTitle: "Заголовок",
     colCategory: "Категорія",
     colStatus: "Статус",
@@ -1357,6 +1370,9 @@ export const dict = {
     statusInactive: "Приховано",
     activate: "Показати",
     deactivate: "Приховати",
+    searchPlaceholder: "Пошук за текстом запитання…",
+    searchAria: "Пошук запитань",
+    emptyMatch: (q: string) => `Немає запитань за запитом «${q}».`,
     loadError: "Не вдалося завантажити запитання. Спробуйте ще раз.",
     loadOneError: "Не вдалося завантажити запитання. Спробуйте ще раз.",
     empty: "Запитань ще немає. Додайте перше запитання.",
@@ -1614,6 +1630,21 @@ export const dict = {
     statusInProgress: "В роботі",
     markInProgress: "Взяти в роботу",
     viewProfile: "Профіль клієнта",
+
+    // Bulk status change over the on-screen selection (TASK-354).
+    //
+    // Only three of the four statuses are offered. "Повернути в нові" is
+    // per-row only: it is an undo for one mis-click, and in bulk it would push
+    // conversations back into the unread badge that someone has already worked.
+    bulk: {
+      markInProgress: (count: number) => `В роботу (${count})`,
+      markRead: (count: number) => `Прочитано (${count})`,
+      markArchived: (count: number) => `В архів (${count})`,
+      selectRow: (name: string) => `Вибрати повідомлення від ${name}`,
+      announceSaving: (count: number) => `Оновлення ${count} повідомл.…`,
+      announceDone: (count: number) => `Оновлено повідомлень: ${count}`,
+      announceFailed: "Не вдалося виконати масову дію",
+    },
   },
 
   orderStatus: {
@@ -2050,6 +2081,9 @@ export const dict = {
     add: "Додати групу",
     loadError: "Не вдалося завантажити групи товарів. Спробуйте ще раз.",
     empty: "Груп товарів ще немає. Створіть свою першу групу.",
+    searchPlaceholder: "Пошук за назвою групи…",
+    searchAria: "Пошук груп товарів",
+    emptyMatch: (q: string) => `Немає груп за запитом «${q}».`,
     colName: "Назва",
     colAxes: "Осі",
     colPositions: "Позиції",
@@ -2266,6 +2300,9 @@ export const dict = {
     add: "Додати карусель",
     loadError: "Не вдалося завантажити каруселі. Спробуйте ще раз.",
     empty: "Каруселей ще немає. Створіть свою першу карусель.",
+    searchPlaceholder: "Пошук за заголовком…",
+    searchAria: "Пошук каруселей",
+    emptyMatch: (q: string) => `Немає каруселей за запитом «${q}».`,
     colTitle: "Заголовок",
     colSource: "Джерело",
     colPlacement: "Місце на сайті",
