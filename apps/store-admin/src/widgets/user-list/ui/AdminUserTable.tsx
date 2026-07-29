@@ -19,6 +19,7 @@ import {
   Badge,
   Button,
   Input,
+  LiveAnnouncer,
   Select,
   SelectContent,
   SelectItem,
@@ -31,6 +32,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableToolbar,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { AdminUserTableSkeleton } from "./AdminUserTableSkeleton";
@@ -68,6 +70,17 @@ function roleOf(user: UserEntity): string {
  * Search, role, status, and page state all live in the URL (`?search=`,
  * `?role=`, `?isActive=`, `?page=`) so the view is shareable and refresh-safe.
  * The search input is debounced before it touches the URL.
+ *
+ * The controls sit in the shared `TableToolbar` (TASK-356) so this table gains
+ * the manual refresh every admin list now has. No `staleTime` override here on
+ * purpose: the account list is not a queue two people work at once, so the
+ * panel-wide five minutes plus the explicit button is the right trade.
+ *
+ * Deliberately no checkbox column. Every bulk action one could offer on users —
+ * deactivate, delete, change role — is exactly the action that can lock the
+ * owner out of their own store, and the API guards those one id at a time (it
+ * refuses to strip the last working admin). A multi-select would invite the one
+ * mistake there is no undo for.
  */
 export function AdminUserTable() {
   const router = useRouter();
@@ -111,17 +124,18 @@ export function AdminUserTable() {
     updateParams({ search: trimmed || undefined, page: undefined });
   }, SEARCH_DEBOUNCE_MS);
 
-  const { data, isLoading, isFetching, isError } = useUserControllerFindAll({
-    page,
-    limit: PAGE_SIZE,
-    search: searchParam || undefined,
-    role: roleParam
-      ? (roleParam as (typeof UserEntityRole)[keyof typeof UserEntityRole])
-      : undefined,
-    isActive: isActiveParam ? isActiveParam === "true" : undefined,
-    sortBy,
-    sortOrder,
-  });
+  const { data, isLoading, isFetching, isError, refetch } =
+    useUserControllerFindAll({
+      page,
+      limit: PAGE_SIZE,
+      search: searchParam || undefined,
+      role: roleParam
+        ? (roleParam as (typeof UserEntityRole)[keyof typeof UserEntityRole])
+        : undefined,
+      isActive: isActiveParam ? isActiveParam === "true" : undefined,
+      sortBy,
+      sortOrder,
+    });
 
   const users = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
@@ -141,199 +155,215 @@ export function AdminUserTable() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          type="search"
-          placeholder={dict.users.searchPlaceholder}
-          value={searchInput}
-          onChange={(event) => {
-            setSearchInput(event.target.value);
-            debouncedSearch(event.target.value);
-          }}
-          className="w-64"
-          aria-label={dict.users.searchAria}
+    <LiveAnnouncer>
+      <div className="flex flex-col gap-4">
+        <TableToolbar
+          className="mb-0"
+          onRefresh={() => void refetch()}
+          isRefreshing={isFetching}
+          search={
+            <Input
+              type="search"
+              placeholder={dict.users.searchPlaceholder}
+              value={searchInput}
+              onChange={(event) => {
+                setSearchInput(event.target.value);
+                debouncedSearch(event.target.value);
+              }}
+              className="max-w-xs"
+              aria-label={dict.users.searchAria}
+            />
+          }
+          filters={
+            <>
+              <Select
+                value={roleParam || ALL_OPTION}
+                onValueChange={handleRoleChange}
+              >
+                <SelectTrigger
+                  className="w-40"
+                  aria-label={dict.users.filterRoleAria}
+                >
+                  <SelectValue placeholder={dict.users.allRoles} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_OPTION}>
+                    {dict.users.allRoles}
+                  </SelectItem>
+                  <SelectItem value={ROLE_VALUES.CUSTOMER}>
+                    {dict.users.roleCustomer}
+                  </SelectItem>
+                  {/* TASK-334: MANAGER is a real role the API returns and
+                      filters on, even though the generated `UserEntityRole`
+                      union still predates it. Without this option the owner
+                      could not list their own managers. */}
+                  <SelectItem value={ROLE_VALUES.MANAGER}>
+                    {dict.users.roleManager}
+                  </SelectItem>
+                  <SelectItem value={ROLE_VALUES.ADMIN}>
+                    {dict.users.roleAdmin}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={isActiveParam || ALL_OPTION}
+                onValueChange={handleStatusChange}
+              >
+                <SelectTrigger
+                  className="w-40"
+                  aria-label={dict.users.filterStatusAria}
+                >
+                  <SelectValue placeholder={dict.users.allStatuses} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_OPTION}>
+                    {dict.users.allStatuses}
+                  </SelectItem>
+                  <SelectItem value="true">{dict.common.active}</SelectItem>
+                  <SelectItem value="false">{dict.common.inactive}</SelectItem>
+                </SelectContent>
+              </Select>
+            </>
+          }
+          actions={
+            isOwner ? (
+              <Button type="button" onClick={() => setCreateOpen(true)}>
+                {dict.users.create}
+              </Button>
+            ) : null
+          }
         />
-        <Select
-          value={roleParam || ALL_OPTION}
-          onValueChange={handleRoleChange}
-        >
-          <SelectTrigger
-            className="w-40"
-            aria-label={dict.users.filterRoleAria}
-          >
-            <SelectValue placeholder={dict.users.allRoles} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_OPTION}>{dict.users.allRoles}</SelectItem>
-            <SelectItem value={ROLE_VALUES.CUSTOMER}>
-              {dict.users.roleCustomer}
-            </SelectItem>
-            {/* TASK-334: MANAGER is a real role the API returns and filters on,
-                even though the generated `UserEntityRole` union still predates
-                it. Without this option the owner could not list their own
-                managers. */}
-            <SelectItem value={ROLE_VALUES.MANAGER}>
-              {dict.users.roleManager}
-            </SelectItem>
-            <SelectItem value={ROLE_VALUES.ADMIN}>
-              {dict.users.roleAdmin}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={isActiveParam || ALL_OPTION}
-          onValueChange={handleStatusChange}
-        >
-          <SelectTrigger
-            className="w-40"
-            aria-label={dict.users.filterStatusAria}
-          >
-            <SelectValue placeholder={dict.users.allStatuses} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_OPTION}>{dict.users.allStatuses}</SelectItem>
-            <SelectItem value="true">{dict.common.active}</SelectItem>
-            <SelectItem value="false">{dict.common.inactive}</SelectItem>
-          </SelectContent>
-        </Select>
 
         {isOwner && (
-          <Button
-            type="button"
-            className="ml-auto"
-            onClick={() => setCreateOpen(true)}
-          >
-            {dict.users.create}
-          </Button>
+          <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
+        )}
+
+        {isLoading ? (
+          <AdminUserTableSkeleton />
+        ) : isError ? (
+          <p role="alert" className="text-sm text-destructive">
+            {dict.users.loadError}
+          </p>
+        ) : users.length === 0 ? (
+          <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
+            {dict.users.empty}
+          </div>
+        ) : (
+          <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
+            {isFetching && !isLoading && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60"
+              >
+                <Loader2 className="size-6 animate-spin text-primary" />
+              </div>
+            )}
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12" />
+                  <SortableColumnHeader
+                    field="email"
+                    label={dict.users.colEmail}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={onSort}
+                  />
+                  <TableHead hideOnMobile>{dict.users.colName}</TableHead>
+                  <TableHead>{dict.users.colRole}</TableHead>
+                  <TableHead>{dict.users.colStatus}</TableHead>
+                  <SortableColumnHeader
+                    field="createdAt"
+                    label={dict.users.colJoined}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={onSort}
+                    hideOnMobile
+                  />
+                  <TableHead className="text-right">
+                    {dict.common.actions}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {users.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell>
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-sm font-medium uppercase text-muted-foreground">
+                        {user.email.charAt(0)}
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-medium">{user.email}</TableCell>
+                    <TableCell hideOnMobile>{fullName(user)}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          roleOf(user) === ROLE_VALUES.ADMIN
+                            ? "default"
+                            : roleOf(user) === ROLE_VALUES.MANAGER
+                              ? "warning"
+                              : "secondary"
+                        }
+                      >
+                        {roleLabel(roleOf(user))}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={user.isActive ? "default" : "destructive"}
+                      >
+                        {user.isActive
+                          ? dict.common.active
+                          : dict.common.inactive}
+                      </Badge>
+                    </TableCell>
+                    <TableCell hideOnMobile className="text-muted-foreground">
+                      {dateFormatter.format(new Date(user.createdAt))}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/users/${user.id}`}>
+                          {dict.common.view}
+                        </Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {!isLoading && !isError && users.length > 0 && (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {dict.common.pageOf(page, totalPages)}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() =>
+                  updateParams({
+                    page: page - 1 <= 1 ? undefined : String(page - 1),
+                  })
+                }
+              >
+                {dict.common.previous}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                onClick={() => updateParams({ page: String(page + 1) })}
+              >
+                {dict.common.next}
+              </Button>
+            </div>
+          </div>
         )}
       </div>
-
-      {isOwner && (
-        <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
-      )}
-
-      {isLoading ? (
-        <AdminUserTableSkeleton />
-      ) : isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.users.loadError}
-        </p>
-      ) : users.length === 0 ? (
-        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {dict.users.empty}
-        </div>
-      ) : (
-        <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
-          {isFetching && !isLoading && (
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60"
-            >
-              <Loader2 className="size-6 animate-spin text-primary" />
-            </div>
-          )}
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12" />
-                <SortableColumnHeader
-                  field="email"
-                  label={dict.users.colEmail}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={onSort}
-                />
-                <TableHead hideOnMobile>{dict.users.colName}</TableHead>
-                <TableHead>{dict.users.colRole}</TableHead>
-                <TableHead>{dict.users.colStatus}</TableHead>
-                <SortableColumnHeader
-                  field="createdAt"
-                  label={dict.users.colJoined}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={onSort}
-                  hideOnMobile
-                />
-                <TableHead className="text-right">
-                  {dict.common.actions}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-sm font-medium uppercase text-muted-foreground">
-                      {user.email.charAt(0)}
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-medium">{user.email}</TableCell>
-                  <TableCell hideOnMobile>{fullName(user)}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        roleOf(user) === ROLE_VALUES.ADMIN
-                          ? "default"
-                          : roleOf(user) === ROLE_VALUES.MANAGER
-                            ? "warning"
-                            : "secondary"
-                      }
-                    >
-                      {roleLabel(roleOf(user))}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={user.isActive ? "default" : "destructive"}>
-                      {user.isActive
-                        ? dict.common.active
-                        : dict.common.inactive}
-                    </Badge>
-                  </TableCell>
-                  <TableCell hideOnMobile className="text-muted-foreground">
-                    {dateFormatter.format(new Date(user.createdAt))}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/users/${user.id}`}>{dict.common.view}</Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {!isLoading && !isError && users.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {dict.common.pageOf(page, totalPages)}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() =>
-                updateParams({
-                  page: page - 1 <= 1 ? undefined : String(page - 1),
-                })
-              }
-            >
-              {dict.common.previous}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: String(page + 1) })}
-            >
-              {dict.common.next}
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
+    </LiveAnnouncer>
   );
 }
