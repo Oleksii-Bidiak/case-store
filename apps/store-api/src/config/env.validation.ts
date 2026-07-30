@@ -210,6 +210,14 @@ export class EnvironmentVariables {
   @IsString()
   PUBLISHING_CRON?: string;
 
+  // Six fields, not five: the catalogue-import worker ticks on seconds
+  // (`*/10 * * * * *`), because an apply run of ~1300 rows is chunked and would
+  // otherwise take hours. A five-field value is still accepted here and fails
+  // later inside CronJob — declaring it at least keeps the name discoverable.
+  @IsOptional()
+  @IsString()
+  CATALOG_IMPORT_CRON?: string;
+
   // ─── Redis / Cache ──────────────────────────────────────────────────────────
   // All optional: when REDIS_HOST is absent the cache falls back to an in-memory
   // store, so the app boots and serves requests without a Redis dependency.

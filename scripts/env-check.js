@@ -1534,6 +1534,21 @@ const VARS = [
     howTo: "Cron-вираз із 5 полів.",
   },
   {
+    name: "CATALOG_IMPORT_CRON",
+    group: "tuning",
+    need: "optional",
+    compose: "none",
+    services: [],
+    buildArgs: [],
+    example: false,
+    validated: "optional",
+    code: "used",
+    effect:
+      "Дефолт — раз на 10 секунд: саме такий темп дає застосуванню імпорту на ~1300 рядків завершитися за хвилини, а не за години. Рідший інтервал сам по собі нічого не зламає, але прогрес-бар в адмінці почне виглядати зависним.",
+    howTo:
+      "Cron-вираз із **6** полів (перше — секунди), на відміну від решти кронів у цій таблиці; дефолт `*/10 * * * * *`.",
+  },
+  {
     name: "MAIL_OUTBOX_CRON",
     group: "tuning",
     need: "optional",
