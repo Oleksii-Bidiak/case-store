@@ -208,6 +208,16 @@ toolchain, and run the command above against `localhost`. Step-by-step commands 
 [`deploy/03b-test-deploy-no-domain.md`](deploy/03b-test-deploy-no-domain.md) §7 — written for the
 demo, but only the address and credentials change for staging.
 
+Two things that procedure will not do for you:
+
+- **The tunnel carries database rows only.** Seed imagery (§8) is written as files on the machine
+  running the seed, so those files stay on your laptop while the rows point at the server. Ship
+  them separately — `tar` + `scp` + `docker compose cp` into the `uploads_data` volume, then
+  `chown` them to the container's `nestjs` user. Commands: `03b` §7.5.
+- **`PUBLIC_BASE_URL` must be exported alongside the seed command**, set to the target's public
+  API origin. Under `NODE_ENV=production` the seed refuses to run without it (§8) rather than
+  bake `localhost` URLs into a remote database.
+
 > Port clash to expect: your own dev Postgres already holds `5432`. Either stop it, or forward to
 > a different local port — `ssh -N -L 55432:localhost:5432 …` with `…@localhost:55432/…` in
 > `DATABASE_URL`.
@@ -365,9 +375,10 @@ so a staging database can never be seeded with `localhost` URLs.
   test data outside the seed, or the upsert will overwrite your row.
 - **Imagery needs no network.** Seed images are rendered locally (§8), so an offline machine gets
   exactly the same pictures as a connected one. What they do need is a **writable `UPLOAD_DEST`**
-  and an API served from the `PUBLIC_BASE_URL` the seed logged — in Docker that means running the
-  seed via `docker compose exec` so the files land in the mounted `uploads_data` volume rather
-  than inside a throwaway container. Real product photos still go through the admin upload flow,
-  not the seed.
+  and an API served from the `PUBLIC_BASE_URL` the seed logged. Note where those two part company
+  on a remote target: the files are written on **whatever machine runs the seed**, while the URLs
+  in the database point at the server. Copying them across is a separate, manual step — see §6 and
+  [`deploy/03b-test-deploy-no-domain.md`](deploy/03b-test-deploy-no-domain.md) §7.5. Real product
+  photos still go through the admin upload flow, not the seed.
 - The seed assumes an empty or already-seeded DB. It does **not** delete unrelated rows you may
   have created manually — only seed-owned axes and images are replaced wholesale.

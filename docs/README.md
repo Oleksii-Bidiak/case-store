@@ -19,19 +19,20 @@
 Нумерована послідовність. **Читати по порядку** — номер це крок, а не розділ.
 Точка входу: **[deploy/00-start-here.md](deploy/00-start-here.md)**.
 
-| Файл                                                  | Про що                                                                   |
-| ----------------------------------------------------- | ------------------------------------------------------------------------ |
-| [00-start-here.md](deploy/00-start-here.md)           | маршрут, «де я зараз», словник                                           |
-| [01-accounts-access.md](deploy/01-accounts-access.md) | **хто чим володіє**, менеджер паролів, 2FA, ключі. **До першої покупки** |
-| [02-domain-dns.md](deploy/02-domain-dns.md)           | домен замовника, DNS, пошта (SPF/DKIM/DMARC)                             |
-| [03-server.md](deploy/03-server.md)                   | оренда й налаштування VPS, відновлення доступу                           |
-| [04-secrets-ci.md](deploy/04-secrets-ci.md)           | секрети GitHub, ручне затвердження прода, branch protection              |
-| [04a-env-matrix.md](deploy/04a-env-matrix.md)         | довідник змінних: що буде, якщо не задати, і звідки взяти значення       |
-| [05-first-deploy.md](deploy/05-first-deploy.md)       | перший деплой, як зрозуміти, що він пройшов                              |
-| [06-day-to-day.md](deploy/06-day-to-day.md)           | моніторинг, логи, playbook аварії, шпаргалка                             |
-| [07-rollback.md](deploy/07-rollback.md)               | відкат образу й поганої міграції                                         |
-| [08-backup-restore.md](deploy/08-backup-restore.md)   | бекапи, відновлення, навчальна тривога                                   |
-| [09-pre-launch.md](deploy/09-pre-launch.md)           | **чек-лист перед першим живим покупцем**                                 |
+| Файл                                                                | Про що                                                                                      |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| [00-start-here.md](deploy/00-start-here.md)                         | маршрут, «де я зараз», словник                                                              |
+| [01-accounts-access.md](deploy/01-accounts-access.md)               | **хто чим володіє**, менеджер паролів, 2FA, ключі. **До першої покупки**                    |
+| [02-domain-dns.md](deploy/02-domain-dns.md)                         | домен замовника, DNS, пошта (SPF/DKIM/DMARC)                                                |
+| [03-server.md](deploy/03-server.md)                                 | оренда й налаштування VPS, відновлення доступу                                              |
+| [03b-test-deploy-no-domain.md](deploy/03b-test-deploy-no-domain.md) | **убік від маршруту:** викидне демо на `nip.io`, коли домену ще немає, а показати треба вже |
+| [04-secrets-ci.md](deploy/04-secrets-ci.md)                         | секрети GitHub, ручне затвердження прода, branch protection                                 |
+| [04a-env-matrix.md](deploy/04a-env-matrix.md)                       | довідник змінних: що буде, якщо не задати, і звідки взяти значення                          |
+| [05-first-deploy.md](deploy/05-first-deploy.md)                     | перший деплой, як зрозуміти, що він пройшов                                                 |
+| [06-day-to-day.md](deploy/06-day-to-day.md)                         | моніторинг, логи, playbook аварії, шпаргалка                                                |
+| [07-rollback.md](deploy/07-rollback.md)                             | відкат образу й поганої міграції                                                            |
+| [08-backup-restore.md](deploy/08-backup-restore.md)                 | бекапи, відновлення, навчальна тривога                                                      |
+| [09-pre-launch.md](deploy/09-pre-launch.md)                         | **чек-лист перед першим живим покупцем**                                                    |
 
 ---
 
