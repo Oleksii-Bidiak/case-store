@@ -139,6 +139,35 @@ export class EnvironmentVariables {
   @IsString()
   UMAMI_ORIGIN?: string;
 
+  // ─── Umami read API for the admin traffic card (TASK-380) ─────────────────
+  // ALL optional and all-or-nothing: with any of the four missing the analytics
+  // endpoint reports `configured: false` and the admin card falls back to the
+  // plain link it showed before. Nothing here reaches the browser — that is the
+  // entire point of proxying Umami through our own API.
+  //
+  // UMAMI_API_URL: internal base URL of the Umami container (http://umami:3000
+  //   on the compose network — no reason to leave it and come back via Caddy).
+  // UMAMI_API_USERNAME / UMAMI_API_PASSWORD: a Umami account used only for
+  //   reading. Do NOT reuse the owner's dashboard login.
+  // UMAMI_WEBSITE_ID: the site's UUID in Umami — the same value the storefront
+  //   bakes into NEXT_PUBLIC_UMAMI_WEBSITE_ID.
+
+  @IsOptional()
+  @IsString()
+  UMAMI_API_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  UMAMI_API_USERNAME?: string;
+
+  @IsOptional()
+  @IsString()
+  UMAMI_API_PASSWORD?: string;
+
+  @IsOptional()
+  @IsString()
+  UMAMI_WEBSITE_ID?: string;
+
   // Rate limit for the locked-account owner notice (TASK-287): the minimum gap,
   // in hours, between two such emails to the same address no matter how often the
   // login is retried. Optional — defaults to 24h in AuthService.

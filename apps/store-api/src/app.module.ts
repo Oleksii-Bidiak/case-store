@@ -41,6 +41,7 @@ import { DiscountModule } from './discount';
 import { ReviewModule } from './review';
 import { DeliveryModule } from './delivery';
 import { SearchModule } from './search';
+import { AnalyticsModule } from './analytics';
 import { DashboardModule } from './dashboard';
 import { MailModule } from './mail';
 import { MailOutboxModule } from './mail-outbox';
@@ -210,6 +211,10 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Admin dashboard metrics
     DashboardModule,
+
+    // Storefront traffic from the self-hosted Umami, proxied so the analytics
+    // credential never reaches the admin's browser bundle (TASK-380)
+    AnalyticsModule,
 
     // Transactional email (global — provides MailService everywhere)
     MailModule,

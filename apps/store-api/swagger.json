@@ -10929,6 +10929,52 @@
         ]
       }
     },
+    "/api/admin/analytics/traffic": {
+      "get": {
+        "operationId": "getTrafficSummary",
+        "parameters": [
+          {
+            "name": "days",
+            "required": false,
+            "in": "query",
+            "description": "Window length in days (1–90)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 90,
+              "default": 7,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Traffic summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrafficSummaryEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — analytics access required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Storefront traffic summary (admin)",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
     "/api/csrf-token": {
       "get": {
         "operationId": "CsrfController_getToken",
@@ -11262,6 +11308,10 @@
     {
       "name": "FAQ",
       "description": "Global FAQ list — public read and admin management"
+    },
+    {
+      "name": "Analytics",
+      "description": "Storefront traffic for the admin dashboard (proxied from Umami)"
     }
   ],
   "servers": [],
@@ -21528,6 +21578,82 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/NeedsActionDto"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "TrafficSummaryEntity": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "description": "Analytics credentials are present on the server"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "The analytics service answered this request"
+          },
+          "rangeDays": {
+            "type": "number",
+            "description": "Length of the reported window, in days",
+            "example": 7
+          },
+          "pageviews": {
+            "type": "number",
+            "description": "Page views in the window",
+            "nullable": true,
+            "example": 1240
+          },
+          "visitors": {
+            "type": "number",
+            "description": "Unique visitors in the window",
+            "nullable": true,
+            "example": 380
+          },
+          "visits": {
+            "type": "number",
+            "description": "Sessions in the window",
+            "nullable": true,
+            "example": 460
+          },
+          "bounceRate": {
+            "type": "number",
+            "description": "Share of single-page sessions, 0…1",
+            "nullable": true,
+            "example": 0.42
+          },
+          "avgVisitSeconds": {
+            "type": "number",
+            "description": "Average session length in seconds",
+            "nullable": true,
+            "example": 96
+          },
+          "previousVisitors": {
+            "type": "number",
+            "description": "Visitors in the PREVIOUS window of equal length, for comparison",
+            "nullable": true,
+            "example": 351
+          }
+        },
+        "required": [
+          "configured",
+          "available",
+          "rangeDays",
+          "pageviews",
+          "visitors",
+          "visits",
+          "bounceRate",
+          "avgVisitSeconds",
+          "previousVisitors"
+        ]
+      },
+      "TrafficSummaryEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TrafficSummaryEntity"
           }
         },
         "required": [

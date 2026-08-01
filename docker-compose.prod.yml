@@ -243,6 +243,14 @@ services:
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
       UMAMI_ORIGIN: ${UMAMI_ORIGIN:-}
+      # Read-only Umami access for the admin traffic card (TASK-380). All four
+      # or none: partially set = the card reports "not configured" and links out,
+      # exactly as before. The internal address is used on purpose — no reason to
+      # exit the bridge network, terminate TLS at Caddy and come back in.
+      UMAMI_API_URL: ${UMAMI_API_URL:-http://umami:3000}
+      UMAMI_API_USERNAME: ${UMAMI_API_USERNAME:-}
+      UMAMI_API_PASSWORD: ${UMAMI_API_PASSWORD:-}
+      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # ─── ISR revalidation (TASK-187) ──────────────────────────────────────
       # After an admin publishes/edits content the API POSTs to the storefront's

@@ -59,6 +59,7 @@ async function exportSwagger(): Promise<void> {
     .addTag('Newsletter', 'Newsletter subscriptions — public opt-in and admin list/export')
     .addTag('SeoSettings', 'Global SEO settings singleton — public read and admin management')
     .addTag('FAQ', 'Global FAQ list — public read and admin management')
+    .addTag('Analytics', 'Storefront traffic for the admin dashboard (proxied from Umami)')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
