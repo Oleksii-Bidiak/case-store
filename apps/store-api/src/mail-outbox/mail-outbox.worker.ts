@@ -1,8 +1,9 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { PinoLogger } from 'nestjs-pino';
+import { schedulingEnabled, stopCronJob } from '../common/scheduling/scheduling.util';
 import { MailOutboxService } from './mail-outbox.service';
 
 /** Registered name of the cron job — used to look it up via SchedulerRegistry. */
@@ -21,7 +22,7 @@ const DEFAULT_CRON = '* * * * *';
  * scheduler.
  */
 @Injectable()
-export class MailOutboxWorker implements OnModuleInit {
+export class MailOutboxWorker implements OnModuleInit, OnModuleDestroy {
   private readonly cronExpression: string;
 
   constructor(
@@ -35,6 +36,7 @@ export class MailOutboxWorker implements OnModuleInit {
   }
 
   onModuleInit(): void {
+    if (!schedulingEnabled(this.config)) return;
     const job = new CronJob(this.cronExpression, () => {
       void this.tick();
     });
@@ -46,6 +48,11 @@ export class MailOutboxWorker implements OnModuleInit {
       { event: 'mailOutbox.scheduled', cron: this.cronExpression },
       `Mail outbox worker scheduled (${this.cronExpression})`,
     );
+  }
+
+  /** See {@link stopCronJob} — Nest does not close manually registered jobs. */
+  onModuleDestroy(): void {
+    stopCronJob(this.schedulerRegistry, DISPATCH_JOB_NAME);
   }
 
   /**

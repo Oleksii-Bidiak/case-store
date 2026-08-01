@@ -15,6 +15,19 @@
  * Overriding NODE_ENV here brings them back.
  */
 process.env.NODE_ENV = process.env.NODE_ENV ?? 'test';
+
+// No background cron jobs in e2e (TASK-381). The suites boot a REAL application
+// and replace PrismaService with a mock — but the workers are real and tick on a
+// schedule, the catalogue import every ten seconds. A tick landing mid-run calls
+// into a mock that has no `catalogImportRun` and throws
+// `Cannot read properties of undefined (reading 'findFirst')` inside whichever
+// test happened to be executing, failing a random unrelated suite while the next
+// run comes back green.
+//
+// Nothing is lost: every worker exposes `tick()` publicly precisely so its
+// behaviour is tested directly rather than by waiting for a timer.
+process.env.SCHEDULER_ENABLED = 'false';
+
 process.env.JWT_SECRET = 'test-access-secret-at-least-32-characters-long';
 process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-at-least-32-characters-long';
 process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://test:test@localhost:5432/test';

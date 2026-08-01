@@ -1,9 +1,10 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DiscoveryService } from '@nestjs/core';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { PinoLogger } from 'nestjs-pino';
+import { schedulingEnabled, stopCronJob } from '../common/scheduling/scheduling.util';
 import { PUBLISHABLE_REPOSITORY, PublishablePort } from './publishing.tokens';
 import { RevalidationNotifier } from './revalidation.notifier';
 
@@ -30,7 +31,7 @@ const DEFAULT_CRON = '* * * * *';
  * are caught and logged so one bad port never crashes the tick.
  */
 @Injectable()
-export class PublishingScheduler implements OnModuleInit {
+export class PublishingScheduler implements OnModuleInit, OnModuleDestroy {
   private readonly cronExpression: string;
 
   constructor(
@@ -45,6 +46,7 @@ export class PublishingScheduler implements OnModuleInit {
   }
 
   onModuleInit(): void {
+    if (!schedulingEnabled(this.config)) return;
     const job = new CronJob(this.cronExpression, () => {
       void this.tick();
     });
@@ -60,6 +62,11 @@ export class PublishingScheduler implements OnModuleInit {
       },
       `Publishing scheduler started (${this.cronExpression})`,
     );
+  }
+
+  /** See {@link stopCronJob} — Nest does not close manually registered jobs. */
+  onModuleDestroy(): void {
+    stopCronJob(this.schedulerRegistry, PUBLISH_JOB_NAME);
   }
 
   /**

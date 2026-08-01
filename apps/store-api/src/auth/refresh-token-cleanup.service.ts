@@ -1,8 +1,9 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { PinoLogger } from 'nestjs-pino';
+import { schedulingEnabled, stopCronJob } from '../common/scheduling/scheduling.util';
 import { AuthRepository } from './auth.repository';
 
 /** Registered name of the cron job — used to look it up via SchedulerRegistry. */
@@ -22,7 +23,7 @@ const DEFAULT_CRON = '0 3 * * *';
  * runtime (decorator metadata is evaluated before `.env` is loaded).
  */
 @Injectable()
-export class RefreshTokenCleanupService implements OnModuleInit {
+export class RefreshTokenCleanupService implements OnModuleInit, OnModuleDestroy {
   private readonly retentionDays: number;
   private readonly cronExpression: string;
 
@@ -41,6 +42,7 @@ export class RefreshTokenCleanupService implements OnModuleInit {
   }
 
   onModuleInit(): void {
+    if (!schedulingEnabled(this.configService)) return;
     const job = new CronJob(this.cronExpression, () => {
       void this.purgeStaleTokens();
     });
@@ -56,6 +58,11 @@ export class RefreshTokenCleanupService implements OnModuleInit {
       },
       `Refresh-token cleanup scheduled (${this.cronExpression})`,
     );
+  }
+
+  /** See {@link stopCronJob} — Nest does not close manually registered jobs. */
+  onModuleDestroy(): void {
+    stopCronJob(this.schedulerRegistry, CLEANUP_JOB_NAME);
   }
 
   /**

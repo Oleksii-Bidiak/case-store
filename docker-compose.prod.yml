@@ -239,6 +239,10 @@ services:
       # How long the RBAC guard caches a role’s permissions — i.e. the longest a
       # revoked permission can still be honoured (TASK-334).
       RBAC_PERMISSION_CACHE_TTL_SECONDS: ${RBAC_PERMISSION_CACHE_TTL_SECONDS:-60}
+      # Background cron workers (TASK-381). Leave unset. Only a SECOND API
+      # container would set it to false, so exactly one process drains the mail
+      # outbox, reconciles payments and publishes scheduled content.
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}

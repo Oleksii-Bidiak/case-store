@@ -1,9 +1,10 @@
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { OrderStatus } from '@prisma/client';
 import { CronJob } from 'cron';
 import { PinoLogger } from 'nestjs-pino';
+import { schedulingEnabled, stopCronJob } from '../common/scheduling/scheduling.util';
 import { OrderService } from '../order';
 import { PAYMENT_CLOCK, type Clock } from './payment.clock';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './payment.port';
@@ -55,7 +56,7 @@ const BATCH_SIZE = 50;
  * mirroring {@link MailOutboxWorker}.
  */
 @Injectable()
-export class PaymentReconcileWorker implements OnModuleInit {
+export class PaymentReconcileWorker implements OnModuleInit, OnModuleDestroy {
   private readonly cronExpression: string;
   private readonly autoCancelEnabled: boolean;
 
@@ -78,6 +79,7 @@ export class PaymentReconcileWorker implements OnModuleInit {
   }
 
   onModuleInit(): void {
+    if (!schedulingEnabled(this.config)) return;
     const job = new CronJob(this.cronExpression, () => {
       void this.tick();
     });
@@ -93,6 +95,11 @@ export class PaymentReconcileWorker implements OnModuleInit {
       },
       `Payment reconcile worker scheduled (${this.cronExpression})`,
     );
+  }
+
+  /** See {@link stopCronJob} — Nest does not close manually registered jobs. */
+  onModuleDestroy(): void {
+    stopCronJob(this.schedulerRegistry, RECONCILE_JOB_NAME);
   }
 
   /**

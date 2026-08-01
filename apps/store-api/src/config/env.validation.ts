@@ -139,6 +139,16 @@ export class EnvironmentVariables {
   @IsString()
   UMAMI_ORIGIN?: string;
 
+  // ─── Background schedulers (TASK-381) ────────────────────────────────────
+  // Optional; ON unless set to the exact string 'false'. Disables every cron
+  // worker in this process (mail outbox, payment reconcile, publishing,
+  // catalogue import, refresh-token cleanup). The e2e harness sets it so timers
+  // cannot fire into mocked providers mid-test; in production it allows a second
+  // API container that serves traffic without competing for the queues.
+  @IsOptional()
+  @IsString()
+  SCHEDULER_ENABLED?: string;
+
   // ─── Umami read API for the admin traffic card (TASK-380) ─────────────────
   // ALL optional and all-or-nothing: with any of the four missing the analytics
   // endpoint reports `configured: false` and the admin card falls back to the

@@ -1,7 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
+import { schedulingEnabled, stopCronJob } from '../common/scheduling/scheduling.util';
 import { CatalogImportService } from './catalog-import.service';
 
 /** Registered name of the cron job — used to look it up via SchedulerRegistry. */
@@ -26,7 +27,7 @@ const DEFAULT_SCHEDULE = '*/10 * * * * *';
  * API resumes a half-applied import exactly where it stopped.
  */
 @Injectable()
-export class CatalogImportWorker implements OnModuleInit {
+export class CatalogImportWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CatalogImportWorker.name);
   /** Guards against a slow chunk overlapping the next tick. */
   private running = false;
@@ -38,12 +39,18 @@ export class CatalogImportWorker implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
+    if (!schedulingEnabled(this.config)) return;
     const schedule = this.config.get<string>('CATALOG_IMPORT_CRON') ?? DEFAULT_SCHEDULE;
     const job = new CronJob(schedule, () => {
       void this.tick();
     });
     this.schedulerRegistry.addCronJob(CATALOG_IMPORT_CRON, job);
     job.start();
+  }
+
+  /** See {@link stopCronJob} — Nest does not close manually registered jobs. */
+  onModuleDestroy(): void {
+    stopCronJob(this.schedulerRegistry, CATALOG_IMPORT_CRON);
   }
 
   /** Apply one chunk of the oldest confirmed run, if there is one. */

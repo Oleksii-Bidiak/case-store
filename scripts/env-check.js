@@ -1176,6 +1176,21 @@ const VARS = [
     howTo: "Той самий origin, що й у NEXT_PUBLIC_UMAMI_SRC.",
   },
   {
+    name: "SCHEDULER_ENABLED",
+    group: "api",
+    need: "optional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    code: "used",
+    effect:
+      "Дефолт увімкнено. Рівно значення `false` вимикає ВСІ фонові завдання API: чергу листів, звірку платежів, публікацію за розкладом, імпорт каталогу, чистку токенів. Друкарська помилка нічого не вимикає — перевірка на точний рядок.",
+    howTo:
+      "Не задавати. Ставити `false` лише для ДРУГОГО контейнера API, щоб черги обслуговував рівно один процес.",
+  },
+  {
     name: "UMAMI_API_URL",
     group: "analytics",
     need: "optional",
@@ -2229,6 +2244,23 @@ const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\n/g, " ");
 
 function renderDocs() {
   const out = [];
+
+  // A variable whose `group` is not in GROUPS renders nowhere — it silently
+  // vanishes from the operator's matrix while --audit still reports "no drift",
+  // because the audit compares the SOURCES against VARS and never asks whether
+  // VARS reached the page. Found while adding SCHEDULER_ENABLED under a group
+  // name that did not exist (TASK-381). Fail loudly instead.
+  const known = new Set(GROUPS.map(([group]) => group));
+  const orphans = VARS.filter((v) => !known.has(v.group));
+  if (orphans.length) {
+    console.error(
+      `Unknown group(s) in VARS — these would be dropped from the docs:\n` +
+        orphans.map((v) => `  ${v.name} → "${v.group}"`).join("\n") +
+        `\nUse one of: ${[...known].join(", ")}`,
+    );
+    process.exit(1);
+  }
+
   for (const [group, title] of GROUPS) {
     const rows = VARS.filter((v) => v.group === group);
     if (!rows.length) continue;
