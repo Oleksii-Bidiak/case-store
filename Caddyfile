@@ -43,3 +43,24 @@ api.{$DOMAIN} {
 	encode zstd gzip
 	reverse_proxy store-api:{$PORT}
 }
+
+# ─── Umami analytics (analytics. subdomain) ─────────────────────────────────
+# WHY THIS BLOCK IS NOT OPTIONAL (TASK-378): the tracker is loaded by the
+# VISITOR'S BROWSER from NEXT_PUBLIC_UMAMI_SRC. With Umami reachable only on the
+# host's loopback port, that URL cannot exist, no script ever loads, and the
+# analytics stack collects exactly nothing — while every container reports
+# healthy. It looked like "the admin panel shows no statistics"; the truth was
+# that no statistics were ever recorded.
+#
+# Two hostnames must therefore agree: the A record for analytics.<domain> and
+# NEXT_PUBLIC_UMAMI_SRC (= https://analytics.<domain>/script.js), which is baked
+# into the storefront at BUILD time — see docs/deploy/05a-analytics.md.
+#
+# BEFORE pointing DNS here, change Umami's default admin/umami login. This block
+# publishes its dashboard as well as its tracker.
+analytics.{$DOMAIN} {
+	header X-Robots-Tag "noindex, nofollow, noarchive"
+
+	encode zstd gzip
+	reverse_proxy umami:3000
+}

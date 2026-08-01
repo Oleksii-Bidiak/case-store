@@ -29,6 +29,7 @@
 | [04-secrets-ci.md](deploy/04-secrets-ci.md)                         | секрети GitHub, ручне затвердження прода, branch protection                                 |
 | [04a-env-matrix.md](deploy/04a-env-matrix.md)                       | довідник змінних: що буде, якщо не задати, і звідки взяти значення                          |
 | [05-first-deploy.md](deploy/05-first-deploy.md)                     | перший деплой, як зрозуміти, що він пройшов                                                 |
+| [05a-analytics.md](deploy/05a-analytics.md)                         | увімкнути Umami: домен, сайт, ключі, перезбірка вітрини (без цього аналітики не існує)      |
 | [06-day-to-day.md](deploy/06-day-to-day.md)                         | моніторинг, логи, playbook аварії, шпаргалка                                                |
 | [07-rollback.md](deploy/07-rollback.md)                             | відкат образу й поганої міграції                                                            |
 | [08-backup-restore.md](deploy/08-backup-restore.md)                 | бекапи, відновлення, навчальна тривога                                                      |

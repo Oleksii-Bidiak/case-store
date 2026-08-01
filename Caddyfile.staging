@@ -66,3 +66,21 @@ api.{$DOMAIN} {
 	encode zstd gzip
 	reverse_proxy store-api:{$PORT}
 }
+
+# ─── Umami analytics (analytics. subdomain) ─────────────────────────────────
+# Mirrors the production block (TASK-378), with one difference that matters: the
+# TRACKER must stay outside basic auth. `/script.js` is fetched by the visitor's
+# browser and `/api/send` receives the events — behind a password both fail
+# silently, and staging would "have analytics" that records nothing, which is
+# exactly the failure this task exists to remove. The DASHBOARD stays protected,
+# so a staging Umami is no more public than the rest of the deployment.
+analytics.{$DOMAIN} {
+	@protected not path /script.js /api/send
+	basic_auth @protected {
+		staging {$STAGING_BASIC_AUTH}
+	}
+	header X-Robots-Tag "noindex, nofollow, noarchive"
+
+	encode zstd gzip
+	reverse_proxy umami:3000
+}

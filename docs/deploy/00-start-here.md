@@ -35,6 +35,7 @@
 | **3** | [03-server.md](03-server.md)                       | орендуєте й налаштовуєте два VPS                                           | після §1              |
 | **4** | [04-secrets-ci.md](04-secrets-ci.md)               | заповнюєте секрети GitHub, вмикаєте ручне затвердження                     |                       |
 | **5** | [05-first-deploy.md](05-first-deploy.md)           | перший деплой на staging                                                   |                       |
+| 5a    | [05a-analytics.md](05a-analytics.md)               | вмикаєте аналітику: домен для Umami, сайт, ключі, **перезбірка вітрини**   | після §5              |
 | 6     | [06-day-to-day.md](06-day-to-day.md)               | моніторинг, логи, playbook аварії                                          | далі щодня            |
 | 7     | [07-rollback.md](07-rollback.md)                   | деплой зламав прод                                                         | коли припече          |
 | 8     | [08-backup-restore.md](08-backup-restore.md)       | бекапи й відновлення                                                       | налаштувати ДО прода  |
