@@ -21,6 +21,7 @@ import {
   Mail,
   Phone,
   Search,
+  RefreshCw,
   HelpCircle,
   Map,
   KeyRound,
@@ -198,6 +199,15 @@ const bottomNavItems: readonly NavItem[] = [
     href: "/settings/seo",
     icon: Search,
     permission: PERM.settingsSeo,
+  },
+  // TASK-377 — the only way to repair a search that returns nothing. It had a
+  // permission and an endpoint but no entry here, so the runbook's "finish it
+  // from the admin panel" was not something anyone could do.
+  {
+    label: dict.nav.searchIndex,
+    href: "/settings/search",
+    icon: RefreshCw,
+    permission: PERM.settingsSearch,
   },
   {
     label: dict.nav.faq,

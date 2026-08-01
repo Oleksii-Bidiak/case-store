@@ -37,6 +37,12 @@ export * from "./generated/carousels/carousels";
 // TASK-334 / TASK-318 — the owner-only RBAC surfaces (permission matrix, log).
 export * from "./generated/permissions/permissions";
 export * from "./generated/audit/audit";
+// TASK-377 — search-index maintenance (reindex). Generated since the endpoint
+// existed, but exported by nothing, so the admin had no way to reach it.
+export * from "./generated/search/search";
+// TASK-380 — storefront traffic, proxied through our API so the analytics
+// credential never lands in this bundle.
+export * from "./generated/analytics/analytics";
 
 // Generated DTO / entity types
 export * from "./generated/models";

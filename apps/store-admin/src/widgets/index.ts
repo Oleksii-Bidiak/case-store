@@ -115,3 +115,5 @@ export { AdminReturnTable, AdminReturnTableSkeleton } from "./return-list";
 export { ReturnDetailView, ReturnDetailSkeleton } from "./return-detail";
 // Supplier-catalogue import (TASK-360)
 export { CatalogImportView } from "./catalog-import-view";
+// Search-index maintenance (TASK-377)
+export { SearchIndexView } from "./search-index-view";

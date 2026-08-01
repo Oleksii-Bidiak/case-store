@@ -33,6 +33,7 @@ export const dict = {
     contentMap: "Де що на сайті",
     siteContact: "Контакти",
     seoSettings: "SEO",
+    searchIndex: "Пошук",
     faq: "FAQ",
     // TASK-334 / TASK-318 — owner-only sections.
     permissions: "Права доступу",
@@ -165,6 +166,20 @@ export const dict = {
     trafficOpenLink: "Відкрити Umami",
     trafficNotConfigured: "Ще не підключено. Зверніться до розробника.",
     trafficOpenLinkAria: "Відкрити Umami у новій вкладці",
+    // TASK-380: the card now shows real numbers when the analytics proxy is
+    // configured. «Недоступно» is a deliberate third state — zeroes here would
+    // read as "the shop lost all its visitors".
+    trafficRange: "за 7 днів",
+    trafficVisitors: "Відвідувачі",
+    trafficPageviews: "Перегляди сторінок",
+    trafficBounceRate: "Пішли одразу",
+    trafficAvgVisit: "Середній візит",
+    trafficUnavailable:
+      "Дані аналітики зараз недоступні. Перевірте, чи працює Umami.",
+    trafficLoading: "Завантажуємо дані…",
+    trafficDeltaUp: (percent: number) => `+${percent}% до попередніх 7 днів`,
+    trafficDeltaDown: (percent: number) => `${percent}% до попередніх 7 днів`,
+    trafficSeconds: (seconds: number) => `${seconds} с`,
   },
 
   common: {
@@ -1398,6 +1413,28 @@ export const dict = {
       workingHoursCloseAfterOpen:
         "Час закриття має бути пізніше часу відкриття",
     },
+  },
+
+  // Search-index maintenance (TASK-377). Written for a non-technical operator:
+  // the word «індекс» never appears without an explanation of what it costs them
+  // when it is stale.
+  searchIndex: {
+    metaTitle: "Пошук — Адмін",
+    heading: "Пошук по магазину",
+    subheading:
+      "Пошук на сайті працює через окремий швидкий покажчик товарів. Зазвичай він оновлюється сам, але інколи його треба перебудувати вручну.",
+    whenHeading: "Коли це потрібно",
+    whenReasons: [
+      "Покупці не знаходять товар, який точно є в каталозі.",
+      "Щойно завантажили каталог постачальника або великий список товарів.",
+      "Магазин перенесли на інший сервер або базу відновили з резервної копії.",
+    ],
+    safetyNote:
+      "Перебудова безпечна: поки вона триває, пошук продовжує працювати на старих даних. Для великого каталогу це може зайняти до хвилини.",
+    button: "Перебудувати покажчик",
+    buttonPending: "Перебудовуємо…",
+    toastDone: (count: number) => `Покажчик оновлено: ${count} товарів`,
+    toastFailed: "Не вдалося перебудувати покажчик. Спробуйте ще раз.",
   },
 
   seoSettings: {

@@ -42,6 +42,7 @@ export const PERM = {
 
   settingsSeo: "settings:seo",
   settingsContacts: "settings:contacts",
+  settingsSearch: "settings:search",
 
   analyticsRead: "analytics:read",
 } as const;

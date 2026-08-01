@@ -15,6 +15,24 @@ export const handlers = [
     }),
   ),
 
+  // Storefront traffic (TASK-380) — "not configured" by default, which is the
+  // state of any deployment that has not wired up analytics yet.
+  http.get("*/api/admin/analytics/traffic", () =>
+    HttpResponse.json({
+      data: {
+        configured: false,
+        available: false,
+        rangeDays: 7,
+        pageviews: null,
+        visitors: null,
+        visits: null,
+        bounceRate: null,
+        avgVisitSeconds: null,
+        previousVisitors: null,
+      },
+    }),
+  ),
+
   // Needs-action counters (TASK-248, +pendingOver48h TASK-251) — all-clear by
   // default; override per-test.
   http.get("*/api/admin/dashboard/needs-action", () =>

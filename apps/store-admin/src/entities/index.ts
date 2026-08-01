@@ -15,3 +15,5 @@ export * from "./discount";
 export * from "./newsletter";
 export * from "./permission";
 export * from "./audit";
+export * from "./search";
+export * from "./analytics";
