@@ -28,6 +28,9 @@ function makeIndexMock(): jest.Mocked<MeiliIndexApi> {
     addDocuments: jest.fn().mockResolvedValue({ taskUid: 2 }),
     deleteDocument: jest.fn().mockResolvedValue({ taskUid: 3 }),
     deleteAllDocuments: jest.fn().mockResolvedValue({ taskUid: 4 }),
+    deleteDocuments: jest.fn().mockResolvedValue({ taskUid: 5 }),
+    getDocuments: jest.fn().mockResolvedValue({ results: [], total: 0 }),
+    waitForTask: jest.fn().mockResolvedValue({ status: 'succeeded' }),
     search: jest.fn().mockResolvedValue({ hits: [], estimatedTotalHits: 0 }),
   };
 }
@@ -104,9 +107,17 @@ describe('MeiliClient', () => {
 
     it('ensureIndex / indexDocuments / deleteDocument / clearDocuments resolve', async () => {
       await expect(client.ensureIndex(SETTINGS)).resolves.toBeUndefined();
-      await expect(client.indexDocuments([DOC])).resolves.toBeUndefined();
+      await expect(client.indexDocuments([DOC])).resolves.toBeNull();
       await expect(client.deleteDocument('p1')).resolves.toBeUndefined();
       await expect(client.clearDocuments()).resolves.toBeUndefined();
+    });
+
+    it('the reindex helpers report "unknown", never a false success', async () => {
+      await expect(client.deleteDocuments(['p1'])).resolves.toBeNull();
+      await expect(client.waitForTasks([1])).resolves.toEqual({ failedUids: [] });
+      // null, NOT an empty set: "could not check" must never be read as
+      // "index is empty", or the reindex prune would delete everything.
+      await expect(client.listDocumentIds()).resolves.toBeNull();
     });
   });
 
@@ -140,13 +151,67 @@ describe('MeiliClient', () => {
       expect(index.updateSettings).toHaveBeenCalledWith(SETTINGS);
     });
 
-    it('indexDocuments delegates addDocuments with the id primary key', async () => {
+    it('indexDocuments delegates addDocuments and returns the enqueued task uid', async () => {
       const index = makeIndexMock();
       const client = new MeiliClient(makeConfig({}), loggerMock, makeClientMock(index));
 
-      await client.indexDocuments([DOC]);
+      const uid = await client.indexDocuments([DOC]);
 
       expect(index.addDocuments).toHaveBeenCalledWith([DOC], { primaryKey: 'id' });
+      // The uid is what lets the caller distinguish "accepted into the queue"
+      // from "actually applied" (TASK-376).
+      expect(uid).toBe(2);
+    });
+
+    it('waitForTasks reports the uids that did not succeed', async () => {
+      const index = makeIndexMock();
+      index.waitForTask
+        .mockResolvedValueOnce({ status: 'succeeded' })
+        .mockResolvedValueOnce({ status: 'failed', error: { code: 'invalid_document' } });
+      const client = new MeiliClient(makeConfig({}), loggerMock, makeClientMock(index));
+
+      await expect(client.waitForTasks([7, 8])).resolves.toEqual({ failedUids: [8] });
+    });
+
+    it('waitForTasks counts an unverifiable task as failed', async () => {
+      const index = makeIndexMock();
+      index.waitForTask.mockRejectedValue(new Error('timeout'));
+      const client = new MeiliClient(makeConfig({}), loggerMock, makeClientMock(index));
+
+      await expect(client.waitForTasks([9])).resolves.toEqual({ failedUids: [9] });
+    });
+
+    it('listDocumentIds pages through the index', async () => {
+      const index = makeIndexMock();
+      index.getDocuments.mockResolvedValueOnce({ results: [{ id: 'a' }, { id: 'b' }], total: 2 });
+      const client = new MeiliClient(makeConfig({}), loggerMock, makeClientMock(index));
+
+      await expect(client.listDocumentIds()).resolves.toEqual(new Set(['a', 'b']));
+      expect(index.getDocuments).toHaveBeenCalledWith({
+        fields: ['id'],
+        limit: 1000,
+        offset: 0,
+      });
+    });
+
+    it('listDocumentIds returns null (not an empty set) when the read fails', async () => {
+      const index = makeIndexMock();
+      index.getDocuments.mockRejectedValue(new Error('ECONNREFUSED'));
+      const client = new MeiliClient(makeConfig({}), loggerMock, makeClientMock(index));
+
+      await expect(client.listDocumentIds()).resolves.toBeNull();
+    });
+
+    it('deleteDocuments delegates the id batch and is a no-op when empty', async () => {
+      const index = makeIndexMock();
+      const client = new MeiliClient(makeConfig({}), loggerMock, makeClientMock(index));
+
+      await expect(client.deleteDocuments(['p1', 'p2'])).resolves.toBe(5);
+      expect(index.deleteDocuments).toHaveBeenCalledWith(['p1', 'p2']);
+
+      index.deleteDocuments.mockClear();
+      await expect(client.deleteDocuments([])).resolves.toBeNull();
+      expect(index.deleteDocuments).not.toHaveBeenCalled();
     });
 
     it('indexDocuments is a no-op for an empty batch', async () => {
@@ -203,12 +268,12 @@ describe('MeiliClient', () => {
       await expect(client.health()).resolves.toBe(false);
     });
 
-    it('indexDocuments swallows an SDK error', async () => {
+    it('indexDocuments swallows an SDK error and reports no task', async () => {
       const index = makeIndexMock();
       index.addDocuments.mockRejectedValue(new Error('boom'));
       const client = new MeiliClient(makeConfig({}), loggerMock, makeClientMock(index));
 
-      await expect(client.indexDocuments([DOC])).resolves.toBeUndefined();
+      await expect(client.indexDocuments([DOC])).resolves.toBeNull();
     });
   });
 });

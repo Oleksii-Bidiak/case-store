@@ -119,28 +119,79 @@ export class SearchService implements OnModuleInit {
   }
 
   /**
-   * Full reindex: clear the index and re-add every active product in batches.
-   * Used on bootstrap and by the admin reindex endpoint for drift recovery.
-   * Returns the number of documents indexed.
+   * Full reindex: upsert every active product, then drop whatever is left in the
+   * index that the database no longer knows about. Used on bootstrap and by the
+   * admin reindex endpoint for drift recovery. Returns the number of documents
+   * Meilisearch CONFIRMED it applied.
+   *
+   * Deliberately no `clearDocuments()` first (TASK-376). Clearing and refilling
+   * are two independent best-effort calls, so a failure between them — a
+   * restart, a slow engine, a database hiccup — left the index empty until the
+   * next successful reindex. That turned a routine `restart store-api` into a
+   * way to BREAK a working search, which is the opposite of what a repair
+   * operation should be able to do. Upsert-then-prune never empties the index:
+   * a failure part-way through leaves the previous documents in place.
    */
   async reindexAll(): Promise<number> {
     if (!this.meili.isConfigured()) return 0;
     await this.ensureIndex();
-    await this.meili.clearDocuments();
 
+    const seenIds = new Set<string>();
+    const batches: { uid: number; count: number }[] = [];
     let skip = 0;
-    let indexed = 0;
     for (;;) {
       const { items } = await this.productRepository.findManyForIndex(skip, REINDEX_BATCH);
       if (items.length === 0) break;
       const docs = await Promise.all(items.map((item) => this.toDocument(item)));
-      await this.meili.indexDocuments(docs);
-      indexed += items.length;
+      for (const doc of docs) seenIds.add(doc.id);
+      const uid = await this.meili.indexDocuments(docs);
+      if (uid !== null) batches.push({ uid, count: docs.length });
       if (items.length < REINDEX_BATCH) break;
       skip += REINDEX_BATCH;
     }
-    this.logger.info({ indexed }, 'Meilisearch reindex complete');
+
+    // Count only what the engine actually accepted. An enqueued write that later
+    // fails used to be reported as a success, so the log said "reindex complete"
+    // over an empty index.
+    const { failedUids } = await this.meili.waitForTasks(batches.map((b) => b.uid));
+    const failed = new Set(failedUids);
+    const indexed = batches.filter((b) => !failed.has(b.uid)).reduce((sum, b) => sum + b.count, 0);
+
+    const pruned = await this.pruneStaleDocuments(seenIds);
+    this.logger.info(
+      { indexed, pruned, failedBatches: failedUids.length },
+      'Meilisearch reindex complete',
+    );
     return indexed;
+  }
+
+  /**
+   * Delete documents that survive in the index but no longer exist as active
+   * products. Returns how many were removed.
+   *
+   * Two guards, both of which exist so a bad read can never empty the index:
+   * `listDocumentIds()` returning `null` means "could not check" (not "index is
+   * empty"), and an empty `seenIds` means the database returned no indexable
+   * products at all — plausible on a brand-new install, but far more often a
+   * symptom, and deleting the entire index on that basis is not a repair.
+   */
+  private async pruneStaleDocuments(seenIds: Set<string>): Promise<number> {
+    const indexedIds = await this.meili.listDocumentIds();
+    if (indexedIds === null) return 0;
+    if (seenIds.size === 0) {
+      if (indexedIds.size > 0) {
+        this.logger.warn(
+          { indexedDocuments: indexedIds.size },
+          'Reindex found no indexable products; keeping existing documents rather than emptying the index',
+        );
+      }
+      return 0;
+    }
+    const stale = [...indexedIds].filter((id) => !seenIds.has(id));
+    if (stale.length === 0) return 0;
+    const uid = await this.meili.deleteDocuments(stale);
+    if (uid !== null) await this.meili.waitForTasks([uid]);
+    return stale.length;
   }
 
   /**
@@ -159,7 +210,13 @@ export class SearchService implements OnModuleInit {
         offset: (pageNum - 1) * pageSize,
         filter: ['isActive = true'],
       });
-      if (result) {
+      // An EMPTY hit list falls through to Postgres, exactly like an error
+      // (TASK-376). Zero hits is a perfectly valid Meilisearch response, so the
+      // old `if (result)` trusted a stale or still-empty index and answered
+      // "nothing found" over a full catalogue — the state a freshly seeded
+      // server is in, since seeding writes straight to Postgres. The cost is one
+      // extra query in the rare case where there genuinely is no match.
+      if (result && result.hits.length > 0) {
         const ids = result.hits.map((hit) => hit.id);
         const products = await this.productRepository.findByIdsForCards(ids);
         const byId = new Map(products.map((p) => [p.id, p]));
@@ -191,7 +248,9 @@ export class SearchService implements OnModuleInit {
         limit: SUGGEST_LIMIT,
         filter: ['isActive = true'],
       });
-      if (result) {
+      // Empty → fall through to the Postgres scan below, same as an error
+      // (TASK-376): an empty index must not silently mute autocomplete.
+      if (result && result.hits.length > 0) {
         // Re-hydrate the hit ids through the SAME active-category-gated read the
         // results page uses (findByIdsForCards filters category:{isActive:true}),
         // instead of trusting the raw index rows. De-indexing on category

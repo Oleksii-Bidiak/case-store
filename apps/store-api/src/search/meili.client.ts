@@ -9,6 +9,19 @@ export const PRODUCTS_INDEX = 'products';
 /** Meili status string that means the engine is up and reachable. */
 const HEALTH_AVAILABLE = 'available';
 
+/** Meili task status that means the write was actually applied. */
+const TASK_SUCCEEDED = 'succeeded';
+
+/**
+ * How long to wait for a single index write to leave the queue. Generous — a
+ * reindex batch on a small VPS is slow — but bounded, so a stuck engine cannot
+ * hang the admin's reindex request forever.
+ */
+const TASK_WAIT_TIMEOUT_MS = 30_000;
+
+/** Page size for reading document ids back out of the index. */
+const DOCUMENT_ID_PAGE = 1000;
+
 /**
  * A search document as stored in the `products` index. Holds enough to render a
  * result/suggestion card without a second DB hit (public fields only — no raw
@@ -82,15 +95,36 @@ export interface MeiliSearchResult<T> {
   estimatedTotalHits: number;
 }
 
+/** An index write accepted for processing — Meilisearch applies it asynchronously. */
+export interface EnqueuedWrite {
+  taskUid: number;
+}
+
+/** A task as reported by Meilisearch once it has left the queue. */
+export interface TaskStatus {
+  status: string;
+  error?: unknown;
+}
+
 /**
  * Minimal surface of the `meilisearch` SDK index this wrapper depends on. Kept
  * narrow so unit specs can inject a mock without a running engine.
  */
 export interface MeiliIndexApi {
   updateSettings(settings: IndexSettings): Promise<unknown>;
-  addDocuments(docs: ProductSearchDocument[], options?: { primaryKey?: string }): Promise<unknown>;
+  addDocuments(
+    docs: ProductSearchDocument[],
+    options?: { primaryKey?: string },
+  ): Promise<EnqueuedWrite>;
   deleteDocument(id: string): Promise<unknown>;
+  deleteDocuments(ids: string[]): Promise<EnqueuedWrite>;
   deleteAllDocuments(): Promise<unknown>;
+  getDocuments(params: {
+    fields: string[];
+    limit: number;
+    offset: number;
+  }): Promise<{ results: Array<{ id: string }>; total?: number }>;
+  waitForTask(taskUid: number, options?: { timeOutMs?: number }): Promise<TaskStatus>;
   search<T = ProductSearchDocument>(
     query: string,
     options?: MeiliSearchOptions,
@@ -181,13 +215,81 @@ export class MeiliClient {
     }
   }
 
-  /** Upsert documents into the products index (best-effort). */
-  async indexDocuments(docs: ProductSearchDocument[]): Promise<void> {
-    if (!this.client || docs.length === 0) return;
+  /**
+   * Upsert documents into the products index (best-effort).
+   *
+   * Returns the id of the ENQUEUED task, or `null` when nothing was sent or the
+   * call failed. Meilisearch applies writes asynchronously, so a resolved
+   * promise only means "accepted into the queue" — pass the uid to
+   * {@link waitForTasks} before reporting the write as done. Without that, a
+   * reindex can log a healthy document count while the engine rejects every
+   * batch.
+   */
+  async indexDocuments(docs: ProductSearchDocument[]): Promise<number | null> {
+    if (!this.client || docs.length === 0) return null;
     try {
-      await this.client.index(PRODUCTS_INDEX).addDocuments(docs, { primaryKey: 'id' });
+      const task = await this.client.index(PRODUCTS_INDEX).addDocuments(docs, { primaryKey: 'id' });
+      return task?.taskUid ?? null;
     } catch (err) {
       this.logger.warn({ err, count: docs.length }, 'Meilisearch addDocuments failed');
+      return null;
+    }
+  }
+
+  /**
+   * Wait for enqueued index writes to actually finish. Returns the uids that did
+   * NOT reach `succeeded` — including ones we could not check, because an
+   * unverified write is not a successful write.
+   */
+  async waitForTasks(taskUids: number[]): Promise<{ failedUids: number[] }> {
+    if (!this.client || taskUids.length === 0) return { failedUids: [] };
+    const index = this.client.index(PRODUCTS_INDEX);
+    const failedUids: number[] = [];
+    for (const taskUid of taskUids) {
+      try {
+        const task = await index.waitForTask(taskUid, { timeOutMs: TASK_WAIT_TIMEOUT_MS });
+        if (task?.status !== TASK_SUCCEEDED) {
+          failedUids.push(taskUid);
+          this.logger.warn(
+            { taskUid, status: task?.status, err: task?.error },
+            'Meili task failed',
+          );
+        }
+      } catch (err) {
+        failedUids.push(taskUid);
+        this.logger.warn({ err, taskUid }, 'Meilisearch waitForTask failed');
+      }
+    }
+    return { failedUids };
+  }
+
+  /**
+   * Every document id currently in the index, or `null` when unconfigured or the
+   * read failed. `null` means "unknown" and callers must treat it as such — a
+   * failed listing that looked like an empty one would make the reindex prune
+   * delete the whole index.
+   */
+  async listDocumentIds(): Promise<Set<string> | null> {
+    if (!this.client) return null;
+    const index = this.client.index(PRODUCTS_INDEX);
+    const ids = new Set<string>();
+    let offset = 0;
+    try {
+      for (;;) {
+        const page = await index.getDocuments({
+          fields: ['id'],
+          limit: DOCUMENT_ID_PAGE,
+          offset,
+        });
+        const results = page?.results ?? [];
+        for (const doc of results) ids.add(doc.id);
+        if (results.length < DOCUMENT_ID_PAGE) break;
+        offset += DOCUMENT_ID_PAGE;
+      }
+      return ids;
+    } catch (err) {
+      this.logger.warn({ err }, 'Meilisearch getDocuments failed; skipping stale-document prune');
+      return null;
     }
   }
 
@@ -198,6 +300,18 @@ export class MeiliClient {
       await this.client.index(PRODUCTS_INDEX).deleteDocument(id);
     } catch (err) {
       this.logger.warn({ err, id }, 'Meilisearch deleteDocument failed');
+    }
+  }
+
+  /** Remove several documents by id (best-effort). Returns the task uid. */
+  async deleteDocuments(ids: string[]): Promise<number | null> {
+    if (!this.client || ids.length === 0) return null;
+    try {
+      const task = await this.client.index(PRODUCTS_INDEX).deleteDocuments(ids);
+      return task?.taskUid ?? null;
+    } catch (err) {
+      this.logger.warn({ err, count: ids.length }, 'Meilisearch deleteDocuments failed');
+      return null;
     }
   }
 

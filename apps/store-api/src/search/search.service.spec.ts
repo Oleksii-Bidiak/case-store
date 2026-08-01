@@ -82,7 +82,10 @@ describe('SearchService', () => {
       | 'ensureIndex'
       | 'indexDocuments'
       | 'deleteDocument'
+      | 'deleteDocuments'
       | 'clearDocuments'
+      | 'listDocumentIds'
+      | 'waitForTasks'
       | 'search'
     >
   >;
@@ -99,9 +102,14 @@ describe('SearchService', () => {
     meili = {
       isConfigured: jest.fn().mockReturnValue(true),
       ensureIndex: jest.fn().mockResolvedValue(undefined),
-      indexDocuments: jest.fn().mockResolvedValue(undefined),
+      // Resolves to the ENQUEUED task uid (TASK-376) — reindexAll waits on these
+      // before it reports how much it indexed.
+      indexDocuments: jest.fn().mockResolvedValue(10),
       deleteDocument: jest.fn().mockResolvedValue(undefined),
+      deleteDocuments: jest.fn().mockResolvedValue(11),
       clearDocuments: jest.fn().mockResolvedValue(undefined),
+      listDocumentIds: jest.fn().mockResolvedValue(new Set<string>()),
+      waitForTasks: jest.fn().mockResolvedValue({ failedUids: [] }),
       search: jest.fn(),
     };
     repo = {
@@ -264,23 +272,75 @@ describe('SearchService', () => {
   // ─── reindexAll ──────────────────────────────────────────────────────────────
 
   describe('reindexAll', () => {
-    it('clears the index then batch-adds active products', async () => {
+    it('batch-upserts active products WITHOUT emptying the index first (TASK-376)', async () => {
       repo.findManyForIndex
         .mockResolvedValueOnce({ items: [makeIndexSource()] as never })
         .mockResolvedValueOnce({ items: [] });
 
       const count = await service.reindexAll();
 
-      expect(meili.clearDocuments).toHaveBeenCalledTimes(1);
+      // The old implementation cleared first, so any failure after that point
+      // left an empty index — i.e. a restart could break a working search.
+      expect(meili.clearDocuments).not.toHaveBeenCalled();
       expect(meili.indexDocuments).toHaveBeenCalledTimes(1);
       expect(count).toBe(1);
+    });
+
+    it('prunes only the documents the database no longer has', async () => {
+      repo.findManyForIndex
+        .mockResolvedValueOnce({ items: [makeIndexSource({ id: 'product-1' })] as never })
+        .mockResolvedValueOnce({ items: [] });
+      meili.listDocumentIds.mockResolvedValue(new Set(['product-1', 'gone-1', 'gone-2']));
+
+      await service.reindexAll();
+
+      expect(meili.deleteDocuments).toHaveBeenCalledTimes(1);
+      const [staleIds] = meili.deleteDocuments.mock.calls[0];
+      expect([...staleIds].sort()).toEqual(['gone-1', 'gone-2']);
+    });
+
+    it('keeps existing documents when the database returns nothing indexable', async () => {
+      // An empty product read is far more often a symptom than a genuinely empty
+      // catalogue — wiping the index on that basis is not a repair.
+      repo.findManyForIndex.mockResolvedValue({ items: [] } as never);
+      meili.listDocumentIds.mockResolvedValue(new Set(['product-1']));
+
+      const count = await service.reindexAll();
+
+      expect(meili.deleteDocuments).not.toHaveBeenCalled();
+      expect(count).toBe(0);
+    });
+
+    it('skips the prune when the index listing is unavailable', async () => {
+      repo.findManyForIndex
+        .mockResolvedValueOnce({ items: [makeIndexSource()] as never })
+        .mockResolvedValueOnce({ items: [] });
+      // null = "could not check", which must never be read as "index is empty".
+      meili.listDocumentIds.mockResolvedValue(null);
+
+      await service.reindexAll();
+
+      expect(meili.deleteDocuments).not.toHaveBeenCalled();
+    });
+
+    it('counts only the batches Meilisearch confirmed it applied', async () => {
+      repo.findManyForIndex
+        .mockResolvedValueOnce({ items: [makeIndexSource()] as never })
+        .mockResolvedValueOnce({ items: [] });
+      meili.indexDocuments.mockResolvedValue(42);
+      meili.waitForTasks.mockResolvedValue({ failedUids: [42] });
+
+      const count = await service.reindexAll();
+
+      // Enqueued ≠ applied: the old code reported success for a rejected write.
+      expect(count).toBe(0);
     });
 
     it('returns 0 without touching Meili when unconfigured', async () => {
       meili.isConfigured.mockReturnValue(false);
       const count = await service.reindexAll();
       expect(count).toBe(0);
-      expect(meili.clearDocuments).not.toHaveBeenCalled();
+      expect(meili.indexDocuments).not.toHaveBeenCalled();
     });
   });
 
@@ -330,6 +390,22 @@ describe('SearchService', () => {
       );
       expect(result.data).toHaveLength(1);
       expect(result.data[0]).toBeInstanceOf(PublicProductEntity);
+    });
+
+    it('falls back to Postgres when the index answers with zero hits (TASK-376)', async () => {
+      // The state a freshly deployed server is in: the engine is up and healthy,
+      // the index is empty because seeding wrote straight to Postgres. Trusting
+      // that answer showed "nothing found" over a full catalogue.
+      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      repo.findAll.mockResolvedValue({ products: [makeProduct()], total: 1 } as never);
+
+      const result = await service.search('case', 1, 20);
+
+      expect(repo.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ search: 'case', isActive: true, categoryActiveOnly: true }),
+      );
+      expect(result.data).toHaveLength(1);
+      expect(result.meta.total).toBe(1);
     });
 
     it('uses Postgres directly when the engine is unconfigured', async () => {
@@ -426,6 +502,16 @@ describe('SearchService', () => {
       expect(res[0]).toEqual(
         expect.objectContaining({ id: 'product-1', slug: 'iphone-15-case', price: '29.99' }),
       );
+    });
+
+    it('falls back to Postgres when the index answers with zero hits (TASK-376)', async () => {
+      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      repo.findAll.mockResolvedValue({ products: [makeProduct()], total: 1 } as never);
+
+      const res = await service.suggest('iphone');
+
+      expect(repo.findAll).toHaveBeenCalled();
+      expect(res.map((s) => s.id)).toEqual(['product-1']);
     });
   });
 });
