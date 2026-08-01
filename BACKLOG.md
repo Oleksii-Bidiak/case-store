@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-375**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-376**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -420,6 +420,8 @@
 
 | TASK-374 | [🟢 після запуску] `settings:delivery` — єдине право, що стереже справжній маршрут API (`AdminDeliveryController`) **без екрана в адмінці**: у `store-admin` ключ не згадується взагалі. Власник ставить галочку «Доставка» і вважає, що делегував налаштування, а делегувати нічого — сторінки немає. Або намалювати екран, або прибрати право з каталогу, як уже зробили зі `stock:write`: галочка, яка нічого не дає, гірша за відсутню (див. коментар у `permissions-without-routes.ts`). Зверни увагу: механізм бейджа «не діє» існує, але його множина порожня, тож цей розрив він **не** ловить (E-30). Виявлено звіркою `user-stories.md` із кодом (TASK-369) | ⬜ | — |
 
+| TASK-375 | [🔴 запуск] `/api/docs-json` віддавав повну OpenAPI-спеку **в кожному середовищі, крім development** (`main.ts`, гілка `else`): інтерактивний Swagger UI у проді закритий, а сира спека — ні, тож анонімний запит отримував карту всіх 175 маршрутів, зокрема адмінських, разом зі схемами DTO. Привід був легітимний і **встиг зникнути двічі**: спеку тягнув білд фронтів на Vercel (`curl … /api/docs-json`, `docs/archive/deploy-vercel.md`), але той ранбук superseded самостійним хостингом, а з TASK-325 контракт лежить у git — Orval читає файл, а не мережу. Виявлено з питання власника, чому `swagger.json` потрапляє в git. **Закрито 2026-08-01:** увесь Swagger-блок узято під `nodeEnv === 'development'` — поза ним не монтується ні UI, ні JSON (заодно прод більше не будує документ на старті). Доведено живим прогоном, а не читанням коду: у прод-режимі `/api/docs` і `/api/docs-json` → **404** при `/health` і `/api/products` → 200; у dev обидва → 200. Автотестом не покривається — e2e піднімають застосунок через `Test.createTestingModule`, повз `main.ts`, тож гейт лишається ручним: SYS-17 у `qa-manual-full.md`/`qa-demo-server.md` і security-смоук у `manual-qa-pending.md` розширені на `docs-json` | ✅ | — |
+
 ## Зручність адмін-таблиць (епік TASK-292)
 
 > Розпарковано й **перецілено 2026-07-29**. Memo [157](docs/plans/157-admin-datatable-rescope.md)
@@ -461,6 +463,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-375**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-376**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.

@@ -8,7 +8,6 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import type { Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { CsrfService } from './csrf';
 import { buildHelmetOptions } from './config/security.config';
@@ -92,12 +91,21 @@ async function bootstrap() {
     exclude: ['health'],
   });
 
-  // Swagger/OpenAPI documentation.
-  // The interactive Swagger UI stays development-only, but the raw OpenAPI JSON
-  // is exposed in EVERY environment at /api/docs-json — the storefront/admin
-  // Vercel builds fetch it to generate their typed API client (Orval), so it
-  // must be reachable on the deployed API (see docs/deploy/02-domain-dns.md).
-  {
+  // Swagger/OpenAPI documentation — DEVELOPMENT ONLY.
+  //
+  // Outside development nothing is mounted: no interactive UI, and no raw JSON
+  // either. The spec used to be served at /api/docs-json in every environment
+  // because the Vercel frontend builds fetched it at build time to run Orval.
+  // That reason is gone twice over: deploys are self-hosted (the Vercel runbook
+  // is superseded, see docs/deploy/00-start-here.md) and the contract is now
+  // committed at apps/store-api/swagger.json (TASK-325), so codegen reads the
+  // file. A deployed API has no reason to hand anonymous callers a complete map
+  // of its admin surface.
+  //
+  // The committed spec is produced out-of-band by src/export-swagger.ts
+  // (`npm run swagger:export -w apps/store-api`) — it boots AppModule without
+  // listening, so it does not depend on this block.
+  if (nodeEnv === 'development') {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Mobile Accessories Store API')
       .setDescription('B2C e-commerce platform for mobile accessories')
@@ -150,22 +158,14 @@ async function bootstrap() {
       .build();
 
     const document = SwaggerModule.createDocument(app, swaggerConfig);
-    if (nodeEnv === 'development') {
-      SwaggerModule.setup('api/docs', app, document, {
-        customSiteTitle: 'Mobile Accessories Store API',
-        swaggerOptions: {
-          persistAuthorization: true,
-          tagsSorter: 'alpha',
-          operationsSorter: 'alpha',
-        },
-      });
-    } else {
-      // Production/staging: expose ONLY the JSON spec (no interactive UI) so the
-      // Vercel frontend builds can fetch it for Orval codegen.
-      app.getHttpAdapter().get('/api/docs-json', (_req: Request, res: Response) => {
-        res.json(document);
-      });
-    }
+    SwaggerModule.setup('api/docs', app, document, {
+      customSiteTitle: 'Mobile Accessories Store API',
+      swaggerOptions: {
+        persistAuthorization: true,
+        tagsSorter: 'alpha',
+        operationsSorter: 'alpha',
+      },
+    });
   }
 
   await app.listen(port);
