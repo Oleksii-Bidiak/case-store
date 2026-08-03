@@ -115,6 +115,22 @@ const nextConfig: NextConfig = {
         pathname: "/**",
       })),
     ],
+    // How long an OPTIMIZED variant stays in the on-disk optimizer cache
+    // (`.next/cache/images`). Stated explicitly because the default moved from
+    // 60 seconds in Next 15 to FOUR HOURS in Next 16, and it silently governs a
+    // question operators actually ask: "I replaced the picture, why is the old
+    // one still there?"
+    //
+    // The effective TTL is `max(minimumCacheTTL, upstream Cache-Control)`, and
+    // store-api serves `/uploads/*` with `max-age=0`, so this value alone
+    // decides. It is safe to make it LONG rather than short, because uploads are
+    // content-addressed: `local-disk-storage.service.ts` names every stored file
+    // with a fresh UUID, so a re-upload is a NEW url that can never hit a stale
+    // entry. Only overwriting a file in place at the same URL — which the admin
+    // panel has no way to do — would be affected. One day keeps the CPU cost of
+    // re-encoding down on a 2-vCPU box, where a cold catalogue page is 40-60
+    // transforms (TASK-387).
+    minimumCacheTTL: 60 * 60 * 24,
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

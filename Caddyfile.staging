@@ -37,6 +37,13 @@
 	}
 	header X-Robots-Tag "noindex, nofollow, noarchive"
 
+	# Kept in sync with the production Caddyfile — optimized images are immutable
+	# by construction (the URL encodes source, width and quality). Staging carries
+	# it too so a load test here measures the same thing production does
+	# (TASK-387).
+	@nextImage path /_next/image*
+	header @nextImage Cache-Control "public, max-age=31536000, immutable"
+
 	encode zstd gzip
 	reverse_proxy store-client:3000
 }
@@ -62,6 +69,11 @@ api.{$DOMAIN} {
 		staging {$STAGING_BASIC_AUTH}
 	}
 	header X-Robots-Tag "noindex, nofollow, noarchive"
+
+	# Kept in sync with the production Caddyfile (TASK-387): uploads are
+	# content-addressed, so their bytes never change under a given URL.
+	@uploads path /uploads/*
+	header @uploads Cache-Control "public, max-age=31536000, immutable"
 
 	encode zstd gzip
 	reverse_proxy store-api:{$PORT}

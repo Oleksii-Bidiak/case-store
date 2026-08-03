@@ -11,6 +11,7 @@ import { ProductRepository } from './product.repository';
 import { ProductImageRepository } from './product-image.repository';
 import { CacheService } from '../cache';
 import { ImageProcessor, STORAGE_SERVICE } from '../storage';
+import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
 const PRODUCT_ID = '11111111-1111-1111-1111-111111111111';
 const SLUG = 'iphone-15-case';
@@ -44,6 +45,7 @@ describe('ProductImageService', () => {
   let storage: { save: jest.Mock; delete: jest.Mock };
   let imageProcessor: { process: jest.Mock; detectFormat: jest.Mock };
   let cache: { del: jest.Mock; delByPrefix: jest.Mock };
+  let revalidation: { revalidate: jest.Mock };
 
   beforeEach(async () => {
     productRepository = {
@@ -71,6 +73,9 @@ describe('ProductImageService', () => {
       del: jest.fn().mockResolvedValue(undefined),
       delByPrefix: jest.fn().mockResolvedValue(undefined),
     };
+    revalidation = {
+      revalidate: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -81,6 +86,7 @@ describe('ProductImageService', () => {
         { provide: ImageProcessor, useValue: imageProcessor },
         { provide: CacheService, useValue: cache },
         { provide: ConfigService, useValue: { get: () => 'http://localhost:3001' } },
+        { provide: RevalidationNotifier, useValue: revalidation },
       ],
     }).compile();
 
@@ -126,7 +132,17 @@ describe('ProductImageService', () => {
 
       expect(cache.del).toHaveBeenCalled();
       expect(cache.delByPrefix).toHaveBeenCalled();
+      // A new photo changes what the homepage carousels show, and that HTML is
+      // prerendered — evicting Redis alone leaves the old picture on the one page
+      // customers land on first (TASK-384).
+      expect(revalidation.revalidate).toHaveBeenCalledWith(CATALOGUE_REVALIDATE_TARGET);
       expect(result).toHaveLength(2);
+    });
+
+    it('completes the upload even when the storefront purge rejects', async () => {
+      revalidation.revalidate.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+
+      await expect(service.uploadImages(PRODUCT_ID, [makeFile()])).resolves.toHaveLength(1);
     });
 
     it('pre-optimizes raster uploads to WebP and persists the LQIP blurDataUrl', async () => {

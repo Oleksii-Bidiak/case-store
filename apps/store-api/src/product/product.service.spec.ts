@@ -24,6 +24,7 @@ import {
   PRODUCT_LIST_PREFIX,
 } from '../cache';
 import { ProductIndexer } from '../search/product-indexer';
+import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -136,6 +137,16 @@ const productIndexerMock = {
   remove: jest.fn().mockResolvedValue(undefined),
 };
 
+// ─── RevalidationNotifier mock (TASK-384 storefront purge) ───────────────────
+// Product writes must purge the storefront's prerendered homepage, not just the
+// Redis list cache: the homepage bakes carousel product lists (name, price,
+// image) into static HTML, so before this it kept serving the old numbers while
+// /products — rendered per request — was already correct.
+
+const revalidationMock = {
+  revalidate: jest.fn().mockResolvedValue(undefined),
+};
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('ProductService', () => {
@@ -151,6 +162,7 @@ describe('ProductService', () => {
     configServiceMock.get.mockReturnValue(300);
     productIndexerMock.index.mockResolvedValue(undefined);
     productIndexerMock.remove.mockResolvedValue(undefined);
+    revalidationMock.revalidate.mockResolvedValue(undefined);
     categoryRepositoryMock.findSubtreeIds.mockImplementation((id: string) => Promise.resolve([id]));
     brandRepositoryMock.findById.mockResolvedValue({
       id: 'brand-uuid-1',
@@ -188,6 +200,7 @@ describe('ProductService', () => {
           provide: AttributeDefinitionRepository,
           useValue: attributeDefinitionRepositoryMock,
         },
+        { provide: RevalidationNotifier, useValue: revalidationMock },
       ],
     }).compile();
 
@@ -1245,6 +1258,97 @@ describe('ProductService', () => {
       expect(cacheServiceMock.del).toHaveBeenCalledWith(
         productDetailSlugKey(mockInactiveProduct.slug),
       );
+    });
+  });
+
+  // ─── storefront revalidation (TASK-384) ──────────────────────────────────────
+  //
+  // Evicting Redis is only half of a product write. The storefront's HOMEPAGE is
+  // statically prerendered and bakes each carousel's resolved product list —
+  // name, price, image — into that HTML. Before this, the Redis half fired at
+  // all nine mutation sites and the storefront half at none, so an admin price
+  // change reached /products within seconds and the homepage kept the old number
+  // until its ISR timer happened to expire, 0–60 minutes later. That reads as
+  // "the feature does not work", which is exactly how it was reported.
+
+  describe('storefront revalidation', () => {
+    it.each([
+      [
+        'create',
+        async () => {
+          productRepositoryMock.findBySlug.mockResolvedValue(null);
+          productRepositoryMock.findBySku.mockResolvedValue(null);
+          productRepositoryMock.create.mockResolvedValue(mockProduct);
+          await service.create({
+            name: 'New Product',
+            slug: 'new-product',
+            price: 10,
+            categoryId: 'category-uuid-1',
+          });
+        },
+      ],
+      [
+        'update',
+        async () => {
+          productRepositoryMock.findById.mockResolvedValue(mockProduct);
+          productRepositoryMock.update.mockResolvedValue(mockProduct);
+          await service.update('product-uuid-1', { price: 999 });
+        },
+      ],
+      [
+        'deactivate',
+        async () => {
+          productRepositoryMock.findById.mockResolvedValue(mockProduct);
+          productRepositoryMock.deactivate.mockResolvedValue(mockInactiveProduct);
+          await service.deactivate('product-uuid-1');
+        },
+      ],
+      [
+        'delete',
+        async () => {
+          productRepositoryMock.findById.mockResolvedValue(mockProduct);
+          productRepositoryMock.softDelete.mockResolvedValue({ ...mockProduct, isActive: false });
+          await service.delete('product-uuid-1');
+        },
+      ],
+    ])('%s purges the storefront homepage', async (_label, run) => {
+      await run();
+
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(CATALOGUE_REVALIDATE_TARGET);
+    });
+
+    // The two halves are one obligation. If a future edit reintroduces a bare
+    // `delByPrefix(PRODUCT_LIST_PREFIX)` at a new mutation site, this fails.
+    it('purges Redis and the storefront the same number of times', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.update.mockResolvedValue(mockProduct);
+
+      await service.update('product-uuid-1', { price: 999 });
+
+      expect(revalidationMock.revalidate).toHaveBeenCalledTimes(
+        cacheServiceMock.delByPrefix.mock.calls.length,
+      );
+    });
+
+    // A storefront that is down, slow or unconfigured must never fail an admin
+    // write. The notifier swallows its own errors; this proves the service does
+    // not reintroduce the failure by awaiting it unguarded.
+    it('still completes the write when the storefront purge rejects', async () => {
+      revalidationMock.revalidate.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.update.mockResolvedValue(mockProduct);
+
+      await expect(service.update('product-uuid-1', { price: 999 })).resolves.toBeInstanceOf(
+        ProductEntity,
+      );
+    });
+
+    it('does not purge on a read', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [mockProduct], total: 1 });
+
+      await service.findAll({ page: 1, limit: 20 });
+
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
     });
   });
 

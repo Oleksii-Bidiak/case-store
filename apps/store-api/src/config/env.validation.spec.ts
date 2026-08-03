@@ -2,6 +2,17 @@ import 'reflect-metadata';
 import { validateEnv } from './env.validation';
 
 /**
+ * The ISR-revalidation pair became mandatory in production (TASK-383), so every
+ * fixture that expects a production config to VALIDATE has to carry it. Kept in
+ * one place: each describe below is about one variable, and repeating unrelated
+ * production requirements inline would bury what each test is actually asserting.
+ */
+const PROD_REVALIDATION = {
+  REVALIDATE_SECRET: 'r'.repeat(32),
+  STOREFRONT_REVALIDATE_URL: 'http://store-client:3000/api/revalidate',
+};
+
+/**
  * Guards TASK-048 acceptance: the Sentry env vars are ALL optional, so the API
  * must boot (validation must pass) with no SENTRY_* configured, and must accept
  * them when present.
@@ -103,6 +114,7 @@ describe('validateEnv — CSRF_SECRET is required in production', () => {
     expect(() =>
       validateEnv({
         ...base,
+        ...PROD_REVALIDATION,
         NODE_ENV: 'production',
         CSRF_SECRET: 'c'.repeat(32),
         CORS_ORIGINS: 'https://shop.example.com',
@@ -125,6 +137,7 @@ describe('validateEnv — CORS_ORIGINS must be a well-formed origin list', () =>
     JWT_REFRESH_SECRET: 'b'.repeat(32),
     CSRF_SECRET: 'c'.repeat(32),
     STORE_CLIENT_URL: 'https://shop.example.com',
+    ...PROD_REVALIDATION,
     NODE_ENV: 'production',
   };
 
@@ -193,6 +206,7 @@ describe('validateEnv — STORE_CLIENT_URL is required in production', () => {
     JWT_REFRESH_SECRET: 'b'.repeat(32),
     CSRF_SECRET: 'c'.repeat(32),
     CORS_ORIGINS: 'https://shop.example.com',
+    ...PROD_REVALIDATION,
   };
 
   it('boots in development without STORE_CLIENT_URL', () => {
@@ -241,5 +255,92 @@ describe('validateEnv — STORE_CLIENT_URL is required in production', () => {
         STORE_CLIENT_URL: 'https://shop.example.com/',
       }),
     ).toThrow(/STORE_CLIENT_URL/i);
+  });
+});
+
+/**
+ * REVALIDATE_SECRET / STOREFRONT_REVALIDATE_URL are how an admin edit reaches the
+ * storefront's ISR cache. Missing them does not break anything visibly: the stack
+ * boots, every container is healthy, and content just surfaces 0–60 minutes late
+ * when the ISR timer happens to expire. That is precisely how a demo server ran
+ * with revalidation dead while it read as "the feature does not work" (TASK-383).
+ *
+ * docker-compose.prod.yml has promised ">=32 chars, identical for store-api and
+ * store-client" in its error text since TASK-270 while nothing checked it, and
+ * the throwaway-demo runbook never listed the variable at all. Refusing to boot
+ * is the only signal this class of bug produces.
+ */
+describe('validateEnv — ISR revalidation is required in production', () => {
+  const base = {
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+    JWT_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+    CSRF_SECRET: 'c'.repeat(32),
+    CORS_ORIGINS: 'https://shop.example.com',
+    STORE_CLIENT_URL: 'https://shop.example.com',
+  };
+
+  it('boots in development with neither variable set', () => {
+    expect(() => validateEnv({ ...base, NODE_ENV: 'development' })).not.toThrow();
+  });
+
+  it('fails fast in production when REVALIDATE_SECRET is missing', () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        NODE_ENV: 'production',
+        STOREFRONT_REVALIDATE_URL: PROD_REVALIDATION.STOREFRONT_REVALIDATE_URL,
+      }),
+    ).toThrow(/REVALIDATE_SECRET/i);
+  });
+
+  it('fails fast in production when STOREFRONT_REVALIDATE_URL is missing', () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        NODE_ENV: 'production',
+        REVALIDATE_SECRET: PROD_REVALIDATION.REVALIDATE_SECRET,
+      }),
+    ).toThrow(/STOREFRONT_REVALIDATE_URL/i);
+  });
+
+  it('rejects a secret shorter than 32 characters', () => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        ...PROD_REVALIDATION,
+        NODE_ENV: 'production',
+        REVALIDATE_SECRET: 'short',
+      }),
+    ).toThrow(/REVALIDATE_SECRET/i);
+  });
+
+  it('accepts the compose defaults in production', () => {
+    const result = validateEnv({ ...base, ...PROD_REVALIDATION, NODE_ENV: 'production' });
+    expect(result.STOREFRONT_REVALIDATE_URL).toBe('http://store-client:3000/api/revalidate');
+  });
+
+  // A bare hostname or a path-only value reaches `fetch` and throws at the first
+  // admin write — long after the deploy that introduced it.
+  it.each([
+    ['a bare host', 'store-client:3000/api/revalidate'],
+    ['a path only', '/api/revalidate'],
+  ])('rejects %s as the storefront URL', (_label, value) => {
+    expect(() =>
+      validateEnv({
+        ...base,
+        ...PROD_REVALIDATION,
+        NODE_ENV: 'production',
+        STOREFRONT_REVALIDATE_URL: value,
+      }),
+    ).toThrow(/STOREFRONT_REVALIDATE_URL/i);
+  });
+
+  // Outside production both stay optional, but a value that IS set must be valid —
+  // otherwise a staging typo is only discovered on the production deploy.
+  it('rejects a too-short secret outside production too', () => {
+    expect(() =>
+      validateEnv({ ...base, NODE_ENV: 'development', REVALIDATE_SECRET: 'short' }),
+    ).toThrow(/REVALIDATE_SECRET/i);
   });
 });

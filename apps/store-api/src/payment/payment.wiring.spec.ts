@@ -14,6 +14,7 @@ import { PaymentService } from './payment.service';
 import { PaymentModule } from './payment.module';
 import { PermissionModule } from '../auth/permissions';
 import { AuditModule } from '../audit';
+import { PublishingModule } from '../publishing';
 
 /**
  * DI-wiring test (no DB), mirroring `publishing.wiring.spec.ts`.
@@ -70,6 +71,11 @@ describe('PaymentModule wiring', () => {
         // @Global() in the app; a test graph must still name them once.
         AuditModule,
         PermissionModule,
+        // Same rule, third instance (TASK-384): PublishingModule is @Global(),
+        // but the transitively imported ProductModule/CategoryModule now inject
+        // RevalidationNotifier to purge the storefront after a catalogue write,
+        // and a @Global() module still has to be named ONCE per graph.
+        PublishingModule,
         ScheduleModule.forRoot(),
         LoggerModule.forRoot({ pinoHttp: { enabled: false } }),
         InfraStubModule,

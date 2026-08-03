@@ -30,10 +30,11 @@
 | [04a-env-matrix.md](deploy/04a-env-matrix.md)                       | довідник змінних: що буде, якщо не задати, і звідки взяти значення                          |
 | [05-first-deploy.md](deploy/05-first-deploy.md)                     | перший деплой, як зрозуміти, що він пройшов                                                 |
 | [05a-analytics.md](deploy/05a-analytics.md)                         | увімкнути Umami: домен, сайт, ключі, перезбірка вітрини (без цього аналітики не існує)      |
-| [06-day-to-day.md](deploy/06-day-to-day.md)                         | моніторинг, логи, playbook аварії, шпаргалка                                                |
+| [06-day-to-day.md](deploy/06-day-to-day.md)                         | моніторинг, логи, playbook аварії (в т.ч. §5а «зберіг в адмінці — на сайті старе»)          |
 | [07-rollback.md](deploy/07-rollback.md)                             | відкат образу й поганої міграції                                                            |
 | [08-backup-restore.md](deploy/08-backup-restore.md)                 | бекапи, відновлення, навчальна тривога                                                      |
 | [09-pre-launch.md](deploy/09-pre-launch.md)                         | **чек-лист перед першим живим покупцем**                                                    |
+| [10-capacity.md](deploy/10-capacity.md)                             | **який сервер купувати**: навантажувальний стенд k6, формула, «що знецінює прогін»          |
 
 ---
 

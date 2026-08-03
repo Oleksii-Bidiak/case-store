@@ -168,6 +168,16 @@ COPY --from=build --chown=node:node /app/apps/store-client/.next/standalone ./
 COPY --from=build --chown=node:node /app/apps/store-client/.next/static ./apps/store-client/.next/static
 COPY --from=build --chown=node:node /app/apps/store-client/public ./apps/store-client/public
 
+# The next/image optimizer cache is mounted as a named volume in production
+# (TASK-387). Docker seeds a fresh named volume from whatever the IMAGE has at
+# that path — and creates it root-owned when the path does not exist. This
+# process runs as `node`, so without this line the first write fails with
+# EACCES: image optimization silently falls back to re-encoding every request
+# forever, on the exact code path the volume exists to make cheap. Creating the
+# directory here, owned correctly, is what makes the mount work.
+RUN mkdir -p apps/store-client/.next/cache/images \
+  && chown -R node:node apps/store-client/.next/cache
+
 USER node
 
 EXPOSE 3000

@@ -37,6 +37,7 @@ import {
   PRODUCT_LIST_PREFIX,
 } from '../cache';
 import { ProductIndexer } from '../search/product-indexer';
+import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
 /** Fallback TTL (seconds) when REDIS_CACHE_TTL_SECONDS is not configured. */
 const DEFAULT_CACHE_TTL_SECONDS = 300;
@@ -96,7 +97,9 @@ interface ProductDetailAdminResponse {
  * Cache invalidation obligation: ANY method that mutates product data MUST
  * evict the affected cache entries after the write, otherwise stale data is
  * served until the TTL expires. Use {@link ProductService.evictProductDetail}
- * for detail keys and `delByPrefix(PRODUCT_LIST_PREFIX)` for list pages.
+ * for detail keys and {@link ProductService.invalidateProductLists} for list
+ * pages — the latter also purges the storefront, and calling
+ * `delByPrefix(PRODUCT_LIST_PREFIX)` directly skips that half (TASK-384).
  */
 @Injectable()
 export class ProductService {
@@ -113,6 +116,7 @@ export class ProductService {
     private readonly deviceRepository: DeviceRepository,
     private readonly specRepository: ProductSpecRepository,
     private readonly attributeDefinitionRepository: AttributeDefinitionRepository,
+    private readonly revalidation: RevalidationNotifier,
   ) {
     this.cacheTtlSeconds =
       this.config.get<number>('REDIS_CACHE_TTL_SECONDS') ?? DEFAULT_CACHE_TTL_SECONDS;
@@ -460,7 +464,7 @@ export class ProductService {
     });
 
     // A new product may appear on any list page — bust every list cache entry.
-    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.invalidateProductLists();
     await this.syncSearchIndex(product);
 
     return ProductEntity.fromPrisma(product);
@@ -529,7 +533,7 @@ export class ProductService {
 
     // Evict list pages and both detail variants. The slug may have changed, so
     // evict the OLD slug captured above; if it changed, also evict the new one.
-    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.invalidateProductLists();
     await this.evictProductDetail(id, product.slug);
     if (input.slug !== undefined && input.slug !== product.slug) {
       await this.cache.del(productDetailSlugKey(input.slug));
@@ -552,7 +556,7 @@ export class ProductService {
 
     const deactivatedProduct = await this.productRepository.deactivate(id);
 
-    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.invalidateProductLists();
     await this.evictProductDetail(id, product.slug);
     await this.syncSearchIndex(deactivatedProduct);
 
@@ -572,7 +576,7 @@ export class ProductService {
 
     const activatedProduct = await this.productRepository.activate(id);
 
-    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.invalidateProductLists();
     await this.evictProductDetail(id, product.slug);
     await this.syncSearchIndex(activatedProduct);
 
@@ -605,7 +609,7 @@ export class ProductService {
       throw error;
     }
 
-    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.invalidateProductLists();
     for (const product of updated) {
       await this.evictProductDetail(product.id, product.slug);
       await this.syncSearchIndex(product);
@@ -636,7 +640,7 @@ export class ProductService {
     const deleted = await this.productRepository.softDelete(id, mangledSlug, mangledSku);
 
     // A removed product must disappear from every list page and its detail caches.
-    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.invalidateProductLists();
     await this.evictProductDetail(id, product.slug);
     await this.syncSearchIndex(deleted);
 
@@ -689,7 +693,7 @@ export class ProductService {
     await this.assertDeviceModelsExist(deviceModelIds);
     await this.deviceCompatRepository.setDeviceCompat(productId, deviceModelIds);
 
-    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.invalidateProductLists();
     await this.evictProductDetail(productId, product.slug);
     await this.syncSearchIndex(product);
 
@@ -720,7 +724,7 @@ export class ProductService {
 
     // Every affected position may change on any list page and its detail caches;
     // bust the list prefix once and re-index each position.
-    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.invalidateProductLists();
     for (const id of productIds) {
       await this.cache.del(productDetailIdKey(id));
       await this.syncSearchIndex({ id, isActive: true });
@@ -801,7 +805,7 @@ export class ProductService {
 
     await this.specRepository.setSpecs(productId, writes);
 
-    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.invalidateProductLists();
     await this.evictProductDetail(productId, product.slug);
 
     const specValues = await this.specRepository.getSpecs(productId);
@@ -845,6 +849,33 @@ export class ProductService {
       case AttributeType.TEXT:
       default:
         return { value: String(raw) };
+    }
+  }
+
+  /**
+   * Drop everything downstream of a product write: the Redis list cache in this
+   * process, and the storefront's prerendered homepage.
+   *
+   * The two halves live in ONE method on purpose. Until TASK-384 only the Redis
+   * half existed at all nine call sites, and the result was invisible in
+   * exactly the way that matters: `/products` and the PDP refreshed within
+   * seconds (they are rendered per request), while the homepage — whose
+   * carousels bake product name, price and image into prerendered HTML — kept
+   * the old numbers until its ISR timer expired. Two separate calls at nine
+   * sites is how the halves drift apart again; one call cannot.
+   *
+   * Best-effort on both sides: cache errors are swallowed inside CacheService,
+   * and the notifier already catches its own — the `catch` here is the same
+   * belt-and-braces guard {@link ProductService.syncSearchIndex} carries, so an
+   * unreachable storefront can never fail an admin write even if that contract
+   * changes.
+   */
+  private async invalidateProductLists(): Promise<void> {
+    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    try {
+      await this.revalidation.revalidate(CATALOGUE_REVALIDATE_TARGET);
+    } catch {
+      // Swallowed: purging the storefront is never allowed to fail the write.
     }
   }
 

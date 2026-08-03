@@ -203,7 +203,7 @@ openssl rand -hex 32
 > робить те саме.) Бонус hex-формату: лише символи `0-9a-f`, тож `POSTGRES_PASSWORD` не
 > доведеться URL-кодувати — а він підставляється в `postgresql://…`.
 
-Запустіть команду **окремо для кожного** із семи секретів нижче.
+Запустіть команду **окремо для кожного** із восьми секретів нижче.
 
 ### Що заповнити
 
@@ -233,11 +233,21 @@ JWT_SECRET=<згенеруйте, ≥32>
 JWT_REFRESH_SECRET=<інший, ≥32>
 CSRF_SECRET=<згенеруйте, ≥32>
 UMAMI_APP_SECRET=<згенеруйте, ≥32>
+REVALIDATE_SECRET=<згенеруйте, ≥32>
 
 # Для демо лишіть вимкненими
 MAIL_ENABLED=false
 STAGING_BASIC_AUTH=
 ```
+
+> 🚨 **`REVALIDATE_SECRET` — це той рядок, через який демо виглядає зламаним, а насправді
+> просто мовчить.** Це спільний секрет між API та вітриною: саме ним API просить вітрину
+> скинути кеш після кожної правки в адмінці. Розійдуться значення — вітрина відповість 401;
+> буде порожнім — API нічого не надішле. В обох випадках **усе виглядає справним**: контейнери
+> здорові, адмінка каже «збережено», логи чисті. Просто новий логотип чи банер зʼявляються на
+> сайті не одразу, а за випадкові 0–60 хвилин, коли перегенерується кеш ISR. Саме так цей
+> варіант і пропустили на першому демо — до TASK-383 змінної в цьому списку не було зовсім.
+> Тепер API **не стартує** без неї в проді, а обидві відмови пишуться в лог.
 
 > **`POSTGRES_USER=store` і `POSTGRES_DB=store` уже заповнені — не міняйте їх.** Інакше
 > `DATABASE_URL` із кроку 7.3 не зійдеться з базою, і сід не достукається.
@@ -256,12 +266,12 @@ STAGING_BASIC_AUTH=
 
 Три команди; жодна не друкує секретів.
 
-**1. Чи не лишилось незаповнених обов'язкових змінних.** Без будь-якої з цих 15 стек не
+**1. Чи не лишилось незаповнених обов'язкових змінних.** Без будь-якої з цих 16 стек не
 підніметься — у `docker-compose.prod.yml` вони оголошені як `${VAR:?…}`, а `:?` падає і на
 **порожньому** значенні, не лише на відсутньому:
 
 ```bash
-grep -nE '^(DOMAIN|POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_DB|REDIS_PASSWORD|MEILI_MASTER_KEY|UMAMI_APP_SECRET|JWT_SECRET|JWT_REFRESH_SECRET|CORS_ORIGINS|CSRF_SECRET|PUBLIC_BASE_URL|NEXT_PUBLIC_API_URL|NEXT_PUBLIC_APP_URL|NEXT_PUBLIC_ADMIN_URL)=$' /opt/case-store/.env.production
+grep -nE '^(DOMAIN|POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_DB|REDIS_PASSWORD|MEILI_MASTER_KEY|UMAMI_APP_SECRET|JWT_SECRET|JWT_REFRESH_SECRET|CORS_ORIGINS|CSRF_SECRET|REVALIDATE_SECRET|PUBLIC_BASE_URL|NEXT_PUBLIC_API_URL|NEXT_PUBLIC_APP_URL|NEXT_PUBLIC_ADMIN_URL)=$' /opt/case-store/.env.production
 ```
 
 `=$` означає «після `=` порожньо». **Порожній вивід — усе гаразд.** Що вивелось — те й зупинить

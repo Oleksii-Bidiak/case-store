@@ -19,6 +19,13 @@ import { SITE_URL } from "@/shared/config";
  *   accept unauthenticated purges).
  * - 401 on a missing / mismatched secret.
  *
+ * Both rejections are LOGGED (TASK-383). They used to be silent, and combined
+ * with the equally silent no-op branch in store-api's `RevalidationNotifier`
+ * that produced a system where revalidation was dead and nothing anywhere said
+ * so — an admin edit just surfaced 0–60 minutes later, when the ISR timer
+ * happened to expire. The log never contains the secret, only its length, which
+ * is enough to tell "unset" from "set to something else" without leaking it.
+ *
  * IndexNow (TASK-282, plan 144): after a valid request with ≥1 non-empty path,
  * the affected absolute URLs are pinged to IndexNow via `after()` — post-response
  * and non-blocking, so the admin write never waits on api.indexnow.org.
@@ -38,6 +45,11 @@ export async function POST(request: Request): Promise<NextResponse> {
     // Unconfigured: in production this must fail closed; in dev it is a no-op
     // signal that revalidation is simply not wired up.
     const status = process.env.NODE_ENV === "production" ? 503 : 200;
+    console.warn(
+      "[revalidate] REVALIDATE_SECRET is not set in the storefront container — " +
+        `rejecting the purge with ${status}. Admin edits will only surface when ` +
+        "the ISR timer expires.",
+    );
     return NextResponse.json(
       { error: "Revalidation is not configured", statusCode: status },
       { status },
@@ -46,6 +58,12 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   const provided = request.headers.get("x-revalidate-secret");
   if (!provided || provided !== secret) {
+    console.warn(
+      "[revalidate] rejected a purge: the x-revalidate-secret header " +
+        `${provided ? `did not match (received ${provided.length} chars, expected ${secret.length})` : "was missing"}. ` +
+        "store-api and store-client must read the SAME REVALIDATE_SECRET — note " +
+        "that `docker compose restart` does not re-read the env file, only `up -d` does.",
+    );
     return NextResponse.json(
       { error: "Unauthorized", statusCode: 401 },
       { status: 401 },

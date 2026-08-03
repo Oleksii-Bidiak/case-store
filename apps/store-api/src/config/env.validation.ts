@@ -116,18 +116,43 @@ export class EnvironmentVariables {
   })
   STORE_CLIENT_URL?: string;
 
-  // ─── ISR revalidation (TASK-187) ──────────────────────────────────────────
+  // ─── ISR revalidation (TASK-187, hardened in TASK-383) ────────────────────
   // The shared secret and the storefront endpoint RevalidationNotifier POSTs to
-  // after published content changes. Both optional: when either is absent the
-  // notifier is a silent no-op, which is what dev and CI want. In production
-  // both are set by docker-compose.prod.yml — and were not, until TASK-324,
-  // which is why on-demand revalidation was dead there.
-  @IsOptional()
-  @IsString()
+  // after published content changes. Outside production both stay optional —
+  // when either is absent the notifier degrades to a no-op, which is what dev
+  // and CI want.
+  //
+  // In production they are REQUIRED, and the secret must be >= 32 characters.
+  // That is not belt-and-braces: docker-compose.prod.yml has claimed ">=32
+  // chars, identical for store-api and store-client" in its error text since
+  // TASK-270 while nothing actually checked it, and `03b-test-deploy-no-domain`
+  // never listed the variable among the secrets to generate. The failure mode is
+  // the worst kind — the stack boots, every container reports healthy, and admin
+  // edits simply surface 0-60 minutes late, which reads as "the feature is
+  // broken" rather than "a variable is missing". Refusing to boot is the only
+  // signal this class of bug ever produces.
+  @ValidateIf(
+    (env: EnvironmentVariables) =>
+      env.NODE_ENV === Environment.Production || env.REVALIDATE_SECRET !== undefined,
+  )
+  @IsString({ message: 'REVALIDATE_SECRET is required in production' })
+  @MinLength(32, {
+    message:
+      'REVALIDATE_SECRET must be at least 32 characters and identical in ' +
+      'store-api and store-client',
+  })
   REVALIDATE_SECRET?: string;
 
-  @IsOptional()
-  @IsString()
+  @ValidateIf(
+    (env: EnvironmentVariables) =>
+      env.NODE_ENV === Environment.Production || env.STOREFRONT_REVALIDATE_URL !== undefined,
+  )
+  @IsString({ message: 'STOREFRONT_REVALIDATE_URL is required in production' })
+  @Matches(/^https?:\/\/\S+$/i, {
+    message:
+      'STOREFRONT_REVALIDATE_URL must be an absolute http(s) URL, e.g. ' +
+      '"http://store-client:3000/api/revalidate"',
+  })
   STOREFRONT_REVALIDATE_URL?: string;
 
   // ─── Umami CSP origin (TASK-261) ──────────────────────────────────────────

@@ -6,6 +6,7 @@ export {
   type PublishablePort,
   type RevalidateTarget,
 } from './publishing.tokens';
+export { CATALOGUE_REVALIDATE_TARGET } from './revalidate-targets';
 export {
   resolvePublishState,
   type PublishStateInput,
