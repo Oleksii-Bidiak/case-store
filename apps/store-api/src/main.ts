@@ -2,6 +2,7 @@
 // the SDK can patch Node + Nest internals. No-op when SENTRY_DSN is unset.
 import './instrument';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
@@ -11,16 +12,22 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { CsrfService } from './csrf';
 import { buildHelmetOptions } from './config/security.config';
+import { applyProxyTrust } from './config/trust-proxy';
 import { HttpExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
   });
 
   // Use Pino logger as the default logger
   app.useLogger(app.get(Logger));
+
+  // Trust exactly one reverse proxy (Caddy) so `req.ip` is the visitor and not
+  // the proxy container — otherwise the global rate limiter counts the entire
+  // shop as one client. Rationale and the `1`-not-`true` trap: trust-proxy.ts.
+  applyProxyTrust(app);
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT', 3001);

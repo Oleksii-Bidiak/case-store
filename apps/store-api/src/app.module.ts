@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { ScheduleModule } from '@nestjs/schedule';
 import { resolve } from 'node:path';
@@ -49,7 +49,7 @@ import { PublishingModule } from './publishing';
 import { RedisCacheModule } from './cache';
 import { CsrfModule } from './csrf';
 import { NewsletterModule } from './newsletter';
-import { buildThrottlerOptions } from './throttler';
+import { buildThrottlerOptions, ClientIpThrottlerGuard } from './throttler';
 import { HttpExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
 import { validateEnv } from './config/env.validation';
@@ -242,8 +242,11 @@ import { buildPinoHttpOptions } from './config/pino.config';
     // Register filter and interceptor as providers so they receive PinoLogger via DI
     HttpExceptionFilter,
     LoggingInterceptor,
-    // Register ThrottlerGuard globally so @Throttle() decorators work on all endpoints
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Register the throttler guard globally so @Throttle() decorators work on all
+    // endpoints. The subclass exists to pin WHICH address is counted — see
+    // ClientIpThrottlerGuard, and `app.set('trust proxy', 1)` in main.ts, without
+    // which every visitor behind Caddy shared a single bucket (TASK-386).
+    { provide: APP_GUARD, useClass: ClientIpThrottlerGuard },
     // Admin action log (TASK-318). Registered here rather than via
     // `app.useGlobalInterceptors` in main.ts so it is also active under
     // `Test.createTestingModule`, which never runs main.ts — an audit trail that
