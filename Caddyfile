@@ -21,6 +21,16 @@
 
 # ─── Storefront (root domain) ───────────────────────────────────────────────
 {$DOMAIN} {
+	# Optimized images are immutable by construction: the URL carries the source
+	# path, the width and the quality, so any change produces a DIFFERENT URL.
+	# Without this header the browser re-asks for every thumbnail on every page
+	# view, and each miss that reaches Next costs 100-400 ms of pinned CPU on a
+	# 2-vCPU box — a cold catalogue page is 40-60 such transforms. This is the
+	# single cheapest thing standing between the current box and the next one up
+	# (TASK-387).
+	@nextImage path /_next/image*
+	header @nextImage Cache-Control "public, max-age=31536000, immutable"
+
 	encode zstd gzip
 	reverse_proxy store-client:3000
 }
@@ -39,6 +49,16 @@ admin.{$DOMAIN} {
 # images at /uploads/* — all proxied through here on the app's configured PORT.
 api.{$DOMAIN} {
 	header X-Robots-Tag "noindex, nofollow"
+
+	# Uploaded files are content-addressed — every upload gets a fresh UUID
+	# filename (`local-disk-storage.service.ts`), so a URL's bytes never change
+	# and a replacement is simply a different URL. NestJS's ServeStatic answers
+	# with `max-age=0` + ETag, which makes every browser and the Next.js image
+	# optimizer re-validate on each request; those round trips are served by the
+	# same Node event loop that handles the JSON API. Overriding here keeps
+	# product photos off that loop entirely (TASK-387).
+	@uploads path /uploads/*
+	header @uploads Cache-Control "public, max-age=31536000, immutable"
 
 	encode zstd gzip
 	reverse_proxy store-api:{$PORT}

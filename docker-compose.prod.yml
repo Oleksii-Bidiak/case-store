@@ -368,6 +368,24 @@ services:
       # a rebuild. Build-time fetches are NOT covered — those would need a
       # Dockerfile ARG.
       SERVER_FETCH_TIMEOUT_MS: ${SERVER_FETCH_TIMEOUT_MS:-5000}
+    volumes:
+      # Persist the next/image optimizer cache across deploys (TASK-387).
+      #
+      # Every distinct (source, width, quality) combination is resized and
+      # re-encoded by THIS Node process, at 100-400 ms of pinned CPU per miss on
+      # a 2-vCPU box; a cold catalogue page is 40-60 of them. Without a volume
+      # that cache lives inside the container, so every `up -d` that recreates
+      # store-client threw it away and the first visitors after each deploy paid
+      # the whole bill again — on the machine, at the moment, least able to
+      # afford it.
+      #
+      # Safe to persist across image versions: entries are keyed by the request
+      # URL, uploads are content-addressed (a new upload is a new UUID filename,
+      # never a rewrite), and Next revalidates entries against
+      # `minimumCacheTTL`. Path matches the standalone layout — server.js runs
+      # from /app with the app nested under apps/store-client (see its
+      # Dockerfile), so distDir resolves there.
+      - next_image_cache:/app/apps/store-client/.next/cache/images
     ports:
       - "127.0.0.1:3000:3000"
     # Not health-gated: the storefront should still boot and degrade gracefully
@@ -479,6 +497,9 @@ volumes:
   redis_prod_data:
   meili_prod_data:
   uploads_data:
+  # Optimized image variants (TASK-387). Pure cache — deleting it costs CPU on
+  # the next few page views and nothing else, so it is NOT part of the backup.
+  next_image_cache:
   caddy_data:
   caddy_config:
 
