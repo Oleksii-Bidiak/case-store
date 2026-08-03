@@ -81,6 +81,36 @@ describe("bannerFormValuesToCreateDto", () => {
     expect(dto.scheduledAt).toBe(new Date("2026-08-01T09:00").toISOString());
   });
 
+  // Non-tautological companion to the test above, which computes its expectation
+  // with the same expression the implementation uses and so would survive any
+  // rewrite. This states the invariant an operator actually cares about: the
+  // wall-clock time they typed is the wall-clock time the banner goes live.
+  //
+  // Investigated under TASK-388 as a suspected cause of "I scheduled it and
+  // nothing happened": the round trip is CORRECT. A `datetime-local` value is
+  // interpreted in the browser's own zone, `new Date(...).toISOString()` converts
+  // it to the right instant, and `toDateTimeLocal` in the edit views converts it
+  // back with local getters. The test exists to keep it that way — the tempting
+  // "simplification" is `values.scheduledAt + ":00Z"`, which silently shifts
+  // every schedule by the operator's UTC offset (three hours in Ukraine).
+  it("stores the instant the operator's own clock showed", () => {
+    const typed = "2026-08-01T09:00";
+
+    const dto = bannerFormValuesToCreateDto({
+      ...baseValues,
+      status: "SCHEDULED",
+      scheduledAt: typed,
+    });
+
+    const stored = new Date(dto.scheduledAt as string);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const asOperatorSeesIt =
+      `${stored.getFullYear()}-${pad(stored.getMonth() + 1)}-${pad(stored.getDate())}` +
+      `T${pad(stored.getHours())}:${pad(stored.getMinutes())}`;
+
+    expect(asOperatorSeesIt).toBe(typed);
+  });
+
   it("omits scheduledAt when the banner is not SCHEDULED", () => {
     const dto = bannerFormValuesToCreateDto({
       ...baseValues,
