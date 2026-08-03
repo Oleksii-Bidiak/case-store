@@ -22,6 +22,7 @@ import {
   PRODUCT_LIST_PREFIX,
 } from '../cache';
 import { IStorageService, ImageProcessor, PRODUCTS_SUBDIR, STORAGE_SERVICE } from '../storage';
+import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
 /** Allowed image MIME types mapped to their canonical file extension. */
 const ALLOWED_MIME_EXT: Record<string, string> = {
@@ -67,6 +68,7 @@ export class ProductImageService {
     private readonly imageProcessor: ImageProcessor,
     private readonly cache: CacheService,
     private readonly config: ConfigService,
+    private readonly revalidation: RevalidationNotifier,
   ) {
     this.publicBaseUrl = (
       this.config.get<string>('PUBLIC_BASE_URL') ?? 'http://localhost:3001'
@@ -226,10 +228,24 @@ export class ProductImageService {
     return idx >= 0 ? url.slice(idx + PUBLIC_UPLOADS_PREFIX.length) : null;
   }
 
-  /** Evict the product's detail caches (by id + slug) and all list pages. */
+  /**
+   * Evict the product's detail caches (by id + slug), all list pages, and the
+   * storefront's prerendered homepage.
+   *
+   * The storefront half matters most here, not least: uploading a new image or
+   * promoting a different one to primary changes the picture the homepage
+   * carousels show, and that picture is baked into static HTML. Without this the
+   * admin sees the new photo everywhere except the one page customers land on
+   * first (TASK-384). Best-effort — the purge can never fail an admin write.
+   */
   private async evictProductCaches(productId: string, slug: string): Promise<void> {
     await this.cache.del(productDetailIdKey(productId));
     await this.cache.del(productDetailSlugKey(slug));
     await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    try {
+      await this.revalidation.revalidate(CATALOGUE_REVALIDATE_TARGET);
+    } catch {
+      // Swallowed: purging the storefront is never allowed to fail the write.
+    }
   }
 }

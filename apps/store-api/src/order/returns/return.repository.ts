@@ -235,6 +235,11 @@ export class ReturnRepository {
    * affected product's detail entries. Mirrors `OrderRepository.evictProductCaches`;
    * eviction errors are swallowed inside CacheService, so they never affect the
    * return.
+   *
+   * Like its twin, this does NOT purge the storefront's ISR cache — see the
+   * reasoning on `OrderRepository.evictProductCaches` (TASK-384). A restock only
+   * ever makes MORE stock available, so the stale copy understates availability:
+   * the safe direction to be wrong in.
    */
   private async evictProductCaches(returned: ReturnWithItems): Promise<void> {
     await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);

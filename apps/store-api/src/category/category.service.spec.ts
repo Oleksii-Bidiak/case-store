@@ -26,6 +26,7 @@ import {
 } from './category.errors';
 import { CacheService, PRODUCT_CACHE_PREFIX, PRODUCT_LIST_PREFIX } from '../cache';
 import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
+import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -101,6 +102,17 @@ const pinoLoggerMock = {
   error: jest.fn(),
 };
 
+// ─── RevalidationNotifier mock (TASK-384 storefront purge) ───────────────────
+// Category writes reach the storefront through products — a reparent changes the
+// subtree rollup a product-list cache key is built from, a deactivation
+// withdraws products from sale — and the homepage bakes carousel product lists
+// into prerendered HTML. Purging Redis without purging that HTML is the split
+// this mock guards against.
+
+const revalidationMock = {
+  revalidate: jest.fn().mockResolvedValue(undefined),
+};
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('CategoryService', () => {
@@ -110,6 +122,7 @@ describe('CategoryService', () => {
     jest.clearAllMocks();
     cacheMock.delByPrefix.mockResolvedValue(undefined);
     subtreeIndexerMock.reindexSubtrees.mockResolvedValue(undefined);
+    revalidationMock.revalidate.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -121,6 +134,7 @@ describe('CategoryService', () => {
         { provide: CacheService, useValue: cacheMock },
         { provide: CategorySubtreeIndexer, useValue: subtreeIndexerMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
+        { provide: RevalidationNotifier, useValue: revalidationMock },
       ],
     }).compile();
 
@@ -563,6 +577,39 @@ describe('CategoryService', () => {
 
       expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
       expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
+      // A rename needs no storefront purge either: the nav and /categories are
+      // rendered client-side through React Query, never from prerendered HTML.
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+
+    // TASK-384: deactivating a category withdraws its products from sale, and the
+    // storefront homepage bakes carousel product lists into static HTML. Purging
+    // Redis without purging that HTML left the withdrawn products on the homepage
+    // until its ISR timer expired.
+    it('purges the storefront when a status flip withdraws products from sale', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory); // isActive: true
+      categoryRepositoryMock.update.mockResolvedValue({
+        category: { ...mockCategory, isActive: false },
+        reparented: false,
+      });
+
+      await service.update('cat-uuid-1', { isActive: false }, 'admin-1');
+
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_CACHE_PREFIX);
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(CATALOGUE_REVALIDATE_TARGET);
+    });
+
+    it('still completes the write when the storefront purge rejects', async () => {
+      revalidationMock.revalidate.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
+      categoryRepositoryMock.update.mockResolvedValue({
+        category: { ...mockCategory, isActive: false },
+        reparented: false,
+      });
+
+      await expect(
+        service.update('cat-uuid-1', { isActive: false }, 'admin-1'),
+      ).resolves.toBeInstanceOf(CategoryEntity);
     });
 
     it('should update a category and return CategoryEntity', async () => {
@@ -800,6 +847,9 @@ describe('CategoryService', () => {
       );
       expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledTimes(1);
       expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledWith(['cat-uuid-2']);
+      // A reparent changes the subtree rollup baked into product-list cache keys,
+      // so the storefront's prerendered homepage is stale too (TASK-384).
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(CATALOGUE_REVALIDATE_TARGET);
     });
 
     it('does NOT evict or reindex when the parent is not changing', async () => {

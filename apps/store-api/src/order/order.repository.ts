@@ -1123,6 +1123,17 @@ export class OrderRepository {
    * Evict the product caches affected by a stock change: every list page plus
    * the detail (by slug and by id) of each product in the order. Called after a
    * stock decrement (createFromCart) or increment (cancelAndRestock).
+   *
+   * Deliberately does NOT purge the storefront's ISR cache, unlike the admin
+   * write paths (TASK-384). This fires on EVERY order, and purging `/` here
+   * would make the prerendered homepage regenerate on essentially every
+   * checkout — turning a static page into a dynamic one on the busiest days,
+   * which is exactly when the box can least afford it. The visible cost is
+   * narrow and bounded: a product that sells out stays un-greyed in the
+   * homepage carousels until the next admin write or the ISR timer. The cart
+   * and checkout re-check stock server-side, so nobody can buy what is gone.
+   * Noted rather than left silent, because an undocumented omission here is the
+   * same class of bug this task closed.
    */
   private async evictProductCaches(items: OrderItemRow[]): Promise<void> {
     await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);

@@ -25,6 +25,7 @@ import {
 import { ReorderGroupInput } from './category-reorder.rules';
 import { generateSlug } from '../common/utils';
 import { CacheService, PRODUCT_CACHE_PREFIX, PRODUCT_LIST_PREFIX } from '../cache';
+import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
 
 /**
@@ -91,8 +92,35 @@ export class CategoryService {
     private readonly cache: CacheService,
     private readonly categorySubtreeIndexer: CategorySubtreeIndexer,
     private readonly logger: PinoLogger,
+    private readonly revalidation: RevalidationNotifier,
   ) {
     this.logger.setContext(CategoryService.name);
+  }
+
+  /**
+   * Purge a product-cache namespace AND the storefront's prerendered homepage.
+   *
+   * Category writes reach the storefront through products: reparenting changes
+   * the subtree rollup a product-list key is built from, and deactivating a
+   * category withdraws its products from sale. The homepage bakes carousel
+   * product lists into static HTML, so both are visible there — and until
+   * TASK-384 only the Redis half of this pair existed, which is why the change
+   * showed up on `/products` (rendered per request) but not on the homepage.
+   *
+   * Category names themselves need no purge: the storefront renders the nav and
+   * `/categories` client-side through React Query, never from prerendered HTML.
+   *
+   * Best-effort on both sides — cache errors are swallowed inside CacheService,
+   * and the notifier already catches its own; the `catch` here is belt-and-braces
+   * so an unreachable storefront can never fail an admin write.
+   */
+  private async purgeProductCaches(prefix: string): Promise<void> {
+    await this.cache.delByPrefix(prefix);
+    try {
+      await this.revalidation.revalidate(CATALOGUE_REVALIDATE_TARGET);
+    } catch {
+      // Swallowed: purging the storefront is never allowed to fail the write.
+    }
   }
 
   /**
@@ -332,7 +360,7 @@ export class CategoryService {
       // like "no change" here while the repository legitimately moves the node back — and
       // the cache/index would silently rot. `movedIds` does the same job for the batch
       // endpoint; this is its single-node twin.
-      await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+      await this.purgeProductCaches(PRODUCT_LIST_PREFIX);
       this.reindexSubtreesInBackground([id]);
     }
 
@@ -360,7 +388,7 @@ export class CategoryService {
       throw this.toHttp(error);
     }
 
-    await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    await this.purgeProductCaches(PRODUCT_LIST_PREFIX);
     this.reindexSubtreesInBackground(result.movedIds);
 
     this.logger.info(
@@ -488,7 +516,7 @@ export class CategoryService {
     actorId: string | undefined,
     updatedCount: number,
   ): Promise<void> {
-    await this.cache.delByPrefix(PRODUCT_CACHE_PREFIX);
+    await this.purgeProductCaches(PRODUCT_CACHE_PREFIX);
     this.reindexSubtreesInBackground(ids);
 
     this.logger.info(
