@@ -36,6 +36,52 @@ describe('RevalidationNotifier', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  // TASK-383: the disabled state used to be completely silent on both sides,
+  // which is how a demo server ran for days with revalidation dead.
+  it('announces the disabled state once at boot (debug outside production)', () => {
+    const notifier = buildNotifier({});
+
+    notifier.onModuleInit();
+
+    expect(loggerMock.debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'revalidate.notify.disabled',
+        missing: ['STOREFRONT_REVALIDATE_URL', 'REVALIDATE_SECRET'],
+      }),
+      expect.any(String),
+    );
+    expect(loggerMock.error).not.toHaveBeenCalled();
+  });
+
+  it('escalates the disabled state to error in production', () => {
+    const notifier = buildNotifier({
+      NODE_ENV: 'production',
+      STOREFRONT_REVALIDATE_URL: 'https://shop.test/api/revalidate',
+    });
+
+    notifier.onModuleInit();
+
+    expect(loggerMock.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'revalidate.notify.disabled',
+        missing: ['REVALIDATE_SECRET'],
+      }),
+      expect.any(String),
+    );
+  });
+
+  it('stays quiet at boot when fully configured', () => {
+    const notifier = buildNotifier({
+      STOREFRONT_REVALIDATE_URL: 'https://shop.test/api/revalidate',
+      REVALIDATE_SECRET: 's3cret',
+    });
+
+    notifier.onModuleInit();
+
+    expect(loggerMock.debug).not.toHaveBeenCalled();
+    expect(loggerMock.error).not.toHaveBeenCalled();
+  });
+
   it('POSTs tags + paths with the secret header when configured', async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200 });
     const notifier = buildNotifier({
@@ -54,6 +100,8 @@ describe('RevalidationNotifier', () => {
       tags: ['pages', 'page:faq'],
       paths: ['/legal'],
     });
+    // A hung storefront must not hold the admin's write open (TASK-383).
+    expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('never throws when fetch rejects (best-effort)', async () => {
