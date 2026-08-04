@@ -465,7 +465,16 @@ export class EnvironmentVariables {
   // Encrypts TOTP secrets at rest (AES-256-GCM). Required only once 2FA is
   // enabled. Losing it locks every enrolled admin out — the secrets cannot be
   // re-derived, only backup codes remain.
-  @IsOptional()
+  //
+  // `@ValidateIf`, not `@IsOptional()` (TASK-395). `@IsOptional()` skips only
+  // `null`/`undefined`, but nothing ever hands this container an absent
+  // variable: `docker-compose.prod.yml` passes `${TOTP_ENCRYPTION_KEY:-}`, so an
+  // operator who never set it — which is everyone, since `.env.production.example`
+  // ships the line empty and TASK-344 is still deferred with no reader in `src/` —
+  // gets an EMPTY STRING. That empty value then failed `@MinLength(32)` and killed
+  // the API on boot, in a restart loop, for a feature that does not exist yet.
+  // Treat empty as unset; validate only a value someone actually chose.
+  @ValidateIf((env: EnvironmentVariables) => (env.TOTP_ENCRYPTION_KEY ?? '') !== '')
   @IsString()
   @MinLength(32)
   TOTP_ENCRYPTION_KEY?: string;

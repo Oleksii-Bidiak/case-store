@@ -344,3 +344,47 @@ describe('validateEnv — ISR revalidation is required in production', () => {
     ).toThrow(/REVALIDATE_SECRET/i);
   });
 });
+
+/**
+ * TASK-395. `docker-compose.prod.yml` passes `${TOTP_ENCRYPTION_KEY:-}`, so the
+ * container never sees this variable as absent — it sees an empty string. Under
+ * `@IsOptional()` (which skips only null/undefined) that empty value reached
+ * `@MinLength(32)` and took the API down on boot, in a restart loop, for a
+ * feature nothing reads yet. These tests pin the distinction the fix rests on:
+ * empty means "not configured", a short non-empty value is still a real mistake.
+ */
+describe('validateEnv — TOTP_ENCRYPTION_KEY treats empty as unset', () => {
+  // A config that is otherwise VALID in production, so a failure here can only
+  // be about TOTP_ENCRYPTION_KEY and never about a missing neighbour.
+  const base = {
+    NODE_ENV: 'production',
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+    JWT_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+    CSRF_SECRET: 'c'.repeat(32),
+    CORS_ORIGINS: 'https://shop.example.com',
+    STORE_CLIENT_URL: 'https://shop.example.com',
+    ...PROD_REVALIDATION,
+  };
+
+  it('is a valid production config to begin with', () => {
+    expect(() => validateEnv({ ...base })).not.toThrow();
+  });
+
+  // The exact shape compose produces for an operator who never set it:
+  // `${TOTP_ENCRYPTION_KEY:-}` yields an empty string, not an absent key.
+  it('accepts an empty string in production', () => {
+    expect(() => validateEnv({ ...base, TOTP_ENCRYPTION_KEY: '' })).not.toThrow();
+  });
+
+  it('still rejects a value that was set but is too short', () => {
+    expect(() => validateEnv({ ...base, TOTP_ENCRYPTION_KEY: 'short' })).toThrow(
+      /TOTP_ENCRYPTION_KEY/i,
+    );
+  });
+
+  it('accepts a proper 32-character key', () => {
+    const key = 't'.repeat(32);
+    expect(validateEnv({ ...base, TOTP_ENCRYPTION_KEY: key }).TOTP_ENCRYPTION_KEY).toBe(key);
+  });
+});
