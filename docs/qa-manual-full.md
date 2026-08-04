@@ -70,8 +70,10 @@
    → Postgres (5432), Redis (6379), Meilisearch (7700). Перевір: `docker ps` — контейнери `Up`.
 2. **Міграції + дані:** `npm run db:migrate`, потім `npm run db:seed`
    → у консолі підсумок сіда без помилок. Якщо каталог уже сіявся раніше і ти перевіряєш
-   **новий** сід — спершу `npx prisma migrate reset` (сідер нічого не видаляє, старі
-   позиції інакше переживуть пересів).
+   **новий** сід — спершу `npx prisma migrate reset --config apps/store-api/prisma.config.ts`
+   (сідер нічого не видаляє, старі позиції інакше переживуть пересів). `--config` обов'язковий:
+   адреса бази лежить у `prisma.config.ts`, а не в `schema.prisma`. Ресет не сіє — `db:seed`
+   після нього окремо.
 3. **API:** `npm run start:dev -w apps/store-api` → `http://localhost:3001`,
    Swagger: `http://localhost:3001/api/docs` (404 на голому `/api` — норма).
 4. **Вітрина:** `npm run dev -w apps/store-client` → `http://localhost:3000`.
@@ -1489,7 +1491,7 @@
       (його тягнув білд на Vercel); той шлях більше не використовується.
 - [ ] **SYS-17a — 🔴 Пошук не бреше на порожньому покажчику (TASK-376).** **Зроби:** очисти
       індекс Meilisearch (`curl -X DELETE -H "Authorization: Bearer <MEILI_MASTER_KEY>"
-    <meili>/indexes/products/documents`) і **не** перезапускай API; шукай на вітрині слово,
+  <meili>/indexes/products/documents`) і **не** перезапускай API; шукай на вітрині слово,
       яке точно є в каталозі. **Має бути:** товари знаходяться (запит тихо пішов у Postgres),
       а не «нічого не знайдено». Далі: адмінка → «Пошук» → «Перебудувати покажчик» → тост із
       кількістю товарів; повтори пошук — результат той самий.

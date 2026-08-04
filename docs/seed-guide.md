@@ -166,14 +166,26 @@ needs `CREATEDB`. Check with `SELECT rolcreatedb FROM pg_roles WHERE rolname = c
 
 ## 5. Resetting a dev database
 
-To drop, recreate, migrate, and reseed in one step (from the repo root):
+To drop, recreate and migrate (from the repo root), then seed as a second step:
 
 ```bash
-npx prisma migrate reset --schema=apps/store-api/prisma/schema.prisma
+npx prisma migrate reset --config apps/store-api/prisma.config.ts
+npm run db:seed
 ```
 
 This wipes **all** data in the target database. **Never run `migrate reset` against a production
-or shared database** — it is destructive and irreversible.
+or shared database** — it is destructive and irreversible. It asks for confirmation first;
+`--force` skips that prompt, so keep it out of anything you paste half-awake.
+
+Two things that used to be wrong here, both worth knowing because the old forms fail in
+non-obvious ways:
+
+- **`--config`, not `--schema`.** The `datasource` block in `schema.prisma` carries no `url` —
+  the connection string lives only in `prisma.config.ts`. Point Prisma at the schema alone and
+  it has no idea what to connect to.
+- **Reset no longer reseeds.** Prisma 7 removed the automatic seed after `migrate reset` (and
+  the `--skip-seed` flag along with it), so seeding is always its own explicit step. Any snippet
+  that still passes `--skip-seed` predates v7.
 
 ---
 
