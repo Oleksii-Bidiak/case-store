@@ -57,9 +57,11 @@ Workspace-direct equivalents (run from anywhere) use the `-w` flag, e.g.
 
 Re-running `npm run db:seed` on a populated DB is **safe** — it will not create duplicates:
 
-- **Users, categories, products, reviews, addresses** are written with `upsert` keyed on a stable
-  natural key (`email`, `slug`, the `userId_productId` composite for reviews, and the fixed
-  `seed-address-1` id for the demo address).
+- **Users, categories, products, addresses** are written with `upsert` keyed on a stable
+  natural key (`email`, `slug`, and the fixed `seed-address-1` id for the demo address).
+- **Reviews** are replaced wholesale, not upserted: the seed deletes every review owned by its 23
+  seeded reviewer accounts (`deleteMany` scoped to those `userId`s) and recreates them. Reviews
+  written by real users are never touched — the delete is scoped by author, not by product.
 - **Product groups** upsert on a deterministic UUID derived from the entry slug
   (`deterministicUuid(slug)`), so groups stay stable across runs.
 - **Product group axes** and **product images** are deleted and recreated wholesale per entry on
@@ -80,6 +82,18 @@ Re-running `npm run db:seed` on a populated DB is **safe** — it will not creat
 
 Because images are `deleteMany`-then-recreate per position, a crash mid-loop could leave a position
 with no images. Recovery is simply re-running `npm run db:seed`.
+
+> ⚠️ **The one case that is NOT idempotent: the catalogue itself changed between runs.**
+> Positions upsert on `slug`, but `Product.sku` is `@unique` too. If a new catalogue revision
+> reuses an SKU under a different slug, the upsert finds nothing, takes the `create` branch and
+> dies on `Unique constraint failed on the fields: (sku)` — halfway through `seedProducts`, which
+> is step 6 of 20, so most seeders never run and `pruneSeedImages()` never cleans up. This is
+> exactly what TASK-366 (2026-07-30) did: it replaced the English demo catalogue with the
+> Ukrainian one and moved 9 iPhone SKUs onto new slugs. A DB seeded before that date cannot be
+> re-seeded in place — reset it first (§5). The same applies to any future catalogue swap.
+>
+> Related: the seed never deletes rows it no longer owns, so positions dropped from the catalogue
+> stay in the DB as live, `isActive: true` orphans (see §9).
 
 ---
 
