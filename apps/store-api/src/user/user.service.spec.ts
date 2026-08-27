@@ -1,5 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { UserRepository, UpdateUserInput } from './user.repository';
 import { UserService } from './user.service';
@@ -158,25 +163,40 @@ describe('UserService', () => {
       });
     });
 
-    it('should throw ConflictException when email is already taken by another user', async () => {
+    it('refuses to change the email address (TASK-372)', async () => {
       const dtoWithEmail: UpdateProfileDto = {
-        email: 'taken@example.com',
-      };
-      const existingOtherUser = {
-        ...mockUser,
-        id: 'other-user-id',
-        email: 'taken@example.com',
+        email: 'someone-else@example.com',
       };
 
       repository.findById.mockResolvedValue(mockUser);
-      repository.findByEmail.mockResolvedValue(existingOtherUser);
 
       await expect(service.updateProfile('user-uuid-1', dtoWithEmail)).rejects.toThrow(
-        ConflictException,
+        BadRequestException,
       );
       expect(repository.update).not.toHaveBeenCalled();
     });
 
+    it('refuses the change WITHOUT looking the address up — no enumeration oracle', async () => {
+      // The refusal must not depend on whether the address is taken: a 409 for
+      // taken and a 400 for free would let anyone holding a token probe which
+      // addresses hold an account. Both cases answer identically, and the
+      // lookup that could tell them apart never runs.
+      repository.findById.mockResolvedValue(mockUser);
+
+      await expect(
+        service.updateProfile('user-uuid-1', { email: 'free@example.com' }),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.updateProfile('user-uuid-1', { email: 'taken@example.com' }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(repository.findByEmail).not.toHaveBeenCalled();
+    });
+
+    // Why an unchanged email is accepted rather than refused along with the rest:
+    // a client that reads the profile and posts the whole object back is sending
+    // the address it was given, not asking to change anything. Refusing that
+    // would break honest callers to stop nothing.
     it('should allow user to keep their own email without conflict', async () => {
       const dtoWithSameEmail: UpdateProfileDto = {
         email: 'test@example.com', // same as mockUser.email
@@ -187,7 +207,6 @@ describe('UserService', () => {
       };
 
       repository.findById.mockResolvedValue(mockUser);
-      repository.findByEmail.mockResolvedValue(mockUser); // same user
       repository.update.mockResolvedValue(updatedUser);
 
       const result = await service.updateProfile('user-uuid-1', dtoWithSameEmail);

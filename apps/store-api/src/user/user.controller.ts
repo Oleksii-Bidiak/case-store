@@ -148,8 +148,9 @@ export class UserController {
    * PUT /api/users/me
    *
    * Updates the profile of the currently authenticated user.
-   * Only safe fields (email, firstName, lastName, phone) can be updated.
-   * Role and isActive cannot be changed through this endpoint.
+   * Only firstName, lastName and phone can be changed. Role and isActive are
+   * admin operations; the email address is the login and the password-reset
+   * channel, so changing it is refused here (TASK-372) — see UserService.
    */
   @Put('me')
   @UseGuards(JwtAuthGuard)

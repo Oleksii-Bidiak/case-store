@@ -4,8 +4,15 @@ import { ApiProperty } from '@nestjs/swagger';
 /**
  * DTO for updating the authenticated user's profile.
  *
- * Only allows updating safe fields — email, firstName, lastName, phone.
- * Role and isActive cannot be changed through this DTO (admin-only operations).
+ * Changeable fields: firstName, lastName, phone. Role and isActive are
+ * admin-only operations and have no field here.
+ *
+ * `email` is still accepted, but only as a repeat of the address the account
+ * already has — a client that echoes the whole profile back keeps working,
+ * while an actual change is refused by `UserService.updateProfile` (TASK-372).
+ * The field is deliberately NOT removed: dropping it would make the global
+ * `forbidNonWhitelisted` pipe answer a bare "property email should not exist",
+ * which tells an API consumer nothing about where address changes DO live.
  */
 export class UpdateProfileDto {
   @ApiProperty({

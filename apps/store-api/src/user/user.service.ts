@@ -1,5 +1,6 @@
 import {
   Injectable,
+  BadRequestException,
   NotFoundException,
   ConflictException,
   ForbiddenException,
@@ -60,11 +61,14 @@ export class UserService {
   }
 
   /**
-   * Update the profile of the authenticated user.
-   * Only allows updating safe fields (email, firstName, lastName, phone).
-   * Validates email uniqueness if the email is being changed.
+   * Update the profile of the authenticated user — firstName, lastName, phone.
+   *
+   * `email` is accepted in the DTO but may only repeat the address the account
+   * already has, so a client that sends the whole profile back keeps working.
+   * An actual change is refused (TASK-372) — see the comment on the guard below.
+   *
    * Throws NotFoundException if the user does not exist.
-   * Throws ConflictException if the new email is already taken by another user.
+   * Throws BadRequestException on an attempt to change the email address.
    */
   async updateProfile(userId: string, dto: UpdateProfileDto): Promise<UserEntity> {
     // Verify the user exists
@@ -74,13 +78,20 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    // If email is being changed, check uniqueness
+    // The address is the login AND the password-reset channel, so changing it is
+    // equivalent to handing over the account — it does not belong in a profile
+    // edit. Refused rather than made to work: the dedicated flow (TASK-396)
+    // proves the new address BEFORE applying it, requires the current password,
+    // and warns the old address. This endpoint therefore never changes an email
+    // in any design, which is why the refusal is permanent and not a stopgap.
+    //
+    // Refusing BEFORE any uniqueness lookup is deliberate: answering 409 "already
+    // taken" here would turn a forbidden operation into an email-enumeration
+    // oracle — anyone with a token could probe which addresses hold an account.
     if (dto.email !== undefined && dto.email !== user.email) {
-      const existingUser = await this.userRepository.findByEmail(dto.email);
-
-      if (existingUser && existingUser.id !== userId) {
-        throw new ConflictException('Email is already taken');
-      }
+      throw new BadRequestException(
+        'Email cannot be changed here — use the dedicated address-change flow',
+      );
     }
 
     // Build update input from DTO — only include provided fields

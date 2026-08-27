@@ -245,21 +245,27 @@ describe('UserController (e2e)', () => {
       expect(response.body.data).not.toHaveProperty('passwordHash');
     });
 
-    it('should return 409 when updating email to one already taken', async () => {
+    it('should return 400 when trying to change the email address (TASK-372)', async () => {
       const token = generateAccessToken(testUser.id, testUser.role);
 
       userRepositoryMock.findById.mockResolvedValue(testUser);
-      userRepositoryMock.findByEmail.mockResolvedValue({
-        ...testUser,
-        id: 'other-user-id',
-        email: 'taken@example.com',
-      });
 
+      // Taken or free, the answer is the same 400 — the address is the login and
+      // the password-reset channel, so it does not change through a profile edit.
+      // Identical answers also deny an enumeration oracle.
       await request(app.getHttpServer())
         .put('/api/users/me')
         .set('Authorization', `Bearer ${token}`)
         .send({ email: 'taken@example.com' })
-        .expect(409);
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .put('/api/users/me')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ email: 'brand-new@example.com' })
+        .expect(400);
+
+      expect(userRepositoryMock.update).not.toHaveBeenCalled();
     });
 
     it('should return 400 when sending invalid data', async () => {
