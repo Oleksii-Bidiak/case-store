@@ -80,3 +80,9 @@ apps/store-client/.ds-sync-css/
 # uploaded through the admin import page, never committed.
 *.xlsx
 *.xls
+
+# Seed image bundle for the demo stand (docs/deploy/03b step 7). A tar of
+# apps/store-api/uploads/products, made only to scp the generated catalogue
+# pictures to the server so it does not have to regenerate them. Rebuildable in
+# one command, ~1 MB of binaries, and tied to one deploy — never a code revision.
+seed-images.tgz
