@@ -2140,7 +2140,14 @@ describe('OrderService', () => {
     const hashOf = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
     it('hashes the token before looking it up (the raw value never hits the DB)', async () => {
-      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(makeOrder({ userId: null }));
+      // `createdAt` must be relative to real time, like every sibling test here.
+      // The default from `makeOrder` is a fixed calendar date, and the service
+      // 404s once it is older than the TTL — so leaving it made this a time bomb
+      // that passed in CI until the date drifted 60 days past, then failed for a
+      // reason that has nothing to do with token hashing.
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ userId: null, createdAt: new Date() }),
+      );
 
       await service.getGuestOrder(RAW_TOKEN);
 
