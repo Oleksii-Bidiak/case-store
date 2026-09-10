@@ -103,14 +103,15 @@ describe("ProductAddonDeltaPanel (TASK-174)", () => {
     );
   });
 
-  it("PUTs an OVERRIDE delta with the typed price", async () => {
-    arrange({ resolved: [warranty] });
-    let body: unknown = null;
+  /** Type a price into the entry named `name` and hit save; returns the PUT body. */
+  async function typeOwnPrice(name: string, value: string) {
+    const sent: { addonServiceId?: string; body?: unknown } = {};
     server.use(
       http.put(
         "*/api/addon-services/deltas/product/:productId/:addonServiceId",
-        async ({ request }) => {
-          body = await request.json();
+        async ({ params, request }) => {
+          sent.addonServiceId = params.addonServiceId as string;
+          sent.body = await request.json();
           return HttpResponse.json({ data: {} });
         },
       ),
@@ -121,14 +122,55 @@ describe("ProductAddonDeltaPanel (TASK-174)", () => {
       await screen.findByRole("button", { name: d.actionOwnPrice }),
     );
 
-    const input = await screen.findByLabelText(d.ownPriceLabel("Гарантія"));
+    const input = await screen.findByLabelText(d.ownPriceLabel(name));
     await userEvent.clear(input);
-    await userEvent.type(input, "350");
+    await userEvent.type(input, value);
     await userEvent.click(
       screen.getByRole("button", { name: dict.common.save }),
     );
 
-    await waitFor(() => expect(body).toEqual({ type: "OVERRIDE", price: 350 }));
+    return sent;
+  }
+
+  it("PUTs an OVERRIDE delta with the typed price for an INHERITED service", async () => {
+    arrange({ resolved: [warranty] });
+
+    const sent = await typeOwnPrice("Гарантія", "350");
+
+    await waitFor(() =>
+      expect(sent).toEqual({
+        addonServiceId: "svc-warranty",
+        body: { type: "OVERRIDE", price: 350 },
+      }),
+    );
+  });
+
+  // TASK-404: one delta row per (product, add-on) pair, so an OVERRIDE here
+  // would REPLACE the ADD row and the service would vanish from the product.
+  it("PUTs an ADD delta with the typed price for a product-EXCLUSIVE service", async () => {
+    arrange({ resolved: [tradeIn] });
+
+    const sent = await typeOwnPrice("Trade-in", "250");
+
+    await waitFor(() =>
+      expect(sent).toEqual({
+        addonServiceId: "svc-tradein",
+        body: { type: "ADD", price: 250 },
+      }),
+    );
+  });
+
+  it("keeps OVERRIDE for an entry that already carries one", async () => {
+    arrange({ resolved: [insurance] });
+
+    const sent = await typeOwnPrice("Страхування", "1500");
+
+    await waitFor(() =>
+      expect(sent).toEqual({
+        addonServiceId: "svc-insurance",
+        body: { type: "OVERRIDE", price: 1500 },
+      }),
+    );
   });
 
   it("PUTs an ADD delta for a product-exclusive service picked from the catalog", async () => {
