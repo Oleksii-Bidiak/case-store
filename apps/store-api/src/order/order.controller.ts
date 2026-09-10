@@ -26,6 +26,7 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { FailClosedThrottle } from '../throttler';
 import { OrderService, PaginationMeta } from './order.service';
 import { OrderEntity, OrderItemEntity, OrderGuestData } from './entities';
 import { CreateOrderDto, OrderListQueryDto } from './dto';
@@ -162,6 +163,10 @@ export class OrderController {
   // read, and a natural abuse target. Cap it well below the global 100/60s, and
   // tighter still for guests (see orderCreationLimit).
   @Throttle({ default: { limit: orderCreationLimit, ttl: 60000 } })
+  // Guest checkout: no account stands between a script and this route, and each
+  // call reserves stock and sends mail. Without a counter we would rather not
+  // take the order than take ten thousand of them (TASK-401).
+  @FailClosedThrottle()
   @ApiOperation({ summary: 'Create order from cart', operationId: 'createOrder' })
   @ApiResponse({
     status: 201,

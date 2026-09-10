@@ -49,7 +49,12 @@ import { PublishingModule } from './publishing';
 import { RedisCacheModule } from './cache';
 import { CsrfModule } from './csrf';
 import { NewsletterModule } from './newsletter';
-import { buildThrottlerOptions, ClientIpThrottlerGuard } from './throttler';
+import {
+  buildThrottlerOptions,
+  ClientIpThrottlerGuard,
+  ThrottlerHealthModule,
+  ThrottlerRedisHealth,
+} from './throttler';
 import { HttpExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
 import { validateEnv } from './config/env.validation';
@@ -72,11 +77,15 @@ import { buildPinoHttpOptions } from './config/pino.config';
     // Cron/interval scheduling — enables @Cron jobs (e.g. refresh-token cleanup).
     ScheduleModule.forRoot(),
 
+    // Health of the rate-limit store — shared by the factory below (which pings
+    // Redis at boot) and by AppService, which reports it on /health (TASK-401).
+    ThrottlerHealthModule,
+
     // Rate limiting — uses a shared Redis store when REDIS_HOST is set
     // (multi-instance correctness), otherwise an in-memory store.
     ThrottlerModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
+      imports: [ConfigModule, ThrottlerHealthModule],
+      inject: [ConfigService, ThrottlerRedisHealth],
       useFactory: buildThrottlerOptions,
     }),
 

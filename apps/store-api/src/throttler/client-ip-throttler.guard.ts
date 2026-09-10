@@ -1,5 +1,10 @@
-import { Injectable } from '@nestjs/common';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { Injectable, type ExecutionContext } from '@nestjs/common';
+import { ThrottlerGuard, type ThrottlerRequest } from '@nestjs/throttler';
+import { FAIL_CLOSED_THROTTLE_KEY } from './fail-closed-throttle.decorator';
+import {
+  rateLimitStorageUnavailableError,
+  ThrottlerStorageUnavailableError,
+} from './throttler.errors';
 
 /** The shape of the request fields this guard reads. */
 interface TrackedRequest {
@@ -35,11 +40,55 @@ interface TrackedRequest {
  * The socket fallback covers non-HTTP or malformed contexts where Express has
  * not populated `ip`; returning a constant there would put every such request in
  * one bucket, which is the bug this class was written to remove.
+ *
+ * ## Why it also decides what happens when the counter store is down (TASK-401)
+ *
+ * `RedisThrottlerStorage` raises {@link ThrottlerStorageUnavailableError} when
+ * it cannot reach Redis. It cannot decide the outcome itself — it does not know
+ * whether it is counting a product listing or a login attempt, and those two
+ * want opposite answers. The guard does know, so the choice lives here:
+ *
+ * - a route marked {@link FailClosedThrottle} (public writes: login, register,
+ *   password reset, contact, review, order) → `503`, because serving it without
+ *   a limiter is exactly the state this task removes;
+ * - everything else → served, unlimited, as before. A Redis blip must not take
+ *   the storefront's reads down with it.
  */
 @Injectable()
 export class ClientIpThrottlerGuard extends ThrottlerGuard {
   protected async getTracker(req: Record<string, unknown>): Promise<string> {
     const request = req as unknown as TrackedRequest;
     return request.ip ?? request.socket?.remoteAddress ?? 'unknown';
+  }
+
+  protected async handleRequest(requestProps: ThrottlerRequest): Promise<boolean> {
+    try {
+      return await super.handleRequest(requestProps);
+    } catch (error) {
+      // Anything else — including the library's own ThrottlerException for a
+      // client that really is over the limit — keeps propagating untouched.
+      if (!(error instanceof ThrottlerStorageUnavailableError)) {
+        throw error;
+      }
+
+      if (this.isFailClosed(requestProps.context)) {
+        throw rateLimitStorageUnavailableError();
+      }
+
+      // Fail open. Deliberately silent: the outage is already logged once by
+      // ThrottlerRedisHealth and reported by /health, and a per-request line
+      // here would produce one log entry per request for as long as it lasts.
+      return true;
+    }
+  }
+
+  /** Route-level (or controller-level) opt-in written by {@link FailClosedThrottle}. */
+  private isFailClosed(context: ExecutionContext): boolean {
+    return (
+      this.reflector.getAllAndOverride<boolean>(FAIL_CLOSED_THROTTLE_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) === true
+    );
   }
 }

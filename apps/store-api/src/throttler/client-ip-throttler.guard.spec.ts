@@ -1,4 +1,14 @@
+import { HttpStatus, type ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { HttpException } from '@nestjs/common';
+import {
+  ThrottlerException,
+  type ThrottlerModuleOptions,
+  type ThrottlerStorage,
+} from '@nestjs/throttler';
 import { ClientIpThrottlerGuard } from './client-ip-throttler.guard';
+import { FailClosedThrottle } from './fail-closed-throttle.decorator';
+import { ThrottlerErrorCode, ThrottlerStorageUnavailableError } from './throttler.errors';
 
 /**
  * These tests exist because the bug they encode was invisible in every unit
@@ -50,5 +60,106 @@ describe('ClientIpThrottlerGuard.getTracker', () => {
 
   it('returns a stable sentinel when there is no address at all', async () => {
     await expect(guard.getTracker({})).resolves.toBe('unknown');
+  });
+});
+
+/**
+ * TASK-401 — what the guard does when the counter store is DOWN.
+ *
+ * The demo stand ran the whole session with Redis misconfigured: the storage
+ * caught the error, returned "0 hits", and every limit in the API was off —
+ * seven contact submissions against a 5/min cap, and `/auth/login` accepting
+ * unlimited password attempts. The storage now raises; these tests pin the two
+ * answers the guard is allowed to give, because getting the split wrong in
+ * either direction is a real incident: fail-open on login is the bug above,
+ * fail-closed on reads turns a Redis blip into a dead storefront.
+ *
+ * The guard is built with its real constructor here (not `Object.create`): the
+ * whole point is the interaction of the reflector, the storage and the base
+ * class's `handleRequest`.
+ */
+describe('ClientIpThrottlerGuard when the rate-limit store is unavailable', () => {
+  class ProbeController {
+    /** Stands in for POST /api/contact, /auth/login, /orders … */
+    @FailClosedThrottle()
+    publicWrite(): void {}
+
+    /** Stands in for GET /api/products — no decorator, so fail-open. */
+    read(): void {}
+  }
+
+  const options: ThrottlerModuleOptions = { throttlers: [{ ttl: 60_000, limit: 5 }] };
+
+  const buildGuard = async (storage: ThrottlerStorage): Promise<ClientIpThrottlerGuard> => {
+    const guard = new ClientIpThrottlerGuard(options, storage, new Reflector());
+    await guard.onModuleInit();
+    return guard;
+  };
+
+  const contextFor = (handler: () => void): ExecutionContext =>
+    ({
+      getHandler: () => handler,
+      getClass: () => ProbeController,
+      switchToHttp: () => ({
+        getRequest: () => ({ ip: '203.0.113.7', headers: {} }),
+        getResponse: () => ({ header: jest.fn() }),
+      }),
+    }) as unknown as ExecutionContext;
+
+  const unreachableStorage = (): ThrottlerStorage => ({
+    increment: jest
+      .fn()
+      .mockRejectedValue(new ThrottlerStorageUnavailableError('NOAUTH Authentication required')),
+  });
+
+  it('refuses a public write with 503 and a stable error code', async () => {
+    const guard = await buildGuard(unreachableStorage());
+
+    const thrown = await guard.canActivate(contextFor(ProbeController.prototype.publicWrite)).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(thrown).toBeInstanceOf(HttpException);
+    const exception = thrown as HttpException;
+    expect(exception.getStatus()).toBe(HttpStatus.SERVICE_UNAVAILABLE);
+    expect(exception.getResponse()).toMatchObject({
+      error: ThrottlerErrorCode.STORAGE_UNAVAILABLE,
+    });
+  });
+
+  it('still serves a route that did not opt in — reads must survive a Redis blip', async () => {
+    const guard = await buildGuard(unreachableStorage());
+
+    await expect(guard.canActivate(contextFor(ProbeController.prototype.read))).resolves.toBe(true);
+  });
+
+  // The storage failure must not swallow the ordinary over-limit case: a client
+  // that really did exceed the limit still gets 429, not 503.
+  it('lets a genuine over-limit rejection through unchanged', async () => {
+    const guard = await buildGuard({
+      increment: jest.fn().mockResolvedValue({
+        totalHits: 6,
+        timeToExpire: 30,
+        isBlocked: true,
+        timeToBlockExpire: 60,
+      }),
+    });
+
+    await expect(
+      guard.canActivate(contextFor(ProbeController.prototype.publicWrite)),
+    ).rejects.toBeInstanceOf(ThrottlerException);
+  });
+
+  // A bug in the storage (a typo, a bad reply shape) is not a rate-limit outage
+  // and must not be dressed up as a tidy 503 on some routes and ignored on others.
+  it('does not disguise an unrelated storage bug', async () => {
+    const guard = await buildGuard({
+      increment: jest.fn().mockRejectedValue(new TypeError('reply.map is not a function')),
+    });
+
+    await expect(
+      guard.canActivate(contextFor(ProbeController.prototype.read)),
+    ).rejects.toBeInstanceOf(TypeError);
   });
 });
