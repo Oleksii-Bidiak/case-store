@@ -201,6 +201,78 @@ describe("AdminOrderTable — lifecycle tabs (TASK-250)", () => {
   });
 });
 
+/**
+ * TASK-405 — the demo run hit `/orders?status=…` opened in a fresh tab and found
+ * the filter controls dead. Two independent causes; these cover the second one.
+ *
+ * The first was the route: `page.tsx` was statically prerendered, so a hard load
+ * with a query string served a prerender that a later query-only
+ * `router.replace` never re-rendered. That is fixed by `export const dynamic`
+ * on the route and is not observable from a widget test — jsdom has no Next
+ * router; the assertions below are exactly the part that is.
+ *
+ * The second was in this widget: the "Всі" tab carried `value: ""`, which is not
+ * a legal Radix `Tabs` value. `?status=PROCESSING` (a single status — the Select
+ * writes it, no preset tab matches it) is the state the run was actually in.
+ */
+describe("AdminOrderTable — «Всі» tab sentinel (TASK-405)", () => {
+  it("switches away from a deep-linked ?status=PROCESSING", async () => {
+    mockSearchParams = new URLSearchParams("status=PROCESSING");
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(/Немає замовлень зі статусом/);
+
+    // A single PROCESSING matches no preset, so nothing renders active on arrival.
+    for (const label of [
+      dict.orders.tabNew,
+      dict.orders.tabProcessing,
+      dict.orders.tabShipped,
+      dict.orders.tabAll,
+    ]) {
+      expect(screen.getByRole("tab", { name: label })).toHaveAttribute(
+        "data-state",
+        "inactive",
+      );
+    }
+
+    await userEvent.click(
+      screen.getByRole("tab", { name: dict.orders.tabShipped }),
+    );
+
+    expect(mockReplace).toHaveBeenCalled();
+    for (const [url] of mockReplace.mock.calls) {
+      expect(url).toBe("/orders?status=SHIPPED");
+    }
+  });
+
+  it("clears ?status=PROCESSING without leaking the sentinel into the URL", async () => {
+    mockSearchParams = new URLSearchParams("status=PROCESSING");
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(/Немає замовлень зі статусом/);
+
+    await userEvent.click(
+      screen.getByRole("tab", { name: dict.orders.tabAll }),
+    );
+
+    expect(mockReplace).toHaveBeenCalled();
+    for (const [url] of mockReplace.mock.calls) {
+      // `__all__` is a UI-only value: the URL just loses `?status=`.
+      expect(url).toBe("/orders");
+    }
+  });
+
+  it("gives «Всі» a real Radix value and renders it active with no ?status=", async () => {
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.orders.empty);
+
+    const allTab = screen.getByRole("tab", { name: dict.orders.tabAll });
+    expect(allTab).toHaveAttribute("data-state", "active");
+    // Radix derives the trigger id from its `value`; with `""` the id stopped at
+    // the separator, which is the shape this test exists to keep out.
+    expect(allTab.id).toContain("__all__");
+    expect(allTab.id).not.toMatch(/-trigger-$/);
+  });
+});
+
 describe("AdminOrderTable — column sorting (TASK-147)", () => {
   beforeEach(() => mockReplace.mockClear());
 

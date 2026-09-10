@@ -59,8 +59,14 @@ const STATUS_FILTER_OPTIONS = [
 /**
  * Lifecycle preset tabs (TASK-250) — a quick-access layer over the existing
  * `?status=` param. "В обробці" is a multi-status filter (`CONFIRMED,PROCESSING`),
- * only valid because the admin endpoint accepts a CSV `status` param. Each `value`
- * is written verbatim to the URL; "Всі" clears the filter (`value: ""`).
+ * only valid because the admin endpoint accepts a CSV `status` param. Each status
+ * `value` is written verbatim to the URL.
+ *
+ * "Всі" carries the `ALL_OPTION` sentinel rather than the `""` it held until
+ * TASK-405: the empty string is not a legal Radix `Tabs` value, so that tab could
+ * never render active, and clicking it fed `""` back into a controlled
+ * `Tabs.Root`. The sentinel never reaches the URL — `handleTabChange` maps it
+ * back to "no `?status=`", exactly as the `<Select>` beside it already did.
  */
 const STATUS_TABS: ReadonlyArray<{ value: string; label: string }> = [
   { value: OrderEntityStatus.PENDING, label: dict.orders.tabNew },
@@ -69,7 +75,7 @@ const STATUS_TABS: ReadonlyArray<{ value: string; label: string }> = [
     label: dict.orders.tabProcessing,
   },
   { value: OrderEntityStatus.SHIPPED, label: dict.orders.tabShipped },
-  { value: "", label: dict.orders.tabAll },
+  { value: ALL_OPTION, label: dict.orders.tabAll },
 ];
 
 /**
@@ -171,13 +177,18 @@ export function AdminOrderTable() {
   };
 
   // The active preset tab is the one whose value exactly matches the current
-  // `?status=` string; otherwise CUSTOM_TAB → no tab renders active.
-  const activeTab = STATUS_TABS.some((tab) => tab.value === statusParam)
-    ? statusParam
+  // `?status=` string, with an absent filter standing for the "Всі" sentinel;
+  // otherwise CUSTOM_TAB → no tab renders active.
+  const currentTabValue = statusParam || ALL_OPTION;
+  const activeTab = STATUS_TABS.some((tab) => tab.value === currentTabValue)
+    ? currentTabValue
     : CUSTOM_TAB;
 
   const handleTabChange = (value: string) => {
-    updateParams({ status: value || undefined, page: undefined });
+    updateParams({
+      status: value === ALL_OPTION ? undefined : value,
+      page: undefined,
+    });
   };
 
   return (
@@ -205,7 +216,7 @@ export function AdminOrderTable() {
               <Tabs value={activeTab} onValueChange={handleTabChange}>
                 <TabsList aria-label={dict.orders.tabsAria}>
                   {STATUS_TABS.map((tab) => (
-                    <TabsTrigger key={tab.value || "all"} value={tab.value}>
+                    <TabsTrigger key={tab.value} value={tab.value}>
                       {tab.label}
                     </TabsTrigger>
                   ))}
