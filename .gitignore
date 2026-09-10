@@ -86,3 +86,6 @@ apps/store-client/.ds-sync-css/
 # pictures to the server so it does not have to regenerate them. Rebuildable in
 # one command, ~1 MB of binaries, and tied to one deploy — never a code revision.
 seed-images.tgz
+
+# Claude Code worktrees (EnterWorktree)
+.claude/worktrees/
