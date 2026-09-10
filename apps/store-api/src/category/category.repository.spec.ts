@@ -34,6 +34,9 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
   const update = jest.fn();
   const findUnique = jest.fn();
   const findFirst = jest.fn();
+  const count = jest.fn();
+  const productCount = jest.fn();
+  const productGroupBy = jest.fn();
   const $transaction = jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock));
 
   beforeEach(async () => {
@@ -45,7 +48,8 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
           provide: PrismaService,
           useValue: {
             $queryRaw: queryRaw,
-            category: { findMany, update, findUnique, findFirst },
+            category: { findMany, update, findUnique, findFirst, count },
+            product: { count: productCount, groupBy: productGroupBy },
             $transaction,
           },
         },
@@ -437,6 +441,146 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
       const data = txMock.category.updateMany.mock.calls[0][0].data;
       expect(data).toEqual({ isActive: true });
       expect(txMock.$executeRaw).not.toHaveBeenCalled(); // no advisory lock needed
+    });
+  });
+
+  // ─── product-count rollup (TASK-408) ────────────────────────────────────────
+
+  /**
+   * The storefront lists a category's WHOLE subtree (TASK-236); the admin counted
+   * only what a category filed directly. So the demo stand showed «Товари: 0» on a
+   * parent whose page listed 19 products — two numbers about the same category
+   * that could never agree. Both are now returned, and these tests pin which is
+   * which: `productCount` direct, `subtreeProductCount` self + descendants.
+   */
+  describe('product counts — direct vs subtree', () => {
+    const row = (
+      id: string,
+      parentId: string | null,
+      products: number,
+    ): Record<string, unknown> => ({
+      id,
+      name: id,
+      slug: id,
+      description: null,
+      image: null,
+      parentId,
+      isActive: true,
+      sortOrder: 0,
+      metaTitle: null,
+      metaDescription: null,
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      _count: { products },
+    });
+
+    describe('findCategoryTreeForAdmin', () => {
+      // The headline case from the live run: a parent files nothing of its own.
+      it('shows a childless-of-its-own parent the subtree total AND its direct 0', async () => {
+        findMany.mockResolvedValue([row('root', null, 0), row('child', 'root', 19)]);
+
+        const [rootNode] = await repo.findCategoryTreeForAdmin();
+
+        expect(rootNode.productCount).toBe(0);
+        expect(rootNode.subtreeProductCount).toBe(19);
+        expect(rootNode.children[0].productCount).toBe(19);
+        expect(rootNode.children[0].subtreeProductCount).toBe(19);
+      });
+
+      it('accumulates through every level and across sibling branches', async () => {
+        findMany.mockResolvedValue([
+          row('root', null, 1),
+          row('mid', 'root', 0),
+          row('leaf', 'mid', 3),
+          row('sibling', 'root', 2),
+        ]);
+
+        const [rootNode] = await repo.findCategoryTreeForAdmin();
+        const mid = rootNode.children.find((n) => n.id === 'mid')!;
+
+        expect(mid.subtreeProductCount).toBe(3);
+        expect(rootNode.subtreeProductCount).toBe(6);
+      });
+
+      // Same rule the tree structure already follows: a node unreachable from any
+      // root is not in the tree, so it cannot contribute to anyone's total either.
+      it('never counts a node that a parent cycle made unreachable', async () => {
+        findMany.mockResolvedValue([row('root', null, 1), row('a', 'b', 10), row('b', 'a', 100)]);
+
+        const tree = await repo.findCategoryTreeForAdmin();
+
+        expect(tree.map((n) => n.id)).toEqual(['root']);
+        expect(tree[0].subtreeProductCount).toBe(1);
+      });
+    });
+
+    describe('findAllWithProductCount', () => {
+      /**
+       * The page read and the rollup read both go through `category.findMany`; the
+       * rollup one is the bare `{ select: { id, parentId } }` projection.
+       */
+      const wireReads = (page: Array<Record<string, unknown>>): void => {
+        findMany.mockImplementation((args: { select?: unknown }) =>
+          Promise.resolve(
+            args?.select
+              ? [
+                  { id: 'root', parentId: null },
+                  { id: 'child', parentId: 'root' },
+                ]
+              : page,
+          ),
+        );
+      };
+
+      it('carries the subtree total for a parent whose descendants are off-page', async () => {
+        // One row on the page — the child that holds the products is NOT on it,
+        // which is exactly why the rollup cannot be computed from the page alone.
+        wireReads([row('root', null, 0)]);
+        count.mockResolvedValue(1);
+        productGroupBy.mockResolvedValue([{ categoryId: 'child', _count: { _all: 19 } }]);
+
+        const result = await repo.findAllWithProductCount({ page: 1, limit: 20 });
+
+        expect(result.categories[0].productCount).toBe(0);
+        expect(result.categories[0].subtreeProductCount).toBe(19);
+      });
+
+      it('leaves a leaf category with the same number in both fields', async () => {
+        wireReads([row('child', 'root', 19)]);
+        count.mockResolvedValue(1);
+        productGroupBy.mockResolvedValue([{ categoryId: 'child', _count: { _all: 19 } }]);
+
+        const result = await repo.findAllWithProductCount({ page: 1, limit: 20 });
+
+        expect(result.categories[0].productCount).toBe(19);
+        expect(result.categories[0].subtreeProductCount).toBe(19);
+      });
+    });
+
+    describe('findWithProductCount', () => {
+      it('adds up the whole subtree when the category has descendants', async () => {
+        findUnique.mockResolvedValue({ id: 'root', name: 'Root' });
+        queryRaw.mockResolvedValue([{ id: 'root' }, { id: 'child' }]);
+        productCount.mockResolvedValueOnce(0).mockResolvedValueOnce(19);
+
+        const result = await repo.findWithProductCount('root');
+
+        expect(result!.productCount).toBe(0);
+        expect(result!.subtreeProductCount).toBe(19);
+      });
+
+      // A leaf's subtree is itself, so the second count would be the first one
+      // re-run — skipping it keeps the common read exactly as cheap as it was.
+      it('skips the second count for a leaf and reuses the direct one', async () => {
+        findUnique.mockResolvedValue({ id: 'leaf', name: 'Leaf' });
+        queryRaw.mockResolvedValue([{ id: 'leaf' }]);
+        productCount.mockResolvedValue(4);
+
+        const result = await repo.findWithProductCount('leaf');
+
+        expect(result!.productCount).toBe(4);
+        expect(result!.subtreeProductCount).toBe(4);
+        expect(productCount).toHaveBeenCalledTimes(1);
+      });
     });
   });
 });

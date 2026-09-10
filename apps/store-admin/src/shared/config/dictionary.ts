@@ -281,6 +281,9 @@ export const dict = {
     // (tied up in unshipped orders) / physical (on the shelf = available + reserved).
     // The sortable header uses the generic dict.common.sortByAria(label) helper.
     colStock: "Вільно / Резерв / Фізично",
+    // TASK-408: three numbers in one column need the arithmetic spelled out, or
+    // «Фізично» reads as a fourth independent figure the operator has to reconcile.
+    colStockHint: "Фізично = вільно + зарезервовано під незакриті замовлення",
     // Bulk activate / deactivate over the on-screen selection (TASK-355).
     bulk: {
       activate: (count: number) => `Активувати (${count})`,
@@ -573,6 +576,13 @@ export const dict = {
     colSlug: "Slug",
     colParent: "Батьківська",
     colProducts: "Товари",
+    // TASK-408: the column shows the SUBTREE total, because that is what the
+    // storefront category page lists. The direct count is spelled out beside it —
+    // without it a parent that files nothing of its own looks like a data error.
+    colProductsHint:
+      "Скільки товарів показує вітрина на сторінці категорії — разом з усіма підкатегоріями. " +
+      "У дужках — скільки лежить безпосередньо в самій категорії.",
+    productsDirect: (count: number) => `безпосередньо ${count}`,
     colSort: "Порядок",
     colStatus: "Статус",
     root: "Коренева",
@@ -606,6 +616,13 @@ export const dict = {
       edit: "Редагувати",
       activate: "Активувати",
       deactivate: "Деактивувати",
+      // TASK-408: an ACTIVE category under a deactivated ancestor is invisible on
+      // the storefront, but its own row says «Активна» — the status column can only
+      // speak about one row. The badge says what the tree does, so nobody spends an
+      // afternoon wondering why an active category has no page.
+      hiddenByParent: "Прихована через батька",
+      hiddenByParentHint: (name: string) =>
+        `Категорія активна, але не показується на вітрині: вимкнено «${name}» вище по дереву.`,
       // Blast radius (§3.11): stated BEFORE the mutation fires, N computed from
       // the tree already in memory.
       deactivateConfirm: (name: string, count: number) =>

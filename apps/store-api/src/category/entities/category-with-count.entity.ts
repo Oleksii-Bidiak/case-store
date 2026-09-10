@@ -1,11 +1,19 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 /**
- * Domain entity representing a category with its product count.
+ * Domain entity representing a category with its product counts.
  *
- * Used for admin listing endpoints where the number of products
- * per category is needed for display purposes.
- * Contains all CategoryEntity fields plus an additional productCount.
+ * Used for admin listing endpoints and the public category-by-slug read, where
+ * the number of products per category is needed for display purposes. Contains
+ * all CategoryEntity fields plus TWO counts (TASK-408):
+ *
+ * - `productCount` — active products filed DIRECTLY on this category;
+ * - `subtreeProductCount` — this category plus every descendant, which is what a
+ *   storefront category listing actually shows (it rolls up over the subtree,
+ *   TASK-236).
+ *
+ * They differ for every parent category, and reporting only the first is what
+ * made a parent read "0 товарів" beside a page listing nineteen of them.
  */
 export class CategoryWithCountEntity {
   @ApiProperty({
@@ -59,12 +67,23 @@ export class CategoryWithCountEntity {
   @ApiProperty({ description: 'Last update timestamp', example: '2024-01-01T00:00:00.000Z' })
   updatedAt!: Date;
 
-  @ApiProperty({ description: 'Number of products in this category', example: 42 })
+  @ApiProperty({
+    description: 'Number of ACTIVE products filed directly on this category',
+    example: 42,
+  })
   productCount!: number;
+
+  @ApiProperty({
+    description:
+      'Number of ACTIVE products in this category and every descendant (TASK-408) — ' +
+      'the figure the storefront category page lists',
+    example: 61,
+  })
+  subtreeProductCount!: number;
 
   /**
    * Create a CategoryWithCountEntity from a Prisma Category model
-   * with an aggregated product count.
+   * with its aggregated product counts.
    */
   static fromPrisma(
     category: {
@@ -80,6 +99,7 @@ export class CategoryWithCountEntity {
       updatedAt: Date;
     },
     productCount: number,
+    subtreeProductCount: number,
   ): CategoryWithCountEntity {
     const entity = new CategoryWithCountEntity();
     entity.id = category.id;
@@ -93,6 +113,7 @@ export class CategoryWithCountEntity {
     entity.createdAt = category.createdAt;
     entity.updatedAt = category.updatedAt;
     entity.productCount = productCount;
+    entity.subtreeProductCount = subtreeProductCount;
     return entity;
   }
 }
