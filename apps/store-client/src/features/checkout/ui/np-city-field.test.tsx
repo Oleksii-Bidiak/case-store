@@ -79,6 +79,49 @@ describe("NpCityField", () => {
     );
   });
 
+  // TASK-402: the lookup is a proxy to a third party. When it fails, "нічого не
+  // знайдено" blames the shopper's spelling for someone else's outage — and the
+  // free-text path that would have unblocked them goes unmentioned.
+  it("says the directory is unavailable when the lookup itself fails", async () => {
+    server.use(
+      http.get("*/api/delivery/cities", () =>
+        HttpResponse.json(
+          { statusCode: 503, message: "Nova Poshta is unavailable" },
+          { status: 503 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<Harness />);
+
+    await user.type(screen.getByLabelText(dict.checkout.fields.city), "Київ");
+
+    // Twice on purpose: inside the open dropdown, and as a notice under the
+    // field that survives the blur which closes it.
+    const notices = await screen.findAllByText(dict.checkout.searchUnavailable);
+    expect(notices.some((el) => el.getAttribute("role") === "status")).toBe(
+      true,
+    );
+    // The empty-result copy must not be what a failure looks like.
+    expect(screen.queryByText(dict.checkout.searchEmpty)).toBeNull();
+  });
+
+  it("keeps the typed city usable when the directory is down (free-text fallback)", async () => {
+    server.use(
+      http.get("*/api/delivery/cities", () =>
+        HttpResponse.json({ statusCode: 503 }, { status: 503 }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<Harness />);
+
+    await user.type(screen.getByLabelText(dict.checkout.fields.city), "Ромни");
+    await screen.findAllByText(dict.checkout.searchUnavailable);
+
+    expect(screen.getByTestId("city")).toHaveTextContent("Ромни");
+    expect(screen.getByTestId("npCityRef")).toHaveTextContent("");
+  });
+
   it("does not fire a search for queries shorter than 2 characters", async () => {
     let calls = 0;
     server.use(

@@ -987,6 +987,10 @@ export const dict = {
     discountLine: "Знижка",
     required: "Введіть промокод",
     tooLong: "Промокод занадто довгий",
+    // The preview endpoint is behind JwtAuthGuard, so a guest can never apply a
+    // code — say so before they spend one on a 401 (TASK-402).
+    guestHint: "Промокоди доступні після входу в акаунт.",
+    signInCta: "Увійти",
     // Typed error codes from the API map to friendly messages.
     errors: {
       DISCOUNT_NOT_FOUND: "Такого промокоду не існує.",
@@ -998,6 +1002,13 @@ export const dict = {
       DISCOUNT_MAX_REDEMPTIONS_REACHED:
         "Ліміт використань цього промокоду вичерпано.",
       DISCOUNT_USER_LIMIT_REACHED: "Ви вже використали цей промокод.",
+      // Status-driven branches (TASK-402). The live demo read a plain 401 as
+      // "WELCOME10 не працює" because every failure shared one sentence.
+      unauthorized: "Щоб скористатись промокодом, увійдіть в акаунт.",
+      forbidden:
+        "Сесія застаріла. Оновіть сторінку та застосуйте промокод ще раз.",
+      tooManyRequests:
+        "Забагато спроб. Зачекайте хвилину і спробуйте промокод ще раз.",
       generic: "Не вдалося застосувати промокод. Спробуйте ще раз.",
     } as Record<string, string>,
   },
@@ -1030,6 +1041,9 @@ export const dict = {
     shippingCostLabel: "Доставка",
     shippingCalculating: "Розраховуємо…",
     shippingSelectCity: "Оберіть місто для розрахунку",
+    // The NP estimate can come back empty or fail outright; the cost row used to
+    // fall silent (or, worse, print an ETA where a price belongs) — TASK-402.
+    shippingCostUnknown: "Уточнить оператор",
     etaValue: (days: number) => `Орієнтовно ${days}–${days + 1} роб. дн.`,
     fields: {
       firstName: "Ім'я",
@@ -1055,6 +1069,10 @@ export const dict = {
     warehouseHint: "Спершу оберіть місто, щоб побачити відділення Нової Пошти",
     searchLoading: "Пошук…",
     searchEmpty: "Нічого не знайдено",
+    // The NP directory is a proxied third party: when the lookup itself fails,
+    // "нічого не знайдено" blames the shopper's spelling (TASK-402).
+    searchUnavailable:
+      "Довідник Нової Пошти тимчасово недоступний — введіть місто вручну.",
     validation: {
       firstName: "Ім'я є обов'язковим",
       lastName: "Прізвище є обов'язковим",
@@ -1347,6 +1365,10 @@ export const dict = {
       noAccount: "Немає акаунту?",
       registerLink: "Реєстрація",
       errorInvalid: "Невірний email або пароль.",
+      // IP throttle on POST /auth/login is 5 per 60 s. Deliberately says only
+      // "за хвилину": the separate 15-minute per-account lockout must stay
+      // invisible, or the form becomes an account-enumeration oracle (TASK-402).
+      errorTooMany: "Забагато спроб. Спробуйте ще раз за хвилину.",
       validationEmail: "Введіть дійсну email-адресу",
       validationPassword: "Пароль є обов'язковим",
       // Slide-out extras (login "as in the mockup"). Social sign-in has no

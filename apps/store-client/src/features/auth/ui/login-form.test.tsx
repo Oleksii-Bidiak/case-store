@@ -85,6 +85,33 @@ describe("LoginForm", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
+  // TASK-402: a 429 is the throttler talking, not the credentials. Reading it as
+  // "щось пішло не так" invites the shopper to keep hammering an endpoint that
+  // is already refusing them.
+  it("names the rate limit on a 429, without mentioning the account lockout", async () => {
+    server.use(
+      http.post("*/api/auth/login", () =>
+        HttpResponse.json(
+          { statusCode: 429, message: "ThrottlerException: Too Many Requests" },
+          { status: 429 },
+        ),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<LoginForm />);
+
+    await submitCredentials(user);
+
+    expect(
+      await screen.findByText(dict.auth.login.errorTooMany),
+    ).toBeInTheDocument();
+    // Anti-enumeration: the separate 15-minute per-account lockout must stay
+    // invisible, so the copy may name only the IP throttle's one-minute window.
+    expect(dict.auth.login.errorTooMany).not.toMatch(/15/);
+    expect(screen.queryByText(dict.common.genericError)).toBeNull();
+  });
+
   // TASK-287: the API now answers EVERY login failure — including a deactivated
   // account — with the same generic 401, so there is no deactivated-specific UI
   // left to test. The permanent support link is what a locked-out user gets.
@@ -102,8 +129,12 @@ describe("LoginForm", () => {
 
   describe("Google OAuth (TASK-168)", () => {
     const realLocation = window.location;
+    const realFlag = process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED;
 
     beforeEach(() => {
+      // TASK-402: the button is opt-in per deployment now. These cases describe
+      // a deployment that really has Google credentials.
+      process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED = "true";
       // jsdom cannot navigate — swap window.location for a writable stand-in
       // so the component's `window.location.href = ...` is observable.
       Object.defineProperty(window, "location", {
@@ -114,6 +145,12 @@ describe("LoginForm", () => {
     });
 
     afterEach(() => {
+      // Assigning `undefined` would leave the literal string "undefined" behind.
+      if (realFlag === undefined) {
+        delete process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED;
+      } else {
+        process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED = realFlag;
+      }
       Object.defineProperty(window, "location", {
         configurable: true,
         writable: true,
@@ -170,6 +207,57 @@ describe("LoginForm", () => {
 
       const banner = await screen.findByText(dict.auth.oauth.error);
       expect(banner).toHaveAttribute("role", "alert");
+    });
+  });
+
+  // ─── Google button is opt-in per deployment (TASK-402) ─────────────────────
+  // `GET /api/auth/google` 500s unless the API carries real Google credentials.
+  // On the demo stand it did not, so the most prominent control on the login
+  // screen led to an error page. Absent configuration now means "no button".
+
+  describe("Google button visibility (TASK-402)", () => {
+    const realFlag = process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED;
+
+    afterEach(() => {
+      if (realFlag === undefined) {
+        delete process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED;
+      } else {
+        process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED = realFlag;
+      }
+    });
+
+    it("hides the Google button when the flag is unset", () => {
+      delete process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED;
+      renderWithProviders(<LoginForm />);
+
+      expect(
+        screen.queryByRole("button", { name: dict.auth.login.google }),
+      ).toBeNull();
+      // The rest of the sign-in options are untouched.
+      expect(
+        screen.getByRole("button", { name: dict.auth.login.apple }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: dict.auth.login.submit }),
+      ).toBeInTheDocument();
+    });
+
+    it("hides it for any value other than an explicit 'true'", () => {
+      process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED = "";
+      renderWithProviders(<LoginForm />);
+
+      expect(
+        screen.queryByRole("button", { name: dict.auth.login.google }),
+      ).toBeNull();
+    });
+
+    it("shows it on a deployment that declares Google is configured", () => {
+      process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED = "true";
+      renderWithProviders(<LoginForm />);
+
+      expect(
+        screen.getByRole("button", { name: dict.auth.login.google }),
+      ).toBeInTheDocument();
     });
   });
 });

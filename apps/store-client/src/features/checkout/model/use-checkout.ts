@@ -14,6 +14,7 @@ import {
   clearAppliedDiscount,
 } from "@/features/apply-discount";
 import { dict } from "@/shared/config";
+import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
 import type { CheckoutFormValues } from "./checkout-schema";
 import { requiresPaymentHandoff } from "./payment-methods";
 import { checkoutHandoffMessage, useOrderPayment } from "./use-order-payment";
@@ -140,10 +141,16 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
     router.push(`/orders/${order.id}/confirmation`);
   };
 
-  const status = mutation.error?.response?.status;
+  // A 400 from `createOrder` is never generic: it names the exact line that
+  // blocked the order — a product withdrawn from sale, or one whose stock no
+  // longer covers the quantity (`order.service.ts`, the checkout backstop).
+  // Collapsing that into "деякі товари можуть бути недоступні" leaves the
+  // shopper to guess which of eight items to remove (TASK-402), so the server's
+  // own sentence wins whenever it wrote one; the constant remains the fallback.
+  const status = apiErrorStatus(mutation.error);
   const errorMessage =
     status === 400
-      ? dict.checkout.error400
+      ? (apiErrorMessage(mutation.error) ?? dict.checkout.error400)
       : mutation.isError
         ? dict.common.genericError
         : null;
