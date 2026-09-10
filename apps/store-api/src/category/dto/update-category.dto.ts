@@ -76,7 +76,7 @@ export class UpdateCategoryDto {
   // Allow an explicit `null` (clear the parent → root category); only validate
   // the UUID format when a non-null value is supplied.
   @ValidateIf((o: UpdateCategoryDto) => o.parentId !== null)
-  @IsUUID('all', { message: 'Parent ID must be a valid UUID' })
+  @IsUUID('loose', { message: 'Parent ID must be a valid UUID' })
   parentId?: string | null;
 
   // NOTE (TASK-291, plan 158 §3.10.1): `sortOrder` is deliberately NOT accepted here —

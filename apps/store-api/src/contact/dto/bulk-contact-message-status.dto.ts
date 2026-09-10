@@ -27,7 +27,7 @@ export class BulkContactMessageStatusDto {
   @IsArray()
   @ArrayNotEmpty()
   @ArrayMaxSize(MAX_REORDER_IDS)
-  @IsUUID('all', { each: true })
+  @IsUUID('loose', { each: true })
   ids!: string[];
 
   @ApiProperty({

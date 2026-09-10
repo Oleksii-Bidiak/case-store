@@ -72,7 +72,7 @@ export class CategoryListQueryDto {
     required: false,
   })
   @IsOptional()
-  @IsUUID('all', { message: 'Parent ID must be a valid UUID' })
+  @IsUUID('loose', { message: 'Parent ID must be a valid UUID' })
   parentId?: string;
 
   @ApiProperty({

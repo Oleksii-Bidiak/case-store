@@ -10,7 +10,7 @@ export class SetCarouselItemDto {
     description: 'Product UUID',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
-  @IsUUID('all', { message: 'productId must be a valid UUID' })
+  @IsUUID('loose', { message: 'productId must be a valid UUID' })
   productId!: string;
 
   @ApiProperty({ description: 'Display order within the carousel (lower = first)', example: 0 })

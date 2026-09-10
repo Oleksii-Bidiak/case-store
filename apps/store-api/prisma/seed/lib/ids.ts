@@ -15,6 +15,13 @@ import { createHash } from 'crypto';
  * product answered 400 on save. Forcing both nibbles keeps the function
  * deterministic (the same seed still yields the same id) and makes the output a
  * real v4.
+ *
+ * This fixes ids written from now on; it does nothing for the ones already stored,
+ * which is why the DTOs validate with `@IsUUID('loose')` (shape only) rather than
+ * the default `'all'`. And because the same seed key now maps to a DIFFERENT id,
+ * re-seeding an older database `upsert`s new rows beside the old ones instead of
+ * updating them — do a full `migrate reset` first (docs/manual-qa-pending.md §Крок 0,
+ * docs/seed-guide.md §5).
  */
 export function deterministicUuid(seed: string): string {
   const h = createHash('sha1').update(seed).digest('hex').split('');

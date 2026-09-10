@@ -20,6 +20,21 @@ import { MAX_DESCRIPTION_LENGTH } from '../product.constants';
  *
  * All fields are optional — only provided fields will be updated.
  * Admin-only endpoint.
+ *
+ * TASK-397: every id below is `@IsUUID('loose')` — not `@IsUUID(4)`, and not the
+ * default `'all'`. The admin form posts back the categoryId / groupId / brandId it
+ * read off the product it had just fetched, so these validators guard ids the
+ * database issued, never ids a client invented — and the rows already in the
+ * database are not all valid UUIDs of any version. The seed's `deterministicUuid`
+ * used to leave the version and variant nibbles to a sha1 digest: measured over 500
+ * seeds, 11% of the ids it produced match validator's `'all'` pattern (version
+ * nibble `[1-8]`, variant `[89ab]` — node_modules/validator/lib/isUUID.js) and 2%
+ * match `4`, while all 500 match `'loose'`, which checks the 8-4-4-4-12 hex shape
+ * and nothing else. `'all'` would therefore keep answering 400 on most seeded
+ * groups until the database is re-seeded; `'loose'` accepts what Postgres actually
+ * holds and still rejects anything that is not UUID-shaped. The same reasoning
+ * applies to every other `@IsUUID` site in `src/`. Re-seeding is still required for
+ * a different reason — see the TASK-397 line in docs/manual-qa-pending.md.
  */
 export class UpdateProductDto {
   @ApiProperty({
@@ -114,7 +129,7 @@ export class UpdateProductDto {
     required: false,
   })
   @IsOptional()
-  @IsUUID('all', { message: 'Category ID must be a valid UUID' })
+  @IsUUID('loose', { message: 'Category ID must be a valid UUID' })
   categoryId?: string;
 
   @ApiProperty({
@@ -124,7 +139,7 @@ export class UpdateProductDto {
     nullable: true,
   })
   @IsOptional()
-  @IsUUID('all', { message: 'Group ID must be a valid UUID' })
+  @IsUUID('loose', { message: 'Group ID must be a valid UUID' })
   groupId?: string;
 
   @ApiProperty({
@@ -134,7 +149,7 @@ export class UpdateProductDto {
     nullable: true,
   })
   @IsOptional()
-  @IsUUID('all', { message: 'Brand ID must be a valid UUID' })
+  @IsUUID('loose', { message: 'Brand ID must be a valid UUID' })
   brandId?: string;
 
   @ApiProperty({
