@@ -111,17 +111,28 @@ export function CheckoutAddressForm({
                 placeholder={dict.checkout.phonePlaceholder}
                 aria-invalid={fieldState.error ? true : undefined}
                 aria-describedby={
-                  fieldState.error ? "checkout-phone-error" : undefined
+                  fieldState.error
+                    ? "checkout-phone-error"
+                    : "checkout-phone-hint"
                 }
                 {...field}
               />
-              {fieldState.error && (
+              {fieldState.error ? (
                 <p
                   id="checkout-phone-error"
                   role="alert"
                   className="text-sm text-destructive"
                 >
                   {fieldState.error.message}
+                </p>
+              ) : (
+                // Stated up front (TASK-407): "Вкажіть коректний номер
+                // телефону" tells a shopper that something is wrong, never what.
+                <p
+                  id="checkout-phone-hint"
+                  className="text-xs text-muted-foreground"
+                >
+                  {dict.checkout.phoneHint}
                 </p>
               )}
             </div>

@@ -9,11 +9,13 @@ import { useAuthControllerConfirmPasswordReset } from "@/entities/session";
 import { dict } from "@/shared/config";
 // Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders, which this client form does not need.
-import { passwordSchema } from "@/shared/lib/password-policy";
+import { customerPasswordSchema } from "@/shared/lib/password-policy";
 
 const resetSchema = z
   .object({
-    newPassword: passwordSchema,
+    // Shopper policy (TASK-407). A staff member resetting through this same
+    // emailed-link flow is still held to the strict rule server-side.
+    newPassword: customerPasswordSchema,
     confirmPassword: z.string(),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {

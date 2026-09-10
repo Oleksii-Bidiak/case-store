@@ -12,6 +12,8 @@ export * from "./analytics";
 // Reader for failed API responses (TASK-402) — same reasoning as `analytics`:
 // a plain module with no React import, so the barrel stays server-safe.
 export * from "./api-error";
+// UA phone mask + validation rule (TASK-407). Also plain and server-safe.
+export * from "./phone";
 // NOTE: `use-debounced-callback` is a client-only hook ("use client"). It is
 // intentionally NOT re-exported here — adding a client module to this barrel,
 // which server components also import (e.g. for `formatMoney`), splits the

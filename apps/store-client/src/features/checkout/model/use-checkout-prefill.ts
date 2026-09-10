@@ -43,6 +43,17 @@ export function useCheckoutPrefill(
     if (!user?.id) return;
     reset(
       {
+        // `reset` replaces the entire form value, so any field it omits becomes
+        // undefined. Restating the static defaults keeps the payment radio from
+        // silently losing its selection the moment the profile lands;
+        // `keepDirtyValues` still protects a choice the shopper already made.
+        //
+        // Spread FIRST, so what we know about this user wins over the blank
+        // default. It used to come last, which was harmless only for as long as
+        // the defaults and the profile fields did not overlap — the moment
+        // `phone: ""` joined the defaults (TASK-407) that ordering would have
+        // wiped the saved number out of every prefilled checkout.
+        ...CHECKOUT_DEFAULT_VALUES,
         firstName: user.firstName ?? "",
         lastName: user.lastName ?? "",
         phone: user.phone ?? "",
@@ -51,11 +62,6 @@ export function useCheckoutPrefill(
         deliveryAddress: "",
         npWarehouseRef: "",
         notes: "",
-        // `reset` replaces the entire form value, so any field it omits becomes
-        // undefined. Restating the static defaults keeps the payment radio from
-        // silently losing its selection the moment the profile lands;
-        // `keepDirtyValues` still protects a choice the shopper already made.
-        ...CHECKOUT_DEFAULT_VALUES,
       },
       { keepDirtyValues: true },
     );

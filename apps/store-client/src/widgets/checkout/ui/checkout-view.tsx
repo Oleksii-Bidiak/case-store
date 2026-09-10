@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -89,8 +90,7 @@ export function CheckoutView() {
     reset,
     setValue,
     setFocus,
-    trigger,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<CheckoutFormValues>({
     // Guests validate one extra field. RHF reassigns `control._options` on every
     // render, so swapping the resolver once the auth probe settles takes effect.
@@ -103,10 +103,7 @@ export function CheckoutView() {
 
   // Two-screen flow: Delivery (step 1) → Review (step 2). The order is created
   // only on the step-2 submit (TASK-146).
-  const { step, isValidating, goToReview, goToDelivery } = useCheckoutSteps(
-    trigger,
-    isGuest,
-  );
+  const { step, goToReview, goToDelivery } = useCheckoutSteps();
   const reviewHeadingRef = useRef<HTMLHeadingElement>(null);
   const isFirstRender = useRef(true);
 
@@ -133,6 +130,23 @@ export function CheckoutView() {
       keyof CheckoutFormValues | undefined;
     if (first) setFocus(first);
   };
+
+  /**
+   * Both steps submit through `handleSubmit` — step 1 to advance, step 2 to
+   * place the order (TASK-407).
+   *
+   * Step 1 used to be a `type="button"` calling `trigger()` by hand, and that is
+   * what made the errors stick: RHF arms `reValidateMode` ("onChange" by
+   * default) on SUBMIT, and a manual `trigger` is not a submit. So a shopper who
+   * pressed «Далі» with an empty phone, then filled it in, went on staring at
+   * «Вкажіть коректний номер телефону» until they pressed «Далі» again. Going
+   * through `handleSubmit` gives the intended timing for free: nothing is said
+   * before the first «Далі», and every message clears as the field is fixed.
+   */
+  const onStepSubmit = handleSubmit(
+    step === 1 ? goToReview : submitOrder,
+    focusFirstError,
+  );
 
   const items = data?.data?.items ?? [];
   const cartIsEmpty = !isInitializing && !isCartLoading && items.length === 0;
@@ -178,6 +192,26 @@ export function CheckoutView() {
 
   return (
     <div>
+      {/* Breadcrumbs — the checkout was the one step of the funnel with no way
+          back to the cart except the browser button (TASK-407). Same markup as
+          the cart's own trail so the two read as one path; `text-sm` rather than
+          that trail's grandfathered `text-[13px]`, since new code takes the
+          token scale (TASK-260). */}
+      <nav
+        aria-label={dict.product.breadcrumbAria}
+        className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground"
+      >
+        <Link href="/" className="transition-colors hover:text-foreground">
+          {dict.checkout.breadcrumbHome}
+        </Link>
+        <span aria-hidden="true">/</span>
+        <Link href="/cart" className="transition-colors hover:text-foreground">
+          {dict.checkout.breadcrumbCart}
+        </Link>
+        <span aria-hidden="true">/</span>
+        <span className="text-foreground">{dict.checkout.breadcrumb}</span>
+      </nav>
+
       <h1 className="mb-6 font-display text-2xl font-bold tracking-tight text-foreground sm:text-[28px]">
         {dict.checkout.title}
       </h1>
@@ -187,7 +221,7 @@ export function CheckoutView() {
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
         <form
-          onSubmit={handleSubmit(submitOrder, focusFirstError)}
+          onSubmit={onStepSubmit}
           className="flex min-w-0 flex-col gap-4"
           noValidate
         >
@@ -247,10 +281,9 @@ export function CheckoutView() {
               <CheckoutPayment control={control} options={paymentOptions} />
 
               <Button
-                type="button"
+                type="submit"
                 size="lg"
-                onClick={goToReview}
-                disabled={isValidating}
+                disabled={isSubmitting}
                 className="self-start"
               >
                 {dict.checkout.nextStep}

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { OAuthProvider } from '@prisma/client';
 import { AuthRepository } from './auth.repository';
@@ -1195,6 +1195,33 @@ describe('AuthService', () => {
       expect(authRepository.revokeAllUserTokens).toHaveBeenCalledWith(mockUser.id);
       expect(authRepository.revokeAllUserTokens).toHaveBeenCalledTimes(1);
     });
+
+    // TASK-407: the DTO can only apply the shopper policy here — a reset token
+    // says nothing about whose account it opens — so the strict staff rule has
+    // to be re-checked once the token resolves to a user. Without this, «Забули
+    // пароль?» would be a one-click way around it.
+    it('accepts a shopper-grade password for a CUSTOMER', async () => {
+      authRepository.findPasswordResetToken.mockResolvedValue(validRow as never);
+
+      await service.confirmPasswordReset('valid-token', 'newpassword1');
+
+      expect(authRepository.updatePasswordHash).toHaveBeenCalled();
+    });
+
+    it('refuses the same password when the token belongs to a staff account', async () => {
+      authRepository.findPasswordResetToken.mockResolvedValue({
+        ...validRow,
+        user: { ...mockUser, role: 'ADMIN' },
+      } as never);
+
+      await expect(service.confirmPasswordReset('valid-token', 'newpassword1')).rejects.toThrow(
+        BadRequestException,
+      );
+
+      expect(authRepository.updatePasswordHash).not.toHaveBeenCalled();
+      // The token is still unused, so the owner can try again with a stronger one.
+      expect(authRepository.markPasswordResetTokenUsed).not.toHaveBeenCalled();
+    });
   });
 
   // ─── generateTokenPair ────────────────────────────────────────────────────
@@ -1290,6 +1317,57 @@ describe('AuthService', () => {
       await expect(service.changePassword('ghost', 'anything', 'BrandNewPass1')).rejects.toThrow(
         'Invalid credentials',
       );
+    });
+
+    // ── Role-aware strength (TASK-407) ─────────────────────────────────────────
+    // One endpoint, two policies. `ChangePasswordDto` validates against the
+    // shopper rule because the body carries no role at all; the service knows
+    // who the caller is and holds staff to the strict one. Both branches are
+    // pinned here — the loose half alone would be a silent downgrade of every
+    // admin account.
+
+    it('lets a CUSTOMER set a password with no uppercase letter', async () => {
+      authRepository.findById.mockResolvedValue({ ...mockUser, role: 'CUSTOMER' });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      await service.changePassword('user-uuid-1', 'OldPass123', 'brandnewpass1');
+
+      expect(authRepository.updatePasswordHash).toHaveBeenCalled();
+    });
+
+    it.each(['ADMIN', 'MANAGER'])(
+      'refuses the same password for a %s account and changes nothing',
+      async (role) => {
+        authRepository.findById.mockResolvedValue({ ...mockUser, role });
+        (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+        await expect(
+          service.changePassword('user-uuid-1', 'OldPass123', 'brandnewpass1'),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(authRepository.updatePasswordHash).not.toHaveBeenCalled();
+        expect(authRepository.revokeAllUserTokens).not.toHaveBeenCalled();
+      },
+    );
+
+    it('accepts a strict password for a staff account', async () => {
+      authRepository.findById.mockResolvedValue({ ...mockUser, role: 'ADMIN' });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      await service.changePassword('user-uuid-1', 'OldPass123', 'BrandNewPass1');
+
+      expect(authRepository.updatePasswordHash).toHaveBeenCalled();
+    });
+
+    it('checks the CURRENT password before the policy — order matters', async () => {
+      // Reversed, a weak-password rejection would answer before the credential
+      // check and tell a token thief which accounts are staff.
+      authRepository.findById.mockResolvedValue({ ...mockUser, role: 'ADMIN' });
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        service.changePassword('user-uuid-1', 'WrongOldPass1', 'brandnewpass1'),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 });

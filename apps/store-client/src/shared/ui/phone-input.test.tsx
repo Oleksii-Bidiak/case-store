@@ -1,20 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { formatUAPhone, PhoneInput } from "./phone-input";
+import { PhoneInput } from "./phone-input";
 
-describe("formatUAPhone", () => {
-  it.each([
-    ["", "+380"],
-    ["0501234567", "+380 50 123 4567"],
-    ["380501234567", "+380 50 123 4567"],
-    ["+380501234567", "+380 50 123 4567"],
-    ["+380 50 123 4", "+380 50 123 4"],
-    ["12345678901", "+380 12 345 6789"],
-    ["80501234567", "+380 50 123 4567"],
-  ])("formats %p as %p", (input, expected) => {
-    expect(formatUAPhone(input)).toBe(expected);
-  });
-});
+// `formatUAPhone` moved to `shared/lib/phone.ts` alongside the validation rule
+// (TASK-407); its cases live in `shared/lib/phone.test.ts`.
 
 describe("PhoneInput", () => {
   it("renders the +380 prefix for an empty value", () => {

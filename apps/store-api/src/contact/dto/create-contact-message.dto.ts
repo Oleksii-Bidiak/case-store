@@ -1,6 +1,7 @@
 import { IsString, IsOptional, IsEmail, MaxLength, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsUaPhone } from '../../common/validators';
 
 /**
  * Trim a string value coming off the request body. Non-string values pass
@@ -24,11 +25,21 @@ export class CreateContactMessageDto {
   @MaxLength(120, { message: 'Name must be at most 120 characters' })
   name!: string;
 
-  @ApiProperty({ description: 'Contact phone number', example: '+380671234567' })
+  /**
+   * The number an operator will dial back (TASK-407). It had no format rule at
+   * all — `@MinLength(5)` accepted `12345` — which is how the contact queue
+   * collected messages nobody could answer. `@IsUaPhone` normalises the
+   * separators away and then requires `380` + 9 digits; `@MaxLength` stays as a
+   * bound on what gets stored, not as the format check it was standing in for.
+   */
+  @ApiProperty({
+    description: 'Contact phone number (Ukrainian: +380 and 9 digits, any separators)',
+    example: '+380671234567',
+  })
   @Transform(trim)
   @IsString()
-  @MinLength(5, { message: 'Phone must be at least 5 characters' })
   @MaxLength(32, { message: 'Phone must be at most 32 characters' })
+  @IsUaPhone()
   phone!: string;
 
   @ApiProperty({ description: 'Contact email address', example: 'ivan@example.com' })

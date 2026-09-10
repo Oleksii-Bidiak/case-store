@@ -10,14 +10,18 @@ import { useAuth, useAuthControllerChangePassword } from "@/entities/session";
 import { dict } from "@/shared/config";
 // Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders, which this client form does not need.
-import { passwordSchema } from "@/shared/lib/password-policy";
+import { customerPasswordSchema } from "@/shared/lib/password-policy";
 
 const changePasswordSchema = z
   .object({
     currentPassword: z
       .string()
       .min(1, dict.auth.changePassword.validationCurrentRequired),
-    newPassword: passwordSchema,
+    // This screen is `/account`, i.e. a shopper's, so it states the shopper
+    // policy (TASK-407). `POST /api/auth/password/change` serves the admin panel
+    // too and holds an ADMIN/MANAGER to the strict rule server-side, which the
+    // admin panel's own form already mirrors.
+    newPassword: customerPasswordSchema,
     confirmPassword: z.string(),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {

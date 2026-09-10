@@ -171,13 +171,16 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
         createdAt={order.createdAt}
       />
 
-      {/* Reads the server's `paymentStatus` and nothing else. Arriving here from
-          the provider's redirect proves only that a browser was pointed at this
-          URL — the money is confirmed by a signed callback that may still be in
-          flight (docs/payments-liqpay.md §4, rule 1). */}
+      {/* Every claim about money comes from the server's `paymentStatus`.
+          Arriving here from the provider's redirect proves only that a browser
+          was pointed at this URL — the money is confirmed by a signed callback
+          that may still be in flight (docs/payments-liqpay.md §4, rule 1).
+          `status` is passed for one narrow purpose: a closed order gets no
+          retry button (TASK-407). */}
       <OrderPaymentPanel
         orderId={order.id}
         paymentStatus={order.paymentStatus}
+        orderStatus={order.status}
         hasRecentAttempt={!!attempt}
         isAwaitingCallback={!!attempt && !waitElapsed}
       />

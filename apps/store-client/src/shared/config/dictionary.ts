@@ -1027,6 +1027,10 @@ export const dict = {
 
   checkout: {
     title: "Оформлення замовлення",
+    // Breadcrumbs (TASK-407) — the checkout had no way back to the cart.
+    breadcrumbHome: "Головна",
+    breadcrumbCart: "Кошик",
+    breadcrumb: "Оформлення",
     shippingAddress: "Адреса доставки",
     billingAddress: "Адреса оплати",
     billingSame: "Адреса оплати збігається з адресою доставки",
@@ -1072,6 +1076,9 @@ export const dict = {
     },
     countryPlaceholder: "напр. UA",
     phonePlaceholder: "напр. +380 50 123 4567",
+    // TASK-407: the rule is now "380 + 9 digits", so say so BEFORE the shopper
+    // trips over it — the error message alone never explains what was wrong.
+    phoneHint: "Український номер: +380 і 9 цифр",
     deliveryPlaceholder: "напр. Нова Пошта, відділення №12",
     deliveryHint:
       "Вкажіть місто та відділення Нової Пошти або адресу для кур'єра. Доставку оформлюємо вручну.",
@@ -1233,6 +1240,15 @@ export const dict = {
         "Онлайн-оплата зараз недоступна. Зателефонуйте нам або зачекайте на дзвінок менеджера.",
       retryConflict: "Це замовлення вже не можна оплатити онлайн.",
       retryGeneric: "Не вдалося перейти до оплати. Спробуйте ще раз.",
+      // Shown INSTEAD of the retry button once the order itself is closed
+      // (TASK-407). Says why there is no button, and says nothing about whether
+      // money moved — that stays the job of `paymentStatus` above.
+      orderCancelledTitle: "Замовлення скасовано",
+      orderCancelledBody:
+        "Це замовлення скасовано, тому оплатити його вже не можна. Якщо гроші все ж було списано — зателефонуйте нам, ми повернемо кошти.",
+      orderClosedTitle: "Замовлення вже виконано",
+      orderClosedBody:
+        "Замовлення доставлено, тож онлайн-оплата для нього недоступна. Якщо є питання щодо оплати — зателефонуйте нам.",
     },
 
     // ── Guest order status page (TASK-338) ──────────────────────────────────
@@ -1486,8 +1502,14 @@ export const dict = {
       validationFirstName: "Ім'я є обов'язковим",
       validationLastName: "Прізвище є обов'язковим",
       validationPassword: "Пароль має містити щонайменше 8 символів",
-      validationPasswordPolicy:
-        "Пароль має містити велику та малу літери й цифру",
+      // Shopper policy (owner decision 2026-09-10 / TASK-407): a letter and a
+      // digit, no uppercase requirement. The strict variant below is what staff
+      // accounts still answer to.
+      validationPasswordPolicy: "Пароль має містити літеру та цифру",
+      validationPasswordPolicyStaff:
+        "Пароль службового акаунту має містити велику та малу літери й цифру",
+      // Shown under the password field, before anything goes wrong.
+      passwordHint: "Щонайменше 8 символів, з літерою та цифрою",
       validationPasswordMatch: "Паролі не збігаються",
       terms: "Погоджуюсь з умовами використання та політикою конфіденційності",
       validationTerms: "Потрібно прийняти умови використання",
