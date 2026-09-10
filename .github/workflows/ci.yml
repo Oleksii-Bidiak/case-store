@@ -229,8 +229,8 @@ jobs:
       # with "datasource.url property is required" before applying anything (TASK-303).
       - run: npx prisma migrate deploy --config apps/store-api/prisma.config.ts
       - run: npx playwright install --with-deps chromium
-      # playwright.config.ts boots the API + storefront (webServer) and seeds the
-      # DB via globalSetup before running the specs.
+      # playwright.config.ts boots the API + storefront + admin panel (webServer)
+      # and seeds the DB via globalSetup before running the specs.
       - run: npm run test:e2e:pw
 
   test-int:
