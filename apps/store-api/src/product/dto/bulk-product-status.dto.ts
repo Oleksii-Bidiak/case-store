@@ -39,7 +39,7 @@ export class BulkProductStatusDto {
   // produce that today; this makes it a clear 400 rather than a confusing 404 if a
   // future caller does.
   @ArrayUnique({ message: 'ids must not contain duplicates' })
-  @IsUUID('4', { each: true })
+  @IsUUID('all', { each: true })
   ids!: string[];
 
   @ApiProperty({

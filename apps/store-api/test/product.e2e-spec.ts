@@ -651,6 +651,61 @@ describe('ProductController (e2e)', () => {
         .send({ slug: 'taken-slug' })
         .expect(409);
     });
+
+    // TASK-397. The admin form round-trips the ids it was given: it reads
+    // categoryId/groupId/brandId out of the product it just fetched and sends
+    // them straight back. When the DTO pinned `@IsUUID(4)` any row whose id was
+    // not specifically a v4 — every seeded ProductGroup, because the seed's
+    // `deterministicUuid` never set the version nibble — made "save" answer 400
+    // with no way for the operator to save the product at all. The version pin
+    // is gone from all 36 validation sites; these two guard the boundary.
+    it('accepts a non-v4 groupId that already exists in the database (TASK-397)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      // A well-formed UUID whose version nibble is 1, not 4.
+      const nonV4GroupId = '11f6ad8e-c52a-11d4-abaa-fd7c3b516503';
+
+      productRepositoryMock.findById.mockResolvedValue({
+        ...testProduct,
+        groupId: nonV4GroupId,
+      });
+      productRepositoryMock.update.mockResolvedValue({
+        ...testProduct,
+        groupId: nonV4GroupId,
+        name: 'Updated Product Name',
+      });
+
+      const response = await request(app.getHttpServer())
+        .put('/api/products/product-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Updated Product Name', groupId: nonV4GroupId })
+        .expect(200);
+
+      expect(response.body.data.name).toBe('Updated Product Name');
+      // Read positionally rather than with toHaveBeenCalledWith: the service
+      // passes a third `slugRename` argument, so a two-argument expectation would
+      // fail on the arity instead of on the id under test.
+      const [updatedId, updatePayload] = productRepositoryMock.update.mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      expect(updatedId).toBe('product-e2e-1');
+      expect(updatePayload).toEqual(expect.objectContaining({ groupId: nonV4GroupId }));
+    });
+
+    it('still rejects an id that is not a UUID at all (TASK-397)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+
+      const response = await request(app.getHttpServer())
+        .put('/api/products/product-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ groupId: 'not-a-uuid' })
+        .expect(400);
+
+      expect(JSON.stringify(response.body.message)).toContain('Group ID must be a valid UUID');
+      expect(productRepositoryMock.update).not.toHaveBeenCalled();
+    });
   });
 
   // ─── PATCH /api/products/:id/deactivate (admin) ─────────────────────────────

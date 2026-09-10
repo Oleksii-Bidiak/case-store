@@ -40,7 +40,7 @@ export class CreateBlogPostDto extends PublishFieldsDto {
   excerpt!: string;
 
   @ApiProperty({ description: 'Category id', example: '550e8400-e29b-41d4-a716-446655440000' })
-  @IsUUID('4', { message: 'categoryId must be a valid UUID' })
+  @IsUUID('all', { message: 'categoryId must be a valid UUID' })
   categoryId!: string;
 
   @ApiProperty({ description: 'Author display name', example: 'Олег Пилипенко' })

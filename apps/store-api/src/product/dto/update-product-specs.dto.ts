@@ -13,7 +13,7 @@ export class ProductSpecValueDto {
     description: 'The attribute definition this value fills in',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
-  @IsUUID(4, { message: 'definitionId must be a valid UUID' })
+  @IsUUID('all', { message: 'definitionId must be a valid UUID' })
   definitionId!: string;
 
   @ApiProperty({ description: 'Value in canonical string form', example: 'Силікон' })

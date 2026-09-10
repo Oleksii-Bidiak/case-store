@@ -70,7 +70,7 @@ export class ReorderGroupDto {
     example: null,
   })
   @ValidateIf((o: ReorderGroupDto) => o.parentId !== null)
-  @IsUUID('4')
+  @IsUUID('all')
   parentId!: string | null;
 
   @ApiProperty({
@@ -84,7 +84,7 @@ export class ReorderGroupDto {
   // NO @ArrayNotEmpty() — dragging the ONLY child out of a parent sends that parent an
   // empty list, and it is a day-one operator action (plan §3.4). Non-negotiable.
   @ArrayMaxSize(500)
-  @IsUUID('4', { each: true })
+  @IsUUID('all', { each: true })
   orderedIds!: string[];
 }
 
@@ -113,6 +113,6 @@ export class ReorderFlatDto {
   })
   @IsArray()
   @ArrayMaxSize(MAX_REORDER_IDS)
-  @IsUUID('4', { each: true })
+  @IsUUID('all', { each: true })
   orderedIds!: string[];
 }

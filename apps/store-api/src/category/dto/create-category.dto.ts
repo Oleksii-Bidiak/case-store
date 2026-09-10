@@ -70,7 +70,7 @@ export class CreateCategoryDto {
     required: false,
   })
   @IsOptional()
-  @IsUUID(4, { message: 'Parent ID must be a valid UUID' })
+  @IsUUID('all', { message: 'Parent ID must be a valid UUID' })
   parentId?: string;
 
   // NOTE (TASK-291, plan 158 §3.10.1): `sortOrder` is deliberately NOT accepted here.

@@ -144,9 +144,7 @@ export class CatalogImportController {
   @ApiOperation({ summary: 'Read one run with its full plan and progress' })
   @ApiResponse({ status: 200, type: CatalogImportRunEnvelope })
   @ApiResponse({ status: 404, description: 'Run not found' })
-  async findOne(
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-  ): Promise<CatalogImportRunEnvelope> {
+  async findOne(@Param('id', new ParseUUIDPipe()) id: string): Promise<CatalogImportRunEnvelope> {
     const run = await this.service.getRun(id);
     return { data: CatalogImportRunEntity.fromPrisma(run, true) };
   }
@@ -161,7 +159,7 @@ export class CatalogImportController {
   @ApiResponse({ status: 201, type: CatalogImportRunEnvelope })
   @ApiResponse({ status: 409, description: 'The run has already been applied or cancelled' })
   async apply(
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: ApplyImportDto,
   ): Promise<CatalogImportRunEnvelope> {
     const run = await this.service.apply(id, dto);
@@ -172,9 +170,7 @@ export class CatalogImportController {
   @ApiOperation({ summary: 'Discard a plan without applying it' })
   @ApiResponse({ status: 201, type: CatalogImportRunEnvelope })
   @ApiResponse({ status: 409, description: 'The run has already been applied' })
-  async cancel(
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-  ): Promise<CatalogImportRunEnvelope> {
+  async cancel(@Param('id', new ParseUUIDPipe()) id: string): Promise<CatalogImportRunEnvelope> {
     const run = await this.service.cancel(id);
     return { data: CatalogImportRunEntity.fromPrisma(run) };
   }

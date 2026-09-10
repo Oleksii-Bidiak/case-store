@@ -49,7 +49,7 @@ export class CreateCarouselDto extends PublishFieldsDto {
     required: false,
   })
   @ValidateIf((o: CreateCarouselDto) => o.source === CarouselSource.CATEGORY)
-  @IsUUID('4', { message: 'categoryId must be a valid UUID when source is CATEGORY' })
+  @IsUUID('all', { message: 'categoryId must be a valid UUID when source is CATEGORY' })
   categoryId?: string;
 
   @ApiProperty({

@@ -114,7 +114,7 @@ export class UpdateProductDto {
     required: false,
   })
   @IsOptional()
-  @IsUUID(4, { message: 'Category ID must be a valid UUID' })
+  @IsUUID('all', { message: 'Category ID must be a valid UUID' })
   categoryId?: string;
 
   @ApiProperty({
@@ -124,7 +124,7 @@ export class UpdateProductDto {
     nullable: true,
   })
   @IsOptional()
-  @IsUUID(4, { message: 'Group ID must be a valid UUID' })
+  @IsUUID('all', { message: 'Group ID must be a valid UUID' })
   groupId?: string;
 
   @ApiProperty({
@@ -134,7 +134,7 @@ export class UpdateProductDto {
     nullable: true,
   })
   @IsOptional()
-  @IsUUID(4, { message: 'Brand ID must be a valid UUID' })
+  @IsUUID('all', { message: 'Brand ID must be a valid UUID' })
   brandId?: string;
 
   @ApiProperty({
