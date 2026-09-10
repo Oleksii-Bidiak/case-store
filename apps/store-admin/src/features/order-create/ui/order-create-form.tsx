@@ -11,6 +11,7 @@ import {
   getAdminOrderControllerFindAllQueryKey,
   useAdminOrderControllerCreate,
 } from "@/entities/order";
+import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
 import {
   Button,
   Input,
@@ -90,6 +91,17 @@ export function OrderCreateForm() {
         onSuccess: (response) => {
           void queryClient.invalidateQueries({
             queryKey: getAdminOrderControllerFindAllQueryKey(),
+          });
+          // TASK-400: the order is created PENDING, which is precisely what the
+          // needs-action widget and the sidebar badge count (`newOrders` in
+          // `dashboard.repository.ts`). Without this the operator takes a phone
+          // order and the "new orders" badge still shows the old number.
+          //
+          // The per-order keys (detail, history, transitions) are deliberately
+          // NOT invalidated here: this id did not exist a moment ago, so there is
+          // nothing cached under it that could be stale.
+          void queryClient.invalidateQueries({
+            queryKey: getAdminDashboardControllerGetNeedsActionQueryKey(),
           });
           toast.success(dict.orderCreate.success);
           router.push(`/orders/${response.data.id}`);

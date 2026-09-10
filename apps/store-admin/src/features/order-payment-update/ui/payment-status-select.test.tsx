@@ -1,7 +1,17 @@
 import { http, HttpResponse, delay } from "msw";
-import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import { QueryClient } from "@tanstack/react-query";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import {
+  getAdminOrderControllerGetAllowedTransitionsQueryKey,
+  getAdminOrderControllerGetHistoryQueryKey,
+} from "@/entities/order";
 import { PaymentStatusSelect } from "./payment-status-select";
 
 const toastSuccess = jest.fn();
@@ -28,13 +38,31 @@ function stubPatch(status = 200) {
   );
 }
 
-function renderSelect(currentPaymentStatus = "PENDING") {
+function renderSelect(
+  currentPaymentStatus = "PENDING",
+  queryClient?: QueryClient,
+) {
   return renderWithProviders(
     <PaymentStatusSelect
       orderId={ORDER_ID}
       currentPaymentStatus={currentPaymentStatus}
     />,
+    queryClient ? { queryClient } : {},
   );
+}
+
+/** A QueryClient whose `invalidateQueries` calls the test can read back. */
+function spyingQueryClient() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  return {
+    queryClient,
+    invalidate: jest.spyOn(queryClient, "invalidateQueries"),
+  };
 }
 
 const openSelect = async () =>
@@ -115,5 +143,44 @@ describe("PaymentStatusSelect (TASK-151)", () => {
         name: dict.orderStatus.paymentUpdateAria,
       }),
     ).toBeDisabled();
+  });
+
+  // TASK-400. The bug this pins was invisible in this component: marking an
+  // order paid succeeded, and the damage only showed up on the NEXT action, in
+  // a different control. The status picker sends back the `updatedAt` it read
+  // from the allowed-transitions query as an optimistic-lock token; a payment
+  // write bumps `updatedAt`, so leaving that query cached made the picker
+  // present a token the server had already superseded, and the server refused
+  // the move as stale. The operator, alone in one tab, was told somebody else
+  // had just changed the order.
+  it("invalidates the allowed-transitions key, so the next status change is not refused as stale", async () => {
+    stubPatch(200);
+    const { queryClient, invalidate } = spyingQueryClient();
+    renderSelect("PENDING", queryClient);
+
+    await openSelect();
+    await userEvent.click(screen.getByRole("option", { name: "Оплачено" }));
+
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey:
+          getAdminOrderControllerGetAllowedTransitionsQueryKey(ORDER_ID),
+      }),
+    );
+  });
+
+  it("invalidates the history key, because the write adds a PAYMENT_STATUS audit row", async () => {
+    stubPatch(200);
+    const { queryClient, invalidate } = spyingQueryClient();
+    renderSelect("PENDING", queryClient);
+
+    await openSelect();
+    await userEvent.click(screen.getByRole("option", { name: "Оплачено" }));
+
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: getAdminOrderControllerGetHistoryQueryKey(ORDER_ID),
+      }),
+    );
   });
 });
