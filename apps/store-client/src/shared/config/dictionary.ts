@@ -956,6 +956,18 @@ export const dict = {
     countShort: (n: number) => `${n} тов.`,
     inStock: "В наявності",
     outOfStock: "Немає в наявності",
+    // A line the API flagged `isActive: false` — the product, or its category,
+    // was withdrawn from sale while it sat in the cart (TASK-403). Not a stock
+    // problem: no quantity makes it orderable again, so the line offers removal
+    // instead of a stepper and holds the checkout CTA until it is gone.
+    unavailable: "Недоступно",
+    unavailableNote:
+      "Товар знято з продажу — приберіть його, щоб оформити замовлення.",
+    unavailableRemove: "Прибрати",
+    unavailableRemoveAria: (name: string) =>
+      `Прибрати недоступний товар «${name}» з кошика`,
+    checkoutBlocked:
+      "Приберіть недоступні товари з кошика, щоб оформити замовлення.",
     addExtra: "Додати ще товари",
     summaryHeading: "Разом",
     itemsLine: "Товари",
