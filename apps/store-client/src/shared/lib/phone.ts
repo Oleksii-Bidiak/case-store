@@ -8,11 +8,19 @@
  * about it until an operator called. Validation therefore runs on the
  * NORMALISED value — digits only — and the mask stays presentation.
  *
- * The rule (owner decision, 2026-09-10): a storefront contact number is a
- * Ukrainian one — 12 digits, `380` + a 9-digit local number. It is applied to
- * the **checkout** and **contact** forms only. `order/dto/guest-contact.dto.ts`
- * on the API deliberately stays format-free for roaming and border numbers;
- * that decision is written down there and still stands.
+ * The rule (plan 173, TASK-407 §1): a number a shopper types into the storefront
+ * is a Ukrainian one — 12 digits, `380` + a 9-digit local number. It is applied
+ * to the **checkout** and **contact** forms only, and mirrored on the API by
+ * `@IsUaPhone()` on the contact DTO.
+ *
+ * The order endpoints deliberately stay format-free: they also carry orders an
+ * operator enters by hand and orders from API clients, where a roaming or
+ * border-region number is legitimate. That decision is written down at
+ * `apps/store-api/src/order/dto/guest-contact.dto.ts:39-41` (TASK-338) and was
+ * not reopened here — see the scope note on `IsUaPhone` in
+ * `apps/store-api/src/common/validators/is-ua-phone.decorator.ts`, which states
+ * the same split from the other side. A shopper still cannot submit a non-UA
+ * number, because this schema refuses it before the request is made.
  */
 
 /** Digits in a UA local number, after the `380` country code. */

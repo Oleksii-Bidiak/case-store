@@ -1502,14 +1502,16 @@ export const dict = {
       validationFirstName: "Ім'я є обов'язковим",
       validationLastName: "Прізвище є обов'язковим",
       validationPassword: "Пароль має містити щонайменше 8 символів",
-      // Shopper policy (owner decision 2026-09-10 / TASK-407): a letter and a
-      // digit, no uppercase requirement. The strict variant below is what staff
-      // accounts still answer to.
-      validationPasswordPolicy: "Пароль має містити літеру та цифру",
+      // Shopper policy (owner decision 2026-09-10 / TASK-407): a LOWERCASE
+      // letter and a digit, no uppercase requirement. Says «малу» because the
+      // regex means it — «PAROLE123» is refused, and a message describing a
+      // laxer rule than the one enforced reads as a broken form. The strict
+      // variant below is what staff accounts still answer to.
+      validationPasswordPolicy: "Пароль має містити малу літеру та цифру",
       validationPasswordPolicyStaff:
         "Пароль службового акаунту має містити велику та малу літери й цифру",
       // Shown under the password field, before anything goes wrong.
-      passwordHint: "Щонайменше 8 символів, з літерою та цифрою",
+      passwordHint: "Щонайменше 8 символів, з малою літерою та цифрою",
       validationPasswordMatch: "Паролі не збігаються",
       terms: "Погоджуюсь з умовами використання та політикою конфіденційності",
       validationTerms: "Потрібно прийняти умови використання",

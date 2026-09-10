@@ -655,9 +655,9 @@ export class AuthService {
    * Staff — ADMIN today, any future MANAGER — sign in with a password (plus 2FA
    * once it lands). Without this gate, any privileged row whose email happens to
    * be a Gmail address turns Google's consent screen into a full admin login:
-   * the store's password policy, `is-strong-app-password` and the login lockout
-   * are all bypassed, and the entire trust boundary silently moves onto that
-   * Google account.
+   * the store's password policy, `IsStaffPassword` and the login lockout are all
+   * bypassed, and the entire trust boundary silently moves onto that Google
+   * account.
    *
    * The refusal is the same generic {@link INVALID_CREDENTIALS_MESSAGE} used
    * everywhere else in this file (TASK-274/287) — never "you are an admin, use

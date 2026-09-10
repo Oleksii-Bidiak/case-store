@@ -15,7 +15,9 @@ import { IsString, Matches, MinLength } from 'class-validator';
  * so they no longer share one rule:
  *
  *   - {@link IsCustomerPassword} — 8+ chars, at least one lowercase letter and
- *     one digit. Registration, password reset, self-service change.
+ *     one digit. Registration, password reset, self-service change. Lowercase
+ *     specifically, not "a letter": `PAROLE123` is rejected, and every message
+ *     and hint that states this rule has to say so.
  *   - {@link IsStaffPassword} — the original strict rule. `POST /api/users` and
  *     the owner's reset of an employee's password.
  *
@@ -46,14 +48,18 @@ export const STAFF_PASSWORD_REGEX = /^(?=.*\p{Ll})(?=.*\p{Lu})(?=.*\d).*$/u;
 
 export const PASSWORD_MIN_LENGTH_MESSAGE = `Password must be at least ${PASSWORD_MIN_LENGTH} characters long`;
 
-export const CUSTOMER_PASSWORD_MESSAGE = 'Password must contain at least one letter and one digit';
+// Says "lowercase" because CUSTOMER_PASSWORD_REGEX means it: `PAROLE123` has a
+// letter and a digit and is still rejected. A message that describes a laxer
+// rule than the one being enforced reads as a bug in the form.
+export const CUSTOMER_PASSWORD_MESSAGE =
+  'Password must contain at least one lowercase letter and one digit';
 
 export const STAFF_PASSWORD_MESSAGE =
   'Password must contain at least one lowercase letter, one uppercase letter and one digit';
 
 /** Human-readable policy summaries for OpenAPI (`@ApiProperty`) descriptions. */
 export const CUSTOMER_PASSWORD_DESCRIPTION =
-  `minimum ${PASSWORD_MIN_LENGTH} characters, ` + 'at least one letter and one digit';
+  `minimum ${PASSWORD_MIN_LENGTH} characters, ` + 'at least one lowercase letter and one digit';
 
 export const STAFF_PASSWORD_DESCRIPTION =
   `minimum ${PASSWORD_MIN_LENGTH} characters, ` +

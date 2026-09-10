@@ -783,9 +783,9 @@ describe('AuthService', () => {
     // token for a role other than CUSTOMER. Staff sign in with a password (plus
     // 2FA later). Without this gate, any ADMIN row whose email happens to be a
     // Gmail address turns Google's consent screen into a full admin login —
-    // bypassing the store's password policy, is-strong-app-password and any
-    // future lockout, and moving the whole trust boundary onto that Google
-    // account. There is deliberately no env toggle: the rule is hardcoded.
+    // bypassing the store's password policy, IsStaffPassword and any future
+    // lockout, and moving the whole trust boundary onto that Google account.
+    // There is deliberately no env toggle: the rule is hardcoded.
 
     /** The single server-side event that records a blocked privileged login. */
     const blockedEvents = (): Array<Record<string, unknown>> =>

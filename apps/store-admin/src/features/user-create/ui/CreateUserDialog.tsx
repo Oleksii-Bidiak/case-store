@@ -29,7 +29,12 @@ import { dict } from "@/shared/config";
 
 const d = dict.users;
 
-/** Mirrors `IsStrongAppPassword()` on the API — same rule, stated once here. */
+/**
+ * Mirrors `IsStaffPassword()` on the API — same rule, stated once here.
+ *
+ * Staff only, and it stays strict: TASK-407 loosened the SHOPPER policy
+ * (`IsCustomerPassword`, no uppercase requirement) and left this one alone.
+ */
 const STRONG_PASSWORD = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

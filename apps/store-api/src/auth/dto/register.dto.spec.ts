@@ -10,8 +10,8 @@ import { LoginDto } from './login.dto';
  * QA originally found that `testtest` (8 chars, no uppercase, no digit) was
  * accepted, and the fix required an uppercase letter too. The live demo run then
  * showed shoppers abandoning registration on that requirement, so the shopper
- * rule is now: min 8 characters + at least one letter and one digit. Staff
- * accounts keep the strict rule (see `password-policy.decorator.spec.ts`).
+ * rule is now: min 8 characters + at least one lowercase letter and one digit.
+ * Staff accounts keep the strict rule (see `password-policy.decorator.spec.ts`).
  *
  * Login stays exempt from all of it — existing accounts predate every version.
  */
@@ -40,8 +40,15 @@ describe('RegisterDto password policy', () => {
     it('reports an explicit policy message for testtest', async () => {
       const [error] = await validatePassword('testtest');
       expect(Object.values(error.constraints ?? {}).join('; ')).toContain(
-        'at least one letter and one digit',
+        'at least one lowercase letter and one digit',
       );
+    });
+
+    // The message has to describe the rule that is enforced, not a laxer one:
+    // `PAROLE123` has "a letter and a digit" and is refused all the same.
+    it('names the lowercase requirement for an uppercase-only password', async () => {
+      const [error] = await validatePassword('PAROLE123');
+      expect(Object.values(error.constraints ?? {}).join('; ')).toContain('lowercase');
     });
 
     it('rejects a non-string password', async () => {

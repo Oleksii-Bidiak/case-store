@@ -50,12 +50,26 @@ class IsUaPhoneConstraint implements ValidatorConstraintInterface {
  * Validates a Ukrainian phone number, whatever separators it was typed with
  * (TASK-407).
  *
- * ⛔ Scope, deliberately narrow: the **storefront contact form** only. It is NOT
- * applied to `order/dto/guest-contact.dto.ts` or `order/dto/address.dto.ts` — the
- * written decision there is that an order may legitimately carry a roaming or
- * cross-border number, and the owner reconfirmed it on 2026-09-10. A contact
- * form is different: it exists so we can call the person back, and a number we
- * cannot dial is not a contact.
+ * ── Scope, and why it is narrow ───────────────────────────────────────────────
+ * Applied to the buyer-facing storefront forms only: the contact form
+ * (`contact/dto/create-contact-message.dto.ts`) here, and checkout + contact on
+ * the client through `apps/store-client/src/shared/lib/phone.ts`. Both ends of
+ * the wire therefore answer to the same rule for a number a SHOPPER types: the
+ * storefront is a Ukrainian shop, and the number exists so somebody can dial it.
+ *
+ * It is deliberately NOT applied to `order/dto/guest-contact.dto.ts` or
+ * `order/dto/address.dto.ts`. Those fields also carry orders an operator enters
+ * by hand and orders from API clients, where a roaming or border-region number
+ * is legitimate; that is the written decision at `guest-contact.dto.ts:39-41`,
+ * landed with TASK-338 (commit `0dbc3df`, 2026-07-28). TASK-407 did not reopen
+ * it, so plan 173's line about `create-order.dto` / `create-manual-order.dto` is
+ * knowingly left undone rather than quietly skipped.
+ *
+ * The two are only consistent read together, so read them together: a shopper
+ * cannot submit a non-UA number through the storefront (the form refuses it
+ * before the request is made), while the order endpoints still accept one from
+ * an operator. If that ever stops being what the shop wants, both halves move at
+ * once — the client schema, this decorator's scope and the order DTOs.
  */
 export function IsUaPhone(validationOptions?: ValidationOptions) {
   return function (object: object, propertyName: string) {

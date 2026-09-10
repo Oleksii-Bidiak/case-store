@@ -12,14 +12,17 @@ import { normalizeUaPhone } from './is-ua-phone.decorator';
  * punctuation around it.
  */
 
-async function phoneErrors(phone: unknown) {
-  const dto = plainToInstance(CreateContactMessageDto, {
+function dtoFor(phone: unknown): CreateContactMessageDto {
+  return plainToInstance(CreateContactMessageDto, {
     name: 'Ivan Petrenko',
     phone,
     email: 'ivan@example.com',
     message: 'Доброго дня! Хотів би дізнатись про наявність.',
   });
-  const errors = await validate(dto);
+}
+
+async function phoneErrors(phone: unknown) {
+  const errors = await validate(dtoFor(phone));
   return errors.filter((error) => error.property === 'phone');
 }
 
@@ -69,5 +72,27 @@ describe('CreateContactMessageDto phone', () => {
     expect(Object.values(error.constraints ?? {}).join('; ')).toContain(
       '+380 followed by 9 digits',
     );
+  });
+
+  /**
+   * The storefront field is masked, so what arrives is `+380 50 111 2233`, not
+   * the digits the shopper pressed. Storing the mask would leave the column
+   * holding several spellings of one number and break any admin-side lookup by
+   * phone, so the DTO normalises before the value ever reaches the repository.
+   */
+  describe('normalises before storage', () => {
+    it.each([
+      ['+380 50 111 2233', 'the mask the storefront input renders'],
+      ['+380501112233', 'international form'],
+      ['0501112233', 'domestic leading zero'],
+      ['+38 (050) 111-22-33', 'brackets and dashes'],
+      ['  +380 50 111 2233  ', 'surrounding whitespace'],
+    ])('%s (%s) → 380501112233', (phone) => {
+      expect(dtoFor(phone).phone).toBe('380501112233');
+    });
+
+    it('leaves a non-string value alone so @IsString still reports it', () => {
+      expect(dtoFor(380501112233).phone).toBe(380501112233 as unknown as string);
+    });
   });
 });

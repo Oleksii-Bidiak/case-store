@@ -14,7 +14,9 @@ import { dict } from "@/shared/config";
  * address and an order history, not the shop.
  *
  *   - CUSTOMER (registration, password reset, self-service change): 8+ chars,
- *     at least one letter and one digit. No uppercase requirement.
+ *     at least one LOWERCASE letter and one digit. No uppercase requirement —
+ *     but lowercase specifically, so `PAROLE123` is refused and the copy under
+ *     the field has to say «малу літеру», not just «літеру».
  *   - STAFF (accounts created in the admin panel, and any password an
  *     ADMIN/MANAGER sets): the strict rule, unchanged. These accounts can edit
  *     the catalogue, read every order and create other staff.

@@ -60,6 +60,14 @@ describe("customerPasswordSchema (shopper policy)", () => {
   it("no longer asks the shopper for an uppercase letter, in copy either", () => {
     expect(dict.auth.register.validationPasswordPolicy).not.toMatch(/велик/i);
   });
+
+  it("states the lowercase requirement it actually enforces", () => {
+    // «PAROLE123» has a letter and a digit and is refused all the same, so copy
+    // promising only «літеру» describes a rule the form does not implement.
+    expect(customerPasswordSchema.safeParse("PAROLE123").success).toBe(false);
+    expect(dict.auth.register.validationPasswordPolicy).toMatch(/мал/i);
+    expect(dict.auth.register.passwordHint).toMatch(/мал/i);
+  });
 });
 
 describe("staffPasswordSchema (staff policy — unchanged)", () => {
