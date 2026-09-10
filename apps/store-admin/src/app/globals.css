@@ -1,4 +1,9 @@
 @import 'tailwindcss';
+/* `prose` / `prose-sm` / `dark:prose-invert` are typography-plugin utilities.
+   Without this line they compile to nothing, so bold, headings and lists looked
+   like plain paragraphs inside the rich-text editor (TASK-399) while the
+   read-only preview — which the storefront styles — rendered them correctly. */
+@plugin '@tailwindcss/typography';
 
 /* ─────────────────────────────────────────────
    Semantic Design Tokens (Light Mode)
