@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-397**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-460**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -102,7 +102,7 @@
 | TASK-214 | PDP gallery: image-switch spinner with 120ms delayed visibility (no flash on cache hits, `onError`-safe, `motion-reduce` aware); skeleton rebuilt to mirror the real `1fr_1fr_360px` layout | ✅ | — |
 | TASK-215 | Colour swatches: shared map extended (UA adjective stems + Apple finishes, longest-token-first); PDP colour axis renders round swatches with ring on selected; unknown → neutral gradient; all seed colours resolve (unit-locked) | ✅ | — |
 | TASK-216 | Catalog UX: «Показати ще N товарів» appends pages client-side (`?page=` stays the URL contract; reset on filter/sort/page change); «Категорія» moved to chips row above the grid; page-size selector dropped, virtualization deliberately skipped (no profiling data); per-category filters still ride on TASK-191 | ✅ | — |
-| TASK-217 | Move `/orders` into `/account` as a section — **waits for the owner's Claude Design mockup import** | 🅿️ | — |
+| TASK-217 | Move `/orders` into `/account` as a section — **розпарковано 2026-09-10**: макет робимо в Claude Design прямо з Claude Code (скіл `design`), реалізація у хвилі 174 | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
 | TASK-219 | **[discovery]** Coupons v2 proposal: foundation = server-side applied-discount state (replaces sessionStorage), stacking via `combinesWith*`+priority, auto-apply, first-order, category scoping; gift cards as separate payment instrument; coverage pyramid incl. property-based rounding invariants | ✅ | 097 |
 | TASK-220 | **[discovery]** Reviews v2 proposal: status-enum moderation (replaces reject-as-delete), 48h edit window, `ReviewReply`; found bugs: verified-badge ignores order status, public entity leaks `userId`, PDP capped at 10 reviews with no pagination | ✅ | 098 |
 | TASK-221 | Structured working-hours editor (per-day rows, «вихідний» toggle, live preview) serializing to canonical string `Пн–Пт: 9:00–18:00; …` — contract unchanged (`workingHours` stays string); legacy free text preserved in raw mode | ✅ | — |
@@ -499,12 +499,120 @@
 
 ---
 
+## Хвиля після живого прогону 2026-08-27 (плани 173–179)
+
+> Джерело: журнал [`docs/reviews/2026-08-27-demo-run.md`](docs/reviews/2026-08-27-demo-run.md) + чекліст [`docs/qa-demo-server.md`](docs/qa-demo-server.md) (285 ✅ / 139 ❌ / 87 не дійшли).
+> Розбір кодом і мапа кожної знахідки → задача: [`docs/reviews/2026-08-27-demo-run-triage.md`](docs/reviews/2026-08-27-demo-run-triage.md). Корені з `file:line` — у планах, не тут.
+> Рішення власника 2026-09-10: брейншторми окремою сесією (план 178); стенд (пошта, НП, Google, Umami, LiqPay) не вмикаємо — повторний прогін на staging (TASK-457); великі 💡 — до запуску.
+> Порядок: 173 першою → 174 ∥ 175 ∥ 176 у worktrees → 177 (після TASK-424) → 179 фоном; 178 паралельно з власником.
+> Перепровірка: [`docs/qa-recheck.md`](docs/qa-recheck.md) — лише ❌ і не пройдені чеки з мапою чек → задача; закриваючи задачу, постав `[🔁]` на її чеках (Додаток А там), тестер проходить лише `[🔁]`.
+
+### План 173 — Хвиля A: розблокувати повторний прогін
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-397 | [🔴] Збереження товару в адмінці падає з 400: сідові `groupId` не UUID v4 проти `@IsUUID(4)`; тост ховає причину | ⬜ | [173](docs/plans/173-demo-run-fix-wave.md) |
+| TASK-398 | [🔴] Зображення в адмінці не вантажаться: `Cross-Origin-Resource-Policy: same-origin` від Helmet на `/uploads` | ⬜ | [173](docs/plans/173-demo-run-fix-wave.md) |
+| TASK-399 | [🔴] Редактор Tiptap порожній при клієнтській навігації (збереження затирає текст); без typography-плагіна | ⬜ | [173](docs/plans/173-demo-run-fix-wave.md) |
+| TASK-400 | [🔴] «Хтось інший змінив замовлення» в одній вкладці: після зміни оплати не інвалідується ключ переходів | ⬜ | [173](docs/plans/173-demo-run-fix-wave.md) |
+| TASK-401 | [🔴] Rate-limit мовчки вимикається без Redis (fail-open): fail-closed для публічних записів + сигнал на старті | ⬜ | [173](docs/plans/173-demo-run-fix-wave.md) |
+| TASK-402 | [🟡] Мапери помилок вітрини викидають відповідь сервера: промокод для гостя → «увійдіть, щоб скористатись» (підтверджено: тестер був гостем), 403/429, чекаут 400, логін 429, НП 503, Google-кнопка без конфігу | ⬜ | [173](docs/plans/173-demo-run-fix-wave.md) |
+| TASK-403 | [🟡] Кошик не позначає недоступний товар; чекаут ковтає причину (E-14, SF-CART-18) | ⬜ | [173](docs/plans/173-demo-run-fix-wave.md) |
+| TASK-404 | [🟡] «Власна ціна» на послузі товару видаляє послугу: `OVERRIDE` замість `ADD` (AD-PROD-25) | ⬜ | [173](docs/plans/173-demo-run-fix-wave.md) |
+| TASK-405 | [🟡] `/orders?status=` у новій вкладці — фільтри не працюють: статичний маршрут + `useUrlParams` | ⬜ | [173](docs/plans/173-demo-run-fix-wave.md) |
+| TASK-406 | [🟡] Створення менеджера не знайти: CTA у заголовок `/users` **і** на «Права доступу» з видачею акаунта одразу; пошук за повним іменем і SKU; бейдж деактивації без F5 | ⬜ | [173](docs/plans/173-demo-run-fix-wave.md) |
+| TASK-407 | [🟡] Чекаут: телефон по цифрах (спільний UA-валідатор), помилки зникають при вводі, степер 3/3, контейнер підтвердження, retry на скасованому; пароль покупця ≥8 + мала + цифра (адмінка лишає строгу) | ⬜ | [173](docs/plans/173-demo-run-fix-wave.md) |
+| TASK-408 | [🟡] «Фізично» з echo-відповідей мутацій; лічильник категорій по піддереву; бейдж «прихована через батька»; тест на цикл | ⬜ | [173](docs/plans/173-demo-run-fix-wave.md) |
+| TASK-409 | [🟡] Дрібне на вітрині: `[slug]/loading.tsx`, стан кнопки PDP, prefetch варіантів, `showAddons` у mini-cart, refresh після зняття, сід відгуків із замовленнями | ⬜ | [173](docs/plans/173-demo-run-fix-wave.md) |
+
+### План 174 — Вітрина: адаптив, тема, фільтри, PDP, пошук (🟡 до запуску)
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-410 | Адаптив до 320px: форма розсилки, хедер `min-w-0`, `scrollbar-gutter`, Sheet `dvh`, іконки <390px | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-411 | Пошук у хедері: лупа нижче `lg`, `keepPreviousData` для підказок, hover ≠ клавіатура (Enter), лінк «показати всі» | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-412 | Ручний перемикач теми для всіх відвідувачів (`next-themes` + `data-theme`) | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-413 | Мега-меню: стрілки вгору/вниз, блокування скролу, «Усі товари» на десктопі | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-414 | Фільтри: скидання пристрою, скрол сайдбару, `inStock`, кілька характеристик, бренди за категорією; набір фасетів — за TASK-458 | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-415 | Сітка 1 (<390px) / 2 / 4 (скасовує F-19), фото в aspect-боксі з `object-contain`, однакова висота карток, діагностика оверлею при alt+tab | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-416 | PDP: колонки з 768px, лайтбокс, таби в URL, скелетони сайдбару каталогу й aside головної | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-417 | Пошук: фільтри на `/search`, SKU в індексі, блог у Meili, спільна пагінація для blog/search/promo | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-418 | Кошик: перерахунок під час вводу кількості, «Повернути» після видалення | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-419 | Повернення після входу на сторінку-джерело; заглушки «порівняння/1 клік» за прапорцем; тихий 401 refresh | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-420 | [L, останньою] Слаги замість id у параметрах каталогу (`/orders/[id]` лишається UUID) | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-459 | Аудит shadcn-примітивів на вітрині й в адмінці: селекти ростуть при скролі (`position="popper"`, `max-h`), комбобокси, шторки, діалоги, scroll-lock | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+
+### План 175 — Адмінка як CRM (🟡 до запуску; продовжує епік TASK-292 / план 168)
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-421 | Дати у форматі `uk-UA` через спільний форматер (16 місць, 8 на `en-US`) | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-422 | Тости: кнопка закриття; успіх 6 с, помилки без автозакриття (зараз 4000 мс) | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-423 | [M–L] Єдиний пошук/фільтри таблиць, селекти з пошуком, фільтр моделей, масові дії товарів, DnD-підказки | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-424 | Завантаження зображень для категорій/брендів/банерів/блогу + drag&drop пачкою (спільний upload-пайплайн) | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-425 | Замовлення: послуги, промокод, гість/акаунт у деталях; фільтри оплати й «давно чекає» у списку | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-426 | Операторське замовлення: пікер клієнта, маска телефону, місто НП, валідатор ТТН (розширює TASK-341) | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-427 | Товари: кнопка видалення (API вже є), лишатись на edit після збереження, read-only картка | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-428 | Порядок сортування: `useSortableListGrid` для FAQ/сторінок/каруселей, дефолт `max+1` | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-429 | Банери: вікно від–до, прев'ю з пропорціями; підказка про ручні каруселі; `/promo` у карті контенту | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-430 | CRM-дрібниці: favicon, лінки топ-товарів, UA-аудит-лог, бейдж «Заплановано», email-бейдж, SKU у відгуках, нотатки на клієнта | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-431 | [після TASK-443] Матриця сумісності статусів оплати й замовлення; селект лише з легальними переходами | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+
+### План 176 — Контент і SEO (🟡 до запуску)
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-432 | description/og падають на глобальні (порядок тирів `resolveSeo`); og-блоки категорії/головної; `g:product_type` | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-433 | Хост SERP-прев'ю з env (зараз `mobilestore.ua`); назва магазину в одному місці | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-434 | Редактор: посилання, зображення, таблиці | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-435 | `/info` як CMS (`Page.kind`), розділення `/legal` і `/info`, SEO хабів із БД | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-436 | Блог: featured як Switch, «Читайте також», `listed=false` замість клоакінгу | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-437 | SEO-поля: теги (keywords), `ogImage` на сутностях, повторний GEO-аудит | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-438 | `docs/search-guide.md` для оператора; пізніше синоніми з адмінки | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+
+### План 177 — Медіа (🟡 до запуску; після TASK-424)
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-439 | Зняти ліміт 5 МБ: resize+rotate на сервері, 20/25 МБ, Caddy `max_size` | ⬜ | [177](docs/plans/177-media-pipeline.md) |
+| TASK-440 | AVIF у `next/image` + тест на відсутність EXIF | ⬜ | [177](docs/plans/177-media-pipeline.md) |
+| TASK-441 | [L] Внутрішня медіатека `MediaAsset` з пікером у всіх формах | ⬜ | [177](docs/plans/177-media-pipeline.md) |
+| TASK-442 | Створення товару з усім одразу: локальне стейджування → `:id`-ендпоінти після створення | ⬜ | [177](docs/plans/177-media-pipeline.md) |
+
+### План 178 — Брейншторми (окрема сесія з власником; кожна задача = одне рішення)
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-443 | B-1 Життєвий цикл замовлення: матриця статусів, джерело заявки на повернення, товар недоступний у замовленні | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-444 | B-2 Видалення товару і категорії | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-445 | B-3 Ролі: OWNER/ADMIN, права на людину чи пресети, PII для менеджерів | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-446 | Відгуки (рішення 2026-09-10): оцінки рахуються одразу, у списку лише схвалені **з текстом**, пагінація по 10, дописати текст до оцінки, захист від зловживань оцінками (throttle, «від покупців», сигнал на дашборд); відкриті лише відповіді й підпис автора | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-447 | B-5 Видимість замовлення для гостя/телефонного покупця: `orderNumber`, пошук за номером і телефоном | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-448 | B-6 Доставка не лише НП: самовивіз, кур'єр, екран `/settings/delivery` (TASK-374) | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-449 | B-7 Сповіщення: Telegram-бот власнику (S), outbox із каналами, SMS-коди | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-450 | B-8 Детальна статистика: перші звіти, Umami API | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-451 | B-9 Головна як контент; перегляд vs редагування в адмінці; прев'ю як на вітрині | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-458 | B-10 Фасети каталогу: які фільтри потрібні по категоріях (ринок vs наші атрибути), чому зараз мало — дані сіду чи модель; вхід для TASK-414 | ⬜ | [178](docs/plans/178-brainstorms.md) |
+
+### План 179 — Якість: безпека, доки, моніторинг, пайплайн, ревʼю, повторний прогін
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-452 | [🟡] Безпека: CSP вітрини, honeypot у контактах, CodeQL / dependency-review / Trivy образів | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-453 | Доки: 4 биті посилання, CI `docs-links`, forms.md Rule 4, admin-guide, presentation після хвиль | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-454 | [🟢] Мінімальний моніторинг: UptimeRobot, Sentry-правила, healthchecks.io, netdata | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-455 | [🟢] Пайплайн замість розбиття монорепо: paths-filter, кеш, Playwright без continue-on-error | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-456 | Ревʼю якості коду і доків по модулях → звіт у `docs/reviews` | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-457 | [QA] Повторний прогін стендових чеків на staging (тріаж §8) | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+
+---
+
 ## How to Update This File
 
 - **Start a task:** ⬜ → 🔄. **Complete:** → ✅ once build/lint/typecheck + automated tests pass;
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-397**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-460**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
