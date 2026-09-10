@@ -149,7 +149,8 @@ const TOOLBAR_GROUPS: ToolbarButton[][] = [
  *   record it and leave the document (and the caret) alone.
  * - once the admin has actually edited here, later external values are recorded
  *   but never applied — losing typed work is worse than showing stale server
- *   text (forms.md Rule 2b).
+ *   text (forms.md Rule 2: a background refetch must not discard in-progress
+ *   edits; Rule 2b's id-keyed reset is a different sub-case).
  *
  * Always import the default export from `./index` (dynamic, ssr:false) — Tiptap
  * touches the DOM on init and must not render on the server.

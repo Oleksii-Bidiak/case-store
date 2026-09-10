@@ -79,7 +79,7 @@ describe("RichTextEditor", () => {
     await waitFor(() => expect(editable).toHaveTextContent("Другий"));
   });
 
-  it("never overwrites edits already made in the editor (forms.md Rule 2b)", async () => {
+  it("never overwrites edits already made in the editor (forms.md Rule 2)", async () => {
     const onChange = jest.fn();
     const { rerender } = render(
       <RichTextEditor value="<p>Старий текст</p>" onChange={onChange} />,
