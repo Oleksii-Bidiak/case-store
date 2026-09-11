@@ -11421,8 +11421,8 @@
           },
           "password": {
             "type": "string",
-            "description": "User password (minimum 8 characters, at least one lowercase letter, one uppercase letter and one digit)",
-            "example": "StrongP@ss123",
+            "description": "User password (minimum 8 characters, at least one lowercase letter and one digit)",
+            "example": "strongp@ss123",
             "minLength": 8
           },
           "firstName": {
@@ -11483,8 +11483,8 @@
           },
           "newPassword": {
             "type": "string",
-            "description": "New account password (minimum 8 characters, at least one lowercase letter, one uppercase letter and one digit)",
-            "example": "StrongP@ss123",
+            "description": "New account password (minimum 8 characters, at least one lowercase letter and one digit; staff accounts additionally require an uppercase letter)",
+            "example": "strongp@ss123",
             "minLength": 8
           }
         },
@@ -11503,8 +11503,8 @@
           },
           "newPassword": {
             "type": "string",
-            "description": "New account password (minimum 8 characters, at least one lowercase letter, one uppercase letter and one digit)",
-            "example": "StrongP@ss123",
+            "description": "New account password (minimum 8 characters, at least one lowercase letter and one digit; staff accounts additionally require an uppercase letter)",
+            "example": "strongp@ss123",
             "minLength": 8
           }
         },
@@ -12407,8 +12407,13 @@
           },
           "productCount": {
             "type": "number",
-            "description": "Number of products in this category",
+            "description": "Number of ACTIVE products filed directly on this category",
             "example": 42
+          },
+          "subtreeProductCount": {
+            "type": "number",
+            "description": "Number of ACTIVE products in this category and every descendant (TASK-408) — the figure the storefront category page lists",
+            "example": 61
           }
         },
         "required": [
@@ -12419,7 +12424,8 @@
           "sortOrder",
           "createdAt",
           "updatedAt",
-          "productCount"
+          "productCount",
+          "subtreeProductCount"
         ]
       },
       "CategoryPaginationMeta": {
@@ -12577,8 +12583,13 @@
           },
           "productCount": {
             "type": "number",
-            "description": "Number of ACTIVE products in this category",
+            "description": "Number of ACTIVE products filed directly on this category",
             "example": 12
+          },
+          "subtreeProductCount": {
+            "type": "number",
+            "description": "Number of ACTIVE products in this category and every descendant (TASK-408) — the figure the storefront category page actually lists",
+            "example": 19
           },
           "depth": {
             "type": "number",
@@ -12596,6 +12607,7 @@
           "children",
           "parentId",
           "productCount",
+          "subtreeProductCount",
           "depth"
         ]
       },
@@ -18642,7 +18654,7 @@
           },
           "phone": {
             "type": "string",
-            "description": "Contact phone number",
+            "description": "Contact phone number (Ukrainian: +380 and 9 digits, any separators). Stored normalised, as digits only.",
             "example": "+380671234567"
           },
           "email": {
@@ -19344,7 +19356,7 @@
           },
           "phone": {
             "type": "string",
-            "description": "Phone number the courier can call",
+            "description": "Phone number the courier can call — any country, 9 to 15 digits (E.164), typed with whatever separators the buyer uses",
             "example": "+380501234567",
             "maxLength": 32
           },
@@ -19411,7 +19423,7 @@
           },
           "phone": {
             "type": "string",
-            "description": "Contact phone",
+            "description": "Contact phone — any country, 9 to 15 digits (E.164), typed with whatever separators the buyer uses",
             "example": "+380501234567"
           },
           "npCityRef": {
