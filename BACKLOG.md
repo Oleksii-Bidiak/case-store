@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-460**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-461**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -604,6 +604,7 @@
 | TASK-455 | [🟢] Пайплайн замість розбиття монорепо: paths-filter, кеш, Playwright без continue-on-error | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
 | TASK-456 | Ревʼю якості коду і доків по модулях → звіт у `docs/reviews` | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
 | TASK-457 | [QA] Повторний прогін стендових чеків на staging (тріаж §8) | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-460 | [🔴 CI] Блокуючий джоб `test-int` червоний із 2026-08-03: `cache.int-spec.ts` не збирає модуль (`CategoryService` вимагає `RevalidationNotifier` із 0718fc9, спек його не надає) — 3 тести падають, інші 86 зелені | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
 
 ---
 
@@ -613,6 +614,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-460**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-461**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
