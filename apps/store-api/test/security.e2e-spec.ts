@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { AbstractLoader, ExpressLoader } from '@nestjs/serve-static';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
@@ -118,6 +119,20 @@ describe('Security hardening (e2e)', () => {
       .useValue(userRepositoryMock)
       .overrideProvider(CartRepository)
       .useValue(cartRepositoryMock)
+      // Restore the loader a real boot would have picked. `ServeStaticModule`
+      // chooses between ExpressLoader / FastifyLoader / NoopLoader in a provider
+      // factory that reads `HttpAdapterHost.httpAdapter` — and under
+      // `Test.createTestingModule().compile()` every provider is instantiated
+      // BEFORE `createNestApplication()` exists, so the host is still empty and
+      // the module silently settles on NoopLoader. `/uploads` is then never
+      // mounted, every request for it 404s through the Nest router, and the CORP
+      // assertion below reads as a failure of the application when it is one of
+      // the harness. A real `NestFactory.create(AppModule)` boot was checked and
+      // does mount it. Everything else here stays production code: `rootPath`
+      // still comes from ConfigService and the headers from the
+      // `serveStaticOptions` in `app.module.ts`.
+      .overrideProvider(AbstractLoader)
+      .useValue(new ExpressLoader())
       .compile();
 
     app = moduleFixture.createNestApplication();
