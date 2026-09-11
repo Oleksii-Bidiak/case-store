@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-487**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-491**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -533,7 +533,7 @@
 | TASK-411 | Пошук у хедері: лупа нижче `lg`, `keepPreviousData` для підказок, hover ≠ клавіатура (Enter), лінк «показати всі» | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
 | TASK-412 | Ручний перемикач теми для всіх відвідувачів (`next-themes` + `data-theme`) | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
 | TASK-413 | Мега-меню: стрілки вгору/вниз, блокування скролу, «Усі товари» на десктопі | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
-| TASK-414 | Фільтри: скидання пристрою, скрол сайдбару, `inStock`, кілька характеристик, бренди за категорією; набір фасетів — за TASK-458 | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-414 | Фільтри: скидання пристрою, скрол сайдбару, `inStock`, кілька характеристик, бренди за категорією. **Уточнено рішенням B-10 (2026-09-11):** «кілька характеристик» = мультивибір `?specs=material:Силікон,TPU;case-type:Накладка` — АБО всередині фасета, І між фасетами, старий однопарний формат лишається валідним входом; `inStock` = `stock > 0`; набір фасетів — TASK-488 | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
 | TASK-415 | Сітка 1 (<390px) / 2 / 4 (скасовує F-19), фото в aspect-боксі з `object-contain`, однакова висота карток, діагностика оверлею при alt+tab | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
 | TASK-416 | PDP: колонки з 768px, лайтбокс, таби в URL, скелетони сайдбару каталогу й aside головної | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
 | TASK-417 | Пошук: фільтри на `/search`, SKU в індексі, блог у Meili, спільна пагінація для blog/search/promo | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
@@ -592,7 +592,7 @@
 | TASK-449 | B-7 Сповіщення: Telegram-бот власнику (S), outbox із каналами, SMS-коди | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-450 | B-8 Детальна статистика: перші звіти, Umami API | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-451 | B-9 Головна як контент; перегляд vs редагування в адмінці; прев'ю як на вітрині | ⬜ | [178](docs/plans/178-brainstorms.md) |
-| TASK-458 | B-10 Фасети каталогу: які фільтри потрібні по категоріях (ринок vs наші атрибути), чому зараз мало — дані сіду чи модель; вхід для TASK-414 | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-458 | B-10 Фасети каталогу: мультивибір, наявність і колір, розширений набір фасетів, лічильники, SEO-сторінки сумісності — рішення 2026-09-11 (з порівнянням із Rozetka/Allo), реалізація в TASK-487…490 + уточнення TASK-414 | ✅ | [178](docs/plans/178-brainstorms.md) |
 
 #### Реалізація за рішеннями B-1 (2026-09-11)
 
@@ -628,6 +628,15 @@
 | TASK-485 | Приєднання гостьових замовлень **при підтвердженні пошти**, не при реєстрації: виклик `claimGuestOrders` там, де ставиться `emailVerifiedAt`; розрив циклу `AuthModule → OrderModule → UserModule → AuthModule` портом (зразок `PublishablePort`) або `ModuleRef`; банер «приєднано N замовлень» у кабінеті; тест «неверифікована адреса не приєднує нічого». Закриває хвіст TASK-338 | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-486 | Доки під рішення B-5: `docs/user-stories.md` (E-17 і подорож О2 — телефонний покупець більше не сліпий), `docs/admin-guide.md` «як дати покупцеві посилання на його замовлення» + коли видавати нове, `docs/qa-manual-full.md` — публічна форма статусу як окрема ZONE-перевірка (включно з перевіркою, що адреси на ній немає) | ⬜ | [178](docs/plans/178-brainstorms.md) |
 
+#### Реалізація за рішеннями B-10 (2026-09-11)
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-487 | Колір як наскрізний фасет: `color` (SELECT, `isFilterable`) у товарних категоріях + заповнені значення (сід, імпорт каталогу, масова правка в адмінці), свотчі кольору у сайдбарі. Нової моделі не треба — колір уже є віссю групи (`ProductGroupAxis`), тож фасет читає той самий атрибут, що розводить позиції | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-488 | Розширення набору фасетів за ринковим списком: `isFilterable` для вже заповнених MagSafe (чохли), ANC (навушники), технологія (зарядки), к-сть портів, твердість (скло); три нові атрибути — вихідний роз'єм зарядки, мікрофон навушників, комплектація чохла; стеля 6 фасетів у сайдбарі + «Ще фільтри», порядок за `sortOrder`. TEXT-атрибути фасетами не робимо ніколи | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-489 | Лічильники біля значень фасета з урахуванням уже вибраних фільтрів («Силікон (12)») + приховування нульових значень: агрегат у `product.repository`, `GET /categories/:id/filterable-specs` віддає counts, кнопка мобільної шторки стає «Показати N товарів». Обсяг росту — facet distribution у Meilisearch (уже в стеку), окремої задачі не заводимо | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-490 | SEO-сторінки сумісності `/catalog/<категорія>/<модель>` («Чохли для iPhone 15 Pro»): маршрут на парі категорія × `DeviceModel`, власні H1/title/опис, sitemap; решта фасетів лишається query-параметрами з `canonical` на категорію і `noindex` — свідома межа проти ферми майже однакових сторінок | ⬜ | [178](docs/plans/178-brainstorms.md) |
+
 ### План 179 — Якість: безпека, доки, моніторинг, пайплайн, ревʼю, повторний прогін
 
 | Task ID | Description | Status | Plan |
@@ -655,6 +664,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-487**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-491**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
