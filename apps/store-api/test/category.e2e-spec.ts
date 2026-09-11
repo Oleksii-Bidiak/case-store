@@ -384,6 +384,7 @@ describe('CategoryController (e2e)', () => {
       categoryRepositoryMock.findWithProductCount.mockResolvedValue({
         category: testCategory,
         productCount: 5,
+        subtreeProductCount: 19,
       });
 
       const response = await request(app.getHttpServer())
@@ -395,6 +396,10 @@ describe('CategoryController (e2e)', () => {
       expect(response.body.data).toHaveProperty('name', 'Phone Cases');
       expect(response.body.data).toHaveProperty('slug', 'phone-cases');
       expect(response.body.productCount).toBe(5);
+      // TASK-408: the subtree rollup travels beside the direct count — this page
+      // LISTS the whole subtree, so the direct number alone describes a different
+      // set of products than the one on screen.
+      expect(response.body.data.subtreeProductCount).toBe(19);
     });
 
     it('should return 404 for non-existent slug', async () => {
@@ -445,8 +450,8 @@ describe('CategoryController (e2e)', () => {
 
       categoryRepositoryMock.findAllWithProductCount.mockResolvedValue({
         categories: [
-          { category: testCategory, productCount: 5 },
-          { category: testChildCategory, productCount: 3 },
+          { category: testCategory, productCount: 5, subtreeProductCount: 8 },
+          { category: testChildCategory, productCount: 3, subtreeProductCount: 3 },
         ],
         total: 2,
       });
@@ -462,6 +467,7 @@ describe('CategoryController (e2e)', () => {
       expect(Array.isArray(response.body.data)).toBe(true);
       expect(response.body.data).toHaveLength(2);
       expect(response.body.data[0]).toHaveProperty('productCount');
+      expect(response.body.data[0]).toHaveProperty('subtreeProductCount', 8); // TASK-408
     });
   });
 
@@ -727,16 +733,35 @@ describe('CategoryController (e2e)', () => {
     it('should return 400 when setting parent to a descendant (cycle)', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
+      // `parentId` travels in the BODY, where `UpdateCategoryDto` validates it as
+      // a UUID — unlike the path id, which the controller reads as a plain string
+      // (the 404 case above posts `nonexistent-id` and gets past the pipe). With
+      // the fixture's `cat-e2e-2` here the request never reached the service at
+      // all: the ValidationPipe answered 400 first, and for years the assertion
+      // `.expect(400)` was satisfied by that — the cycle branch below has in fact
+      // never run in this suite. A UUID-shaped descendant id is what makes the
+      // request reach `CategoryService.update` and its cycle guard.
+      const descendantId = 'cae2e002-0000-4000-8000-000000000002';
+
       categoryRepositoryMock.findById.mockResolvedValue(testCategory);
       categoryRepositoryMock.findById.mockResolvedValueOnce(testCategory);
-      categoryRepositoryMock.findById.mockResolvedValueOnce(testChildCategory);
-      categoryRepositoryMock.findDescendantIds.mockResolvedValue(['cat-e2e-2']);
+      categoryRepositoryMock.findById.mockResolvedValueOnce({
+        ...testChildCategory,
+        id: descendantId,
+      });
+      categoryRepositoryMock.findDescendantIds.mockResolvedValue([descendantId]);
 
-      await request(app.getHttpServer())
+      const response = await request(app.getHttpServer())
         .put('/api/admin/categories/cat-e2e-1')
         .set('Authorization', `Bearer ${token}`)
-        .send({ parentId: 'cat-e2e-2' })
+        .send({ parentId: descendantId })
         .expect(400);
+
+      // TASK-408 (AD-CAT-08): the STATUS alone is not enough for the admin form —
+      // it tells apart "you made a cycle" from every other 400 this route can
+      // return by the stable `error` code, exactly as the reorder route does.
+      expect(response.body).toHaveProperty('error', 'CATEGORY_CYCLE');
+      expect(categoryRepositoryMock.update).not.toHaveBeenCalled();
     });
   });
 
@@ -761,6 +786,7 @@ describe('CategoryController (e2e)', () => {
       metaDescription: null,
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
       productCount: 3,
+      subtreeProductCount: 3,
       depth: 1,
       children: [],
     };
@@ -914,6 +940,7 @@ describe('CategoryController (e2e)', () => {
       metaDescription: null,
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
       productCount: 3,
+      subtreeProductCount: 3,
       depth: 1,
       children: [],
     };

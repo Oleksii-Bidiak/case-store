@@ -150,6 +150,22 @@
     "parser back at the version just declared insufficient, to avoid a test-config",
     "change, trades the wrong thing."
   ],
+  "//jest.roots": [
+    "TASK-397. `rootDir: \"src\"` alone made the seed untestable: Jest only ever",
+    "crawled `src/`, so a spec under `prisma/seed/` was not \"failing\" — it was",
+    "never collected, and adding one looked like it passed. `deterministicUuid`",
+    "shipped a broken UUID for that long. `roots` widens the crawl to `prisma/`",
+    "without moving `rootDir`, which the transform paths and `coverageDirectory`",
+    "below still resolve against. Keep the seed's specs beside the seed code —",
+    "`prisma/tsconfig.json` already typechecks that tree.",
+    "",
+    "Do NOT put explanatory keys inside the `jest` object: Jest validates its own",
+    "option names and prints the whole comment as an 'Unknown option' warning on",
+    "every run. Hence this sibling key.",
+    "",
+    "Only the `jest` key here needs it — test/jest-e2e.json and test/jest-int.json",
+    "have their own rootDir and do not look at prisma/."
+  ],
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
@@ -188,6 +204,10 @@
       "ts"
     ],
     "rootDir": "src",
+    "roots": [
+      "<rootDir>",
+      "<rootDir>/../prisma"
+    ],
     "testRegex": ".*\\.spec\\.ts$",
     "transformIgnorePatterns": [
       "/node_modules/(?!(?:sanitize-html|htmlparser2|domhandler|domutils|domelementtype|dom-serializer|entities)/)"

@@ -16,7 +16,7 @@ import {
 /** One order line the customer wants to send back (TASK-340). */
 export class ReturnItemDto {
   @ApiProperty({ description: 'Order line being returned', format: 'uuid' })
-  @IsUUID()
+  @IsUUID('loose')
   orderItemId!: string;
 
   @ApiProperty({

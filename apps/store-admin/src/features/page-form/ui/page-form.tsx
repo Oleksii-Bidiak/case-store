@@ -187,6 +187,7 @@ export function PageForm({
                 <RichTextEditor
                   value={field.value ?? ""}
                   onChange={field.onChange}
+                  resetKey={id}
                   placeholder={dict.pageForm.contentPlaceholder}
                   disabled={isPending}
                 />

@@ -24,6 +24,7 @@ import { ProductSpecsEditor } from "@/features/product-specs-editor";
 import { ProductPublishPanel } from "@/features/product-publish-panel";
 import { Separator } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { apiErrorMessage } from "@/shared/lib";
 
 interface EditProductViewProps {
   productId: string;
@@ -80,8 +81,14 @@ export function EditProductView({ productId }: EditProductViewProps) {
           toast.success(dict.products.toastUpdated);
           router.push("/products");
         },
-        onError: () => {
-          toast.error(dict.products.toastUpdateFailed);
+        onError: (mutationError) => {
+          // TASK-397: the generic toast swallowed the server's own explanation,
+          // turning a precise 400 ("Group ID must be a valid UUID") into an
+          // unactionable "Не вдалося оновити товар" that took a live demo run to
+          // diagnose. Show the API's words whenever it sends any.
+          toast.error(
+            apiErrorMessage(mutationError) ?? dict.products.toastUpdateFailed,
+          );
         },
       },
     );
@@ -144,6 +151,7 @@ export function EditProductView({ productId }: EditProductViewProps) {
           />
 
           <ProductForm
+            id={productId}
             defaultValues={mapProductToFormValues(product)}
             onSubmit={handleSubmit}
             isPending={update.isPending}

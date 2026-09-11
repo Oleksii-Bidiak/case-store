@@ -150,12 +150,20 @@ export interface PaginatedCategoriesResult {
 }
 
 /**
- * Category with aggregated product count.
- * Used for admin listing endpoints.
+ * Category with aggregated product counts.
+ * Used for admin listing endpoints and the public category-by-slug read.
+ *
+ * `productCount` counts ACTIVE products filed DIRECTLY on the category;
+ * `subtreeProductCount` counts the category AND every descendant (TASK-408) —
+ * the figure the storefront category page actually lists, since a listing rolls
+ * up over the whole subtree (TASK-236). A parent that files nothing itself has
+ * `productCount: 0` and a non-zero subtree total, and reporting only the first
+ * is what made the admin show 0 next to a storefront page listing 19.
  */
 export interface CategoryWithCountResult {
   category: Category;
   productCount: number;
+  subtreeProductCount: number;
 }
 
 /**
@@ -440,6 +448,12 @@ export class CategoryRepository {
    * with a `visited` set, so a (schema-permitted, guard-prevented) parent cycle can
    * never spin this forever — such nodes are simply unreachable and omitted. A row
    * whose `parentId` points at a missing row is treated as a root.
+   *
+   * The same depth-first pass rolls `subtreeProductCount` up (TASK-408): a child is
+   * fully built before its parent returns, so adding each child's total into the
+   * parent is exact at every level and costs nothing — no extra query, no recursive
+   * CTE. Rows that are unreachable (a cycle) are absent from the tree and therefore
+   * contribute to no total, which is the rule their own row already follows.
    */
   private assembleAdminTree(rows: AdminCategoryTreeRow[]): AdminCategoryTreeNodeEntity[] {
     const byId = new Map<string, AdminCategoryTreeRow>(rows.map((row) => [row.id, row]));
@@ -462,7 +476,9 @@ export class CategoryRepository {
       const node = AdminCategoryTreeNodeEntity.fromRow(row, depth);
       for (const child of childRowsByParent.get(row.id) ?? []) {
         if (visited.has(child.id)) continue;
-        node.children.push(build(child, depth + 1));
+        const childNode = build(child, depth + 1);
+        node.children.push(childNode);
+        node.subtreeProductCount += childNode.subtreeProductCount;
       }
       return node;
     };
@@ -681,8 +697,14 @@ export class CategoryRepository {
   }
 
   /**
-   * Find a category by ID with its product count.
-   * Returns the category record and the count of active products.
+   * Find a category by ID with its product counts — direct and subtree-wide.
+   *
+   * This backs the PUBLIC category-by-slug read, whose page lists the whole
+   * subtree (TASK-236). Reporting only the direct count there was the same
+   * mismatch the admin tree had (TASK-408), so both numbers are returned and the
+   * caller picks the one it means. A leaf resolves its subtree to just itself, in
+   * which case the second count is skipped — that is the overwhelmingly common
+   * case and it costs exactly what it always did, plus the one recursive CTE.
    */
   async findWithProductCount(id: string): Promise<CategoryWithCountResult | null> {
     const category = await this.prisma.category.findUnique({
@@ -693,16 +715,94 @@ export class CategoryRepository {
       return null;
     }
 
-    const productCount = await this.prisma.product.count({
-      where: { categoryId: id, isActive: true },
-    });
+    const [productCount, subtreeIds] = await Promise.all([
+      this.prisma.product.count({ where: { categoryId: id, isActive: true } }),
+      this.findSubtreeIds(id),
+    ]);
 
-    return { category, productCount };
+    const subtreeProductCount =
+      subtreeIds.length <= 1
+        ? productCount
+        : await this.prisma.product.count({
+            where: { categoryId: { in: subtreeIds }, isActive: true },
+          });
+
+    return { category, productCount, subtreeProductCount };
+  }
+
+  /**
+   * Subtree product totals for EVERY category, keyed by id (TASK-408).
+   *
+   * Two queries, whatever the page size: the whole `(id, parent_id)` taxonomy —
+   * tens of rows, the same read the admin tree already does — and one `groupBy`
+   * of active products per category. The rollup then happens in memory.
+   *
+   * The alternative, a recursive CTE per listed row, would fire `limit` of them
+   * for one page; this fires two for any page. It is also the only shape that can
+   * total a category whose descendants are NOT on the current page, which is the
+   * normal case for a paginated, filtered listing.
+   *
+   * Cycle-safe the same way {@link assembleAdminTree} is — descent from the roots
+   * with a `visited` set. A row unreachable from any root (only possible under a
+   * parent cycle the write guards prevent) still reports its own direct count
+   * rather than nothing at all.
+   */
+  private async loadSubtreeProductCounts(): Promise<Map<string, number>> {
+    const [rows, directRows] = await Promise.all([
+      this.prisma.category.findMany({ select: { id: true, parentId: true } }),
+      this.prisma.product.groupBy({
+        by: ['categoryId'],
+        where: { isActive: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const directById = new Map<string, number>();
+    for (const row of directRows) {
+      directById.set(row.categoryId, row._count._all);
+    }
+
+    const knownIds = new Set(rows.map((row) => row.id));
+    const childIdsByParent = new Map<string, string[]>();
+    const rootIds: string[] = [];
+    for (const row of rows) {
+      if (row.parentId === null || !knownIds.has(row.parentId)) {
+        rootIds.push(row.id);
+        continue;
+      }
+      const siblings = childIdsByParent.get(row.parentId);
+      if (siblings) siblings.push(row.id);
+      else childIdsByParent.set(row.parentId, [row.id]);
+    }
+
+    const totals = new Map<string, number>();
+    const visited = new Set<string>();
+    const walk = (id: string): number => {
+      visited.add(id);
+      let total = directById.get(id) ?? 0;
+      for (const childId of childIdsByParent.get(id) ?? []) {
+        if (visited.has(childId)) continue;
+        total += walk(childId);
+      }
+      totals.set(id, total);
+      return total;
+    };
+    for (const id of rootIds) walk(id);
+
+    for (const row of rows) {
+      if (!totals.has(row.id)) totals.set(row.id, directById.get(row.id) ?? 0);
+    }
+
+    return totals;
   }
 
   /**
    * Find all categories with their product counts (admin listing).
    * Supports pagination and optional filtering.
+   *
+   * Each row carries BOTH counts (TASK-408): `productCount` is what this category
+   * files directly, `subtreeProductCount` what it and its descendants file
+   * together — the number the storefront listing for that category shows.
    */
   async findAllWithProductCount(
     params: FindAllParams,
@@ -748,7 +848,7 @@ export class CategoryRepository {
     }
     const effectiveSortField = sortField ?? 'sortOrder';
 
-    const [categories, total] = await Promise.all([
+    const [categories, total, subtreeCounts] = await Promise.all([
       this.prisma.category.findMany({
         where,
         skip,
@@ -763,6 +863,7 @@ export class CategoryRepository {
         },
       }),
       this.prisma.category.count({ where }),
+      this.loadSubtreeProductCounts(),
     ]);
 
     const categoriesWithCount: CategoryWithCountResult[] = categories.map((cat) => ({
@@ -779,6 +880,7 @@ export class CategoryRepository {
         updatedAt: cat.updatedAt,
       } as Category,
       productCount: cat._count.products,
+      subtreeProductCount: subtreeCounts.get(cat.id) ?? cat._count.products,
     }));
 
     return { categories: categoriesWithCount, total };

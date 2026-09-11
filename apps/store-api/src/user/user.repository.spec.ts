@@ -166,6 +166,96 @@ describe('UserRepository (soft-delete behaviour)', () => {
 
       expect(prismaMock.user.findMany.mock.calls[0][0].where).not.toHaveProperty('isActive');
     });
+
+    // ── Multi-token search (TASK-406) ──
+    //
+    // The old clause was a single OR over email/firstName/lastName, which can
+    // only match the whole query inside ONE column. «John Doe» is the way a
+    // person is actually looked up and it returned nobody, because no column
+    // holds the first and the last name together.
+    describe('search', () => {
+      const whereOfFindAll = () => prismaMock.user.findMany.mock.calls[0][0].where;
+
+      beforeEach(() => {
+        prismaMock.user.findMany.mockResolvedValue([]);
+        prismaMock.user.count.mockResolvedValue(0);
+      });
+
+      it('ANDs one OR-over-columns clause per token so «John Doe» matches a split name', async () => {
+        await repository.findAll({ page: 1, limit: 20, search: 'John Doe' });
+
+        expect(whereOfFindAll()).toEqual(
+          expect.objectContaining({
+            deletedAt: null,
+            AND: [
+              {
+                OR: [
+                  { email: { contains: 'John', mode: 'insensitive' } },
+                  { firstName: { contains: 'John', mode: 'insensitive' } },
+                  { lastName: { contains: 'John', mode: 'insensitive' } },
+                ],
+              },
+              {
+                OR: [
+                  { email: { contains: 'Doe', mode: 'insensitive' } },
+                  { firstName: { contains: 'Doe', mode: 'insensitive' } },
+                  { lastName: { contains: 'Doe', mode: 'insensitive' } },
+                ],
+              },
+            ],
+          }),
+        );
+        // The flat OR is gone — leaving it would widen the result to "any token
+        // in any column", i.e. every John and every Doe in the shop.
+        expect(whereOfFindAll()).not.toHaveProperty('OR');
+      });
+
+      it('is word-order insensitive — «doe john» builds the same conjunction', async () => {
+        await repository.findAll({ page: 1, limit: 20, search: 'doe john' });
+
+        const { AND } = whereOfFindAll();
+        expect(AND).toHaveLength(2);
+        expect(AND[0].OR[1]).toEqual({ firstName: { contains: 'doe', mode: 'insensitive' } });
+        expect(AND[1].OR[1]).toEqual({ firstName: { contains: 'john', mode: 'insensitive' } });
+      });
+
+      it('keeps a single token working as one OR across the three columns («john@»)', async () => {
+        await repository.findAll({ page: 1, limit: 20, search: 'john@' });
+
+        expect(whereOfFindAll().AND).toEqual([
+          {
+            OR: [
+              { email: { contains: 'john@', mode: 'insensitive' } },
+              { firstName: { contains: 'john@', mode: 'insensitive' } },
+              { lastName: { contains: 'john@', mode: 'insensitive' } },
+            ],
+          },
+        ]);
+      });
+
+      it('collapses repeated whitespace instead of searching for an empty token', async () => {
+        // An empty token would produce `contains: ''`, which matches every row —
+        // silently turning a typo into "no filter at all".
+        await repository.findAll({ page: 1, limit: 20, search: '  John   Doe  ' });
+
+        const { AND } = whereOfFindAll();
+        expect(AND).toHaveLength(2);
+        expect(AND[0].OR[0]).toEqual({ email: { contains: 'John', mode: 'insensitive' } });
+      });
+
+      it('applies the same clause to the count query so pagination totals agree', async () => {
+        await repository.findAll({ page: 1, limit: 20, search: 'John Doe' });
+
+        expect(prismaMock.user.count.mock.calls[0][0].where).toEqual(whereOfFindAll());
+      });
+
+      it('adds no search clause at all for an absent or whitespace-only query', async () => {
+        await repository.findAll({ page: 1, limit: 20, search: '   ' });
+
+        expect(whereOfFindAll()).not.toHaveProperty('AND');
+        expect(whereOfFindAll()).not.toHaveProperty('OR');
+      });
+    });
   });
 
   describe('softDelete', () => {

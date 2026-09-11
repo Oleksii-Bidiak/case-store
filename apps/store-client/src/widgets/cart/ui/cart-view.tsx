@@ -76,6 +76,9 @@ export function CartView() {
 
   const cart = data?.data;
   const items = cart?.items ?? [];
+  // A line the API withdrew from sale (TASK-403) blocks checkout until it is
+  // removed — the summary explains why, each row carries the badge.
+  const hasUnavailableItems = items.some((item) => !item.isActive);
 
   if (items.length === 0) {
     return (
@@ -163,7 +166,10 @@ export function CartView() {
             real choice lives on /checkout, where it is wired to the order. */}
         {cart && (
           <div className={`flex flex-col gap-4 lg:sticky ${STICKY_ASIDE_TOP}`}>
-            <CartSummary totals={cart.totals} />
+            <CartSummary
+              totals={cart.totals}
+              hasUnavailableItems={hasUnavailableItems}
+            />
           </div>
         )}
       </div>

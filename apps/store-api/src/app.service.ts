@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service';
+import { ThrottlerRedisHealth, type ThrottlerStoreStatus } from './throttler';
 
 /**
  * How long the database ping may take before we call the database down.
@@ -13,10 +14,17 @@ const DB_PING_TIMEOUT_MS = 3_000;
 
 export type HealthCheckResult = {
   status: 'ok' | 'error';
+  /**
+   * Something non-fatal is broken: the service still answers, but not with all
+   * of its guarantees. Today that means the rate-limit store is unreachable
+   * (TASK-401). `status` stays `ok` and the probe stays 200 — see below.
+   */
+  degraded: boolean;
   timestamp: string;
   uptime: number;
   checks: {
     database: 'up' | 'down';
+    rateLimitStore: ThrottlerStoreStatus;
   };
 };
 
@@ -24,7 +32,10 @@ export type HealthCheckResult = {
 export class AppService {
   private readonly logger = new Logger(AppService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly throttlerRedis: ThrottlerRedisHealth,
+  ) {}
 
   /**
    * Liveness + readiness in one endpoint.
@@ -34,15 +45,27 @@ export class AppService {
    * check, and any uptime monitor all reported a healthy store while Postgres was
    * unreachable and every request 500'd. The database is not optional — if it is
    * down, this service is down, and `/health` has to say so.
+   *
+   * ## Why the rate-limit store does NOT turn the probe red (TASK-401)
+   *
+   * Redis holds the rate-limit counters, and its outage is real — public writes
+   * are refused while it lasts. But `status: 'error'` here means 503, which
+   * Docker reads as *unhealthy* and Caddy as "take this container out": a Redis
+   * blip would then stop the shop from serving pages it can serve perfectly
+   * well, and a restart cannot fix a dependency the container does not own. So
+   * it is reported as `degraded` with `checks.rateLimitStore`, which an uptime
+   * monitor can alert on without anything killing the container.
    */
   async health(): Promise<HealthCheckResult> {
     const database = (await this.isDatabaseUp()) ? 'up' : 'down';
+    const rateLimitStore = this.throttlerRedis.status;
 
     return {
       status: database === 'up' ? 'ok' : 'error',
+      degraded: this.throttlerRedis.isDegraded,
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-      checks: { database },
+      checks: { database, rateLimitStore },
     };
   }
 

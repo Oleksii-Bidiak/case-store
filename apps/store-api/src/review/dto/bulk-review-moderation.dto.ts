@@ -29,7 +29,7 @@ export class BulkReviewModerationDto {
   // an operator who is told "not found" about a review that plainly exists has no
   // way to tell whether anything was removed.
   @ArrayUnique({ message: 'ids must not contain duplicates' })
-  @IsUUID('4', { each: true })
+  @IsUUID('loose', { each: true })
   ids!: string[];
 
   @ApiProperty({

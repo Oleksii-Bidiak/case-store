@@ -14,6 +14,6 @@ export class SetDeviceCompatDto {
   })
   @IsArray()
   @ArrayUnique({ message: 'deviceModelIds must not contain duplicates' })
-  @IsUUID(4, { each: true, message: 'Each device model id must be a valid UUID' })
+  @IsUUID('loose', { each: true, message: 'Each device model id must be a valid UUID' })
   deviceModelIds!: string[];
 }

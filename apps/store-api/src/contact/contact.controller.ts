@@ -1,6 +1,7 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiExtraModels, ApiOperation, ApiProperty, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { FailClosedThrottle } from '../throttler';
 import { ContactService } from './contact.service';
 import { CreateContactMessageDto } from './dto';
 
@@ -48,6 +49,9 @@ export class ContactController {
   // Unauthenticated public write and a spam target — cap strictly (5/min per IP),
   // matching the auth register/login limits.
   @Throttle({ default: { limit: 5, ttl: 60000 } })
+  // …and refuse the submission outright when the limiter itself is down: an
+  // unauthenticated form with no working cap is a spam relay (TASK-401).
+  @FailClosedThrottle()
   @ApiOperation({ summary: 'Submit a contact message', operationId: 'contactControllerSubmit' })
   @ApiResponse({
     status: 201,

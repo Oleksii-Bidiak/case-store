@@ -1,13 +1,40 @@
 import { createHash } from 'crypto';
 
 /**
- * Derive a stable, UUID-shaped id from a seed string (sha1-based). Lets the seed
- * upsert ProductGroup rows idempotently even though groups have no natural
+ * Derive a stable, RFC 4122 version-4 id from a seed string (sha1-based). Lets the
+ * seed upsert ProductGroup rows idempotently even though groups have no natural
  * unique key (TASK-142).
+ *
+ * TASK-397: the first cut only reshaped the sha1 digest into the 8-4-4-4-12 form
+ * and left the version nibble (index 12) and the variant nibble (index 16) to
+ * chance. Roughly fifteen of every sixteen seeded groups therefore carried an id
+ * that is UUID-shaped but not a valid UUID of any version — even validator's
+ * permissive `all` pattern wants the version nibble in `[1-8]` and the variant in
+ * `[89ab]`. Those ids went into the database, came back out through the admin
+ * product form, and were rejected by `@IsUUID` on the way in again: every grouped
+ * product answered 400 on save. Forcing both nibbles keeps the function
+ * deterministic (the same seed still yields the same id) and makes the output a
+ * real v4.
+ *
+ * This fixes ids written from now on; it does nothing for the ones already stored,
+ * which is why the DTOs validate with `@IsUUID('loose')` (shape only) rather than
+ * the default `'all'`. And because the same seed key now maps to a DIFFERENT id,
+ * re-seeding an older database `upsert`s new rows beside the old ones instead of
+ * updating them — do a full `migrate reset` first (docs/manual-qa-pending.md §Крок 0,
+ * docs/seed-guide.md §5).
  */
 export function deterministicUuid(seed: string): string {
-  const h = createHash('sha1').update(seed).digest('hex');
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+  const h = createHash('sha1').update(seed).digest('hex').split('');
+  h[12] = '4'; // version 4
+  h[16] = '89ab'[parseInt(h[16], 16) % 4]; // variant 10xx — one of 8, 9, a, b
+  const hex = h.join('');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join('-');
 }
 
 /**

@@ -1,8 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useSetUserPassword } from "@/entities/user";
+import {
+  getGetUserAdminCardQueryKey,
+  getUserControllerFindByIdQueryKey,
+  useSetUserPassword,
+} from "@/entities/user";
 import {
   Button,
   Dialog,
@@ -19,7 +24,12 @@ import { dict } from "@/shared/config";
 
 const d = dict.users;
 
-/** Mirrors `IsStrongAppPassword()` on the API — same rule, stated once here. */
+/**
+ * Mirrors `IsStaffPassword()` on the API — same rule, stated once here.
+ *
+ * Staff only, and it stays strict: TASK-407 loosened the SHOPPER policy
+ * (`IsCustomerPassword`, no uppercase requirement) and left this one alone.
+ */
 const STRONG_PASSWORD = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
 interface UserPasswordResetDialogProps {
@@ -42,6 +52,7 @@ export function UserPasswordResetDialog({
   open,
   onOpenChange,
 }: UserPasswordResetDialogProps) {
+  const queryClient = useQueryClient();
   const setPassword = useSetUserPassword();
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +78,16 @@ export function UserPasswordResetDialog({
       { id: userId, data: { newPassword } },
       {
         onSuccess: () => {
+          // TASK-406: this dialog invalidated nothing at all. The write bumps
+          // the user row's `updatedAt`, which the card renders as «Останнє
+          // оновлення», so the screen kept showing a timestamp from before the
+          // reset — the one visible confirmation the operator has.
+          void queryClient.invalidateQueries({
+            queryKey: getUserControllerFindByIdQueryKey(userId),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: getGetUserAdminCardQueryKey(userId),
+          });
           toast.success(d.passwordResetToastDone);
           close(false);
         },

@@ -55,6 +55,9 @@ describe('CategoryRepository batch reorder (integration)', () => {
   /** Ids created by the current test, in creation order (parents before children). */
   let created: string[] = [];
 
+  /** Product ids created by the current test — dropped BEFORE the categories they point at. */
+  let createdProducts: string[] = [];
+
   const MISSING_ID = '00000000-0000-0000-0000-000000000000';
 
   const mk = async (name: string, parentId: string | null, sortOrder = 0): Promise<string> => {
@@ -63,6 +66,23 @@ describe('CategoryRepository batch reorder (integration)', () => {
     });
     created.push(cat.id);
     return cat.id;
+  };
+
+  /** File `count` ACTIVE products directly on `categoryId` (TASK-408 count rollup). */
+  const mkProducts = async (categoryId: string, count: number): Promise<void> => {
+    for (let i = 0; i < count; i += 1) {
+      const product = await prisma.product.create({
+        data: {
+          name: `cnt-product-${i}`,
+          slug: `cnt-product-${randomUUID()}`,
+          price: 10,
+          stock: 1,
+          isActive: true,
+          categoryId,
+        },
+      });
+      createdProducts.push(product.id);
+    }
   };
 
   const rows = async (ids: string[]): Promise<Category[]> =>
@@ -118,9 +138,14 @@ describe('CategoryRepository batch reorder (integration)', () => {
 
   beforeEach(() => {
     created = [];
+    createdProducts = [];
   });
 
   afterEach(async () => {
+    // Products first — they hold an FK onto the categories about to be dropped.
+    if (createdProducts.length > 0) {
+      await prisma.product.deleteMany({ where: { id: { in: createdProducts } } });
+    }
     // Leaves-first (reverse creation order) to respect the self-referential FK —
     // and re-root everything first, because a test may have reparented rows.
     if (created.length === 0) return;
@@ -173,6 +198,62 @@ describe('CategoryRepository batch reorder (integration)', () => {
       expect(node.children[0].isActive).toBe(false);
       expect(node.productCount).toBe(0);
       expect(node.children[0].productCount).toBe(0);
+      expect(node.subtreeProductCount).toBe(0);
+    });
+
+    // TASK-408: the "Товари" column used to show the DIRECT `_count` only, so a
+    // parent that files nothing itself read 0 next to a storefront page listing
+    // its children's products (the storefront rolls a listing up over the whole
+    // subtree, TASK-236). Both numbers now travel, and they must differ exactly
+    // where the taxonomy says they should.
+    it('rolls subtreeProductCount up through EVERY level while productCount stays direct', async () => {
+      const root = await mk('roll-root', null);
+      const mid = await mk('roll-mid', root);
+      const leaf = await mk('roll-leaf', mid);
+      const sibling = await mk('roll-sibling', root, 1);
+
+      await mkProducts(leaf, 3);
+      await mkProducts(sibling, 2);
+      await mkProducts(root, 1);
+
+      const tree = await repo.findCategoryTreeForAdmin();
+      const rootNode = tree.find((n) => n.id === root)!;
+      const midNode = rootNode.children.find((n) => n.id === mid)!;
+      const leafNode = midNode.children.find((n) => n.id === leaf)!;
+      const siblingNode = rootNode.children.find((n) => n.id === sibling)!;
+
+      // Direct counts — unchanged semantics.
+      expect(rootNode.productCount).toBe(1);
+      expect(midNode.productCount).toBe(0);
+      expect(leafNode.productCount).toBe(3);
+      expect(siblingNode.productCount).toBe(2);
+
+      // Subtree rollup — a level with 0 of its own still carries what is under it.
+      expect(leafNode.subtreeProductCount).toBe(3);
+      expect(midNode.subtreeProductCount).toBe(3);
+      expect(siblingNode.subtreeProductCount).toBe(2);
+      expect(rootNode.subtreeProductCount).toBe(6);
+    });
+
+    // An INACTIVE product is invisible to the storefront listing, so it must not
+    // inflate the rollup either — the two numbers have to agree about which
+    // products exist, or the column is wrong in the other direction.
+    it('excludes inactive products from the rollup, at any depth', async () => {
+      const root = await mk('roll-inactive-root', null);
+      const child = await mk('roll-inactive-child', root);
+
+      await mkProducts(child, 2);
+      await prisma.product.updateMany({
+        where: { categoryId: child },
+        data: { isActive: false },
+      });
+      await mkProducts(child, 1);
+
+      const tree = await repo.findCategoryTreeForAdmin();
+      const rootNode = tree.find((n) => n.id === root)!;
+
+      expect(rootNode.children[0].productCount).toBe(1);
+      expect(rootNode.subtreeProductCount).toBe(1);
     });
 
     it('orders siblings by sortOrder then id (legacy all-zero rows are deterministic)', async () => {

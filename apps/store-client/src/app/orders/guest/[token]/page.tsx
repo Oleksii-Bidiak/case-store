@@ -31,8 +31,12 @@ export default async function GuestOrderPage({ params }: GuestOrderPageProps) {
   const { token } = await params;
 
   return (
-    <Suspense fallback={<OrderConfirmationSkeleton />}>
-      <GuestOrderView token={token} />
-    </Suspense>
+    // Same container as `app/orders/page.tsx` — without it this page ran edge
+    // to edge on a wide screen while every sibling route did not (TASK-407).
+    <div className="mx-auto w-full max-w-7xl px-4 py-8">
+      <Suspense fallback={<OrderConfirmationSkeleton />}>
+        <GuestOrderView token={token} />
+      </Suspense>
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 import { IsString, IsOptional, IsEmail, MaxLength, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsUaPhone, normalizeUaPhone } from '../../common/validators';
 
 /**
  * Trim a string value coming off the request body. Non-string values pass
@@ -8,6 +9,24 @@ import { ApiProperty } from '@nestjs/swagger';
  */
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
+
+/**
+ * Store one number in one shape (TASK-407).
+ *
+ * The storefront field is masked, so the wire value is now `+380 50 111 2233`
+ * where it used to be whatever the shopper typed. Persisting that would leave
+ * `ContactMessage.phone` holding three spellings of the same number — the mask,
+ * the old free-form rows and whatever an API client sends — and any admin-side
+ * lookup or grouping by phone would silently miss most of them. Normalising
+ * here, at the boundary, means the column only ever gains the canonical
+ * digits-only form `380XXXXXXXXX`.
+ *
+ * Non-string values pass through so `@IsString()` still reports the type error,
+ * and an unrecognisable string reduces to its bare digits and is then refused by
+ * {@link IsUaPhone} — normalisation never rescues an invalid number.
+ */
+const normalizePhone = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? normalizeUaPhone(value.trim()) : value;
 
 /**
  * DTO for a public contact-message submission (storefront contact form).
@@ -24,11 +43,27 @@ export class CreateContactMessageDto {
   @MaxLength(120, { message: 'Name must be at most 120 characters' })
   name!: string;
 
-  @ApiProperty({ description: 'Contact phone number', example: '+380671234567' })
-  @Transform(trim)
+  /**
+   * The number an operator will dial back (TASK-407). It had no format rule at
+   * all — `@MinLength(5)` accepted `12345` — which is how the contact queue
+   * collected messages nobody could answer. `@IsUaPhone` normalises the
+   * separators away and then requires `380` + 9 digits; `@MaxLength` stays as a
+   * bound on what gets stored, not as the format check it was standing in for.
+   *
+   * {@link normalizePhone} replaces the plain trim so the value that reaches the
+   * repository is the canonical `380XXXXXXXXX`, whatever separators (or mask)
+   * it arrived with.
+   */
+  @ApiProperty({
+    description:
+      'Contact phone number (Ukrainian: +380 and 9 digits, any separators). ' +
+      'Stored normalised, as digits only.',
+    example: '+380671234567',
+  })
+  @Transform(normalizePhone)
   @IsString()
-  @MinLength(5, { message: 'Phone must be at least 5 characters' })
   @MaxLength(32, { message: 'Phone must be at most 32 characters' })
+  @IsUaPhone()
   phone!: string;
 
   @ApiProperty({ description: 'Contact email address', example: 'ivan@example.com' })

@@ -5,6 +5,13 @@ import { BlogCategoryTable, BlogCategoryTableSkeleton } from "@/widgets";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
+/**
+ * TASK-405: no query state on this route yet, but it is a dashboard list like
+ * its siblings and sits behind auth — kept dynamic so that adding a filter here
+ * later cannot quietly bring back the stale-prerender bug.
+ */
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: dict.blogCategories.metaTitle,
 };

@@ -31,6 +31,11 @@ import { randomBytes } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { hashPassword } from '../common/security';
+import {
+  PASSWORD_MIN_LENGTH,
+  STAFF_PASSWORD_MESSAGE,
+  STAFF_PASSWORD_REGEX,
+} from '../common/validators';
 
 type Args = { email: string; password: string; generated: boolean };
 
@@ -48,13 +53,14 @@ function parseArgs(): Args {
 
   const supplied = read('--password') ?? process.env.ADMIN_PASSWORD;
   if (supplied) {
-    // Mirrors IsStrongAppPassword (min 8, upper + lower + digit). A password this
-    // script accepts but the login form would reject is a trap door into a
-    // half-broken account.
-    if (!/^(?=.*\p{Ll})(?=.*\p{Lu})(?=.*\d).{8,}$/u.test(supplied)) {
-      throw new Error(
-        'The password must be at least 8 characters and contain a lowercase letter, an uppercase letter and a digit.',
-      );
+    // This script mints an ADMIN, so it answers to the STAFF policy — imported
+    // rather than re-typed (TASK-407). It used to carry its own copy of the
+    // regex, and a hand-copied rule is a rule that drifts: the moment the
+    // shopper policy loosened, that copy silently became "whatever it said in
+    // 2026". A password this script accepts but the login form rejects is a trap
+    // door into a half-broken account.
+    if (supplied.length < PASSWORD_MIN_LENGTH || !STAFF_PASSWORD_REGEX.test(supplied)) {
+      throw new Error(`${STAFF_PASSWORD_MESSAGE} (minimum ${PASSWORD_MIN_LENGTH} characters).`);
     }
     return { email, password: supplied, generated: false };
   }

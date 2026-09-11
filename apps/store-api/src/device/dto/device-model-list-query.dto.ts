@@ -44,7 +44,7 @@ export class DeviceModelListQueryDto {
     required: false,
   })
   @IsOptional()
-  @IsUUID(4, { message: 'Device brand ID must be a valid UUID' })
+  @IsUUID('loose', { message: 'Device brand ID must be a valid UUID' })
   deviceBrandId?: string;
 
   @ApiProperty({ description: 'Search by device model name', example: 'iphone', required: false })

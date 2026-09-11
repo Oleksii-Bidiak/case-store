@@ -83,12 +83,22 @@ export default async function ProductDetailPage({
   // path — check the slug-redirect ledger and serve a permanent (308) redirect
   // when the admin renamed the slug. A genuinely dead slug (no redirect row)
   // falls through unchanged: ProductDetailView still renders its own
-  // client-side not-found state. For the 308 to actually reach the wire, this
-  // route deliberately has NO route-level loading.tsx: a loading boundary
-  // streams a 200 shell before permanentRedirect() can set the status (same
-  // rationale as /categories/[slug]). The redirect decision above runs before
-  // any Suspense boundary; the in-page <Suspense> fallback below keeps the
-  // skeleton UX while ProductDetailView hydrates.
+  // client-side not-found state.
+  //
+  // This note used to claim the route deliberately has NO route-level
+  // loading.tsx, so that no loading boundary could stream a 200 shell before
+  // permanentRedirect() sets the status. That never held HERE:
+  // `app/products/loading.tsx` sits one segment above and wraps this page too —
+  // which is exactly why the live run saw the CATALOGUE grid skeleton on a
+  // product page (SF-PDP-03/05). TASK-409 therefore added `[slug]/loading.tsx`
+  // with the right skeleton: it changes which fallback renders, not whether one
+  // exists. The /categories/[slug] twin has no such ancestor and keeps the
+  // precaution. Whether this route's redirect reaches the wire as a 308 status
+  // or as a client-router redirect wants a live check on the demo stand — the
+  // shopper lands on the new slug either way.
+  //
+  // The in-page <Suspense> fallback below keeps the skeleton UX while
+  // ProductDetailView hydrates.
   if (!schemas) {
     const newSlug = await resolveSlugRedirect("PRODUCT", slug);
     if (newSlug) {

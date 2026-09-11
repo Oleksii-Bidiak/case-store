@@ -204,7 +204,11 @@ export class CategoryService {
     }
 
     return {
-      data: CategoryWithCountEntity.fromPrisma(result.category, result.productCount),
+      data: CategoryWithCountEntity.fromPrisma(
+        result.category,
+        result.productCount,
+        result.subtreeProductCount,
+      ),
       productCount: result.productCount,
     };
   }
@@ -547,7 +551,11 @@ export class CategoryService {
 
     return {
       data: categories.map((item) =>
-        CategoryWithCountEntity.fromPrisma(item.category, item.productCount),
+        CategoryWithCountEntity.fromPrisma(
+          item.category,
+          item.productCount,
+          item.subtreeProductCount,
+        ),
       ),
       meta: {
         total,

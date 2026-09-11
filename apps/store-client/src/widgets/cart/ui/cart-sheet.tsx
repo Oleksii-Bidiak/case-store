@@ -32,6 +32,10 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
   const cart = data?.data;
   const items = cart?.items ?? [];
   const count = cart?.totals.itemCount ?? 0;
+  // Same rule as the cart page (TASK-403): a line the API withdrew from sale
+  // blocks checkout. "Перейти в кошик" below stays live — that is where the
+  // shopper removes it; the rows carry the badge via the shared CartItemRow.
+  const hasUnavailableItems = items.some((item) => !item.isActive);
   const close = () => onOpenChange(false);
 
   const loading = isInitializing || isLoading;
@@ -112,7 +116,16 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
                 // `onNavigate` closes the sheet when a line's product link is
                 // clicked — otherwise the navigation happens behind the open
                 // overlay and looks like a no-op (TASK-204).
-                <CartItemRow key={item.id} item={item} onNavigate={close} />
+                // `showAddons` (TASK-409): the add-on services used to be
+                // suppressed here to keep the mini-cart compact, which meant a
+                // shopper who never opened the full cart page never saw them —
+                // and never bought one. The offers are now in both places.
+                <CartItemRow
+                  key={item.id}
+                  item={item}
+                  showAddons
+                  onNavigate={close}
+                />
               ))}
             </ul>
 
@@ -129,13 +142,34 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
                 <CheckCircle2 className="size-4" aria-hidden="true" />
                 {dict.cart.sheetShipping}
               </p>
-              <Link
-                href="/checkout"
-                onClick={close}
-                className="mt-3.5 flex h-12 items-center justify-center rounded-xl bg-primary font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]"
-              >
-                {dict.cart.checkout}
-              </Link>
+              {hasUnavailableItems ? (
+                // A real disabled <button>, not a styled link: a link with
+                // `aria-disabled` still navigates on Enter.
+                <>
+                  <button
+                    type="button"
+                    disabled
+                    aria-describedby="cart-sheet-checkout-blocked"
+                    className="mt-3.5 flex h-12 w-full cursor-not-allowed items-center justify-center rounded-xl bg-muted font-semibold text-muted-foreground"
+                  >
+                    {dict.cart.checkout}
+                  </button>
+                  <p
+                    id="cart-sheet-checkout-blocked"
+                    className="mt-2 text-center text-xs font-medium text-destructive"
+                  >
+                    {dict.cart.checkoutBlocked}
+                  </p>
+                </>
+              ) : (
+                <Link
+                  href="/checkout"
+                  onClick={close}
+                  className="mt-3.5 flex h-12 items-center justify-center rounded-xl bg-primary font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]"
+                >
+                  {dict.cart.checkout}
+                </Link>
+              )}
               <Link
                 href="/cart"
                 onClick={close}

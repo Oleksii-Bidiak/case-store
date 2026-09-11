@@ -21,7 +21,7 @@ export class CreateDeviceModelDto {
     description: 'Owning device brand ID',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
-  @IsUUID(4, { message: 'Device brand ID must be a valid UUID' })
+  @IsUUID('loose', { message: 'Device brand ID must be a valid UUID' })
   deviceBrandId!: string;
 
   @ApiProperty({ description: 'Device model name', example: 'iPhone 15 Pro' })

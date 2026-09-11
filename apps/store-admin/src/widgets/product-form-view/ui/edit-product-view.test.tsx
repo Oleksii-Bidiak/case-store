@@ -14,6 +14,15 @@ jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
 }));
 
+const toastSuccess = jest.fn();
+const toastError = jest.fn();
+jest.mock("sonner", () => ({
+  toast: {
+    success: (...args: unknown[]) => toastSuccess(...args),
+    error: (...args: unknown[]) => toastError(...args),
+  },
+}));
+
 const PRODUCT_ID = "product-uuid-1";
 
 function makeProduct(isActive: boolean) {
@@ -166,5 +175,54 @@ describe("EditProductView — slug-rename guard (TASK-285)", () => {
 
     await waitFor(() => expect(putCalls).toHaveLength(1));
     expect(confirmSpy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * TASK-397. Every grouped product answered 400 on save, and the toast said only
+ * "Не вдалося оновити товар" — the operator had no way to learn that the seeded
+ * `groupId` was the rejected field. Diagnosing it cost a live demo run.
+ */
+describe("EditProductView — update failure toast (TASK-397)", () => {
+  beforeEach(() => {
+    toastError.mockClear();
+    toastSuccess.mockClear();
+  });
+
+  it("shows the ValidationPipe message from a 400 rather than the generic copy", async () => {
+    await renderAndWaitForForm(makeProduct(true));
+    // Registered after the default stub — MSW gives the newest handler priority.
+    server.use(
+      http.put(`*/api/products/${PRODUCT_ID}`, () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: ["Group ID must be a valid UUID"],
+            error: "Bad Request",
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    await submit();
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+    expect(toastError).toHaveBeenCalledWith("Group ID must be a valid UUID");
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the dictionary copy when the response carries no message", async () => {
+    await renderAndWaitForForm(makeProduct(true));
+    server.use(
+      http.put(`*/api/products/${PRODUCT_ID}`, () =>
+        HttpResponse.json({}, { status: 500 }),
+      ),
+    );
+
+    await submit();
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+    expect(toastError).toHaveBeenCalledWith(dict.products.toastUpdateFailed);
   });
 });

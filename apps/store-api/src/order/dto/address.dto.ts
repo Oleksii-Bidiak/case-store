@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsOptional, Length, MaxLength } from 'class-validator';
+import { IsInternationalPhone } from '../../common/validators';
 
 /**
  * Shipping/billing address shape embedded in {@link CreateOrderDto}.
@@ -81,10 +82,24 @@ export class AddressDto {
   // the server-side default when the field is omitted from the payload.
   country?: string = 'UA';
 
-  @ApiProperty({ description: 'Contact phone', example: '+380501234567' })
+  @ApiProperty({
+    description:
+      'Contact phone — any country, 9 to 15 digits (E.164), typed with whatever separators ' +
+      'the buyer uses',
+    example: '+380501234567',
+  })
   @IsString()
   @IsNotEmpty()
   @MaxLength(30)
+  // The number the courier dials, and the field the storefront checkout actually
+  // posts. Until TASK-407 it carried no format rule at all, so `33333` was a
+  // valid delivery phone. `@IsInternationalPhone` counts DIGITS, not mask
+  // characters, and stays country-agnostic on purpose — the same standing
+  // decision as `guest-contact.dto.ts` (TASK-338, restated by the owner
+  // 2026-09-10): strict Ukrainian validation lives on the storefront and contact
+  // forms, while an operator entering a phone order may legitimately be given a
+  // roaming or foreign number.
+  @IsInternationalPhone()
   phone!: string;
 
   // ─── Nova Poshta delivery refs (TASK-080) ───────────────────────────────────

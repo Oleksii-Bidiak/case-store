@@ -4,7 +4,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  getGetUserAdminCardQueryKey,
   getUserControllerFindAllQueryKey,
+  getUserControllerFindByIdQueryKey,
   useDeleteUser,
 } from "@/entities/user";
 import { useAuth } from "@/entities/session";
@@ -64,6 +66,16 @@ export function DeleteUserDialog({
         onSuccess: () => {
           void queryClient.invalidateQueries({
             queryKey: getUserControllerFindAllQueryKey(),
+          });
+          // TASK-406: the list was the only key invalidated, so the tombstoned
+          // account's own cached queries survived the delete. Navigating back
+          // into `/users/<id>` within the panel's five-minute `staleTime` then
+          // re-rendered the deleted user from cache as if nothing had happened.
+          void queryClient.invalidateQueries({
+            queryKey: getUserControllerFindByIdQueryKey(userId),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: getGetUserAdminCardQueryKey(userId),
           });
           toast.success(d.deleteToastDone);
           onOpenChange(false);

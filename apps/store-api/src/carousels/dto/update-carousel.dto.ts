@@ -45,7 +45,7 @@ export class UpdateCarouselDto extends PublishFieldsDto {
     required: false,
   })
   @IsOptional()
-  @IsUUID('4', { message: 'categoryId must be a valid UUID' })
+  @IsUUID('loose', { message: 'categoryId must be a valid UUID' })
   categoryId?: string;
 
   @ApiProperty({

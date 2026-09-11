@@ -1,8 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Loader2, XCircle, Undo2, Clock } from "lucide-react";
-import type { OrderEntityPaymentStatus } from "@/entities/order";
+import {
+  Ban,
+  CheckCircle2,
+  Loader2,
+  XCircle,
+  Undo2,
+  Clock,
+} from "lucide-react";
+import type {
+  OrderEntityPaymentStatus,
+  OrderEntityStatus,
+} from "@/entities/order";
 import {
   retryHandoffMessage,
   useOrderPayment,
@@ -11,10 +21,34 @@ import {
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
+/**
+ * Order statuses past which no further payment can be started (TASK-407).
+ *
+ * Not a judgement about the money — `paymentStatus` keeps that job — but about
+ * the ORDER: a cancelled, refunded or already-delivered order has nothing left
+ * to pay for, and `POST /api/payments/orders/:id/checkout` answers 409 for every
+ * one of them. Offering «Спробувати ще раз» there sent the shopper to a button
+ * that could only ever fail.
+ */
+const CLOSED_ORDER_STATUSES = [
+  "CANCELLED",
+  "REFUNDED",
+  "DELIVERED",
+] as const satisfies readonly OrderEntityStatus[];
+
+function isClosedOrder(status: OrderEntityStatus): boolean {
+  return (CLOSED_ORDER_STATUSES as readonly string[]).includes(status);
+}
+
 interface OrderPaymentPanelProps {
   orderId: string;
   /** The server's word on the money. The ONLY thing this panel may assert from. */
   paymentStatus: OrderEntityPaymentStatus;
+  /**
+   * The server's word on the order. Read only to decide whether a retry is
+   * still possible — never to say anything about whether money moved.
+   */
+  orderStatus: OrderEntityStatus;
   /**
    * Whether this browser recently handed itself off to the provider for this
    * order. Local, forgeable, and used for nothing but choosing wording — see
@@ -47,10 +81,16 @@ interface OrderPaymentPanelProps {
  * opens a **new** `Payment` with a new id, which is not an implementation detail:
  * the provider refuses a second payment under an identifier it has already seen,
  * so reusing the old handoff would fail every time.
+ *
+ * The retry is withheld once the ORDER is closed ({@link CLOSED_ORDER_STATUSES},
+ * TASK-407). Both retry branches used to reason from `paymentStatus` alone, so a
+ * shopper who cancelled an order with a declined payment was still invited to pay
+ * for it — twice over, since the slow-PENDING branch offered the same button.
  */
 export function OrderPaymentPanel({
   orderId,
   paymentStatus,
+  orderStatus,
   hasRecentAttempt,
   isAwaitingCallback,
 }: OrderPaymentPanelProps) {
@@ -115,6 +155,24 @@ export function OrderPaymentPanel({
       <Undo2 className="size-5" aria-hidden />,
       copy.refundedTitle,
       copy.refundedBody,
+    );
+  }
+
+  // The order is closed: whatever the payment status says, there is no second
+  // attempt to offer. Checked BEFORE the two retry branches below, which is the
+  // whole point — each of them used to render its own «Спробувати ще раз» here.
+  if (isClosedOrder(orderStatus)) {
+    const cancelled = orderStatus !== "DELIVERED";
+    // Say nothing to the cash-on-delivery shopper whose delivered order was
+    // never going to be paid online — the silent PENDING branch below is right
+    // for them too.
+    if (!cancelled && paymentStatus !== "FAILED") return null;
+
+    return shell(
+      "neutral",
+      <Ban className="size-5" aria-hidden />,
+      cancelled ? copy.orderCancelledTitle : copy.orderClosedTitle,
+      cancelled ? copy.orderCancelledBody : copy.orderClosedBody,
     );
   }
 

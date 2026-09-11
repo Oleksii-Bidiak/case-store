@@ -29,8 +29,10 @@ import type {
  *        - `REMOVE` deletes an entry. Dangling (the service is no longer in the
  *          resolved template) → silent no-op, never an error: the template may
  *          have legitimately changed since the delta was created.
- *        - `OVERRIDE` replaces an existing entry's effective price. Dangling →
- *          the same silent no-op (logged at debug level, never thrown).
+ *        - `OVERRIDE` replaces an existing entry's effective price. With no base
+ *          entry to replace it is NOT inert: it resolves as an `ADD` at the
+ *          delta's own price (logged at debug level, never thrown) — see
+ *          {@link applyDeltas} for why (TASK-404).
  *        - `ADD` inserts (or overwrites) an entry regardless of the base set —
  *          the "exclusive to this product" case, which doubles as the way to
  *          re-add something a REMOVE took out, with no extra mechanism.
@@ -166,13 +168,26 @@ export class AddonApplicabilityResolver {
           break;
 
         case 'OVERRIDE':
+          if (!delta.addonService.isActive) break;
           if (!existing) {
+            // An OVERRIDE with nothing under it is NOT inert (TASK-404).
+            // `@@unique(productId, addonServiceId)` makes the three delta types
+            // mutually exclusive, so an admin re-pricing a product-EXCLUSIVE
+            // add-on REPLACED its ADD row with an OVERRIDE — and dropping the
+            // entry here made the service vanish from the product entirely.
+            // Resolve it as the ADD it was meant to be. A genuinely stale row
+            // (its template entry withdrawn since) then resurfaces at the price
+            // the admin last set: the safer of the two failure modes, because it
+            // is visible in the panel and one click away from being cleared.
             this.logger.debug(
-              `Inert OVERRIDE delta: product ${productId} overrides add-on ${delta.addonServiceId}, which its resolved template no longer contains`,
+              `Base-less OVERRIDE delta: product ${productId} overrides add-on ${delta.addonServiceId}, which its resolved template does not contain — resolving it as an ADD`,
+            );
+            entries.set(
+              delta.addonServiceId,
+              this.toResolved(delta.addonService, 'add', delta.price),
             );
             break;
           }
-          if (!delta.addonService.isActive) break;
           existing.price = toTwoDecimals(delta.price ?? delta.addonService.price);
           existing.source = 'override';
           break;

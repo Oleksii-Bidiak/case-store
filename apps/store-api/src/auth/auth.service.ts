@@ -1,4 +1,9 @@
-import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { PinoLogger } from 'nestjs-pino';
@@ -10,6 +15,7 @@ import { RegisterDto } from './dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
 import { hashPassword, verifyPassword } from '../common/security';
+import { STAFF_PASSWORD_MESSAGE, STAFF_PASSWORD_REGEX } from '../common/validators';
 
 /** Bytes of entropy for an opaque password-reset token (→ 64 hex chars). */
 const PASSWORD_RESET_TOKEN_BYTES = 32;
@@ -484,6 +490,13 @@ export class AuthService {
       throw new UnauthorizedException(INVALID_RESET_TOKEN_MESSAGE);
     }
 
+    // The DTO could only validate against the shopper policy — a reset token
+    // says nothing about whose account it opens. Now that it does, staff are
+    // held to the strict rule (TASK-407). Checked after the token has been
+    // accepted, so a rejection here cannot be used to probe whether a token is
+    // valid.
+    this.assertPasswordMeetsRolePolicy(stored.user.role, newPassword);
+
     // Hash + clear the lockout + terminate every existing session. Routed
     // through the shared tail (TASK-333) so a reset can never drift from a
     // change; clearing `lockedUntil` here also closes a real trap — the owner
@@ -544,12 +557,34 @@ export class AuthService {
       throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
 
+    this.assertPasswordMeetsRolePolicy(user.role, newPassword);
+
     await this.setPassword(userId, newPassword);
 
     this.logger.info(
       { event: 'user.passwordChanged', userId },
       'Password changed by the account owner',
     );
+  }
+
+  /**
+   * Hold a STAFF account to the strict password policy (TASK-407).
+   *
+   * The shopper policy was loosened by owner decision on 2026-09-10 — 8+ chars
+   * with a letter and a digit, no uppercase requirement — while ADMIN/MANAGER
+   * accounts keep the original rule. Neither of the two endpoints a user changes
+   * their OWN password through can express that in its DTO: `ChangePasswordDto`
+   * carries no role, and `ConfirmPasswordResetDto` carries only an opaque token.
+   * Both therefore validate loosely and land here, where the user row is in hand.
+   *
+   * Without this check the strict staff rule would be exactly one «Забули
+   * пароль?» away from not existing.
+   */
+  private assertPasswordMeetsRolePolicy(role: UserRole, newPassword: string): void {
+    if (role === UserRole.CUSTOMER) return;
+    if (STAFF_PASSWORD_REGEX.test(newPassword)) return;
+
+    throw new BadRequestException(STAFF_PASSWORD_MESSAGE);
   }
 
   /**
@@ -620,9 +655,9 @@ export class AuthService {
    * Staff — ADMIN today, any future MANAGER — sign in with a password (plus 2FA
    * once it lands). Without this gate, any privileged row whose email happens to
    * be a Gmail address turns Google's consent screen into a full admin login:
-   * the store's password policy, `is-strong-app-password` and the login lockout
-   * are all bypassed, and the entire trust boundary silently moves onto that
-   * Google account.
+   * the store's password policy, `IsStaffPassword` and the login lockout are all
+   * bypassed, and the entire trust boundary silently moves onto that Google
+   * account.
    *
    * The refusal is the same generic {@link INVALID_CREDENTIALS_MESSAGE} used
    * everywhere else in this file (TASK-274/287) — never "you are an admin, use

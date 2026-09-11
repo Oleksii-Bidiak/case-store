@@ -42,7 +42,13 @@ export function NpCityField({
     300,
   );
 
-  const { data, isFetching } = useSearchDeliveryCities(
+  // `isError` was never read (TASK-402): a proxy failure — NP down, our own
+  // guard rejecting the key, a 503 — landed in the same "нічого не знайдено" as
+  // a genuine miss, so the shopper retyped their own city over and over instead
+  // of being told to type it by hand and move on. Free text is a fully supported
+  // path here (`npCityRef` simply stays empty), so an unreachable directory is
+  // an inconvenience rather than a dead end — but only if we say so.
+  const { data, isFetching, isError } = useSearchDeliveryCities(
     { q: query },
     { query: { enabled: query.trim().length >= 2 } },
   );
@@ -67,10 +73,19 @@ export function NpCityField({
         isLoading={isFetching}
         placeholder={dict.checkout.cityPlaceholder}
         loadingText={dict.checkout.searchLoading}
-        emptyText={dict.checkout.searchEmpty}
+        emptyText={
+          isError ? dict.checkout.searchUnavailable : dict.checkout.searchEmpty
+        }
         autoComplete="address-level2"
         aria-invalid={fieldState.error ? true : undefined}
-        aria-describedby={fieldState.error ? `${id}-error` : undefined}
+        aria-describedby={
+          [
+            fieldState.error ? `${id}-error` : null,
+            isError ? `${id}-lookup-error` : null,
+          ]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
         onInputChange={(text) => {
           field.onChange(text);
           setValue("npCityRef", "");
@@ -84,6 +99,18 @@ export function NpCityField({
           setQuery("");
         }}
       />
+      {/* Persistent, not just a dropdown row: the popup closes on blur, and this
+          notice has to survive long enough for the shopper to act on it. Not an
+          `alert` — nothing is invalid, the field simply lost its autocomplete. */}
+      {isError && (
+        <p
+          id={`${id}-lookup-error`}
+          role="status"
+          className="text-sm text-muted-foreground"
+        >
+          {dict.checkout.searchUnavailable}
+        </p>
+      )}
       {fieldState.error && (
         <p id={`${id}-error`} role="alert" className="text-sm text-destructive">
           {fieldState.error.message}

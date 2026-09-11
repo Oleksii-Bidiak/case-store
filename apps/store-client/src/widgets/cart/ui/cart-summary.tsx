@@ -8,6 +8,12 @@ import { dict } from "@/shared/config";
 
 interface CartSummaryProps {
   totals: CartTotals;
+  /**
+   * At least one line is withdrawn from sale (`CartItemEntity.isActive === false`,
+   * TASK-403). The order would be rejected server-side, so the checkout CTA is
+   * blocked here and the panel says which action unblocks it.
+   */
+  hasUnavailableItems?: boolean;
 }
 
 /**
@@ -22,7 +28,10 @@ interface CartSummaryProps {
  * order creation), so the clamp below floors the DISCOUNTED SUBTOTAL at zero and
  * then adds the add-ons on top, rather than letting a coupon eat into them.
  */
-export function CartSummary({ totals }: CartSummaryProps) {
+export function CartSummary({
+  totals,
+  hasUnavailableItems = false,
+}: CartSummaryProps) {
   const applied = useAppliedDiscount();
 
   const subtotalCents = Math.round(parseFloat(totals.subtotal) * 100);
@@ -79,16 +88,40 @@ export function CartSummary({ totals }: CartSummaryProps) {
         </span>
       </div>
 
-      <Link
-        href="/checkout"
-        aria-label={dict.cart.checkoutAria}
-        className="flex h-[52px] items-center justify-center rounded-[13px] bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {dict.cart.checkout}
-      </Link>
-      <p className="mt-3 text-center text-xs text-muted-foreground">
-        {dict.cart.termsNote}
-      </p>
+      {hasUnavailableItems ? (
+        // A real disabled <button>, not a styled link: a link with
+        // `aria-disabled` still navigates on Enter, and /checkout would then
+        // fail on an order the API refuses to create.
+        <>
+          <button
+            type="button"
+            disabled
+            aria-describedby="cart-checkout-blocked"
+            className="flex h-13 w-full cursor-not-allowed items-center justify-center rounded-xl bg-muted text-base font-bold text-muted-foreground"
+          >
+            {dict.cart.checkout}
+          </button>
+          <p
+            id="cart-checkout-blocked"
+            className="mt-3 text-center text-xs font-medium text-destructive"
+          >
+            {dict.cart.checkoutBlocked}
+          </p>
+        </>
+      ) : (
+        <>
+          <Link
+            href="/checkout"
+            aria-label={dict.cart.checkoutAria}
+            className="flex h-[52px] items-center justify-center rounded-[13px] bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {dict.cart.checkout}
+          </Link>
+          <p className="mt-3 text-center text-xs text-muted-foreground">
+            {dict.cart.termsNote}
+          </p>
+        </>
+      )}
     </div>
   );
 }

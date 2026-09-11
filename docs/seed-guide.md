@@ -28,13 +28,13 @@ hook in `apps/store-api/prisma.config.ts` (`migrations.seed: 'tsx prisma/seed.ts
 
 All commands run from the **repo root** unless noted. They delegate to the `store-api` workspace.
 
-| Command               | What it does                                                                    |
-| --------------------- | ------------------------------------------------------------------------------- |
-| `npm run db:seed`     | Run the seed script against the current DB (no schema change). Idempotent.      |
-| `npm run db:migrate`  | Apply pending migrations via `prisma migrate dev`, then auto-run the seed hook. |
-| `npm run db:push`     | Push the schema to the DB without creating a migration (rapid dev only).        |
-| `npm run db:studio`   | Open Prisma Studio to browse/edit seeded data in the browser.                   |
-| `npm run db:generate` | Regenerate the Prisma Client after a schema change.                             |
+| Command               | What it does                                                                                                          |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `npm run db:seed`     | Run the seed script against the current DB (no schema change). Idempotent — with one one-off TASK-397 caveat, see §3. |
+| `npm run db:migrate`  | Apply pending migrations via `prisma migrate dev`, then auto-run the seed hook.                                       |
+| `npm run db:push`     | Push the schema to the DB without creating a migration (rapid dev only).                                              |
+| `npm run db:studio`   | Open Prisma Studio to browse/edit seeded data in the browser.                                                         |
+| `npm run db:generate` | Regenerate the Prisma Client after a schema change.                                                                   |
 
 Workspace-direct equivalents (run from anywhere) use the `-w` flag, e.g.
 `npm run db:seed -w apps/store-api`.
@@ -55,15 +55,28 @@ Workspace-direct equivalents (run from anywhere) use the `-w` flag, e.g.
 
 ## 3. Idempotency
 
-Re-running `npm run db:seed` on a populated DB is **safe** — it will not create duplicates:
+Re-running `npm run db:seed` on a populated DB is **safe** — it will not create duplicates, with
+one one-off exception for DBs seeded **before TASK-397** (see the warning at the end of §3):
 
 - **Users, categories, products, addresses** are written with `upsert` keyed on a stable
   natural key (`email`, `slug`, and the fixed `seed-address-1` id for the demo address).
 - **Reviews** are replaced wholesale, not upserted: the seed deletes every review owned by its 23
   seeded reviewer accounts (`deleteMany` scoped to those `userId`s) and recreates them. Reviews
   written by real users are never touched — the delete is scoped by author, not by product.
+  The five **verified-purchase** reviews (TASK-409) are the exception: they are written by demo
+  CUSTOMER accounts, so only their exact `(user, product)` pairs are replaced — anything else those
+  accounts wrote by hand survives. They exist because the «Підтверджена покупка» badge is computed
+  («does this author have an order containing this product?»), and a review from a `reviewerN@`
+  account can never satisfy it. The pairs are derived from the delivered orders in
+  `prisma/seed/data/orders.data.ts`, so they follow automatically when those orders change. Open
+  any of these five to see the badge: `apple-iphone-15-pro-256gb-blue`,
+  `wireless-charger-belkin-magsafe-black`, `wireless-charger-belkin-magsafe-white`,
+  `case-silicone-magsafe-iphone-15-black`, `car-charger-baseus-30w-black`. The seed prints their
+  SKUs on every run.
 - **Product groups** upsert on a deterministic UUID derived from the entry slug
-  (`deterministicUuid(slug)`), so groups stay stable across runs.
+  (`deterministicUuid(slug)`), so groups stay stable across runs of the same code. TASK-397
+  changed that derivation, so a slug now maps to a **different** id than it did before — see the
+  warning at the end of this section.
 - **Product group axes** and **product images** are deleted and recreated wholesale per entry on
   every run (`deleteMany` + `create`/`createMany`). This keeps them exactly in sync with the seed
   source even if you change axis names or image lists between runs.
@@ -94,6 +107,14 @@ with no images. Recovery is simply re-running `npm run db:seed`.
 >
 > Related: the seed never deletes rows it no longer owns, so positions dropped from the catalogue
 > stay in the DB as live, `isActive: true` orphans (see §9).
+
+> ⚠️ **The one-off case: a DB seeded before TASK-397.** That task made `deterministicUuid` emit a
+> real v4 (it used to leave the version and variant nibbles to the sha1 digest), so the same seed
+> key now maps to a **different** id — and every row keyed on it upserts **by id**: product groups,
+> orders, the demo address, banners, carousels, contact messages. Re-seeding an older DB therefore
+> writes a second copy of those rows beside the old ones instead of updating them. Reset it once
+> (§5); after that, re-seeding is safe again. A DB first seeded on TASK-397 code or later is not
+> affected.
 
 ---
 
@@ -320,6 +341,7 @@ A clean seed produces:
 | Carousel items         | 4     | Hand-picked products on the MANUAL rail; replaced wholesale on re-run                                                                        |
 | Reviews (approved)     | 2 203 | 5–20 per position, pre-approved (`isActive = true`), deterministic, ratings skewed positive                                                  |
 | Reviews (pending)      | 6     | `isActive = false` with UA comments, on six **named** positions — the admin moderation queue is always exactly these six                     |
+| Reviews (verified)     | 5     | Written by the customers who placed the **delivered** orders, so «Підтверджена покупка» is visible — see below (TASK-409)                    |
 | Discounts              | 5     | WELCOME10, SUMMER500 (minSpend), VIP20, EXPIRED15 (past), OLDPROMO (inactive)                                                                |
 | Orders                 | 12    | Cover **every** OrderStatus + PaymentStatus; deterministic ids                                                                               |
 | Order items            | 17    | Price captured at purchase                                                                                                                   |

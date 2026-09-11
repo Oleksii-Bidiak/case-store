@@ -188,6 +188,7 @@ export function BlogPostForm({
                 <RichTextEditor
                   value={field.value ?? ""}
                   onChange={field.onChange}
+                  resetKey={id}
                   placeholder={dict.blogPostForm.contentPlaceholder}
                   disabled={isPending}
                 />

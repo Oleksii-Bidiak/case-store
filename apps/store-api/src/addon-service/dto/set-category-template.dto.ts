@@ -15,6 +15,6 @@ export class SetCategoryTemplateDto {
     type: [String],
   })
   @IsArray({ message: 'addonServiceIds must be an array' })
-  @IsUUID('4', { each: true, message: 'Each add-on service id must be a valid UUID' })
+  @IsUUID('loose', { each: true, message: 'Each add-on service id must be a valid UUID' })
   addonServiceIds!: string[];
 }

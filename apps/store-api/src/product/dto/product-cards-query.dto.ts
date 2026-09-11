@@ -39,6 +39,6 @@ export class ProductCardsQueryDto {
   @ArrayMaxSize(PRODUCT_CARDS_MAX_IDS, {
     message: `ids must contain at most ${PRODUCT_CARDS_MAX_IDS} ids`,
   })
-  @IsUUID(4, { each: true, message: 'each id must be a valid UUID' })
+  @IsUUID('loose', { each: true, message: 'each id must be a valid UUID' })
   ids!: string[];
 }

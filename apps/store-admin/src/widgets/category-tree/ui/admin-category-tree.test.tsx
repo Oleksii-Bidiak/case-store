@@ -56,6 +56,12 @@ interface Node {
   parentId: string | null;
   depth: number;
   children: Node[];
+  /** Server-side status; defaults to active (TASK-408 badge cases override it). */
+  isActive?: boolean;
+  /** ACTIVE products filed DIRECTLY here; defaults to 0. */
+  productCount?: number;
+  /** ACTIVE products here AND below; defaults to `productCount`. */
+  subtreeProductCount?: number;
 }
 
 function node(
@@ -63,8 +69,9 @@ function node(
   parentId: string | null,
   depth: number,
   children: Node[] = [],
+  counts: Pick<Node, "isActive" | "productCount" | "subtreeProductCount"> = {},
 ): Node {
-  return { id, parentId, depth, children };
+  return { id, parentId, depth, children, ...counts };
 }
 
 /** Default shape: A(A1(A1A), A2), B, C. */
@@ -82,13 +89,14 @@ function treeResponse(roots: Node[] = DEFAULT_ROOTS()) {
     slug: n.id.slice(0, 4),
     description: null,
     image: null,
-    isActive: true,
+    isActive: n.isActive ?? true,
     sortOrder,
     metaTitle: null,
     metaDescription: null,
     updatedAt: "2026-07-01T00:00:00.000Z",
     parentId: n.parentId,
-    productCount: 0,
+    productCount: n.productCount ?? 0,
+    subtreeProductCount: n.subtreeProductCount ?? n.productCount ?? 0,
     depth: n.depth,
     children: n.children.map((child, i) => toEntity(child, i)),
   });
@@ -1150,5 +1158,116 @@ describe("AdminCategoryTree — multi-select + bulk status (TASK-293)", () => {
     expect(rowEl(A)).toHaveAttribute("aria-selected", "true");
 
     confirmSpy.mockRestore();
+  });
+});
+
+/* ───────────── counts and inherited visibility (TASK-408) ───────────── */
+
+/**
+ * Two numbers the treegrid used to state wrongly, both found on the live run:
+ *
+ * - «Товари» showed the DIRECT product count, while the storefront page for the
+ *   same category lists its whole subtree (TASK-236) — a parent read 0 next to a
+ *   page listing 19;
+ * - an ACTIVE category under a DEACTIVATED ancestor showed «Активна» and had no
+ *   storefront page, because a deactivated parent hides its entire branch. The
+ *   status column can only speak about its own row, so the tree has to say the
+ *   rest.
+ */
+describe("AdminCategoryTree — product counts and inherited visibility (TASK-408)", () => {
+  const mockTree = (roots: Node[]): void => {
+    server.use(
+      http.get("*/api/categories/admin/tree", () =>
+        HttpResponse.json(treeResponse(roots)),
+      ),
+    );
+  };
+
+  it("leads with the subtree total and spells the direct count out beside it", async () => {
+    // Аксесуари files nothing itself; everything sits in Чохли underneath it.
+    mockTree([
+      node(A, null, 1, [node(A1, A, 2, [], { productCount: 19 })], {
+        productCount: 0,
+        subtreeProductCount: 19,
+      }),
+    ]);
+    await renderTree();
+
+    const parentCell = within(rowEl(A)).getAllByRole("gridcell")[3];
+    expect(parentCell).toHaveTextContent("19");
+    expect(parentCell).toHaveTextContent(dict.categories.productsDirect(0));
+  });
+
+  it("shows no bracketed direct count when the category files everything itself", async () => {
+    mockTree([node(A, null, 1, [], { productCount: 7 })]);
+    await renderTree();
+
+    const cell = within(rowEl(A)).getAllByRole("gridcell")[3];
+    expect(cell).toHaveTextContent("7");
+    expect(cell.textContent).not.toContain("безпосередньо");
+  });
+
+  it("badges an ACTIVE child of a deactivated parent as hidden through it", async () => {
+    mockTree([
+      node(
+        A,
+        null,
+        1,
+        [node(A1, A, 2), node(A2, A, 2, [], { isActive: false })],
+        { isActive: false },
+      ),
+      node(B, null, 1),
+    ]);
+    await renderTree();
+
+    // The child's own status is untouched — it really is active…
+    expect(within(rowEl(A1)).getByText(dict.common.active)).toBeInTheDocument();
+    // …and the badge is what explains why it has no storefront page anyway.
+    const badge = within(rowEl(A1)).getByText(
+      dict.categories.tree.hiddenByParent,
+    );
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveAttribute(
+      "title",
+      dict.categories.tree.hiddenByParentHint(NAMES[A]),
+    );
+
+    // A row that is deactivated in its own right already says so — no second badge.
+    expect(
+      within(rowEl(A2)).queryByText(dict.categories.tree.hiddenByParent),
+    ).not.toBeInTheDocument();
+    // The deactivated ancestor itself is not hidden BY anyone.
+    expect(
+      within(rowEl(A)).queryByText(dict.categories.tree.hiddenByParent),
+    ).not.toBeInTheDocument();
+    // An unrelated active root is untouched.
+    expect(
+      within(rowEl(B)).queryByText(dict.categories.tree.hiddenByParent),
+    ).not.toBeInTheDocument();
+  });
+
+  it("names the NEAREST deactivated ancestor, not the first one it walks past", async () => {
+    // A (active) → A1 (deactivated) → A1A (active): the useful name is A1.
+    mockTree([
+      node(A, null, 1, [
+        node(A1, A, 2, [node(A1A, A1, 3)], { isActive: false }),
+      ]),
+    ]);
+    await renderTree();
+
+    // Level 2 is collapsed by default (§3.11) — open Чохли to reach Силіконові.
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: dict.categories.tree.expandRow(NAMES[A1]),
+      }),
+    );
+
+    const badge = await within(rowEl(A1A)).findByText(
+      dict.categories.tree.hiddenByParent,
+    );
+    expect(badge).toHaveAttribute(
+      "title",
+      dict.categories.tree.hiddenByParentHint(NAMES[A1]),
+    );
   });
 });

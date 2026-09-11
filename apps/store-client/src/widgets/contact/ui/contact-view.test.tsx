@@ -52,9 +52,11 @@ describe("ContactView", () => {
       screen.getByRole("textbox", { name: d.fieldName }),
       "Олександр",
     );
+    // The field masks as you type and already shows the `+380` prefix
+    // (TASK-407) — type the 9-digit local part, as a shopper would.
     await user.type(
       screen.getByRole("textbox", { name: d.fieldPhone }),
-      "+380501112233",
+      "501112233",
     );
     await user.type(
       screen.getByRole("textbox", { name: d.fieldEmail }),
@@ -88,7 +90,7 @@ describe("ContactView", () => {
     expect(await screen.findByText(d.sentHeading)).toBeInTheDocument();
     expect(received).toMatchObject({
       name: "Олександр",
-      phone: "+380501112233",
+      phone: "+380 50 111 2233",
       email: "shopper@example.com",
       message: "Питання про доставку",
       topic: d.topics[0].key,

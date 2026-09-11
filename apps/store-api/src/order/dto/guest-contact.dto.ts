@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsString, MaxLength, MinLength, Matches } from 'class-validator';
+import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsInternationalPhone } from '../../common/validators';
 
 /**
  * Contact details a guest supplies at checkout (TASK-338).
@@ -30,16 +31,24 @@ export class GuestContactDto {
   email!: string;
 
   @ApiProperty({
-    description: 'Phone number the courier can call',
+    description:
+      'Phone number the courier can call — any country, 9 to 15 digits (E.164), typed with ' +
+      'whatever separators the buyer uses',
     example: '+380501234567',
     maxLength: 32,
   })
   @IsString()
   @MaxLength(32)
-  // Deliberately permissive: digits, spaces, dashes, brackets and a leading plus.
-  // A stricter Ukrainian-only pattern would reject the roaming and border-region
-  // numbers real customers use, and the number is dialled by a human, not parsed.
-  @Matches(/^\+?[\d\s()-]{9,}$/, { message: 'A valid phone number is required' })
+  // Deliberately NOT Ukrainian-only: a stricter pattern would reject the roaming
+  // and border-region numbers real customers order with, and the number is
+  // dialled by a human, not parsed (TASK-338; owner's decision restated
+  // 2026-09-10 — strict UA validation belongs on the storefront and contact
+  // forms, not on the order endpoints).
+  //
+  // It does, however, count DIGITS rather than mask characters (TASK-407). The
+  // old `@Matches(/^\+?[\d\s()-]{9,}$/)` accepted `(((((((((` — nine brackets,
+  // no number at all — as the only way to reach a guest buyer.
+  @IsInternationalPhone({ message: 'A valid phone number is required' })
   @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   phone!: string;
 

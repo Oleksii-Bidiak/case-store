@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Check, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, ShieldCheck, Trash2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetCartQueryKey,
@@ -39,9 +39,11 @@ function centsToString(cents: number): string {
 interface CartItemRowProps {
   item: CartItemEntity;
   /**
-   * Render the add-on-services block for this line (TASK-174). The cart page
-   * passes `true`; the compact mini-cart sheet leaves it off — the offers need
-   * room to read as an upsell, not a cramped checkbox list.
+   * Render the add-on-services block for this line (TASK-174). Both hosts — the
+   * cart page and the mini-cart sheet — pass `true` since TASK-409: keeping the
+   * sheet compact hid the offers from every shopper who checked out straight
+   * from it, which is most of them. The flag stays a prop so a future host that
+   * genuinely has no room can still opt out; the default is off.
    */
   showAddons?: boolean;
   /**
@@ -105,6 +107,13 @@ export function CartItemRow({
   // never reaches the client. 0 means the position is out of stock.
   const maxQty = item.maxQty;
   const outOfStock = maxQty <= 0;
+
+  // TASK-403: the API flags a line whose product — or whose product's category —
+  // was withdrawn from sale while it sat in the cart (`CartItemEntity.isActive`).
+  // That is NOT a stock state: no quantity makes it orderable again, so the line
+  // drops the stepper and the add-on upsell, says so, and offers only removal.
+  // The checkout CTA stays blocked until it is gone (see `CartSummary`).
+  const unavailable = !item.isActive;
 
   const compareAtPrice = asString(item.compareAtPrice);
   const onSale =
@@ -202,7 +211,9 @@ export function CartItemRow({
   // Real, server-resolved add-ons for this line (TASK-174) — the category
   // template plus this product's ADD/REMOVE/OVERRIDE deltas, already applied by
   // the API. `showAddons` lets a host (the mini-cart sheet) suppress the block.
-  const offers = showAddons ? item.availableAddons : [];
+  // A withdrawn line must not upsell: an add-on on an unorderable product is
+  // money the shop cannot take.
+  const offers = showAddons && !unavailable ? item.availableAddons : [];
   const selectedAddonIds = new Set(item.selectedAddonIds);
 
   // Single source for the PDP link — the image and the product name must always
@@ -251,19 +262,33 @@ export function CartItemRow({
                 {item.productName}
               </Link>
             </p>
-            <p
-              className={`flex items-center gap-1.5 text-[12.5px] ${
-                outOfStock ? "text-muted-foreground" : "text-success"
-              }`}
-            >
-              <span
-                aria-hidden="true"
-                className={`size-1.5 rounded-full ${
-                  outOfStock ? "bg-muted-foreground" : "bg-success"
+            {unavailable ? (
+              // Withdrawn beats out-of-stock: "немає в наявності" would promise
+              // the shopper a restock that is never coming (TASK-403).
+              <>
+                <span className="inline-flex items-center gap-1.5 rounded-md bg-destructive/10 px-2 py-0.5 text-xs font-semibold text-destructive">
+                  <AlertTriangle className="size-4" aria-hidden="true" />
+                  {dict.cart.unavailable}
+                </span>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {dict.cart.unavailableNote}
+                </p>
+              </>
+            ) : (
+              <p
+                className={`flex items-center gap-1.5 text-[12.5px] ${
+                  outOfStock ? "text-muted-foreground" : "text-success"
                 }`}
-              />
-              {outOfStock ? dict.cart.outOfStock : dict.cart.inStock}
-            </p>
+              >
+                <span
+                  aria-hidden="true"
+                  className={`size-1.5 rounded-full ${
+                    outOfStock ? "bg-muted-foreground" : "bg-success"
+                  }`}
+                />
+                {outOfStock ? dict.cart.outOfStock : dict.cart.inStock}
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -276,37 +301,54 @@ export function CartItemRow({
         </div>
 
         <div className="mt-auto flex flex-wrap items-end justify-between gap-3.5 pt-3">
-          <div className="flex items-center overflow-hidden rounded-md border border-border">
-            <button
-              type="button"
-              aria-label={dict.cart.decreaseAria}
-              disabled={stepperQty <= 1}
-              onClick={() => commit(Math.max(1, stepperQty - 1))}
-              className="flex size-9 items-center justify-center bg-background text-lg text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              −
-            </button>
-            <input
-              type="number"
-              aria-label={dict.cart.quantityAria}
-              min={1}
-              max={maxQty}
-              value={qty}
-              onChange={(e) =>
-                setQty(e.target.value === "" ? "" : Number(e.target.value))
-              }
-              onBlur={commitTyped}
-              className="w-11 bg-background py-1.5 text-center font-mono text-[15px] font-semibold text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-            />
-            <button
-              type="button"
-              aria-label={dict.cart.increaseAria}
-              disabled={stepperQty >= maxQty || outOfStock}
-              onClick={() => commit(stepperQty + 1)}
-              className="flex size-9 items-center justify-center bg-background text-lg text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              +
-            </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center overflow-hidden rounded-md border border-border">
+              <button
+                type="button"
+                aria-label={dict.cart.decreaseAria}
+                disabled={unavailable || stepperQty <= 1}
+                onClick={() => commit(Math.max(1, stepperQty - 1))}
+                className="flex size-9 items-center justify-center bg-background text-lg text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                aria-label={dict.cart.quantityAria}
+                min={1}
+                max={maxQty}
+                value={qty}
+                disabled={unavailable}
+                onChange={(e) =>
+                  setQty(e.target.value === "" ? "" : Number(e.target.value))
+                }
+                onBlur={commitTyped}
+                className="w-11 bg-background py-1.5 text-center font-mono text-[15px] font-semibold text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              />
+              <button
+                type="button"
+                aria-label={dict.cart.increaseAria}
+                disabled={unavailable || stepperQty >= maxQty || outOfStock}
+                onClick={() => commit(stepperQty + 1)}
+                className="flex size-9 items-center justify-center bg-background text-lg text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                +
+              </button>
+            </div>
+            {unavailable && (
+              // The trash icon above stays the generic control; a withdrawn line
+              // needs a labelled action, because removal is now the ONLY move
+              // left on it and the checkout CTA waits on that click.
+              <button
+                type="button"
+                aria-label={dict.cart.unavailableRemoveAria(item.productName)}
+                onClick={() => removeItem.mutate({ itemId: item.id })}
+                className="inline-flex items-center gap-1.5 rounded-md border border-destructive px-3 py-2 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Trash2 className="size-4" aria-hidden="true" />
+                {dict.cart.unavailableRemove}
+              </button>
+            )}
           </div>
 
           <div className="text-right">

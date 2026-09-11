@@ -20,6 +20,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { FailClosedThrottle } from '../throttler';
 import { ReviewService, PaginationMeta } from './review.service';
 import { ReviewEntity, ReviewAggregateEntity } from './entities';
 import { CreateReviewDto, ReviewListQueryDto } from './dto';
@@ -102,6 +103,9 @@ export class ReviewController {
   // Writing a review is a state mutation and a spam target; cap below the
   // global limit.
   @Throttle({ default: { limit: 10, ttl: 60000 } })
+  // Authenticated, but a single stolen or throwaway account with no working cap
+  // can flood the moderation queue for every product (TASK-401).
+  @FailClosedThrottle()
   @ApiOperation({ summary: 'Submit a product review', operationId: 'reviewControllerSubmit' })
   @ApiParam({ name: 'productId', description: 'Product UUID' })
   @ApiResponse({

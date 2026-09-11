@@ -13,15 +13,15 @@ import { getGetWishlistQueryKey } from "@/entities/wishlist";
 import { dict } from "@/shared/config";
 // Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders, which this client form does not need.
-import { passwordSchema } from "@/shared/lib/password-policy";
+import { customerPasswordSchema } from "@/shared/lib/password-policy";
 
 const registerSchema = z
   .object({
     email: z.string().email(dict.auth.register.validationEmail),
     firstName: z.string().min(1, dict.auth.register.validationFirstName),
     lastName: z.string().min(1, dict.auth.register.validationLastName),
-    // Mirrors the API policy (TASK-227): min 8 + lower + upper + digit.
-    password: passwordSchema,
+    // Mirrors the API shopper policy (TASK-407): min 8 + a letter + a digit.
+    password: customerPasswordSchema,
     passwordConfirm: z.string(),
     terms: z.boolean().refine((v) => v === true, {
       message: dict.auth.register.validationTerms,

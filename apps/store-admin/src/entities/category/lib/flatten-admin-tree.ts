@@ -10,8 +10,8 @@
  *
  * The result is in depth-first order, which is also the row order the treegrid
  * renders, and is a strict SUPERSET of `TreeItem` — the extra columns
- * (`slug`, `isActive`, `productCount`, `depth`) ride along so the widget does
- * not need a second lookup map.
+ * (`slug`, `isActive`, `productCount`, `subtreeProductCount`, `depth`) ride
+ * along so the widget does not need a second lookup map.
  */
 
 import type { TreeItem } from "@/shared/lib/sortable-tree";
@@ -20,7 +20,14 @@ import type { AdminCategoryTreeNodeEntity } from "@/shared/api";
 export interface CategoryTreeItem extends TreeItem {
   slug: string;
   isActive: boolean;
+  /** ACTIVE products filed DIRECTLY on this category. */
   productCount: number;
+  /**
+   * ACTIVE products in this category AND every descendant (TASK-408) — the
+   * figure the storefront category page lists, since a listing rolls up over the
+   * whole subtree (TASK-236).
+   */
+  subtreeProductCount: number;
   /** 1-based level as computed by the server (a root category is level 1). */
   depth: number;
 }
@@ -42,6 +49,7 @@ export function flattenAdminCategoryTree(
       slug: node.slug,
       isActive: node.isActive,
       productCount: node.productCount,
+      subtreeProductCount: node.subtreeProductCount,
       depth: node.depth,
     });
     for (const child of node.children ?? []) {

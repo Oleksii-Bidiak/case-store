@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-460**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-468**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -604,6 +604,14 @@
 | TASK-455 | [🟢] Пайплайн замість розбиття монорепо: paths-filter, кеш, Playwright без continue-on-error | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
 | TASK-456 | Ревʼю якості коду і доків по модулях → звіт у `docs/reviews` | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
 | TASK-457 | [QA] Повторний прогін стендових чеків на staging (тріаж §8) | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-460 | [🔴 CI] Блокуючий джоб `test-int` червоний із 2026-08-03: `cache.int-spec.ts` не збирає модуль (`CategoryService` вимагає `RevalidationNotifier` із 0718fc9, спек його не надає) — 3 тести падають, інші 86 зелені | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-461 | [🔴 CI] Джоб `contract-freshness` (і export-кроки deploy-*) не бутяться з 866834e: `STORE_CLIENT_URL`, `REVALIDATE_SECRET`, `STOREFRONT_REVALIDATE_URL` стали обовʼязковими в production, а `env:` у workflow їх не дає — дописати три змінні; сама спека свіжа (звірено 2026-09-11) | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-462 | `e2e/cart-flow.spec.ts` перевіряє поведінку до гість-чекауту (TASK-166): чекає редірект `/checkout` → `/login?redirect=/checkout`, а гість тепер проходить чекаут і з порожнім кошиком їде на `/cart` — переписати під журнал гостя (решта 5 PW-тестів зелені) | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-463 | PW-спек `admin-order-filters` флакає у ПОВНОМУ прогоні (2 падіння з 3): після успішного логіна наступна навігація віддає сторінку входу. Окремо `--project=admin` і прогін без `auth-flow` — стабільно зелені, тож причина у спільному стані сюїти (один IP на лічильники, один процес API, одна БД); логи API до виводу PW не доходять, механізм не доведено | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-464 | [🟡 безпека] `newsletter.controller.ts` — обидва публічні POST (`subscribe`/`unsubscribe`) мають `@Throttle`, але не `@FailClosedThrottle()`: за відмови Redis розсилка стає безлімітною (масова підписка чужих адрес → репутація домену). Зразок для правки вже є в `contact.controller.ts` | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-465 | Адмінка тримає три власні ASCII-регекси пароля (`CreateUserDialog.tsx:38`, `UserPasswordResetDialog.tsx:33`, `AdminPasswordChangeForm.tsx:18`) проти юнікодного `\p{Ll}`/`\p{Lu}` на бекенді — кириличний `Пароль123` сервер приймає, а адмінка ріже на клієнті повідомленням, що причини не називає; винести спільний модуль за зразком `store-client/shared/lib/password-policy.ts` | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-466 | `address.dto.ts:102` і `guest-contact.dto.ts:51` рахують цифри, але не зводять телефон до канонічних (контактне DTO зводить — `create-contact-message.dto.ts:63`): вітрина шле маску `+380 50 111 2233`, ручне замовлення в адмінці — незамасковане поле, тож один номер лежить у різних написаннях і `contains`-пошук замовлення за телефоном (`order.repository.ts:516`) їх не знаходить. `phoneDigits()` для цього вже існує | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-467 | `StarterKit` у `rich-text-editor.tsx` мовчки викидає непідтримуваний HTML (таблиці, картинки, inline-стилі) — а імпорт каталогу пише HTML у ту саму колонку `description`. Сід безпечний (програмний `setContent` не викликає `onChange`), але перша ж правка оператора збереже обрізану версію: або розширити схему, або показувати попередження через `onContentError` | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
 
 ---
 
@@ -613,6 +621,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-460**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-468**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.

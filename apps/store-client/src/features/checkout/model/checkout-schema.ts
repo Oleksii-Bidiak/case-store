@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { dict } from "@/shared/config";
+// Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
+// schema builders this form model has no use for.
+import { isValidUAPhone } from "@/shared/lib/phone";
 import {
   CHECKOUT_PAYMENT_METHODS,
   DEFAULT_PAYMENT_METHOD,
@@ -16,17 +19,19 @@ import {
  * separate billing address in the MVP. `notes` is capped at 500 chars to match
  * the backend DTO.
  *
- * UA phone: accept `+380…`, `0…` and common separators; require ≥ 10 digits.
+ * UA phone (TASK-407): validated on the NORMALISED number, not on the mask.
+ * The previous rule — `/^\+?[\d\s()-]{10,20}$/` — matched the characters
+ * `PhoneInput` had just drawn, so a string of brackets passed and a number with
+ * two digits missing out of the middle did too. `isValidUAPhone` strips the
+ * separators first and then requires `380` + 9 digits.
  */
-const phoneRegex = /^\+?[\d\s()-]{10,20}$/;
-
 export const checkoutSchema = z.object({
   firstName: z.string().min(1, dict.checkout.validation.firstName),
   lastName: z.string().min(1, dict.checkout.validation.lastName),
   phone: z
     .string()
     .min(1, dict.checkout.validation.phone)
-    .regex(phoneRegex, dict.checkout.validation.phone),
+    .refine(isValidUAPhone, dict.checkout.validation.phone),
   city: z.string().min(1, dict.checkout.validation.city),
   // Nova Poshta refs (TASK-080) — set when the user picks from the autocomplete;
   // empty for the free-text fallback (NP not configured / offline). The visible
@@ -90,8 +95,14 @@ export type CheckoutFormValues = z.infer<typeof checkoutSchema>;
 /**
  * Static form defaults. Constant by construction — never seeded from async
  * server data, per `docs/conventions/forms.md`.
+ *
+ * `phone` is listed for a reason (TASK-407): without a default the field starts
+ * `undefined`, and zod reports an untouched phone as the English "Required"
+ * instead of the Ukrainian sentence in the dictionary — the one thing on this
+ * screen a shopper could not read.
  */
 export const CHECKOUT_DEFAULT_VALUES = {
   email: "",
+  phone: "",
   paymentMethod: DEFAULT_PAYMENT_METHOD,
 } satisfies Partial<CheckoutFormValues>;

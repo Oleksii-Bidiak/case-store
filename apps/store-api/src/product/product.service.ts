@@ -200,6 +200,11 @@ export class ProductService {
     const params: FindAllParams = {
       ...this.toListParams(query),
       categoryIds: await this.resolveSubtreeIds(query.categoryId),
+      // AD-PROD-08 (TASK-406): the operator searches for a position by its
+      // article number. Set HERE and nowhere else — `toListParams` is shared
+      // with the public listing, and an SKU is an internal identifier that the
+      // storefront search must not accept as a query.
+      searchIncludesSku: true,
     };
     return this.listFromDbForAdmin(params);
   }
@@ -307,6 +312,28 @@ export class ProductService {
         totalPages,
       },
     };
+  }
+
+  /**
+   * The reserved-units aggregate for ONE product — the single-row form of
+   * {@link ProductRepository.getReservedQtyByProductId} (TASK-408).
+   *
+   * Every admin mutation echoes the written row back as a {@link ProductEntity},
+   * and that entity carries `physicalQty` — the number the admin form labels
+   * «фізично на складі». Before TASK-408 the mutation paths passed no
+   * `reservedQty` at all and the entity defaulted it to 0, so every save reported
+   * physical == free: a product with 3 units held by unshipped orders showed its
+   * true 10 on the shelf as 7. The echo is precisely when the operator reads that
+   * number, so "the next list read heals it" was never a defence.
+   *
+   * One indexed `groupBy` on a path that already writes, evicts two cache key
+   * spaces and re-indexes a search document — the cost is noise, and the
+   * alternative (dropping the derived fields from mutation responses) would force
+   * the admin form to refetch after every save.
+   */
+  private async reservedQtyFor(productId: string): Promise<number> {
+    const reservedByProductId = await this.productRepository.getReservedQtyByProductId([productId]);
+    return reservedByProductId.get(productId) ?? 0;
   }
 
   /**
@@ -467,7 +494,10 @@ export class ProductService {
     await this.invalidateProductLists();
     await this.syncSearchIndex(product);
 
-    return ProductEntity.fromPrisma(product);
+    return ProductEntity.fromPrisma({
+      ...product,
+      reservedQty: await this.reservedQtyFor(product.id),
+    });
   }
 
   /**
@@ -540,7 +570,10 @@ export class ProductService {
     }
     await this.syncSearchIndex(updatedProduct);
 
-    return ProductEntity.fromPrisma(updatedProduct);
+    return ProductEntity.fromPrisma({
+      ...updatedProduct,
+      reservedQty: await this.reservedQtyFor(updatedProduct.id),
+    });
   }
 
   /**
@@ -560,7 +593,10 @@ export class ProductService {
     await this.evictProductDetail(id, product.slug);
     await this.syncSearchIndex(deactivatedProduct);
 
-    return ProductEntity.fromPrisma(deactivatedProduct);
+    return ProductEntity.fromPrisma({
+      ...deactivatedProduct,
+      reservedQty: await this.reservedQtyFor(deactivatedProduct.id),
+    });
   }
 
   /**
@@ -580,7 +616,10 @@ export class ProductService {
     await this.evictProductDetail(id, product.slug);
     await this.syncSearchIndex(activatedProduct);
 
-    return ProductEntity.fromPrisma(activatedProduct);
+    return ProductEntity.fromPrisma({
+      ...activatedProduct,
+      reservedQty: await this.reservedQtyFor(activatedProduct.id),
+    });
   }
 
   /**
@@ -644,7 +683,10 @@ export class ProductService {
     await this.evictProductDetail(id, product.slug);
     await this.syncSearchIndex(deleted);
 
-    return ProductEntity.fromPrisma(deleted);
+    return ProductEntity.fromPrisma({
+      ...deleted,
+      reservedQty: await this.reservedQtyFor(deleted.id),
+    });
   }
 
   /**
@@ -698,7 +740,11 @@ export class ProductService {
     await this.syncSearchIndex(product);
 
     const compatibleDeviceModels = await this.deviceCompatRepository.getDeviceCompat(productId);
-    return ProductEntity.fromPrisma({ ...product, compatibleDeviceModels });
+    return ProductEntity.fromPrisma({
+      ...product,
+      compatibleDeviceModels,
+      reservedQty: await this.reservedQtyFor(productId),
+    });
   }
 
   /**
@@ -809,7 +855,11 @@ export class ProductService {
     await this.evictProductDetail(productId, product.slug);
 
     const specValues = await this.specRepository.getSpecs(productId);
-    return ProductEntity.fromPrisma({ ...product, specValues });
+    return ProductEntity.fromPrisma({
+      ...product,
+      specValues,
+      reservedQty: await this.reservedQtyFor(productId),
+    });
   }
 
   /**
