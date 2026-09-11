@@ -332,6 +332,16 @@ services:
         # cash on delivery only in EVERY container build, no matter what the
         # operator set — LiqPay keys and all. Fixed in TASK-348.
         NEXT_PUBLIC_PAYMENT_METHODS: ${NEXT_PUBLIC_PAYMENT_METHODS:-}
+        # Whether the login screen shows the "Sign in with Google" button
+        # (TASK-402). Not `true` → hidden; `true` on its own is still not enough,
+        # because the button links into store-api's /api/auth/google, which 500s
+        # without GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET below. Baked in at build
+        # time like every NEXT_PUBLIC_*, so flipping it means a rebuild.
+        #
+        # Neither this line nor the Dockerfile's ARG existed until TASK-495: the
+        # flag shipped with TASK-402 and reached no container build at all, so the
+        # button was hidden in production however the API was configured.
+        NEXT_PUBLIC_GOOGLE_AUTH_ENABLED: ${NEXT_PUBLIC_GOOGLE_AUTH_ENABLED:-}
         NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
         NEXT_PUBLIC_SENTRY_ENVIRONMENT: ${NEXT_PUBLIC_SENTRY_ENVIRONMENT:-production}
         NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE: ${NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE:-0}

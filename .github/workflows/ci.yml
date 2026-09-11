@@ -545,6 +545,7 @@ jobs:
             NEXT_PUBLIC_CURRENCY=${{ vars.NEXT_PUBLIC_CURRENCY || 'UAH' }}
             NEXT_PUBLIC_IMAGE_HOSTS=${{ vars.NEXT_PUBLIC_IMAGE_HOSTS }}
             NEXT_PUBLIC_PAYMENT_METHODS=${{ vars.NEXT_PUBLIC_PAYMENT_METHODS }}
+            NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=${{ vars.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging
             NEXT_PUBLIC_UMAMI_SRC=${{ vars.NEXT_PUBLIC_UMAMI_SRC }}
@@ -884,7 +885,10 @@ jobs:
       # deployed bundle. NEXT_PUBLIC_PAYMENT_METHODS in particular must be set in
       # the `production` Environment's variables when card payment goes live —
       # unset, the checkout offers cash on delivery only, whatever LiqPay keys
-      # store-api holds (TASK-348).
+      # store-api holds (TASK-348). NEXT_PUBLIC_GOOGLE_AUTH_ENABLED is the same
+      # shape and was missing from this list entirely until TASK-495: set it to
+      # `true` when store-api has real GOOGLE_CLIENT_ID/_SECRET, or the
+      # "Sign in with Google" button stays hidden no matter what the API holds.
       - name: Build & push store-client
         if: steps.need.outputs.client == 'true'
         uses: docker/build-push-action@v6
@@ -899,6 +903,7 @@ jobs:
             NEXT_PUBLIC_CURRENCY=${{ vars.NEXT_PUBLIC_CURRENCY || 'UAH' }}
             NEXT_PUBLIC_IMAGE_HOSTS=${{ vars.NEXT_PUBLIC_IMAGE_HOSTS }}
             NEXT_PUBLIC_PAYMENT_METHODS=${{ vars.NEXT_PUBLIC_PAYMENT_METHODS }}
+            NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=${{ vars.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=production
             NEXT_PUBLIC_UMAMI_SRC=${{ vars.NEXT_PUBLIC_UMAMI_SRC }}

@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-491**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-496**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -640,7 +640,9 @@
 
 ### План 179 — Якість: безпека, доки, моніторинг, пайплайн, ревʼю, повторний прогін
 
-> **S0 — першими, до будь-якого мержу:** TASK-460…467 у таблиці нижче — 460/461 тримають CI червоним, 466 є передумовою TASK-483.
+> **S0 — першими, до будь-якого мержу:** TASK-460…467 і TASK-491…495 у таблиці нижче — 460/461/495
+> тримають CI червоним, 466 є передумовою TASK-483. **TASK-491 — не код, а рахунок:** доки білінг
+> GitHub заблоковано, жоден джоб не виконується, тож «зелений CI» перевіряється лише локально.
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
@@ -658,6 +660,11 @@
 | TASK-465 | Адмінка тримає три власні ASCII-регекси пароля (`CreateUserDialog.tsx:38`, `UserPasswordResetDialog.tsx:33`, `AdminPasswordChangeForm.tsx:18`) проти юнікодного `\p{Ll}`/`\p{Lu}` на бекенді — кириличний `Пароль123` сервер приймає, а адмінка ріже на клієнті повідомленням, що причини не називає; винести спільний модуль за зразком `store-client/shared/lib/password-policy.ts` | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
 | TASK-466 | `address.dto.ts:102` і `guest-contact.dto.ts:51` рахують цифри, але не зводять телефон до канонічних (контактне DTO зводить — `create-contact-message.dto.ts:63`): вітрина шле маску `+380 50 111 2233`, ручне замовлення в адмінці — незамасковане поле, тож один номер лежить у різних написаннях і `contains`-пошук замовлення за телефоном (`order.repository.ts:516`) їх не знаходить. `phoneDigits()` для цього вже існує | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
 | TASK-467 | `StarterKit` у `rich-text-editor.tsx` мовчки викидає непідтримуваний HTML (таблиці, картинки, inline-стилі) — а імпорт каталогу пише HTML у ту саму колонку `description`. Сід безпечний (програмний `setContent` не викликає `onChange`), але перша ж правка оператора збереже обрізану версію: або розширити схему, або показувати попередження через `onContentError` | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-491 | [🔴 CI] **Не код — рахунок.** Акаунт GitHub заблоковано за білінгом: жоден джоб не стартував із 2026-07-07 (звірено `gh run view` по прогонах 07-07…08-27 — усі падають за 3–7 с із `The job was not started because your account is locked due to a billing issue`). Тому червоні джоби нікому не видно, а «CI зелений після пушу» непідтверджуваний: приймання хвиль іде локальним прогоном еквівалентів джобів. Розблокувати білінг і перезапустити останній прогін на `develop` | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-492 | Розширити схему `rich-text-editor.tsx` до контракту санітайзера: `@tiptap/extension-image`, `@tiptap/extension-table*`, `heading.levels: [1,2,3,4]` + кнопки тулбару. Тягне за собою клієнтський санітайзер у `rich-text-preview.tsx` — його обґрунтування «схема не має Image/Link/raw-HTML» після цього падає. Рішення власника 2026-09-11: у S0 лише банер (TASK-467), розширення — окремо | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-493 | [🟡 безпека] Ще два публічні POST без `@FailClosedThrottle()`: `auth/password-reset/confirm` (`auth.controller.ts:239`) і `auth/email/verify/confirm` (`:417`) — обидва поверхні для перебору токена. Це компроміс доступності: за збою Redis скидання пароля й підтвердження пошти зупиняться повністю, тому рішення за власником, а не за виконавцем TASK-464 | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-494 | `scripts/env-check.js` звіряє чотири джерела, але **не читає `.github/workflows/**`** — а задеплоєні образи збирають саме списки `build-args:` у `ci.yml`, не `build.args` у compose. Тому пропуск змінної в джобі нічим не ловиться: так пройшли і TASK-461, і TASK-495. Додати workflow п'ятим джерелом гейта | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-495 | [🔴 CI] Блокуючий джоб `Env Drift Gate` червоний: (1) сканер `scanCode()` читав і коментарі, тож фраза «literal `process.env.X`» у JSDoc `login-form.tsx:51` завела змінну на ім'я `X`; (2) `NEXT_PUBLIC_GOOGLE_AUTH_ENABLED` читається кодом, але відсутній у Dockerfile вітрини, compose, `build-args:` у `ci.yml`, прод-прикладі й таблиці `VARS` — тобто кнопку «Увійти через Google» не можна було ввімкнути в жодній контейнерній збірці, попри налаштовані `GOOGLE_CLIENT_ID/_SECRET` на API | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
 
 ---
 
@@ -667,6 +674,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-491**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-496**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.

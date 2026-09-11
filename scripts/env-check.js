@@ -1374,6 +1374,21 @@ const VARS = [
       "Через кому, ГОЛІ імена хостів без схеми й шляху: `cdn.mystore.ua,images.brand.com`. Додавати щойно в адмінці з'явилося зовнішнє посилання на картинку категорії.",
   },
   {
+    name: "NEXT_PUBLIC_GOOGLE_AUTH_ENABLED",
+    group: "frontend",
+    need: "optional",
+    compose: "default",
+    services: [],
+    buildArgs: ["store-client"],
+    example: true,
+    validated: "absent",
+    code: "used",
+    effect:
+      "Не `true` → кнопки «Увійти через Google» на вітрині немає взагалі (вхід поштою+паролем працює як завжди). Саме `true` при цьому ще НЕ вмикає її по-справжньому: кнопка — це посилання на `/api/auth/google`, який без GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET у store-api відповідає помилкою, тож потрібні обидві половини. Build-time: перемикання = перезбирання образу.",
+    howTo:
+      "`true` — і лише після того, як у store-api задані справжні GOOGLE_CLIENT_ID/_SECRET. Порожньо (сховано) — правильний стан, доки OAuth-клієнт у Google Cloud Console не створений.",
+  },
+  {
     name: "SERVER_FETCH_TIMEOUT_MS",
     group: "frontend",
     need: "optional",
@@ -1857,6 +1872,36 @@ function parseValidation(text) {
   return fields;
 }
 
+/**
+ * Blank out JS/TS comments before the scan below hunts for `process.env.X`.
+ * (`stripComments` further up is the compose-file `#` one — different syntax,
+ * different job.)
+ *
+ * The scan reads raw file text, so until TASK-495 any variable name merely
+ * WRITTEN ABOUT in prose counted as a read. TASK-402's JSDoc above
+ * `isGoogleAuthEnabled()` explains that the flag is accessed as "literal
+ * `process.env.X` … that is the form Next.js inlines at build time" — and the
+ * gate dutifully reported a variable named `X` missing from VARS, so a
+ * blocking CI job went red over a sentence of documentation. The workaround
+ * taken in apps/store-client/src/features/checkout/model/payment-methods.ts
+ * (never spell the prefix out in a comment) only postpones the next one: this
+ * gate's contract is "every `process.env.X` in application CODE", and a
+ * comment is not code.
+ *
+ * Only block comments and WHOLE-LINE `//` comments are removed. A trailing
+ * `//` is deliberately left alone, because `//` also occurs inside string
+ * literals (`"https://…"`) and cutting the rest of such a line would hide real
+ * code from the scan — the one mistake this helper must never make. Stripped
+ * spans become spaces and newlines are kept, so every remaining offset stays
+ * where it was.
+ */
+function stripJsComments(src) {
+  const blank = (text) => text.replace(/[^\r\n]/g, " ");
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, blank)
+    .replace(/^[ \t]*\/\/[^\r\n]*$/gm, blank);
+}
+
 /** Every `process.env.X` / `config.get('X')` in non-test application source. */
 function scanCode() {
   const names = new Map();
@@ -1875,7 +1920,7 @@ function scanCode() {
         continue;
       }
       if (!/\.(ts|tsx|js|mjs|cjs)$/.test(entry.name) || isTest(full)) continue;
-      const src = fs.readFileSync(full, "utf8");
+      const src = stripJsComments(fs.readFileSync(full, "utf8"));
       let m;
       while ((m = re.exec(src))) {
         const name = m[1] || m[2] || m[3];
