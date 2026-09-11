@@ -32,22 +32,6 @@ export interface CategoryTreeItem extends TreeItem {
   depth: number;
 }
 
-/**
- * Read `subtreeProductCount` off a tree node, falling back to its direct count.
- *
- * The field is new in TASK-408 and the Orval-generated `AdminCategoryTreeNodeEntity`
- * only learns about it on the next `swagger:export` + `orval` run, so the read is
- * narrowed here rather than asserted across the widget. The fallback is also the
- * honest answer against an older API: with no rollup available, a category's own
- * count is the most the client can truthfully claim.
- */
-function readSubtreeCount(node: AdminCategoryTreeNodeEntity): number {
-  const withRollup = node as AdminCategoryTreeNodeEntity & {
-    subtreeProductCount?: number;
-  };
-  return withRollup.subtreeProductCount ?? node.productCount;
-}
-
 /** Depth-first flatten of the nested admin tree. */
 export function flattenAdminCategoryTree(
   nodes: AdminCategoryTreeNodeEntity[] | undefined,
@@ -65,7 +49,7 @@ export function flattenAdminCategoryTree(
       slug: node.slug,
       isActive: node.isActive,
       productCount: node.productCount,
-      subtreeProductCount: readSubtreeCount(node),
+      subtreeProductCount: node.subtreeProductCount,
       depth: node.depth,
     });
     for (const child of node.children ?? []) {

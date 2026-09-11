@@ -28,13 +28,13 @@ hook in `apps/store-api/prisma.config.ts` (`migrations.seed: 'tsx prisma/seed.ts
 
 All commands run from the **repo root** unless noted. They delegate to the `store-api` workspace.
 
-| Command               | What it does                                                                    |
-| --------------------- | ------------------------------------------------------------------------------- |
-| `npm run db:seed`     | Run the seed script against the current DB (no schema change). Idempotent.      |
-| `npm run db:migrate`  | Apply pending migrations via `prisma migrate dev`, then auto-run the seed hook. |
-| `npm run db:push`     | Push the schema to the DB without creating a migration (rapid dev only).        |
-| `npm run db:studio`   | Open Prisma Studio to browse/edit seeded data in the browser.                   |
-| `npm run db:generate` | Regenerate the Prisma Client after a schema change.                             |
+| Command               | What it does                                                                                                          |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `npm run db:seed`     | Run the seed script against the current DB (no schema change). Idempotent — with one one-off TASK-397 caveat, see §3. |
+| `npm run db:migrate`  | Apply pending migrations via `prisma migrate dev`, then auto-run the seed hook.                                       |
+| `npm run db:push`     | Push the schema to the DB without creating a migration (rapid dev only).                                              |
+| `npm run db:studio`   | Open Prisma Studio to browse/edit seeded data in the browser.                                                         |
+| `npm run db:generate` | Regenerate the Prisma Client after a schema change.                                                                   |
 
 Workspace-direct equivalents (run from anywhere) use the `-w` flag, e.g.
 `npm run db:seed -w apps/store-api`.
