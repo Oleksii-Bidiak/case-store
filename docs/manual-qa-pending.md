@@ -1230,16 +1230,16 @@ exit 0; `swagger:export` без змін коду дає нульовий diff; 
       `OpenAPI Contract Freshness`. **Має бути:** `swagger:export` піднявся з одноразовим
       Postgres, а крок порівняння вивів «OpenAPI contract is in sync…». Локально spec
       побайтово збігся, але на ubuntu це перша перевірка.
-- [ ] 🔴 **ДЕПЛОЙНІ ДЖОБИ ЗЛАМАНІ — бракує `CSRF_SECRET`.** **Зроби:** прочитай кроки
-      `Export OpenAPI spec into the build context` у `deploy-staging` і `deploy-production`
-      (`ci.yml`). **Проблема:** `env.validation.ts` вимагає `CSRF_SECRET` (обов'язковий у
-      production, мін. 32 символи), а обидва кроки задають лише `JWT_SECRET` /
-      `JWT_REFRESH_SECRET` / `CORS_ORIGINS` при `NODE_ENV=production`. Відтворено локально:
-      `Invalid environment configuration: CSRF_SECRET must be at least 32 characters,
-CSRF_SECRET is required in production` → крок падає → **падає весь деплой**.
-      **Треба:** додати `CSRF_SECRET` до env обох кроків (у новій джобі `contract-freshness`
-      це вже зроблено — беріть її за зразок). Свідомо не чіпав деплойні джоби в межах
-      TASK-325: вони поза скоупом задачі й найнебезпечніші у файлі.
+- [x] ~~🔴 **ДЕПЛОЙНІ ДЖОБИ ЗЛАМАНІ — бракує `CSRF_SECRET`.**~~ **Закрито TASK-461**
+      (2026-09-11). `CSRF_SECRET` дописали раніше, але дірка була ширша: `env.validation.ts`
+      вимагає в production ще `STORE_CLIENT_URL` (із 1fdeecd / TASK-324), `REVALIDATE_SECRET`
+      і `STOREFRONT_REVALIDATE_URL` (із 866834e / TASK-383), а `deploy-staging` не мав ще й
+      `CORS_ORIGINS`. Відтворено локально — крок падав із
+      `Invalid environment configuration: STORE_CLIENT_URL is required in production;
+REVALIDATE_SECRET is required in production; STOREFRONT_REVALIDATE_URL is required in
+production`. Тепер усі **три** кроки експорту (`contract-freshness`, `deploy-staging`,
+      `deploy-production`) несуть побайтово однаковий `env:` блок; перевірено парсером YAML.
+      Далі тримати їх однаковими — нова змінна у схемі валідації має з'явитись у всіх трьох.
 
 ### TASK-326 — linux-бінарники в локфайлі; джоба `lockfile-platform` (4)
 

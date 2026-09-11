@@ -344,14 +344,22 @@ jobs:
       # The dummy secrets are throwaway build-time inputs for env validation —
       # never used at runtime, and the app never listens on a port here.
       #
-      # ⚠️ CSRF_SECRET is REQUIRED for this to boot with NODE_ENV=production
-      # (env.validation.ts: required, min 32 chars). Verified by running the
-      # export locally: without it the process dies with
-      #   "Invalid environment configuration: CSRF_SECRET must be at least 32
-      #    characters, CSRF_SECRET is required in production"
-      # The deploy-staging / deploy-production export steps below do NOT set it
-      # and would fail the same way — see docs/manual-qa-pending.md §TASK-325.
-      # Do not "align" this job by copying their env; align theirs with this one.
+      # ⚠️ EVERY variable below is REQUIRED to boot with NODE_ENV=production.
+      # env.validation.ts is the list; the ones that have bitten us are:
+      #   - CSRF_SECRET, min 32 chars (TASK-325)
+      #   - STORE_CLIENT_URL, an exact origin — no path, no trailing slash
+      #     (required since 1fdeecd / TASK-324)
+      #   - REVALIDATE_SECRET (min 32) and STOREFRONT_REVALIDATE_URL, required
+      #     since 866834e / TASK-383
+      # The last three were never added here, so this job — and the two export
+      # steps below — have been dying before reaching any Swagger metadata with
+      #   "Invalid environment configuration: STORE_CLIENT_URL is required in
+      #    production; REVALIDATE_SECRET is required in production;
+      #    STOREFRONT_REVALIDATE_URL is required in production"
+      # (TASK-461, reproduced locally). The three export steps now carry an
+      # IDENTICAL env block: keep them that way — a variable added to the
+      # validation schema has to land in all three or the next deploy dies
+      # halfway, the way this one did.
       - name: Re-export the OpenAPI spec
         run: npm run swagger:export -w apps/store-api
         env:
@@ -361,6 +369,9 @@ jobs:
           JWT_REFRESH_SECRET: ci-dummy-jwt-refresh-secret-min-32-000
           CSRF_SECRET: ci-dummy-csrf-secret-min-32-chars-0000
           CORS_ORIGINS: http://localhost:3000
+          STORE_CLIENT_URL: http://localhost:3000
+          REVALIDATE_SECRET: ci-dummy-revalidate-secret-min-32-0000
+          STOREFRONT_REVALIDATE_URL: http://localhost:3000/api/revalidate
       - name: Committed spec must match the re-export
         run: |
           if ! git diff --exit-code -- apps/store-api/swagger.json; then
@@ -457,15 +468,23 @@ jobs:
       - name: Export OpenAPI spec into the build context
         run: npm run swagger:export -w apps/store-api
         env:
+          # Identical to the contract-freshness job's block by design — see the
+          # comment there. Every one of these is required, not optional:
+          # env.validation refuses a production boot without them, and the export
+          # exits 1 and takes the whole deploy with it. CSRF_SECRET was found
+          # while closing TASK-325; CORS_ORIGINS, STORE_CLIENT_URL,
+          # REVALIDATE_SECRET and STOREFRONT_REVALIDATE_URL while closing
+          # TASK-461. All five were missing here and none of it ever surfaced,
+          # because no deploy has ever run.
           NODE_ENV: production
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/store_swagger?schema=public
           JWT_SECRET: ci-dummy-jwt-secret-min-32-chars-000000
           JWT_REFRESH_SECRET: ci-dummy-jwt-refresh-secret-min-32-000
-          # Required, not optional: env.validation rejects a production boot without
-          # a >=32-char CSRF_SECRET, so without this line the export exits 1 and takes
-          # the whole deploy with it. Found while closing TASK-325 — this step had
-          # never actually run, because no deploy has ever run.
           CSRF_SECRET: ci-dummy-csrf-secret-min-32-chars-0000
+          CORS_ORIGINS: http://localhost:3000
+          STORE_CLIENT_URL: http://localhost:3000
+          REVALIDATE_SECRET: ci-dummy-revalidate-secret-min-32-0000
+          STOREFRONT_REVALIDATE_URL: http://localhost:3000/api/revalidate
 
       # ── image coordinates ────────────────────────────────────────────────
       # GHCR requires a LOWERCASE path; the repo owner renders mixed-case
@@ -777,16 +796,22 @@ jobs:
       - name: Export OpenAPI spec into the build context
         run: npm run swagger:export -w apps/store-api
         env:
+          # Identical to the contract-freshness job's block by design — see the
+          # comment there. Every one of these is required, not optional:
+          # env.validation refuses a production boot without them, and the export
+          # exits 1 and takes the whole deploy with it. CSRF_SECRET was found
+          # while closing TASK-325; STORE_CLIENT_URL, REVALIDATE_SECRET and
+          # STOREFRONT_REVALIDATE_URL while closing TASK-461. None of it ever
+          # surfaced, because no deploy has ever run.
           NODE_ENV: production
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/store_swagger?schema=public
           JWT_SECRET: ci-dummy-jwt-secret-min-32-chars-000000
           JWT_REFRESH_SECRET: ci-dummy-jwt-refresh-secret-min-32-000
-          # Required, not optional: env.validation rejects a production boot without
-          # a >=32-char CSRF_SECRET, so without this line the export exits 1 and takes
-          # the whole deploy with it. Found while closing TASK-325 — this step had
-          # never actually run, because no deploy has ever run.
           CSRF_SECRET: ci-dummy-csrf-secret-min-32-chars-0000
           CORS_ORIGINS: http://localhost:3000
+          STORE_CLIENT_URL: http://localhost:3000
+          REVALIDATE_SECRET: ci-dummy-revalidate-secret-min-32-0000
+          STOREFRONT_REVALIDATE_URL: http://localhost:3000/api/revalidate
 
       # ── per-app image tags ───────────────────────────────────────────────
       # Each tag is the SHA of the last commit that touched that app's inputs, so
