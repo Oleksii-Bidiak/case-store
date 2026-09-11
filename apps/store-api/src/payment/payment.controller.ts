@@ -79,6 +79,10 @@ export class PaymentController {
   @ApiResponse({ status: 503, description: 'Online payment is not configured' })
   async createCheckout(
     @CurrentUser('id') userId: string,
+    // Unversioned on purpose (TASK-397). Nest's own default regex is shape-only,
+    // i.e. what class-validator calls 'loose' — adding `{ version: '4' }` would
+    // look like hardening and instead 400 every seeded order, whose id comes
+    // from `deterministicUuid`. Reasoning in full: update-product.dto.ts.
     @Param('orderId', ParseUUIDPipe) orderId: string,
   ): Promise<PaymentCheckoutResponse> {
     const order = await this.orderService.getOrder(userId, orderId);

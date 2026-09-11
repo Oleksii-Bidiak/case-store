@@ -38,6 +38,18 @@ import { MAX_DESCRIPTION_LENGTH } from '../product.constants';
  * mode-less `@IsUUID` left anywhere in `src/` silently means `'all'` and is a bug.
  * Re-seeding is still required for a different reason — see the TASK-397 line in
  * docs/manual-qa-pending.md.
+ *
+ * The four `ParseUUIDPipe` sites — `catalog-import.controller.ts` (3) and
+ * `payment.controller.ts` (`orderId`) — are the other half of this audit and need
+ * no change, for a reason that is easy to get backwards: NestJS ships its OWN
+ * regex table, and its `all` (the default when no `version` is given) is
+ * `^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i`
+ * (node_modules/@nestjs/common/pipes/parse-uuid.pipe.js) — shape only, i.e.
+ * already equivalent to validator's `'loose'`, NOT to validator's same-named
+ * `'all'`. Leave them unversioned: `new ParseUUIDPipe({ version: '4' })` reads
+ * like hardening and would put the TASK-397 400 back on `POST
+ * /api/payment/orders/:orderId/checkout`, whose `orderId` the seed issues
+ * through `deterministicUuid`.
  */
 export class UpdateProductDto {
   @ApiProperty({
