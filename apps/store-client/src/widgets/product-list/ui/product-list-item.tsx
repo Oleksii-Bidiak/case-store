@@ -29,7 +29,10 @@ export function ProductListItem({ product }: { product: PublicProductEntity }) {
   return (
     <article className="group flex flex-col gap-5 rounded-2xl border border-border bg-card p-4 shadow-card transition-colors hover:border-primary/30 sm:flex-row">
       <div
-        className={`relative flex size-[150px] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br [&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105 ${gradient}`}
+        // Hover zoom + `object-contain` both live in `ProductCardImage`; the
+        // duplicate `[&_img]:` transition that used to sit here only overrode
+        // its duration (TASK-415).
+        className={`relative flex size-[150px] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br ${gradient}`}
       >
         <ProductCardImage
           src={product.primaryImage?.url}

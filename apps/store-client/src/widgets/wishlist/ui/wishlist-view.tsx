@@ -332,7 +332,10 @@ export function WishlistView() {
               ))}
             </div>
           ) : (
-            <div className="grid gap-[18px] [grid-template-columns:repeat(auto-fill,minmax(232px,1fr))]">
+            // Same 1 / 2 / 4 grid as the catalog (TASK-415) — the wishlist
+            // renders the same card, so it must not use a different column
+            // count. Gap left at the pre-existing 18px on purpose (see BACKLOG).
+            <div className="grid grid-cols-1 items-stretch gap-[18px] min-[390px]:grid-cols-2 lg:grid-cols-4">
               {visible.map((item) => (
                 <WishlistItemCard key={item.id} item={item} />
               ))}

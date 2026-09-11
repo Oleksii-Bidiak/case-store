@@ -118,7 +118,10 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
             <Loader2 className="size-8 animate-spin text-primary" />
           </div>
         )}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        {/* Same 1 / 2 / 4 grid as the catalog (TASK-415) — search results are
+            the same cards, so they must not jump to a different column count
+            than /products. Keep in sync with `SearchResultsSkeleton`. */}
+        <div className="grid grid-cols-1 items-stretch gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4">
           {products.map((product, index) => (
             <ProductCard
               key={product.id}

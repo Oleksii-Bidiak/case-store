@@ -7,14 +7,18 @@ import { BLUR_PLACEHOLDER } from "./image-placeholder";
 
 /**
  * Default `sizes` for the responsive catalog grid
- * (`repeat(auto-fill, minmax(232px, 1fr))` inside the `max-w-7xl` container):
- * one column on phones, two up to `lg`, then ~232–300px columns. The desktop
- * entry is a fixed 300px cap — the old `calc(25vw - 2rem)` over-downloaded on
- * wide screens (480px+ candidates for a ≤300px slot) since the container is
- * capped anyway (TASK-210).
+ * (`grid-cols-1 min-[390px]:grid-cols-2 lg:grid-cols-4` inside the `max-w-7xl`
+ * container): one column on the narrowest phones, two from 390px, four from
+ * `lg` (~292px slots at the capped container width). The desktop entry is a
+ * fixed 300px cap — `calc(25vw - 2rem)` over-downloaded on wide screens (480px+
+ * candidates for a ≤300px slot) since the container is capped anyway (TASK-210).
+ *
+ * The first breakpoint tracks the GRID, not a Tailwind breakpoint: the grid goes
+ * two-up at 390px (TASK-415), so a 390–639px viewport gets half-width cards and
+ * must not be told to download a full-viewport candidate.
  */
 const GRID_SIZES =
-  "(max-width: 639px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), 300px";
+  "(max-width: 389px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), 300px";
 
 interface ProductCardImageProps {
   /** Primary image URL, or empty/undefined when the product has no image. */
@@ -74,7 +78,12 @@ export function ProductCardImage({
         fill
         sizes={sizes}
         placeholder="blur"
-        blurDataURL={blurDataUrl ?? BLUR_PLACEHOLDER}
+        // `||`, not `??`: the shared shimmer must only stand in when the image
+        // has NO usable LQIP of its own. `??` let an empty string through, and
+        // `placeholder="blur"` with an empty `blurDataURL` renders no
+        // placeholder at all (next/image treats it as a missing value and
+        // throws in dev) — a per-image LQIP always wins, a blank one never does.
+        blurDataURL={blurDataUrl || BLUR_PLACEHOLDER}
         // Next.js 16 renamed the LCP `priority` prop to `preload`. With
         // `preload={false}` and no `loading` prop, next/image emits
         // `loading="lazy"` (verified in get-img-props: `isLazy = !preload &&
@@ -82,7 +91,15 @@ export function ProductCardImage({
         // fetched — do not add `loading` here, it conflicts with `preload`.
         preload={priority}
         onError={() => setFailed(true)}
-        className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+        // `object-contain`, not `object-cover` (TASK-415): accessory photos are
+        // shot in different aspect ratios, and cropping them to the square box
+        // cut off plugs, straps and case edges — the box stays fixed (no layout
+        // shift), the photo is letterboxed over the card's gradient instead.
+        // The hover zoom lives HERE and only here: card wrappers used to add a
+        // second `[&_img]:transition-transform [&_img]:duration-500` on top of
+        // this one (the descendant selector won, so the declared 300ms never
+        // ran). One declaration, one duration, reduced-motion aware.
+        className="absolute inset-0 h-full w-full object-contain transition-transform duration-200 ease-out group-hover:scale-105 motion-reduce:transition-none"
       />
     );
   }
