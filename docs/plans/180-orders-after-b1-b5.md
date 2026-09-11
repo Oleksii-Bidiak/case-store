@@ -60,5 +60,5 @@ O1 перший (решта читає `PARTIALLY_REFUNDED` і машину). O2
 
 `npm run test -w apps/store-api`, `npm run test:e2e -w apps/store-api -- --runInBand`,
 `npm run test -w apps/store-admin --runInBand`, `npm run test -w apps/store-client --runInBand`.
-Закриваючи задачу — `[🔁]` у `docs/qa-recheck.md` (AD-ORD-_, AD-RET-_, SF-ACC-19/22/24 за
+Закриваючи задачу — `[🔁]` у `docs/qa-recheck.md` (зони AD-ORD і AD-RET, SF-ACC-19/22/24 за
 Додатком А; нові чеки для публічної форми — у `qa-manual-full.md`, TASK-486).
