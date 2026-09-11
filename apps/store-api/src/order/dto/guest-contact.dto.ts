@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
-import { IsInternationalPhone } from '../../common/validators';
+import { IsInternationalPhone, normalizePhone } from '../../common/validators';
 
 /**
  * Contact details a guest supplies at checkout (TASK-338).
@@ -33,10 +33,18 @@ export class GuestContactDto {
   @ApiProperty({
     description:
       'Phone number the courier can call — any country, 9 to 15 digits (E.164), typed with ' +
-      'whatever separators the buyer uses',
+      'whatever separators the buyer uses. Stored normalised, as digits only.',
     example: '+380501234567',
     maxLength: 32,
   })
+  // TASK-466: was a bare trim, which left the same number stored as `+380 50 111
+  // 2233` from the masked storefront field and as `050 111 2233` from an
+  // operator's unmasked one — so the admin order search matched at most one of
+  // them. The shared transform trims as part of normalising, and runs before the
+  // rules below because class-transformer runs first under `transform: true`; it
+  // touches only a value that is already a number and nothing else, so what
+  // those rules see is unchanged.
+  @Transform(normalizePhone)
   @IsString()
   @MaxLength(32)
   // Deliberately NOT Ukrainian-only: a stricter pattern would reject the roaming
@@ -49,7 +57,6 @@ export class GuestContactDto {
   // old `@Matches(/^\+?[\d\s()-]{9,}$/)` accepted `(((((((((` — nine brackets,
   // no number at all — as the only way to reach a guest buyer.
   @IsInternationalPhone({ message: 'A valid phone number is required' })
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   phone!: string;
 
   @ApiProperty({ description: 'Buyer name', example: 'Олена Шевченко', maxLength: 120 })

@@ -39,26 +39,39 @@ const REJECTED: [string, string][] = [
   ['ноль-вісім-нуль', 'words instead of digits'],
 ];
 
+/**
+ * `plainToInstance` runs the DTO's `@Transform`s, exactly as the global
+ * ValidationPipe does with `transform: true` — so the instance these return
+ * carries the value that would actually be STORED, not the one that was posted.
+ */
+function guestDto(phone: unknown): GuestContactDto {
+  return plainToInstance(GuestContactDto, {
+    email: 'olena@example.com',
+    name: 'Олена Шевченко',
+    phone,
+  });
+}
+
+function addressDto(phone: unknown): AddressDto {
+  return plainToInstance(AddressDto, {
+    firstName: 'Olena',
+    lastName: 'Shevchenko',
+    address1: 'Нова Пошта, відділення №12',
+    city: 'Kyiv',
+    phone,
+  });
+}
+
 function guestErrors(phone: unknown) {
-  return validate(
-    plainToInstance(GuestContactDto, {
-      email: 'olena@example.com',
-      name: 'Олена Шевченко',
-      phone,
-    }),
-  ).then((errors) => errors.filter((error) => error.property === 'phone'));
+  return validate(guestDto(phone)).then((errors) =>
+    errors.filter((error) => error.property === 'phone'),
+  );
 }
 
 function addressErrors(phone: unknown) {
-  return validate(
-    plainToInstance(AddressDto, {
-      firstName: 'Olena',
-      lastName: 'Shevchenko',
-      address1: 'Нова Пошта, відділення №12',
-      city: 'Kyiv',
-      phone,
-    }),
-  ).then((errors) => errors.filter((error) => error.property === 'phone'));
+  return validate(addressDto(phone)).then((errors) =>
+    errors.filter((error) => error.property === 'phone'),
+  );
 }
 
 describe('phoneDigits', () => {
@@ -122,4 +135,73 @@ describe('stays country-agnostic', () => {
       expect(await addressErrors(phone)).toHaveLength(0);
     },
   );
+});
+
+/**
+ * One number, one stored string (TASK-466).
+ *
+ * The storefront checkout posts the value its mask renders — `+380 50 123 45 67`
+ * — while an operator entering the same order by phone types `0501234567`. Both
+ * used to be stored verbatim, so the admin order search (`contains` on
+ * `guestPhone` / `user.phone`) matched at most one spelling of a number that
+ * exists once. Validation is unchanged: what changed is which string reaches the
+ * repository.
+ *
+ * Note that these assert the value on the INSTANCE, not the validation outcome —
+ * the first tests in this repo to do so.
+ */
+describe('normalises before storage', () => {
+  const CONVERGE: [string, string][] = [
+    ['+380 50 123 45 67', 'the mask the storefront checkout renders'],
+    ['0501234567', 'Ukrainian, domestic leading zero'],
+    ['+380501234567', 'international form'],
+    ['380501234567', 'already canonical'],
+    ['80501234567', 'the old inter-city prefix'],
+    ['+38 (050) 123-45-67', 'brackets and dashes'],
+    ['  +380 50 123 45 67  ', 'surrounding whitespace'],
+  ];
+
+  it.each(CONVERGE)('GuestContactDto: %s (%s) → 380501234567', (phone) => {
+    expect(guestDto(phone).phone).toBe('380501234567');
+  });
+
+  it.each(CONVERGE)('AddressDto: %s (%s) → 380501234567', (phone) => {
+    expect(addressDto(phone).phone).toBe('380501234567');
+  });
+
+  it('makes the masked checkout value and the operator-typed one one string', () => {
+    // The pair from ACCEPTED that the whole task exists for.
+    expect(guestDto('+380 50 123 45 67').phone).toBe(guestDto('0501234567').phone);
+    expect(addressDto('+380 50 123 45 67').phone).toBe(addressDto('0501234567').phone);
+  });
+
+  it.each([
+    ['+48 123 456 789', '48123456789', 'Polish — kept whole, never given a UA prefix'],
+    ['+1 (212) 555-0123', '12125550123', 'US'],
+    ['+44 20 7946 0958', '442079460958', 'UK'],
+  ])('leaves a foreign number as its own digits: %s → %s (%s)', (phone, expected) => {
+    expect(guestDto(phone).phone).toBe(expected);
+    expect(addressDto(phone).phone).toBe(expected);
+  });
+
+  it('leaves a non-string value alone so @IsString still reports it', () => {
+    expect(guestDto(380501234567).phone).toBe(380501234567 as unknown as string);
+    expect(addressDto(380501234567).phone).toBe(380501234567 as unknown as string);
+  });
+
+  /**
+   * The guard that keeps this a normalisation change and not a validation one:
+   * class-transformer runs BEFORE class-validator, so normalising a value that
+   * is not a number-and-nothing-else would hand the validator digits it never
+   * saw and rescue an input the endpoint refuses today — silently deleting the
+   * operator's note in the process.
+   */
+  it('does not rescue a value the validators refuse', async () => {
+    const withNote = '+380 50 123 45 67 call after 6pm';
+
+    expect(guestDto(withNote).phone).toBe(withNote);
+    expect(addressDto(withNote).phone).toBe(withNote);
+    expect((await guestErrors(withNote)).length).toBeGreaterThan(0);
+    expect((await addressErrors(withNote)).length).toBeGreaterThan(0);
+  });
 });

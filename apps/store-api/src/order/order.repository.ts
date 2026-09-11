@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { Prisma, OrderStatus, PaymentStatus, OrderHistoryChangeType } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { normalizeUaPhone, phoneDigits } from '../common/validators';
 import {
   CacheService,
   productDetailIdKey,
@@ -77,6 +78,18 @@ const ADMIN_ORDERS_INCLUDE = {
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
+
+/**
+ * How many digits a free-text search term must contain before it is treated as
+ * a (partial) phone number at all (TASK-466).
+ *
+ * The guard is not a nicety: `normalizeUaPhone('ivan')` returns `''`, and
+ * `{ contains: '' }` matches EVERY row — so normalising the term unconditionally
+ * would turn a search for a customer's name into "show me all orders". Three is
+ * low enough that an operator can narrow by an operator code (`067`) and high
+ * enough that a one- or two-digit stray inside a name search does nothing.
+ */
+const SEARCH_PHONE_MIN_DIGITS = 3;
 
 @Injectable()
 export class OrderRepository {
@@ -508,15 +521,32 @@ export class OrderRepository {
     // "abc12345…". Emails and phones use case-insensitive `contains`: a customer
     // reads their number aloud as "067 111 22 33" or "+380671112233", and a
     // prefix match would find neither.
+    //
+    // TASK-466: the two phone arms match the NORMALISED term. Since TASK-466 the
+    // columns only ever hold `380XXXXXXXXX`, so `contains` on the raw term found
+    // nothing at all whenever the operator typed the number the way the customer
+    // dictates it — `050 111 2233` or `+380 50 111 2233`. Normalising the term
+    // the same way the DTOs normalise the value puts both sides in one alphabet:
+    // a full number matches exactly, a leading fragment (`0501` → `380501`)
+    // matches as a prefix, and a trailing fragment (`1112233`, which normalises
+    // to itself) still matches mid-string.
     if (query.search) {
       const term = query.search;
-      where.OR = [
+      const or: Prisma.OrderWhereInput[] = [
         { id: { startsWith: term.toLowerCase() } },
         { guestEmail: { contains: term, mode: 'insensitive' } },
-        { guestPhone: { contains: term } },
         { user: { email: { contains: term, mode: 'insensitive' } } },
-        { user: { phone: { contains: term } } },
       ];
+
+      // Only when the term actually carries digits — see SEARCH_PHONE_MIN_DIGITS
+      // for why an unguarded `contains` here would return the whole table.
+      if (phoneDigits(term).length >= SEARCH_PHONE_MIN_DIGITS) {
+        const phoneTerm = normalizeUaPhone(term);
+        or.push({ guestPhone: { contains: phoneTerm } });
+        or.push({ user: { phone: { contains: phoneTerm } } });
+      }
+
+      where.OR = or;
     }
 
     // TASK-248: active-but-unpaid ("in-transit") deep-link filter — the same

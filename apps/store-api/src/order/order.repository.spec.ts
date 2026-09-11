@@ -1144,12 +1144,46 @@ describe('OrderRepository', () => {
         });
       });
 
-      it('searches the guest phone and the account phone', async () => {
+      // ── TASK-466: the phone arms match the NORMALISED term ──────────────────
+      // The columns hold only `380XXXXXXXXX` now, so `contains` on the raw term
+      // found nothing whenever the operator typed the number the way a customer
+      // dictates it.
+
+      it('searches the guest phone and the account phone, normalising the term', async () => {
         const where = await whereFor({ search: '0671112233' });
 
-        expect(where.OR).toContainEqual({ guestPhone: { contains: '0671112233' } });
-        expect(where.OR).toContainEqual({ user: { phone: { contains: '0671112233' } } });
+        expect(where.OR).toContainEqual({ guestPhone: { contains: '380671112233' } });
+        expect(where.OR).toContainEqual({ user: { phone: { contains: '380671112233' } } });
       });
+
+      it.each([
+        ['050 111 2233', '380501112233', 'dictated with spaces, domestic form'],
+        ['+380 50 111 2233', '380501112233', 'the mask the storefront renders'],
+        ['0501112233', '380501112233', 'domestic, no separators'],
+        ['0501', '380501', 'a leading fragment — still a prefix of the stored value'],
+        ['1112233', '1112233', 'a trailing fragment — matches mid-string, unprefixed'],
+      ])('%s searches for %s (%s)', async (search, expected) => {
+        const where = await whereFor({ search });
+
+        expect(where.OR).toContainEqual({ guestPhone: { contains: expected } });
+        expect(where.OR).toContainEqual({ user: { phone: { contains: expected } } });
+      });
+
+      /**
+       * The trap this guard exists for: `normalizeUaPhone('ivan')` is `''`, and
+       * `{ contains: '' }` matches every row — a search for a customer's name
+       * would have quietly returned the entire order table.
+       */
+      it.each([['ivan'], ['Олена'], ['olena@example.com'], ['ORD'], ['']])(
+        'adds no phone arm for %s, which carries no number',
+        async (search) => {
+          const where = await whereFor({ search });
+
+          const arms = JSON.stringify(where.OR ?? []);
+          expect(arms).not.toContain('guestPhone');
+          expect(arms).not.toContain('"phone"');
+        },
+      );
 
       it('adds no OR clause at all when nothing was searched for', async () => {
         const where = await whereFor({});

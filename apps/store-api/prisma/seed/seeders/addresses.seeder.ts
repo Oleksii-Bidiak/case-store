@@ -2,6 +2,11 @@ import { PrismaClient } from '@prisma/client';
 import { deterministicUuid } from '../lib/ids';
 import type { SeededUser } from '../types';
 
+/**
+ * Phones are written in the canonical `380XXXXXXXXX` form (TASK-466) — the seed
+ * writes through Prisma and bypasses the DTOs that normalise, so a masked
+ * literal here would undo the backfill migration on every `db:seed`.
+ */
 export async function seedAddresses(prisma: PrismaClient, customers: SeededUser[]) {
   // customers[0] is the demo John Doe account — keep the fixed `seed-address-1`
   // id it has always owned (documented in the seed guide) for backwards-compat.
@@ -22,7 +27,7 @@ export async function seedAddresses(prisma: PrismaClient, customers: SeededUser[
       state: 'Київська область',
       postalCode: '01001',
       country: 'UA',
-      phone: '+380991234567',
+      phone: '380991234567',
       isDefault: true,
     },
   });
@@ -45,7 +50,7 @@ export async function seedAddresses(prisma: PrismaClient, customers: SeededUser[
     'oksana@example.com': {
       firstName: 'Оксана',
       lastName: 'Шевченко',
-      phone: '+380671112233',
+      phone: '380671112233',
       city: 'Львів',
       state: 'Львівська область',
       postalCode: '79000',
@@ -55,7 +60,7 @@ export async function seedAddresses(prisma: PrismaClient, customers: SeededUser[
     'taras@example.com': {
       firstName: 'Тарас',
       lastName: 'Бондаренко',
-      phone: '+380672223344',
+      phone: '380672223344',
       city: 'Одеса',
       state: 'Одеська область',
       postalCode: '65000',
@@ -65,7 +70,7 @@ export async function seedAddresses(prisma: PrismaClient, customers: SeededUser[
     'mariia@example.com': {
       firstName: 'Марія',
       lastName: 'Коваль',
-      phone: '+380673334455',
+      phone: '380673334455',
       city: 'Харків',
       state: 'Харківська область',
       postalCode: '61000',
@@ -75,7 +80,7 @@ export async function seedAddresses(prisma: PrismaClient, customers: SeededUser[
     'dmytro@example.com': {
       firstName: 'Дмитро',
       lastName: 'Ткаченко',
-      phone: '+380674445566',
+      phone: '380674445566',
       city: 'Дніпро',
       state: 'Дніпропетровська область',
       postalCode: '49000',
@@ -85,7 +90,7 @@ export async function seedAddresses(prisma: PrismaClient, customers: SeededUser[
     'nataliia@example.com': {
       firstName: 'Наталія',
       lastName: 'Кравченко',
-      phone: '+380675556677',
+      phone: '380675556677',
       city: 'Київ',
       state: 'Київська область',
       postalCode: '02000',

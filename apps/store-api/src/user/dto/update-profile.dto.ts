@@ -1,5 +1,7 @@
 import { IsOptional, IsEmail, IsString, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { normalizePhone } from '../../common/validators';
 
 /**
  * DTO for updating the authenticated user's profile.
@@ -45,10 +47,17 @@ export class UpdateProfileDto {
   lastName?: string;
 
   @ApiProperty({
-    description: 'User phone number',
+    description: 'User phone number. Stored normalised, as digits only.',
     example: '+380991234567',
     required: false,
   })
+  // TASK-466: the third write path into `users.phone`, and the one a customer
+  // drives. The storefront profile field is unmasked, so `050 111 2233` and
+  // `+380 50 111 2233` both reached the column verbatim — which is the same
+  // several-spellings-of-one-number defect the order DTOs had, and it would have
+  // re-dirtied the column the backfill migration just canonicalised and the
+  // admin order search reads (`user: { phone: { contains: … } }`).
+  @Transform(normalizePhone)
   @IsOptional()
   @IsString()
   @MaxLength(30, { message: 'Phone number must be at most 30 characters' })
