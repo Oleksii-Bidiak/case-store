@@ -251,6 +251,24 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # Redis is NOT optional here (TASK-460). `cache.int-spec.ts` exists to
+      # exercise the REAL Redis path — SCAN-based prefix eviction and the
+      # round-trip through @keyv/redis — and it defaults REDIS_HOST to
+      # `localhost` itself, so with no service the cache module still takes the
+      # Redis branch and simply talks to nothing. CacheService then swallows
+      # every failure as designed, turning what should be a cache hit into a
+      # second repository call: the suite failed on an assertion about caching
+      # while the real cause was a missing container. The in-memory fallback is
+      # not a substitute — it would hide exactly the code this spec covers.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -268,6 +286,10 @@ jobs:
       - run: npm run test:int -w apps/store-api
         env:
           DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/store_test
+          # Set explicitly rather than relying on the spec's own `?? 'localhost'`
+          # default, so the job says out loud which service it needs.
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
 
   # ──────────────────────────────────────────────────────────────────────────
   # contract-freshness (TASK-325) — the committed OpenAPI spec must match the
