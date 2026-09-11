@@ -102,6 +102,67 @@ describe("RichTextEditor", () => {
     expect(editable).not.toHaveTextContent("Новий з сервера");
   });
 
+  it("loads the next entity's content even after an edit (forms.md Rule 2b)", async () => {
+    const onChange = jest.fn();
+    const { rerender } = render(
+      <RichTextEditor
+        value="<p>Сторінка А</p>"
+        onChange={onChange}
+        resetKey="a"
+      />,
+    );
+    const editable = await screen.findByLabelText(EDITOR_LABEL);
+    await waitFor(() => expect(editable).toHaveTextContent("Сторінка А"));
+
+    // The admin edits A, which latches "there is unsaved work here".
+    fireEvent.click(screen.getByLabelText("Горизонтальна лінія"));
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+
+    // Now a DIFFERENT entity is opened without this instance unmounting. The
+    // latch belongs to A, not to the component: without `resetKey` clearing it,
+    // B's content is refused for good and the admin's next keystroke saves A's
+    // document under B.
+    rerender(
+      <RichTextEditor
+        value="<p>Сторінка Б</p>"
+        onChange={onChange}
+        resetKey="b"
+      />,
+    );
+
+    await waitFor(() => expect(editable).toHaveTextContent("Сторінка Б"));
+    expect(editable).not.toHaveTextContent("Сторінка А");
+  });
+
+  it("still refuses an external value when the entity has not changed", async () => {
+    const onChange = jest.fn();
+    const { rerender } = render(
+      <RichTextEditor
+        value="<p>Старий текст</p>"
+        onChange={onChange}
+        resetKey="a"
+      />,
+    );
+    const editable = await screen.findByLabelText(EDITOR_LABEL);
+    await waitFor(() => expect(editable).toHaveTextContent("Старий текст"));
+
+    fireEvent.click(screen.getByLabelText("Горизонтальна лінія"));
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+
+    // Same `resetKey` — this is a background refetch of the SAME entity, so
+    // Rule 2 still wins over Rule 2b.
+    rerender(
+      <RichTextEditor
+        value="<p>Новий з сервера</p>"
+        onChange={onChange}
+        resetKey="a"
+      />,
+    );
+
+    expect(editable).toHaveTextContent("Старий текст");
+    expect(editable).not.toHaveTextContent("Новий з сервера");
+  });
+
   it("does not report a change while it is only being seeded", async () => {
     const onChange = jest.fn();
     const { rerender } = render(

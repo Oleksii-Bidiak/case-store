@@ -151,6 +151,7 @@ export function EditProductView({ productId }: EditProductViewProps) {
           />
 
           <ProductForm
+            id={productId}
             defaultValues={mapProductToFormValues(product)}
             onSubmit={handleSubmit}
             isPending={update.isPending}

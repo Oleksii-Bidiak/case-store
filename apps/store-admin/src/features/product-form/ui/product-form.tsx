@@ -79,6 +79,13 @@ function collectLeafCategories(
 }
 
 interface ProductFormProps {
+  /**
+   * Entity id (edit mode). The form itself re-seeds through RHF's `values` +
+   * `keepDirtyValues`, so it needs no id — but the rich-text editor's
+   * "the admin has edited here" latch is per entity (forms.md Rule 2b) and has
+   * no other way to learn that a different product is now on screen.
+   */
+  id?: string;
   defaultValues?: Partial<ProductFormInput>;
   onSubmit: (values: ProductFormValues) => void;
   isPending: boolean;
@@ -127,6 +134,7 @@ const EMPTY_VALUES: ProductFormInput = {
  * controlled component).
  */
 export function ProductForm({
+  id,
   defaultValues,
   onSubmit,
   isPending,
@@ -274,6 +282,7 @@ export function ProductForm({
                 <RichTextEditor
                   value={field.value ?? ""}
                   onChange={field.onChange}
+                  resetKey={id}
                   placeholder={dict.productForm.descriptionPlaceholder}
                   disabled={isPending}
                 />

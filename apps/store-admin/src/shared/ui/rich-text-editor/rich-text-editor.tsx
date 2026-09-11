@@ -26,6 +26,13 @@ export interface RichTextEditorProps {
   value: string;
   /** Called with the new HTML on every edit. */
   onChange: (html: string) => void;
+  /**
+   * Identity of the entity being edited — pass the same id the parent form keys
+   * its `reset()` / `values` on (forms.md Rule 2b). When it changes, the
+   * "the admin has edited here" latch is cleared so the next entity's content
+   * can be seeded. Omit it only where one mount edits exactly one entity.
+   */
+  resetKey?: string;
   disabled?: boolean;
   placeholder?: string;
   className?: string;
@@ -150,7 +157,18 @@ const TOOLBAR_GROUPS: ToolbarButton[][] = [
  * - once the admin has actually edited here, later external values are recorded
  *   but never applied — losing typed work is worse than showing stale server
  *   text (forms.md Rule 2: a background refetch must not discard in-progress
- *   edits; Rule 2b's id-keyed reset is a different sub-case).
+ *   edits).
+ *
+ * That latch is per ENTITY, not per mount, which is Rule 2b's other half: were
+ * this instance ever reused across a client-side navigation from one entity's
+ * edit page straight into another's, a latch left standing from the first would
+ * refuse the second's content for good, and the next keystroke would save that
+ * stale document under the new entity. No route does that today — every path
+ * into the three edit forms goes through a list route or a different component,
+ * so React unmounts — but the guard must not depend on a fact about routing
+ * that lives nowhere near this file. `resetKey` carries the entity id and
+ * clears both refs when it changes, from an effect declared ahead of the
+ * seeding one so the clear always lands first.
  *
  * Always import the default export from `./index` (dynamic, ssr:false) — Tiptap
  * touches the DOM on init and must not render on the server.
@@ -158,6 +176,7 @@ const TOOLBAR_GROUPS: ToolbarButton[][] = [
 export function RichTextEditor({
   value,
   onChange,
+  resetKey,
   disabled = false,
   placeholder,
   className,
@@ -166,9 +185,10 @@ export function RichTextEditor({
   // into the document or recognised as the echo of our own `onChange`.
   const lastSeededRef = React.useRef<string | null>(null);
   // Flips on the first real edit made inside the editor; from then on external
-  // values are never written over the admin's work. It lives exactly as long as
-  // this editor instance, i.e. as long as the form that mounts it.
+  // values are never written over the admin's work. Scoped to one entity —
+  // `resetKey` clears it, see the block comment above.
   const hasLocalEditsRef = React.useRef(false);
+  const lastResetKeyRef = React.useRef(resetKey);
 
   const editor = useEditor({
     extensions: [
@@ -206,6 +226,21 @@ export function RichTextEditor({
   React.useEffect(() => {
     editor?.setEditable(!disabled, false);
   }, [editor, disabled]);
+
+  // A different entity is on screen: forget the latch and the last value we
+  // saw, so the seeding effect below treats the incoming content as new.
+  //
+  // Declared BEFORE that effect on purpose. React flushes a component's effects
+  // in declaration order within the same commit, so when `resetKey` and `value`
+  // change together this clears the latch first and the seed then lands on the
+  // same commit; putting it after would let the seed run against the previous
+  // entity's latch and refuse the content for good.
+  React.useEffect(() => {
+    if (resetKey === lastResetKeyRef.current) return;
+    lastResetKeyRef.current = resetKey;
+    hasLocalEditsRef.current = false;
+    lastSeededRef.current = null;
+  }, [resetKey]);
 
   // Seed / re-sync external value → editor (see the block comment above).
   React.useEffect(() => {
