@@ -107,18 +107,34 @@ model Product {
 > Note: the real `Product` model also carries `deletedAt DateTime?` (audit tombstone, indexed)
 > alongside `isActive`, and uses `slug String @unique` directly.
 
-## Migration History Is Not in Git
+## Migration History Is in Git (since TASK-303)
 
-`apps/store-api/prisma/migrations/*_*/` is **git-ignored** (see `.gitignore`); only
-`migrations/migration_lock.toml` is committed. Consequences you must plan around:
+`apps/store-api/prisma/migrations/*_*/` is **tracked**. It was git-ignored from the first
+commit until TASK-303 (2026-07-14) — if you are reading an older doc that says otherwise, it
+describes the world before that fix. What TASK-303 found is why this matters: with 1 of 15
+migrations in git, staging synchronised its schema with `db push --accept-data-loss`, and a
+check against the live Postgres turned up **108 operations of drift** (24 tables existed only
+in `schema.prisma`). The closing migration `close_schema_drift_db_push_era` is that catch-all,
+which is why it is 570 lines and why several tables have no dedicated migration of their own.
 
-- **`schema.prisma` is the single source of truth.** There is no migration history in the
-  repository to read, diff, or reason about — never try to reconstruct past schema states from it.
-- A fresh clone has **no local migration folder**. Bring a database up with `npx prisma migrate dev`
-  (which generates the SQL locally) or `npx prisma db push`, then `npm run db:seed`.
-- Do **not** hand-author migration SQL expecting teammates or CI to receive it — they won't.
-  Ship the schema change; each environment generates its own SQL.
-- The DB connection string for Prisma CLI invocations lives in `apps/store-api/prisma.config.ts`.
+Consequences you must plan around:
+
+- **Migrations are the deployment mechanism.** CI and every environment run
+  `npx prisma migrate deploy` — a schema change that is not in a migration does not ship.
+- A fresh clone or worktree already has the full history; do not regenerate it.
+- Hand-authored migration SQL **is** delivered to teammates and CI. Data backfills belong in a
+  migration, written by hand, with a prose comment above the SQL explaining the cause — see
+  `20260612120000_product_variant_stock_non_negative/migration.sql` for the house style. The
+  rounded `…120000` timestamp is the convention for a hand-written file, as opposed to the
+  wall-clock timestamp Prisma generates.
+- **Always pass `--config`, never `--schema`.** The DB connection string lives in
+  `apps/store-api/prisma.config.ts`, not in `schema.prisma`'s datasource block, so a root-cwd
+  `--schema` invocation dies with "datasource.url property is required" before applying
+  anything. The working form is
+  `npx prisma migrate deploy --config apps/store-api/prisma.config.ts`. (The workspace scripts
+  in `apps/store-api/package.json` may use `--schema` because they run with that cwd.)
+- `npx prisma migrate reset --config apps/store-api/prisma.config.ts` does **not** seed under
+  Prisma 7 (TASK-394) — run the seed as a separate step.
 
 ## Migration Workflow
 
