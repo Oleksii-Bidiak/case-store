@@ -4,8 +4,9 @@ export {
   customInstance,
   getAccessToken,
   setAccessToken,
+  refreshSession,
 } from "./instance";
-export type { ErrorType, BodyType } from "./instance";
+export type { ErrorType, BodyType, RefreshOutcome } from "./instance";
 
 // Orval-generated Cart hooks (useGetCart, useAddToCart, useUpdateCartItem,
 // useRemoveCartItem, useClearCart). Upper FSD layers import these from

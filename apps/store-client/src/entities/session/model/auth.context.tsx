@@ -9,9 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { isAxiosError } from "axios";
-import { setAccessToken } from "@/shared/api";
-import { authControllerRefresh } from "@/shared/api/generated/auth/auth";
+import { refreshSession, setAccessToken } from "@/shared/api";
 import { getGetCartQueryKey } from "@/shared/api/generated/cart/cart";
 import { getGetWishlistQueryKey } from "@/shared/api/generated/wishlist/wishlist";
 
@@ -35,23 +33,26 @@ export const AuthContext = createContext<AuthContextValue | null>(null);
  * rate limiter, 5xx, network blip) is transient — retry once after a short
  * pause instead of silently signing the user out (fix/196).
  *
- * Calls the Orval-generated operation imperatively (it is a plain function, not a
- * hook — this runs from an effect, outside React Query). `customInstance` already
- * unwraps the Axios response, so the value here IS the `{ data }` envelope: one
- * level of unwrapping, not two.
+ * Goes through {@link refreshSession} rather than calling the generated
+ * `authControllerRefresh()` (TASK-463). That indirection is the whole point:
+ * `instance.ts` already deduped concurrent refreshes, but this bootstrap was
+ * outside its guard, so a cold page load fired two — the provider restoring the
+ * session here, and the interceptor reacting to the 401s from queries that
+ * started before the access token existed. Refresh rotates the cookie, and the
+ * loser of that race is read as a stolen token, which revokes every session the
+ * user holds. One guard, one caller, no race. See `instance.ts` for the
+ * measurement.
  */
 async function bootstrapRefresh(): Promise<string | null> {
   for (let attempt = 0; ; attempt++) {
-    try {
-      const envelope = await authControllerRefresh();
-      return envelope.data?.accessToken ?? null;
-    } catch (error) {
-      const status = isAxiosError(error) ? error.response?.status : undefined;
-      if (status === 401 || attempt >= 1) {
-        return null;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }
+    const { accessToken, status } = await refreshSession();
+    if (accessToken) return accessToken;
+
+    // No status means the request SUCCEEDED and simply carried no token — a
+    // definite "no session", not something a retry can improve.
+    if (status === undefined || status === 401 || attempt >= 1) return null;
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 }
 

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures/test";
 import { E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./fixtures/seed-e2e";
 
 /**

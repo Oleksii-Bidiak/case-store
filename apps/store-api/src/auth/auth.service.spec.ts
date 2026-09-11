@@ -1244,10 +1244,17 @@ describe('AuthService', () => {
         },
       );
 
-      // Second call: refresh token with JWT_REFRESH_SECRET
+      // Second call: refresh token with JWT_REFRESH_SECRET. `jti` is matched
+      // loosely because its whole job is to differ every time (TASK-463) —
+      // pinning a value here would assert the opposite of what it is for.
       expect(jwtService.sign).toHaveBeenNthCalledWith(
         2,
-        { sub: 'user-uuid-1', role: 'CUSTOMER', type: 'refresh' },
+        {
+          sub: 'user-uuid-1',
+          role: 'CUSTOMER',
+          type: 'refresh',
+          jti: expect.any(String) as unknown as string,
+        },
         {
           secret: 'test-refresh-secret',
           expiresIn: '7d',
@@ -1368,6 +1375,52 @@ describe('AuthService', () => {
       await expect(
         service.changePassword('user-uuid-1', 'WrongOldPass1', 'brandnewpass1'),
       ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('generateTokenPair — refresh tokens are unique per mint (TASK-463)', () => {
+    /**
+     * Two refresh tokens minted in the same SECOND used to be byte-identical:
+     * the payload was {sub, role, type} and JWT stamps iat/exp in seconds, so
+     * nothing varied. `refresh_tokens.token` is unique on the hash, so the
+     * second insert threw and the request 500'd — and because
+     * `refreshToken()` revokes the presented token BEFORE minting its
+     * replacement, that left the session with no live token at all. The client's
+     * retry then presented a revoked cookie, which is indistinguishable from a
+     * stolen one and revoked every session the user held. One collision signed
+     * the user out everywhere.
+     */
+    it('gives each refresh token its own jti', async () => {
+      authRepository.saveRefreshToken.mockResolvedValue({} as never);
+      jwtService.sign.mockReturnValue('signed');
+
+      await service.generateTokenPair('user-uuid-1', 'CUSTOMER');
+      await service.generateTokenPair('user-uuid-1', 'CUSTOMER');
+
+      const refreshPayloads = jwtService.sign.mock.calls
+        .map(([payload]) => payload as { type?: string; jti?: string })
+        .filter((payload) => payload.type === 'refresh');
+
+      expect(refreshPayloads).toHaveLength(2);
+      for (const payload of refreshPayloads) {
+        expect(typeof payload.jti).toBe('string');
+        expect(payload.jti).not.toHaveLength(0);
+      }
+      // The whole point: same user, same role, same second, different token.
+      expect(refreshPayloads[0].jti).not.toBe(refreshPayloads[1].jti);
+    });
+
+    it('leaves the access token payload alone', async () => {
+      authRepository.saveRefreshToken.mockResolvedValue({} as never);
+      jwtService.sign.mockReturnValue('signed');
+
+      await service.generateTokenPair('user-uuid-1', 'CUSTOMER');
+
+      // The access token is short-lived and never persisted, so it has no
+      // uniqueness requirement — and adding a claim there would change a token
+      // other code decodes.
+      const accessPayload = jwtService.sign.mock.calls[0][0] as Record<string, unknown>;
+      expect(accessPayload).toEqual({ sub: 'user-uuid-1', role: 'CUSTOMER' });
     });
   });
 });

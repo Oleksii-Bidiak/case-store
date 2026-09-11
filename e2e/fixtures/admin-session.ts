@@ -37,4 +37,27 @@ export async function loginAsAdmin(page: Page): Promise<void> {
   // A CUSTOMER login is rejected in place with "не має прав адміністратора", so
   // leaving /login is itself the proof that the seeded account is staff.
   await expect(page).not.toHaveURL(/\/login/);
+
+  // ...but leaving /login is NOT proof that the next navigation will be served
+  // the dashboard (TASK-463). `proxy.ts` gates every admin route on the
+  // `admin_ui_session` marker cookie — it cannot see the API's HttpOnly refresh
+  // cookie, which lives on another host — and that marker is written by
+  // `AuthProvider.setTokens`, separately from the redirect this assertion
+  // watches. Return too early and the very next `page.goto` arrives without the
+  // marker, the proxy redirects to /login, and the spec fails with a missing
+  // table row: exactly the residual flake left after the rate-limit and
+  // concurrent-refresh causes were fixed.
+  //
+  // Waiting on the cookie rather than on a dashboard element is deliberate: the
+  // marker IS what the proxy checks, so this asserts the precondition itself
+  // instead of a proxy for it.
+  await expect
+    .poll(
+      async () => {
+        const cookies = await page.context().cookies();
+        return cookies.some((cookie) => cookie.name === "admin_ui_session");
+      },
+      { message: "admin_ui_session marker cookie was never written" },
+    )
+    .toBe(true);
 }

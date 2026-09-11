@@ -4,8 +4,9 @@ export {
   customInstance,
   getAccessToken,
   setAccessToken,
+  refreshSession,
 } from "./instance";
-export type { ErrorType, BodyType } from "./instance";
+export type { ErrorType, BodyType, RefreshOutcome } from "./instance";
 
 // Orval-generated endpoint hooks, grouped by API tag.
 // NOTE: `generated/` is git-ignored — run `npm run generate:api` after checkout.

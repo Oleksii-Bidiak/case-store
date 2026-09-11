@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures/test";
 import {
   E2E_ORDER_PENDING_ID,
   E2E_ORDER_PROCESSING_ID,
