@@ -128,14 +128,34 @@ blog-categories, device-brands); API — `PATCH …/reorder` тієї ж фор�
 | Артикул у таблиці відгуків                              | `admin-review-table` — колонка SKU + лінк на товар                                                                    |
 | Нотатки на користувача                                  | модель `UserNote` (як нотатки замовлення), `@RequirePermission('customers:write')`, вкладка на `/users/[id]`          |
 
-### TASK-431 — Узгодженість статусів оплати і замовлення (M, **після** брейншторму TASK-443)
+### TASK-431 — Узгодженість статусів оплати і замовлення (M; матриця затверджена 2026-09-11)
 
-`payment-status-select.tsx:28,45-47` пропонує будь-який з трьох інших статусів; сервер
-`order.service.ts:1034-1041` пише що завгодно. Є одна стейт-машина — для `OrderStatus`
-(`order-state-machine.ts:54-95`). Додати `PAYMENT_TRANSITIONS` + матрицю сумісності (напр.
-`paymentStatus=REFUNDED` ⇒ `status ∈ {CANCELLED, REFUNDED}`; `DELIVERED` при `ON_DELIVERY` вимагає
-підтвердження оплати), `GET …/allowed-payment-transitions`, селект пропонує лише легальні.
-Матрицю **визначає** брейншторм TASK-443; тут — реалізація за його результатом.
+`payment-status-select.tsx:55-57` пропонує будь-який з трьох інших статусів; сервер
+`adminUpdatePaymentStatus` (`order.service.ts:1023-1042`) перевіряє лише «замовлення існує» й
+пише що завгодно. Є одна стейт-машина — для `OrderStatus` (`order-state-machine.ts:55-94`).
+
+Матрицю визначив брейншторм B-1 —
+[рішення 2026-09-11](178-brainstorms.md#рішення-2026-09-11-b-1); тут лише реалізація. Обсяг:
+
+```
+PAYMENT_TRANSITIONS
+  PENDING            → PAID, FAILED
+  FAILED             → PENDING, PAID
+  PAID               → PARTIALLY_REFUNDED, REFUNDED
+  PARTIALLY_REFUNDED → REFUNDED
+  REFUNDED           → (нічого)
+```
+
+- міграція `PaymentStatus` +1 значення `PARTIALLY_REFUNDED`, **без бекфілу**;
+- одне жорстке крос-правило (409): **повний** `REFUNDED` дозволений, лише коли замовлення
+  ∈ {CANCELLED, REFUNDED}. `PARTIALLY_REFUNDED` при `DELIVERED` — легальний;
+- `GET …/allowed-payment-transitions` за зразком `allowed-transitions`, селект пропонує лише
+  легальні;
+- **чого тут навмисно немає:** «`DELIVERED` при `ON_DELIVERY` вимагає підтвердження оплати» —
+  ця гіпотеза першої редакції плану **відхилена**. Доставлене й неоплачене лишається
+  дозволеним і стає видимим чіпом «Борг N ₴» (TASK-468), бо жорсткий блок тут лише змусив би
+  оператора поставити `PAID` неправдиво. Відображення `PARTIALLY_REFUNDED` в UI і в звітах —
+  TASK-472.
 
 ## Порядок
 

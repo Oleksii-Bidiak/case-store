@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-468**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-474**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -556,7 +556,7 @@
 | TASK-428 | Порядок сортування: `useSortableListGrid` для FAQ/сторінок/каруселей, дефолт `max+1` | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
 | TASK-429 | Банери: вікно від–до, прев'ю з пропорціями; підказка про ручні каруселі; `/promo` у карті контенту | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
 | TASK-430 | CRM-дрібниці: favicon, лінки топ-товарів, UA-аудит-лог, бейдж «Заплановано», email-бейдж, SKU у відгуках, нотатки на клієнта | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
-| TASK-431 | [після TASK-443] Матриця сумісності статусів оплати й замовлення; селект лише з легальними переходами | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-431 | Машина станів `PaymentStatus` (PENDING→PAID/FAILED, FAILED→PENDING/PAID, PAID→PARTIALLY_REFUNDED/REFUNDED, PARTIALLY_REFUNDED→REFUNDED, REFUNDED термінальний) + міграція `PARTIALLY_REFUNDED` без бекфілу; крос-правило 409 «повний REFUNDED ⇒ замовлення CANCELLED/REFUNDED»; `GET …/allowed-payment-transitions`; селект в адмінці лише з легальних | ⬜ | [178](docs/plans/178-brainstorms.md) |
 
 ### План 176 — Контент і SEO (🟡 до запуску)
 
@@ -583,7 +583,7 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-443 | B-1 Життєвий цикл замовлення: матриця статусів, джерело заявки на повернення, товар недоступний у замовленні | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-443 | B-1 Життєвий цикл замовлення: матриця статусів, джерело заявки на повернення, товар недоступний у замовленні — рішення 2026-09-11, реалізація в TASK-431/468…473 | ✅ | [178](docs/plans/178-brainstorms.md) |
 | TASK-444 | B-2 Видалення товару і категорії | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-445 | B-3 Ролі: OWNER/ADMIN, права на людину чи пресети, PII для менеджерів | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-446 | Відгуки (рішення 2026-09-10): оцінки рахуються одразу, у списку лише схвалені **з текстом**, пагінація по 10, дописати текст до оцінки, захист від зловживань оцінками (throttle, «від покупців», сигнал на дашборд); відкриті лише відповіді й підпис автора | ⬜ | [178](docs/plans/178-brainstorms.md) |
@@ -593,6 +593,17 @@
 | TASK-450 | B-8 Детальна статистика: перші звіти, Umami API | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-451 | B-9 Головна як контент; перегляд vs редагування в адмінці; прев'ю як на вітрині | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-458 | B-10 Фасети каталогу: які фільтри потрібні по категоріях (ринок vs наші атрибути), чому зараз мало — дані сіду чи модель; вхід для TASK-414 | ⬜ | [178](docs/plans/178-brainstorms.md) |
+
+#### Реалізація за рішеннями B-1 (2026-09-11)
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-468 | М'які попередження за матрицею B-1: чіп «Борг N ₴» при DELIVERED без PAID; діалог підтвердження при ONLINE+SHIPPED без PAID із записом в `OrderStatusHistory` | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-469 | Оператор відкриває заявку на повернення з картки замовлення: `POST /api/admin/orders/:orderId/returns` (`returns:write`, автор у заявці) + діалог «заявка на все замовлення?» при переході в REFUNDED без заявок; закриває діру для гостьових і телефонних замовлень | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-470 | Недоступна позиція в живому замовленні (`deletedAt` / `isActive=false` / `stock<0` / резерв знято по TTL): чіп на рядку позиції, плитка `unavailableItems` у needs-action, діп-лінк-фільтр; перевірка при відкритті картки й при переході вперед, без блоку | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-471 | Похідні мітки «Очікує оплати · N хв» і «Резерв сплив» у списку й картці + фільтр (без нового `OrderStatus`; рахуються з `paymentMethod`+`paymentStatus`+`reservationExpiresAt`) | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-472 | Часткове повернення на замовленні: `PARTIALLY_REFUNDED` у картці/списку/фільтрах + похідна сума «Повернуто X з Y» із `Return.refundedAmount`; звіти віднімають повернення | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-473 | `docs/admin-guide.md`: розділ «що означає кожен статус» — статуси замовлення, статуси оплати, каталог міток із плану 178, хто відкриває заявку на повернення | ⬜ | [178](docs/plans/178-brainstorms.md) |
 
 ### План 179 — Якість: безпека, доки, моніторинг, пайплайн, ревʼю, повторний прогін
 
@@ -621,6 +632,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-468**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-474**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
