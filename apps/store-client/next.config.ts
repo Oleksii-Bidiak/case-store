@@ -58,6 +58,13 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
 ];
 
+// Deliberately NO `experimental.staleTimes` block (TASK-409). Stale storefront
+// content after a Back navigation (AD-PROD-16) gets blamed on Next's Client
+// Router Cache, but `staleTimes.dynamic` has defaulted to 0 since Next 15 (see
+// the defaults in `next/dist/server/config-shared.js`), so pinning it here would
+// be a no-op that reads like a fix. The catalogue and the PDP are client
+// components fed by React Query, so the stale copy lives in THAT cache — it is
+// invalidated on `popstate` by `shared/lib/use-refresh-on-back-navigation`.
 const nextConfig: NextConfig = {
   // Per-page budget for static generation, in seconds (TASK-327).
   //

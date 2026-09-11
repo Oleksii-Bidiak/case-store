@@ -127,6 +127,26 @@ import the hook across app boundaries.
 
 ---
 
+## Rule 4 — Validation timing, and validating the value rather than the mask
+
+**Placeholder — the rule itself is written by TASK-453.** TASK-407 fixed the instances that prompted
+it and records them here so the eventual text has something concrete to generalise from:
+
+- **Timing.** A multi-step RHF form advances through `handleSubmit(next)` on a `type="submit"`
+  button, never a `type="button"` calling `trigger()` by hand. RHF arms `reValidateMode` on
+  **submit**, and a manual `trigger` is not one — so errors raised that way appear at the right
+  moment but never clear while the user fixes the field. Seen on
+  `apps/store-client/src/widgets/checkout/ui/checkout-view.tsx`, step 1.
+- **Mask vs value.** Validate the **normalised** value, never the characters a display mask drew.
+  `checkout-schema.ts` tested the phone against `/^\+?[\d\s()-]{10,20}$/`, which accepted a string of
+  brackets and a number with digits missing out of the middle. The mask and the rule now live
+  together in `apps/store-client/src/shared/lib/phone.ts`.
+- **Defaults.** Every field the schema validates needs an entry in the form's default values, or an
+  untouched field is `undefined` and zod reports its own English `"Required"` where the localized
+  message belongs.
+
+---
+
 ## Quick checklist for reviewers
 
 - [ ] No `useState(prop)` seeded from async data without a render-time guard (Rule 1a) or
@@ -134,3 +154,5 @@ import the hook across app boundaries.
 - [ ] No `key`-remount on a text/search input.
 - [ ] No RHF edit form using bare `defaultValues` from async data — `values` or `reset()` present.
 - [ ] No inline `setTimeout` debounce — `useDebouncedCallback` used instead.
+- [ ] No multi-step form advancing via a hand-rolled `trigger()` on a `type="button"` (Rule 4).
+- [ ] No schema validating a masked string instead of the normalised value (Rule 4).

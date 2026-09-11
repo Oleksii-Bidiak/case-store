@@ -465,4 +465,114 @@ describe("CartItemRow", () => {
       ).toBeInTheDocument();
     });
   });
+
+  // TASK-403: the API marks a line `isActive: false` when the product — or its
+  // category — is withdrawn from sale while it sits in the cart. Until now the
+  // storefront read only `maxQty`, so a withdrawn line looked ordinary and the
+  // shopper only learned the truth when the order was refused.
+  describe("withdrawn from sale (TASK-403)", () => {
+    const warranty = {
+      addonServiceId: "svc-warranty",
+      name: "Гарантійний сертифікат",
+      description: null,
+      price: "499.00",
+      source: "template" as const,
+    };
+
+    it("marks the line unavailable instead of showing a stock state", () => {
+      // maxQty is healthy: this is NOT an out-of-stock line, and saying so would
+      // promise a restock that is never coming.
+      const item = makeCartItem({ isActive: false, maxQty: 50 });
+
+      renderWithProviders(<CartItemRow item={item} />);
+
+      expect(screen.getByText(dict.cart.unavailable)).toBeInTheDocument();
+      expect(screen.getByText(dict.cart.unavailableNote)).toBeInTheDocument();
+      expect(screen.queryByText(dict.cart.inStock)).not.toBeInTheDocument();
+      expect(screen.queryByText(dict.cart.outOfStock)).not.toBeInTheDocument();
+    });
+
+    it("disables the whole quantity stepper", () => {
+      const item = makeCartItem({ isActive: false, quantity: 2, maxQty: 50 });
+
+      renderWithProviders(<CartItemRow item={item} />);
+
+      expect(
+        screen.getByRole("button", { name: dict.cart.decreaseAria }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: dict.cart.increaseAria }),
+      ).toBeDisabled();
+      expect(screen.getByLabelText(dict.cart.quantityAria)).toBeDisabled();
+    });
+
+    it("writes nothing to the server when the disabled stepper is clicked", async () => {
+      const user = userEvent.setup();
+      const item = makeCartItem({ isActive: false, quantity: 2, maxQty: 50 });
+      let patchCount = 0;
+      server.use(
+        http.patch("*/api/cart/items/:itemId", () => {
+          patchCount += 1;
+          return HttpResponse.json({ data: {} });
+        }),
+      );
+
+      renderWithProviders(<CartItemRow item={item} />);
+      await user.click(
+        screen.getByRole("button", { name: dict.cart.increaseAria }),
+      );
+
+      expect(patchCount).toBe(0);
+      expect(screen.getByLabelText(dict.cart.quantityAria)).toHaveValue(2);
+    });
+
+    it("removes the line through the explicit «Прибрати» CTA", async () => {
+      const user = userEvent.setup();
+      const item = makeCartItem({
+        id: "item-77",
+        isActive: false,
+        productName: "Знятий кейс",
+      });
+      let removedId: string | null = null;
+      server.use(
+        http.delete("*/api/cart/items/:itemId", ({ params }) => {
+          removedId = params.itemId as string;
+          return HttpResponse.json({ data: {} });
+        }),
+      );
+
+      renderWithProviders(<CartItemRow item={item} />);
+      await user.click(
+        screen.getByRole("button", {
+          name: dict.cart.unavailableRemoveAria("Знятий кейс"),
+        }),
+      );
+
+      await waitFor(() => expect(removedId).toBe("item-77"));
+    });
+
+    it("stops upselling add-ons on a line that can no longer be ordered", () => {
+      const item = makeCartItem({
+        isActive: false,
+        availableAddons: [warranty],
+      });
+
+      renderWithProviders(<CartItemRow item={item} showAddons />);
+
+      expect(
+        screen.queryByText(dict.cart.offersHeading),
+      ).not.toBeInTheDocument();
+    });
+
+    it("leaves an active line exactly as it was", () => {
+      renderWithProviders(<CartItemRow item={makeCartItem()} />);
+
+      expect(screen.queryByText(dict.cart.unavailable)).not.toBeInTheDocument();
+      expect(screen.getByText(dict.cart.inStock)).toBeInTheDocument();
+      expect(screen.getByLabelText(dict.cart.quantityAria)).toBeEnabled();
+      expect(
+        screen.getByRole("button", { name: dict.cart.increaseAria }),
+      ).toBeEnabled();
+    });
+  });
 });

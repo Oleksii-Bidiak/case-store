@@ -1,6 +1,13 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
+import { makeCart, makeCartItem } from "@/shared/test/msw-handlers";
+import { dict } from "@/shared/config";
 import { ProductDetailView } from "./product-detail-view";
 
 // next/navigation is unavailable under jsdom — the sibling navigator routes off
@@ -107,13 +114,14 @@ describe("ProductDetailView — position model (TASK-142)", () => {
       name: "Tempered Glass — Blue Single",
     });
 
-    // Current position's pack value is "single" → active.
+    // Current position's pack value is "single" → active, and a button (there
+    // is nowhere to go). The reachable sibling is a link since TASK-409.
     expect(
       await screen.findByRole("button", { name: "single" }),
     ).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "double" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
+    expect(screen.getByRole("link", { name: "double" })).toHaveAttribute(
+      "href",
+      "/products/glass-blue-double",
     );
   });
 
@@ -142,5 +150,88 @@ describe("ProductDetailView — position model (TASK-142)", () => {
     ).toHaveLength(1);
 
     delete window.umami;
+  });
+});
+
+/**
+ * TASK-409 — the buy box reads the CART, not the add mutation.
+ *
+ * The old button wore the mutation's `isSuccess`, which never clears: one click
+ * and it read «Додано ✓» for the rest of the page's life, whatever happened to
+ * the cart afterwards. The three states below are all derived from `GET /api/cart`,
+ * so they survive a reload and clear when the line is removed.
+ */
+describe("ProductDetailView — buy box in-cart state (TASK-409)", () => {
+  const arrange = (
+    product: Partial<typeof baseProduct>,
+    items: ReturnType<typeof makeCartItem>[],
+  ) => {
+    server.use(
+      http.get("*/api/products/:slug", () =>
+        HttpResponse.json({
+          ...detailEnvelope(),
+          data: { ...baseProduct, ...product },
+        }),
+      ),
+      http.get("*/api/products", () =>
+        HttpResponse.json({
+          data: [],
+          meta: { total: 0, page: 1, limit: 5, totalPages: 0 },
+        }),
+      ),
+      http.get("*/api/cart", () => HttpResponse.json(makeCart(items))),
+    );
+    renderWithProviders(<ProductDetailView slug="glass-blue-single" />);
+  };
+
+  it("offers «Додати до кошика» while the position is not in the cart", async () => {
+    arrange({}, []);
+
+    expect(
+      await screen.findByRole("button", { name: dict.addToCart.idle }),
+    ).toBeEnabled();
+    expect(screen.queryByText(dict.addToCart.inCart)).toBeNull();
+  });
+
+  it("shows «В кошику» when the cart already holds this position", async () => {
+    arrange({}, [makeCartItem({ productId: "product-1" })]);
+
+    expect(
+      await screen.findByRole("button", {
+        name: dict.addToCart.inCartAria("Tempered Glass — Blue Single"),
+      }),
+    ).toBeInTheDocument();
+    // The add button is gone — the shopper manages the line in the cart now.
+    expect(
+      screen.queryByRole("button", { name: dict.addToCart.idle }),
+    ).toBeNull();
+  });
+
+  it("warns «Товар закінчився» when the position is in the cart but sold out", async () => {
+    arrange({ inStock: false }, [makeCartItem({ productId: "product-1" })]);
+
+    const button = await screen.findByRole("button", {
+      name: dict.addToCart.soldOutAria("Tempered Glass — Blue Single"),
+    });
+    expect(button).toHaveTextContent(dict.addToCart.soldOut);
+  });
+
+  it("never leaves the add button stuck on «Додано ✓» after a successful add", async () => {
+    const user = userEvent.setup();
+    arrange({}, []);
+
+    const button = await screen.findByRole("button", {
+      name: dict.addToCart.idle,
+    });
+    await user.click(button);
+
+    // The success signal is the toast; the button returns to its idle label
+    // (and flips to «В кошику» only once the cart query says so).
+    await waitFor(() =>
+      expect(screen.queryByText(dict.addToCart.added)).toBeNull(),
+    );
+    expect(
+      screen.getByRole("button", { name: dict.addToCart.idle }),
+    ).toBeInTheDocument();
   });
 });

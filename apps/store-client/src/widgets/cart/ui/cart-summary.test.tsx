@@ -56,4 +56,17 @@ describe("CartSummary", () => {
       screen.queryByText(dict.cart.addonServicesLine),
     ).not.toBeInTheDocument();
   });
+
+  it("blocks the checkout CTA while a line is withdrawn from sale (TASK-403)", () => {
+    renderWithProviders(<CartSummary totals={totals} hasUnavailableItems />);
+
+    // The navigable link is gone — /checkout would only fail on an order the
+    // API refuses to create — and what unblocks it is spelled out.
+    expect(
+      screen.queryByRole("link", { name: dict.cart.checkoutAria }),
+    ).not.toBeInTheDocument();
+    const cta = screen.getByRole("button", { name: dict.cart.checkout });
+    expect(cta).toBeDisabled();
+    expect(cta).toHaveAccessibleDescription(dict.cart.checkoutBlocked);
+  });
 });

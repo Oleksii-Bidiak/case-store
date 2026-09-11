@@ -1,7 +1,7 @@
 import { IsEmail, IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
-import { IsStrongAppPassword, PASSWORD_POLICY_DESCRIPTION } from '../../common/validators';
+import { IsStaffPassword, STAFF_PASSWORD_DESCRIPTION } from '../../common/validators';
 
 /**
  * Body of `POST /api/users` — owner-only staff provisioning (TASK-333/317).
@@ -11,6 +11,10 @@ import { IsStrongAppPassword, PASSWORD_POLICY_DESCRIPTION } from '../../common/v
  * (`scripts/create-admin.ts`); creating CUSTOMER accounts is what registration
  * is for, and offering it here would just be a way to mint an account whose
  * email nobody ever proved.
+ *
+ * Which is also why the password keeps the STRICT policy while shoppers moved to
+ * a looser one (TASK-407): this endpoint only ever mints accounts that can reach
+ * the admin panel.
  */
 export class CreateUserDto {
   @ApiProperty({ description: 'Email address (also the login)', example: 'manager@example.com' })
@@ -18,11 +22,11 @@ export class CreateUserDto {
   email!: string;
 
   @ApiProperty({
-    description: `Initial password (${PASSWORD_POLICY_DESCRIPTION})`,
+    description: `Initial password (${STAFF_PASSWORD_DESCRIPTION})`,
     example: 'StrongP@ss123',
     minLength: 8,
   })
-  @IsStrongAppPassword()
+  @IsStaffPassword()
   password!: string;
 
   @ApiProperty({

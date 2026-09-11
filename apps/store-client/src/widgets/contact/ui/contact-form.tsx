@@ -2,10 +2,15 @@
 
 import Link from "next/link";
 import { Check } from "lucide-react";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useContactControllerSubmit } from "@/entities/contact";
 import { dict } from "@/shared/config";
+// The mask function rather than `shared/ui`'s `PhoneInput`: this form draws its
+// own fields (`FIELD` below), and pulling in the shadcn-styled input would drag
+// a second set of base classes into a panel that does not use them. What must be
+// shared is the rule and the mask — both live in `shared/lib/phone` (TASK-407).
+import { formatUAPhone } from "@/shared/lib/phone";
 import { contactSchema, type ContactFormValues } from "../model/contact-schema";
 
 const FIELD =
@@ -157,16 +162,29 @@ export function ContactForm() {
           </label>
           <label className="flex flex-col gap-[7px]">
             <span className={LABEL}>{d.fieldPhone}</span>
-            <input
-              id="contact-phone"
-              type="tel"
-              placeholder={d.fieldPhonePlaceholder}
-              aria-invalid={Boolean(errors.phone)}
-              aria-describedby={
-                errors.phone ? "contact-phone-error" : undefined
-              }
-              className={FIELD}
-              {...register("phone")}
+            {/* Controlled, not `register`d: the field displays the mask while
+                the form value stays the raw string the shopper typed. */}
+            <Controller
+              name="phone"
+              control={control}
+              render={({ field }) => (
+                <input
+                  id="contact-phone"
+                  type="tel"
+                  inputMode="numeric"
+                  placeholder={d.fieldPhonePlaceholder}
+                  aria-invalid={Boolean(errors.phone)}
+                  aria-describedby={
+                    errors.phone ? "contact-phone-error" : undefined
+                  }
+                  className={FIELD}
+                  name={field.name}
+                  ref={field.ref}
+                  onBlur={field.onBlur}
+                  value={formatUAPhone(field.value ?? "")}
+                  onChange={(event) => field.onChange(event.target.value)}
+                />
+              )}
             />
             {errors.phone && (
               <span id="contact-phone-error" role="alert" className={ERROR}>

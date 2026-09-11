@@ -903,11 +903,23 @@ export const dict = {
     idle: "Додати до кошика",
     buy: "Купити",
     adding: "Додаємо…",
+    // Success is a TOAST, never a button label (TASK-409): a mutation's
+    // `isSuccess` never clears, so a button that wears it freezes on «Додано ✓».
     added: "Додано ✓",
     error: "Не вдалося додати товар. Спробуйте ще раз.",
     // Mirrors dict.product.outOfStock; kept in the feature's own slice so the
     // compact card button can surface the state via its label.
     outOfStock: "Немає в наявності",
+    // PDP buy box, once the position is already in the cart (TASK-409). Mirrors
+    // dict.productCard.inCart — the card and the PDP say the same thing, but the
+    // card's slice must stay usable on its own.
+    inCart: "В кошику",
+    inCartAria: (name: string) => `«${name}» вже в кошику — відкрити кошик`,
+    // In the cart, but the position sold out meanwhile: the shopper is warned
+    // here rather than at checkout, and the button opens the cart to remove it.
+    soldOut: "Товар закінчився",
+    soldOutAria: (name: string) =>
+      `«${name}» у кошику, але закінчився — відкрити кошик`,
   },
 
   cart: {
@@ -956,6 +968,18 @@ export const dict = {
     countShort: (n: number) => `${n} тов.`,
     inStock: "В наявності",
     outOfStock: "Немає в наявності",
+    // A line the API flagged `isActive: false` — the product, or its category,
+    // was withdrawn from sale while it sat in the cart (TASK-403). Not a stock
+    // problem: no quantity makes it orderable again, so the line offers removal
+    // instead of a stepper and holds the checkout CTA until it is gone.
+    unavailable: "Недоступно",
+    unavailableNote:
+      "Товар знято з продажу — приберіть його, щоб оформити замовлення.",
+    unavailableRemove: "Прибрати",
+    unavailableRemoveAria: (name: string) =>
+      `Прибрати недоступний товар «${name}» з кошика`,
+    checkoutBlocked:
+      "Приберіть недоступні товари з кошика, щоб оформити замовлення.",
     addExtra: "Додати ще товари",
     summaryHeading: "Разом",
     itemsLine: "Товари",
@@ -987,6 +1011,10 @@ export const dict = {
     discountLine: "Знижка",
     required: "Введіть промокод",
     tooLong: "Промокод занадто довгий",
+    // The preview endpoint is behind JwtAuthGuard, so a guest can never apply a
+    // code — say so before they spend one on a 401 (TASK-402).
+    guestHint: "Промокоди доступні після входу в акаунт.",
+    signInCta: "Увійти",
     // Typed error codes from the API map to friendly messages.
     errors: {
       DISCOUNT_NOT_FOUND: "Такого промокоду не існує.",
@@ -998,12 +1026,23 @@ export const dict = {
       DISCOUNT_MAX_REDEMPTIONS_REACHED:
         "Ліміт використань цього промокоду вичерпано.",
       DISCOUNT_USER_LIMIT_REACHED: "Ви вже використали цей промокод.",
+      // Status-driven branches (TASK-402). The live demo read a plain 401 as
+      // "WELCOME10 не працює" because every failure shared one sentence.
+      unauthorized: "Щоб скористатись промокодом, увійдіть в акаунт.",
+      forbidden:
+        "Сесія застаріла. Оновіть сторінку та застосуйте промокод ще раз.",
+      tooManyRequests:
+        "Забагато спроб. Зачекайте хвилину і спробуйте промокод ще раз.",
       generic: "Не вдалося застосувати промокод. Спробуйте ще раз.",
     } as Record<string, string>,
   },
 
   checkout: {
     title: "Оформлення замовлення",
+    // Breadcrumbs (TASK-407) — the checkout had no way back to the cart.
+    breadcrumbHome: "Головна",
+    breadcrumbCart: "Кошик",
+    breadcrumb: "Оформлення",
     shippingAddress: "Адреса доставки",
     billingAddress: "Адреса оплати",
     billingSame: "Адреса оплати збігається з адресою доставки",
@@ -1030,6 +1069,9 @@ export const dict = {
     shippingCostLabel: "Доставка",
     shippingCalculating: "Розраховуємо…",
     shippingSelectCity: "Оберіть місто для розрахунку",
+    // The NP estimate can come back empty or fail outright; the cost row used to
+    // fall silent (or, worse, print an ETA where a price belongs) — TASK-402.
+    shippingCostUnknown: "Уточнить оператор",
     etaValue: (days: number) => `Орієнтовно ${days}–${days + 1} роб. дн.`,
     fields: {
       firstName: "Ім'я",
@@ -1046,6 +1088,9 @@ export const dict = {
     },
     countryPlaceholder: "напр. UA",
     phonePlaceholder: "напр. +380 50 123 4567",
+    // TASK-407: the rule is now "380 + 9 digits", so say so BEFORE the shopper
+    // trips over it — the error message alone never explains what was wrong.
+    phoneHint: "Український номер: +380 і 9 цифр",
     deliveryPlaceholder: "напр. Нова Пошта, відділення №12",
     deliveryHint:
       "Вкажіть місто та відділення Нової Пошти або адресу для кур'єра. Доставку оформлюємо вручну.",
@@ -1055,6 +1100,10 @@ export const dict = {
     warehouseHint: "Спершу оберіть місто, щоб побачити відділення Нової Пошти",
     searchLoading: "Пошук…",
     searchEmpty: "Нічого не знайдено",
+    // The NP directory is a proxied third party: when the lookup itself fails,
+    // "нічого не знайдено" blames the shopper's spelling (TASK-402).
+    searchUnavailable:
+      "Довідник Нової Пошти тимчасово недоступний — введіть місто вручну.",
     validation: {
       firstName: "Ім'я є обов'язковим",
       lastName: "Прізвище є обов'язковим",
@@ -1203,6 +1252,15 @@ export const dict = {
         "Онлайн-оплата зараз недоступна. Зателефонуйте нам або зачекайте на дзвінок менеджера.",
       retryConflict: "Це замовлення вже не можна оплатити онлайн.",
       retryGeneric: "Не вдалося перейти до оплати. Спробуйте ще раз.",
+      // Shown INSTEAD of the retry button once the order itself is closed
+      // (TASK-407). Says why there is no button, and says nothing about whether
+      // money moved — that stays the job of `paymentStatus` above.
+      orderCancelledTitle: "Замовлення скасовано",
+      orderCancelledBody:
+        "Це замовлення скасовано, тому оплатити його вже не можна. Якщо гроші все ж було списано — зателефонуйте нам, ми повернемо кошти.",
+      orderClosedTitle: "Замовлення вже виконано",
+      orderClosedBody:
+        "Замовлення доставлено, тож онлайн-оплата для нього недоступна. Якщо є питання щодо оплати — зателефонуйте нам.",
     },
 
     // ── Guest order status page (TASK-338) ──────────────────────────────────
@@ -1347,6 +1405,10 @@ export const dict = {
       noAccount: "Немає акаунту?",
       registerLink: "Реєстрація",
       errorInvalid: "Невірний email або пароль.",
+      // IP throttle on POST /auth/login is 5 per 60 s. Deliberately says only
+      // "за хвилину": the separate 15-minute per-account lockout must stay
+      // invisible, or the form becomes an account-enumeration oracle (TASK-402).
+      errorTooMany: "Забагато спроб. Спробуйте ще раз за хвилину.",
       validationEmail: "Введіть дійсну email-адресу",
       validationPassword: "Пароль є обов'язковим",
       // Slide-out extras (login "as in the mockup"). Social sign-in has no
@@ -1452,8 +1514,16 @@ export const dict = {
       validationFirstName: "Ім'я є обов'язковим",
       validationLastName: "Прізвище є обов'язковим",
       validationPassword: "Пароль має містити щонайменше 8 символів",
-      validationPasswordPolicy:
-        "Пароль має містити велику та малу літери й цифру",
+      // Shopper policy (owner decision 2026-09-10 / TASK-407): a LOWERCASE
+      // letter and a digit, no uppercase requirement. Says «малу» because the
+      // regex means it — «PAROLE123» is refused, and a message describing a
+      // laxer rule than the one enforced reads as a broken form. The strict
+      // variant below is what staff accounts still answer to.
+      validationPasswordPolicy: "Пароль має містити малу літеру та цифру",
+      validationPasswordPolicyStaff:
+        "Пароль службового акаунту має містити велику та малу літери й цифру",
+      // Shown under the password field, before anything goes wrong.
+      passwordHint: "Щонайменше 8 символів, з малою літерою та цифрою",
       validationPasswordMatch: "Паролі не збігаються",
       terms: "Погоджуюсь з умовами використання та політикою конфіденційності",
       validationTerms: "Потрібно прийняти умови використання",

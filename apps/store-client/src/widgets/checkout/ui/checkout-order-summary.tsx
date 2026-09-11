@@ -23,12 +23,21 @@ export function CheckoutOrderSummary({ npCityRef }: CheckoutOrderSummaryProps) {
   const { data, isLoading, isError } = useGetCart();
   const applied = useAppliedDiscount();
 
-  const { data: estimateData, isFetching: isEstimating } = useEstimateDelivery(
+  const {
+    data: estimateData,
+    isFetching: isEstimating,
+    // TASK-402: a failed estimate was indistinguishable from a zero-cost one,
+    // and both fell through to a row that printed a delivery ETA where a price
+    // belongs. They now say the same honest thing — an operator will confirm the
+    // shipping cost — because that is exactly what happens next in either case.
+    isError: isEstimateError,
+  } = useEstimateDelivery(
     { cityRef: npCityRef ?? "" },
     { query: { enabled: Boolean(npCityRef) } },
   );
   const estimate = estimateData?.data;
-  const hasCost = estimate ? Number(estimate.cost) > 0 : false;
+  const hasCost =
+    !isEstimateError && estimate ? Number(estimate.cost) > 0 : false;
 
   if (isLoading) {
     return (
@@ -92,8 +101,12 @@ export function CheckoutOrderSummary({ npCityRef }: CheckoutOrderSummaryProps) {
         ))}
       </ul>
 
-      {/* Promo code (real coupons, TASK-079). */}
-      <ApplyDiscount />
+      {/* Promo code (real coupons, TASK-079). Kept visible for guests rather
+          than hidden (TASK-402): a shopper who was handed a code and finds no
+          field for it concludes the site lost it, and hiding the control is
+          also the one option that cannot explain itself. ApplyDiscount shows
+          guests the "sign in first" hint instead, pointing back HERE. */}
+      <ApplyDiscount redirectTo="/checkout" />
 
       <div className="mt-3 border-t border-border pt-3">
         <div className="flex justify-between py-1.5 text-sm text-muted-foreground">
@@ -115,7 +128,7 @@ export function CheckoutOrderSummary({ npCityRef }: CheckoutOrderSummaryProps) {
                 ? dict.checkout.shippingCalculating
                 : hasCost && estimate
                   ? formatMoney(estimate.cost)
-                  : dict.checkout.deliveryEstimateValue}
+                  : dict.checkout.shippingCostUnknown}
           </span>
         </div>
 

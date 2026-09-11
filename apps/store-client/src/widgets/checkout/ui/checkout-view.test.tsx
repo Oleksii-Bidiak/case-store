@@ -3,6 +3,7 @@ import {
   renderWithProviders,
   screen,
   waitFor,
+  within,
   userEvent,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
@@ -415,6 +416,109 @@ describe("CheckoutView", () => {
     expect(review).toHaveTextContent("Відділення №5");
   });
 
+  // ── TASK-407: validation timing, phone rule, breadcrumbs ───────────────────
+  describe("validation timing", () => {
+    it("says nothing before the first «Далі» — errors are not the greeting", async () => {
+      setupBlankProfile();
+      const user = userEvent.setup();
+      renderWithProviders(<CheckoutView />, authed);
+
+      await screen.findByRole("heading", { name: dict.checkout.title });
+
+      // Touch a required field and leave it empty; blur alone must stay quiet.
+      await user.click(screen.getByLabelText(dict.checkout.fields.firstName));
+      await user.tab();
+
+      expect(
+        screen.queryByText(dict.checkout.validation.firstName),
+      ).not.toBeInTheDocument();
+    });
+
+    it("clears an error as soon as the field is fixed, without a second «Далі»", async () => {
+      // The regression this test exists for: step 1 ran through a manual
+      // `trigger()`, which does not arm RHF's `reValidateMode`. A shopper who
+      // pressed «Далі», then filled the field in, kept staring at the same red
+      // sentence until they pressed «Далі» again.
+      setupBlankProfile();
+      const user = userEvent.setup();
+      renderWithProviders(<CheckoutView />, authed);
+
+      await screen.findByRole("heading", { name: dict.checkout.title });
+      await user.click(
+        screen.getByRole("button", { name: dict.checkout.nextStep }),
+      );
+
+      expect(
+        await screen.findByText(dict.checkout.validation.firstName),
+      ).toBeInTheDocument();
+
+      await user.type(
+        screen.getByLabelText(dict.checkout.fields.firstName),
+        "Олег",
+      );
+
+      await waitFor(() =>
+        expect(
+          screen.queryByText(dict.checkout.validation.firstName),
+        ).not.toBeInTheDocument(),
+      );
+    });
+
+    it("reports a bad phone in Ukrainian, not as the English «Required»", async () => {
+      // `CHECKOUT_DEFAULT_VALUES` had no `phone` key, so an untouched field was
+      // `undefined` and zod answered with its own English default.
+      setupBlankProfile();
+      const user = userEvent.setup();
+      renderWithProviders(<CheckoutView />, authed);
+
+      await screen.findByRole("heading", { name: dict.checkout.title });
+      await user.click(
+        screen.getByRole("button", { name: dict.checkout.nextStep }),
+      );
+
+      expect(
+        await screen.findByText(dict.checkout.validation.phone),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Required")).not.toBeInTheDocument();
+    });
+
+    it("refuses a half-typed phone number that the old mask-shaped rule accepted", async () => {
+      setupBlankProfile();
+      const user = userEvent.setup();
+      renderWithProviders(<CheckoutView />, authed);
+
+      await screen.findByRole("heading", { name: dict.checkout.title });
+      // Six local digits: the mask renders "+380 50 123", which is 11 characters
+      // of `[\d\s()-]` and therefore passed the rule this replaced.
+      await fillDelivery(user, { phone: "501234" });
+      await user.click(
+        screen.getByRole("button", { name: dict.checkout.nextStep }),
+      );
+
+      expect(
+        await screen.findByText(dict.checkout.validation.phone),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: dict.checkout.reviewHeading }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("offers a way back to the cart from the checkout", async () => {
+    setupBlankProfile();
+    renderWithProviders(<CheckoutView />, authed);
+
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    const crumbs = screen.getByRole("navigation", {
+      name: dict.product.breadcrumbAria,
+    });
+    expect(crumbs).toHaveTextContent(dict.checkout.breadcrumb);
+    expect(
+      within(crumbs).getByRole("link", { name: dict.checkout.breadcrumbCart }),
+    ).toHaveAttribute("href", "/cart");
+  });
+
   // ── TASK-261: begin_checkout analytics ─────────────────────────────────────
   describe("begin_checkout analytics", () => {
     afterEach(() => {
@@ -555,6 +659,14 @@ describe("CheckoutView", () => {
           name: dict.checkout.guest.accountOfferCta,
         }),
       ).toHaveAttribute("href", "/register");
+
+      // TASK-407: the stepper promises three steps, and this screen IS the
+      // third one — it used to freeze on step 2 while the order already existed.
+      const current = document.querySelector('[aria-current="step"]');
+      expect(current).toHaveTextContent("3");
+      expect(current?.closest("li")).toHaveTextContent(
+        dict.checkout.stepConfirm,
+      );
     });
   });
 

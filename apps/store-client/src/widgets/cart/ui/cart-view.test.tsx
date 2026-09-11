@@ -76,4 +76,33 @@ describe("CartView", () => {
 
     await waitFor(() => expect(cleared).toBe(true));
   });
+
+  it("blocks checkout while the cart holds a withdrawn line (TASK-403)", async () => {
+    server.use(
+      http.get("*/api/cart", () =>
+        HttpResponse.json(
+          makeCart([
+            makeCartItem({ id: "a", productName: "Живий товар" }),
+            makeCartItem({
+              id: "b",
+              productName: "Знятий товар",
+              isActive: false,
+            }),
+          ]),
+        ),
+      ),
+    );
+
+    renderWithProviders(<CartView />);
+    await screen.findByText("Знятий товар");
+
+    expect(screen.getByText(dict.cart.unavailable)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: dict.cart.checkoutAria }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.cart.checkout }),
+    ).toBeDisabled();
+    expect(screen.getByText(dict.cart.checkoutBlocked)).toBeInTheDocument();
+  });
 });

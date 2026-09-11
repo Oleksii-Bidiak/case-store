@@ -12,6 +12,7 @@ import { useAuth, useAuthControllerLogin } from "@/entities/session";
 import { getGetCartQueryKey } from "@/entities/cart";
 import { getGetWishlistQueryKey } from "@/entities/wishlist";
 import { dict } from "@/shared/config";
+import { apiErrorStatus } from "@/shared/lib";
 
 const loginSchema = z.object({
   email: z.string().email(dict.auth.login.validationEmail),
@@ -35,6 +36,23 @@ const socialClass =
 function buildGoogleOAuthUrl(redirect: string): string {
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
   return `${apiBase}/api/auth/google?redirect=${encodeURIComponent(redirect)}`;
+}
+
+/**
+ * Whether the Google sign-in button is offered at all (TASK-402).
+ *
+ * The button is a plain link into `GET /api/auth/google`, which 500s unless the
+ * deployment carries a real `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` pair. On
+ * the demo stand it did not, so the most prominent control on the login screen
+ * led straight to an error page. Off unless the env var explicitly says `true`:
+ * a missing variable means "nobody configured Google here", and the safe
+ * reading of that is to hide the button rather than to advertise a dead route.
+ *
+ * Literal `process.env.X` access on purpose — that is the form Next.js inlines
+ * at build time for `NEXT_PUBLIC_*`.
+ */
+function isGoogleAuthEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true";
 }
 
 interface LoginFormProps {
@@ -79,6 +97,10 @@ export function LoginForm({
   // account — deliberately indistinguishable) to /login?oauthError=1.
   const hasOAuthError = Boolean(searchParams.get("oauthError"));
 
+  // Read per render rather than at module scope so a test (and a redeployed
+  // container) sees the value it actually set.
+  const googleEnabled = isGoogleAuthEnabled();
+
   const {
     register,
     handleSubmit,
@@ -119,18 +141,26 @@ export function LoginForm({
     );
   };
 
-  const status = login.error?.response?.status;
+  const status = apiErrorStatus(login.error);
   // Every 401 is the same generic "Invalid credentials" — the API deliberately
   // does not distinguish unknown email / wrong password / deactivated account
   // (TASK-274), so there is nothing here to branch on. A deactivated owner is
   // told the truth by email instead (TASK-287); everyone sees the support link
   // below the form.
+  //
+  // A 429 is different in kind, and used to read as "щось пішло не так" — which
+  // invites the shopper to keep hammering the endpoint that is already refusing
+  // them (TASK-402). It names the IP throttle's window (60 s) and nothing else:
+  // the per-account 15-minute lockout stays unmentioned on purpose, because a
+  // message that can only appear for a real account is an enumeration oracle.
   const errorMessage =
     status === 401
       ? dict.auth.login.errorInvalid
-      : login.isError
-        ? dict.common.genericError
-        : null;
+      : status === 429
+        ? dict.auth.login.errorTooMany
+        : login.isError
+          ? dict.common.genericError
+          : null;
 
   return (
     <form
@@ -243,19 +273,21 @@ export function LoginForm({
         <span className="h-px flex-1 bg-border" />
       </div>
       <div className="flex gap-2.5">
-        <button
-          type="button"
-          onClick={() => {
-            // Full top-level navigation — the redirect target is the same
-            // value the password login navigates to after success, so both
-            // auth methods share one "where do we land" source of truth.
-            window.location.href = buildGoogleOAuthUrl(redirectTarget);
-          }}
-          className={socialClass}
-        >
-          <GoogleIcon />
-          {dict.auth.login.google}
-        </button>
+        {googleEnabled && (
+          <button
+            type="button"
+            onClick={() => {
+              // Full top-level navigation — the redirect target is the same
+              // value the password login navigates to after success, so both
+              // auth methods share one "where do we land" source of truth.
+              window.location.href = buildGoogleOAuthUrl(redirectTarget);
+            }}
+            className={socialClass}
+          >
+            <GoogleIcon />
+            {dict.auth.login.google}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => toast(dict.auth.login.socialSoon)}

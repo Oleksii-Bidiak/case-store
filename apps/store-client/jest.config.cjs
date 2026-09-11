@@ -36,6 +36,13 @@ const resolveSingleCopy = (id) => require.resolve(id).replace(/\\/g, "/");
  * Component-project module mapper. Pins react/react-dom (and the JSX runtimes)
  * to ONE copy so the app code under test and the react-dom used by RTL share a
  * single React instance — otherwise hooks see a null dispatcher.
+ *
+ * `@sentry/nextjs` is mapped to a local stub for a different reason (TASK-402):
+ * this project runs jsdom with `customExportConditions: [""]`, and the package's
+ * export map offers only `browser`/`node`/`edge`/`import` at the top level — no
+ * `require`, no `default`. Under those conditions the resolver finds nothing,
+ * and any component that reports to Sentry dies with "Cannot find module"
+ * before its first assertion. The stub also makes the reports assertable.
  */
 const componentModuleNameMapper = {
   "^react$": resolveSingleCopy("react"),
@@ -43,6 +50,7 @@ const componentModuleNameMapper = {
   "^react-dom/client$": resolveSingleCopy("react-dom/client"),
   "^react/jsx-runtime$": resolveSingleCopy("react/jsx-runtime"),
   "^react/jsx-dev-runtime$": resolveSingleCopy("react/jsx-dev-runtime"),
+  "^@sentry/nextjs$": "<rootDir>/shared/test/sentry-mock.ts",
   ...moduleNameMapper,
 };
 

@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { OrderConfirmationView, OrderConfirmationSkeleton } from "@/widgets";
+import {
+  CheckoutStepIndicator,
+  OrderConfirmationView,
+  OrderConfirmationSkeleton,
+} from "@/widgets";
 import { dict } from "@/shared/config";
 
 interface OrderConfirmationPageProps {
@@ -26,8 +30,16 @@ export default async function OrderConfirmationPage({
   const { id } = await params;
 
   return (
-    <Suspense fallback={<OrderConfirmationSkeleton />}>
-      <OrderConfirmationView orderId={id} />
-    </Suspense>
+    // The page had no container at all: on a wide screen the confirmation ran
+    // edge to edge while every other route sat in the same 7xl column
+    // (TASK-407). Mirrors `app/orders/page.tsx`.
+    <div className="mx-auto w-full max-w-7xl px-4 py-8">
+      {/* Step 3 of 3 — the stepper has always named «Підтвердження» as the last
+          step; this is the screen it meant. */}
+      <CheckoutStepIndicator current={3} />
+      <Suspense fallback={<OrderConfirmationSkeleton />}>
+        <OrderConfirmationView orderId={id} />
+      </Suspense>
+    </div>
   );
 }

@@ -1,70 +1,37 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import type { UseFormTrigger } from "react-hook-form";
-import type { CheckoutFormValues } from "./checkout-schema";
-
-/**
- * Delivery-step fields that must validate before advancing to the review step.
- * `npCityRef`/`npWarehouseRef` are excluded — both are `.optional()` and set
- * automatically by the Nova Poshta autocomplete, never typed by the user.
- */
-export const DELIVERY_STEP_FIELDS = [
-  "firstName",
-  "lastName",
-  "phone",
-  "city",
-  "deliveryAddress",
-  "notes",
-] as const satisfies readonly (keyof CheckoutFormValues)[];
-
-/**
- * Extra step-1 field for a shopper without an account (TASK-338). Validated here
- * rather than only at submit, so a guest hears about a missing email on the
- * screen that holds the input instead of two screens later.
- */
-export const GUEST_STEP_FIELDS = [
-  "email",
-] as const satisfies readonly (keyof CheckoutFormValues)[];
 
 export interface CheckoutSteps {
   /** Current step: 1 = Delivery, 2 = Review. */
   step: 1 | 2;
-  /** True while the delivery fields are being validated (gates the "Далі" button). */
-  isValidating: boolean;
-  /** Validate the delivery fields and advance to review only if they pass. */
-  goToReview: () => Promise<void>;
+  /** Advance to the review step. */
+  goToReview: () => void;
   /** Return to the delivery step. */
   goToDelivery: () => void;
 }
 
 /**
  * useCheckoutSteps — transient step state for the two-screen checkout flow
- * (Delivery → Review). The single `useForm` instance is owned by `CheckoutView`;
- * this hook only gates the transition by running `trigger` on the delivery
- * fields, so the order-creation submit stays behind the review screen (TASK-146).
+ * (Delivery → Review). Nothing else: the single `useForm` instance is owned by
+ * `CheckoutView`, and the order-creation submit stays behind the review screen
+ * (TASK-146).
+ *
+ * ── Why this hook no longer validates (TASK-407) ──────────────────────────────
+ * It used to take RHF's `trigger` and run it over an explicit list of
+ * delivery-step fields before advancing. That list was a second, hand-kept copy
+ * of "what is on screen 1" — but the real cost was the timing: RHF arms
+ * `reValidateMode` on SUBMIT, and a manual `trigger()` is not a submit, so every
+ * message raised this way stayed on screen while the shopper fixed the field.
+ * Step 1 is now a real `handleSubmit(goToReview)`, which validates the whole
+ * form — every field of which lives on screen 1 except `paymentMethod`, and that
+ * one always holds its default — and gets the correct timing for free.
  */
-export function useCheckoutSteps(
-  trigger: UseFormTrigger<CheckoutFormValues>,
-  isGuest = false,
-): CheckoutSteps {
+export function useCheckoutSteps(): CheckoutSteps {
   const [step, setStep] = useState<1 | 2>(1);
-  const [isValidating, setIsValidating] = useState(false);
 
-  const goToReview = useCallback(async () => {
-    setIsValidating(true);
-    try {
-      const fields = isGuest
-        ? [...DELIVERY_STEP_FIELDS, ...GUEST_STEP_FIELDS]
-        : [...DELIVERY_STEP_FIELDS];
-      const valid = await trigger(fields);
-      if (valid) setStep(2);
-    } finally {
-      setIsValidating(false);
-    }
-  }, [trigger, isGuest]);
-
+  const goToReview = useCallback(() => setStep(2), []);
   const goToDelivery = useCallback(() => setStep(1), []);
 
-  return { step, isValidating, goToReview, goToDelivery };
+  return { step, goToReview, goToDelivery };
 }

@@ -19,7 +19,11 @@ export { ProductDetailView, ProductDetailSkeleton } from "./product-detail";
 export { ProductReviewsWidget } from "./product-reviews";
 export { CartView, CartSkeleton } from "./cart";
 export { WishlistView, WishlistSkeleton } from "./wishlist";
-export { CheckoutView, CheckoutOrderSummary } from "./checkout";
+export {
+  CheckoutView,
+  CheckoutOrderSummary,
+  CheckoutStepIndicator,
+} from "./checkout";
 export {
   OrderConfirmationView,
   OrderConfirmationSkeleton,

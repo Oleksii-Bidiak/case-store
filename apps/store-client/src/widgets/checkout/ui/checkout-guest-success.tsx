@@ -6,6 +6,7 @@ import type { OrderEntity } from "@/entities/order";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatMoney } from "@/shared/lib";
+import { CheckoutStepIndicator } from "./checkout-step-indicator";
 
 interface CheckoutGuestSuccessProps {
   order: OrderEntity;
@@ -45,6 +46,11 @@ export function CheckoutGuestSuccess({
 
   return (
     <div className="flex flex-col gap-6">
+      {/* A guest never reaches `/orders/[id]/confirmation`, so this panel is
+          their step 3 — and the stepper it replaces was left showing step 2
+          right up to the moment the order existed (TASK-407). */}
+      <CheckoutStepIndicator current={3} />
+
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- matches the grandfathered checkout card radius this panel replaces on screen */}
       <section className="flex flex-col gap-3 rounded-[18px] border border-border bg-card p-6 shadow-card">
         <div className="flex items-center gap-3">

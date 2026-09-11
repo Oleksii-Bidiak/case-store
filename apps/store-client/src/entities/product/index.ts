@@ -37,6 +37,10 @@ export {
   getProductControllerFindAllQueryOptions,
   useProductControllerFindBySlug,
   getProductControllerFindBySlugQueryKey,
+  // Query options for warming a sibling position into the cache before the
+  // shopper clicks it (TASK-409, the PDP variant strip) — same key the PDP's
+  // own hook reads, so the prefetch is a hit rather than a second request.
+  getProductControllerFindBySlugQueryOptions,
   useProductControllerGetCards,
   getProductControllerGetCardsQueryKey,
 } from "@/shared/api/generated/products/products";

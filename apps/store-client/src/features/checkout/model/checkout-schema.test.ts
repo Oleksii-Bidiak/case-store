@@ -1,4 +1,8 @@
-import { checkoutSchema, guestCheckoutSchema } from "./checkout-schema";
+import {
+  CHECKOUT_DEFAULT_VALUES,
+  checkoutSchema,
+  guestCheckoutSchema,
+} from "./checkout-schema";
 import { dict } from "@/shared/config";
 
 const validForm = {
@@ -70,6 +74,45 @@ describe("checkoutSchema (UA)", () => {
     expect(
       checkoutSchema.safeParse({ ...validForm, phone: "0501234567" }).success,
     ).toBe(true);
+  });
+
+  // TASK-407: the rule reads the NUMBER, not the mask around it. The old
+  // `/^\+?[\d\s()-]{10,20}$/` counted characters, so every case below passed.
+  describe("phone — validated on the normalised value, not the mask", () => {
+    it.each([
+      ["+380 50 123 4567", "the exact string PhoneInput renders"],
+      ["+38 (050) 123-45-67", "brackets and dashes"],
+      ["80501234567", "the old inter-city prefix"],
+      ["501234567", "the bare local part"],
+    ])("accepts %s (%s)", (phone) => {
+      expect(checkoutSchema.safeParse({ ...validForm, phone }).success).toBe(
+        true,
+      );
+    });
+
+    it.each([
+      ["+380 50 123", "a half-typed number — 11 mask characters, 8 digits"],
+      ["(((((((((((", "punctuation only"],
+      ["05012345678", "one digit too many"],
+      ["+1 234 567 8901", "a foreign number"],
+      ["", "empty — and it must say so in Ukrainian"],
+    ])("rejects %s (%s)", (phone) => {
+      const result = checkoutSchema.safeParse({ ...validForm, phone });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const issue = result.error.issues.find(
+          (i) => i.path.join(".") === "phone",
+        );
+        expect(issue?.message).toBe(dict.checkout.validation.phone);
+      }
+    });
+  });
+
+  // Without this key an untouched phone field reported zod's English "Required"
+  // — the one sentence on the screen a Ukrainian shopper could not read.
+  it("defaults the phone to an empty string so the message stays Ukrainian", () => {
+    expect(CHECKOUT_DEFAULT_VALUES.phone).toBe("");
   });
 
   it("rejects notes longer than 500 characters", () => {
