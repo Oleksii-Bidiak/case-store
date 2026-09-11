@@ -24,18 +24,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui";
-import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
+import { apiErrorMessage, apiErrorStatus, isStaffPassword } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
 const d = dict.users;
 
-/**
- * Mirrors `IsStaffPassword()` on the API — same rule, stated once here.
- *
- * Staff only, and it stays strict: TASK-407 loosened the SHOPPER policy
- * (`IsCustomerPassword`, no uppercase requirement) and left this one alone.
- */
-const STRONG_PASSWORD = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface CreateUserDialogProps {
@@ -90,7 +83,7 @@ export function CreateUserDialog({
       setError(d.createEmailInvalid);
       return;
     }
-    if (!STRONG_PASSWORD.test(password)) {
+    if (!isStaffPassword(password)) {
       setError(d.createPasswordWeak);
       return;
     }

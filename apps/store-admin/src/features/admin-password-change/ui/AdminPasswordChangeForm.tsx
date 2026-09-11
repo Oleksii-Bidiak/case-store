@@ -4,18 +4,10 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useAuthControllerChangePassword } from "@/entities/session";
 import { Button, Input, Label } from "@/shared/ui";
-import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
+import { apiErrorMessage, apiErrorStatus, isStaffPassword } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
 const d = dict.profile;
-
-/**
- * Mirrors `IsStaffPassword()` on the API — same rule, stated once here.
- *
- * Staff only, and it stays strict: TASK-407 loosened the SHOPPER policy
- * (`IsCustomerPassword`, no uppercase requirement) and left this one alone.
- */
-const STRONG_PASSWORD = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
 /**
  * Change your OWN password from the admin panel (TASK-333 / plan 164 §В1.3).
@@ -45,7 +37,7 @@ export function AdminPasswordChangeForm() {
       setError(d.passwordRequired);
       return;
     }
-    if (!STRONG_PASSWORD.test(newPassword)) {
+    if (!isStaffPassword(newPassword)) {
       setError(d.passwordWeak);
       return;
     }
