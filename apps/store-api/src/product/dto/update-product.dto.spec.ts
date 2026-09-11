@@ -6,7 +6,7 @@ import { UpdateProductDto } from './update-product.dto';
 /**
  * TASK-397. Saving any grouped product answered 400: the admin form reads
  * groupId / categoryId / brandId off the product it fetched and posts them back
- * unchanged, and the DTO pinned `@IsUUID(4)`.
+ * unchanged, and the DTO pinned the UUID-v4 mode.
  *
  * Dropping the pin is not enough on its own — class-validator's default `'all'`
  * still requires a version nibble in `[1-8]` and a variant nibble in `[89ab]`

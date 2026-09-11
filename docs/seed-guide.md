@@ -55,7 +55,8 @@ Workspace-direct equivalents (run from anywhere) use the `-w` flag, e.g.
 
 ## 3. Idempotency
 
-Re-running `npm run db:seed` on a populated DB is **safe** — it will not create duplicates:
+Re-running `npm run db:seed` on a populated DB is **safe** — it will not create duplicates, with
+one one-off exception for DBs seeded **before TASK-397** (see the warning at the end of §3):
 
 - **Users, categories, products, addresses** are written with `upsert` keyed on a stable
   natural key (`email`, `slug`, and the fixed `seed-address-1` id for the demo address).
@@ -63,7 +64,9 @@ Re-running `npm run db:seed` on a populated DB is **safe** — it will not creat
   seeded reviewer accounts (`deleteMany` scoped to those `userId`s) and recreates them. Reviews
   written by real users are never touched — the delete is scoped by author, not by product.
 - **Product groups** upsert on a deterministic UUID derived from the entry slug
-  (`deterministicUuid(slug)`), so groups stay stable across runs.
+  (`deterministicUuid(slug)`), so groups stay stable across runs of the same code. TASK-397
+  changed that derivation, so a slug now maps to a **different** id than it did before — see the
+  warning at the end of this section.
 - **Product group axes** and **product images** are deleted and recreated wholesale per entry on
   every run (`deleteMany` + `create`/`createMany`). This keeps them exactly in sync with the seed
   source even if you change axis names or image lists between runs.
@@ -94,6 +97,14 @@ with no images. Recovery is simply re-running `npm run db:seed`.
 >
 > Related: the seed never deletes rows it no longer owns, so positions dropped from the catalogue
 > stay in the DB as live, `isActive: true` orphans (see §9).
+
+> ⚠️ **The one-off case: a DB seeded before TASK-397.** That task made `deterministicUuid` emit a
+> real v4 (it used to leave the version and variant nibbles to the sha1 digest), so the same seed
+> key now maps to a **different** id — and every row keyed on it upserts **by id**: product groups,
+> orders, the demo address, banners, carousels, contact messages. Re-seeding an older DB therefore
+> writes a second copy of those rows beside the old ones instead of updating them. Reset it once
+> (§5); after that, re-seeding is safe again. A DB first seeded on TASK-397 code or later is not
+> affected.
 
 ---
 
