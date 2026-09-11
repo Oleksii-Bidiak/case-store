@@ -50,11 +50,43 @@ function SelectTrigger({
   );
 }
 
+/**
+ * SelectContent — the popup listbox surface.
+ *
+ * `position` defaults to `"popper"` (TASK-459), deliberately overriding what
+ * Radix and the upstream shadcn/ui template both default to, `"item-aligned"`.
+ * Item-aligned positioning anchors the list so the selected option covers the
+ * trigger — and Radix then *grows* that surface while you scroll it:
+ * `SelectViewport`'s scroll handler adds the scrolled distance to the wrapper's
+ * height on every scroll event, clamps it to the window and never shrinks it
+ * back. Only `SelectItemAlignedPosition` arms that behaviour (via
+ * `shouldExpandOnScrollRef`). It is the reported defect: the list opens at a
+ * sane size and then swells to nearly full height after one flick of the wheel,
+ * which no native `<select>` does.
+ *
+ * Popper positioning uses none of that machinery. The surface is anchored to
+ * the trigger's edge, capped at `--radix-select-content-available-height` — a
+ * variable Radix publishes *only* in popper mode, so the `max-h-*` below was
+ * inert until this change — and scrolls internally at a fixed size.
+ *
+ * `sideOffset` replaces the template's `data-[side=*]:translate-*` trick for the
+ * 4px gap: a transform shifts the box *after* collision detection has measured
+ * it, so the gap it fakes is invisible to the collision logic and silently eats
+ * into `collisionPadding`. A real offset is measured.
+ *
+ * `align` is intentionally NOT defaulted here. Radix's popper default,
+ * `"start"`, lines the list up with the trigger's leading edge the way a native
+ * dropdown does; the call sites that want `align="end"` pass it themselves.
+ *
+ * The storefront and the admin panel keep identical copies of this file on
+ * purpose — change them together.
+ */
 function SelectContent({
   className,
   children,
-  position = "item-aligned",
-  align = "center",
+  position = "popper",
+  sideOffset = 4,
+  collisionPadding = 8,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
@@ -63,18 +95,25 @@ function SelectContent({
         data-slot="select-content"
         className={cn(
           "relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border bg-popover text-popover-foreground shadow-md data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
-          position === "popper" &&
-            "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
           className,
         )}
         position={position}
-        align={align}
+        // Popper-only props. Radix's item-aligned branch spreads whatever it
+        // does not recognise straight onto a DOM node, where these would show up
+        // as unknown attributes.
+        {...(position === "popper" ? { sideOffset, collisionPadding } : {})}
         {...props}
       >
         <SelectScrollUpButton />
         <SelectPrimitive.Viewport
           className={cn(
             "p-1",
+            // `h-[var(--radix-select-trigger-height)]` comes from the upstream
+            // template and is inert: Radix puts `flex: 1` (so `flex-basis: 0%`)
+            // inline on this viewport inside a flex-column content, and a flex
+            // item's main size comes from its basis, not its height. Kept only
+            // to stay diffable against upstream — do not read it as a height
+            // cap, the cap is `max-h-*` on the content above.
             position === "popper" &&
               "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)] scroll-my-1",
           )}
