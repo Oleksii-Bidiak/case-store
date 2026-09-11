@@ -1,5 +1,4 @@
 import { defineConfig, devices } from "@playwright/test";
-import { ADMIN_STORAGE_STATE } from "./e2e/fixtures/admin-session";
 
 /**
  * Playwright E2E config (TASK-105-D). Scaffolds the full-stack smoke suite:
@@ -10,8 +9,9 @@ import { ADMIN_STORAGE_STATE } from "./e2e/fixtures/admin-session";
  * Two surfaces, two projects, because they have different origins and different
  * session requirements (TASK-405):
  *   - `chromium` — the storefront on 3000, anonymous by default.
- *   - `admin`    — the admin panel on 3002, starting from a signed-in
- *                  `storageState` produced by the `admin-setup` project.
+ *   - `admin`    — the admin panel on 3002, each spec signing in for itself via
+ *                  `loginAsAdmin` (see e2e/fixtures/admin-session.ts for why a
+ *                  shared storageState cannot work here).
  *
  * Local run:
  *   1. Start Postgres (docker compose) and set DATABASE_URL.
@@ -52,27 +52,18 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
       // Storefront project: everything except the admin suite, which needs the
       // other origin and a staff session.
-      testIgnore: ["admin.setup.ts", "admin-*.spec.ts"],
+      testIgnore: ["admin-*.spec.ts"],
     },
     {
-      // Logs the seeded staff account in once and saves the cookies. A project
-      // rather than a per-spec `beforeAll` so the login runs exactly once for
-      // the whole admin suite, however many workers it spreads across.
-      name: "admin-setup",
-      testMatch: "admin.setup.ts",
-      use: {
-        ...devices["Desktop Chrome"],
-        baseURL: `http://localhost:${ADMIN_PORT}`,
-      },
-    },
-    {
+      // No `dependencies` / `storageState` setup project: the refresh cookie
+      // this API issues is single-use (rotation + reuse detection), so a saved
+      // session file is spent by the first context that opens it. Each admin
+      // spec signs in for itself — `loginAsAdmin`, and the long comment on it.
       name: "admin",
       testMatch: "admin-*.spec.ts",
-      dependencies: ["admin-setup"],
       use: {
         ...devices["Desktop Chrome"],
         baseURL: `http://localhost:${ADMIN_PORT}`,
-        storageState: ADMIN_STORAGE_STATE,
       },
     },
   ],

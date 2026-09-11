@@ -3,6 +3,7 @@ import {
   E2E_ORDER_PENDING_ID,
   E2E_ORDER_PROCESSING_ID,
 } from "./fixtures/seed-e2e";
+import { loginAsAdmin } from "./fixtures/admin-session";
 
 /**
  * TASK-405 — `/orders?status=…` opened directly (a fresh tab, a pasted link) and
@@ -43,6 +44,12 @@ async function expectOnlyRow(page: Page, visible: string, hidden: string) {
 }
 
 test.describe("admin order filters (TASK-405)", () => {
+  // Own session per test: the saved-state shortcut does not survive this
+  // API's refresh-token rotation. See fixtures/admin-session.ts.
+  test.beforeEach(async ({ page }) => {
+    await loginAsAdmin(page);
+  });
+
   test("a deep-linked ?status=PROCESSING still responds to the tabs", async ({
     page,
   }) => {
