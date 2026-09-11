@@ -62,6 +62,16 @@ Re-running `npm run db:seed` on a populated DB is **safe** — it will not creat
 - **Reviews** are replaced wholesale, not upserted: the seed deletes every review owned by its 23
   seeded reviewer accounts (`deleteMany` scoped to those `userId`s) and recreates them. Reviews
   written by real users are never touched — the delete is scoped by author, not by product.
+  The five **verified-purchase** reviews (TASK-409) are the exception: they are written by demo
+  CUSTOMER accounts, so only their exact `(user, product)` pairs are replaced — anything else those
+  accounts wrote by hand survives. They exist because the «Підтверджена покупка» badge is computed
+  («does this author have an order containing this product?»), and a review from a `reviewerN@`
+  account can never satisfy it. The pairs are derived from the delivered orders in
+  `prisma/seed/data/orders.data.ts`, so they follow automatically when those orders change. Open
+  any of these five to see the badge: `apple-iphone-15-pro-256gb-blue`,
+  `wireless-charger-belkin-magsafe-black`, `wireless-charger-belkin-magsafe-white`,
+  `case-silicone-magsafe-iphone-15-black`, `car-charger-baseus-30w-black`. The seed prints their
+  SKUs on every run.
 - **Product groups** upsert on a deterministic UUID derived from the entry slug
   (`deterministicUuid(slug)`), so groups stay stable across runs.
 - **Product group axes** and **product images** are deleted and recreated wholesale per entry on
@@ -320,6 +330,7 @@ A clean seed produces:
 | Carousel items         | 4     | Hand-picked products on the MANUAL rail; replaced wholesale on re-run                                                                        |
 | Reviews (approved)     | 2 203 | 5–20 per position, pre-approved (`isActive = true`), deterministic, ratings skewed positive                                                  |
 | Reviews (pending)      | 6     | `isActive = false` with UA comments, on six **named** positions — the admin moderation queue is always exactly these six                     |
+| Reviews (verified)     | 5     | Written by the customers who placed the **delivered** orders, so «Підтверджена покупка» is visible — see below (TASK-409)                    |
 | Discounts              | 5     | WELCOME10, SUMMER500 (minSpend), VIP20, EXPIRED15 (past), OLDPROMO (inactive)                                                                |
 | Orders                 | 12    | Cover **every** OrderStatus + PaymentStatus; deterministic ids                                                                               |
 | Order items            | 17    | Price captured at purchase                                                                                                                   |

@@ -903,11 +903,23 @@ export const dict = {
     idle: "Додати до кошика",
     buy: "Купити",
     adding: "Додаємо…",
+    // Success is a TOAST, never a button label (TASK-409): a mutation's
+    // `isSuccess` never clears, so a button that wears it freezes on «Додано ✓».
     added: "Додано ✓",
     error: "Не вдалося додати товар. Спробуйте ще раз.",
     // Mirrors dict.product.outOfStock; kept in the feature's own slice so the
     // compact card button can surface the state via its label.
     outOfStock: "Немає в наявності",
+    // PDP buy box, once the position is already in the cart (TASK-409). Mirrors
+    // dict.productCard.inCart — the card and the PDP say the same thing, but the
+    // card's slice must stay usable on its own.
+    inCart: "В кошику",
+    inCartAria: (name: string) => `«${name}» вже в кошику — відкрити кошик`,
+    // In the cart, but the position sold out meanwhile: the shopper is warned
+    // here rather than at checkout, and the button opens the cart to remove it.
+    soldOut: "Товар закінчився",
+    soldOutAria: (name: string) =>
+      `«${name}» у кошику, але закінчився — відкрити кошик`,
   },
 
   cart: {

@@ -1,9 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import type {
-  ProductGroupEntity,
-  ProductSiblingEntity,
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  getProductControllerFindBySlugQueryOptions,
+  type ProductGroupEntity,
+  type ProductSiblingEntity,
 } from "@/entities/product";
 import { colorSwatch } from "@/shared/lib";
 
@@ -58,17 +61,29 @@ function resolveSibling(
 
 /**
  * ProductSiblingNavigator — renders one selector strip per attribute axis of the
- * product group. Each value button navigates to the sibling position whose
- * attributes match the current one on every other axis (ktc.ua/Rozetka pattern:
- * switching a value changes the page/URL rather than mutating in place). The
- * current value is marked active; values with no resolvable sibling are disabled.
+ * product group. Each value leads to the sibling position whose attributes match
+ * the current one on every other axis (ktc.ua/Rozetka pattern: switching a value
+ * changes the page/URL rather than mutating in place). The current value is
+ * marked active; values with no resolvable sibling are disabled.
+ *
+ * Each reachable value is a real `<Link>`, not a `router.push()` button
+ * (TASK-409). That is what fixes «варіанти вантажаться заново»: Next prefetches
+ * the sibling ROUTE like any link in view, and hover/focus warms the sibling's
+ * PRODUCT QUERY under the very key the PDP reads — so by the time the click
+ * lands the detail data is usually already cached and the page swaps instead of
+ * falling back to a skeleton. It is also ordinary web navigation: middle-click,
+ * ⌘-click and «copy link address» work, which a button never allowed.
+ *
+ * The current value stays a `<button aria-pressed>` (there is nowhere to go) and
+ * an unresolvable value stays a DISABLED `<button>` — a link cannot be disabled,
+ * and `aria-disabled` still navigates on Enter.
  */
 export function ProductSiblingNavigator({
   group,
   currentAttributes,
   currentSlug,
 }: ProductSiblingNavigatorProps) {
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const axes = [...group.axes]
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((axis) => axis.name);
@@ -76,6 +91,17 @@ export function ProductSiblingNavigator({
   if (axes.length === 0) {
     return null;
   }
+
+  /**
+   * Warm the sibling's detail query on hover/focus/touch. `prefetchQuery` is a
+   * no-op while the key already holds fresh data, so repeated hovers cost
+   * nothing beyond the first.
+   */
+  const prefetchSibling = (slug: string) => {
+    void queryClient.prefetchQuery(
+      getProductControllerFindBySlugQueryOptions(slug),
+    );
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -121,36 +147,47 @@ export function ProductSiblingNavigator({
                       value,
                     );
                 const unavailable = !isSelected && sibling === null;
-                const navigate = () => {
-                  if (sibling && sibling.slug !== currentSlug) {
-                    router.push(`/products/${sibling.slug}`);
-                  }
-                };
+                // A sibling resolving to the page we are already on is not a
+                // destination — it renders as the current value instead.
+                const target =
+                  sibling && sibling.slug !== currentSlug ? sibling.slug : null;
 
-                if (isColorAxis) {
-                  // Round swatch (TASK-215): real colour from the shared map;
-                  // the colour TEXT stays the accessible name + tooltip. Light
-                  // colours keep a visible border; the selected one gets a
-                  // primary ring per the design tokens.
-                  const swatch = colorSwatch(value);
+                // One appearance, two possible elements. `swatch` is null on a
+                // text axis; on the colour axis (TASK-215) the round face
+                // carries the real colour and the colour TEXT stays the
+                // accessible name + tooltip.
+                const swatch = isColorAxis ? colorSwatch(value) : null;
+                const className = swatch
+                  ? `block size-9 rounded-full border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-40 ${
+                      swatch.isLight ? "border-border" : "border-black/10"
+                    } ${
+                      isSelected
+                        ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
+                        : "hover:scale-110"
+                    }`
+                  : `rounded-lg border-2 px-4 py-2 text-sm font-medium capitalize no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${
+                      isSelected
+                        ? "border-primary bg-primary/10 text-foreground"
+                        : "border-border text-foreground hover:border-primary"
+                    }`;
+                const style = swatch ? { background: swatch.css } : undefined;
+                const content: ReactNode = swatch ? null : value;
+
+                if (target) {
                   return (
-                    <button
+                    <Link
                       key={value}
-                      type="button"
-                      aria-pressed={isSelected}
-                      aria-label={value}
-                      title={value}
-                      disabled={unavailable}
-                      onClick={navigate}
-                      style={{ background: swatch.css }}
-                      className={`size-9 rounded-full border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-40 ${
-                        swatch.isLight ? "border-border" : "border-black/10"
-                      } ${
-                        isSelected
-                          ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
-                          : "hover:scale-110"
-                      }`}
-                    />
+                      href={`/products/${target}`}
+                      aria-label={swatch ? value : undefined}
+                      title={swatch ? value : undefined}
+                      onMouseEnter={() => prefetchSibling(target)}
+                      onFocus={() => prefetchSibling(target)}
+                      onTouchStart={() => prefetchSibling(target)}
+                      style={style}
+                      className={className}
+                    >
+                      {content}
+                    </Link>
                   );
                 }
 
@@ -159,15 +196,13 @@ export function ProductSiblingNavigator({
                     key={value}
                     type="button"
                     aria-pressed={isSelected}
+                    aria-label={swatch ? value : undefined}
+                    title={swatch ? value : undefined}
                     disabled={unavailable}
-                    onClick={navigate}
-                    className={`rounded-lg border-2 px-4 py-2 text-sm font-medium capitalize focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${
-                      isSelected
-                        ? "border-primary bg-primary/10 text-foreground"
-                        : "border-border text-foreground hover:border-primary"
-                    }`}
+                    style={style}
+                    className={className}
                   >
-                    {value}
+                    {content}
                   </button>
                 );
               })}

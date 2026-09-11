@@ -39,9 +39,11 @@ function centsToString(cents: number): string {
 interface CartItemRowProps {
   item: CartItemEntity;
   /**
-   * Render the add-on-services block for this line (TASK-174). The cart page
-   * passes `true`; the compact mini-cart sheet leaves it off — the offers need
-   * room to read as an upsell, not a cramped checkbox list.
+   * Render the add-on-services block for this line (TASK-174). Both hosts — the
+   * cart page and the mini-cart sheet — pass `true` since TASK-409: keeping the
+   * sheet compact hid the offers from every shopper who checked out straight
+   * from it, which is most of them. The flag stays a prop so a future host that
+   * genuinely has no room can still opt out; the default is off.
    */
   showAddons?: boolean;
   /**

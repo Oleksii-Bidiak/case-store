@@ -71,24 +71,29 @@ export function AddToCartButton({
     });
   };
 
+  // Deliberately NO `isSuccess` label (TASK-409). `isSuccess` is a property of
+  // THIS mutation instance and never clears, so the button froze on «Додано ✓»
+  // for the rest of the page's life: the shopper could not tell whether a second
+  // click had registered, and after removing the line from the cart the button
+  // still claimed the product was in it. Success is announced by the toast (and
+  // by the cart badge); the persistent «in the cart» state belongs to whoever
+  // reads the cart — `ProductCardActions` and the PDP buy box both derive it
+  // from `useGetCart`, which stays true after a reload and false after a removal.
   const label = addToCart.isPending
     ? dict.addToCart.adding
-    : addToCart.isSuccess
-      ? dict.addToCart.added
-      : dict.addToCart.idle;
+    : dict.addToCart.idle;
 
   const isDisabled = disabled || outOfStock || addToCart.isPending;
 
   if (compact) {
     // Card "Купити" button (mockup): a filled primary CTA. Out-of-stock takes
     // precedence so the card communicates the state inline via the label.
+    // No `isSuccess` branch here either — see the note on `label` above.
     const compactLabel = outOfStock
       ? dict.addToCart.outOfStock
       : addToCart.isPending
         ? dict.addToCart.adding
-        : addToCart.isSuccess
-          ? dict.addToCart.added
-          : dict.addToCart.buy;
+        : dict.addToCart.buy;
 
     return (
       <Button

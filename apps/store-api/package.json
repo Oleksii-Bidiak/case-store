@@ -188,6 +188,10 @@
       "ts"
     ],
     "rootDir": "src",
+    "roots": [
+      "<rootDir>",
+      "<rootDir>/../prisma"
+    ],
     "testRegex": ".*\\.spec\\.ts$",
     "transformIgnorePatterns": [
       "/node_modules/(?!(?:sanitize-html|htmlparser2|domhandler|domutils|domelementtype|dom-serializer|entities)/)"

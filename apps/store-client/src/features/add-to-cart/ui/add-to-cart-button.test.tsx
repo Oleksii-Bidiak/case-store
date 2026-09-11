@@ -27,6 +27,41 @@ describe("AddToCartButton — out-of-stock guard (TASK-144)", () => {
   });
 });
 
+// TASK-409 — the button must not wear the mutation's `isSuccess`: it never
+// clears, so one click froze the label on «Додано ✓» for the rest of the page's
+// life, and kept claiming it after the line was removed from the cart. Success
+// is a toast; the persistent "already in the cart" state belongs to whoever
+// reads the cart (ProductCardActions, the PDP buy box).
+describe("AddToCartButton — no sticky success label (TASK-409)", () => {
+  it("stays on «Додати до кошика» after a successful add", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AddToCartButton productId="p1" />);
+
+    await user.click(screen.getByRole("button", { name: dict.addToCart.idle }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: dict.addToCart.idle }),
+      ).toBeEnabled(),
+    );
+    expect(screen.queryByText(dict.addToCart.added)).toBeNull();
+  });
+
+  it("stays on «Купити» after a successful compact add", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AddToCartButton productId="p1" compact />);
+
+    await user.click(screen.getByRole("button", { name: dict.addToCart.buy }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: dict.addToCart.buy }),
+      ).toBeEnabled(),
+    );
+    expect(screen.queryByText(dict.addToCart.added)).toBeNull();
+  });
+});
+
 // TASK-261 — add_to_cart analytics event. Relies on the default MSW handler for
 // POST /api/cart/items (201) so the mutation's onSuccess runs.
 describe("AddToCartButton — add_to_cart analytics (TASK-261)", () => {

@@ -116,7 +116,16 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
                 // `onNavigate` closes the sheet when a line's product link is
                 // clicked — otherwise the navigation happens behind the open
                 // overlay and looks like a no-op (TASK-204).
-                <CartItemRow key={item.id} item={item} onNavigate={close} />
+                // `showAddons` (TASK-409): the add-on services used to be
+                // suppressed here to keep the mini-cart compact, which meant a
+                // shopper who never opened the full cart page never saw them —
+                // and never bought one. The offers are now in both places.
+                <CartItemRow
+                  key={item.id}
+                  item={item}
+                  showAddons
+                  onNavigate={close}
+                />
               ))}
             </ul>
 

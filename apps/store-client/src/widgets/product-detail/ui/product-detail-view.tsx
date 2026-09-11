@@ -1,20 +1,23 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { BarChart3 } from "lucide-react";
+import { AlertTriangle, BarChart3, Check } from "lucide-react";
 import {
   ProductImageGallery,
   ProductStockIndicator,
   useProductControllerFindBySlug,
 } from "@/entities/product";
+import { useGetCart } from "@/entities/cart";
+import { useAuth } from "@/entities/session";
 import { pushRecentlyViewed } from "@/widgets/recently-viewed";
+import { CartSheet } from "@/widgets/cart";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { formatMoney, trackEvent } from "@/shared/lib";
 import { dict } from "@/shared/config";
-import { RatingStars } from "@/shared/ui";
+import { Button, RatingStars } from "@/shared/ui";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
 import { ProductSiblingNavigator } from "./product-sibling-navigator";
 import { ProductTrustBadges } from "./product-trust-badges";
@@ -43,6 +46,28 @@ export function ProductDetailView({ slug }: { slug: string }) {
     () => [...(data?.images ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
     [data],
   );
+
+  // Is THIS position already in the cart? Read from the same cached cart query
+  // the header badge and the product cards observe (guest cart included, via the
+  // cartToken cookie), held until the auth bootstrap settles so it never
+  // reflects a transient empty guest cart minted during refresh (TASK-118).
+  // Extra observers of one query key are free. This — not the add mutation's
+  // `isSuccess` — is what the buy box renders, so the state survives a reload
+  // and clears when the line is removed (TASK-409).
+  const { isInitializing } = useAuth();
+  const { data: cart } = useGetCart({ query: { enabled: !isInitializing } });
+  const productId = data?.data.id;
+  const inCart =
+    cart?.data?.items?.some((item) => item.productId === productId) ?? false;
+
+  // The mini-cart sheet is mounted lazily on first open — the PDP should not
+  // carry an idle sheet for a shopper who never opens one.
+  const [sheetMounted, setSheetMounted] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const openCartSheet = () => {
+    setSheetMounted(true);
+    setSheetOpen(true);
+  };
 
   // Record this product in the guest "recently viewed" history (localStorage),
   // so the homepage "Ви переглядали" rail has something to show. Keyed to the
@@ -217,10 +242,42 @@ export function ProductDetailView({ slug }: { slug: string }) {
 
             <div className="mb-2.5 flex items-stretch gap-2.5">
               <div className="flex-1">
-                <AddToCartButton
-                  productId={product.id}
-                  disabled={!product.inStock}
-                />
+                {inCart ? (
+                  // Already in the cart. Two readings of that fact: the position
+                  // is waiting (success), or it sold out while it waited
+                  // (destructive — the shopper learns it here, not at checkout).
+                  // Either way the button opens the mini-cart, the one place the
+                  // line can be changed or dropped.
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={openCartSheet}
+                    aria-label={
+                      product.inStock
+                        ? dict.addToCart.inCartAria(product.name)
+                        : dict.addToCart.soldOutAria(product.name)
+                    }
+                    className={`h-12 w-full font-semibold transition-colors ${
+                      product.inStock
+                        ? "border-success/40 text-success hover:bg-success/10 hover:text-success"
+                        : "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    }`}
+                  >
+                    {product.inStock ? (
+                      <Check aria-hidden="true" className="size-4" />
+                    ) : (
+                      <AlertTriangle aria-hidden="true" className="size-4" />
+                    )}
+                    {product.inStock
+                      ? dict.addToCart.inCart
+                      : dict.addToCart.soldOut}
+                  </Button>
+                ) : (
+                  <AddToCartButton
+                    productId={product.id}
+                    disabled={!product.inStock}
+                  />
+                )}
               </div>
               {/* Compare — parked feature (TASK-085); stubbed as a toast. */}
               <button
@@ -268,6 +325,10 @@ export function ProductDetailView({ slug }: { slug: string }) {
         price={product.price}
         disabled={!product.inStock}
       />
+
+      {sheetMounted && (
+        <CartSheet open={sheetOpen} onOpenChange={setSheetOpen} />
+      )}
     </article>
   );
 }
