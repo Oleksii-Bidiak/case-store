@@ -1,6 +1,8 @@
-import { Logger, type OnModuleDestroy } from '@nestjs/common';
+import { type OnModuleDestroy } from '@nestjs/common';
 import type { ThrottlerStorage } from '@nestjs/throttler';
 import type Redis from 'ioredis';
+import type { ThrottlerRedisHealth } from './throttler-redis-health';
+import { ThrottlerStorageUnavailableError } from './throttler.errors';
 
 /**
  * Return shape of {@link ThrottlerStorage.increment}. `@nestjs/throttler` does
@@ -24,14 +26,22 @@ interface ThrottlerStorageRecord {
  * a hit counter with a TTL plus a separate block key. It runs as a single Lua
  * script so the read-modify-write is atomic under concurrency.
  *
- * Degradation: if Redis is unreachable the storage fails OPEN (allows the
- * request) and logs a warning, prioritising availability — the same philosophy
- * as the Redis cache layer. When `REDIS_HOST` is unset the module never
- * constructs this class and the in-memory store is used instead.
+ * ## Degradation (TASK-401)
+ *
+ * This class used to swallow every Redis error and return "no hits so far",
+ * failing OPEN for the entire API. Nobody would choose that for `/auth/login`:
+ * on the demo stand it meant unlimited password attempts and unlimited contact
+ * spam, silently, while every dashboard stayed green. A failed counter now
+ * RAISES {@link ThrottlerStorageUnavailableError} and the decision moves one
+ * layer up, to {@link ClientIpThrottlerGuard} — the only place that knows which
+ * route is being served, so public writes can be refused while reads are still
+ * served. Either way {@link ThrottlerRedisHealth} records the outage, so
+ * `/health` and the logs stop pretending.
+ *
+ * When `REDIS_HOST` is unset the module never constructs this class and the
+ * in-memory store is used instead.
  */
 export class RedisThrottlerStorage implements ThrottlerStorage, OnModuleDestroy {
-  private readonly logger = new Logger(RedisThrottlerStorage.name);
-
   // KEYS[1]=hit counter, KEYS[2]=block flag.
   // ARGV[1]=ttl(ms), ARGV[2]=limit, ARGV[3]=blockDuration(ms).
   // Returns { totalHits, hitPttl(ms), isBlocked(0|1), blockPttl(ms) }.
@@ -71,7 +81,10 @@ export class RedisThrottlerStorage implements ThrottlerStorage, OnModuleDestroy 
     return {hits, hitPttl, isBlocked, blockExpire}
   `;
 
-  constructor(private readonly redis: Redis) {}
+  constructor(
+    private readonly redis: Redis,
+    private readonly health: ThrottlerRedisHealth,
+  ) {}
 
   /**
    * Close the connection when the app shuts down (TASK-296).
@@ -113,6 +126,8 @@ export class RedisThrottlerStorage implements ThrottlerStorage, OnModuleDestroy 
       )) as [number, number, number, number];
 
       const [totalHits, hitPttl, isBlocked, blockPttl] = reply;
+      this.health.markReachable();
+
       return {
         totalHits,
         timeToExpire: msToSeconds(hitPttl),
@@ -120,18 +135,14 @@ export class RedisThrottlerStorage implements ThrottlerStorage, OnModuleDestroy 
         timeToBlockExpire: msToSeconds(blockPttl),
       };
     } catch (error) {
-      // Fail open — never 500 the whole API because the rate-limit store blinked.
-      this.logger.warn(
-        `Redis throttler unavailable, allowing request: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return {
-        totalHits: 0,
-        timeToExpire: msToSeconds(ttl),
-        isBlocked: false,
-        timeToBlockExpire: 0,
-      };
+      const reason = error instanceof Error ? error.message : String(error);
+
+      // Records the outage and logs it ONCE (not once per request — an outage
+      // means every request lands here). The guard turns this into a 503 or an
+      // allow, per route; see ThrottlerStorageUnavailableError.
+      this.health.markUnreachable(reason);
+
+      throw new ThrottlerStorageUnavailableError(reason);
     }
   }
 }

@@ -1,6 +1,8 @@
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
@@ -36,6 +38,15 @@ describe('Security hardening (e2e)', () => {
   // afterAll so this suite stays fully isolated.
   const envSnapshot: Record<string, string | undefined> = {};
   const MUTATED_ENV_KEYS = ['REDIS_HOST', 'CSRF_SECRET'] as const;
+
+  // A real file under UPLOAD_DEST, created in beforeAll and removed in afterAll.
+  // `/uploads` is served with `fallthrough: true`, so a request for a file that
+  // does not exist never reaches `setHeaders` — it 404s through the Nest router
+  // instead, and a header assertion on that response would prove nothing.
+  const UPLOAD_FIXTURE_NAME = 'corp-e2e-fixture.txt';
+  let uploadDir = '';
+  let uploadFixturePath = '';
+  let uploadDirWasCreated = false;
 
   const authRepositoryMock = {
     findByEmail: jest.fn().mockResolvedValue(null), // login → 401
@@ -130,10 +141,27 @@ describe('Security hardening (e2e)', () => {
     app.setGlobalPrefix('api', { exclude: ['health'] });
 
     await app.init();
+
+    // Resolve UPLOAD_DEST exactly the way app.module.ts does, from the booted
+    // app's own ConfigService, so the fixture lands wherever this environment
+    // actually serves `/uploads` from.
+    uploadDir = resolve(app.get(ConfigService).get<string>('UPLOAD_DEST', './uploads'));
+    uploadFixturePath = join(uploadDir, UPLOAD_FIXTURE_NAME);
+    uploadDirWasCreated = !existsSync(uploadDir);
+    mkdirSync(uploadDir, { recursive: true });
+    writeFileSync(uploadFixturePath, 'corp-e2e-fixture');
   });
 
   afterAll(async () => {
     await app.close();
+
+    // Remove only what this suite created: the fixture always, the directory
+    // itself only when it did not exist beforehand (a dev checkout keeps real
+    // uploaded images there).
+    rmSync(uploadFixturePath, { force: true });
+    if (uploadDirWasCreated) {
+      rmSync(uploadDir, { recursive: true, force: true });
+    }
 
     // Restore the env keys this suite mutated so later suites see the original
     // environment (and pick their own throttler storage) deterministically.
@@ -153,6 +181,31 @@ describe('Security hardening (e2e)', () => {
       const res = await request(app.getHttpServer()).get('/api/csrf-token');
       expect(res.headers['content-security-policy']).toBeDefined();
       expect(res.headers['x-frame-options']).toBeDefined();
+    });
+
+    // TASK-398. Helmet 8 sends `Cross-Origin-Resource-Policy: same-origin` on
+    // everything, which blanked every image in the admin panel — it uses plain
+    // `<img>` tags against the API host, a different origin. The storefront hid
+    // the bug because `next/image` proxies uploads through its own optimizer, so
+    // TASK-365 concluded a plain `<img>` worked too; it was never opened in a
+    // browser. These two cases pin the header on both sides of the line.
+    it('serves /uploads with Cross-Origin-Resource-Policy: cross-origin', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/uploads/${UPLOAD_FIXTURE_NAME}`)
+        .expect(200);
+
+      expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
+      // The containment headers on user-uploaded content must survive the opening.
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(res.headers['content-security-policy']).toContain('sandbox');
+    });
+
+    it('keeps Cross-Origin-Resource-Policy: same-origin on API responses', async () => {
+      const health = await request(app.getHttpServer()).get('/health');
+      expect(health.headers['cross-origin-resource-policy']).toBe('same-origin');
+
+      const api = await request(app.getHttpServer()).get('/api/csrf-token');
+      expect(api.headers['cross-origin-resource-policy']).toBe('same-origin');
     });
   });
 

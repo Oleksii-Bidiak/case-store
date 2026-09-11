@@ -14,6 +14,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
+import { FailClosedThrottle } from '../throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -116,6 +117,8 @@ export class AuthController {
    */
   @Post('register')
   @Throttle({ default: { limit: 5, ttl: 60000 } })
+  // Account creation with no working limiter is a bulk-signup faucet (TASK-401).
+  @FailClosedThrottle()
   @ApiOperation({
     summary: 'Register a new user (merges guest cart if cartToken cookie present)',
   })
@@ -156,6 +159,11 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
+  // The one route where "the limiter is down" and "there is no brute-force
+  // protection" are the same sentence. 503 beats unlimited password guessing;
+  // the per-account lockout in AuthService is a second line, not a substitute
+  // (it cannot see a spray across many accounts). TASK-401.
+  @FailClosedThrottle()
   @ApiOperation({
     summary: 'Authenticate user (merges guest cart if cartToken cookie present)',
   })
@@ -196,6 +204,9 @@ export class AuthController {
   @Post('password-reset/request')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
+  // Uncapped, this mails an arbitrary address on demand — an account-enumeration
+  // oracle by timing and a way to have us spam a stranger's inbox (TASK-401).
+  @FailClosedThrottle()
   @ApiOperation({ summary: 'Request a password-reset link (existence-hiding, always 200)' })
   @ApiResponse({
     status: 200,

@@ -49,7 +49,12 @@ import { PublishingModule } from './publishing';
 import { RedisCacheModule } from './cache';
 import { CsrfModule } from './csrf';
 import { NewsletterModule } from './newsletter';
-import { buildThrottlerOptions, ClientIpThrottlerGuard } from './throttler';
+import {
+  buildThrottlerOptions,
+  ClientIpThrottlerGuard,
+  ThrottlerHealthModule,
+  ThrottlerRedisHealth,
+} from './throttler';
 import { HttpExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
 import { validateEnv } from './config/env.validation';
@@ -72,11 +77,15 @@ import { buildPinoHttpOptions } from './config/pino.config';
     // Cron/interval scheduling — enables @Cron jobs (e.g. refresh-token cleanup).
     ScheduleModule.forRoot(),
 
+    // Health of the rate-limit store — shared by the factory below (which pings
+    // Redis at boot) and by AppService, which reports it on /health (TASK-401).
+    ThrottlerHealthModule,
+
     // Rate limiting — uses a shared Redis store when REDIS_HOST is set
     // (multi-instance correctness), otherwise an in-memory store.
     ThrottlerModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
+      imports: [ConfigModule, ThrottlerHealthModule],
+      inject: [ConfigService, ThrottlerRedisHealth],
       useFactory: buildThrottlerOptions,
     }),
 
@@ -98,6 +107,19 @@ import { buildPinoHttpOptions } from './config/pino.config';
     // HTML/JS, and the CSP + `sandbox` mean that even an SVG that somehow slipped
     // past sanitize-svg.ts cannot execute script, load anything remote, or act
     // with our origin's authority when opened directly.
+    //
+    // `Cross-Origin-Resource-Policy: cross-origin` is the one deliberate opening
+    // (TASK-398). Helmet 8 sends `same-origin` on every response, which is right
+    // for the API but blanks every image in the admin panel: the admin renders
+    // plain `<img>` tags pointing at the API host — a different origin — so the
+    // browser discards the bytes and only the alt text is left. The storefront
+    // was never affected because `next/image` re-serves uploads through its own
+    // optimizer, i.e. same-origin; that is why TASK-365 could believe a plain
+    // `<img>` worked as well. The override is scoped to `/uploads` alone — the
+    // global Helmet policy in `config/security.config.ts` stays `same-origin`.
+    // Embedding a public product image cross-origin is exactly what these files
+    // are for, and the CSP + `sandbox` above still deny the file itself any
+    // capability of its own.
     ServeStaticModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -114,6 +136,8 @@ import { buildPinoHttpOptions } from './config/pino.config';
                 'Content-Security-Policy',
                 "default-src 'none'; style-src 'unsafe-inline'; sandbox",
               );
+              // Overrides Helmet's global `same-origin` for uploaded media only.
+              res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
             },
           },
         },

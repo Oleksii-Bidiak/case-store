@@ -68,7 +68,11 @@ describe('AppController (e2e)', () => {
           expect(res.body.status).toBe('ok');
           expect(res.body).toHaveProperty('timestamp');
           expect(res.body).toHaveProperty('uptime');
-          expect(res.body.checks).toEqual({ database: 'up' });
+          // `rateLimitStore: 'disabled'` because setup-e2e forces REDIS_HOST='':
+          // the in-memory throttler store is a deliberate choice here, not an
+          // outage, so `degraded` stays false (TASK-401).
+          expect(res.body.checks).toEqual({ database: 'up', rateLimitStore: 'disabled' });
+          expect(res.body.degraded).toBe(false);
         });
     });
 
@@ -83,7 +87,7 @@ describe('AppController (e2e)', () => {
         .expect(503)
         .expect((res) => {
           expect(res.body.status).toBe('error');
-          expect(res.body.checks).toEqual({ database: 'down' });
+          expect(res.body.checks).toEqual({ database: 'down', rateLimitStore: 'disabled' });
         });
     });
   });
