@@ -26,8 +26,13 @@ test.describe("guest cart flow", () => {
       .click();
 
     // Wait for the add to land: the header badge switches to the cart total.
+    // Scoped to the header and matched exactly, because since TASK-409 the buy
+    // box renders its own «…вже в кошику — відкрити кошик» button once the cart
+    // query reports the line, and a loose regex resolves to both.
     await expect(
-      page.getByRole("button", { name: /відкрити кошик/i }),
+      page
+        .getByRole("banner")
+        .getByRole("button", { name: "Відкрити кошик", exact: true }),
     ).toContainText("499");
 
     await page.goto("/cart");
