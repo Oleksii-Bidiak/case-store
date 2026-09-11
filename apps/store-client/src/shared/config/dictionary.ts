@@ -997,6 +997,12 @@ export const dict = {
       selectedAria: (name: string) => `Послугу «${name}» додано`,
       deselectedAria: (name: string) => `Послугу «${name}» прибрано`,
     },
+    // Undo after removing a line (TASK-418). Removal is one click with no
+    // confirmation, so the way back is offered right after it — an 8-second
+    // toast that re-adds the line with the same add-on services.
+    removedToast: (name: string) => `«${name}» прибрано з кошика`,
+    undoRemove: "Повернути",
+    undoError: "Не вдалося повернути товар. Спробуйте ще раз.",
   },
 
   // Promo code / discount (TASK-079)
