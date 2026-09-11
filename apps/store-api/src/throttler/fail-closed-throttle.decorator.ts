@@ -16,9 +16,10 @@ export const FAIL_CLOSED_THROTTLE_KEY = 'throttler:failClosed';
  *
  * On unauthenticated — or cheaply authenticated — WRITE endpoints whose only
  * defence against brute force and spam IS the limiter: login, register,
- * password-reset request, contact, review submission, order creation. On those,
- * "the limiter is down" and "there is no limiter" are the same thing, and the
- * honest answer is to stop taking the request.
+ * password-reset request, contact, review submission, order creation,
+ * newsletter opt-in/opt-out. On those, "the limiter is down" and "there is no
+ * limiter" are the same thing, and the honest answer is to stop taking the
+ * request.
  *
  * ## Where it does NOT belong
  *

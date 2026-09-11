@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { IsString, IsNotEmpty, IsOptional, Length, MaxLength } from 'class-validator';
-import { IsInternationalPhone } from '../../common/validators';
+import { IsInternationalPhone, normalizePhone } from '../../common/validators';
 
 /**
  * Shipping/billing address shape embedded in {@link CreateOrderDto}.
@@ -85,9 +86,17 @@ export class AddressDto {
   @ApiProperty({
     description:
       'Contact phone — any country, 9 to 15 digits (E.164), typed with whatever separators ' +
-      'the buyer uses',
+      'the buyer uses. Stored normalised, as digits only.',
     example: '+380501234567',
   })
+  // TASK-466: normalise BEFORE validating — class-transformer runs first under
+  // the global `transform: true` pipe. The storefront checkout posts the masked
+  // `+380 50 111 2233` while an operator taking the same order by phone types
+  // `050 111 2233`, and both used to be stored verbatim, so one number lived in
+  // the column as several strings and the admin order search found neither
+  // reliably. The transform only touches a value that is already a number and
+  // nothing else, so the rules below still see exactly what they saw before.
+  @Transform(normalizePhone)
   @IsString()
   @IsNotEmpty()
   @MaxLength(30)
@@ -98,7 +107,7 @@ export class AddressDto {
   // decision as `guest-contact.dto.ts` (TASK-338, restated by the owner
   // 2026-09-10): strict Ukrainian validation lives on the storefront and contact
   // forms, while an operator entering a phone order may legitimately be given a
-  // roaming or foreign number.
+  // roaming or foreign number. TASK-466 changed normalisation, not this.
   @IsInternationalPhone()
   phone!: string;
 

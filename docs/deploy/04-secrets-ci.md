@@ -108,15 +108,16 @@ GitHub → репозиторій → **Settings → Environments → `staging`*
 
 **Variables** (публічні, не секрет):
 
-| Ім'я                                                     | Приклад                 |
-| -------------------------------------------------------- | ----------------------- |
-| `STAGING_DOMAIN`                                         | `staging.shop.<домен>`  |
-| `NEXT_PUBLIC_CURRENCY`                                   | `UAH` _(необов'язково)_ |
-| `NEXT_PUBLIC_PAYMENT_METHODS`                            | `ON_DELIVERY,ONLINE`    |
-| `NEXT_PUBLIC_IMAGE_HOSTS`                                | _(необов'язково)_       |
-| `NEXT_PUBLIC_SENTRY_DSN`                                 | _(необов'язково)_       |
-| `NEXT_PUBLIC_UMAMI_SRC` / `NEXT_PUBLIC_UMAMI_WEBSITE_ID` | _(необов'язково)_       |
-| `NEXT_PUBLIC_UMAMI_DASHBOARD_URL`                        | _(необов'язково)_       |
+| Ім'я                                                     | Приклад                  |
+| -------------------------------------------------------- | ------------------------ |
+| `STAGING_DOMAIN`                                         | `staging.shop.<домен>`   |
+| `NEXT_PUBLIC_CURRENCY`                                   | `UAH` _(необов'язково)_  |
+| `NEXT_PUBLIC_PAYMENT_METHODS`                            | `ON_DELIVERY,ONLINE`     |
+| `NEXT_PUBLIC_GOOGLE_AUTH_ENABLED`                        | `true` _(необов'язково)_ |
+| `NEXT_PUBLIC_IMAGE_HOSTS`                                | _(необов'язково)_        |
+| `NEXT_PUBLIC_SENTRY_DSN`                                 | _(необов'язково)_        |
+| `NEXT_PUBLIC_UMAMI_SRC` / `NEXT_PUBLIC_UMAMI_WEBSITE_ID` | _(необов'язково)_        |
+| `NEXT_PUBLIC_UMAMI_DASHBOARD_URL`                        | _(необов'язково)_        |
 
 > `STAGING_DOMAIN` — **один** рядок. Адреси `admin.` й `api.` пайплайн збирає сам.
 
@@ -233,6 +234,22 @@ SMTP, `SENTRY_DSN`, `REVALIDATE_SECRET`.
 > 🪤 **І ще одна, для розробника.** Образи будує список `build-args:` у
 > **`ci.yml`**, а не `build.args` у `docker-compose.prod.yml`. Змінна, додана лише
 > в compose, у задеплоєний контейнер **не потрапить**.
+
+### 🪤 Та сама пастка на вході через Google
+
+**Кнопка «Увійти через Google» — теж ДВІ дії:**
+
+1. `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_CALLBACK_URL` у
+   `PROD_ENV_FILE` (рантайм, перезапуск), **і**
+2. **`NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=true`** у **Variables** того самого
+   середовища (білд-тайм, **перезбирання**).
+
+Без другої кнопки на сторінці входу немає взагалі — вітрина зібрана без прапорця.
+Без першої кнопка є, але веде в помилку. До TASK-495 друга дія була **неможлива**:
+прапорець з'явився в коді з TASK-402, але ні `ci.yml`, ні Dockerfile вітрини, ні
+compose його не передавали, тож у жодному контейнерному розгортанні кнопку не можна
+було ввімкнути. Тепер можна — але саме значення все одно задає оператор, і жодна
+перевірка в CI цього за нього не зробить.
 
 ---
 

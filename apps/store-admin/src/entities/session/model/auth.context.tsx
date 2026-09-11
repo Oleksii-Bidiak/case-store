@@ -8,9 +8,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { isAxiosError } from "axios";
 import {
-  authControllerRefresh,
+  refreshSession,
   setAccessToken,
   useGetMyPermissions,
   userControllerGetProfile,
@@ -89,21 +88,27 @@ export const AuthContext = createContext<AuthContextValue | null>(null);
  * Bootstrap refresh: only a 401 means "no session". Anything else (429 from the
  * rate limiter, 5xx, network blip) is transient — retry once after a short
  * pause instead of kicking the admin to /login on a page reload (fix/196).
+ *
+ * Goes through {@link refreshSession} rather than calling the generated
+ * `authControllerRefresh()` (TASK-463). That indirection is the whole point:
+ * `instance.ts` already deduped concurrent refreshes, but this bootstrap was
+ * outside its guard, so a cold page load fired two — the provider restoring the
+ * session here, and the interceptor reacting to the 401s from queries that
+ * started before the access token existed. Refresh rotates the cookie and the
+ * loser of that race is read as a stolen token, which revokes every session the
+ * user holds. One guard, one caller, no race. See `instance.ts` for the
+ * measurement.
  */
 async function bootstrapRefresh(): Promise<string | null> {
   for (let attempt = 0; ; attempt++) {
-    try {
-      // `customInstance` already unwraps the Axios envelope, so `res` IS the
-      // API's `{ data }` body — one level of `.data`, not two.
-      const res = await authControllerRefresh();
-      return res.data?.accessToken ?? null;
-    } catch (error) {
-      const status = isAxiosError(error) ? error.response?.status : undefined;
-      if (status === 401 || attempt >= 1) {
-        return null;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }
+    const { accessToken, status } = await refreshSession();
+    if (accessToken) return accessToken;
+
+    // No status means the request SUCCEEDED and simply carried no token — a
+    // definite "no session", not something a retry can improve.
+    if (status === undefined || status === 401 || attempt >= 1) return null;
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 }
 

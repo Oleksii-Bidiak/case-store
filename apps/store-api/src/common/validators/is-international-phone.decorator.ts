@@ -18,8 +18,12 @@ export const INTERNATIONAL_PHONE_MESSAGE =
  * The characters a human legitimately types AROUND the digits — a leading `+`,
  * then digits and the usual separators. Anything else (letters, a second `+`,
  * an extension) is not a number a courier can dial as we store it.
+ *
+ * Exported since TASK-466 so `normalize-phone.transform.ts` can ask the same
+ * question this constraint asks: the transform must not normalise a value this
+ * shape would refuse, or it would rescue it into passing validation.
  */
-const PHONE_SHAPE = /^\+?[\d\s().-]+$/;
+export const PHONE_SHAPE = /^\+?[\d\s().-]+$/;
 
 /** Everything that is not a digit is decoration; this is the number itself. */
 export function phoneDigits(value: string): string {

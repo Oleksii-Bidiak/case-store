@@ -30,38 +30,45 @@ export async function seedUsers(prisma: PrismaClient) {
 
   // ── Customers ── customer@store.com is the long-standing demo login (kept as
   // John Doe for backwards-compat with existing fixtures); the rest carry UA
-  // names + +380 phones and back the seeded orders / addresses.
+  // names + UA phones and back the seeded orders / addresses.
+  //
+  // Phones are written in the CANONICAL `380XXXXXXXXX` form (TASK-466), not as
+  // `+380 99 123 4567`. The seed writes through Prisma and so bypasses the DTOs
+  // that normalise, which means a masked literal here would quietly undo the
+  // backfill migration on every `db:seed` and take the admin order search with
+  // it. The exception is `site-settings.seeder.ts`, where the phone is a display
+  // string for the footer, not a number anything matches on.
   const customersData: {
     email: string;
     firstName: string;
     lastName: string;
     phone: string;
   }[] = [
-    { email: 'customer@store.com', firstName: 'John', lastName: 'Doe', phone: '+380991234567' },
+    { email: 'customer@store.com', firstName: 'John', lastName: 'Doe', phone: '380991234567' },
     {
       email: 'oksana@example.com',
       firstName: 'Оксана',
       lastName: 'Шевченко',
-      phone: '+380671112233',
+      phone: '380671112233',
     },
     {
       email: 'taras@example.com',
       firstName: 'Тарас',
       lastName: 'Бондаренко',
-      phone: '+380672223344',
+      phone: '380672223344',
     },
-    { email: 'mariia@example.com', firstName: 'Марія', lastName: 'Коваль', phone: '+380673334455' },
+    { email: 'mariia@example.com', firstName: 'Марія', lastName: 'Коваль', phone: '380673334455' },
     {
       email: 'dmytro@example.com',
       firstName: 'Дмитро',
       lastName: 'Ткаченко',
-      phone: '+380674445566',
+      phone: '380674445566',
     },
     {
       email: 'nataliia@example.com',
       firstName: 'Наталія',
       lastName: 'Кравченко',
-      phone: '+380675556677',
+      phone: '380675556677',
     },
   ];
 

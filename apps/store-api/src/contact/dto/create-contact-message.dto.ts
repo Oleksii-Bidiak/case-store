@@ -1,7 +1,7 @@
 import { IsString, IsOptional, IsEmail, MaxLength, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsUaPhone, normalizeUaPhone } from '../../common/validators';
+import { IsUaPhone, normalizePhone } from '../../common/validators';
 
 /**
  * Trim a string value coming off the request body. Non-string values pass
@@ -9,24 +9,6 @@ import { IsUaPhone, normalizeUaPhone } from '../../common/validators';
  */
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
-
-/**
- * Store one number in one shape (TASK-407).
- *
- * The storefront field is masked, so the wire value is now `+380 50 111 2233`
- * where it used to be whatever the shopper typed. Persisting that would leave
- * `ContactMessage.phone` holding three spellings of the same number — the mask,
- * the old free-form rows and whatever an API client sends — and any admin-side
- * lookup or grouping by phone would silently miss most of them. Normalising
- * here, at the boundary, means the column only ever gains the canonical
- * digits-only form `380XXXXXXXXX`.
- *
- * Non-string values pass through so `@IsString()` still reports the type error,
- * and an unrecognisable string reduces to its bare digits and is then refused by
- * {@link IsUaPhone} — normalisation never rescues an invalid number.
- */
-const normalizePhone = ({ value }: { value: unknown }): unknown =>
-  typeof value === 'string' ? normalizeUaPhone(value.trim()) : value;
 
 /**
  * DTO for a public contact-message submission (storefront contact form).
@@ -50,9 +32,11 @@ export class CreateContactMessageDto {
    * separators away and then requires `380` + 9 digits; `@MaxLength` stays as a
    * bound on what gets stored, not as the format check it was standing in for.
    *
-   * {@link normalizePhone} replaces the plain trim so the value that reaches the
+   * `normalizePhone` replaces the plain trim so the value that reaches the
    * repository is the canonical `380XXXXXXXXX`, whatever separators (or mask)
-   * it arrived with.
+   * it arrived with. It was local to this DTO until TASK-466 gave the two order
+   * DTOs the same treatment; there is now exactly one copy, in
+   * `common/validators/normalize-phone.transform.ts`.
    */
   @ApiProperty({
     description:

@@ -55,6 +55,14 @@ describe('NewsletterController (public)', () => {
     );
     expect(limit).toBe(5);
   });
+
+  it('rate-limits the unsubscribe endpoint via @Throttle (5/min)', () => {
+    const limit = Reflect.getMetadata(
+      `${THROTTLER_LIMIT}default`,
+      NewsletterController.prototype.unsubscribe,
+    );
+    expect(limit).toBe(5);
+  });
 });
 
 describe('AdminNewsletterController', () => {

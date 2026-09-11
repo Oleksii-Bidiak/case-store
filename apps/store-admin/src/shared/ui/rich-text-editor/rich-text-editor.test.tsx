@@ -1,12 +1,20 @@
 import * as React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
+import { dict } from "@/shared/config";
+
 // Import the module, NOT `./index`: the barrel wraps this component in
 // `next/dynamic({ ssr: false, loading: () => null })`, which renders nothing at
 // all under jsdom.
 import { RichTextEditor } from "./rich-text-editor";
 
 const EDITOR_LABEL = "Текстовий редактор";
+const EDIT_ANYWAY = dict.contentPreview.unsupportedEditAnyway;
+
+/** The TASK-467 banner, or `null` when the editor is showing the full document. */
+function truncationBanner() {
+  return screen.queryByText(dict.contentPreview.unsupportedTitle);
+}
 
 /**
  * The shape of the three admin content forms: the editor mounts with an empty
@@ -178,5 +186,135 @@ describe("RichTextEditor", () => {
     // `setEditable()` used to emit an `update` on mount, which pushed the
     // editor's empty HTML back into the form and wiped the seeded content.
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  /**
+   * TASK-467 — the server's allow-list (`sanitize-rich-text.ts`) keeps tables,
+   * images and H1/H4; this editor's Tiptap schema cannot represent any of them
+   * and drops them on seed. `getHTML()` is then already the truncated document,
+   * so the first keystroke would save the loss. The editor must say so and
+   * refuse to be typed into until the operator accepts that cost.
+   */
+  describe("markup the editor cannot render (TASK-467)", () => {
+    const TABLE_HTML =
+      "<p>Характеристики</p><table><tbody><tr><th>Вага</th><td>120 г</td></tr></tbody></table>";
+    const IMAGE_HTML =
+      '<p>Огляд</p><img src="https://example.com/case.jpg" alt="Чохол">';
+    // Everything here round-trips through the schema unchanged in substance —
+    // Tiptap still reformats it (attribute order, self-closing tags), which is
+    // exactly why detection is by tag presence and not by document equality.
+    const ORDINARY_HTML = [
+      "<h2>Заголовок</h2>",
+      "<h3>Підзаголовок</h3>",
+      "<p>Текст із <strong>жирним</strong> та ",
+      '<a href="https://example.com">посиланням</a>.</p>',
+      "<ul><li>Пункт один</li><li>Пункт два</li></ul>",
+    ].join("");
+
+    it("warns and locks the editor when the value contains a table", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value={TABLE_HTML} onChange={onChange} />);
+
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() => expect(truncationBanner()).toBeInTheDocument());
+
+      expect(
+        screen.getByText(
+          new RegExp(dict.contentPreview.unsupportedTables, "i"),
+        ),
+      ).toBeInTheDocument();
+      expect(editable).toHaveAttribute("contenteditable", "false");
+      expect(screen.getByLabelText("Жирний")).toBeDisabled();
+      // Seeding alone must never report a change — the truncated HTML must not
+      // reach the form unless the operator chooses it.
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it("warns and locks the editor when the value contains an image", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value={IMAGE_HTML} onChange={onChange} />);
+
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() => expect(truncationBanner()).toBeInTheDocument());
+
+      expect(
+        screen.getByText(
+          new RegExp(dict.contentPreview.unsupportedImages, "i"),
+        ),
+      ).toBeInTheDocument();
+      expect(editable).toHaveAttribute("contenteditable", "false");
+    });
+
+    it("stays silent and editable for ordinary rich content", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value={ORDINARY_HTML} onChange={onChange} />);
+
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() => expect(editable).toHaveTextContent("Заголовок"));
+
+      expect(truncationBanner()).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: EDIT_ANYWAY }),
+      ).not.toBeInTheDocument();
+      expect(editable).toHaveAttribute("contenteditable", "true");
+      expect(screen.getByLabelText("Жирний")).toBeEnabled();
+    });
+
+    it("unlocks on «edit anyway» and keeps the warning standing", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value={TABLE_HTML} onChange={onChange} />);
+
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() => expect(truncationBanner()).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole("button", { name: EDIT_ANYWAY }));
+
+      await waitFor(() =>
+        expect(editable).toHaveAttribute("contenteditable", "true"),
+      );
+      // The consent removes the lock, not the warning.
+      expect(truncationBanner()).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: EDIT_ANYWAY }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByLabelText("Жирний")).toBeEnabled();
+    });
+
+    it("offers no «edit anyway» while the editor is disabled", async () => {
+      const onChange = jest.fn();
+      render(
+        <RichTextEditor value={TABLE_HTML} onChange={onChange} disabled />,
+      );
+
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() => expect(truncationBanner()).toBeInTheDocument());
+
+      // `disabled` is the caller's word and outranks the latch: the operator
+      // must not be able to talk their way past it.
+      expect(
+        screen.queryByRole("button", { name: EDIT_ANYWAY }),
+      ).not.toBeInTheDocument();
+      expect(editable).toHaveAttribute("contenteditable", "false");
+    });
+
+    it("gives the next entity a fresh verdict (forms.md Rule 2b)", async () => {
+      const onChange = jest.fn();
+      const { rerender } = render(
+        <RichTextEditor value={TABLE_HTML} onChange={onChange} resetKey="a" />,
+      );
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() => expect(truncationBanner()).toBeInTheDocument());
+
+      rerender(
+        <RichTextEditor
+          value="<p>Звичайний опис</p>"
+          onChange={onChange}
+          resetKey="b"
+        />,
+      );
+
+      await waitFor(() => expect(truncationBanner()).not.toBeInTheDocument());
+      expect(editable).toHaveAttribute("contenteditable", "true");
+    });
   });
 });

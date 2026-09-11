@@ -4,6 +4,13 @@ export * from "./format";
 export { slugify } from "./slug";
 export { nullableTextField } from "./nullable-text-field";
 export { apiErrorMessage, apiErrorStatus } from "./api-error-message";
+export {
+  PASSWORD_MIN_LENGTH,
+  CUSTOMER_PASSWORD_REGEX,
+  STAFF_PASSWORD_REGEX,
+  isStaffPassword,
+  isCustomerPassword,
+} from "./password-policy";
 
 // NOTE: `use-debounced-callback` is intentionally NOT re-exported here. It is a
 // "use client" hook; adding a client module to this barrel (which server

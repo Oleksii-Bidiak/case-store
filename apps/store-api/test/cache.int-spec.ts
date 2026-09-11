@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { Global, INestApplication, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
@@ -12,13 +12,41 @@ import { PermissionModule } from '../src/auth/permissions';
 import { AuditModule } from '../src/audit';
 import { ProductService } from '../src/product/product.service';
 import { ProductRepository } from '../src/product/product.repository';
+import { RevalidationNotifier } from '../src/publishing';
+
+/**
+ * Stand-in for the {@link RevalidationNotifier} that `ProductService`,
+ * `ProductImageService` and `CategoryService` take in their constructors since
+ * 0718fc9 (storefront purge on catalogue writes).
+ *
+ * It must be `@Global()` for the same reason `AuditModule`/`PermissionModule`
+ * are named in the imports below: a provider declared in the testing ROOT module
+ * is invisible to `ProductModule`'s and `CategoryModule`'s own injectors, so
+ * only a global export reaches them. TASK-460 — this is the one int-spec built
+ * from real `imports:` rather than a hand-listed `providers:` array, which is
+ * why it alone broke when that constructor argument appeared.
+ *
+ * The real `PublishingModule` is deliberately NOT imported: it also constructs
+ * `PublishingScheduler`, which injects `SchedulerRegistry` (absent without
+ * `ScheduleModule.forRoot()`) and starts a live cron in `onModuleInit` —
+ * `setup-int.ts`, unlike `setup-e2e.ts`, does not set `SCHEDULER_ENABLED=false`,
+ * so that job would tick against the test database mid-run.
+ */
+@Global()
+@Module({
+  providers: [{ provide: RevalidationNotifier, useValue: { revalidate: jest.fn() } }],
+  exports: [RevalidationNotifier],
+})
+class RevalidationStubModule {}
 
 /**
  * Integration tests for the Redis cache layer — run the REAL CacheService and
  * ProductService against a REAL Redis instance and a REAL Postgres test DB
  * (no mocks). These exercise what the unit tests (mocked CacheService) cannot:
- * the actual SCAN-based prefix eviction, ioredis serialization round-trips, and
- * the graceful-degradation fallback when the Redis connection drops.
+ * the actual SCAN-based prefix eviction, node-redis serialization round-trips,
+ * and the graceful-degradation fallback when the Redis connection drops.
+ * (node-redis, not ioredis: the adapter changed with cache-manager v7 in
+ * TASK-304.)
  *
  * Requires BOTH Docker services to be running and migrated:
  *   - store_postgres (DATABASE_URL forced to an isolated *_test DB by setup-int)
@@ -68,6 +96,7 @@ describe('Product cache (integration)', () => {
         // fails — loudly, which is the right failure mode for a security guard.
         AuditModule,
         PermissionModule,
+        RevalidationStubModule,
         ProductModule,
       ],
     }).compile();
@@ -146,11 +175,39 @@ describe('Product cache (integration)', () => {
   });
 
   it('degrades gracefully: findAll still resolves after the Redis client drops', async () => {
-    // Forcibly drop the underlying ioredis connection. CacheService must swallow
-    // the resulting errors and fall through to the database without throwing.
-    const client = (cacheManager as unknown as { store?: { client?: { disconnect?: () => void } } })
-      .store?.client;
-    client?.disconnect?.();
+    // Forcibly drop the underlying node-redis connection. CacheService must
+    // swallow the resulting errors and fall through to the database without
+    // throwing.
+    //
+    // TASK-460: this used to read `cacheManager.store.client` — the cache-manager
+    // v5 shape. Since TASK-304 the project is on v7, where the stores live in an
+    // array, so the path resolved to `undefined`, `disconnect?.()` was a silent
+    // no-op and this test passed without ever dropping a connection. Mirror the
+    // path CacheService itself uses (`getKeyvStore`/`getScanClient`) so the two
+    // cannot drift apart again.
+    const client = (
+      cacheManager as unknown as {
+        stores?: { store?: { client?: { isOpen?: boolean; destroy?: () => void } } }[];
+      }
+    ).stores?.[0]?.store?.client;
+
+    // Both reads are optional-chained so a further shape change fails loudly
+    // HERE rather than crashing the suite with a TypeError — but they ARE
+    // asserted, because passing while dropping nothing is the exact defect
+    // described above. `isOpen` doubles as the Redis precondition: with no
+    // service on REDIS_HOST the client exists but was never connected, and
+    // node-redis then throws a bare "The client is closed" from inside
+    // `destroy()`, which reads as a mystery instead of as a missing container.
+    // `@keyv/redis` is backed by node-redis, whose forcible drop in v5 is
+    // `destroy()` (`disconnect()`/`quit()` are the deprecated v4 spellings).
+    expect(client?.isOpen).toBe(true);
+    expect(typeof client?.destroy).toBe('function');
+    client?.destroy?.();
+
+    // `@keyv/redis` reopens the connection on the next command, so the call below
+    // either falls through to the DB on a rejected cache op or hits a freshly
+    // reconnected client. Both satisfy the contract under test: a Redis that
+    // drops underneath a request must never surface as an error to the caller.
 
     await expect(service.findAll({ page: 1, limit: 20, categoryId })).resolves.toBeDefined();
   });

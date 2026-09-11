@@ -110,15 +110,50 @@ function isAuthEndpoint(url: string | undefined): boolean {
   return !!url && url.includes("/auth/");
 }
 
-// Single in-flight refresh shared across concurrent 401s (avoids a stampede).
-let refreshPromise: Promise<string | null> | null = null;
+/** What one refresh attempt produced. `status` is set only when it failed. */
+export interface RefreshOutcome {
+  accessToken: string | null;
+  /** HTTP status of the failure, or `undefined` when the request succeeded. */
+  status?: number;
+}
 
-async function refreshAccessToken(): Promise<string | null> {
+// Single in-flight refresh shared across concurrent 401s (avoids a stampede).
+let refreshPromise: Promise<RefreshOutcome> | null = null;
+
+/**
+ * Refresh the session, sharing ONE request with every concurrent caller
+ * (TASK-463).
+ *
+ * Exported because this must be the only place the app refreshes from. It was
+ * not: `AuthProvider`'s bootstrap called the generated `authControllerRefresh()`
+ * directly, so the app had two refresh paths with two separate single-flight
+ * guards, each correctly deduping only its own callers. On a cold page load both
+ * fire at once — the provider restoring the session, and the interceptor
+ * reacting to the 401s from queries that started before the access token
+ * existed.
+ *
+ * Two concurrent refreshes with one cookie are not a harmless race.
+ * `POST /api/auth/refresh` ROTATES: the presented token is revoked and a new one
+ * issued, and presenting a revoked token is correctly treated as theft, which
+ * revokes EVERY session the user holds (RFC 6819 §5.2.2). Fired by hand against
+ * a running API, two concurrent refreshes answered `500` and
+ * `401 Token reuse detected — all sessions terminated`.
+ *
+ * Found via the admin panel's Playwright flake (TASK-463); the storefront
+ * carries the identical shape, so it gets the identical fix. Not a dev-only
+ * concern either: two tabs opened together do exactly this.
+ */
+export function refreshSession(): Promise<RefreshOutcome> {
   if (!refreshPromise) {
     refreshPromise = api
       .post<{ data?: { accessToken?: string } }>("/api/auth/refresh")
-      .then((response) => response.data?.data?.accessToken ?? null)
-      .catch(() => null)
+      .then((response) => ({
+        accessToken: response.data?.data?.accessToken ?? null,
+      }))
+      .catch((error: AxiosError) => ({
+        accessToken: null,
+        status: error.response?.status,
+      }))
       .finally(() => {
         refreshPromise = null;
       });
@@ -126,12 +161,15 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
+async function refreshAccessToken(): Promise<string | null> {
+  return (await refreshSession()).accessToken;
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as
-      | (AxiosRequestConfig & { _retry?: boolean })
-      | undefined;
+      (AxiosRequestConfig & { _retry?: boolean }) | undefined;
 
     if (
       error.response?.status === 401 &&

@@ -7,7 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { PinoLogger } from 'nestjs-pino';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { OAuthProvider, User, UserRole } from '@prisma/client';
 import { AuthRepository, CreateUserInput } from './auth.repository';
 import { AuthTokens } from './entities';
@@ -627,9 +627,28 @@ export class AuthService {
       },
     );
 
-    // Sign refresh token with JWT_REFRESH_SECRET
+    // Sign refresh token with JWT_REFRESH_SECRET.
+    //
+    // `jti` is what makes two tokens minted in the same SECOND different
+    // (TASK-463). Without it the payload is `{sub, role, type}` plus `iat`/`exp`
+    // — and JWT timestamps are in seconds, so two mints inside one second
+    // produced a byte-identical token. `refresh_tokens.token` is unique on the
+    // hash, so the second insert threw and the request 500'd.
+    //
+    // That was not a cosmetic 500. `refreshToken()` revokes the presented token
+    // BEFORE minting the replacement, so a failed mint leaves the session with
+    // no live token at all; the clients then retry the same, now-revoked cookie,
+    // which is indistinguishable from a stolen one and correctly revokes EVERY
+    // session the user holds (RFC 6819 §5.2.2). One collision therefore signed
+    // the user out everywhere. Measured: two concurrent refreshes answered `500`
+    // and `401 Token reuse detected — all sessions terminated`, and the seeded
+    // admin ended a Playwright run with 321 tokens, every one revoked.
+    //
+    // Real users reach this by logging in on two devices within the same second,
+    // or by a client refreshing twice at once — rare per request, systematic
+    // under load.
     const refreshToken = this.jwtService.sign(
-      { sub: userId, role, type: 'refresh' },
+      { sub: userId, role, type: 'refresh', jti: randomUUID() },
       {
         secret: this.jwtRefreshSecret,
         expiresIn: this.jwtRefreshExpiration as JwtSignOptions['expiresIn'],

@@ -19,18 +19,10 @@ import {
   Input,
   Label,
 } from "@/shared/ui";
-import { apiErrorMessage } from "@/shared/lib";
+import { apiErrorMessage, isStaffPassword } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
 const d = dict.users;
-
-/**
- * Mirrors `IsStaffPassword()` on the API — same rule, stated once here.
- *
- * Staff only, and it stays strict: TASK-407 loosened the SHOPPER policy
- * (`IsCustomerPassword`, no uppercase requirement) and left this one alone.
- */
-const STRONG_PASSWORD = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
 interface UserPasswordResetDialogProps {
   userId: string;
@@ -68,7 +60,7 @@ export function UserPasswordResetDialog({
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
 
-    if (!STRONG_PASSWORD.test(newPassword)) {
+    if (!isStaffPassword(newPassword)) {
       setError(d.createPasswordWeak);
       return;
     }

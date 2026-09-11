@@ -15953,7 +15953,7 @@
           },
           "phone": {
             "type": "string",
-            "description": "User phone number",
+            "description": "User phone number. Stored normalised, as digits only.",
             "example": "+380991234567"
           }
         }
@@ -19356,7 +19356,7 @@
           },
           "phone": {
             "type": "string",
-            "description": "Phone number the courier can call — any country, 9 to 15 digits (E.164), typed with whatever separators the buyer uses",
+            "description": "Phone number the courier can call — any country, 9 to 15 digits (E.164), typed with whatever separators the buyer uses. Stored normalised, as digits only.",
             "example": "+380501234567",
             "maxLength": 32
           },
@@ -19423,7 +19423,7 @@
           },
           "phone": {
             "type": "string",
-            "description": "Contact phone — any country, 9 to 15 digits (E.164), typed with whatever separators the buyer uses",
+            "description": "Contact phone — any country, 9 to 15 digits (E.164), typed with whatever separators the buyer uses. Stored normalised, as digits only.",
             "example": "+380501234567"
           },
           "npCityRef": {
