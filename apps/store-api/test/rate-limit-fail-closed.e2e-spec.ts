@@ -27,7 +27,7 @@ import {
  * ## Why this suite builds its own tiny app
  *
  * What is being asserted is the guard's split — the same class production
- * registers as `APP_GUARD`, the same `@FailClosedThrottle()` decorator the six
+ * registers as `APP_GUARD`, the same `@FailClosedThrottle()` decorator the eight
  * real routes carry, and a storage that fails the way a dead Redis fails.
  * Booting AppModule would add a database, auth and a mail outbox to a question
  * none of them participate in. WHICH real routes carry the decorator is pinned

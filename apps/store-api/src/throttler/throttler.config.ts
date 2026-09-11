@@ -126,9 +126,13 @@ export async function verifyThrottlerRedis(
     health.markUnreachable(reason);
 
     if (isProduction) {
+      // Names the class of routes instead of listing them: the old enumeration
+      // was already wrong (it omitted reviews, then newsletter) and any list
+      // here rots the next time a public write is added (TASK-464).
       throw new Error(
         `Rate-limit store unreachable at ${target}: ${reason}. ` +
-          'Refusing to start: auth, contact and order endpoints would accept unlimited requests.',
+          'Refusing to start: with no counter store every rate-limited route — the ' +
+          'unauthenticated public writes above all — would accept unlimited requests.',
       );
     }
   }

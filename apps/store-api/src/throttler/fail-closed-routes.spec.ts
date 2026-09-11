@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { AuthController } from '../auth/auth.controller';
 import { ContactController } from '../contact/contact.controller';
+import { NewsletterController } from '../newsletter/newsletter.controller';
 import { OrderController } from '../order/order.controller';
 import { LiqPayWebhookController } from '../payment/liqpay-webhook.controller';
 import { ProductController } from '../product/product.controller';
@@ -32,6 +33,8 @@ describe('Fail-closed route classification', () => {
       ['POST /api/auth/password-reset/request', AuthController.prototype.requestPasswordReset],
       ['POST /api/products/:productId/reviews', ReviewController.prototype.submit],
       ['POST /api/orders', OrderController.prototype.createOrder],
+      ['POST /api/newsletter/subscribe', NewsletterController.prototype.subscribe],
+      ['POST /api/newsletter/unsubscribe', NewsletterController.prototype.unsubscribe],
     ])('%s', (_route, handler) => {
       expect(isFailClosed(handler)).toBe(true);
     });
