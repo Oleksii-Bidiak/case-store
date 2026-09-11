@@ -52,7 +52,7 @@ export class ProductListQueryDto {
     required: false,
   })
   @IsOptional()
-  @IsUUID(4, { message: 'Category ID must be a valid UUID' })
+  @IsUUID('loose', { message: 'Category ID must be a valid UUID' })
   categoryId?: string;
 
   @ApiProperty({
@@ -61,7 +61,7 @@ export class ProductListQueryDto {
     required: false,
   })
   @IsOptional()
-  @IsUUID(4, { message: 'Brand ID must be a valid UUID' })
+  @IsUUID('loose', { message: 'Brand ID must be a valid UUID' })
   brandId?: string;
 
   @ApiProperty({
@@ -70,7 +70,7 @@ export class ProductListQueryDto {
     required: false,
   })
   @IsOptional()
-  @IsUUID(4, { message: 'Device model ID must be a valid UUID' })
+  @IsUUID('loose', { message: 'Device model ID must be a valid UUID' })
   deviceModelId?: string;
 
   @ApiProperty({

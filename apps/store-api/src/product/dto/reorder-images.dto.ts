@@ -5,7 +5,7 @@ import { IsArray, IsBoolean, IsInt, IsUUID, Min, ValidateNested } from 'class-va
 /** A single image's new ordering + primary flag. */
 export class ReorderImageDto {
   @ApiProperty({ description: 'Image ID', example: '550e8400-e29b-41d4-a716-446655440000' })
-  @IsUUID()
+  @IsUUID('loose')
   id!: string;
 
   @ApiProperty({ description: 'New display sort order (0-based)', example: 0 })

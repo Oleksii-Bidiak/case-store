@@ -271,6 +271,7 @@ function AdminProductTableView() {
                 <SortableColumnHeader
                   field="stock"
                   label={dict.products.colStock}
+                  hint={dict.products.colStockHint}
                   sortBy={sortBy}
                   sortOrder={sortOrder}
                   onSort={onSort}

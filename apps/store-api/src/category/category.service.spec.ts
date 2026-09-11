@@ -368,6 +368,7 @@ describe('CategoryService', () => {
       categoryRepositoryMock.findWithProductCount.mockResolvedValue({
         category: mockCategory,
         productCount: 5,
+        subtreeProductCount: 19,
       });
 
       const result = await service.findBySlug('phone-cases');
@@ -375,6 +376,11 @@ describe('CategoryService', () => {
       expect(result.data).toBeInstanceOf(CategoryWithCountEntity);
       expect(result.data.name).toBe('Phone Cases');
       expect(result.productCount).toBe(5);
+      // TASK-408: both counts reach the response — a storefront category listing
+      // rolls up over the whole subtree, so the direct count alone under-reports
+      // every parent category.
+      expect(result.data.productCount).toBe(5);
+      expect(result.data.subtreeProductCount).toBe(19);
       // No `activeOnly` override: the PUBLIC read leans on the repository's
       // active-only DEFAULT (TASK-297), which is what makes a withdrawn category
       // 404 here. Passing `{ activeOnly: false }` — as the uniqueness checks in
@@ -1185,8 +1191,8 @@ describe('CategoryService', () => {
 
     const paginatedWithCount: PaginatedCategoriesWithCountResult = {
       categories: [
-        { category: mockCategory, productCount: 5 },
-        { category: mockChildCategory, productCount: 3 },
+        { category: mockCategory, productCount: 5, subtreeProductCount: 8 },
+        { category: mockChildCategory, productCount: 3, subtreeProductCount: 3 },
       ],
       total: 2,
     };
@@ -1199,6 +1205,7 @@ describe('CategoryService', () => {
       expect(result.data).toHaveLength(2);
       expect(result.data[0]).toBeInstanceOf(CategoryWithCountEntity);
       expect(result.data[0].productCount).toBe(5);
+      expect(result.data[0].subtreeProductCount).toBe(8); // TASK-408
       expect(result.meta.total).toBe(2);
       expect(result.meta.page).toBe(1);
       expect(result.meta.limit).toBe(20);

@@ -62,7 +62,7 @@ export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status
 
   @ApiProperty({ description: 'Filter by owning user ID', required: false, format: 'uuid' })
   @IsOptional()
-  @IsUUID()
+  @IsUUID('loose')
   userId?: string;
 
   @ApiProperty({

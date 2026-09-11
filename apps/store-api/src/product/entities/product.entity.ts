@@ -204,11 +204,16 @@ export class ProductEntity {
    * enrich the product with review aggregates, while admin/mutation paths
    * (create, update, findById) omit them and default to "no reviews".
    *
-   * `reservedQty` follows the same optional-input/always-present-output contract
-   * (TASK-254): admin list/detail/preview reads pass the derived aggregate,
-   * while mutation-echo reads (create/update/activate/deactivate/delete) omit it
-   * and default to 0 (physicalQty = stock) — accurate in the common case and
-   * self-healing on the next list/detail read, exactly like ratingAverage.
+   * `reservedQty` is REQUIRED (TASK-408). It used to be optional and default to
+   * 0, which made every mutation echo (create / update / activate / deactivate /
+   * delete / device-compat / specs) report `physicalQty === stock` — and
+   * `physicalQty` is exactly the number the admin form labels «фізично на
+   * складі», so a product with units tied up in unshipped orders reported its
+   * physical stock as its free stock right after every save. That is not
+   * "self-healing on the next read": the operator read the wrong number at the
+   * one moment they were looking at it. A required input is the guard — a new
+   * mutation path cannot silently re-introduce the bug, it has to pass the
+   * aggregate (`ProductRepository.getReservedQtyByProductId`) or fail to compile.
    */
   static fromPrisma(product: {
     id: string;
@@ -219,7 +224,7 @@ export class ProductEntity {
     compareAtPrice: { toString(): string } | null;
     sku: string | null;
     stock: number;
-    reservedQty?: number;
+    reservedQty: number;
     categoryId: string;
     groupId?: string | null;
     brand?: { id: string; name: string; slug: string; logo: string | null } | null;
@@ -257,7 +262,7 @@ export class ProductEntity {
     entity.compareAtPrice = product.compareAtPrice ? product.compareAtPrice.toString() : null;
     entity.sku = product.sku;
     entity.stock = product.stock;
-    entity.reservedQty = product.reservedQty ?? 0;
+    entity.reservedQty = product.reservedQty;
     entity.physicalQty = entity.stock + entity.reservedQty;
     entity.categoryId = product.categoryId;
     entity.groupId = product.groupId ?? null;

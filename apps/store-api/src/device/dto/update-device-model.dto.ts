@@ -25,7 +25,7 @@ export class UpdateDeviceModelDto {
     required: false,
   })
   @IsOptional()
-  @IsUUID(4, { message: 'Device brand ID must be a valid UUID' })
+  @IsUUID('loose', { message: 'Device brand ID must be a valid UUID' })
   deviceBrandId?: string;
 
   @ApiProperty({ description: 'Device model name', example: 'iPhone 15 Pro', required: false })

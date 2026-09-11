@@ -373,6 +373,39 @@ function CategoryTreeView() {
     [serverItems],
   );
 
+  /**
+   * Rows that are ACTIVE themselves but sit under a deactivated ancestor, mapped
+   * to that ancestor's name (TASK-408).
+   *
+   * A deactivated parent hides its ENTIRE branch from the storefront while every
+   * descendant row keeps saying «Активна» — the status column can only speak
+   * about its own row. On the demo stand that read as a bug in the storefront.
+   *
+   * The walk runs over `items` (the optimistic preview during a move) but reads
+   * status from `metaById` (server truth), so the badge follows a drag the same
+   * way the rest of the grid does. Same `seen`-set discipline as the other
+   * ancestor walks here: a cycle must not spin the render.
+   */
+  const hiddenByAncestor = useMemo(() => {
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const out = new Map<string, string>();
+    for (const item of items) {
+      if (metaById.get(item.id)?.isActive === false) continue;
+      const seen = new Set<string>([item.id]);
+      let parentId = item.parentId;
+      while (parentId !== null && !seen.has(parentId)) {
+        seen.add(parentId);
+        const parent = metaById.get(parentId);
+        if (parent && !parent.isActive) {
+          out.set(item.id, parent.label);
+          break;
+        }
+        parentId = byId.get(parentId)?.parentId ?? null;
+      }
+    }
+    return out;
+  }, [items, metaById]);
+
   const searchActive = search.length > 0;
   const isLocked = searchActive;
 
@@ -1024,6 +1057,10 @@ function CategoryTreeView() {
         name={row.item.label}
         slug={meta?.slug ?? ""}
         productCount={meta?.productCount ?? 0}
+        subtreeProductCount={
+          meta?.subtreeProductCount ?? meta?.productCount ?? 0
+        }
+        hiddenByParent={hiddenByAncestor.get(row.item.id)}
         isActive={meta?.isActive ?? true}
         level={row.level}
         posinset={row.posinset}
@@ -1139,7 +1176,13 @@ function CategoryTreeView() {
                 </TableHead>
                 <TableHead>{dict.categories.colName}</TableHead>
                 <TableHead hideOnMobile>{dict.categories.colSlug}</TableHead>
-                <TableHead>{dict.categories.colProducts}</TableHead>
+                <TableHead title={dict.categories.colProductsHint}>
+                  {dict.categories.colProducts}
+                  <span className="sr-only">
+                    {" "}
+                    {dict.categories.colProductsHint}
+                  </span>
+                </TableHead>
                 <TableHead>{dict.categories.colStatus}</TableHead>
                 <TableHead className="text-right">
                   {dict.common.actions}
@@ -1182,7 +1225,16 @@ interface CategoryTreeRowProps {
   id: string;
   name: string;
   slug: string;
+  /** ACTIVE products filed directly on this category. */
   productCount: number;
+  /** ACTIVE products in this category AND its whole subtree (TASK-408). */
+  subtreeProductCount: number;
+  /**
+   * Name of the nearest DEACTIVATED ancestor, when this (active) category is
+   * hidden from the storefront by it — `undefined` when the row is visible or
+   * deactivated in its own right (TASK-408).
+   */
+  hiddenByParent?: string;
   isActive: boolean;
   level: number;
   posinset: number;
@@ -1216,6 +1268,8 @@ function CategoryTreeRow({
   name,
   slug,
   productCount,
+  subtreeProductCount,
+  hiddenByParent,
   isActive,
   level,
   posinset,
@@ -1347,7 +1401,20 @@ function CategoryTreeRow({
       <TableCell role="gridcell" hideOnMobile className="text-muted-foreground">
         {slug}
       </TableCell>
-      <TableCell role="gridcell">{productCount}</TableCell>
+      {/*
+        The subtree total leads, because that is the number the storefront page
+        for this category actually lists (TASK-236 rolls a listing up over the
+        whole subtree). The direct count follows in brackets, and only when the
+        two differ — otherwise every leaf would carry a redundant echo of itself.
+      */}
+      <TableCell role="gridcell">
+        {subtreeProductCount}
+        {subtreeProductCount !== productCount ? (
+          <span className="ml-1 text-muted-foreground">
+            ({dict.categories.productsDirect(productCount)})
+          </span>
+        ) : null}
+      </TableCell>
       <TableCell role="gridcell">
         <Button
           ref={statusRef}
@@ -1367,6 +1434,19 @@ function CategoryTreeRow({
             {isActive ? dict.common.active : dict.common.inactive}
           </Badge>
         </Button>
+        {/*
+          Outside the toggle button on purpose: it is a statement about an
+          ANCESTOR, not something this row's control can change.
+        */}
+        {hiddenByParent ? (
+          <Badge
+            variant="outline"
+            className="ml-1 align-middle"
+            title={t.hiddenByParentHint(hiddenByParent)}
+          >
+            {t.hiddenByParent}
+          </Badge>
+        ) : null}
       </TableCell>
       <TableCell role="gridcell" className="text-right">
         <span data-row-menu>

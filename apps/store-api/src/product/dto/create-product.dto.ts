@@ -101,7 +101,7 @@ export class CreateProductDto {
     description: 'Category ID the product belongs to',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
-  @IsUUID(4, { message: 'Category ID must be a valid UUID' })
+  @IsUUID('loose', { message: 'Category ID must be a valid UUID' })
   categoryId!: string;
 
   @ApiProperty({
@@ -110,7 +110,7 @@ export class CreateProductDto {
     required: false,
   })
   @IsOptional()
-  @IsUUID(4, { message: 'Group ID must be a valid UUID' })
+  @IsUUID('loose', { message: 'Group ID must be a valid UUID' })
   groupId?: string;
 
   @ApiProperty({
@@ -119,7 +119,7 @@ export class CreateProductDto {
     required: false,
   })
   @IsOptional()
-  @IsUUID(4, { message: 'Brand ID must be a valid UUID' })
+  @IsUUID('loose', { message: 'Brand ID must be a valid UUID' })
   brandId?: string;
 
   @ApiProperty({

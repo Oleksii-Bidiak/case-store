@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import {
   ChevronDownIcon,
   ChevronUpIcon,
@@ -20,6 +21,13 @@ interface SortableColumnHeaderProps {
   sortOrder?: "asc" | "desc";
   /** Called with this column's `field` on click (wire to `useTableSort.onSort`). */
   onSort: (field: string) => void;
+  /**
+   * One sentence saying what the column's numbers mean (TASK-408). Surfaced as a
+   * `title` tooltip on hover and, for assistive tech, as the sort button's
+   * `aria-describedby` — a DESCRIPTION, never part of the button's accessible
+   * name, which has to stay "Сортувати за …".
+   */
+  hint?: string;
   /** Hide this column below `md` (forwarded to the underlying `TableHead`). */
   hideOnMobile?: boolean;
   className?: string;
@@ -38,9 +46,11 @@ export function SortableColumnHeader({
   sortBy,
   sortOrder,
   onSort,
+  hint,
   hideOnMobile,
   className,
 }: SortableColumnHeaderProps) {
+  const hintId = useId();
   const isActive = sortBy === field;
   const ariaSort = isActive
     ? sortOrder === "asc"
@@ -63,6 +73,8 @@ export function SortableColumnHeader({
         type="button"
         onClick={() => onSort(field)}
         aria-label={dict.common.sortByAria(label)}
+        aria-describedby={hint ? hintId : undefined}
+        title={hint}
         className="flex w-full items-center gap-1 px-4 py-2 text-left font-medium hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
         <span>{label}</span>
@@ -71,6 +83,11 @@ export function SortableColumnHeader({
           aria-hidden="true"
         />
       </button>
+      {hint ? (
+        <span id={hintId} className="sr-only">
+          {hint}
+        </span>
+      ) : null}
     </TableHead>
   );
 }

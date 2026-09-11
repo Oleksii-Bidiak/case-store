@@ -384,6 +384,7 @@ describe('CategoryController (e2e)', () => {
       categoryRepositoryMock.findWithProductCount.mockResolvedValue({
         category: testCategory,
         productCount: 5,
+        subtreeProductCount: 19,
       });
 
       const response = await request(app.getHttpServer())
@@ -395,6 +396,10 @@ describe('CategoryController (e2e)', () => {
       expect(response.body.data).toHaveProperty('name', 'Phone Cases');
       expect(response.body.data).toHaveProperty('slug', 'phone-cases');
       expect(response.body.productCount).toBe(5);
+      // TASK-408: the subtree rollup travels beside the direct count — this page
+      // LISTS the whole subtree, so the direct number alone describes a different
+      // set of products than the one on screen.
+      expect(response.body.data.subtreeProductCount).toBe(19);
     });
 
     it('should return 404 for non-existent slug', async () => {
@@ -445,8 +450,8 @@ describe('CategoryController (e2e)', () => {
 
       categoryRepositoryMock.findAllWithProductCount.mockResolvedValue({
         categories: [
-          { category: testCategory, productCount: 5 },
-          { category: testChildCategory, productCount: 3 },
+          { category: testCategory, productCount: 5, subtreeProductCount: 8 },
+          { category: testChildCategory, productCount: 3, subtreeProductCount: 3 },
         ],
         total: 2,
       });
@@ -462,6 +467,7 @@ describe('CategoryController (e2e)', () => {
       expect(Array.isArray(response.body.data)).toBe(true);
       expect(response.body.data).toHaveLength(2);
       expect(response.body.data[0]).toHaveProperty('productCount');
+      expect(response.body.data[0]).toHaveProperty('subtreeProductCount', 8); // TASK-408
     });
   });
 
@@ -732,11 +738,17 @@ describe('CategoryController (e2e)', () => {
       categoryRepositoryMock.findById.mockResolvedValueOnce(testChildCategory);
       categoryRepositoryMock.findDescendantIds.mockResolvedValue(['cat-e2e-2']);
 
-      await request(app.getHttpServer())
+      const response = await request(app.getHttpServer())
         .put('/api/admin/categories/cat-e2e-1')
         .set('Authorization', `Bearer ${token}`)
         .send({ parentId: 'cat-e2e-2' })
         .expect(400);
+
+      // TASK-408 (AD-CAT-08): the STATUS alone is not enough for the admin form —
+      // it tells apart "you made a cycle" from every other 400 this route can
+      // return by the stable `error` code, exactly as the reorder route does.
+      expect(response.body).toHaveProperty('error', 'CATEGORY_CYCLE');
+      expect(categoryRepositoryMock.update).not.toHaveBeenCalled();
     });
   });
 
@@ -761,6 +773,7 @@ describe('CategoryController (e2e)', () => {
       metaDescription: null,
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
       productCount: 3,
+      subtreeProductCount: 3,
       depth: 1,
       children: [],
     };
@@ -914,6 +927,7 @@ describe('CategoryController (e2e)', () => {
       metaDescription: null,
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
       productCount: 3,
+      subtreeProductCount: 3,
       depth: 1,
       children: [],
     };

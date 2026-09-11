@@ -1196,7 +1196,7 @@ describe('ProductService', () => {
 
   describe('caching — findById', () => {
     it('returns the cached value on HIT without querying the repository', async () => {
-      const cached = ProductEntity.fromPrisma(mockProduct);
+      const cached = ProductEntity.fromPrisma({ ...mockProduct, reservedQty: 0 });
       cacheServiceMock.get.mockResolvedValue(cached);
 
       const result = await service.findById('product-uuid-1');
@@ -1717,5 +1717,126 @@ describe('ProductService', () => {
         { definitionId: 'def-material', value: 'Силікон' },
       ]);
     });
+  });
+
+  // ─── mutation echoes carry the REAL reserved/physical pair (TASK-408) ────────
+
+  /**
+   * Every admin mutation echoes the written row back as a ProductEntity, and the
+   * admin form reads `physicalQty` off that echo as «фізично на складі». All
+   * seven paths used to omit `reservedQty`, so the entity defaulted it to 0 and
+   * every save reported physical == free — the one moment the operator is
+   * actually looking at the number.
+   *
+   * The table is the point: the defect was not one forgotten call site but the
+   * SAME omission repeated seven times, so the guard has to enumerate all seven.
+   */
+  describe('reserved/physical on mutation echoes (TASK-408)', () => {
+    const RESERVED = 4;
+    const createInput: CreateProductInput = {
+      name: 'iPhone 15 Pro Case — Clear MagSafe',
+      slug: 'iphone-15-pro-case-clear-magsafe',
+      price: 29.99,
+      categoryId: 'category-uuid-1',
+    };
+
+    const echoes: Array<{ name: string; run: () => Promise<ProductEntity> }> = [
+      {
+        name: 'create',
+        run: () => {
+          productRepositoryMock.findBySlug.mockResolvedValue(null);
+          productRepositoryMock.findBySku.mockResolvedValue(null);
+          productRepositoryMock.create.mockResolvedValue(mockProduct);
+          return service.create(createInput);
+        },
+      },
+      {
+        name: 'update',
+        run: () => {
+          productRepositoryMock.findById.mockResolvedValue(mockProduct);
+          productRepositoryMock.update.mockResolvedValue(mockProduct);
+          return service.update('product-uuid-1', { name: 'Renamed' });
+        },
+      },
+      {
+        name: 'deactivate',
+        run: () => {
+          productRepositoryMock.findById.mockResolvedValue(mockProduct);
+          productRepositoryMock.deactivate.mockResolvedValue({
+            ...mockProduct,
+            isActive: false,
+          });
+          return service.deactivate('product-uuid-1');
+        },
+      },
+      {
+        name: 'activate',
+        run: () => {
+          productRepositoryMock.findById.mockResolvedValue(mockInactiveProduct);
+          productRepositoryMock.activate.mockResolvedValue({
+            ...mockInactiveProduct,
+            id: 'product-uuid-1',
+            isActive: true,
+          });
+          return service.activate('product-uuid-1');
+        },
+      },
+      {
+        name: 'delete',
+        run: () => {
+          productRepositoryMock.findById.mockResolvedValue(mockProduct);
+          productRepositoryMock.softDelete.mockResolvedValue({
+            ...mockProduct,
+            isActive: false,
+          });
+          return service.delete('product-uuid-1');
+        },
+      },
+      {
+        name: 'updateDeviceCompat',
+        run: () => {
+          productRepositoryMock.findById.mockResolvedValue(mockProduct);
+          deviceRepositoryMock.findModelsByIds.mockResolvedValue([]);
+          return service.updateDeviceCompat('product-uuid-1', []);
+        },
+      },
+      {
+        name: 'updateSpecs',
+        run: () => {
+          productRepositoryMock.findById.mockResolvedValue(mockProduct);
+          attributeDefinitionRepositoryMock.findEffectiveForCategory.mockResolvedValue([]);
+          return service.updateSpecs('product-uuid-1', []);
+        },
+      },
+    ];
+
+    it.each(echoes)('$name echoes physicalQty = stock + reservedQty', async ({ run }) => {
+      productRepositoryMock.getReservedQtyByProductId.mockResolvedValue(
+        new Map([['product-uuid-1', RESERVED]]),
+      );
+
+      const result = await run();
+
+      expect(productRepositoryMock.getReservedQtyByProductId).toHaveBeenCalledWith([
+        'product-uuid-1',
+      ]);
+      expect(result.reservedQty).toBe(RESERVED);
+      expect(result.stock).toBe(mockProduct.stock);
+      expect(result.physicalQty).toBe(mockProduct.stock + RESERVED);
+    });
+
+    it.each(echoes)(
+      '$name still reports physical == free when nothing is reserved',
+      async ({ run }) => {
+        productRepositoryMock.getReservedQtyByProductId.mockResolvedValue(
+          new Map<string, number>(),
+        );
+
+        const result = await run();
+
+        expect(result.reservedQty).toBe(0);
+        expect(result.physicalQty).toBe(mockProduct.stock);
+      },
+    );
   });
 });

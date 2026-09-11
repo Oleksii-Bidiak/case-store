@@ -20,7 +20,7 @@ import { GuestContactDto } from './guest-contact.dto';
 /** One line of an operator-created order (TASK-341). */
 export class ManualOrderItemDto {
   @ApiProperty({ description: 'Product to sell', format: 'uuid' })
-  @IsUUID()
+  @IsUUID('loose')
   productId!: string;
 
   @ApiProperty({ description: 'How many units', minimum: 1, example: 1 })
@@ -47,7 +47,7 @@ export class CreateManualOrderDto {
     format: 'uuid',
   })
   @IsOptional()
-  @IsUUID()
+  @IsUUID('loose')
   userId?: string;
 
   @ApiProperty({
