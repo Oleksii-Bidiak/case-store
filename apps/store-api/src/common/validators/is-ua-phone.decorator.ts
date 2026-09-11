@@ -60,10 +60,13 @@ class IsUaPhoneConstraint implements ValidatorConstraintInterface {
  * It is deliberately NOT applied to `order/dto/guest-contact.dto.ts` or
  * `order/dto/address.dto.ts`. Those fields also carry orders an operator enters
  * by hand and orders from API clients, where a roaming or border-region number
- * is legitimate; that is the written decision at `guest-contact.dto.ts:39-41`,
- * landed with TASK-338 (commit `0dbc3df`, 2026-07-28). TASK-407 did not reopen
- * it, so plan 173's line about `create-order.dto` / `create-manual-order.dto` is
- * knowingly left undone rather than quietly skipped.
+ * is legitimate; that is the written decision on the `phone` field of
+ * `guest-contact.dto.ts`, landed with TASK-338 (commit `0dbc3df`, 2026-07-28)
+ * and restated by the owner on 2026-09-10. TASK-407 did not reopen it, so plan
+ * 173's line about `create-order.dto` / `create-manual-order.dto` is knowingly
+ * left undone rather than quietly skipped. What those two DTOs do carry since
+ * TASK-407 is {@link IsInternationalPhone}, which counts digits instead of mask
+ * characters — country-agnostic, but no longer satisfied by punctuation alone.
  *
  * The two are only consistent read together, so read them together: a shopper
  * cannot submit a non-UA number through the storefront (the form refuses it
