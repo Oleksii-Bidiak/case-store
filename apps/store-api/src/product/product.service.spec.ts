@@ -418,6 +418,30 @@ describe('ProductService', () => {
       );
     });
 
+    // AD-PROD-08 (TASK-406): the operator looks a position up by its article
+    // number. The flag is the whole reason the public search cannot — both
+    // listings go through the same repository method.
+    it('lets the admin search reach the article number (searchIncludesSku)', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.adminFindAll({ page: 1, limit: 20, search: 'AB-1234' });
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ search: 'AB-1234', searchIncludesSku: true }),
+      );
+    });
+
+    it('leaves the public listing without the sku flag (the leak guard)', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      cacheServiceMock.get.mockResolvedValue(null);
+
+      await service.findAll({ page: 1, limit: 20, search: 'AB-1234' });
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.not.objectContaining({ searchIncludesSku: true }),
+      );
+    });
+
     // TASK-254: the admin list now returns full ProductEntity items (raw stock,
     // reservedQty/physicalQty) — not the PublicProductEntity the public list uses.
     it('returns ProductEntity items enriched with derived reserved/physical stock', async () => {

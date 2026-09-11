@@ -200,6 +200,11 @@ export class ProductService {
     const params: FindAllParams = {
       ...this.toListParams(query),
       categoryIds: await this.resolveSubtreeIds(query.categoryId),
+      // AD-PROD-08 (TASK-406): the operator searches for a position by its
+      // article number. Set HERE and nowhere else — `toListParams` is shared
+      // with the public listing, and an SKU is an internal identifier that the
+      // storefront search must not accept as a query.
+      searchIncludesSku: true,
     };
     return this.listFromDbForAdmin(params);
   }

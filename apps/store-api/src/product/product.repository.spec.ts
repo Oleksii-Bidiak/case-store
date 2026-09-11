@@ -183,6 +183,63 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       expect(countArgs.where).toEqual(expect.objectContaining({ deletedAt: null }));
     });
 
+    // ── Search by article number, admin only (TASK-406 / AD-PROD-08) ──
+    //
+    // `findAll` is ONE method serving both the public storefront listing and the
+    // admin table. Adding `sku` to the OR unconditionally would have handed the
+    // shop's internal article numbers to the public search box, so the column
+    // joins the clause only behind the flag `adminFindAll` sets.
+    describe('search over sku', () => {
+      beforeEach(() => {
+        prismaMock.product.findMany.mockResolvedValue([]);
+        prismaMock.product.count.mockResolvedValue(0);
+      });
+
+      const orOf = () => prismaMock.product.findMany.mock.calls[0][0].where.OR;
+
+      it('searches name + description only by default (the public path)', async () => {
+        await repository.findAll({ page: 1, limit: 20, search: 'AB-1234' });
+
+        expect(orOf()).toEqual([
+          { name: { contains: 'AB-1234', mode: 'insensitive' } },
+          { description: { contains: 'AB-1234', mode: 'insensitive' } },
+        ]);
+      });
+
+      it('never leaks sku when the flag is explicitly false', async () => {
+        await repository.findAll({
+          page: 1,
+          limit: 20,
+          search: 'AB-1234',
+          searchIncludesSku: false,
+        });
+
+        expect(orOf()).toHaveLength(2);
+        expect(JSON.stringify(orOf())).not.toContain('sku');
+      });
+
+      it('adds sku to the OR when searchIncludesSku is set (the admin path)', async () => {
+        await repository.findAll({
+          page: 1,
+          limit: 20,
+          search: 'AB-1234',
+          searchIncludesSku: true,
+        });
+
+        expect(orOf()).toEqual([
+          { name: { contains: 'AB-1234', mode: 'insensitive' } },
+          { description: { contains: 'AB-1234', mode: 'insensitive' } },
+          { sku: { contains: 'AB-1234', mode: 'insensitive' } },
+        ]);
+      });
+
+      it('builds no OR at all when the flag is set without a search term', async () => {
+        await repository.findAll({ page: 1, limit: 20, searchIncludesSku: true });
+
+        expect(prismaMock.product.findMany.mock.calls[0][0].where).not.toHaveProperty('OR');
+      });
+    });
+
     it('appends id as the last sort key so pages cannot overlap (TASK-292)', async () => {
       // None of the sortable columns is unique — an import writes many products
       // with the same createdAt, and stock repeats constantly. Without a unique

@@ -42,6 +42,18 @@ function stubUsers() {
   );
 }
 
+/** An empty page — the state that carries the create CTA since TASK-406. */
+function stubNoUsers() {
+  server.use(
+    http.get("*/api/users", () =>
+      HttpResponse.json({
+        data: [],
+        meta: { total: 0, page: 1, limit: 20, totalPages: 0 },
+      }),
+    ),
+  );
+}
+
 /**
  * TASK-334: the table reads the session to decide whether to offer the
  * owner-only «Створити співробітника» button. Owner by default, so the
@@ -165,21 +177,55 @@ describe("AdminUserTable — staff management affordances", () => {
     mockSearchParamsRef.current = new URLSearchParams("");
   });
 
-  it("offers «Створити співробітника» to the owner", async () => {
+  // TASK-406: the CTA moved OUT of the toolbar into the page heading, where the
+  // owner looks for it. A populated table therefore offers no create button at
+  // all — the one on screen belongs to `UsersPage`.
+  it("no longer buries the create button between the search box and the filters", async () => {
     stubUsers();
     renderTable();
     await screen.findByText("buyer@example.com");
 
     expect(
+      screen.queryByRole("button", { name: dict.users.create }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers «Створити співробітника» from the empty state, with role-specific copy", async () => {
+    // Filtering to «Менеджер» on a shop that has none is exactly the moment the
+    // owner asked "so how do I make one?" and got «Немає користувачів за
+    // поточними фільтрами» back.
+    mockSearchParamsRef.current = new URLSearchParams("role=MANAGER");
+    stubNoUsers();
+    renderTable();
+
+    expect(
+      await screen.findByText(dict.users.emptyManagers),
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("button", { name: dict.users.create }),
     ).toBeInTheDocument();
   });
 
-  it("hides the create button from a manager", async () => {
-    stubUsers();
-    renderTable({ isOwner: false });
-    await screen.findByText("buyer@example.com");
+  it("keeps the neutral empty copy when a search is what matched nothing", async () => {
+    // «Менеджерів ще немає» would be a claim this query cannot support.
+    mockSearchParamsRef.current = new URLSearchParams(
+      "role=MANAGER&search=zzz",
+    );
+    stubNoUsers();
+    renderTable();
 
+    expect(await screen.findByText(dict.users.empty)).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.users.emptyManagers),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the empty-state create button from a manager", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("role=MANAGER");
+    stubNoUsers();
+    renderTable({ isOwner: false });
+
+    await screen.findByText(dict.users.emptyManagers);
     expect(
       screen.queryByRole("button", { name: dict.users.create }),
     ).not.toBeInTheDocument();

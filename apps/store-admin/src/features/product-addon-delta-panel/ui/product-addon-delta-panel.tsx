@@ -52,8 +52,11 @@ function badgeFor(source: ResolvedAddonEntity["source"]) {
  * at a time:
  *
  *   - «прибрати»    → a REMOVE delta: suppress an inherited service here only;
- *   - «власна ціна» → an OVERRIDE delta: this product's own price for an
- *                     inherited service (the template keeps its own);
+ *   - «власна ціна» → this product's own price for the service. On an INHERITED
+ *                     entry that is an OVERRIDE delta (the template keeps its
+ *                     own price); on a product-exclusive one it stays an ADD,
+ *                     because one row per pair means an OVERRIDE would replace
+ *                     the ADD and leave nothing to override (TASK-404);
  *   - the picker    → an ADD delta: a service exclusive to this product,
  *                     independent of any template;
  *   - «скасувати»   → DELETE the delta row entirely, reverting the product to
@@ -131,13 +134,26 @@ export function ProductAddonDeltaPanel({
     );
   };
 
-  const submitPrice = (addonServiceId: string) => {
+  /**
+   * Save the typed price — as the delta type this entry ALREADY is (TASK-404).
+   *
+   * There is one delta row per (product, add-on) pair, so ADD/REMOVE/OVERRIDE
+   * are mutually exclusive: sending OVERRIDE for a product-exclusive entry
+   * replaced its ADD row, leaving an OVERRIDE with no template row under it —
+   * and the service disappeared from the product. An exclusive keeps its own
+   * price as an ADD; only an inherited (or already overridden) entry overrides.
+   */
+  const submitPrice = (addon: ResolvedAddonEntity) => {
     const price = Number(priceDraft);
     if (priceDraft.trim() === "" || Number.isNaN(price) || price < 0) {
       toast.error(d.toastBadPrice);
       return;
     }
-    mutateDelta(addonServiceId, "OVERRIDE", price);
+    mutateDelta(
+      addon.addonServiceId,
+      addon.source === "add" ? "ADD" : "OVERRIDE",
+      price,
+    );
   };
 
   // Only services that are NOT already resolved for this product can be added as
@@ -219,7 +235,7 @@ export function ProductAddonDeltaPanel({
                             type="button"
                             size="sm"
                             disabled={isPending}
-                            onClick={() => submitPrice(addon.addonServiceId)}
+                            onClick={() => submitPrice(addon)}
                           >
                             {dict.common.save}
                           </Button>

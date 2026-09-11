@@ -228,10 +228,55 @@ describe('AddonApplicabilityResolver (TASK-174)', () => {
     ]);
   });
 
-  it('case 9 — a dangling OVERRIDE (service not in the resolved template) is a silent no-op', async () => {
+  it('case 9 (TASK-404) — a base-less OVERRIDE keeps the service, resolved as an ADD', async () => {
     findAncestorChainsOrdered.mockResolvedValue(new Map([['cat-a', ['cat-a']]]));
     findTemplateRowsForCategories.mockResolvedValue([templateRow('cat-a', warranty)]);
     findDeltaRowsForProducts.mockResolvedValue([deltaRow('p1', insurance, 'OVERRIDE', '1299.00')]);
+
+    const addons = await resolver.resolveForProduct({ id: 'p1', categoryId: 'cat-a' });
+
+    // The service must NOT disappear: an admin re-pricing a product-exclusive
+    // add-on used to turn its ADD row into an OVERRIDE (one row per pair), and
+    // an inert OVERRIDE deleted the service from the product outright.
+    expect(addons).toEqual([
+      {
+        addonServiceId: 'svc-insurance',
+        name: 'Insurance',
+        description: null,
+        price: '1299.00',
+        source: 'add',
+      },
+      {
+        addonServiceId: 'svc-warranty',
+        name: 'Warranty',
+        description: '24 months',
+        price: '499.00',
+        source: 'template',
+      },
+    ]);
+  });
+
+  it('case 9b (TASK-404) — a base-less OVERRIDE survives with no category at all', async () => {
+    findAncestorChainsOrdered.mockResolvedValue(new Map());
+    findDeltaRowsForProducts.mockResolvedValue([deltaRow('p1', tradeIn, 'OVERRIDE', '250.00')]);
+
+    const addons = await resolver.resolveForProduct({ id: 'p1', categoryId: null });
+
+    expect(addons).toEqual([
+      {
+        addonServiceId: 'svc-tradein',
+        name: 'Trade-in',
+        description: null,
+        price: '250.00',
+        source: 'add',
+      },
+    ]);
+  });
+
+  it('case 9c (TASK-404) — a base-less OVERRIDE never resurrects a deactivated service', async () => {
+    findAncestorChainsOrdered.mockResolvedValue(new Map([['cat-a', ['cat-a']]]));
+    findTemplateRowsForCategories.mockResolvedValue([templateRow('cat-a', warranty)]);
+    findDeltaRowsForProducts.mockResolvedValue([deltaRow('p1', retired, 'OVERRIDE', '10.00')]);
 
     const addons = await resolver.resolveForProduct({ id: 'p1', categoryId: 'cat-a' });
 

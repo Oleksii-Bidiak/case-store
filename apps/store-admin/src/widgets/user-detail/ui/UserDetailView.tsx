@@ -375,6 +375,20 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
 
               <UserRoleChange userId={user.id} currentRole={role} />
 
+              {/* TASK-406: the owner came here looking for per-person
+                  permission checkboxes. There are none — access is attached to
+                  the ROLE — so say that where the role is chosen, and link to
+                  the screen that does own it. */}
+              <p className="text-xs text-muted-foreground">
+                {dict.users.rolePermissionsHint}{" "}
+                <Link
+                  href="/settings/permissions"
+                  className="font-medium text-foreground underline underline-offset-2"
+                >
+                  {dict.users.rolePermissionsLink}
+                </Link>
+              </p>
+
               <Separator />
 
               {/* Lockout visibility (plan 164 / TASK-317) is NOT implemented:

@@ -52,6 +52,9 @@ coverage/
 .nyc_output/
 test-results/
 playwright-report/
+# Saved admin browser session for the Playwright admin project (TASK-405) —
+# a live session for the seeded staff account, never committed.
+e2e/.auth/
 
 # Temp
 tmp/

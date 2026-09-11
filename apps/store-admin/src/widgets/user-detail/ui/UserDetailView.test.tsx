@@ -1,5 +1,10 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { orderStatusLabel } from "@/entities/order";
@@ -240,5 +245,60 @@ describe("UserDetailView (customer card, TASK-252)", () => {
     expect(
       await screen.findByText(dict.users.loadOneError),
     ).toBeInTheDocument();
+  });
+
+  // SF-AUTH-14 / TASK-406 — the ban toggle invalidated `findAll` and `findById`,
+  // neither of which this screen reads. It renders `useGetUserAdminCard`, so the
+  // status line and the button label kept claiming the account was active after
+  // a successful deactivation, and the operator had no way to tell it worked.
+  it("re-reads the card after a deactivation so the status flips on screen", async () => {
+    const state = { isActive: true };
+    server.use(
+      http.get("*/api/users/:id/admin-card", () =>
+        HttpResponse.json({
+          data: {
+            user: { ...baseUser, isActive: state.isActive },
+            ...FULL_CARD,
+          },
+        }),
+      ),
+      http.patch("*/api/users/:id/deactivate", () => {
+        state.isActive = false;
+        return HttpResponse.json({ data: { ...baseUser, isActive: false } });
+      }),
+    );
+
+    renderWithProviders(<UserDetailView userId={USER_ID} />);
+    expect(
+      await screen.findByText(dict.users.accountActive),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.userBan.deactivateUserAria }),
+    );
+
+    expect(
+      await screen.findByText(dict.users.accountInactive),
+    ).toBeInTheDocument();
+    // …and the control now offers the way back, rather than a second «Деактивувати».
+    expect(
+      await screen.findByRole("button", {
+        name: dict.userBan.activateUserAria,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  // TASK-406: the owner went looking for per-person permission checkboxes here.
+  it("explains that permissions belong to the role and links to the matrix", async () => {
+    mockCard();
+
+    renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+    expect(
+      await screen.findByText(dict.users.rolePermissionsHint, { exact: false }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: dict.users.rolePermissionsLink }),
+    ).toHaveAttribute("href", "/settings/permissions");
   });
 });

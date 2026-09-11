@@ -123,12 +123,23 @@ export class UserRepository {
       where.isActive = isActive;
     }
 
-    if (search) {
-      where.OR = [
-        { email: { contains: search, mode: 'insensitive' } },
-        { firstName: { contains: search, mode: 'insensitive' } },
-        { lastName: { contains: search, mode: 'insensitive' } },
-      ];
+    // Multi-token search (TASK-406). One OR over the three columns can only
+    // match the whole query INSIDE a single column, so «John Doe» — the way a
+    // person is actually looked up — found nobody: no column holds both the
+    // first and the last name. Split on whitespace and AND the tokens; each
+    // token is still ORed across email/firstName/lastName, so a token may land
+    // in a different column than its neighbour. Word order stops mattering as a
+    // side effect («doe john» finds the same account), and a single-token query
+    // behaves exactly as it did before.
+    const searchTokens = search?.trim().split(/\s+/).filter(Boolean) ?? [];
+    if (searchTokens.length > 0) {
+      where.AND = searchTokens.map((token) => ({
+        OR: [
+          { email: { contains: token, mode: 'insensitive' } },
+          { firstName: { contains: token, mode: 'insensitive' } },
+          { lastName: { contains: token, mode: 'insensitive' } },
+        ],
+      }));
     }
 
     const [users, total] = await Promise.all([
