@@ -75,15 +75,20 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
     <>
       <AnnouncementBar banner={announcement} />
       <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80">
-        <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4">
-          {/* Left: mobile menu trigger + logo */}
-          <div className="flex items-center gap-2">
+        <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 sm:gap-3">
+          {/* Left: mobile menu trigger + logo. `min-w-0` (here and on the logo
+              link) makes this the cluster that yields on a 320px screen — the
+              wordmark truncates instead of pushing the cart off-canvas. */}
+          <div className="flex min-w-0 items-center gap-2">
             <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
               <SheetTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="md:hidden"
+                  // size-11 (44px): this is the only navigation control on a
+                  // phone, so it gets a full touch target; `shrink-0` keeps it
+                  // at that size when the row runs out of width.
+                  className="size-11 shrink-0 md:hidden"
                   aria-label={dict.header.openMenu}
                 >
                   <Menu className="size-5" />
@@ -93,7 +98,11 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
                   Radix does not emit its "Missing Description" dev warning. */}
               <SheetContent
                 side="left"
-                className="w-72 overflow-y-auto"
+                // max-h-dvh + overscroll-contain: the panel keeps its own
+                // scrolling to itself (no scroll-chaining to the page behind it
+                // on iOS) and never grows past the visible viewport when the
+                // mobile browser chrome is showing.
+                className="max-h-dvh w-72 max-w-full overflow-y-auto overscroll-contain"
                 aria-describedby={undefined}
               >
                 <SheetHeader>
@@ -208,7 +217,10 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
 
             <Link
               href="/"
-              className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              // `flex min-w-0` (not just min-w-0): the Logo is an inline-flex
+              // box, so only as a flex CHILD of a shrinkable link does it
+              // actually give way and let its wordmark truncate.
+              className="flex min-w-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Logo logoUrl={logoUrl} markClassName="shadow-elevated" />
             </Link>
@@ -217,17 +229,23 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
           {/* Search pill (Каталог + search + submit) — desktop. */}
           <HeaderSearch />
 
-          {/* Right: action cluster */}
-          <div className="ml-auto flex items-center gap-1 sm:gap-1.5">
+          {/* Right: action cluster. `shrink-0` — these are the commerce actions,
+              so they keep their size and the brand block absorbs the squeeze.
+              Below 390px only the cart survives: Обране and Кабінет are hidden
+              (both are in the slide-out menu above) rather than letting four
+              targets collide on the narrowest phones. */}
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
             <Link
               href="/promo"
-              className="hidden flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-sale transition-colors hover:bg-sale/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
+              className="hidden min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-sale transition-colors hover:bg-sale/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
             >
               <Tag className="size-[22px]" aria-hidden="true" />
               {dict.header.promoLabel}
             </Link>
-            <HeaderWishlistBadge />
-            <HeaderAuth />
+            <HeaderWishlistBadge className="hidden min-[390px]:flex" />
+            <div className="hidden min-[390px]:block">
+              <HeaderAuth />
+            </div>
             <HeaderCartBadge className="ml-1" />
           </div>
         </div>

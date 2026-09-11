@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-497**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-500**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -537,10 +537,13 @@
 | TASK-415 | Сітка 1 (<390px) / 2 / 4 (скасовує F-19), фото в aspect-боксі з `object-contain`, однакова висота карток, діагностика оверлею при alt+tab | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
 | TASK-416 | PDP: колонки з 768px, лайтбокс, таби в URL, скелетони сайдбару каталогу й aside головної | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
 | TASK-417 | Пошук: фільтри на `/search`, SKU в індексі, блог у Meili, спільна пагінація для blog/search/promo | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
-| TASK-418 | Кошик: перерахунок під час вводу кількості, «Повернути» після видалення | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-418 | Кошик: перерахунок під час вводу кількості, «Повернути» після видалення | ✅ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-497 | [a11y] Відкат видалення в кошику (TASK-418) зроблено **тостом** — це перший `toast` з опцією `action` у застосунку. В адмінці свідомо інший прецедент: `reorder-undo-button.tsx` (TASK-291) тримає постійну кнопку з `aria-disabled`, і в коментарі пояснено чому — тост не отримує фокус, не стоїть у tab-order і зникає сам. Переглянути доступність вітринного рішення: або явний шлях із клавіатури (у sonner є hotkey alt+T), або постійна смуга «Прибрано — Повернути» над списком; висновок має бути спільним для обох застосунків | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
 | TASK-419 | Повернення після входу на сторінку-джерело; заглушки «порівняння/1 клік» за прапорцем; тихий 401 refresh | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
 | TASK-420 | [L, останньою] Слаги замість id у параметрах каталогу (`/orders/[id]` лишається UUID) | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
 | TASK-459 | Аудит shadcn-примітивів на вітрині й в адмінці: селекти ростуть при скролі (`position="popper"`, `max-h`), комбобокси, шторки, діалоги, scroll-lock | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-498 | `/promo` усе ще їде вбік на 320px, і не через форму: `promo-newsletter.tsx:24` прибиває `NewsletterSubscribeForm` класом `min-w-[300px]`, а картка-хост має `p-9` — 300px форми в ~216px контенту. Сама форма полагоджена в TASK-410 (стовпчик до `sm`, `min-w-0` на інпуті), тож досить зняти `min-w-` у хості (сусідній файл, не чіпав). Через це `/promo` не внесено в `e2e/responsive.spec.ts` — додати маршрут разом із фіксом | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
+| TASK-499 | Тач-таргет «Кабінет» у хедері ~34px замість 44: `header-auth.tsx` дає кнопці-гостю лише `px-2 py-1.5` довкола іконки 22px (той самий клас був у `promoLabel` і в TASK-410 отримав `min-h-11`, але `header-auth.tsx` — сусідній файл). Те саме перевірити для тригера `AccountDropdown` для залогіненого | ⬜ | [174](docs/plans/174-storefront-ux-wave.md) |
 
 ### План 175 — Адмінка як CRM (🟡 до запуску; продовжує епік TASK-292 / план 168)
 
@@ -675,6 +678,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-497**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-498**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.

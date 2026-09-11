@@ -123,6 +123,24 @@ describe("NewsletterSubscribeForm", () => {
     ).toBeInTheDocument();
   });
 
+  // ── TASK-410: the row must survive a 320px screen ──────────────────────────
+  it("stacks the input above the button until sm, and lets the input shrink", () => {
+    renderWithProviders(<NewsletterSubscribeForm />);
+
+    const input = screen.getByRole("textbox", {
+      name: dict.newsletterForm.emailLabel,
+    });
+    const row = input.parentElement as HTMLElement;
+
+    // One row below `sm` fitted an ~180px-intrinsic email input next to a
+    // never-wrapping submit label — wider than a 320px screen. jsdom applies no
+    // media queries, so the contract is asserted at the class level: the layout
+    // is the fix, and a silent revert of it is exactly what this guards.
+    expect(row).toHaveClass("flex-col", "sm:flex-row");
+    // `flex-1` alone cannot shrink a flex item below its intrinsic width.
+    expect(input).toHaveClass("min-w-0");
+  });
+
   // ── TASK-261: newsletter_subscribe analytics ───────────────────────────────
   describe("newsletter_subscribe analytics", () => {
     afterEach(() => {

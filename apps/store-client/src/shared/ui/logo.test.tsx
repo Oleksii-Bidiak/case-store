@@ -96,6 +96,25 @@ describe("Logo (TASK-299)", () => {
     expect(screen.queryByText("M")).not.toBeInTheDocument();
   });
 
+  // ── TASK-410: the brand block is what yields on a 320px header row ─────────
+  it("lets the wordmark truncate while the monogram keeps its size", () => {
+    const { container } = render(<Logo />);
+
+    // Without min-w-0 a flex item's minimum width is its intrinsic width, so the
+    // logo would push the header's action cluster off a narrow screen instead of
+    // shortening itself.
+    expect(container.firstChild).toHaveClass("min-w-0");
+    expect(screen.getByText("M")).toHaveClass("shrink-0");
+    expect(screen.getByText(SITE_NAME)).toHaveClass("truncate");
+  });
+
+  it("keeps min-w-0 when the call site passes its own wrapper classes", () => {
+    const { container } = render(<Logo className="gap-3" />);
+
+    expect(container.firstChild).toHaveClass("min-w-0");
+    expect(container.firstChild).toHaveClass("gap-3");
+  });
+
   it("applies the caller's wrapper / monogram classes", () => {
     const { container } = render(
       <Logo className="gap-2.5" markClassName="shadow-elevated" />,

@@ -235,6 +235,22 @@ html {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
 }
+/* Reserve the scrollbar's gutter even on pages short enough not to scroll, so
+   the content width (and therefore every centered container) stays identical
+   from route to route — no sideways jump between a long catalog page and a
+   short cart, and no `100vw` element that is a scrollbar wider than the
+   viewport can actually show (TASK-410). Overlay scrollbars (phones) have zero
+   width, so this costs mobile nothing.
+
+   Scoped OUT while a Radix overlay is open: react-remove-scroll locks the page
+   by setting `overflow: hidden` + `margin-right: <scrollbar width>` on <body>
+   (it measures `innerWidth - documentElement.clientWidth`, see
+   react-remove-scroll-bar/utils). With a stable gutter that compensation would
+   be counted twice and the page would slide under every sheet/dialog. Dropping
+   the gutter exactly when the lock attribute appears keeps the two in step. */
+html:not(:has(body[data-scroll-locked])) {
+  scrollbar-gutter: stable;
+}
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
