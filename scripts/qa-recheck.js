@@ -17,17 +17,18 @@
  *
  * Marks in the generated file:
  *   [ ]   waiting for its task (or for staging)
- *   [🔁]  task merged and deployed — ready to re-check (set by the task's author)
+ *   [🔁]  task merged into develop — NOT necessarily on the demo stand yet; the
+ *         "Деплої" table in the header says which commit is live, re-check only after
  *   [✅]  re-checked, passes
  *   [❌ …] re-checked, still fails — write what you saw, open/reopen the task
  */
 
 const { readFileSync, writeFileSync } = require("node:fs");
-const { join } = require("node:path");
+const { join, resolve } = require("node:path");
 
 const REPO = join(__dirname, "..");
-const SOURCE = process.argv[2] ? join(process.cwd(), process.argv[2]) : join(REPO, "docs", "qa-demo-server.md");
-const TARGET = process.argv[3] ? join(process.cwd(), process.argv[3]) : join(REPO, "docs", "qa-recheck.md");
+const SOURCE = process.argv[2] ? resolve(process.argv[2]) : join(REPO, "docs", "qa-demo-server.md");
+const TARGET = process.argv[3] ? resolve(process.argv[3]) : join(REPO, "docs", "qa-recheck.md");
 
 // ─── Check → task map (from docs/reviews/2026-08-27-demo-run-triage.md §3) ────
 // Value: the task(s) that must land before the check is worth repeating, or a
@@ -148,11 +149,22 @@ const header = `# Перепровірка після живого прогон�
 > **Це базовий зріз, далі файл правиться руками.** Повторний запуск скрипта зітре позначки —
 > робити лише після нового повного прогону.
 >
+> **Локального стенда немає: перевіряємо лише на демо-хостингу.** Тому \`[🔁]\` означає
+> «фікс змержено у develop», а не «вже на стенді». Позначки накопичуються по ходу хвиль і
+> проходяться **після заливки** — усі разом або порціями після кожного деплою. Який коміт зараз
+> на стенді — таблиця нижче; чек має сенс перевіряти, лише якщо його задача змержена **до** цього
+> коміту.
+>
+> | Деплой на демо | Коміт develop | Що заливалось |
+> | --- | --- | --- |
+> | — | — | ще не заливали після прогону 2026-08-27 |
+>
 > **Як користуватись.**
 > - \`🎯\` під чеком — задача, після якої чек варто повторювати (або вердикт: ✔️ за задумом,
 >   ⛔ staging, 🔧 скрипт, ⚠️ вже є задача). \`📝 було\` — що бачив тестер 2026-08-27.
-> - **Виконавець задачі**, мержачи її, ставить \`[🔁]\` на всіх чеках зі свого рядка в Додатку А.
-> - **Тестер** проходить лише \`[🔁]\`: \`[✅]\` або \`[❌ що бачив]\`. Нове ❌ — рядок у
+> - **Виконавець задачі**, мержачи її у develop, ставить \`[🔁]\` на всіх чеках зі свого рядка в
+>   Додатку А. Сесія, що заливає на стенд, дописує рядок у таблицю «Деплої».
+> - **Тестер** після заливки проходить \`[🔁]\`: \`[✅]\` або \`[❌ що бачив]\`. Нове ❌ — рядок у
 >   [\`reviews/2026-08-27-demo-run.md\`](reviews/2026-08-27-demo-run.md) і задача.
 > - Чеки з \`⛔ staging\` проходяться у TASK-457 на staging із реальними ключами.
 >
