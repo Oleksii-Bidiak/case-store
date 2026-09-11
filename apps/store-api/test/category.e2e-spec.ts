@@ -733,15 +733,28 @@ describe('CategoryController (e2e)', () => {
     it('should return 400 when setting parent to a descendant (cycle)', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
+      // `parentId` travels in the BODY, where `UpdateCategoryDto` validates it as
+      // a UUID — unlike the path id, which the controller reads as a plain string
+      // (the 404 case above posts `nonexistent-id` and gets past the pipe). With
+      // the fixture's `cat-e2e-2` here the request never reached the service at
+      // all: the ValidationPipe answered 400 first, and for years the assertion
+      // `.expect(400)` was satisfied by that — the cycle branch below has in fact
+      // never run in this suite. A UUID-shaped descendant id is what makes the
+      // request reach `CategoryService.update` and its cycle guard.
+      const descendantId = 'cae2e002-0000-4000-8000-000000000002';
+
       categoryRepositoryMock.findById.mockResolvedValue(testCategory);
       categoryRepositoryMock.findById.mockResolvedValueOnce(testCategory);
-      categoryRepositoryMock.findById.mockResolvedValueOnce(testChildCategory);
-      categoryRepositoryMock.findDescendantIds.mockResolvedValue(['cat-e2e-2']);
+      categoryRepositoryMock.findById.mockResolvedValueOnce({
+        ...testChildCategory,
+        id: descendantId,
+      });
+      categoryRepositoryMock.findDescendantIds.mockResolvedValue([descendantId]);
 
       const response = await request(app.getHttpServer())
         .put('/api/admin/categories/cat-e2e-1')
         .set('Authorization', `Bearer ${token}`)
-        .send({ parentId: 'cat-e2e-2' })
+        .send({ parentId: descendantId })
         .expect(400);
 
       // TASK-408 (AD-CAT-08): the STATUS alone is not enough for the admin form —
