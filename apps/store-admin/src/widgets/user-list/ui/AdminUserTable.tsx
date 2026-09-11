@@ -14,8 +14,7 @@ import {
   useUserControllerFindAll,
   type UserEntity,
 } from "@/entities/user";
-import { useAuth } from "@/entities/session";
-import { CreateUserDialog } from "@/features/user-create";
+import { CreateStaffButton } from "@/features/user-create";
 import {
   Badge,
   Button,
@@ -66,6 +65,26 @@ function roleOf(user: UserEntity): string {
 }
 
 /**
+ * Empty-state copy (TASK-406).
+ *
+ * "Nobody holds this role yet" and "your filters matched nothing" are different
+ * answers, and only the first one has an obvious next step. The role-specific
+ * line is used ONLY when the role filter is the sole narrowing in play — with a
+ * search term or a status filter on top, «Менеджерів ще немає» would be a claim
+ * the query cannot support.
+ */
+function emptyCopy(
+  roleParam: string,
+  searchParam: string,
+  isActiveParam: string,
+): string {
+  if (searchParam || isActiveParam) return dict.users.empty;
+  if (roleParam === ROLE_VALUES.MANAGER) return dict.users.emptyManagers;
+  if (roleParam === ROLE_VALUES.ADMIN) return dict.users.emptyAdmins;
+  return dict.users.empty;
+}
+
+/**
  * Paginated, searchable, filterable user table for the admin panel.
  *
  * Search, role, status, and page state all live in the URL (`?search=`,
@@ -92,11 +111,6 @@ export function AdminUserTable() {
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
 
   const [searchInput, setSearchInput] = useState(searchParam);
-  // Creating staff is owner-only on the API (`@OwnerOnly()` on POST /users).
-  // Hiding the button for a manager keeps the panel honest; the 403 is what
-  // actually stops them.
-  const { isOwner } = useAuth();
-  const [createOpen, setCreateOpen] = useState(false);
 
   const updateParams = useUrlParams();
 
@@ -213,18 +227,7 @@ export function AdminUserTable() {
               </Select>
             </>
           }
-          actions={
-            isOwner ? (
-              <Button type="button" onClick={() => setCreateOpen(true)}>
-                {dict.users.create}
-              </Button>
-            ) : null
-          }
         />
-
-        {isOwner && (
-          <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
-        )}
 
         {isLoading ? (
           <AdminUserTableSkeleton />
@@ -233,8 +236,13 @@ export function AdminUserTable() {
             {dict.users.loadError}
           </p>
         ) : users.length === 0 ? (
-          <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-            {dict.users.empty}
+          // TASK-406: filtering to «Менеджер» on a shop that has none used to
+          // answer «Немає користувачів за поточними фільтрами» — true, and
+          // exactly the moment the owner needed to be told that the way to get
+          // one is to create a staff account, and where.
+          <div className="flex flex-col items-center gap-3 rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
+            <p>{emptyCopy(roleParam, searchParam, isActiveParam)}</p>
+            <CreateStaffButton size="sm" />
           </div>
         ) : (
           <div className="relative rounded-lg border border-border shadow-card overflow-hidden">

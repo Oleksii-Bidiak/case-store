@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { AdminUserTable, AdminUserTableSkeleton } from "@/widgets";
+import { CreateStaffButton } from "@/features/user-create";
 import { dict } from "@/shared/config";
 
 /**
@@ -20,9 +21,21 @@ export const metadata: Metadata = {
 export default function UsersPage() {
   return (
     <div className="flex flex-col gap-6">
-      <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-        {dict.users.heading}
-      </h2>
+      {/* TASK-406: «Створити співробітника» is the primary action of this
+          screen, so it sits next to the heading. Inside the table toolbar — its
+          previous home — the owner never found it and reported that hiring a
+          manager was impossible. */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-2">
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
+            {dict.users.heading}
+          </h2>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            {dict.users.createHint}
+          </p>
+        </div>
+        <CreateStaffButton />
+      </div>
 
       <Suspense fallback={<AdminUserTableSkeleton />}>
         <AdminUserTable />

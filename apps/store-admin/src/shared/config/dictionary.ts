@@ -2020,6 +2020,10 @@ export const dict = {
     allStatuses: "Усі статуси",
     loadError: "Не вдалося завантажити користувачів. Спробуйте ще раз.",
     empty: "Немає користувачів за поточними фільтрами.",
+    // TASK-406: a role filter that matched nothing has an obvious next step —
+    // say it, instead of reporting the filter back to the operator.
+    emptyManagers: "Менеджерів ще немає — створіть службовий акаунт.",
+    emptyAdmins: "Інших адміністраторів ще немає — створіть службовий акаунт.",
     colEmail: "Електронна пошта",
     colName: "Ім'я",
     colRole: "Роль",
@@ -2059,6 +2063,11 @@ export const dict = {
     roleUnknown: (role: string) => `Роль: ${role}`,
     createHeading: "Новий співробітник",
     create: "Створити співробітника",
+    // TASK-406: on the live run the owner looked for a way to "promote" an
+    // existing customer and concluded that creating a manager was impossible.
+    // The heading now says outright what the button does.
+    createHint:
+      "«Створити співробітника» заводить НОВИЙ службовий акаунт: пошта, пароль і роль (адміністратор або менеджер). Щоб змінити роль наявного користувача, відкрийте його картку.",
     createDescription:
       "Акаунт для працівника магазину. Клієнти реєструються самі на вітрині — тут створюються лише адміністратори та менеджери.",
     createEmail: "Електронна пошта",
@@ -2087,6 +2096,12 @@ export const dict = {
     roleChangeSelf: "Не можна змінити власну роль.",
     roleChangeHint:
       "Після зміни ролі всі активні сесії користувача завершуються — йому доведеться увійти знову.",
+    // TASK-406: the owner expected to tick permissions for one person here.
+    // Permissions belong to the ROLE — say so next to the role selector, and
+    // point at the screen where they are actually edited.
+    rolePermissionsHint:
+      "Права видаються ролі, а не конкретній людині: змінивши права «Менеджера», ви змінюєте їх усім менеджерам.",
+    rolePermissionsLink: "Права ролі →",
 
     passwordResetHeading: "Скинути пароль",
     passwordResetDescription:
@@ -2122,6 +2137,10 @@ export const dict = {
       "Хто що може робити в панелі. Перелік прав живе в коді — новий розділ панелі з'являється тут автоматично. Кому їх видано — ваше рішення, і воно діє з наступного запиту працівника.",
     loadError: "Не вдалося завантажити матрицю прав. Спробуйте ще раз.",
     empty: "У каталозі немає жодного права.",
+    // TASK-406: this screen sets what a role MAY do; the account itself is
+    // created by the button beside the heading.
+    createStaffHint:
+      "Права тут стосуються ролі. Сам акаунт працівника створюється кнопкою «Створити співробітника» — праворуч, або на сторінці «Користувачі».",
     roleColumn: (role: string) => `Роль: ${role}`,
     roleManager: "Менеджер",
     ownerNote:

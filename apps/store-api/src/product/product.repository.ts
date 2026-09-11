@@ -87,6 +87,17 @@ export interface FindAllParams {
   maxPrice?: number;
   search?: string;
   /**
+   * Extend `search` to the internal article number (TASK-406, AD-PROD-08).
+   *
+   * OFF by default and set ONLY from `ProductService.adminFindAll`: this
+   * `findAll` is shared by the public storefront listing and the admin table,
+   * and an SKU is an internal identifier — a supplier code, a stock label —
+   * that nobody outside the shop should be able to probe for through the public
+   * search box. The operator, on the other hand, looks a position up by exactly
+   * that number, which is why the flag exists at all.
+   */
+  searchIncludesSku?: boolean;
+  /**
    * Structured-spec facet filter (TASK-191): keep only products carrying a
    * spec value whose definition `key` and `value` both match. A single pair for
    * this "basic" cut (doc 099 §6); multi-pair stacking is a future enhancement.
@@ -540,10 +551,18 @@ export class ProductRepository {
     }
 
     if (search) {
-      where.OR = [
+      const searchOr: Prisma.ProductWhereInput[] = [
         { name: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
       ];
+      // The article number joins the search only on the admin path (TASK-406):
+      // `params.searchIncludesSku` is set by `adminFindAll` and by nothing else,
+      // so the public storefront listing — which calls this very method — cannot
+      // be used to probe internal SKUs.
+      if (params.searchIncludesSku) {
+        searchOr.push({ sku: { contains: search, mode: 'insensitive' } });
+      }
+      where.OR = searchOr;
     }
 
     // Structured-spec facet (TASK-191): the product must have at least one spec

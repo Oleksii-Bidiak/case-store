@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
+  getGetUserAdminCardQueryKey,
   getUserControllerFindAllQueryKey,
   getUserControllerFindByIdQueryKey,
   useUserControllerActivateUser,
@@ -20,10 +21,16 @@ interface UserBanToggleProps {
 /**
  * Activate/deactivate (ban/unban) control for a single user.
  *
- * Invalidates both the admin user list and the specific user detail query on
- * success, and surfaces a sonner toast. The action is disabled for the
- * currently authenticated admin to prevent accidental self-ban (UI-only guard —
- * see plan 029 Risks).
+ * Invalidates the admin user list, the user detail query AND the enriched admin
+ * card on success, then surfaces a sonner toast. The card key is the one that
+ * matters on this screen (SF-AUTH-14 / TASK-406): the only place this button is
+ * rendered is `UserDetailView`, which reads `useGetUserAdminCard` — a different
+ * query from `findById`. Invalidating the other two left the status line and
+ * the button label showing the pre-ban state until a manual reload, so the
+ * operator could not tell whether the deactivation had gone through.
+ *
+ * The action is disabled for the currently authenticated admin to prevent
+ * accidental self-ban (UI-only guard — see plan 029 Risks).
  */
 export function UserBanToggle({ userId, isActive }: UserBanToggleProps) {
   const queryClient = useQueryClient();
@@ -46,6 +53,9 @@ export function UserBanToggle({ userId, isActive }: UserBanToggleProps) {
           });
           void queryClient.invalidateQueries({
             queryKey: getUserControllerFindByIdQueryKey(userId),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: getGetUserAdminCardQueryKey(userId),
           });
           toast.success(
             isActive
