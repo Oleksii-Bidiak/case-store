@@ -768,3 +768,292 @@ describe("HeaderSearch — hover, Enter and the compact trigger (TASK-411)", () 
     expect(catalogTrigger).toHaveAttribute("aria-expanded", "true");
   });
 });
+
+describe("HeaderSearch — mega-menu keyboard, scroll-lock and the second exit (TASK-413)", () => {
+  /** Render and open the "Каталог" panel; hands back RTL's unmount too. */
+  async function openCatalog() {
+    const user = userEvent.setup();
+    const view = renderWithProviders(<HeaderSearch />);
+    await user.click(
+      screen.getByRole("button", { name: dict.header.catalogAria }),
+    );
+    return { user, unmount: view.unmount };
+  }
+
+  function subPane() {
+    return screen.getByRole("group", {
+      name: dict.header.catalogSubcategoriesAria,
+    });
+  }
+
+  /** Open the panel and put focus on the first root, ready for an arrow key. */
+  async function openOnFirstRoot() {
+    const opened = await openCatalog();
+    const first = await screen.findByRole("menuitem", { name: "Смартфони" });
+    act(() => first.focus());
+    return { ...opened, first };
+  }
+
+  describe("vertical traversal", () => {
+    it("walks the root list downwards and wraps past the last root", async () => {
+      setupHandlers({ categories: makeTree() });
+      const { user } = await openOnFirstRoot();
+
+      await user.keyboard("{ArrowDown}");
+      expect(screen.getByRole("menuitem", { name: "Аудіо" })).toHaveFocus();
+      await user.keyboard("{ArrowDown}");
+      expect(screen.getByRole("menuitem", { name: "Кабелі" })).toHaveFocus();
+
+      // Wrapping is what keeps ↓ from being a dead key on the last row.
+      await user.keyboard("{ArrowDown}");
+      expect(screen.getByRole("menuitem", { name: "Смартфони" })).toHaveFocus();
+    });
+
+    it("walks the root list upwards and wraps past the first root", async () => {
+      setupHandlers({ categories: makeTree() });
+      const { user } = await openOnFirstRoot();
+
+      await user.keyboard("{ArrowUp}");
+      expect(screen.getByRole("menuitem", { name: "Кабелі" })).toHaveFocus();
+      await user.keyboard("{ArrowUp}");
+      expect(screen.getByRole("menuitem", { name: "Аудіо" })).toHaveFocus();
+    });
+
+    it("jumps to the last and first root with End and Home", async () => {
+      setupHandlers({ categories: makeTree() });
+      const { user } = await openOnFirstRoot();
+
+      await user.keyboard("{End}");
+      expect(screen.getByRole("menuitem", { name: "Кабелі" })).toHaveFocus();
+      await user.keyboard("{Home}");
+      expect(screen.getByRole("menuitem", { name: "Смартфони" })).toHaveFocus();
+    });
+
+    it("previews the children of whichever root an arrow key lands on", async () => {
+      setupHandlers({ categories: makeTree() });
+      const { user } = await openOnFirstRoot();
+
+      await user.keyboard("{ArrowDown}");
+
+      // Arrows drive the right pane exactly as hovering does — otherwise the
+      // keyboard reads a pane that belongs to a different root.
+      expect(
+        within(subPane()).getByRole("menuitem", { name: "Навушники" }),
+      ).toBeInTheDocument();
+    });
+
+    it("walks the subcategory pane with ArrowDown/ArrowUp/Home/End", async () => {
+      setupHandlers({ categories: makeTree() });
+      const { user } = await openOnFirstRoot();
+
+      await user.keyboard("{ArrowRight}");
+      const cases = within(subPane()).getByRole("menuitem", { name: "Чохли" });
+      const glass = within(subPane()).getByRole("menuitem", { name: "Скло" });
+      expect(cases).toHaveFocus();
+
+      await user.keyboard("{ArrowDown}");
+      expect(glass).toHaveFocus();
+      await user.keyboard("{ArrowDown}");
+      expect(cases).toHaveFocus();
+      await user.keyboard("{End}");
+      expect(glass).toHaveFocus();
+      await user.keyboard("{Home}");
+      expect(cases).toHaveFocus();
+      await user.keyboard("{ArrowUp}");
+      expect(glass).toHaveFocus();
+    });
+
+    it("leaves ArrowLeft and Escape doing what they always did", async () => {
+      setupHandlers({ categories: makeTree() });
+      const { user, first } = await openOnFirstRoot();
+
+      await user.keyboard("{ArrowRight}{ArrowLeft}");
+      expect(first).toHaveFocus();
+
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: dict.header.catalogAria }),
+      ).toHaveFocus();
+    });
+  });
+
+  describe("roving tab stops", () => {
+    it("gives each pane exactly one tabbable row", async () => {
+      setupHandlers({ categories: makeTree() });
+      await openCatalog();
+      await screen.findByRole("menuitem", { name: "Смартфони" });
+
+      // Root pane: the active root holds the stop.
+      expect(
+        screen.getByRole("menuitem", { name: "Смартфони" }),
+      ).toHaveAttribute("tabindex", "0");
+      expect(screen.getByRole("menuitem", { name: "Аудіо" })).toHaveAttribute(
+        "tabindex",
+        "-1",
+      );
+      expect(screen.getByRole("menuitem", { name: "Кабелі" })).toHaveAttribute(
+        "tabindex",
+        "-1",
+      );
+
+      // Child pane: its own stop, defaulting to the first row.
+      const pane = subPane();
+      expect(
+        within(pane).getByRole("menuitem", { name: "Чохли" }),
+      ).toHaveAttribute("tabindex", "0");
+      expect(
+        within(pane).getByRole("menuitem", { name: "Скло" }),
+      ).toHaveAttribute("tabindex", "-1");
+    });
+
+    it("moves the root pane's tab stop with the selection", async () => {
+      setupHandlers({ categories: makeTree() });
+      const { user } = await openOnFirstRoot();
+
+      await user.keyboard("{ArrowDown}");
+
+      expect(screen.getByRole("menuitem", { name: "Аудіо" })).toHaveAttribute(
+        "tabindex",
+        "0",
+      );
+      expect(
+        screen.getByRole("menuitem", { name: "Смартфони" }),
+      ).toHaveAttribute("tabindex", "-1");
+    });
+
+    it("moves the child pane's tab stop, and resets it for a new root", async () => {
+      setupHandlers({ categories: makeTree() });
+      const { user } = await openOnFirstRoot();
+
+      await user.keyboard("{ArrowRight}{ArrowDown}");
+      expect(
+        within(subPane()).getByRole("menuitem", { name: "Скло" }),
+      ).toHaveAttribute("tabindex", "0");
+      expect(
+        within(subPane()).getByRole("menuitem", { name: "Чохли" }),
+      ).toHaveAttribute("tabindex", "-1");
+
+      // A different root renders a different list; the remembered id matches
+      // nothing there, so the stop falls back to that list's first row.
+      await user.hover(screen.getByRole("menuitem", { name: "Аудіо" }));
+      expect(
+        within(subPane()).getByRole("menuitem", { name: "Навушники" }),
+      ).toHaveAttribute("tabindex", "0");
+    });
+  });
+
+  describe("the panel footer", () => {
+    it("offers the flat catalogue beside the category index", async () => {
+      setupHandlers({ categories: makeTree() });
+      await openCatalog();
+      await screen.findByRole("menuitem", { name: "Смартфони" });
+
+      expect(
+        screen.getByRole("menuitem", { name: dict.header.catalogAll }),
+      ).toHaveAttribute("href", "/categories");
+      expect(
+        screen.getByRole("menuitem", { name: dict.header.catalogAllProducts }),
+      ).toHaveAttribute("href", "/products");
+    });
+
+    it("closes the panel when the flat catalogue is picked", async () => {
+      setupHandlers({ categories: makeTree() });
+      const { user } = await openCatalog();
+      await screen.findByRole("menuitem", { name: "Смартфони" });
+
+      await user.click(
+        screen.getByRole("menuitem", { name: dict.header.catalogAllProducts }),
+      );
+
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("scroll-lock", () => {
+    // Belt and braces: a test that fails mid-way must not leave the next one
+    // asserting against a locked <body>.
+    afterEach(() => {
+      document.body.removeAttribute("data-scroll-locked");
+      document.body.style.overflow = "";
+    });
+
+    /** The two marks the lock leaves on <body>, asserted as one. */
+    function expectLocked(locked: boolean) {
+      expect(document.body.hasAttribute("data-scroll-locked")).toBe(locked);
+      expect(document.body.style.overflow).toBe(locked ? "hidden" : "");
+    }
+
+    it("locks the page while the panel is open", async () => {
+      setupHandlers({ categories: makeTree() });
+      expectLocked(false);
+      await openCatalog();
+      await screen.findByRole("menuitem", { name: "Смартфони" });
+
+      // The attribute name is not free: globals.css keys `scrollbar-gutter`
+      // off `body[data-scroll-locked]`, so any other name would drop the
+      // gutter without compensating and slide the page sideways on open.
+      expectLocked(true);
+    });
+
+    it("releases the lock when Escape closes the panel", async () => {
+      setupHandlers({ categories: makeTree() });
+      const { user } = await openCatalog();
+      await screen.findByRole("menuitem", { name: "Смартфони" });
+
+      await user.keyboard("{Escape}");
+
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expectLocked(false);
+    });
+
+    it("releases the lock when a click outside closes the panel", async () => {
+      setupHandlers({ categories: makeTree() });
+      const { user } = await openCatalog();
+      await screen.findByRole("menuitem", { name: "Смартфони" });
+
+      await user.click(document.body);
+
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expectLocked(false);
+    });
+
+    it("releases the lock when a category link closes the panel", async () => {
+      setupHandlers({ categories: makeTree() });
+      const { user } = await openCatalog();
+
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Смартфони" }),
+      );
+
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expectLocked(false);
+    });
+
+    it("releases the lock when the header unmounts with the panel open", async () => {
+      setupHandlers({ categories: makeTree() });
+      const { unmount } = await openCatalog();
+      await screen.findByRole("menuitem", { name: "Смартфони" });
+      expectLocked(true);
+
+      // A route change can tear the header down mid-panel; a lock that only
+      // unwound on the close paths would leave the next page unscrollable.
+      unmount();
+
+      expectLocked(false);
+    });
+
+    it("leaves a lock somebody else already holds alone", async () => {
+      setupHandlers({ categories: makeTree() });
+      // Stand in for a Radix overlay that already owns the page.
+      document.body.setAttribute("data-scroll-locked", "");
+      const { user } = await openCatalog();
+      await screen.findByRole("menuitem", { name: "Смартфони" });
+
+      await user.keyboard("{Escape}");
+
+      // Closing our panel must not unlock a page we never locked.
+      expect(document.body.hasAttribute("data-scroll-locked")).toBe(true);
+    });
+  });
+});
