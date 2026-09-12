@@ -67,10 +67,11 @@ export class CreatePageDto extends PublishFieldsDto {
   metaDescription?: string;
 
   @ApiProperty({
-    description: 'Sort order for display (lower values appear first)',
+    description:
+      'Sort order for display (lower values appear first). OMIT IT (TASK-428): the page ' +
+      'is then appended to the end of the list and the order is changed by dragging rows.',
     example: 0,
     required: false,
-    default: 0,
   })
   @IsOptional()
   @Type(() => Number)

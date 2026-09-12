@@ -12,6 +12,7 @@ import { CategoryRepository } from '../src/category';
 import { ProductService } from '../src/product/product.service';
 import { RevalidationNotifier } from '../src/publishing';
 import { HttpExceptionFilter } from '../src/common/filters';
+import { ReorderNotFoundError, ReorderStaleError } from '../src/common/reorder';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
@@ -86,6 +87,7 @@ describe('Carousel placement (e2e)', () => {
     findItemIds: jest.fn(),
     findItemsWithProducts: jest.fn(),
     replaceItems: jest.fn(),
+    reorderPlacement: jest.fn(),
     revalidateTarget: { tags: ['carousels'], paths: ['/'] },
   };
 
@@ -386,6 +388,128 @@ describe('Carousel placement (e2e)', () => {
       expect(carouselRepositoryMock.findAllPublished).toHaveBeenCalledWith({
         placement: undefined,
       });
+    });
+  });
+
+  // ─── PATCH /api/admin/carousels/reorder (TASK-428) ──────────────────────────
+
+  describe('PATCH /api/admin/carousels/reorder', () => {
+    const body = {
+      placement: CarouselPlacement.HOME_RAILS,
+      orderedIds: [railId, tabsId],
+    };
+
+    it('returns 401 without an auth token', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .send(body)
+        .expect(401);
+    });
+
+    it('returns 403 for a non-admin user', async () => {
+      const token = generateAccessToken('customer-e2e-1', 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(403);
+
+      expect(carouselRepositoryMock.reorderPlacement).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 on an unknown placement', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ placement: 'HOME_SIDEBAR', orderedIds: [railId] })
+        .expect(400);
+
+      expect(carouselRepositoryMock.reorderPlacement).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when an ordered id is not a uuid', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ placement: CarouselPlacement.HOME_RAILS, orderedIds: ['not-a-uuid'] })
+        .expect(400);
+
+      expect(carouselRepositoryMock.reorderPlacement).not.toHaveBeenCalled();
+    });
+
+    // Route-order regression guard: `reorder` is declared BEFORE `:id`, so it must reach
+    // the reorder handler — never `GET/PUT :id` with `id = 'reorder'`.
+    it('is matched by the reorder handler, NOT captured as an :id route', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+      carouselRepositoryMock.reorderPlacement.mockResolvedValue({
+        carousels: publishedRows,
+        total: 2,
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(200);
+
+      expect(carouselRepositoryMock.reorderPlacement).toHaveBeenCalledTimes(1);
+      expect(carouselRepositoryMock.findById).not.toHaveBeenCalled();
+      expect(carouselRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it('returns 200 with the refreshed full admin list (ALL placements)', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+      carouselRepositoryMock.reorderPlacement.mockResolvedValue({
+        carousels: publishedRows,
+        total: 2,
+      });
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(200);
+
+      expect(response.body.data).toHaveLength(2);
+      expect(response.body.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
+      expect(carouselRepositoryMock.reorderPlacement).toHaveBeenCalledWith(
+        CarouselPlacement.HOME_RAILS,
+        [railId, tabsId],
+      );
+    });
+
+    // The stable codes are the contract the admin panel keys its UA announcements off —
+    // and they only reach the wire because `HttpExceptionFilter` rebuilds the envelope
+    // from `error` + `message`.
+    it('surfaces REORDER_STALE as 409 with the stable code', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+      carouselRepositoryMock.reorderPlacement.mockRejectedValue(new ReorderStaleError());
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(409);
+
+      expect(response.body.error).toBe('REORDER_STALE');
+    });
+
+    it('surfaces REORDER_NOT_FOUND as 404 with the stable code', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+      carouselRepositoryMock.reorderPlacement.mockRejectedValue(new ReorderNotFoundError());
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(404);
+
+      expect(response.body.error).toBe('REORDER_NOT_FOUND');
     });
   });
 });

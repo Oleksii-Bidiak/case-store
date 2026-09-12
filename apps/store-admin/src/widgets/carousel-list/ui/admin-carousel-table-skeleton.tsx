@@ -9,7 +9,7 @@ import {
 import { dict } from "@/shared/config";
 
 const SKELETON_ROWS = 4;
-const COLUMN_COUNT = 6;
+const COLUMN_COUNT = 5;
 
 /**
  * Loading placeholder matching the AdminCarouselTable column structure.
@@ -24,7 +24,6 @@ export function AdminCarouselTableSkeleton() {
             <TableHead>{dict.carousels.colSource}</TableHead>
             <TableHead>{dict.carousels.colPlacement}</TableHead>
             <TableHead>{dict.carousels.colStatus}</TableHead>
-            <TableHead>{dict.carousels.colSort}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
         </TableHeader>

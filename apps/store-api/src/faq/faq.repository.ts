@@ -1,9 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { FaqItem, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
 
 /** Page size used when the admin asks for a page but names no `limit` (TASK-357). */
 const DEFAULT_ADMIN_PAGE_SIZE = 20;
+
+/**
+ * Advisory-lock namespace for FAQ items (TASK-428). MANDATORY prefix: advisory locks are
+ * DATABASE-GLOBAL, so without it the FAQ list would serialise against an unrelated
+ * resource's bucket of the same name.
+ */
+const LOCK_RESOURCE = 'faq';
+
+/** FAQ items are ONE global list — a single bucket, hence the `null` bucket key. */
+const FAQ_LOCK_KEY = lockKey(LOCK_RESOURCE, null);
+
+/** Any client the reads accept: the injected singleton or an interactive-transaction client. */
+type FaqDbClient = PrismaService | ReorderTx;
 
 /**
  * Filter params for the admin FAQ list. `page` / `limit` are OPTIONAL and
@@ -75,7 +89,10 @@ export class FaqRepository {
    * `sortOrder` is the operator's own hand-set order and the only ordering the
    * storefront honours, so a paginated admin page must slice that same sequence.
    */
-  async findAllAdmin(params: FindAllAdminParams = {}): Promise<PaginatedFaqItemsResult> {
+  async findAllAdmin(
+    params: FindAllAdminParams = {},
+    client: FaqDbClient = this.prisma,
+  ): Promise<PaginatedFaqItemsResult> {
     const where: Prisma.FaqItemWhereInput = {
       ...(params.search && { question: { contains: params.search, mode: 'insensitive' } }),
     };
@@ -85,7 +102,7 @@ export class FaqRepository {
     ];
 
     if (params.page === undefined && params.limit === undefined) {
-      const items = await this.prisma.faqItem.findMany({ where, orderBy });
+      const items = await client.faqItem.findMany({ where, orderBy });
       return { items, total: items.length };
     }
 
@@ -93,11 +110,28 @@ export class FaqRepository {
     const skip = ((params.page ?? 1) - 1) * limit;
 
     const [items, total] = await Promise.all([
-      this.prisma.faqItem.findMany({ where, orderBy, skip, take: limit }),
-      this.prisma.faqItem.count({ where }),
+      client.faqItem.findMany({ where, orderBy, skip, take: limit }),
+      client.faqItem.count({ where }),
     ]);
 
     return { items, total };
+  }
+
+  /**
+   * Rewrite the complete ordering of the FAQ list and return the refreshed admin list,
+   * read inside the same transaction (TASK-428).
+   *
+   * Throws the domain errors of `common/reorder/reorder.errors.ts`; the service maps them.
+   */
+  reorderAll(orderedIds: readonly string[]): Promise<PaginatedFaqItemsResult> {
+    return reorderBucket<PaginatedFaqItemsResult>(this.prisma, {
+      resource: LOCK_RESOURCE,
+      bucket: null,
+      orderedIds,
+      snapshot: (tx) => tx.faqItem.findMany({ select: { id: true } }),
+      delegate: (tx) => tx.faqItem,
+      result: (tx) => this.findAllAdmin({}, tx),
+    });
   }
 
   /**
@@ -108,17 +142,39 @@ export class FaqRepository {
   }
 
   /**
-   * Create a new FAQ item. `sortOrder` and `isActive` default to 0 / true.
+   * Create a new FAQ item, APPENDED to the END of the list (`sortOrder = max + 1`, `0`
+   * for the first item) — TASK-428. `isActive` still defaults to true.
+   *
+   * The old `data.sortOrder ?? 0` default put every new question ON TOP OF the first one
+   * the moment the admin form stopped sending a hand-typed number (which the reorder UI
+   * removes): the whole list would sit at slot 0 and its order would be DB-arbitrary.
+   * Same shape as `BannerRepository.create` — the `max + 1` read runs INSIDE a transaction
+   * holding the list's advisory lock, so it cannot race a concurrent append (two items
+   * handed the same slot) or a concurrent `reorderAll`.
+   *
+   * An EXPLICIT `data.sortOrder` still wins — the append is only the default.
    */
   create(data: CreateFaqItemInput): Promise<FaqItem> {
-    return this.prisma.faqItem.create({
-      data: {
-        question: data.question,
-        answer: data.answer,
-        sortOrder: data.sortOrder ?? 0,
-        isActive: data.isActive ?? true,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await acquireAdvisoryLocks(tx, [FAQ_LOCK_KEY]);
+
+      const sortOrder = data.sortOrder ?? (await this.nextSortOrder(tx));
+
+      return tx.faqItem.create({
+        data: {
+          question: data.question,
+          answer: data.answer,
+          sortOrder,
+          isActive: data.isActive ?? true,
+        },
+      });
     });
+  }
+
+  /** The append slot of the FAQ list: `max(sortOrder) + 1`, or 0 when it is empty. */
+  private async nextSortOrder(tx: ReorderTx): Promise<number> {
+    const { _max } = await tx.faqItem.aggregate({ _max: { sortOrder: true } });
+    return _max.sortOrder === null ? 0 : _max.sortOrder + 1;
   }
 
   /**

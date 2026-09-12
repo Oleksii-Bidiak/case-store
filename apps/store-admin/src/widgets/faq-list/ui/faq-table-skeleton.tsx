@@ -9,7 +9,7 @@ import {
 import { dict } from "@/shared/config";
 
 const SKELETON_ROWS = 6;
-const COLUMN_COUNT = 4;
+const COLUMN_COUNT = 3;
 
 /**
  * Loading placeholder matching the AdminFaqTable column structure.
@@ -21,7 +21,6 @@ export function AdminFaqTableSkeleton() {
         <TableHeader>
           <TableRow>
             <TableHead>{dict.faq.colQuestion}</TableHead>
-            <TableHead className="w-24">{dict.faq.colOrder}</TableHead>
             <TableHead className="w-32">{dict.faq.colStatus}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>

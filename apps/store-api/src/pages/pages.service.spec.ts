@@ -5,6 +5,7 @@ import { PageRepository } from './pages.repository';
 import { PageService } from './pages.service';
 import { PageEntity } from './entities';
 import { RevalidationNotifier } from '../publishing';
+import { ReorderNotFoundError, ReorderStaleError } from '../common/reorder';
 
 const mockPage = {
   id: 'page-uuid-1',
@@ -44,6 +45,7 @@ const pageRepositoryMock = {
   publish: jest.fn(),
   unpublish: jest.fn(),
   delete: jest.fn(),
+  reorderAll: jest.fn(),
 };
 
 const revalidationMock = { revalidate: jest.fn() };
@@ -450,6 +452,47 @@ describe('PageService', () => {
       await service.delete('page-uuid-1');
 
       expect(pageRepositoryMock.delete).toHaveBeenCalledWith('page-uuid-1');
+    });
+  });
+
+  // ─── reorder (TASK-428) ────────────────────────────────────────────────────
+
+  describe('reorder', () => {
+    it('returns the refreshed COMPLETE list with meta and revalidates the /legal hub', async () => {
+      pageRepositoryMock.reorderAll.mockResolvedValue({ pages: [mockPage, draftPage], total: 2 });
+
+      const result = await service.reorder({ orderedIds: ['page-uuid-1', 'page-uuid-2'] });
+
+      expect(pageRepositoryMock.reorderAll).toHaveBeenCalledWith(['page-uuid-1', 'page-uuid-2']);
+      expect(result.data[0]).toBeInstanceOf(PageEntity);
+      // The unpaginated shape: one page holding everything (the panel writes this
+      // response straight into the list query's cache).
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
+      // The hub only: a reorder changes the sequence `/legal` renders, never the
+      // content of any single `/legal/<slug>` route.
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith({
+        tags: ['pages'],
+        paths: ['/legal'],
+      });
+    });
+
+    it('maps REORDER_STALE onto 409 with the stable code on the wire', async () => {
+      pageRepositoryMock.reorderAll.mockRejectedValue(new ReorderStaleError());
+
+      await expect(service.reorder({ orderedIds: ['page-uuid-1'] })).rejects.toMatchObject({
+        status: 409,
+        response: { error: 'REORDER_STALE' },
+      });
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+
+    it('maps REORDER_NOT_FOUND onto 404 with the stable code on the wire', async () => {
+      pageRepositoryMock.reorderAll.mockRejectedValue(new ReorderNotFoundError());
+
+      await expect(service.reorder({ orderedIds: ['ghost'] })).rejects.toMatchObject({
+        status: 404,
+        response: { error: 'REORDER_NOT_FOUND' },
+      });
     });
   });
 });

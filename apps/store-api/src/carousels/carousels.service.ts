@@ -14,12 +14,14 @@ import {
   CarouselListQueryDto,
   AdminCarouselListQueryDto,
   SetCarouselItemsDto,
+  ReorderCarouselsDto,
 } from './dto';
 import { ProductService } from '../product/product.service';
 import { ProductListQueryDto } from '../product/dto';
 import { PublicProductEntity } from '../product/entities';
 import { CategoryRepository } from '../category';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
+import { reorderErrorToHttp } from '../common/reorder';
 
 /** Pagination metadata carried by the admin carousel list response. */
 interface PaginationMeta {
@@ -251,6 +253,47 @@ export class CarouselService {
     if (carousel.status === PublishStatus.PUBLISHED) {
       await this.notifyRevalidation();
     }
+  }
+
+  /**
+   * Reorder ONE placement bucket (admin, TASK-428) and return the refreshed FULL admin
+   * carousel list — both placements — so the panel resyncs in a single round-trip, exactly
+   * as the banner reorder does.
+   *
+   * The repository's domain errors are mapped to HTTP here, so the wire body carries the
+   * stable `error` code the admin panel keys its UA announcements off.
+   */
+  async reorderPlacement(dto: ReorderCarouselsDto): Promise<CarouselListResponse> {
+    let carousels;
+    let total;
+    try {
+      ({ carousels, total } = await this.carouselRepository.reorderPlacement(
+        dto.placement,
+        dto.orderedIds,
+      ));
+    } catch (error) {
+      throw reorderErrorToHttp(error);
+    }
+
+    // Revalidate ONLY when the reordered bucket actually contains something the shopper
+    // can see — a pure draft shuffle changes nothing public, and this service already
+    // gates its revalidation on visibility everywhere else (create / update / delete).
+    const bucketHasPublished = carousels.some(
+      (carousel) =>
+        carousel.placement === dto.placement && carousel.status === PublishStatus.PUBLISHED,
+    );
+    if (bucketHasPublished) {
+      await this.notifyRevalidation();
+    }
+
+    // Shape parity with `findAllAdmin` is load-bearing: the admin panel writes this
+    // response straight into the list query's cache (`useReorderLifecycle` →
+    // `setQueryData`), and an envelope missing `meta` would blank the row counter the
+    // moment someone drags a row.
+    return {
+      data: carousels.map((carousel) => CarouselEntity.fromPrisma(carousel)),
+      meta: this.buildMeta(total),
+    };
   }
 
   /**

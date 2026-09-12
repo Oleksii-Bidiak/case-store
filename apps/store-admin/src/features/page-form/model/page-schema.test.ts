@@ -62,9 +62,17 @@ describe("pageFormValuesToCreateDto", () => {
       excerpt: "Summary",
       metaTitle: "SEO title",
       metaDescription: "SEO description",
-      sortOrder: 3,
       status: "PUBLISHED",
     });
+  });
+
+  // TASK-428: the absence of the key IS the contract. On create the server appends the
+  // page to the END of the list; on update it leaves the position the operator dragged
+  // the row to untouched. Sending `0` — which the old form did for every new page — put
+  // them all in slot 0 and left the /legal order to the database.
+  it("does NOT send sortOrder, even when the inert input value is set", () => {
+    const dto = pageFormValuesToCreateDto({ ...baseValues, sortOrder: 3 });
+    expect(dto).not.toHaveProperty("sortOrder");
   });
 
   it("sends an ISO scheduledAt for a SCHEDULED page", () => {

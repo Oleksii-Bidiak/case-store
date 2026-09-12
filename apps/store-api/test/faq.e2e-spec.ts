@@ -9,6 +9,11 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { FaqRepository } from '../src/faq';
+import {
+  ReorderDuplicateIdError,
+  ReorderNotFoundError,
+  ReorderStaleError,
+} from '../src/common/reorder';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
@@ -57,7 +62,12 @@ describe('FAQ (e2e)', () => {
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    reorderAll: jest.fn(),
   };
+
+  /** Real UUIDs — `orderedIds` is `@IsUUID('loose', { each: true })`. */
+  const idA = '550e8400-e29b-41d4-a716-446655440001';
+  const idB = '550e8400-e29b-41d4-a716-446655440002';
 
   const prismaServiceMock = {
     $connect: jest.fn(),
@@ -319,6 +329,112 @@ describe('FAQ (e2e)', () => {
         .delete('/api/admin/faq/ghost')
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
+    });
+  });
+
+  // ─── PATCH /api/admin/faq/reorder (TASK-428) ──────────────────────────────────
+
+  describe('PATCH /api/admin/faq/reorder', () => {
+    const body = { orderedIds: [idB, idA] };
+
+    it('returns 401 without an auth token', async () => {
+      await request(app.getHttpServer()).patch('/api/admin/faq/reorder').send(body).expect(401);
+    });
+
+    it('returns 403 for a non-admin user', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/faq/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(403);
+
+      expect(faqRepositoryMock.reorderAll).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when an ordered id is not a uuid', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/faq/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ orderedIds: ['not-a-uuid'] })
+        .expect(400);
+
+      expect(faqRepositoryMock.reorderAll).not.toHaveBeenCalled();
+    });
+
+    // Route-order regression guard: `reorder` is declared BEFORE `:id`, so it must reach
+    // the reorder handler — never a `:id` route with `id = 'reorder'`.
+    it('is matched by the reorder handler, NOT captured as an :id route', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      faqRepositoryMock.reorderAll.mockResolvedValue({ items: [faqRow], total: 1 });
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/faq/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(200);
+
+      expect(faqRepositoryMock.reorderAll).toHaveBeenCalledTimes(1);
+      expect(faqRepositoryMock.findById).not.toHaveBeenCalled();
+      expect(faqRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it('returns 200 with the refreshed full admin FAQ list', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      faqRepositoryMock.reorderAll.mockResolvedValue({ items: [faqRow], total: 1 });
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/faq/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(200);
+
+      expect(response.body.data[0]).toMatchObject({ id: 'faq-e2e-1' });
+      expect(response.body.meta).toEqual({ total: 1, page: 1, limit: 1, totalPages: 1 });
+      expect(faqRepositoryMock.reorderAll).toHaveBeenCalledWith([idB, idA]);
+    });
+
+    // The stable codes are the contract the admin panel keys its UA announcements off.
+    it('surfaces REORDER_STALE as 409 with the stable code', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      faqRepositoryMock.reorderAll.mockRejectedValue(new ReorderStaleError());
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/faq/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(409);
+
+      expect(response.body.error).toBe('REORDER_STALE');
+    });
+
+    it('surfaces REORDER_NOT_FOUND as 404 with the stable code', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      faqRepositoryMock.reorderAll.mockRejectedValue(new ReorderNotFoundError());
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/faq/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(404);
+
+      expect(response.body.error).toBe('REORDER_NOT_FOUND');
+    });
+
+    it('surfaces REORDER_DUPLICATE_ID as 400 with the stable code', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      faqRepositoryMock.reorderAll.mockRejectedValue(new ReorderDuplicateIdError());
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/faq/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ orderedIds: [idA, idA] })
+        .expect(400);
+
+      expect(response.body.error).toBe('REORDER_DUPLICATE_ID');
     });
   });
 });

@@ -9,7 +9,7 @@ import {
 import { dict } from "@/shared/config";
 
 const SKELETON_ROWS = 5;
-const COLUMN_COUNT = 5;
+const COLUMN_COUNT = 4;
 
 /**
  * Loading placeholder matching the AdminPageTable column structure.
@@ -23,7 +23,6 @@ export function AdminPageTableSkeleton() {
             <TableHead>{dict.pages.colTitle}</TableHead>
             <TableHead>{dict.pages.colSlug}</TableHead>
             <TableHead>{dict.pages.colStatus}</TableHead>
-            <TableHead>{dict.pages.colSort}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
         </TableHeader>

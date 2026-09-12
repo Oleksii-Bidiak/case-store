@@ -2,9 +2,24 @@ import { Injectable } from '@nestjs/common';
 import { Carousel, CarouselPlacement, CarouselSource, Prisma, PublishStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import type { PublishablePort, RevalidateTarget } from '../publishing';
+import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
 
 /** Page size used when the admin asks for a page but names no `limit` (TASK-357). */
 const DEFAULT_ADMIN_PAGE_SIZE = 20;
+
+/**
+ * Advisory-lock namespace for carousels (TASK-428). MANDATORY prefix: advisory locks are
+ * DATABASE-GLOBAL, so without it a carousel reorder would serialise against an unrelated
+ * resource's bucket of the same name.
+ */
+const LOCK_RESOURCE = 'carousels';
+
+/** Carousels are bucketed by `placement` — each placement is its own independent list. */
+const placementLockKey = (placement: CarouselPlacement): string =>
+  lockKey(LOCK_RESOURCE, placement);
+
+/** Any client the reads accept: the injected singleton or an interactive-transaction client. */
+type CarouselDbClient = PrismaService | ReorderTx;
 
 /**
  * Filter params for the public carousel list (PUBLISHED only).
@@ -145,20 +160,32 @@ export class CarouselRepository implements PublishablePort {
    * With neither `page` nor `limit` the query keeps its pre-TASK-357 shape — no
    * `skip`/`take`, and `total` comes from the rows we already hold rather than a
    * second `count` round-trip.
+   *
+   * Accepts a transaction client so the reorder endpoint can re-read the refreshed list
+   * inside its own transaction.
+   *
+   * The `createdAt: 'asc'` tiebreaker is LOAD-BEARING (TASK-428): it used to be `'desc'`,
+   * so while every `sortOrder` was still 0 (the pre-TASK-428 state of every row) the admin
+   * list was the exact REVERSE of `findAllPublished`'s — the operator saw one order and
+   * the shopper another. Both reads now tiebreak identically. Do not flip it back.
    */
-  async findAllAdmin(params: FindAllAdminParams = {}): Promise<PaginatedCarouselsResult> {
+  async findAllAdmin(
+    params: FindAllAdminParams = {},
+    client: CarouselDbClient = this.prisma,
+  ): Promise<PaginatedCarouselsResult> {
     const where: Prisma.CarouselWhereInput = {
       ...(params.placement !== undefined && { placement: params.placement }),
       ...(params.status !== undefined && { status: params.status }),
       ...(params.search && { title: { contains: params.search, mode: 'insensitive' } }),
     };
     const orderBy: Prisma.CarouselOrderByWithRelationInput[] = [
+      { placement: 'asc' },
       { sortOrder: 'asc' },
-      { createdAt: 'desc' },
+      { createdAt: 'asc' },
     ];
 
     if (params.page === undefined && params.limit === undefined) {
-      const carousels = await this.prisma.carousel.findMany({ where, orderBy });
+      const carousels = await client.carousel.findMany({ where, orderBy });
       return { carousels, total: carousels.length };
     }
 
@@ -166,11 +193,37 @@ export class CarouselRepository implements PublishablePort {
     const skip = ((params.page ?? 1) - 1) * limit;
 
     const [carousels, total] = await Promise.all([
-      this.prisma.carousel.findMany({ where, orderBy, skip, take: limit }),
-      this.prisma.carousel.count({ where }),
+      client.carousel.findMany({ where, orderBy, skip, take: limit }),
+      client.carousel.count({ where }),
     ]);
 
     return { carousels, total };
+  }
+
+  /**
+   * Rewrite the complete ordering of ONE placement bucket and return the refreshed FULL
+   * admin carousel list (both placements), read inside the same transaction (TASK-428).
+   *
+   * `scope: { placement }` is the safety net: every write is `WHERE id = … AND placement =
+   * …`, so an id forged from the other placement silently updates nothing instead of being
+   * stolen into this bucket. Cross-placement moves are out of scope by design — they stay
+   * a form edit.
+   *
+   * Throws the domain errors of `common/reorder/reorder.errors.ts`; the service maps them.
+   */
+  reorderPlacement(
+    placement: CarouselPlacement,
+    orderedIds: readonly string[],
+  ): Promise<PaginatedCarouselsResult> {
+    return reorderBucket<PaginatedCarouselsResult>(this.prisma, {
+      resource: LOCK_RESOURCE,
+      bucket: placement,
+      orderedIds,
+      scope: { placement },
+      snapshot: (tx) => tx.carousel.findMany({ where: { placement }, select: { id: true } }),
+      delegate: (tx) => tx.carousel,
+      result: (tx) => this.findAllAdmin({}, tx),
+    });
   }
 
   /**
@@ -181,22 +234,49 @@ export class CarouselRepository implements PublishablePort {
   }
 
   /**
-   * Create a new carousel.
+   * Create a new carousel, APPENDED to the end of its placement bucket
+   * (`sortOrder = max(bucket) + 1`, `0` for the first carousel in it) — TASK-428.
+   *
+   * The old `data.sortOrder ?? 0` default put every new carousel ON TOP OF the first one
+   * the moment the admin form stopped sending a hand-typed number (which the reorder UI
+   * removes): the whole bucket would sit at slot 0 and its order would be DB-arbitrary.
+   * Same shape as `BannerRepository.create` — the `max + 1` read runs INSIDE a transaction
+   * holding the bucket's advisory lock, so it cannot race a concurrent append or a
+   * concurrent `reorderPlacement` and hand out a duplicate slot.
+   *
+   * An EXPLICIT `data.sortOrder` still wins — the append is only the default.
    */
   create(data: CreateCarouselInput): Promise<Carousel> {
-    return this.prisma.carousel.create({
-      data: {
-        title: data.title,
-        source: data.source,
-        categoryId: data.categoryId ?? null,
-        itemLimit: data.itemLimit ?? 12,
-        placement: data.placement ?? CarouselPlacement.HOME_RAILS,
-        sortOrder: data.sortOrder ?? 0,
-        status: data.status,
-        publishedAt: data.publishedAt,
-        scheduledAt: data.scheduledAt,
-      },
+    const placement = data.placement ?? CarouselPlacement.HOME_RAILS;
+
+    return this.prisma.$transaction(async (tx) => {
+      await acquireAdvisoryLocks(tx, [placementLockKey(placement)]);
+
+      const sortOrder = data.sortOrder ?? (await this.nextSortOrder(tx, placement));
+
+      return tx.carousel.create({
+        data: {
+          title: data.title,
+          source: data.source,
+          categoryId: data.categoryId ?? null,
+          itemLimit: data.itemLimit ?? 12,
+          placement,
+          sortOrder,
+          status: data.status,
+          publishedAt: data.publishedAt,
+          scheduledAt: data.scheduledAt,
+        },
+      });
     });
+  }
+
+  /** The append slot of a placement bucket: `max(sortOrder) + 1`, or 0 when it is empty. */
+  private async nextSortOrder(tx: ReorderTx, placement: CarouselPlacement): Promise<number> {
+    const { _max } = await tx.carousel.aggregate({
+      where: { placement },
+      _max: { sortOrder: true },
+    });
+    return _max.sortOrder === null ? 0 : _max.sortOrder + 1;
   }
 
   /**

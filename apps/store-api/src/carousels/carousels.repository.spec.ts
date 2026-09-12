@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CarouselPlacement, CarouselSource, PublishStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { CarouselRepository } from './carousels.repository';
+import { ReorderStaleError } from '../common/reorder';
 
 const mockCarousel = {
   id: 'carousel-uuid-1',
@@ -18,18 +19,32 @@ const mockCarousel = {
   updatedAt: new Date('2026-07-01T00:00:00.000Z'),
 };
 
+/**
+ * ONE carousel delegate shared by the singleton client and the transaction client: the
+ * repository reads/writes through `tx.carousel` inside a transaction (create + reorder)
+ * and through `this.prisma.carousel` outside one, and the assertions do not care which.
+ */
+const carouselDelegate = {
+  findMany: jest.fn(),
+  count: jest.fn(),
+  findUnique: jest.fn(),
+  aggregate: jest.fn(),
+  create: jest.fn(),
+  update: jest.fn(),
+  updateMany: jest.fn(),
+  delete: jest.fn(),
+};
+
+const txMock = {
+  carousel: carouselDelegate,
+  // `pg_advisory_xact_lock` — taken by `create` and by `reorderPlacement`.
+  $executeRaw: jest.fn(),
+};
+
 const transactionMock = jest.fn();
 
 const prismaMock = {
-  carousel: {
-    findMany: jest.fn(),
-    count: jest.fn(),
-    findUnique: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    updateMany: jest.fn(),
-    delete: jest.fn(),
-  },
+  carousel: carouselDelegate,
   carouselItem: {
     findMany: jest.fn(),
     deleteMany: jest.fn(),
@@ -43,6 +58,15 @@ describe('CarouselRepository', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    // `$transaction` serves BOTH shapes: the INTERACTIVE callback form (`create`,
+    // `reorderPlacement`) and the BATCH-ARRAY form (`replaceItems`). Re-established on
+    // every test so a `mockResolvedValue` inside one case cannot leak into the next.
+    transactionMock.mockImplementation((arg: unknown) =>
+      typeof arg === 'function'
+        ? (arg as (tx: typeof txMock) => Promise<unknown>)(txMock)
+        : Promise.resolve([]),
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [CarouselRepository, { provide: PrismaService, useValue: prismaMock }],
@@ -179,6 +203,7 @@ describe('CarouselRepository', () => {
 
   describe('create', () => {
     it('persists the carousel with resolved publish fields and defaults', async () => {
+      prismaMock.carousel.aggregate.mockResolvedValue({ _max: { sortOrder: null } });
       prismaMock.carousel.create.mockResolvedValue(mockCarousel);
 
       await repository.create({
@@ -205,6 +230,7 @@ describe('CarouselRepository', () => {
     });
 
     it('persists an explicit placement (TASK-288)', async () => {
+      prismaMock.carousel.aggregate.mockResolvedValue({ _max: { sortOrder: null } });
       prismaMock.carousel.create.mockResolvedValue(mockCarousel);
 
       await repository.create({
@@ -219,6 +245,101 @@ describe('CarouselRepository', () => {
       expect(prismaMock.carousel.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ placement: CarouselPlacement.HOME_TABS }),
       });
+    });
+
+    // TASK-428: the whole point of the change — a new carousel lands at the END of ITS
+    // placement bucket, not on top of the first one.
+    it('appends to the end of the TARGET PLACEMENT bucket (max + 1) under that bucket lock', async () => {
+      prismaMock.carousel.aggregate.mockResolvedValue({ _max: { sortOrder: 2 } });
+      prismaMock.carousel.create.mockResolvedValue({ ...mockCarousel, sortOrder: 3 });
+
+      await repository.create({
+        title: 'Нові надходження',
+        source: CarouselSource.NEWEST,
+        placement: CarouselPlacement.HOME_TABS,
+        status: PublishStatus.DRAFT,
+        publishedAt: null,
+        scheduledAt: null,
+      });
+
+      // The max read MUST happen inside the locked transaction, or two concurrent
+      // appends both read the same max and collide on one slot. And it must be scoped
+      // to the bucket — the other placement's numbers are irrelevant.
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(prismaMock.carousel.aggregate).toHaveBeenCalledWith({
+        where: { placement: CarouselPlacement.HOME_TABS },
+        _max: { sortOrder: true },
+      });
+      expect(prismaMock.carousel.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          sortOrder: 3,
+          placement: CarouselPlacement.HOME_TABS,
+        }),
+      });
+    });
+
+    it('honours an explicit sortOrder without reading max', async () => {
+      prismaMock.carousel.create.mockResolvedValue({ ...mockCarousel, sortOrder: 9 });
+
+      await repository.create({
+        title: 'X',
+        source: CarouselSource.NEWEST,
+        sortOrder: 9,
+        status: PublishStatus.DRAFT,
+        publishedAt: null,
+        scheduledAt: null,
+      });
+
+      expect(prismaMock.carousel.aggregate).not.toHaveBeenCalled();
+      expect(prismaMock.carousel.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ sortOrder: 9 }),
+      });
+    });
+  });
+
+  // ─── reorderPlacement (TASK-428) ───────────────────────────────────────────
+
+  describe('reorderPlacement', () => {
+    const a = 'carousel-uuid-1';
+    const b = 'carousel-uuid-2';
+
+    it('locks the bucket, writes the index as sortOrder and scopes every write to it', async () => {
+      prismaMock.carousel.findMany
+        // 1) the in-transaction snapshot of the bucket's membership
+        .mockResolvedValueOnce([{ id: a }, { id: b }])
+        // 2) the refreshed admin list (ALL placements), read in the same transaction
+        .mockResolvedValueOnce([
+          { ...mockCarousel, id: b, sortOrder: 0 },
+          { ...mockCarousel, sortOrder: 1 },
+        ]);
+
+      const result = await repository.reorderPlacement(CarouselPlacement.HOME_RAILS, [b, a]);
+
+      expect(result.total).toBe(2);
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(prismaMock.carousel.findMany).toHaveBeenNthCalledWith(1, {
+        where: { placement: CarouselPlacement.HOME_RAILS },
+        select: { id: true },
+      });
+      // `placement` in the WHERE is the safety net: an id forged from the OTHER
+      // placement silently updates nothing instead of being stolen into this bucket.
+      expect(prismaMock.carousel.updateMany).toHaveBeenNthCalledWith(1, {
+        where: { id: b, placement: CarouselPlacement.HOME_RAILS },
+        data: { sortOrder: 0 },
+      });
+      expect(prismaMock.carousel.updateMany).toHaveBeenNthCalledWith(2, {
+        where: { id: a, placement: CarouselPlacement.HOME_RAILS },
+        data: { sortOrder: 1 },
+      });
+    });
+
+    it('rejects a PARTIAL ordering (a row appeared underneath the client) as stale', async () => {
+      prismaMock.carousel.findMany.mockResolvedValueOnce([{ id: a }, { id: b }]);
+
+      await expect(
+        repository.reorderPlacement(CarouselPlacement.HOME_RAILS, [a]),
+      ).rejects.toBeInstanceOf(ReorderStaleError);
+      expect(prismaMock.carousel.updateMany).not.toHaveBeenCalled();
     });
   });
 

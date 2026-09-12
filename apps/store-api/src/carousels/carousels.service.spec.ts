@@ -8,6 +8,7 @@ import { ProductService } from '../product/product.service';
 import { ProductListQueryDto } from '../product/dto';
 import { CategoryRepository } from '../category';
 import { RevalidationNotifier } from '../publishing';
+import { ReorderNotFoundError, ReorderStaleError } from '../common/reorder';
 
 const baseCarousel = {
   id: 'carousel-uuid-1',
@@ -46,6 +47,7 @@ const carouselRepositoryMock = {
   findItemIds: jest.fn(),
   findItemsWithProducts: jest.fn(),
   replaceItems: jest.fn(),
+  reorderPlacement: jest.fn(),
 };
 
 const productServiceMock = {
@@ -760,6 +762,77 @@ describe('CarouselService', () => {
       await service.setItems('carousel-uuid-2', { items: [] });
 
       expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── reorderPlacement (TASK-428) ───────────────────────────────────────────
+
+  describe('reorderPlacement', () => {
+    const payload = {
+      placement: CarouselPlacement.HOME_RAILS,
+      orderedIds: ['carousel-uuid-2', 'carousel-uuid-1'],
+    };
+
+    it('returns the refreshed FULL list (all placements) with meta', async () => {
+      carouselRepositoryMock.reorderPlacement.mockResolvedValue({
+        carousels: [draftCarousel, baseCarousel],
+        total: 2,
+      });
+
+      const result = await service.reorderPlacement(payload);
+
+      expect(carouselRepositoryMock.reorderPlacement).toHaveBeenCalledWith(
+        CarouselPlacement.HOME_RAILS,
+        payload.orderedIds,
+      );
+      expect(result.data[0]).toBeInstanceOf(CarouselEntity);
+      // The unpaginated shape: one page holding everything (the panel writes this
+      // response straight into the list query's cache).
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(carouselsTarget);
+    });
+
+    it('does NOT revalidate when the reordered bucket holds nothing published', async () => {
+      carouselRepositoryMock.reorderPlacement.mockResolvedValue({
+        carousels: [draftCarousel],
+        total: 1,
+      });
+
+      await service.reorderPlacement({ ...payload, orderedIds: ['carousel-uuid-2'] });
+
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+
+    it('ignores a published carousel in the OTHER placement when deciding to revalidate', async () => {
+      carouselRepositoryMock.reorderPlacement.mockResolvedValue({
+        // Published, but it lives in HOME_TABS — the HOME_RAILS shuffle changed nothing
+        // a shopper can see.
+        carousels: [{ ...baseCarousel, placement: CarouselPlacement.HOME_TABS }, draftCarousel],
+        total: 2,
+      });
+
+      await service.reorderPlacement(payload);
+
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+
+    it('maps REORDER_STALE onto 409 with the stable code on the wire', async () => {
+      carouselRepositoryMock.reorderPlacement.mockRejectedValue(new ReorderStaleError());
+
+      await expect(service.reorderPlacement(payload)).rejects.toMatchObject({
+        status: 409,
+        response: { error: 'REORDER_STALE' },
+      });
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+
+    it('maps REORDER_NOT_FOUND onto 404 with the stable code on the wire', async () => {
+      carouselRepositoryMock.reorderPlacement.mockRejectedValue(new ReorderNotFoundError());
+
+      await expect(service.reorderPlacement(payload)).rejects.toMatchObject({
+        status: 404,
+        response: { error: 'REORDER_NOT_FOUND' },
+      });
     });
   });
 });

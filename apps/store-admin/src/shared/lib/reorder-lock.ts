@@ -26,7 +26,11 @@ export type ReorderResource =
   | "categories"
   | "banners"
   | "blog-categories"
-  | "device-brands";
+  | "device-brands"
+  // TASK-428 converted these three from a hand-typed `sortOrder` field to drag-reorder.
+  | "faq"
+  | "pages"
+  | "carousels";
 
 const inFlight = new Map<ReorderResource, number>();
 

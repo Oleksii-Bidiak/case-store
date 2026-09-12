@@ -65,6 +65,16 @@ export const pageSchema = z
       .optional()
       .or(z.literal("")),
 
+    /**
+     * TASK-428: NO LONGER RENDERED and NO LONGER SUBMITTED — the order is set by
+     * dragging rows in the page list, and a new page is appended by the server.
+     *
+     * The key survives in the INPUT shape only because `widgets/page-form-view` still
+     * seeds it (`sortOrder: String(page.sortOrder)`) and that widget is owned elsewhere;
+     * dropping it here would break that object literal's excess-property check. Nothing
+     * registers this field and `pageFormValuesToDto` no longer sends it, so the value is
+     * inert. Delete it together with the mapper line in `widgets/page-form-view`.
+     */
     sortOrder: z
       .string()
       .trim()
@@ -116,7 +126,9 @@ export function pageFormValuesToCreateDto(
     excerpt: excerpt ? excerpt : undefined,
     metaTitle: metaTitle ? metaTitle : undefined,
     metaDescription: metaDescription ? metaDescription : undefined,
-    sortOrder: values.sortOrder,
+    // `sortOrder` is deliberately NOT sent (TASK-428). On create its absence is what
+    // makes the server append the page to the END of the list; on update its absence
+    // leaves the position the operator dragged the row to untouched.
     status: values.status,
     scheduledAt,
   };

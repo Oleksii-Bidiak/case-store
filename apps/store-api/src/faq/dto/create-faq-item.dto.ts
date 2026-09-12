@@ -4,9 +4,9 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 /**
  * DTO for creating a new FAQ item (admin-only).
  *
- * `sortOrder` defaults to 0 and `isActive` to true when omitted (the repository
- * applies the defaults). Length limits mirror the storefront copy — questions
- * are one-liners, answers a short paragraph.
+ * `sortOrder` is APPENDED (max + 1) and `isActive` defaults to true when omitted
+ * (the repository applies both). Length limits mirror the storefront copy —
+ * questions are one-liners, answers a short paragraph.
  */
 export class CreateFaqItemDto {
   @ApiProperty({
@@ -26,9 +26,10 @@ export class CreateFaqItemDto {
   answer!: string;
 
   @ApiPropertyOptional({
-    description: 'Display order (ascending). Lower numbers appear first.',
+    description:
+      'Display order (ascending). OMIT IT (TASK-428): the item is then appended to the ' +
+      'end of the list and the order is changed by dragging rows, not by typing numbers.',
     example: 0,
-    default: 0,
   })
   @IsOptional()
   @IsInt({ message: 'sortOrder must be an integer' })

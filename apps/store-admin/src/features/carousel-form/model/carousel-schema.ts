@@ -63,6 +63,18 @@ export const carouselSchema = z
       )
       .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
 
+    /**
+     * TASK-428: NO LONGER RENDERED and NO LONGER SUBMITTED — the order is set by
+     * dragging rows inside a placement in the carousel list, and a new carousel is
+     * appended to its placement bucket by the server.
+     *
+     * The key survives in the INPUT shape only because `widgets/carousel-form-view`
+     * still seeds it (`sortOrder: String(carousel.sortOrder)`) and that widget is owned
+     * elsewhere; dropping it here would break that object literal's excess-property
+     * check. Nothing registers this field and `carouselFormValuesToCreateDto` no longer
+     * sends it, so the value is inert. Delete it together with the mapper line in
+     * `widgets/carousel-form-view`.
+     */
     sortOrder: z
       .string()
       .trim()
@@ -118,7 +130,9 @@ export function carouselFormValuesToCreateDto(
         ? values.categoryId
         : undefined,
     itemLimit: values.itemLimit,
-    sortOrder: values.sortOrder,
+    // `sortOrder` is deliberately NOT sent (TASK-428). On create its absence is what
+    // makes the server append the carousel to the END of its placement bucket; on update
+    // its absence leaves the position the operator dragged the row to untouched.
     status: values.status,
     scheduledAt,
   };

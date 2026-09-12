@@ -3,6 +3,7 @@ import { PublishStatus, SlugRedirectEntity } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
 import { PageRepository } from './pages.repository';
+import { ReorderStaleError } from '../common/reorder';
 
 const mockPage = {
   id: 'page-uuid-1',
@@ -21,23 +22,32 @@ const mockPage = {
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
+/**
+ * ONE page delegate shared by the singleton client and the transaction client: the
+ * repository reads/writes through `tx.page` inside a transaction (create, reorder, a
+ * slug-rename update) and through `this.prisma.page` outside one, and the assertions do
+ * not care which.
+ */
+const pageDelegate = {
+  findMany: jest.fn(),
+  findFirst: jest.fn(),
+  findUnique: jest.fn(),
+  count: jest.fn(),
+  aggregate: jest.fn(),
+  create: jest.fn(),
+  update: jest.fn(),
+  updateMany: jest.fn(),
+  delete: jest.fn(),
+};
+
 const txMock = {
-  page: {
-    update: jest.fn(),
-  },
+  page: pageDelegate,
+  // `pg_advisory_xact_lock` — taken by `create` and by `reorderAll`.
+  $executeRaw: jest.fn(),
 };
 
 const prismaMock = {
-  page: {
-    findMany: jest.fn(),
-    findFirst: jest.fn(),
-    findUnique: jest.fn(),
-    count: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    updateMany: jest.fn(),
-    delete: jest.fn(),
-  },
+  page: pageDelegate,
   $transaction: jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock)),
 };
 
@@ -163,6 +173,7 @@ describe('PageRepository', () => {
 
   describe('create', () => {
     it('persists the page and derives isActive from status', async () => {
+      prismaMock.page.aggregate.mockResolvedValue({ _max: { sortOrder: null } });
       prismaMock.page.create.mockResolvedValue(mockPage);
 
       await repository.create({
@@ -189,6 +200,7 @@ describe('PageRepository', () => {
     });
 
     it('sets isActive = false for a DRAFT create', async () => {
+      prismaMock.page.aggregate.mockResolvedValue({ _max: { sortOrder: null } });
       prismaMock.page.create.mockResolvedValue(mockPage);
 
       await repository.create({
@@ -203,6 +215,87 @@ describe('PageRepository', () => {
       expect(prismaMock.page.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ status: PublishStatus.DRAFT, isActive: false }),
       });
+    });
+
+    // TASK-428: the whole point of the change — a new page lands at the END, not on
+    // top of the first one.
+    it('appends the page to the END of the list (max + 1) under the list lock', async () => {
+      prismaMock.page.aggregate.mockResolvedValue({ _max: { sortOrder: 6 } });
+      prismaMock.page.create.mockResolvedValue({ ...mockPage, sortOrder: 7 });
+
+      await repository.create({
+        slug: 'returns',
+        title: 'Returns',
+        content: '<p>x</p>',
+        status: PublishStatus.DRAFT,
+        publishedAt: null,
+        scheduledAt: null,
+      });
+
+      // The max read MUST happen inside the locked transaction, or two concurrent
+      // appends both read the same max and collide on one slot.
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(prismaMock.page.aggregate).toHaveBeenCalledWith({ _max: { sortOrder: true } });
+      expect(prismaMock.page.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ sortOrder: 7 }),
+      });
+    });
+
+    it('honours an explicit sortOrder without reading max', async () => {
+      prismaMock.page.create.mockResolvedValue({ ...mockPage, sortOrder: 3 });
+
+      await repository.create({
+        slug: 'terms',
+        title: 'Terms',
+        content: '<p>x</p>',
+        status: PublishStatus.DRAFT,
+        publishedAt: null,
+        scheduledAt: null,
+        sortOrder: 3,
+      });
+
+      expect(prismaMock.page.aggregate).not.toHaveBeenCalled();
+      expect(prismaMock.page.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ sortOrder: 3 }),
+      });
+    });
+  });
+
+  // ─── reorderAll (TASK-428) ─────────────────────────────────────────────────
+
+  describe('reorderAll', () => {
+    const a = 'page-uuid-1';
+    const b = 'page-uuid-2';
+
+    it('locks the list, writes the index as sortOrder and returns the refreshed list', async () => {
+      prismaMock.page.findMany
+        // 1) the in-transaction snapshot of the list's membership
+        .mockResolvedValueOnce([{ id: a }, { id: b }])
+        // 2) the refreshed admin list, read inside the same transaction
+        .mockResolvedValueOnce([
+          { ...mockPage, id: b, sortOrder: 0 },
+          { ...mockPage, sortOrder: 1 },
+        ]);
+
+      const result = await repository.reorderAll([b, a]);
+
+      expect(result.total).toBe(2);
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(prismaMock.page.updateMany).toHaveBeenNthCalledWith(1, {
+        where: { id: b },
+        data: { sortOrder: 0 },
+      });
+      expect(prismaMock.page.updateMany).toHaveBeenNthCalledWith(2, {
+        where: { id: a },
+        data: { sortOrder: 1 },
+      });
+    });
+
+    it('rejects a PARTIAL ordering (a row appeared underneath the client) as stale', async () => {
+      prismaMock.page.findMany.mockResolvedValueOnce([{ id: a }, { id: b }]);
+
+      await expect(repository.reorderAll([a])).rejects.toBeInstanceOf(ReorderStaleError);
+      expect(prismaMock.page.updateMany).not.toHaveBeenCalled();
     });
   });
 
@@ -261,13 +354,18 @@ describe('PageRepository', () => {
         where: { id: 'page-uuid-1' },
         data: { slug: 'new-slug' },
       });
+      // The ledger write receives the SAME transaction client the update ran on — which
+      // is what makes the rename and the redirect atomic. (It is no longer provable by
+      // asserting the singleton delegate went untouched: since TASK-428 the singleton and
+      // the transaction client share ONE delegate mock, because `create` and `reorderAll`
+      // write through `tx.page` too.)
       expect(slugRedirectRepositoryMock.recordRename).toHaveBeenCalledWith(
         txMock,
         SlugRedirectEntity.PAGE,
         'privacy-policy',
         'new-slug',
       );
-      expect(prismaMock.page.update).not.toHaveBeenCalled();
+      expect(prismaMock.page.update).toHaveBeenCalledTimes(1);
     });
   });
 
