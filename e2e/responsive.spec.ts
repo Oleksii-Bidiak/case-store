@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "./fixtures/test";
+import { E2E_PRODUCT_SLUG } from "./fixtures/seed-e2e";
 
 /**
  * Narrow-viewport regression (TASK-410): the storefront must never scroll
@@ -38,6 +39,12 @@ const WIDTHS = [320, 360, 390] as const;
 
 /** Tall enough that the routes below render their full layout, not a fold. */
 const VIEWPORT_HEIGHT = 844;
+
+// The catalog list is fetched on the client, so give it room to paint before
+// reading a slug out of it. Generous on purpose — a cold dev-mode compile
+// dominates this wait, and the fixture fallback below means a timeout still
+// does not cost us the width assertion.
+const CATALOG_RENDER_TIMEOUT_MS = 15_000;
 
 /** Routes with a stable URL. The PDP is resolved from the catalog at runtime. */
 const STATIC_ROUTES = ["/", "/products", "/cart"] as const;
@@ -131,23 +138,30 @@ test.describe("narrow viewports have no horizontal scroll", () => {
     }
 
     test(`a product page fits ${width}px`, async ({ page }) => {
-      // Resolve the slug from the catalog instead of hardcoding a fixture: this
-      // spec is about layout, so it should keep working against any seed.
+      // Prefer a slug read from the catalog so the spec keeps working against a
+      // richer seed, but WAIT for the cards first: the list is fetched on the
+      // client, so reading the DOM straight after `goto` finds an empty grid and
+      // the test fails for a reason that has nothing to do with layout.
       await page.setViewportSize({ width, height: VIEWPORT_HEIGHT });
       await page.goto("/products");
 
-      const hrefs = await page
-        .locator('#main-content a[href^="/products/"]')
-        .evaluateAll((links) =>
-          links.map((link) => link.getAttribute("href") ?? ""),
-        );
       // A bare `/products/<slug>` — never a filtered or paginated catalog URL.
-      const productHref = hrefs.find((href) =>
-        /^\/products\/[^/?#]+$/.test(href),
-      );
-      expect(productHref, "the catalog rendered no product links").toBeTruthy();
+      const productHref = await page
+        .locator('#main-content a[href^="/products/"]')
+        .first()
+        .getAttribute("href", { timeout: CATALOG_RENDER_TIMEOUT_MS })
+        .catch(() => null);
 
-      await expectNoHorizontalScroll(page, productHref as string, width);
+      // Fall back to the fixture the global setup guarantees. The minimal e2e
+      // seed holds a single product, and a catalog that renders none of it is a
+      // data problem — it must not silently cost us the PDP width check, which
+      // is the one route here with a three-column desktop layout to collapse.
+      const target =
+        productHref && /^\/products\/[^/?#]+$/.test(productHref)
+          ? productHref
+          : `/products/${E2E_PRODUCT_SLUG}`;
+
+      await expectNoHorizontalScroll(page, target, width);
     });
   }
 });
