@@ -2981,6 +2981,52 @@
         ]
       }
     },
+    "/api/products/group": {
+      "patch": {
+        "operationId": "productControllerSetGroupMany",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkProductGroupDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Number of products moved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkProductGroupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — empty, oversized, duplicated or non-UUID ids"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Unknown product id or unknown target group — nothing was written"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Bulk reassign products to a variant group (admin)",
+        "tags": [
+          "Products"
+        ]
+      }
+    },
     "/api/products/{id}/deactivate": {
       "patch": {
         "operationId": "ProductController_deactivate",
@@ -3285,6 +3331,250 @@
         "summary": "Delete a product image (admin)",
         "tags": [
           "Products"
+        ]
+      }
+    },
+    "/api/admin/uploads/categories": {
+      "post": {
+        "operationId": "uploadsControllerUploadCategoryImage",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file, or a disallowed MIME type"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — categories:write required"
+          },
+          "413": {
+            "description": "File exceeds the 5 MB limit"
+          },
+          "415": {
+            "description": "File contents are not a valid image"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Upload a category image (admin)",
+        "tags": [
+          "Uploads"
+        ]
+      }
+    },
+    "/api/admin/uploads/brands": {
+      "post": {
+        "operationId": "uploadsControllerUploadBrandLogo",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file, or a disallowed MIME type"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — brands:write required"
+          },
+          "413": {
+            "description": "File exceeds the 5 MB limit"
+          },
+          "415": {
+            "description": "File contents are not a valid image"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Upload a brand logo (admin)",
+        "tags": [
+          "Uploads"
+        ]
+      }
+    },
+    "/api/admin/uploads/banners": {
+      "post": {
+        "operationId": "uploadsControllerUploadBannerImage",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file, or a disallowed MIME type"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — banners:write required"
+          },
+          "413": {
+            "description": "File exceeds the 5 MB limit"
+          },
+          "415": {
+            "description": "File contents are not a valid image"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Upload a banner image (admin)",
+        "tags": [
+          "Uploads"
+        ]
+      }
+    },
+    "/api/admin/uploads/blog": {
+      "post": {
+        "operationId": "uploadsControllerUploadBlogCover",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file, or a disallowed MIME type"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — blog:write required"
+          },
+          "413": {
+            "description": "File exceeds the 5 MB limit"
+          },
+          "415": {
+            "description": "File contents are not a valid image"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Upload a blog cover image (admin)",
+        "tags": [
+          "Uploads"
         ]
       }
     },
@@ -8647,6 +8937,17 @@
             }
           },
           {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Free-text search over sender name, email, phone, topic, order ref and message",
+            "schema": {
+              "maxLength": 120,
+              "example": "Іван",
+              "type": "string"
+            }
+          },
+          {
             "name": "sortBy",
             "required": false,
             "in": "query",
@@ -9748,8 +10049,19 @@
             "in": "query",
             "description": "Items per page (max 100)",
             "schema": {
-              "default": 10,
+              "default": 20,
               "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Free-text search across the return id, the order number (id prefix), the customer email/phone and the customer's stated reason (TASK-423). The queue had no search at all, so an operator on the phone with a customer could only page through it.",
+            "schema": {
+              "maxLength": 120,
+              "example": "ABC12345",
+              "type": "string"
             }
           },
           {
@@ -10700,12 +11012,23 @@
             "name": "limit",
             "required": false,
             "in": "query",
-            "description": "Items per page (max 50)",
+            "description": "Items per page (max 100)",
             "schema": {
               "minimum": 1,
-              "maximum": 50,
-              "default": 10,
+              "maximum": 100,
+              "default": 20,
               "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Free-text search over review text, author email and product name",
+            "schema": {
+              "maxLength": 120,
+              "example": "чохол",
+              "type": "string"
             }
           }
         ],
@@ -14220,6 +14543,53 @@
           "data"
         ]
       },
+      "BulkProductGroupDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "description": "Ids of the products being reassigned.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "groupId": {
+            "type": "string",
+            "description": "Target variant group, or `null` to take the products out of whatever group they are in. The field is REQUIRED: an absent `groupId` would be indistinguishable from \"clear the group\", which is a destructive default for a request that omitted the field by mistake.",
+            "format": "uuid",
+            "nullable": true,
+            "example": "3f1c6d24-9b8e-4f2a-8a1d-6d3b5c2e7a90"
+          }
+        },
+        "required": [
+          "ids",
+          "groupId"
+        ]
+      },
+      "BulkProductGroupResult": {
+        "type": "object",
+        "properties": {
+          "updatedCount": {
+            "type": "number",
+            "description": "Products whose groupId was written",
+            "example": 9
+          }
+        },
+        "required": [
+          "updatedCount"
+        ]
+      },
+      "BulkProductGroupResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkProductGroupResult"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ProductImageListEnvelope": {
         "type": "object",
         "properties": {
@@ -14272,6 +14642,37 @@
         },
         "required": [
           "items"
+        ]
+      },
+      "UploadedImageEntity": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Absolute public URL of the stored image",
+            "example": "http://localhost:3001/uploads/content/8f1c….webp"
+          },
+          "blurDataUrl": {
+            "type": "object",
+            "description": "base64 LQIP for `next/image` blur-up, or null when the file was stored as-is (animated GIF)",
+            "nullable": true,
+            "example": "data:image/webp;base64,UklGR…"
+          }
+        },
+        "required": [
+          "url",
+          "blurDataUrl"
+        ]
+      },
+      "UploadedImageResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/UploadedImageEntity"
+          }
+        },
+        "required": [
+          "data"
         ]
       },
       "BrandEntity": {
@@ -19736,6 +20137,33 @@
           "data"
         ]
       },
+      "ManualOrderContactDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email, if the customer has one. OPTIONAL on an operator-created order (TASK-426) — unlike guest checkout, where it carries the order-status link. Validated when present.",
+            "example": "olena@example.com",
+            "maxLength": 254
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number the courier can call — any country, 9 to 15 digits (E.164), typed with whatever separators the buyer uses. Stored normalised, as digits only.",
+            "example": "+380501234567",
+            "maxLength": 32
+          },
+          "name": {
+            "type": "string",
+            "description": "Buyer name",
+            "example": "Олена Шевченко",
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "phone",
+          "name"
+        ]
+      },
       "ManualOrderItemDto": {
         "type": "object",
         "properties": {
@@ -19765,10 +20193,10 @@
             "format": "uuid"
           },
           "contact": {
-            "description": "Contact details when there is no account. Required unless `userId` is given — an order nobody can be reached about is not a sale.",
+            "description": "Contact details when there is no account. Required unless `userId` is given — an order nobody can be reached about is not a sale. Phone is required, email optional (TASK-426): see ManualOrderContactDto.",
             "allOf": [
               {
-                "$ref": "#/components/schemas/GuestContactDto"
+                "$ref": "#/components/schemas/ManualOrderContactDto"
               }
             ]
           },
@@ -19845,7 +20273,7 @@
         "properties": {
           "trackingNumber": {
             "type": "object",
-            "description": "Nova Poshta waybill (ТТН), typed in by the operator (TASK-335). Send null to clear it. Setting it on an already-SHIPPED order that had none sends the customer their tracking notice.",
+            "description": "Nova Poshta waybill (ТТН), typed in by the operator (TASK-335): EXACTLY 14 DIGITS (TASK-426 / AD-ORD-18). Separators are allowed on the way in and stripped before storage, so `2045 0000 0000 01` is stored as `20450000000001`. Send null to clear it. Setting it on an already-SHIPPED order that had none sends the customer their tracking notice.",
             "nullable": true,
             "maxLength": 64,
             "example": "20450000000001"
