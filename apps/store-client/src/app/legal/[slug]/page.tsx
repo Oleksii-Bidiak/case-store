@@ -8,9 +8,14 @@ import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { LegalDocView, type LegalOtherDoc } from "@/widgets/legal-doc";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
-import { buildOgImages, resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
+import {
+  buildOgImages,
+  resolveSeo,
+  resolveSiteName,
+  toMetadataTitle,
+} from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
+import { SITE_URL, dict } from "@/shared/config";
 
 /**
  * Fetch a published page by slug through the ISR-tagged server fetcher; returns
@@ -54,9 +59,11 @@ export async function generateMetadata({
     settings: seo,
     content: { name: page.title, description: page.excerpt || page.content },
   });
+  // TASK-433 — admin-managed store name (title template + og:site_name).
+  const siteName = resolveSiteName(seo);
   const title = toMetadataTitle(resolved, {
     settings: seo,
-    siteName: SITE_NAME,
+    siteName,
     fallback: page.title,
   });
   const description = resolved.description;
@@ -74,7 +81,7 @@ export async function generateMetadata({
       title: title.absolute,
       description,
       url: canonical,
-      siteName: SITE_NAME,
+      siteName,
       locale: "uk_UA",
       type: "article",
       images: buildOgImages({ ogImage: resolved.ogImage }),

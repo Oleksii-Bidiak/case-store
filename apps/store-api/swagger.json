@@ -18197,6 +18197,12 @@
             "description": "Singleton row identifier (always the well-known constant)",
             "example": "00000000-0000-0000-0000-000000000002"
           },
+          "siteName": {
+            "type": "string",
+            "description": "Human-readable store name (TASK-433). Null → the storefront falls back to its built-in SITE_NAME constant. Read by every server-rendered surface: title template, og:site_name, Organization/WebSite/BlogPosting JSON-LD, llms.txt, the web manifest, the Merchant feed.",
+            "example": "MobileStore",
+            "nullable": true
+          },
           "defaultMetaTitle": {
             "type": "string",
             "description": "Default meta title used when a page has no own title",
@@ -18362,6 +18368,12 @@
       "UpdateSeoSettingsDto": {
         "type": "object",
         "properties": {
+          "siteName": {
+            "type": "string",
+            "description": "Human-readable store name — the single source for the storefront's title template, `openGraph.siteName`, Organization/WebSite JSON-LD, llms.txt, the web manifest and the Merchant feed. Blank/absent → the storefront's built-in SITE_NAME constant (TASK-433).",
+            "example": "MobileStore",
+            "maxLength": 120
+          },
           "defaultMetaTitle": {
             "type": "string",
             "description": "Default meta title used when a page has no own title",

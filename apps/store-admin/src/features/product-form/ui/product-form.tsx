@@ -35,7 +35,7 @@ import {
   TabsTrigger,
   Textarea,
 } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, STOREFRONT_HOST } from "@/shared/config";
 import {
   productSchema,
   type ProductFormInput,
@@ -633,7 +633,7 @@ export function ProductForm({
         titleTier={previewTitle.tier}
         description={previewDescription.text || undefined}
         descriptionTier={previewDescription.tier}
-        url={`${dict.seoSnippetPreview.urlHost} › products › ${previewSlug}`}
+        url={`${STOREFRONT_HOST} › products › ${previewSlug}`}
         rawTitleLength={metaTitleValue.trim().length}
         rawDescriptionLength={metaDescriptionValue.trim().length}
       />

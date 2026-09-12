@@ -1478,7 +1478,13 @@ export const dict = {
 
   seoSettingsForm: {
     defaultMetaTitle: "Заголовок сайту за замовчуванням",
-    defaultMetaTitlePlaceholder: "MobileStore — аксесуари для смартфонів",
+    // Placeholders are neutral examples on purpose (TASK-433): they used to
+    // spell out one particular shop's name and domain, which read like a
+    // pre-filled value rather than a hint — and the shop in question was not
+    // this one. Where a real value is genuinely more useful than a shape hint
+    // (the OG-image path), the placeholder is a function of the storefront host
+    // instead, so the parsing stays out of this constants module.
+    defaultMetaTitlePlaceholder: "Ваш магазин — аксесуари для смартфонів",
     defaultMetaTitleHint:
       "Заголовок, який показується у вкладці браузера та в результатах пошуку, коли у сторінки немає власного заголовка. Залиште порожнім — і заголовок згенерується автоматично з назви сторінки.",
     defaultMetaDescription: "Опис сайту за замовчуванням",
@@ -1487,11 +1493,12 @@ export const dict = {
     defaultMetaDescriptionHint:
       "Короткий опис магазину (1–2 речення), який Google показує під заголовком у результатах пошуку — коли у сторінки немає власного опису.",
     titleTemplate: "Шаблон заголовка сторінки",
-    titleTemplatePlaceholder: "%s | MobileStore",
+    titleTemplatePlaceholder: "%s | Ваш магазин",
     titleTemplateHint:
       "Шаблон заголовка сторінки. %s буде замінено на назву конкретної сторінки. Залиште порожнім — і ми додамо назву магазину після заголовка автоматично.",
     defaultOgImage: "Зображення для соцмереж (OG-картинка)",
-    defaultOgImagePlaceholder: "https://mobilestore.ua/og-image.jpg",
+    /** Takes the storefront host (`STOREFRONT_HOST`) so the example path sits on the store's own domain. */
+    defaultOgImagePlaceholder: (host: string) => `https://${host}/og-image.jpg`,
     defaultOgImageHint:
       "Картинка для попереднього перегляду, коли посилання на магазин поширюють у соцмережах чи месенджерах (Facebook, Telegram, Viber). Вкажіть повне посилання на зображення (https://…).",
     siteVerificationGroup: "Верифікація власності сайта",
@@ -1510,7 +1517,7 @@ export const dict = {
       "Короткий опис вашого бізнесу для AI-асистентів на кшталт ChatGPT. Замінює вступний абзац у файлі /llms.txt. Залиште порожнім — використаємо стандартний опис.",
     additionalSameAsLinks: "Додаткові посилання на профілі бренду",
     additionalSameAsLinksPlaceholder:
-      "https://facebook.com/mobilestore\nhttps://youtube.com/@mobilestore",
+      "https://facebook.com/ваша-сторінка\nhttps://youtube.com/@ваш-канал",
     additionalSameAsLinksHint:
       "Посилання на офіційні сторінки магазину в інших мережах (Facebook, YouTube, LinkedIn тощо) — по одному в рядку. Це показує пошуковим системам, що це офіційні профілі вашого бренду.",
     noindexSite: "Приховати сайт від пошукових систем",
@@ -1529,7 +1536,23 @@ export const dict = {
         "Код підтвердження задовгий (максимум 255 символів)",
       sameAsInvalid:
         "Кожне посилання має бути коректним URL (https://…), по одному в рядку.",
+      siteNameTooLong: "Назва задовга (максимум 120 символів)",
     },
+    // Store name (TASK-433) — rendered first in the form; the keys sit at the
+    // end of the block only to keep concurrent waves from colliding here.
+    siteName: "Назва магазину",
+    /**
+     * Takes the fallback brand (`dict.brand`) rather than spelling a name out:
+     * that IS what the storefront shows while the field is empty, so the hint
+     * stays true after a rename instead of becoming a second hardcoded name.
+     */
+    siteNamePlaceholder: (fallback: string) => `Наприклад: ${fallback}`,
+    siteNameHint:
+      "Як магазин називається для відвідувача й для Google: підставляється у заголовок вкладки браузера, у прев'ю посилання в месенджерах і соцмережах, у підпис листів і в машинну розмітку для пошукових систем. Залиште порожнім — використаємо стандартну назву.",
+    // Deliberately a separate, blunt line rather than a footnote inside the
+    // hint: the owner WILL change this field expecting the logo to follow.
+    siteNameLogoNote:
+      "Напис у самому логотипі поки змінюється в коді — якщо ви завантажили логотип-картинку, він теж лишиться без змін. Напишіть розробнику, якщо треба оновити і його.",
   },
 
   // --- Store logo upload (TASK-299) -------------------------------------------
@@ -2433,9 +2456,12 @@ export const dict = {
         appliesTo: "Футер кожної сторінки та сторінка «Контакти»",
       },
       seoSettings: {
-        source: "Meta-заголовки та SEO за замовчуванням",
+        // TASK-433 put the store name behind this same screen, and "where do I
+        // change the name?" is exactly the question this map exists to answer.
+        source: "Назва магазину, meta-заголовки та SEO за замовчуванням",
         target: "Налаштування → SEO",
-        appliesTo: "Кожна сторінка (невидимо: title, meta, robots)",
+        appliesTo:
+          "Кожна сторінка: назва у вкладці браузера й у прев'ю посилань, решта — невидимо (title, meta, robots)",
       },
     },
   },
@@ -2444,11 +2470,13 @@ export const dict = {
   // Google-result mock (title / green URL / description) + char counters + a
   // "blank field = auto-generated" hint, shown under the metaTitle/
   // metaDescription fields on product/category/page forms and the /settings/seo
-  // defaults form. `urlHost` is an illustrative storefront host for the
-  // breadcrumb line only — advisory UX, not the real canonical origin.
+  // defaults form. The host of the breadcrumb line is NOT a dictionary string:
+  // it comes from the environment (`STOREFRONT_HOST`, derived from
+  // NEXT_PUBLIC_SITE_URL) so the preview shows the store's own domain instead
+  // of an illustrative one. TASK-433 removed the former `urlHost` key — see
+  // `shared/config/site.ts` for why the URL parsing lives there and not here.
   seoSnippetPreview: {
     heading: "Перегляд у результатах пошуку Google",
-    urlHost: "mobilestore.ua",
     emptyTitle: "(без заголовка)",
     // `{typed}/{max}` counter shown next to each field's live length.
     counter: (n: number, max: number) => `${n}/${max}`,

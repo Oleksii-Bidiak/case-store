@@ -23,7 +23,7 @@ import {
   resolveEffectiveTitleTemplate,
 } from "@/shared/lib/seo";
 import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
-import { dict } from "@/shared/config";
+import { dict, STOREFRONT_HOST } from "@/shared/config";
 import {
   pageSchema,
   type PageFormInput,
@@ -254,7 +254,7 @@ export function PageForm({
         titleTier={previewTitle.tier}
         description={previewDescription.text || undefined}
         descriptionTier={previewDescription.tier}
-        url={`${dict.seoSnippetPreview.urlHost} › legal › ${previewSlug}`}
+        url={`${STOREFRONT_HOST} › legal › ${previewSlug}`}
         rawTitleLength={metaTitleValue.trim().length}
         rawDescriptionLength={metaDescriptionValue.trim().length}
       />

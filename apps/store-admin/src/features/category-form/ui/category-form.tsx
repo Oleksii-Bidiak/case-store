@@ -28,7 +28,7 @@ import {
   SeoSnippetPreview,
   Textarea,
 } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, STOREFRONT_HOST } from "@/shared/config";
 import {
   categorySchema,
   type CategoryFormInput,
@@ -314,7 +314,7 @@ export function CategoryForm({
         titleTier={previewTitle.tier}
         description={previewDescription.text || undefined}
         descriptionTier={previewDescription.tier}
-        url={`${dict.seoSnippetPreview.urlHost} › products › ${previewSlug}`}
+        url={`${STOREFRONT_HOST} › categories › ${previewSlug}`}
         rawTitleLength={metaTitleValue.trim().length}
         rawDescriptionLength={metaDescriptionValue.trim().length}
       />

@@ -30,12 +30,22 @@ jest.mock("next/navigation", () => ({
 jest.mock("@/shared/lib/slug-redirect", () => ({
   resolveSlugRedirect: jest.fn(),
 }));
+// The SEO singleton carries the admin-managed store name (TASK-433). Defaults to
+// null — the unconfigured / API-down case, where the SITE_NAME constant stands in.
+jest.mock("@/shared/api/seo-settings-server", () => ({
+  fetchSeoSettings: jest.fn().mockResolvedValue(null),
+}));
 
 import BlogArticlePage, { generateMetadata } from "./page";
 import { notFound, permanentRedirect } from "next/navigation";
 import { fetchPublishedPost } from "@/shared/api/blog-server";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { BRAND_OG_IMAGE_PATH, SITE_NAME, SITE_URL } from "@/shared/config";
+
+const fetchSeo = fetchSeoSettings as jest.MockedFunction<
+  typeof fetchSeoSettings
+>;
 
 const fetchPost = fetchPublishedPost as jest.MockedFunction<
   typeof fetchPublishedPost
@@ -67,6 +77,9 @@ function makePost(): BlogPostEntity {
 }
 
 afterEach(() => jest.clearAllMocks());
+// Re-arm the default (no store name configured) after every clear, so a test that
+// sets one cannot leak it into the next.
+beforeEach(() => fetchSeo.mockResolvedValue(null));
 
 describe("blog/[slug] slug-redirect (TASK-285)", () => {
   const runPage = (slug: string) =>
@@ -126,6 +139,19 @@ describe("blog/[slug] generateMetadata — the openGraph block it must re-state"
       type: "article",
       url: `${SITE_URL}/blog/iphone-16-oglyad`,
     });
+  });
+
+  // TASK-433: this route read no settings at all, so its og:site_name was the
+  // one in the storefront that could not follow a rename in the admin.
+  it("takes og:site_name from the admin-managed store name when set", async () => {
+    fetchPost.mockResolvedValue(makePost());
+    fetchSeo.mockResolvedValue({
+      siteName: "Аксесуарня",
+    } as Awaited<ReturnType<typeof fetchSeoSettings>>);
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.openGraph).toMatchObject({ siteName: "Аксесуарня" });
   });
 
   it("uses the article's own cover as the OG card when it has one", async () => {

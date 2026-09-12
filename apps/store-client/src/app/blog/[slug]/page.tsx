@@ -11,8 +11,9 @@ import {
   buildBlogPostingSchema,
   buildBreadcrumbSchema,
 } from "@/shared/lib/schema";
-import { buildOgImages } from "@/shared/lib/seo";
-import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
+import { buildOgImages, resolveSiteName } from "@/shared/lib/seo";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { SITE_URL, dict } from "@/shared/config";
 
 const RELATED_LIMIT = 3;
 
@@ -24,7 +25,14 @@ export async function generateMetadata({
   params,
 }: BlogArticlePageProps): Promise<Metadata> {
   const { slug } = await params;
-  const post = await fetchPublishedPost(slug);
+  // TASK-433: this route did not read the SEO singleton at all, so its
+  // `og:site_name` was the only one in the storefront that could not follow an
+  // admin rename. `fetchSeoSettings()` is the tagged, per-request-deduped fetch
+  // and returns null on failure, so adding it cannot break the article.
+  const [post, seo] = await Promise.all([
+    fetchPublishedPost(slug),
+    fetchSeoSettings(),
+  ]);
   if (!post) {
     return { title: dict.meta.blogTitle };
   }
@@ -44,7 +52,7 @@ export async function generateMetadata({
       title: post.title,
       description: post.excerpt,
       url: canonical,
-      siteName: SITE_NAME,
+      siteName: resolveSiteName(seo),
       locale: "uk_UA",
       type: "article",
       images: buildOgImages({ pageImage: post.coverImageUrl }),
@@ -61,7 +69,13 @@ export default async function BlogArticlePage({
   params,
 }: BlogArticlePageProps) {
   const { slug } = await params;
-  const entity = await fetchPublishedPost(slug);
+  // `seo` feeds the BlogPosting `publisher.name` below — the store name, which is
+  // admin-managed since TASK-433. Deduped with generateMetadata's identical
+  // tagged fetch within the request.
+  const [entity, seo] = await Promise.all([
+    fetchPublishedPost(slug),
+    fetchSeoSettings(),
+  ]);
   if (!entity) {
     // TASK-285: an admin may have renamed the slug — serve a permanent (308)
     // redirect to the current address instead of a dead 404.
@@ -102,7 +116,7 @@ export default async function BlogArticlePage({
           description: post.excerpt,
           datePublished: post.publishedAt ?? undefined,
           authorName: post.author,
-          siteName: SITE_NAME,
+          siteName: resolveSiteName(seo),
         })}
       />
 

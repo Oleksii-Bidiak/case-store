@@ -10,10 +10,15 @@ import {
   buildBreadcrumbSchema,
   buildFaqPageSchema,
 } from "@/shared/lib/schema";
-import { buildOgImages, resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
+import {
+  buildOgImages,
+  resolveSeo,
+  resolveSiteName,
+  toMetadataTitle,
+} from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { fetchFaqItems } from "@/shared/api/faq-server";
-import { SITE_URL, SITE_NAME, CURRENCY, dict } from "@/shared/config";
+import { SITE_URL, CURRENCY, dict } from "@/shared/config";
 
 interface ProductDetailPageProps {
   params: Promise<{ slug: string }>;
@@ -41,9 +46,11 @@ export async function generateMetadata({
       settings: seo,
       content: { name: product.name, description: product.description },
     });
+    // TASK-433 — admin-managed store name (title template + og:site_name).
+    const siteName = resolveSiteName(seo);
     const title = toMetadataTitle(resolved, {
       settings: seo,
-      siteName: SITE_NAME,
+      siteName,
       fallback: product.name,
     });
     const description =
@@ -61,7 +68,7 @@ export async function generateMetadata({
         title: title.absolute,
         description,
         url: canonical,
-        siteName: SITE_NAME,
+        siteName,
         locale: "uk_UA",
         type: "website",
         images: buildOgImages({
@@ -142,10 +149,17 @@ async function buildProductPageSchemas(slug: string): Promise<{
     // accordion lives on the /info hub; the PDP only emits the FAQPage JSON-LD
     // (structured data) from the same source so it stays a single source of
     // truth. Null on failure → the block is simply omitted.
-    const [{ data: product, images, category }, faqItems] = await Promise.all([
-      productControllerFindBySlug(slug),
-      fetchFaqItems(),
-    ]);
+    // The SEO singleton joins the fetch for one reason: `brandName` below is the
+    // FALLBACK brand of a product that has none of its own, and that fallback is
+    // the store's name — admin-managed since TASK-433, so it can no longer be
+    // read from a constant. Same tagged URL `generateMetadata` already fetched,
+    // so Next dedupes it within the request and this costs nothing.
+    const [{ data: product, images, category }, faqItems, seo] =
+      await Promise.all([
+        productControllerFindBySlug(slug),
+        fetchFaqItems(),
+        fetchSeoSettings(),
+      ]);
     const canonical = `${SITE_URL}/products/${product.slug}`;
 
     const faq =
@@ -164,7 +178,7 @@ async function buildProductPageSchemas(slug: string): Promise<{
         images,
         siteUrl: SITE_URL,
         currency: CURRENCY,
-        brandName: SITE_NAME,
+        brandName: resolveSiteName(seo),
       }),
       breadcrumb: buildBreadcrumbSchema([
         { name: dict.product.breadcrumbHome, item: SITE_URL },

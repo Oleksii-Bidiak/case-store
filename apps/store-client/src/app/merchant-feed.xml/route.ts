@@ -1,5 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
-import { SITE_URL, SITE_NAME, CURRENCY, dict } from "@/shared/config";
+import { SITE_URL, CURRENCY, dict } from "@/shared/config";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { resolveSiteName } from "@/shared/lib/seo";
 import { fetchAllActiveProducts } from "@/shared/lib/schema";
 import { buildCategoryPathMap } from "@/shared/lib/category-path";
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
@@ -23,6 +25,14 @@ import {
  * suspend the feed, while an empty channel just re-syncs on the next pull.
  */
 export async function GET(): Promise<Response> {
+  // The store name is both the feed channel `<title>` and the `g:brand` fallback
+  // for unbranded goods, so it is admin-managed since TASK-433. Fetched OUTSIDE
+  // the try/catch below on purpose: that block's job is to degrade a failed
+  // product fetch into an empty channel, and `fetchSeoSettings()` already
+  // swallows its own errors (null → the SITE_NAME fallback), so it needs no
+  // second net and must not be able to empty the catalogue by failing.
+  const siteName = resolveSiteName(await fetchSeoSettings());
+
   let products: MerchantFeedProduct[] = [];
   try {
     // The category tree feeds `g:product_type` (TASK-432). It is fetched in
@@ -67,7 +77,7 @@ export async function GET(): Promise<Response> {
   const xml = buildMerchantFeedXml({
     products,
     siteUrl: SITE_URL,
-    siteName: SITE_NAME,
+    siteName,
     currency: CURRENCY,
     channelDescription: dict.meta.rootDescription,
     fallbackDescription: dict.meta.productFallbackDescription,

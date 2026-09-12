@@ -21,12 +21,13 @@ import {
   buildListingMetadata,
   buildOgImages,
   resolveSeo,
+  resolveSiteName,
   toMetadataTitle,
   type ListingFilterParams,
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
-import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
+import { SITE_URL, dict } from "@/shared/config";
 
 interface CategoryLandingPageProps {
   params: Promise<{ slug: string }>;
@@ -108,9 +109,12 @@ export async function generateMetadata({
     filters,
   });
 
+  // TASK-433 — admin-managed store name, one value shared by the title template
+  // and the og:site_name below.
+  const siteName = resolveSiteName(seo);
   const title = toMetadataTitle(seoMeta, {
     settings: seo,
-    siteName: SITE_NAME,
+    siteName,
     fallback: node.name,
   });
   const description =
@@ -132,7 +136,7 @@ export async function generateMetadata({
       title: title.absolute,
       description,
       url: `${SITE_URL}${listingMeta.canonicalPath ?? `/categories/${node.slug}`}`,
-      siteName: SITE_NAME,
+      siteName,
       locale: "uk_UA",
       type: "website",
       images: buildOgImages({ ogImage: seoMeta.ogImage }),

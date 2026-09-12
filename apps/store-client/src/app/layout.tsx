@@ -8,7 +8,6 @@ import {
   PRIMARY_COLOR,
   PRIMARY_COLOR_DARK,
   SITE_URL,
-  SITE_NAME,
   dict,
   UMAMI_ENABLED,
   UMAMI_SRC,
@@ -19,6 +18,7 @@ import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import {
   buildOgImages,
   resolveSeo,
+  resolveSiteName,
   resolveTitleTemplate,
 } from "@/shared/lib/seo";
 import "./globals.css";
@@ -66,7 +66,8 @@ export const viewport: Viewport = {
  * Root metadata, seeded from the admin-managed SeoSettings singleton (TASK-239)
  * with the hardcoded localized strings kept as the zero-config fallback:
  *   - title.template — `SeoSettings.titleTemplate` when it contains a `%s`
- *     token, else the default `%s | ${SITE_NAME}`.
+ *     token, else the default `%s | <store name>` (the admin-managed
+ *     `SeoSettings.siteName`, falling back to the SITE_NAME constant).
  *   - title.default / description — the admin defaults when set, else the
  *     current `dict.meta.*` strings.
  *   - openGraph.images — seeded from `SeoSettings.defaultOgImage` when set.
@@ -87,17 +88,21 @@ export async function generateMetadata(): Promise<Metadata> {
   // template is picked separately and applied by Next to each page's
   // plain-string `<title>` (`title.default` itself is never templated).
   const resolved = resolveSeo({ settings: seo });
+  // TASK-433: the store's name now comes from `SeoSettings.siteName`, with
+  // SITE_NAME as the zero-config fallback baked into `resolveSiteName`. This is
+  // the root template, so it is what brands every child page's static title.
+  const siteName = resolveSiteName(seo);
 
   return {
     metadataBase: new URL(SITE_URL),
     title: {
       default: resolved.title || dict.meta.rootTitle,
-      template: resolveTitleTemplate(seo, SITE_NAME),
+      template: resolveTitleTemplate(seo, siteName),
     },
     description: resolved.description ?? dict.meta.rootDescription,
     openGraph: {
       type: "website",
-      siteName: SITE_NAME,
+      siteName,
       url: SITE_URL,
       locale: "uk_UA",
       // Admin-uploaded default OG image wins verbatim; otherwise the committed

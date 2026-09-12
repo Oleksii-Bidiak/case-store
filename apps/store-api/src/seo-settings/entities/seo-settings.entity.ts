@@ -18,6 +18,16 @@ export class SeoSettingsEntity {
   id!: string;
 
   @ApiProperty({
+    description:
+      'Human-readable store name (TASK-433). Null → the storefront falls back to its built-in SITE_NAME constant. Read by every server-rendered surface: title template, og:site_name, Organization/WebSite/BlogPosting JSON-LD, llms.txt, the web manifest, the Merchant feed.',
+    example: 'MobileStore',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  siteName!: string | null;
+
+  @ApiProperty({
     description: 'Default meta title used when a page has no own title',
     example: 'MobileStore — аксесуари для смартфонів',
     type: String,
@@ -118,6 +128,7 @@ export class SeoSettingsEntity {
   static fromPrisma(row: SeoSettings): SeoSettingsEntity {
     const entity = new SeoSettingsEntity();
     entity.id = row.id;
+    entity.siteName = row.siteName;
     entity.defaultMetaTitle = row.defaultMetaTitle;
     entity.defaultMetaDescription = row.defaultMetaDescription;
     entity.titleTemplate = row.titleTemplate;
@@ -141,6 +152,7 @@ export class SeoSettingsEntity {
     const entity = new SeoSettingsEntity();
     const now = new Date(0);
     entity.id = SINGLETON_ID;
+    entity.siteName = null;
     entity.defaultMetaTitle = null;
     entity.defaultMetaDescription = null;
     entity.titleTemplate = null;

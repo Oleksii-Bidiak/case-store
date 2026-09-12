@@ -18,6 +18,12 @@ export type {
   ResolveSeoSettings,
 } from "./resolveSeo";
 
+// Store display name (TASK-433) — `SeoSettings.siteName` with the `SITE_NAME`
+// constant as the zero-config fallback. Every server-rendered surface that
+// prints the shop's name goes through this one function.
+export { resolveSiteName } from "./resolve-site-name";
+export type { ResolveSiteNameSettings } from "./resolve-site-name";
+
 // Open Graph image fallback chain (TASK-432) — a segment that declares its own
 // `openGraph` block replaces the root layout's entirely, images included, so
 // every such block re-states them through this one helper.

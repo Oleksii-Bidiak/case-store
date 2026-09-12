@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import { GET } from "./route";
 import { fetchAllActiveProducts } from "@/shared/lib/schema";
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import type {
   CategoryTreeNodeEntity,
   PublicProductEntity,
@@ -20,6 +21,12 @@ jest.mock("@/shared/api/generated/categories/categories", () => ({
 // point (a no-op without a DSN anyway).
 jest.mock("@sentry/nextjs", () => ({ captureException: jest.fn() }));
 
+// The store name behind the channel <title> and the g:brand fallback (TASK-433).
+// null by default — unconfigured, i.e. the SITE_NAME fallback path.
+jest.mock("@/shared/api/seo-settings-server", () => ({
+  fetchSeoSettings: jest.fn().mockResolvedValue(null),
+}));
+
 const mockFetchAllActiveProducts =
   fetchAllActiveProducts as jest.MockedFunction<typeof fetchAllActiveProducts>;
 const mockGetCategoryTree =
@@ -27,6 +34,9 @@ const mockGetCategoryTree =
     typeof categoryControllerGetCategoryTree
   >;
 const captureException = Sentry.captureException as jest.Mock;
+const mockFetchSeoSettings = fetchSeoSettings as jest.MockedFunction<
+  typeof fetchSeoSettings
+>;
 
 const CASES_CATEGORY_ID = "cat-cases";
 
@@ -87,6 +97,23 @@ describe("GET /merchant-feed.xml", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetCategoryTree.mockResolvedValue(treeResponse(makeTree()));
+    mockFetchSeoSettings.mockResolvedValue(null);
+  });
+
+  // TASK-433: the feed's channel <title> and the g:brand of an unbranded product
+  // are both the store's name, which the owner now edits in the admin.
+  it("takes the channel title and the g:brand fallback from the admin store name", async () => {
+    mockFetchSeoSettings.mockResolvedValue({
+      siteName: "Аксесуарня",
+    } as Awaited<ReturnType<typeof fetchSeoSettings>>);
+    mockFetchAllActiveProducts.mockResolvedValue([
+      makeProduct({ brand: null }),
+    ]);
+
+    const body = await (await GET()).text();
+
+    expect(body).toContain("<title>Аксесуарня</title>");
+    expect(body).toContain("<g:brand>Аксесуарня</g:brand>");
   });
 
   it("returns 200 with feed headers and one <item> per active product (happy path)", async () => {

@@ -15,11 +15,12 @@ import {
   buildListingMetadata,
   buildOgImages,
   resolveSeo,
+  resolveSiteName,
   toMetadataTitle,
   type ListingFilterParams,
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
+import { SITE_URL, dict } from "@/shared/config";
 
 /** Take the first value when a query param appears more than once. */
 function first(value: string | string[] | undefined): string | undefined {
@@ -72,6 +73,9 @@ export async function generateMetadata({
     categoryId ? resolveCategoryNode(categoryId) : Promise.resolve(null),
     fetchSeoSettings(),
   ]);
+  // TASK-433: the store name is admin-managed; one read per request feeds both
+  // the branded title template and every `og:site_name` below.
+  const siteName = resolveSiteName(seo);
 
   // Canonical/robots policy (plan 143): ALL seven filter params are read here —
   // brandId/deviceModelId/onSale included, even though the server-rendered query
@@ -111,7 +115,7 @@ export async function generateMetadata({
     });
     const title = toMetadataTitle(seoMeta, {
       settings: seo,
-      siteName: SITE_NAME,
+      siteName,
       fallback: dict.meta.productsTitle,
     });
     const description = seoMeta.description ?? dict.meta.productsDescription;
@@ -128,7 +132,7 @@ export async function generateMetadata({
         title: title.absolute,
         description,
         url: `${SITE_URL}${listingMeta.canonicalPath ?? "/products"}`,
-        siteName: SITE_NAME,
+        siteName,
         locale: "uk_UA",
         type: "website",
         images: buildOgImages({ ogImage: seoMeta.ogImage }),
@@ -140,7 +144,7 @@ export async function generateMetadata({
   // still branded through the same helper so the title carries the store name.
   const title = toMetadataTitle(
     { title: dict.meta.productsTitle, titleAbsolute: false },
-    { settings: seo, siteName: SITE_NAME, fallback: dict.meta.productsTitle },
+    { settings: seo, siteName, fallback: dict.meta.productsTitle },
   );
   return {
     title,
@@ -150,7 +154,7 @@ export async function generateMetadata({
       title: title.absolute,
       description: dict.meta.productsDescription,
       url: `${SITE_URL}${listingMeta.canonicalPath ?? "/products"}`,
-      siteName: SITE_NAME,
+      siteName,
       locale: "uk_UA",
       type: "website",
       images: buildOgImages({ ogImage: seo?.defaultOgImage }),

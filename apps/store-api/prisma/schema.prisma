@@ -692,6 +692,16 @@ model SiteContactSettings {
 /// singleton is always active and is never deleted.
 model SeoSettings {
   id                     String   @id
+  /// Human-readable store name (TASK-433) — the ONE place the owner renames the
+  /// shop. Read by every SERVER-rendered surface: the `<title>` template,
+  /// `openGraph.siteName`, Organization/WebSite/BlogPosting JSON-LD, the
+  /// llms.txt heading, the web manifest and the Merchant-feed channel. Null =
+  /// zero-config fallback to the storefront's `SITE_NAME` constant, so a fresh
+  /// install still renders a name before anyone opens the admin. NOTE: the
+  /// lettering inside the header/footer logo is a CLIENT component and still
+  /// reads the constant — moving it here is a separate task (see admin-guide
+  /// §27).
+  siteName               String?  @map("site_name")
   defaultMetaTitle       String?  @map("default_meta_title")
   defaultMetaDescription String?  @map("default_meta_description")
   /// Must contain exactly one `%s` token when set, e.g. "%s | MobileStore".

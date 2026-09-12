@@ -18,7 +18,20 @@ export const SITE_URL =
 // feeds structured data. Override with NEXT_PUBLIC_CURRENCY for another market.
 export const CURRENCY = process.env.NEXT_PUBLIC_CURRENCY ?? "UAH";
 
-// Human-readable brand / site name used in <title> templates and structured data.
+// Human-readable brand / site name.
+//
+// SINCE TASK-433 THIS IS A FALLBACK, NOT THE SOURCE OF TRUTH. The owner renames
+// the shop in the admin (Налаштування → SEO → «Назва магазину»), which writes
+// `SeoSettings.siteName`; every server-rendered surface reads that through
+// `shared/lib/seo` → `resolveSiteName(settings)` and only lands here when the
+// column is null (a fresh, zero-config install) or the settings fetch failed.
+// Do not add new direct readers of this constant — call `resolveSiteName()` so
+// the admin value keeps winning.
+//
+// The one deliberate exception is `shared/ui/logo.tsx`: it is a client component
+// with no access to the server-side settings fetch, so the lettering inside the
+// header/footer logo still comes from here. Wiring that up is a separate task
+// (the admin form says so in plain UA, and docs/admin-guide.md §27 repeats it).
 export const SITE_NAME = "MobileStore";
 
 // ─── Brand OG-image fallback (TASK-279, plan 145) ────────────────────────────
