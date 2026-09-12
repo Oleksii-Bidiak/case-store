@@ -1,7 +1,9 @@
-import { IsString, IsOptional, IsInt, MaxLength, Min, Matches } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsEnum, MaxLength, Min, Matches } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { PageKind } from '@prisma/client';
 import { PublishFieldsDto } from '../../publishing';
+import { HUB_SLUGS } from '../hub-routes';
 
 /**
  * DTO for updating a static page (admin-only).
@@ -34,6 +36,20 @@ export class UpdatePageDto extends PublishFieldsDto {
       'Slug must be lowercase, contain only letters, numbers, and hyphens, and not start or end with a hyphen',
   })
   slug?: string;
+
+  @ApiProperty({
+    description:
+      'What this row is — LEGAL: a document at /legal/<slug>; INFO: a help page at ' +
+      `/info/<slug>; HUB: meta tags for an existing hub route (slug must be one of: ${HUB_SLUGS.join(', ')})`,
+    enum: PageKind,
+    example: PageKind.INFO,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(PageKind, {
+    message: `kind must be one of: ${Object.values(PageKind).join(', ')}`,
+  })
+  kind?: PageKind;
 
   @ApiProperty({
     description: 'Short summary',

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { CreatePageDto, UpdatePageDto } from "@/entities/page";
-import { dict } from "@/shared/config";
+import { dict, hubRouteForSlug } from "@/shared/config";
 
 const e = dict.pageForm.errors;
 
@@ -9,6 +9,10 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** Publish lifecycle values — mirror of the API's PublishStatus enum. */
 export const PAGE_STATUS = ["DRAFT", "SCHEDULED", "PUBLISHED"] as const;
 export type PageStatus = (typeof PAGE_STATUS)[number];
+
+/** Page kinds — mirror of the API's PageKind enum (TASK-435). */
+export const PAGE_KIND = ["LEGAL", "INFO", "HUB"] as const;
+export type PageKindValue = (typeof PAGE_KIND)[number];
 
 /**
  * Validation schema for the admin page form.
@@ -74,6 +78,8 @@ export const pageSchema = z
 
     status: z.enum(PAGE_STATUS),
 
+    kind: z.enum(PAGE_KIND),
+
     // `datetime-local` value ("YYYY-MM-DDTHH:mm") or empty string when unset.
     scheduledAt: z.string().optional().or(z.literal("")),
   })
@@ -83,6 +89,20 @@ export const pageSchema = z
         code: z.ZodIssueCode.custom,
         path: ["scheduledAt"],
         message: e.scheduledAtRequired,
+      });
+    }
+
+    // TASK-435 — a HUB row's slug is not an address, it is the NAME of an
+    // existing storefront section. Any other value saves a row that renders
+    // nowhere: the API rejects it with a 400, and the form should never let the
+    // operator get that far. The UI offers a picker, so this only fires on a
+    // kind switched to HUB while a free-text slug from the previous kind is
+    // still in the field.
+    if (values.kind === "HUB" && !hubRouteForSlug(values.slug ?? "")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["slug"],
+        message: e.hubSlugRequired,
       });
     }
   });
@@ -112,6 +132,7 @@ export function pageFormValuesToCreateDto(
   return {
     title: values.title,
     content: values.content,
+    kind: values.kind,
     slug: slug ? slug : undefined,
     excerpt: excerpt ? excerpt : undefined,
     metaTitle: metaTitle ? metaTitle : undefined,

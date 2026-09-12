@@ -18,14 +18,16 @@ import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { SITE_URL, dict } from "@/shared/config";
 
 /**
- * Fetch a published page by slug through the ISR-tagged server fetcher; returns
- * null on 404 (draft / scheduled / missing) or any API error.
+ * Fetch a published LEGAL page by slug through the ISR-tagged server fetcher;
+ * returns null on 404 (draft / scheduled / missing / wrong kind) or any API
+ * error. The explicit kind is what keeps a help page from ever being served
+ * under a legal address (TASK-435) — the API 404s the mismatch.
  */
-const getPage = fetchPublishedPage;
+const getPage = (slug: string) => fetchPublishedPage(slug, "LEGAL");
 
 /** Other published pages (for the "інші правові документи" grid). Never throws. */
 async function getOtherDocs(currentSlug: string): Promise<LegalOtherDoc[]> {
-  const pages = await fetchPublishedPages();
+  const pages = await fetchPublishedPages("LEGAL");
   return pages
     .filter((page) => page.slug !== currentSlug)
     .map((page) => ({ slug: page.slug, title: page.title }));

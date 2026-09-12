@@ -11,6 +11,7 @@ import {
   useAdminPageControllerPublish,
   useAdminPageControllerUnpublish,
   useAdminPageControllerDelete,
+  PageEntityKind,
 } from "@/entities/page";
 import {
   Badge,
@@ -24,12 +25,54 @@ import {
   TableHeader,
   TableRow,
   TableToolbar,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from "@/shared/ui";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { dict } from "@/shared/config";
 import { AdminPageTableSkeleton } from "./admin-page-table-skeleton";
 
 const PAGE_SIZE = 20;
+const ALL_OPTION = "__all__";
+
+/**
+ * Kind tabs (TASK-435) — one screen now holds three different things: legal
+ * documents served at `/legal/<slug>`, help pages at `/info/<slug>`, and hub
+ * rows that are not pages at all (meta tags for a listing route). Mixed into one
+ * list they are indistinguishable, so the tabs write `?kind=` and the badge
+ * column labels each row.
+ *
+ * "Усі" carries the `ALL_OPTION` sentinel rather than `""`, which is not a legal
+ * Radix `Tabs` value (the lesson TASK-405 learned on the order table): the
+ * sentinel never reaches the URL — `handleKindChange` maps it back to "no
+ * `?kind=`".
+ */
+const KIND_TABS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: ALL_OPTION, label: dict.pages.tabAll },
+  { value: PageEntityKind.LEGAL, label: dict.pages.tabLegal },
+  { value: PageEntityKind.INFO, label: dict.pages.tabInfo },
+  { value: PageEntityKind.HUB, label: dict.pages.tabHub },
+];
+
+/**
+ * Radix `Tabs.Root` value used when `?kind=` matches no tab (a hand-typed or
+ * stale value): it matches no `TabsTrigger`, so no tab renders active — the
+ * honest state rather than a lie about what is being listed.
+ */
+const CUSTOM_TAB = "__custom__";
+
+/** Plain-UA label for a row's kind. */
+const KIND_LABELS: Record<PageEntityKind, string> = {
+  [PageEntityKind.LEGAL]: dict.pages.kindLegal,
+  [PageEntityKind.INFO]: dict.pages.kindInfo,
+  [PageEntityKind.HUB]: dict.pages.kindHub,
+};
+
+/** Narrow an arbitrary `?kind=` string to the enum before it reaches the API. */
+function isPageKind(value: string): value is PageEntityKind {
+  return Object.values(PageEntityKind).includes(value as PageEntityKind);
+}
 
 /**
  * Admin static-pages table: title, slug, status badge, sort order, and per-row
@@ -58,6 +101,7 @@ function AdminPageView() {
   const queryClient = useQueryClient();
 
   const searchParam = searchParams.get("search") ?? "";
+  const kindParam = searchParams.get("kind") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
 
   const [searchInput, setSearchInput] = useState(searchParam);
@@ -69,7 +113,25 @@ function AdminPageView() {
       page,
       limit: PAGE_SIZE,
       search: searchParam || undefined,
+      // An unrecognised `?kind=` would be rejected by the API's enum validation,
+      // so only a real tab value is sent; anything else lists everything (and
+      // no tab renders active, see CUSTOM_TAB).
+      kind: isPageKind(kindParam) ? kindParam : undefined,
     });
+
+  // The active tab is the one matching `?kind=` exactly, with an absent filter
+  // standing for the "Усі" sentinel; otherwise CUSTOM_TAB → nothing highlighted.
+  const currentTabValue = kindParam || ALL_OPTION;
+  const activeTab = KIND_TABS.some((tab) => tab.value === currentTabValue)
+    ? currentTabValue
+    : CUSTOM_TAB;
+
+  const handleKindChange = (value: string) => {
+    updateParams({
+      kind: value === ALL_OPTION ? undefined : value,
+      page: undefined,
+    });
+  };
   const publish = useAdminPageControllerPublish();
   const unpublish = useAdminPageControllerUnpublish();
   const remove = useAdminPageControllerDelete();
@@ -127,6 +189,17 @@ function AdminPageView() {
         className="mb-0"
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
+        filters={
+          <Tabs value={activeTab} onValueChange={handleKindChange}>
+            <TabsList aria-label={dict.pages.tabsAria}>
+              {KIND_TABS.map((tab) => (
+                <TabsTrigger key={tab.value} value={tab.value}>
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        }
         search={
           <form
             onSubmit={handleSearchSubmit}
@@ -156,7 +229,13 @@ function AdminPageView() {
         </p>
       ) : pages.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {searchParam ? dict.pages.emptyMatch(searchParam) : dict.pages.empty}
+          {searchParam
+            ? dict.pages.emptyMatch(searchParam)
+            : kindParam
+              ? // Say WHICH kind is empty — "Сторінок ще немає" on a tab that
+                // filters would read as "the whole section is empty".
+                dict.pages.emptyKind
+              : dict.pages.empty}
         </div>
       ) : (
         <div className="rounded-lg border border-border shadow-card overflow-hidden">
@@ -164,6 +243,7 @@ function AdminPageView() {
             <TableHeader>
               <TableRow>
                 <TableHead>{dict.pages.colTitle}</TableHead>
+                <TableHead>{dict.pages.colKind}</TableHead>
                 <TableHead hideOnMobile>{dict.pages.colSlug}</TableHead>
                 <TableHead>{dict.pages.colStatus}</TableHead>
                 <TableHead hideOnMobile>{dict.pages.colSort}</TableHead>
@@ -183,6 +263,9 @@ function AdminPageView() {
                     >
                       {row.title}
                     </Link>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{KIND_LABELS[row.kind]}</Badge>
                   </TableCell>
                   <TableCell hideOnMobile className="text-muted-foreground">
                     {row.slug}

@@ -23,7 +23,12 @@ import {
   resolveEffectiveTitleTemplate,
 } from "@/shared/lib/seo";
 import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
-import { dict, STOREFRONT_HOST } from "@/shared/config";
+import {
+  dict,
+  HUB_PAGES,
+  pagePreviewPath,
+  STOREFRONT_HOST,
+} from "@/shared/config";
 import {
   pageSchema,
   type PageFormInput,
@@ -51,6 +56,9 @@ const EMPTY_VALUES: PageFormInput = {
   metaDescription: "",
   sortOrder: "0",
   status: "DRAFT",
+  // LEGAL matches the API's own default, so "create page" without touching the
+  // picker produces the same row it did before TASK-435.
+  kind: "LEGAL",
   scheduledAt: "",
 };
 
@@ -95,6 +103,8 @@ export function PageForm({
   const titleValue = useWatch({ control, name: "title" }) ?? "";
   const slugValue = useWatch({ control, name: "slug" });
   const statusValue = useWatch({ control, name: "status" });
+  const kindValue = useWatch({ control, name: "kind" }) ?? "LEGAL";
+  const isHub = kindValue === "HUB";
 
   // Live SERP preview (TASK-268): resolve the exact title/description the
   // storefront would render for this /legal/[slug] page through the same
@@ -123,6 +133,14 @@ export function PageForm({
   });
   const previewSlug =
     slugValue || (titleValue.trim() ? slugify(titleValue) : "");
+  // TASK-435 — the green breadcrumb follows the KIND: `/legal/<slug>`,
+  // `/info/<slug>`, or, for a hub, the section's own route with no slug segment
+  // after it. A hub with no section picked yet has no address at all, so the
+  // preview shows the bare host rather than inventing one.
+  const previewPath = pagePreviewPath(kindValue, previewSlug);
+  const previewUrl = previewPath
+    ? `${STOREFRONT_HOST}${previewPath.split("/").join(" › ")}`
+    : STOREFRONT_HOST;
 
   return (
     <form
@@ -140,27 +158,74 @@ export function PageForm({
         )}
       </div>
 
+      {/* TASK-435 — what this row IS decides where it lives, so it sits right
+          under the title, above the slug it governs. */}
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="page-slug">{dict.pageForm.slug}</Label>
-        <Input
-          id="page-slug"
-          placeholder={dict.pageForm.slugPlaceholder}
-          {...register("slug")}
-        />
-        {!slugValue && titleValue.trim().length > 0 && (
-          <p
-            className="text-sm text-muted-foreground"
-            data-testid="slug-preview"
-          >
-            {dict.pageForm.slugPreview(slugify(titleValue))}
-          </p>
-        )}
-        {errors.slug && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.slug.message}
-          </p>
-        )}
+        <Label htmlFor="page-kind">{dict.pageForm.kind}</Label>
+        <select
+          id="page-kind"
+          className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+          {...register("kind")}
+        >
+          <option value="LEGAL">{dict.pageForm.kindLegal}</option>
+          <option value="INFO">{dict.pageForm.kindInfo}</option>
+          <option value="HUB">{dict.pageForm.kindHub}</option>
+        </select>
+        <p className="text-sm text-muted-foreground">
+          {dict.pageForm.kindHint}
+        </p>
       </div>
+
+      {/* A hub's address is not invented — it names a section the storefront
+          already has, so the free-text slug becomes a picker. A typo here would
+          save a row attached to nothing (the API rejects it with a 400). */}
+      {isHub ? (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="page-hub-slug">{dict.pageForm.hubSlug}</Label>
+          <select
+            id="page-hub-slug"
+            className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+            {...register("slug")}
+          >
+            <option value="">{dict.pageForm.hubSlugPlaceholder}</option>
+            {HUB_PAGES.map((hub) => (
+              <option key={hub.slug} value={hub.slug}>
+                {hub.route}
+              </option>
+            ))}
+          </select>
+          <p className="text-sm text-muted-foreground">
+            {dict.pageForm.hubSlugHint}
+          </p>
+          {errors.slug && (
+            <p role="alert" className="text-sm text-destructive">
+              {errors.slug.message}
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="page-slug">{dict.pageForm.slug}</Label>
+          <Input
+            id="page-slug"
+            placeholder={dict.pageForm.slugPlaceholder}
+            {...register("slug")}
+          />
+          {!slugValue && titleValue.trim().length > 0 && (
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="slug-preview"
+            >
+              {dict.pageForm.slugPreview(slugify(titleValue))}
+            </p>
+          )}
+          {errors.slug && (
+            <p role="alert" className="text-sm text-destructive">
+              {errors.slug.message}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="page-content">{dict.pageForm.content}</Label>
@@ -201,6 +266,13 @@ export function PageForm({
             />
           </TabsContent>
         </Tabs>
+        {/* A hub row's body is never rendered on the storefront — say so, or the
+            operator spends time polishing text nobody will read. */}
+        {isHub && (
+          <p className="text-sm text-muted-foreground">
+            {dict.pageForm.hubContentHint}
+          </p>
+        )}
         {errors.content && (
           <p role="alert" className="text-sm text-destructive">
             {errors.content.message}
@@ -254,7 +326,7 @@ export function PageForm({
         titleTier={previewTitle.tier}
         description={previewDescription.text || undefined}
         descriptionTier={previewDescription.tier}
-        url={`${STOREFRONT_HOST} › legal › ${previewSlug}`}
+        url={previewUrl}
         rawTitleLength={metaTitleValue.trim().length}
         rawDescriptionLength={metaDescriptionValue.trim().length}
       />

@@ -127,3 +127,125 @@ describe("PageForm — content preview tab (TASK-266)", () => {
     );
   });
 });
+
+// TASK-435 — the form now decides WHAT a row is, and the kind decides where it
+// lives. Two things must not be possible: a hub with an invented address, and a
+// SERP preview that shows an address the page will not actually have.
+describe("PageForm — page kind (TASK-435)", () => {
+  const kindField = () => screen.getByLabelText(dict.pageForm.kind);
+  const previewUrl = () => screen.getByTestId("seo-snippet-url");
+
+  it("defaults to a legal page, and previews it under /legal", async () => {
+    renderWithProviders(
+      <PageForm
+        id="page-1"
+        defaultValues={{ title: "Оферта", slug: "offer", content: "<p>x</p>" }}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() => expect(kindField()).toHaveValue("LEGAL"));
+    expect(previewUrl()).toHaveTextContent("legal › offer");
+  });
+
+  it("moves the previewed address to /info when the kind becomes a help page", async () => {
+    renderWithProviders(
+      <PageForm
+        id="page-1"
+        defaultValues={{ title: "Про нас", slug: "about", content: "<p>x</p>" }}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+    await waitFor(() =>
+      expect(previewUrl()).toHaveTextContent("legal › about"),
+    );
+
+    await userEvent.selectOptions(kindField(), "INFO");
+
+    await waitFor(() => expect(previewUrl()).toHaveTextContent("info › about"));
+    expect(previewUrl()).not.toHaveTextContent("legal");
+  });
+
+  it("replaces the free-text slug with a picker of real sections for a hub", async () => {
+    renderWithProviders(<PageForm onSubmit={noop} isPending={false} />);
+
+    expect(screen.getByLabelText(dict.pageForm.slug)).toBeInTheDocument();
+
+    await userEvent.selectOptions(kindField(), "HUB");
+
+    // The free-text field is gone — a hub address cannot be typed.
+    expect(screen.queryByLabelText(dict.pageForm.slug)).not.toBeInTheDocument();
+    const picker = screen.getByLabelText(dict.pageForm.hubSlug);
+    expect(picker).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "/blog" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "/categories" }),
+    ).toBeInTheDocument();
+  });
+
+  it("previews a hub at the section's own route, with no slug segment after it", async () => {
+    renderWithProviders(<PageForm onSubmit={noop} isPending={false} />);
+
+    await userEvent.selectOptions(kindField(), "HUB");
+    await userEvent.selectOptions(
+      screen.getByLabelText(dict.pageForm.hubSlug),
+      "blog",
+    );
+
+    await waitFor(() => expect(previewUrl()).toHaveTextContent("› blog"));
+    expect(previewUrl()).not.toHaveTextContent("legal");
+    expect(previewUrl()).not.toHaveTextContent("info");
+  });
+
+  it("refuses to submit a hub with no section chosen", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<PageForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(screen.getByTestId("rte-stub"), "<p>Текст</p>");
+    await userEvent.type(screen.getByLabelText(dict.pageForm.title), "Хаб");
+    await userEvent.selectOptions(kindField(), "HUB");
+    await userEvent.click(screen.getByRole("button", { name: /Зберегти/ }));
+
+    expect(
+      await screen.findByText(dict.pageForm.errors.hubSlugRequired),
+    ).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("submits the chosen kind and hub slug", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<PageForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(screen.getByTestId("rte-stub"), "<p>Текст</p>");
+    await userEvent.type(
+      screen.getByLabelText(dict.pageForm.title),
+      "Розділ «Блог»",
+    );
+    await userEvent.selectOptions(kindField(), "HUB");
+    await userEvent.selectOptions(
+      screen.getByLabelText(dict.pageForm.hubSlug),
+      "blog",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Зберегти/ }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      kind: "HUB",
+      slug: "blog",
+    });
+  });
+
+  it("tells the operator a hub body is never shown on the site", async () => {
+    renderWithProviders(<PageForm onSubmit={noop} isPending={false} />);
+
+    expect(
+      screen.queryByText(dict.pageForm.hubContentHint),
+    ).not.toBeInTheDocument();
+
+    await userEvent.selectOptions(kindField(), "HUB");
+
+    expect(screen.getByText(dict.pageForm.hubContentHint)).toBeInTheDocument();
+  });
+});

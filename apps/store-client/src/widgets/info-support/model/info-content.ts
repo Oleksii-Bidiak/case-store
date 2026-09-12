@@ -1,15 +1,16 @@
 // Static content for the "Інформація та підтримка" hub (/info, Info.dc.html).
-// This is curated marketing/support copy with no backend — a stub, mirroring the
-// mockup 1:1 (brand "volta" localized to MobileStore). Only the Contacts section
-// pulls real data (SiteContactSettings, TASK-154). When an admin-managed
-// info/CMS surface exists this content moves there (see BACKLOG).
+// Curated marketing/support copy mirroring the mockup 1:1 (brand "volta"
+// localized to MobileStore).
+//
+// Migrating to the CMS, section by section. Already admin-managed: Contacts
+// (SiteContactSettings, TASK-154), FAQ (TASK-187), and "Про нас" — the `about`
+// page of kind INFO (TASK-435). What remains below is the delivery/warranty copy
+// and the presentation of the About section (stats + values); each moves the
+// same way — a page row supplies the text, these constants stay as the fallback
+// that keeps /info rendering when the API does not answer.
 
 export type InfoSectionKey =
-  | "delivery"
-  | "warranty"
-  | "faq"
-  | "about"
-  | "contacts";
+  "delivery" | "warranty" | "faq" | "about" | "contacts";
 
 export const INFO_SECTIONS: readonly InfoSectionKey[] = [
   "delivery",
@@ -58,6 +59,24 @@ export interface InfoValue {
 export interface InfoFaq {
   q: string;
   a: string;
+}
+
+/**
+ * The "Про нас" section, loaded from the CMS (TASK-435): the `about` page of
+ * kind INFO. `html` is already sanitized by the server component that reads it —
+ * `InfoView` is a client component and must not pull a sanitizer into the
+ * bundle. Null everywhere means "no such page / API down", and the section falls
+ * back to `dict.info.aboutHeading` + `aboutIntro`; `ABOUT_STATS` / `ABOUT_VALUES`
+ * below stay as the section's presentation either way.
+ */
+export interface InfoAbout {
+  heading: string;
+  /** Short lede under the heading (the page's excerpt), or null. */
+  intro: string | null;
+  /** Sanitized page body. */
+  html: string;
+  /** Link to the full page at `/info/<slug>`. */
+  href: string;
 }
 
 // TASK-311 — NO FABRICATED FACTS in this file. Anything that is a claim about

@@ -5974,6 +5974,21 @@
         "operationId": "PageController_findAll",
         "parameters": [
           {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Filter by page kind. LEGAL backs the /legal hub, INFO the /info help pages. Without it the list still omits HUB rows — a hub row is not a page (TASK-435).",
+            "schema": {
+              "example": "LEGAL",
+              "type": "string",
+              "enum": [
+                "LEGAL",
+                "INFO",
+                "HUB"
+              ]
+            }
+          },
+          {
             "name": "page",
             "required": false,
             "in": "query",
@@ -6026,6 +6041,21 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Require the page to be of this kind; a mismatch is a 404. Omitted, any kind but HUB matches.",
+            "schema": {
+              "example": "LEGAL",
+              "type": "string",
+              "enum": [
+                "LEGAL",
+                "INFO",
+                "HUB"
+              ]
+            }
           }
         ],
         "responses": {
@@ -6040,10 +6070,10 @@
             }
           },
           "404": {
-            "description": "Page not found or not published"
+            "description": "Page not found, not published, or not of the requested kind"
           }
         },
-        "summary": "Get a published page by slug",
+        "summary": "Get a published page by slug, optionally required to be of a given kind",
         "tags": [
           "Pages"
         ]
@@ -6053,6 +6083,21 @@
       "get": {
         "operationId": "AdminPageController_findAll",
         "parameters": [
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Filter by page kind. LEGAL backs the /legal hub, INFO the /info help pages. Without it the list still omits HUB rows — a hub row is not a page (TASK-435).",
+            "schema": {
+              "example": "LEGAL",
+              "type": "string",
+              "enum": [
+                "LEGAL",
+                "INFO",
+                "HUB"
+              ]
+            }
+          },
           {
             "name": "page",
             "required": false,
@@ -16394,6 +16439,16 @@
             "description": "URL-friendly slug",
             "example": "privacy-policy"
           },
+          "kind": {
+            "type": "string",
+            "description": "What this row is and where it is served — LEGAL: /legal/<slug>; INFO: /info/<slug>; HUB: meta tags for the existing hub route named by the slug, no address of its own",
+            "enum": [
+              "LEGAL",
+              "INFO",
+              "HUB"
+            ],
+            "example": "LEGAL"
+          },
           "title": {
             "type": "string",
             "description": "Page title",
@@ -16472,6 +16527,7 @@
         "required": [
           "id",
           "slug",
+          "kind",
           "title",
           "content",
           "status",
@@ -16626,6 +16682,17 @@
             "description": "URL-friendly slug (auto-generated from title if not provided)",
             "example": "privacy-policy"
           },
+          "kind": {
+            "type": "string",
+            "description": "What this row is — LEGAL: a document at /legal/<slug>; INFO: a help page at /info/<slug>; HUB: meta tags for an existing hub route (slug must be one of: categories, blog, legal, contact, info, promo). Defaults to LEGAL.",
+            "enum": [
+              "LEGAL",
+              "INFO",
+              "HUB"
+            ],
+            "example": "LEGAL",
+            "default": "LEGAL"
+          },
           "excerpt": {
             "type": "string",
             "description": "Short summary",
@@ -16686,6 +16753,16 @@
             "type": "string",
             "description": "URL-friendly slug",
             "example": "privacy-policy"
+          },
+          "kind": {
+            "type": "string",
+            "description": "What this row is — LEGAL: a document at /legal/<slug>; INFO: a help page at /info/<slug>; HUB: meta tags for an existing hub route (slug must be one of: categories, blog, legal, contact, info, promo)",
+            "enum": [
+              "LEGAL",
+              "INFO",
+              "HUB"
+            ],
+            "example": "INFO"
           },
           "excerpt": {
             "type": "string",

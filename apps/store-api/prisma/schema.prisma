@@ -125,6 +125,31 @@ enum PublishStatus {
   PUBLISHED
 }
 
+/// What a {@link Page} row IS, and therefore where it lives on the storefront
+/// (TASK-435). Three kinds because the panel's "Сторінки" screen now edits three
+/// genuinely different things:
+///
+/// - `LEGAL` — a legal/service document served at `/legal/<slug>` and listed on
+///   the `/legal` hub (privacy policy, offer, returns…).
+/// - `INFO`  — a help/reference page served at `/info/<slug>`, part of the
+///   "Інформація та підтримка" surface. Same editing experience, different
+///   address and different hub — an info page must never surface among the
+///   legal documents, and vice versa.
+/// - `HUB`   — NOT a page. A meta-tag carrier for a route that already exists in
+///   the storefront code (`/categories`, `/blog`, `/legal`, `/contact`, `/info`,
+///   `/promo`): it gives the owner a `metaTitle`/`metaDescription` for that
+///   listing, and has NO address of its own. Its `slug` names the hub route it
+///   describes, so only the fixed set of hub slugs is meaningful.
+///
+/// Default `LEGAL` is what makes the migration safe: every row that existed
+/// before this enum was reachable only under `/legal/<slug>`, i.e. was legal by
+/// construction.
+enum PageKind {
+  LEGAL
+  INFO
+  HUB
+}
+
 // Models
 
 model User {
@@ -625,8 +650,10 @@ model PasswordResetToken {
 }
 
 /// Admin-managed static / service pages (Privacy Policy, FAQ, Returns, …).
-/// Rendered on the storefront at /legal/[slug]. Content is Tiptap-generated HTML
-/// (sanitized on write). No `deletedAt` tombstone — pages are admin content, not
+/// Rendered on the storefront at /legal/[slug] or /info/[slug] depending on
+/// `kind` (TASK-435); a `HUB` row is rendered nowhere — it only supplies meta
+/// tags to an existing hub route. Content is Tiptap-generated HTML (sanitized on
+/// write). No `deletedAt` tombstone — pages are admin content, not
 /// user-generated data, so a hard DELETE is appropriate.
 ///
 /// Publish model (TASK-187): `status` is the SINGLE gate for public visibility
@@ -638,6 +665,10 @@ model PasswordResetToken {
 model Page {
   id              String        @id @default(uuid())
   slug            String        @unique
+  /// What this row is and where it is served — see {@link PageKind}.
+  /// `LEGAL` → /legal/<slug>, `INFO` → /info/<slug>, `HUB` → meta tags for the
+  /// existing hub route named by `slug` (no address of its own).
+  kind            PageKind      @default(LEGAL)
   title           String
   /// Tiptap-generated HTML; sanitized on write (server-side).
   content         String        @db.Text
@@ -659,6 +690,9 @@ model Page {
 
   @@index([slug])
   @@index([status])
+  /// The admin list filters by kind on every tab switch (Усі / Юридичні /
+  /// Довідкові / Хаби), and both public readers narrow by kind too.
+  @@index([kind])
   @@map("pages")
 }
 

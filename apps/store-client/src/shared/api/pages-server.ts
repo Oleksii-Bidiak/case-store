@@ -1,5 +1,6 @@
 import type {
   PageEntity,
+  PageEntityKind,
   PageListResponse,
   PageResponseEnvelope,
 } from "@/shared/api/generated/models";
@@ -34,13 +35,20 @@ const PAGE_SIZE = 100;
  * Fetch a single PUBLISHED page by slug, tagged for on-demand revalidation.
  * Returns null on 404 (draft / scheduled / missing) or any transport error so
  * the caller can render a Next.js `notFound()`.
+ *
+ * `kind` is REQUIRED (TASK-435): every caller is a route that serves exactly one
+ * kind, and the API 404s a mismatch, so `/legal/<slug>` can never render a help
+ * page and `/info/<slug>` can never render a legal document. Making the argument
+ * mandatory is the point — a caller that forgot it would silently re-open that
+ * hole.
  */
 export async function fetchPublishedPage(
   slug: string,
+  kind: PageEntityKind,
 ): Promise<PageEntity | null> {
   try {
     const res = await serverFetch(
-      `${API_BASE_URL}/api/pages/${encodeURIComponent(slug)}`,
+      `${API_BASE_URL}/api/pages/${encodeURIComponent(slug)}?kind=${kind}`,
       { next: { tags: [PAGES_COLLECTION_TAG, pageDetailTag(slug)] } },
     );
     if (!res.ok) return null;
@@ -52,13 +60,17 @@ export async function fetchPublishedPage(
 }
 
 /**
- * Fetch all PUBLISHED pages (first page of up to {@link PAGE_SIZE}), tagged for
- * on-demand revalidation. Never throws — returns an empty list on error.
+ * Fetch all PUBLISHED pages of one kind (first page of up to {@link PAGE_SIZE}),
+ * tagged for on-demand revalidation. Never throws — returns an empty list on
+ * error. The kind keeps the `/legal` hub listing legal documents only and the
+ * `/info` one help pages only.
  */
-export async function fetchPublishedPages(): Promise<PageEntity[]> {
+export async function fetchPublishedPages(
+  kind: PageEntityKind,
+): Promise<PageEntity[]> {
   try {
     const res = await serverFetch(
-      `${API_BASE_URL}/api/pages?page=1&limit=${PAGE_SIZE}`,
+      `${API_BASE_URL}/api/pages?kind=${kind}&page=1&limit=${PAGE_SIZE}`,
       { next: { tags: [PAGES_COLLECTION_TAG] } },
     );
     if (!res.ok) return [];

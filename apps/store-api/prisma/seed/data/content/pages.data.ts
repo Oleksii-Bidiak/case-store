@@ -1,7 +1,19 @@
+import { PageKind } from '@prisma/client';
 import { STORE_NAME } from '../../lib/store';
 
+/**
+ * Static pages, by kind (TASK-435).
+ *
+ * `LEGAL` rows are the documents `docs/legal-checklist.md` requires — they live
+ * at `/legal/<slug>` and are listed on the `/legal` hub. `INFO` rows are the
+ * help/reference surface at `/info/<slug>`; `about` MUST be one of them, since
+ * the "Про нас" block on `/info` now renders that page's body. `HUB` rows are
+ * not pages at all: each one carries `metaTitle`/`metaDescription` for a listing
+ * route the storefront already has, and its slug names that route.
+ */
 export const pagesData: {
   slug: string;
+  kind: PageKind;
   title: string;
   excerpt: string;
   metaTitle: string;
@@ -10,6 +22,11 @@ export const pagesData: {
 }[] = [
   {
     slug: 'about',
+    // Not a legal document — a story about the shop. It belongs on the help
+    // surface, and `/info`'s "Про нас" section reads exactly this row. The
+    // seller's legal requisites it repeats also live in `offer`, which stays
+    // LEGAL, so nothing the checklist requires leaves `/legal`.
+    kind: PageKind.INFO,
     title: 'Про нас',
     excerpt: 'Мультибрендовий магазин аксесуарів та Apple-техніки в Україні.',
     metaTitle: `Про нас | ${STORE_NAME}`,
@@ -39,6 +56,7 @@ export const pagesData: {
   },
   {
     slug: 'delivery',
+    kind: PageKind.LEGAL,
     title: 'Доставка і оплата',
     excerpt: 'Умови доставки Новою Поштою та способи оплати замовлень.',
     metaTitle: `Доставка і оплата | ${STORE_NAME}`,
@@ -63,6 +81,7 @@ export const pagesData: {
   },
   {
     slug: 'returns',
+    kind: PageKind.LEGAL,
     title: 'Повернення та обмін',
     excerpt: 'Як повернути або обміняти товар протягом 14 днів.',
     metaTitle: `Повернення та обмін | ${STORE_NAME}`,
@@ -87,6 +106,7 @@ export const pagesData: {
   },
   {
     slug: 'warranty',
+    kind: PageKind.LEGAL,
     title: 'Гарантія',
     excerpt: 'Гарантійні зобов’язання на техніку та аксесуари.',
     metaTitle: `Гарантія | ${STORE_NAME}`,
@@ -112,6 +132,7 @@ export const pagesData: {
   },
   {
     slug: 'privacy-policy',
+    kind: PageKind.LEGAL,
     title: 'Політика конфіденційності',
     excerpt: 'Як ми збираємо, використовуємо та захищаємо ваші дані.',
     metaTitle: `Політика конфіденційності | ${STORE_NAME}`,
@@ -142,6 +163,7 @@ export const pagesData: {
   },
   {
     slug: 'terms',
+    kind: PageKind.LEGAL,
     title: 'Умови використання',
     excerpt: 'Правила користування сайтом та оформлення замовлень.',
     metaTitle: `Умови використання | ${STORE_NAME}`,
@@ -162,6 +184,7 @@ export const pagesData: {
   },
   {
     slug: 'offer',
+    kind: PageKind.LEGAL,
     title: 'Публічна оферта',
     excerpt: 'Договір купівлі-продажу товарів, який укладається під час оформлення замовлення.',
     metaTitle: `Публічна оферта | ${STORE_NAME}`,
@@ -232,6 +255,97 @@ export const pagesData: {
           <li>Телефон: [телефон]</li>
           <li>Email: [email]</li>
         </ul>
+      `,
+  },
+
+  // ─── HUB rows: meta tags for listing routes that already exist ───────────────
+  // Not pages. Each one's slug NAMES the storefront route it describes, and only
+  // the six slugs below mean anything (the API rejects any other). Descriptions
+  // say what the section is — never a claim about the shop (terms, addresses,
+  // guarantees): those belong in the LEGAL documents above, where a lawyer reads
+  // them.
+  {
+    slug: 'categories',
+    kind: PageKind.HUB,
+    title: 'Розділ «Категорії»',
+    excerpt: 'SEO-заголовок і опис для сторінки зі списком категорій.',
+    metaTitle: `Категорії товарів | ${STORE_NAME}`,
+    metaDescription:
+      'Усі категорії магазину в одному списку — оберіть розділ і перейдіть до товарів у ньому.',
+    content: `
+        <p>Це не окрема сторінка сайту, а SEO-картка розділу
+        <strong>/categories</strong>: тут задаються заголовок і опис, які бачить
+        Google і які показуються у прев'ю посилання. Сам список категорій формується автоматично.</p>
+      `,
+  },
+  {
+    slug: 'blog',
+    kind: PageKind.HUB,
+    title: 'Розділ «Блог»',
+    excerpt: 'SEO-заголовок і опис для стрічки блогу.',
+    metaTitle: `Блог | ${STORE_NAME}`,
+    metaDescription:
+      'Огляди, гайди та поради про смартфони, аксесуари й техніку — статті команди магазину.',
+    content: `
+        <p>Це не окрема сторінка сайту, а SEO-картка розділу
+        <strong>/blog</strong>: тут задаються заголовок і опис, які бачить
+        Google і які показуються у прев'ю посилання. Самі статті редагуються в розділі «Блог».</p>
+      `,
+  },
+  {
+    slug: 'legal',
+    kind: PageKind.HUB,
+    title: 'Розділ «Правова інформація»',
+    excerpt: 'SEO-заголовок і опис для списку правових документів.',
+    metaTitle: `Правова інформація | ${STORE_NAME}`,
+    metaDescription:
+      'Офіційні документи магазину в одному місці: політики, умови та оферта. Оберіть документ, щоб прочитати повну редакцію.',
+    content: `
+        <p>Це не окрема сторінка сайту, а SEO-картка розділу
+        <strong>/legal</strong>: тут задаються заголовок і опис, які бачить
+        Google і які показуються у прев'ю посилання. Самі документи — це сторінки виду «Юридична» у цьому ж розділі.</p>
+      `,
+  },
+  {
+    slug: 'contact',
+    kind: PageKind.HUB,
+    title: 'Розділ «Контакти»',
+    excerpt: 'SEO-заголовок і опис для сторінки контактів.',
+    metaTitle: `Контакти | ${STORE_NAME}`,
+    metaDescription:
+      'Телефон, пошта та месенджери магазину — оберіть зручний спосіб звʼязатися з нами.',
+    content: `
+        <p>Це не окрема сторінка сайту, а SEO-картка розділу
+        <strong>/contact</strong>: тут задаються заголовок і опис, які бачить
+        Google і які показуються у прев'ю посилання. Самі контакти редагуються в «Налаштування → Контакти».</p>
+      `,
+  },
+  {
+    slug: 'info',
+    kind: PageKind.HUB,
+    title: 'Розділ «Інформація та підтримка»',
+    excerpt: 'SEO-заголовок і опис для довідкового розділу.',
+    metaTitle: `Інформація та підтримка | ${STORE_NAME}`,
+    metaDescription:
+      'Доставка й оплата, гарантія та сервіс, часті питання і контакти — усе про роботу магазину в одному розділі.',
+    content: `
+        <p>Це не окрема сторінка сайту, а SEO-картка розділу
+        <strong>/info</strong>: тут задаються заголовок і опис, які бачить
+        Google і які показуються у прев'ю посилання. Текст самого розділу — це сторінки виду «Довідкова» та блок FAQ.</p>
+      `,
+  },
+  {
+    slug: 'promo',
+    kind: PageKind.HUB,
+    title: 'Розділ «Акції»',
+    excerpt: 'SEO-заголовок і опис для сторінки акцій.',
+    metaTitle: `Акції та знижки | ${STORE_NAME}`,
+    metaDescription:
+      'Товари зі знижкою та поточні промокоди магазину — усі діючі пропозиції в одному розділі.',
+    content: `
+        <p>Це не окрема сторінка сайту, а SEO-картка розділу
+        <strong>/promo</strong>: тут задаються заголовок і опис, які бачить
+        Google і які показуються у прев'ю посилання. Самі акційні добірки формуються зі знижок і банерів.</p>
       `,
   },
 ];

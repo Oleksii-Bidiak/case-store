@@ -30,6 +30,12 @@ export type { ResolveSiteNameSettings } from "./resolve-site-name";
 export { buildOgImages } from "./og-images";
 export type { OgImage } from "./og-images";
 
+// Listing-hub metadata from the admin-managed `PageKind.HUB` rows (TASK-435) —
+// the six section landing pages get their title/description from the panel, with
+// this route's dictionary strings as the fallback.
+export { buildHubMetadata } from "./hub-metadata";
+export type { HubMetadataInput } from "./hub-metadata";
+
 // Listing canonical/noindex policy (plan 143) — pure, unit-tested; consumed by
 // the `/products` and `/categories/[slug]` `generateMetadata()` call sites.
 export { buildListingMetadata } from "./listing-metadata";

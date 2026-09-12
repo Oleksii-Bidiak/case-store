@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { PublishStatus } from '@prisma/client';
+import { PageKind, PublishStatus } from '@prisma/client';
 
 /**
  * Domain entity representing a static / service page.
@@ -16,6 +16,15 @@ export class PageEntity {
 
   @ApiProperty({ description: 'URL-friendly slug', example: 'privacy-policy' })
   slug!: string;
+
+  @ApiProperty({
+    description:
+      'What this row is and where it is served — LEGAL: /legal/<slug>; INFO: /info/<slug>; ' +
+      'HUB: meta tags for the existing hub route named by the slug, no address of its own',
+    enum: PageKind,
+    example: PageKind.LEGAL,
+  })
+  kind!: PageKind;
 
   @ApiProperty({ description: 'Page title', example: 'Privacy Policy' })
   title!: string;
@@ -101,6 +110,7 @@ export class PageEntity {
   static fromPrisma(page: {
     id: string;
     slug: string;
+    kind: PageKind;
     title: string;
     content: string;
     excerpt: string | null;
@@ -117,6 +127,7 @@ export class PageEntity {
     const entity = new PageEntity();
     entity.id = page.id;
     entity.slug = page.slug;
+    entity.kind = page.kind;
     entity.title = page.title;
     entity.content = page.content;
     entity.excerpt = page.excerpt;

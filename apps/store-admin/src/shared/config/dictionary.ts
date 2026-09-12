@@ -996,6 +996,17 @@ export const dict = {
     toastStatusFailed: "Не вдалося змінити статус сторінки",
     toastDeleted: "Сторінку видалено",
     toastDeleteFailed: "Не вдалося видалити сторінку",
+    // TASK-435 — one screen, three kinds of row. The tabs write `?kind=`.
+    colKind: "Вид",
+    kindLegal: "Юридична",
+    kindInfo: "Довідкова",
+    kindHub: "Хаб",
+    tabsAria: "Фільтр за видом сторінки",
+    tabAll: "Усі",
+    tabLegal: "Юридичні",
+    tabInfo: "Довідкові",
+    tabHub: "Хаби",
+    emptyKind: "Сторінок цього виду ще немає.",
   },
 
   pageForm: {
@@ -1029,7 +1040,24 @@ export const dict = {
       metaDescriptionMax: "SEO опис має містити не більше 500 символів",
       sortInt: "Порядок сортування має бути невід'ємним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої сторінки",
+      // TASK-435 — a hub row whose slug names no hub renders nowhere.
+      hubSlugRequired: "Оберіть розділ, для якого задаються мета-теги",
     },
+    // TASK-435 — page kind: what this row is and where it will live.
+    kind: "Вид сторінки",
+    kindLegal: "Юридична — адреса /legal/…",
+    kindInfo: "Довідкова — адреса /info/…",
+    kindHub: "Хаб — мета-теги наявного розділу",
+    kindHint:
+      "Юридична — документ у розділі «Правова інформація». Довідкова — сторінка в розділі «Інформація та підтримка». " +
+      "Хаб — не окрема сторінка, а заголовок і опис для розділу, який на сайті вже є.",
+    hubSlug: "Розділ сайту",
+    hubSlugPlaceholder: "Оберіть розділ…",
+    hubSlugHint:
+      "Для хаба адресу не вигадують: оберіть один із наявних розділів сайту. " +
+      "Сторінка з іншою адресою просто ніде не показалася б.",
+    hubContentHint:
+      "На сайті цей текст не показується — у хаба немає власної сторінки. Опишіть тут, за що відповідає розділ, щоб наступному редактору було зрозуміло.",
   },
 
   // --- Blog CMS (TASK-172) ----------------------------------------------------
@@ -2441,9 +2469,23 @@ export const dict = {
         appliesTo: "Сторінка «Інформація» та кожна картка товару",
       },
       legalPages: {
-        source: "Правові та інші статичні сторінки",
-        target: "Сторінки",
+        source: "Правові документи",
+        target: "Сторінки → Юридичні",
         appliesTo: "Розділ «Правова інформація» та кожен документ",
+      },
+      // TASK-435 — the Pages screen now edits three different things, so the map
+      // shows three entries rather than one that quietly covered all of them.
+      infoPages: {
+        source: "Довідкові сторінки (зокрема «Про нас»)",
+        target: "Сторінки → Довідкові",
+        appliesTo:
+          "Розділ «Інформація та підтримка»: блок «Про нас» і кожна довідкова сторінка",
+      },
+      hubPages: {
+        source: "Заголовок і опис розділу для Google",
+        target: "Сторінки → Хаби",
+        appliesTo:
+          "Розділи «Категорії», «Блог», «Правова інформація», «Контакти», «Інформація», «Акції» — невидимо на сторінці (title, meta, прев'ю посилання)",
       },
       blog: {
         source: "Стрічка блогу",

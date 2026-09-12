@@ -123,6 +123,7 @@ function mapPageToFormValues(page: PageEntity): Partial<PageFormInput> {
   return {
     title: page.title,
     slug: page.slug,
+    kind: page.kind,
     content: page.content,
     excerpt: page.excerpt ?? "",
     metaTitle: page.metaTitle ?? "",

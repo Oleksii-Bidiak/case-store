@@ -54,6 +54,7 @@ function makePage(overrides: Partial<PageEntity> = {}): PageEntity {
   return {
     id: "p1",
     slug: "dostavka-ta-oplata",
+    kind: "LEGAL",
     title: "Доставка та оплата",
     content: "<p>Умови доставки Новою Поштою по всій Україні.</p>",
     excerpt: null,
@@ -176,6 +177,27 @@ describe("legal/[slug] slug-redirect (TASK-285)", () => {
 
     expect(permanentRedirect).not.toHaveBeenCalled();
     expect(notFound).toHaveBeenCalled();
+  });
+
+  // TASK-435 — /legal serves LEGAL pages and nothing else. The kind travels to
+  // the API, which 404s a mismatch, so an INFO page (or a HUB row) can never be
+  // rendered as a legal document at this address.
+  it("asks the API for a LEGAL page, so /info content can never answer here", async () => {
+    fetchPage.mockResolvedValue(makePage());
+    fetchSeo.mockResolvedValue(settings);
+
+    await runPage("dostavka-ta-oplata");
+
+    expect(fetchPage).toHaveBeenCalledWith("dostavka-ta-oplata", "LEGAL");
+  });
+
+  it("404s a slug that belongs to a help page (kind mismatch ⇒ null)", async () => {
+    fetchPage.mockResolvedValue(null);
+    resolveRedirect.mockResolvedValue(null);
+
+    await expect(runPage("about")).rejects.toThrow("NEXT_NOT_FOUND");
+
+    expect(fetchPage).toHaveBeenCalledWith("about", "LEGAL");
   });
 
   it("never consults the redirect ledger when the page resolves", async () => {

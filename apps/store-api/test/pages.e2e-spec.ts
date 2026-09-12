@@ -83,6 +83,7 @@ describe('Pages (e2e)', () => {
   const publishedPage = {
     id: 'page-e2e-1',
     slug: 'privacy-policy',
+    kind: 'LEGAL' as const,
     title: 'Privacy Policy',
     content: '<p>How we handle your data.</p>',
     excerpt: null,
@@ -163,6 +164,16 @@ describe('Pages (e2e)', () => {
   // ─── Public endpoints ───────────────────────────────────────────────────────
 
   describe('GET /api/pages', () => {
+    it('forwards ?kind= so the /legal hub never lists help or hub rows', async () => {
+      pageRepositoryMock.findAll.mockResolvedValue({ pages: [publishedPage], total: 1 });
+
+      await request(app.getHttpServer()).get('/api/pages?kind=LEGAL').expect(200);
+
+      expect(pageRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'LEGAL' }),
+      );
+    });
+
     it('returns only published pages', async () => {
       pageRepositoryMock.findAll.mockResolvedValue({ pages: [publishedPage], total: 1 });
 
@@ -196,6 +207,34 @@ describe('Pages (e2e)', () => {
       pageRepositoryMock.findBySlug.mockResolvedValue(null);
 
       await request(app.getHttpServer()).get('/api/pages/does-not-exist').expect(404);
+    });
+
+    // TASK-435 — the storefront's two page routes ask for the kind they serve;
+    // the kind reaches the repository query, which is the single place the
+    // invariant is enforced (see pages.repository.spec.ts for the SQL shape).
+    it('carries the requested kind through to the repository query', async () => {
+      pageRepositoryMock.findBySlug.mockResolvedValue(publishedPage);
+
+      await request(app.getHttpServer()).get('/api/pages/privacy-policy?kind=LEGAL').expect(200);
+
+      expect(pageRepositoryMock.findBySlug).toHaveBeenCalledWith('privacy-policy', 'LEGAL');
+    });
+
+    it('404s an INFO page asked for under /legal — kinds do not cross routes', async () => {
+      // What /legal/[slug] does: asks for LEGAL. The row is INFO, so the query
+      // finds nothing and the shopper gets a 404 rather than a help page dressed
+      // up as a legal document.
+      pageRepositoryMock.findBySlug.mockResolvedValue(null);
+
+      await request(app.getHttpServer()).get('/api/pages/about?kind=LEGAL').expect(404);
+
+      expect(pageRepositoryMock.findBySlug).toHaveBeenCalledWith('about', 'LEGAL');
+    });
+
+    it('rejects an unknown kind instead of silently ignoring the filter', async () => {
+      await request(app.getHttpServer()).get('/api/pages/privacy-policy?kind=NOPE').expect(400);
+
+      expect(pageRepositoryMock.findBySlug).not.toHaveBeenCalled();
     });
   });
 
@@ -233,6 +272,40 @@ describe('Pages (e2e)', () => {
       expect(response.body.data).toMatchObject({ slug: 'privacy-policy' });
     });
 
+    // TASK-435 — a HUB row is meta tags for an EXISTING hub route, named by its
+    // slug. Any other slug would be a ghost: editable, attached to nothing.
+    it('rejects a HUB page whose slug names no hub route (400)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .post('/api/admin/pages')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Про нас', content: '<p>x</p>', slug: 'pro-nas', kind: 'HUB' })
+        .expect(400);
+
+      expect(pageRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts a HUB page on one of the six hub slugs', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.create.mockResolvedValue({
+        ...publishedPage,
+        id: 'page-e2e-3',
+        slug: 'blog',
+        kind: 'HUB',
+        title: 'Блог',
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/admin/pages')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Блог', content: '<p>x</p>', slug: 'blog', kind: 'HUB' })
+        .expect(201);
+
+      expect(response.body.data).toMatchObject({ slug: 'blog', kind: 'HUB' });
+    });
+
     it('returns 409 on a duplicate slug', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
       pageRepositoryMock.findBySlugAny.mockResolvedValue(publishedPage);
@@ -261,6 +334,20 @@ describe('Pages (e2e)', () => {
         expect.objectContaining({ page: 3, limit: 20 }),
       );
       expect(response.body.meta).toEqual({ total: 42, page: 3, limit: 20, totalPages: 3 });
+    });
+
+    it('forwards the kind tab filter (the panel edits hub rows, so it sees them)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/admin/pages?kind=HUB')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(pageRepositoryMock.findAllAdmin).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'HUB' }),
+      );
     });
 
     it('forwards the search term', async () => {

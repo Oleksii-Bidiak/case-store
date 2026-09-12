@@ -17,6 +17,7 @@ const baseValues: PageFormValues = {
   metaDescription: "",
   sortOrder: 0,
   status: "DRAFT",
+  kind: "LEGAL",
   scheduledAt: "",
 };
 
@@ -31,6 +32,7 @@ const baseInput: PageFormInput = {
   metaDescription: "",
   sortOrder: "0",
   status: "DRAFT",
+  kind: "LEGAL",
   scheduledAt: "",
 };
 

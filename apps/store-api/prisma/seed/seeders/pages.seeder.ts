@@ -3,7 +3,10 @@ import { sanitizeRichText } from '../../../src/common/sanitize';
 import { pagesData } from '../data/content/pages.data';
 
 /**
- * Seed the admin-managed static / service pages (TASK-187) in UA. Content is
+ * Seed the admin-managed static / service pages (TASK-187) in UA, across all
+ * three kinds (TASK-435): LEGAL documents under `/legal`, INFO help pages under
+ * `/info` (including `about`, which the `/info` hub renders inline), and the six
+ * HUB rows that give the storefront's listing routes their meta tags. Content is
  * Tiptap-style HTML sanitized through {@link sanitizeRichText} on write, exactly
  * like the admin editor. All pages are PUBLISHED with a real `publishedAt` and
  * the derived `isActive` mirror set true. Idempotent — upsert on the unique slug.
@@ -32,6 +35,7 @@ export async function seedPages(prisma: PrismaClient) {
     const page = pagesData[i];
     const content = sanitizeRichText(page.content);
     const data = {
+      kind: page.kind,
       title: page.title,
       content,
       excerpt: page.excerpt,
