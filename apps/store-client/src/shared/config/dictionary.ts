@@ -1377,11 +1377,15 @@ export const dict = {
       bonusesHint: "знижки на наступні покупки",
       bonusesStub:
         "Програма лояльності готується — тут з’являться ваші бали та історія нарахувань.",
-      // Settings section (stub)
+      // Settings section (notifications are still a stub; appearance is real)
       settingsHeading: "Налаштування",
       appearanceHeading: "Оформлення",
+      // TASK-505 — this line used to promise that the theme "adjusts
+      // automatically to your system settings". That stopped being true the
+      // moment TASK-412 gave visitors a manual switch, so the note no longer
+      // describes the behaviour: it introduces the control right below it.
       appearanceNote:
-        "Тема інтерфейсу автоматично підлаштовується під налаштування вашої системи.",
+        "Оберіть тему інтерфейсу. «Системна» слідує за налаштуваннями пристрою, а ваш вибір зберігається в цьому браузері.",
       themeDark: "Темна",
       themeLight: "Світла",
       themeSystem: "Системна",

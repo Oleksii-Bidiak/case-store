@@ -1,13 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { ThemeToggle } from "@/features/theme";
 import { dict } from "@/shared/config";
 
 /**
- * AccountSettingsSection — the "Налаштування" section. STUB: appearance follows
- * the OS `prefers-color-scheme` (no manual theme system yet), and the
- * notification toggles are local-only (not persisted — no notification-prefs
- * backend). Tracked with the loyalty/settings follow-up (TASK-175).
+ * AccountSettingsSection — the "Налаштування" section.
+ *
+ * Appearance is REAL: the same light/system/dark control the header carries
+ * (`features/theme`), so a visitor can change the theme from the page that
+ * claims to hold their settings. Until TASK-505 this card only described the
+ * theme — and described it wrongly, still promising the pre-TASK-412 behaviour
+ * of following the OS with no say in it.
+ *
+ * The notification toggles below remain a STUB: local-only, not persisted (no
+ * notification-prefs backend). Tracked with the loyalty/settings follow-up
+ * (TASK-175).
  */
 export function AccountSettingsSection() {
   const d = dict.account.dashboard;
@@ -33,6 +41,12 @@ export function AccountSettingsSection() {
         <p className="text-[13.5px] text-muted-foreground">
           {d.appearanceNote}
         </p>
+        {/* The control itself, not a sentence about it. `hideLabel`: the card
+            heading and the line above already name this field, so the switch's
+            own caption would be a third title — it stays as the group's
+            accessible name. `max-w-xs` keeps the three segments at a thumb's
+            width instead of stretching them across a 680px card. */}
+        <ThemeToggle variant="full" hideLabel className="mt-4 max-w-xs" />
       </div>
 
       <div className="mt-[18px] rounded-[18px] border border-border bg-card p-[26px] shadow-card">
