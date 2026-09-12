@@ -229,7 +229,10 @@ export default async function ProductsPage({
         </p>
       </div>
 
-      <Suspense fallback={<ProductListSkeleton />}>
+      {/* The fallback stands in for ProductListView as a whole — chips row,
+          toolbar and the 268px filter rail included (TASK-416) — so the grid
+          does not render full-width and then shrink into a column. */}
+      <Suspense fallback={<ProductListSkeleton withSidebar />}>
         <ProductListView initialParams={initialParams} />
       </Suspense>
     </div>

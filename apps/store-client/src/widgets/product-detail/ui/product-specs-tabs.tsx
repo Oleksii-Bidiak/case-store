@@ -1,5 +1,7 @@
 "use client";
 
+import { useCallback } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Truck, Package, MapPin } from "lucide-react";
 import {
   RichText,
@@ -17,12 +19,39 @@ import { formatSpecValue } from "./format-spec";
 const DELIVERY_ICONS = [Truck, Package, MapPin] as const;
 
 /**
+ * Tab ids mirrored into `?tab=`. The FIRST one is the default and is never
+ * written to the URL — a plain `/products/<slug>` must stay the canonical
+ * address of the description tab (plan 143 treats extra query params as a
+ * distinct URL), and a shopper who never touched the tabs should be able to
+ * copy a clean link.
+ */
+const TAB_VALUES = ["description", "specs", "reviews", "delivery"] as const;
+type TabValue = (typeof TAB_VALUES)[number];
+const DEFAULT_TAB: TabValue = TAB_VALUES[0];
+
+/**
+ * Resolve `?tab=` to a real tab. Anything unknown (typo, stale link, an old
+ * value we dropped) silently falls back to the description tab rather than
+ * leaving every panel closed.
+ */
+export function resolveTabParam(raw: string | null): TabValue {
+  return TAB_VALUES.includes(raw as TabValue) ? (raw as TabValue) : DEFAULT_TAB;
+}
+
+/**
  * ProductSpecsTabs — Description / Specifications / Reviews / Delivery tabs for
  * the PDP. The Specifications tab renders the product's structured specs
  * (TASK-191), falling back to the empty-state copy when a product has none; the
  * Reviews tab renders the live {@link ProductReviewsWidget}; Delivery lists the
  * storefront's static shipping methods (curated copy — the real per-order
  * options live in `/checkout`).
+ *
+ * TASK-416 makes the selection URL-addressable: the open tab lives in `?tab=`,
+ * so "ось характеристики цього чохла" is a shareable link, the back button
+ * steps through tabs, and a reload keeps the shopper where they were. The
+ * switch uses `router.replace(..., { scroll: false })` — tab changes are not
+ * navigation history worth a `push`, and scrolling back to the top of the PDP
+ * after clicking a tab that sits halfway down the page would be jarring.
  */
 export function ProductSpecsTabs({
   description,
@@ -33,8 +62,30 @@ export function ProductSpecsTabs({
   productId: string;
   specs: ProductSpecEntity[];
 }) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const value = resolveTabParam(searchParams.get("tab"));
+
+  const handleValueChange = useCallback(
+    (next: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next === DEFAULT_TAB) {
+        params.delete("tab");
+      } else {
+        params.set("tab", next);
+      }
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, {
+        scroll: false,
+      });
+    },
+    [pathname, router, searchParams],
+  );
+
   return (
-    <Tabs defaultValue="description" className="w-full">
+    <Tabs value={value} onValueChange={handleValueChange} className="w-full">
       <TabsList className="w-full max-w-2xl flex-wrap">
         <TabsTrigger value="description">
           {dict.product.tabDescription}

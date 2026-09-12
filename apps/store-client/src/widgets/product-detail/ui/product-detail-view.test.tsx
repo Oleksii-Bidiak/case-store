@@ -9,6 +9,7 @@ import { server } from "@/shared/test/msw-server";
 import { makeCart, makeCartItem } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
 import { ProductDetailView } from "./product-detail-view";
+import { ProductDetailSkeleton } from "./product-detail-skeleton";
 
 // next/navigation is unavailable under jsdom — the sibling navigator routes off
 // the mocked push.
@@ -233,5 +234,67 @@ describe("ProductDetailView — buy box in-cart state (TASK-409)", () => {
     expect(
       screen.getByRole("button", { name: dict.addToCart.idle }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-416 — the PDP hero folds into TWO columns at 768px instead of waiting
+ * for 1024px: gallery over info in the fluid left column, the 360px buy-box
+ * rail beside them. On a tablet the price and the CTA used to sit a full
+ * screen-height below the photo. The skeleton declares the identical grid, or
+ * the page reflows the moment the real view hydrates.
+ */
+describe("ProductDetailView — responsive hero grid (TASK-416)", () => {
+  const arrange = () => {
+    server.use(
+      http.get("*/api/products/:slug", () =>
+        HttpResponse.json(detailEnvelope()),
+      ),
+      http.get("*/api/products", () =>
+        HttpResponse.json({
+          data: [],
+          meta: { total: 0, page: 1, limit: 5, totalPages: 0 },
+        }),
+      ),
+      http.get("*/api/cart", () => HttpResponse.json(makeCart([]))),
+    );
+    return renderWithProviders(<ProductDetailView slug="glass-blue-single" />);
+  };
+
+  it("switches to two columns at md and three at lg", async () => {
+    const { container } = arrange();
+    await screen.findByRole("heading", { level: 1 });
+
+    const hero = container.querySelector(".grid");
+    expect(hero).toHaveClass(
+      "grid-cols-1",
+      "md:grid-cols-[1fr_360px]",
+      "lg:grid-cols-[1fr_1fr_360px]",
+    );
+
+    // Placement is what folds three children into two columns without
+    // reordering the DOM: info under the gallery, buy box spanning both rows.
+    const info = container.querySelector(".md\\:row-start-2");
+    expect(info).toHaveClass("md:col-start-1", "lg:col-start-2");
+    const buyBox = container.querySelector(".md\\:row-span-2");
+    expect(buyBox).toHaveClass(
+      "md:col-start-2",
+      "md:sticky",
+      "lg:col-start-3",
+      "lg:row-span-1",
+    );
+  });
+
+  it("gives the skeleton the identical hero grid", async () => {
+    const { container } = arrange();
+    await screen.findByRole("heading", { level: 1 });
+    const hero = container.querySelector(".grid");
+
+    const { container: skeleton } = renderWithProviders(
+      <ProductDetailSkeleton />,
+    );
+
+    // Byte-identical, not merely "both responsive".
+    expect(skeleton.querySelector(".grid")?.className).toBe(hero?.className);
   });
 });
