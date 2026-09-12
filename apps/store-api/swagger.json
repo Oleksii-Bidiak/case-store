@@ -5227,6 +5227,20 @@
             }
           },
           {
+            "name": "actorRole",
+            "required": false,
+            "in": "query",
+            "description": "Filter by the actor role recorded on the entry",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "CUSTOMER",
+                "ADMIN",
+                "MANAGER"
+              ]
+            }
+          },
+          {
             "name": "action",
             "required": false,
             "in": "query",
@@ -5863,6 +5877,103 @@
           }
         ],
         "summary": "Activate user (admin)",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/admin/users/{userId}/notes": {
+      "get": {
+        "operationId": "listUserNotes",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "description": "Customer UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notes, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserNoteListResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — customers:read required"
+          },
+          "404": {
+            "description": "Customer not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List staff notes about a customer (admin)",
+        "tags": [
+          "Users"
+        ]
+      },
+      "post": {
+        "operationId": "createUserNote",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "description": "Customer UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Note appended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserNoteResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty or over-long note"
+          },
+          "403": {
+            "description": "Forbidden — customers:write required"
+          },
+          "404": {
+            "description": "Customer not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Add a staff note about a customer (admin)",
         "tags": [
           "Users"
         ]
@@ -16770,6 +16881,116 @@
           "role"
         ]
       },
+      "UserNoteEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Note id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "userId": {
+            "type": "string",
+            "description": "The customer this note is about",
+            "example": "user-uuid-1"
+          },
+          "authorId": {
+            "type": "string",
+            "description": "Staff account that wrote the note; null for a note written before the field existed. Carries NO foreign key — deleting the author keeps the note.",
+            "nullable": true,
+            "example": "staff-uuid-1"
+          },
+          "authorEmail": {
+            "type": "string",
+            "description": "Author's email as it was when the note was written; null if unknown",
+            "nullable": true,
+            "example": "manager@example.com"
+          },
+          "body": {
+            "type": "string",
+            "description": "The note text (plain text)",
+            "example": "Просив передзвонити після 18:00."
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the note was written",
+            "example": "2026-09-13T10:24:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "authorId",
+          "authorEmail",
+          "body",
+          "createdAt"
+        ]
+      },
+      "UserNoteListMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "Total notes this customer has",
+            "example": 128
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum notes returned by one read",
+            "example": 50
+          }
+        },
+        "required": [
+          "total",
+          "limit"
+        ]
+      },
+      "UserNoteListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Notes, newest first",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserNoteEntity"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/UserNoteListMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "UserNoteResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/UserNoteEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CreateUserNoteDto": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "The note text (plain text, never rendered as HTML)",
+            "example": "Просив передзвонити після 18:00, хоче рахунок на ФОП.",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
       "CatalogImportRunEntity": {
         "type": "object",
         "properties": {
@@ -18088,6 +18309,13 @@
             "format": "date-time",
             "nullable": true
           },
+          "scheduledUntil": {
+            "type": "string",
+            "description": "End of the publication window — the instant the scheduler takes this banner back down (null = no end, TASK-429)",
+            "example": "2026-09-01T00:00:00.000Z",
+            "format": "date-time",
+            "nullable": true
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -18276,6 +18504,12 @@
             "type": "string",
             "description": "Optional accent / variant key interpreted by the storefront UI",
             "example": "accent"
+          },
+          "scheduledUntil": {
+            "type": "string",
+            "description": "ISO-8601 instant to auto-UNPUBLISH at — the end of the publication window (TASK-429). Omit for a banner with no end. Meaningful for PUBLISHED as well as SCHEDULED (\"live now, down on the 1st\"); ignored for DRAFT. Must be later than scheduledAt when both are given.",
+            "example": "2026-09-01T00:00:00.000Z",
+            "format": "date-time"
           }
         },
         "required": [
@@ -18346,6 +18580,12 @@
             "type": "string",
             "description": "Optional accent / variant key interpreted by the storefront UI",
             "example": "accent"
+          },
+          "scheduledUntil": {
+            "type": "string",
+            "description": "ISO-8601 instant to auto-UNPUBLISH at — the end of the publication window (TASK-429). Written together with `status`: a PUT that carries no `status` leaves an existing window untouched. Omit (with a `status`) to clear it. Must be later than scheduledAt when both are given.",
+            "example": "2026-09-01T00:00:00.000Z",
+            "format": "date-time"
           }
         }
       },
@@ -21953,6 +22193,12 @@
             "type": "string",
             "description": "Reviewed product name",
             "example": "iPhone 15 Pro Case"
+          },
+          "productSku": {
+            "type": "string",
+            "description": "Reviewed product SKU; null when the product has none",
+            "example": "CASE-IP15P-BLK",
+            "nullable": true
           }
         },
         "required": [
@@ -21964,7 +22210,8 @@
           "isActive",
           "createdAt",
           "userEmail",
-          "productName"
+          "productName",
+          "productSku"
         ]
       },
       "AdminReviewPaginationMeta": {
