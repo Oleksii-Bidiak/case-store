@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { keepPreviousData } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { Combobox, type ComboboxOption } from "@/shared/ui";
 import { useSearchSuggest } from "@/entities/search";
@@ -16,6 +17,8 @@ interface SearchAutocompleteProps {
   onNavigate?: () => void;
   /** Distinct id so desktop + mobile instances get unique listbox ids. */
   id?: string;
+  /** Focus the input on mount — for panels that open on demand (TASK-411). */
+  autoFocus?: boolean;
   className?: string;
 }
 
@@ -32,6 +35,7 @@ interface SearchAutocompleteProps {
 export function SearchAutocomplete({
   onNavigate,
   id = "site-search",
+  autoFocus = false,
   className,
 }: SearchAutocompleteProps) {
   const router = useRouter();
@@ -43,9 +47,17 @@ export function SearchAutocomplete({
     250,
   );
 
+  // `keepPreviousData` holds the previous suggestions on screen while the next
+  // keystroke's request is in flight — without it the list empties on every
+  // letter and the popup flickers between "loading" and results (TASK-411).
   const { data, isFetching } = useSearchSuggest(
     { q: query },
-    { query: { enabled: query.trim().length >= MIN_QUERY_LENGTH } },
+    {
+      query: {
+        enabled: query.trim().length >= MIN_QUERY_LENGTH,
+        placeholderData: keepPreviousData,
+      },
+    },
   );
 
   const options: ComboboxOption[] = (data?.data ?? []).map((suggestion) => ({
@@ -83,6 +95,7 @@ export function SearchAutocomplete({
         <Combobox
           id={id}
           value={value}
+          autoFocus={autoFocus}
           options={options}
           isLoading={isFetching}
           placeholder={dict.search.placeholder}

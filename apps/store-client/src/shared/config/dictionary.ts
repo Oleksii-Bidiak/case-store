@@ -119,6 +119,13 @@ export const dict = {
      * as the visible section heading and the second listbox's aria-label.
      */
     blogSectionLabel: "Статті блогу",
+    /**
+     * Compact header search below `lg` (TASK-411): the magnifier trigger's
+     * accessible name, and the row that turns an empty suggestions popup into
+     * a way out — a link to the full results page for what was typed.
+     */
+    openPanel: "Відкрити пошук",
+    showAllResults: (q: string) => `Показати всі результати для «${q}»`,
   },
 
   footer: {
