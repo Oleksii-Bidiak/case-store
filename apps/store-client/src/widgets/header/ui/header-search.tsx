@@ -253,6 +253,12 @@ export function HeaderSearch() {
             onClick={() => {
               setCatalogOpen((v) => !v);
               setSearchOpen(false);
+              // The magnifier's panel is a peer dropdown, not a sibling of
+              // this one: both are absolutely positioned at the same corner,
+              // so leaving it open would stack two panels over each other and
+              // report aria-expanded from two triggers at once. Opening
+              // either closes the other (TASK-411).
+              setCompactOpen(false);
               // Fresh open always previews the first root's children.
               setActiveRootId(undefined);
             }}

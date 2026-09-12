@@ -742,4 +742,29 @@ describe("HeaderSearch — hover, Enter and the compact trigger (TASK-411)", () 
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(document.getElementById("compact-search")).toBeInTheDocument();
   });
+
+  it("closes the search panel when the catalog trigger opens the mega-menu", async () => {
+    setupHandlers({ categories: makeTree() });
+    const user = userEvent.setup();
+    renderWithProviders(<HeaderSearch />);
+
+    const magnifier = screen.getByRole("button", {
+      name: dict.search.openPanel,
+    });
+    await user.click(magnifier);
+    expect(document.getElementById("compact-search")).toHaveFocus();
+
+    const catalogTrigger = screen.getByRole("button", {
+      name: dict.header.catalogAria,
+    });
+    await user.click(catalogTrigger);
+    await screen.findByRole("menuitem", { name: "Смартфони" });
+
+    // The other direction of the same exclusivity: the search panel must go,
+    // or two absolutely positioned panels overlap with a focused input buried
+    // under the catalog, and both triggers claim aria-expanded="true".
+    expect(document.getElementById("compact-search")).not.toBeInTheDocument();
+    expect(magnifier).toHaveAttribute("aria-expanded", "false");
+    expect(catalogTrigger).toHaveAttribute("aria-expanded", "true");
+  });
 });
