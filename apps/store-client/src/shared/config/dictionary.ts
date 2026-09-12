@@ -366,7 +366,6 @@ export const dict = {
       compare: "Порівняння",
     },
     featuredBadge: "Головна тема тижня",
-    loadMore: "Показати більше статей",
     emptyHeading: "Нічого не знайдено",
     emptyBody: "Спробуйте іншу категорію або уточніть запит.",
     newsletter: {
