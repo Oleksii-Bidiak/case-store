@@ -15,8 +15,10 @@
 import Link from "next/link";
 import { MoreHorizontal } from "lucide-react";
 import {
+  MAX_TREE_LEVELS,
   applyIntent,
   type MoveIntent,
+  type MoveOutcome,
   type TreeItem,
 } from "@/shared/lib/sortable-tree";
 import {
@@ -30,6 +32,35 @@ import {
 import { dict } from "@/shared/config";
 
 const t = dict.categories.tree;
+
+/**
+ * "Make this a root category" — outdent, repeatedly, until the reducer refuses
+ * (TASK-423).
+ *
+ * Deliberately NOT a second path into `applyMove` with a hand-built
+ * `{ targetParentId: null }` point. That would be one line shorter and would
+ * bypass everything `applyIntent` decides on the way up: where among its
+ * uncles the row lands at each level, the `level + height − 1 ≤ MAX_TREE_LEVELS`
+ * check, and the typed refusals. Composing the SAME step the menu's «Підняти на
+ * рівень вище» runs means this item cannot land anywhere that pressing that item
+ * repeatedly would not — which is exactly the promise the label makes.
+ *
+ * The loop is bounded by the structural cap rather than by `while (true)`: a
+ * cyclic tree arriving from the server must not spin the render.
+ */
+function outdentToRoot(items: TreeItem[], movingId: string): MoveOutcome {
+  let current = items;
+  let result: MoveOutcome = { kind: "refused", reason: "at-root" };
+
+  for (let step = 0; step < MAX_TREE_LEVELS; step += 1) {
+    const next = applyIntent(current, movingId, "outdent");
+    if (next.kind !== "moved") break;
+    result = next;
+    current = next.items;
+  }
+
+  return result;
+}
 
 export interface CategoryTreeRowActionsProps {
   /** The EFFECTIVE flat tree (the optimistic override while a PATCH is saving). */
@@ -83,6 +114,7 @@ export function CategoryTreeRowActions({
   const down = outcome("down");
   const indent = outcome("indent");
   const outdent = outcome("outdent");
+  const toRoot = outdentToRoot(items, categoryId);
 
   const run = (result: ReturnType<typeof applyIntent>) => {
     if (result.kind !== "moved") return;
@@ -127,14 +159,25 @@ export function CategoryTreeRowActions({
         >
           {previousSibling ? t.indentUnder(previousSibling.label) : t.indent}
         </DropdownMenuItem>
-        {/* Hidden (not merely disabled) at root — there is no level above. */}
+        {/* Hidden (not merely disabled) at root — there is no level above.
+            «Зробити кореневою» hides on the same condition and for the same
+            reason: at the root it is not an action that is currently
+            unavailable, it is an action that has already happened. */}
         {!isRoot && (
-          <DropdownMenuItem
-            disabled={disabled || outdent.kind !== "moved"}
-            onSelect={() => run(outdent)}
-          >
-            {t.outdent}
-          </DropdownMenuItem>
+          <>
+            <DropdownMenuItem
+              disabled={disabled || outdent.kind !== "moved"}
+              onSelect={() => run(outdent)}
+            >
+              {t.outdent}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={disabled || toRoot.kind !== "moved"}
+              onSelect={() => run(toRoot)}
+            >
+              {t.makeRoot}
+            </DropdownMenuItem>
+          </>
         )}
         <DropdownMenuItem
           disabled={disabled}

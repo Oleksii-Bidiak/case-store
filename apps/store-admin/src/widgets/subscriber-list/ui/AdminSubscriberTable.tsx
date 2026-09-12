@@ -5,7 +5,6 @@ import { Download, Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "@/shared/ui/toast";
 import { useUrlParams } from "@/shared/lib/use-url-params";
-import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { formatDate } from "@/shared/lib";
 import {
@@ -16,29 +15,25 @@ import {
 import {
   Badge,
   Button,
-  Input,
   LiveAnnouncer,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   SortableColumnHeader,
   Table,
   TableBody,
   TableCell,
+  TableFilters,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableToolbar,
+  pageSizeFrom,
+  type TableFilterDef,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { downloadCsv } from "../model/download-csv";
 import { AdminSubscriberTableSkeleton } from "./AdminSubscriberTableSkeleton";
 
-const PAGE_SIZE = 20;
-const ALL_OPTION = "__all__";
-const SEARCH_DEBOUNCE_MS = 300;
 const EXPORT_FILENAME = "newsletter-subscribers.csv";
 
 type SubscriberStatus =
@@ -64,8 +59,8 @@ export function AdminSubscriberTable() {
   const searchParam = searchParams.get("search") ?? "";
   const statusParam = searchParams.get("status") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
+  const pageSize = pageSizeFrom(searchParams);
 
-  const [searchInput, setSearchInput] = useState(searchParam);
   const [isExporting, setIsExporting] = useState(false);
 
   const updateParams = useUrlParams();
@@ -75,12 +70,6 @@ export function AdminSubscriberTable() {
     updateParams,
   );
 
-  const debouncedSearch = useDebouncedCallback((value: string) => {
-    const trimmed = value.trim();
-    if (trimmed === searchParam) return;
-    updateParams({ search: trimmed || undefined, page: undefined });
-  }, SEARCH_DEBOUNCE_MS);
-
   const statusFilter = statusParam
     ? (statusParam as SubscriberStatus)
     : undefined;
@@ -88,7 +77,7 @@ export function AdminSubscriberTable() {
   const { data, isLoading, isFetching, isError, refetch } =
     useAdminNewsletterControllerFindAll({
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       search: searchParam || undefined,
       status: statusFilter,
       sortBy,
@@ -98,12 +87,23 @@ export function AdminSubscriberTable() {
   const subscribers = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
 
-  const handleStatusChange = (value: string) => {
-    updateParams({
-      status: value === ALL_OPTION ? undefined : value,
-      page: undefined,
-    });
-  };
+  const filters: TableFilterDef[] = [
+    {
+      param: "status",
+      label: dict.subscribers.filterStatusAria,
+      allLabel: dict.subscribers.allStatuses,
+      options: [
+        {
+          value: AdminNewsletterControllerFindAllStatus.SUBSCRIBED,
+          label: dict.subscribers.statusSubscribed,
+        },
+        {
+          value: AdminNewsletterControllerFindAllStatus.UNSUBSCRIBED,
+          label: dict.subscribers.statusUnsubscribed,
+        },
+      ],
+    },
+  ];
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -133,45 +133,14 @@ export function AdminSubscriberTable() {
           onRefresh={() => void refetch()}
           isRefreshing={isFetching}
           search={
-            <Input
-              type="search"
+            <TableSearch
+              value={searchParam}
               placeholder={dict.subscribers.searchPlaceholder}
-              value={searchInput}
-              onChange={(event) => {
-                setSearchInput(event.target.value);
-                debouncedSearch(event.target.value);
-              }}
-              className="max-w-xs"
-              aria-label={dict.subscribers.searchAria}
+              label={dict.subscribers.searchAria}
             />
           }
           filters={
-            <Select
-              value={statusParam || ALL_OPTION}
-              onValueChange={handleStatusChange}
-            >
-              <SelectTrigger
-                className="w-48"
-                aria-label={dict.subscribers.filterStatusAria}
-              >
-                <SelectValue placeholder={dict.subscribers.allStatuses} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_OPTION}>
-                  {dict.subscribers.allStatuses}
-                </SelectItem>
-                <SelectItem
-                  value={AdminNewsletterControllerFindAllStatus.SUBSCRIBED}
-                >
-                  {dict.subscribers.statusSubscribed}
-                </SelectItem>
-                <SelectItem
-                  value={AdminNewsletterControllerFindAllStatus.UNSUBSCRIBED}
-                >
-                  {dict.subscribers.statusUnsubscribed}
-                </SelectItem>
-              </SelectContent>
-            </Select>
+            <TableFilters filters={filters} values={{ status: statusParam }} />
           }
           actions={
             <Button
@@ -200,7 +169,11 @@ export function AdminSubscriberTable() {
           </p>
         ) : subscribers.length === 0 ? (
           <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-            {dict.subscribers.empty}
+            {/* "Nobody has subscribed yet" and "your filters matched nothing"
+                are different answers (TASK-423). */}
+            {searchParam || statusParam
+              ? dict.common.table.emptyFiltered
+              : dict.subscribers.empty}
           </div>
         ) : (
           <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
@@ -273,33 +246,11 @@ export function AdminSubscriberTable() {
         )}
 
         {!isLoading && !isError && subscribers.length > 0 && (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              {dict.common.pageOf(page, totalPages)}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() =>
-                  updateParams({
-                    page: page - 1 <= 1 ? undefined : String(page - 1),
-                  })
-                }
-              >
-                {dict.common.previous}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => updateParams({ page: String(page + 1) })}
-              >
-                {dict.common.next}
-              </Button>
-            </div>
-          </div>
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            pageSize={pageSize}
+          />
         )}
       </div>
     </LiveAnnouncer>

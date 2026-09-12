@@ -23,6 +23,21 @@
  * dropped) and — together with `listeners` — spread on the GRIP HANDLE button
  * only, never on the row, so the row's other buttons stay independently
  * clickable.
+ *
+ * ── The drop hint (TASK-423) ────────────────────────────────────────────────
+ * The depth projection used to be computed at DROP time only, so during a
+ * pointer drag the one question a nested tree raises — "will this land INSIDE
+ * the row above, or next to it?" — had no answer on screen. Both outcomes looked
+ * identical until the PATCH had already fired. The projection now runs on every
+ * `onDragMove` and paints the answer: an insertion LINE for a reorder (indented
+ * to the projected depth, so a sideways drag visibly changes level) and a FRAME
+ * around the row that would become the new parent for a nest.
+ *
+ * It is delivered through the `style` the consumer already spreads on its row —
+ * not through a new render prop — so all four consuming widgets get it without
+ * changing a line. The decision itself lives in {@link resolveDropHint}, which is
+ * pure and reads the SAME `getProjection` the drop path reads; a hint that could
+ * disagree with the drop would be worse than no hint at all.
  */
 
 import {
@@ -55,6 +70,7 @@ import type { ReorderGroupDto } from "@/shared/api";
 import {
   MAX_TREE_LEVELS,
   applyMove,
+  arrayMove,
   depthClampFor,
   flattenTree,
   getProjection,
@@ -62,6 +78,7 @@ import {
   removeChildrenOf,
   toNested,
   toReorderGroups,
+  type FlattenedItem,
   type TreeItem,
 } from "@/shared/lib/sortable-tree";
 import { useAnnouncer } from "@/shared/ui/live-announcer";
@@ -106,6 +123,111 @@ export function sanitizeSortableAttributes(
   return Object.fromEntries(
     Object.entries(attributes).filter(([key]) => !dropped.includes(key)),
   ) as HTMLAttributes<HTMLElement>;
+}
+
+/**
+ * What the pointer would do if it let go right now.
+ *
+ * `nest` and the two line modes are the SAME projection read two ways, which is
+ * the point: the hint cannot promise one thing and the drop do another.
+ */
+export type DropHintMode = "nest" | "before" | "after";
+
+export interface DropHint {
+  /** The row the hint is painted on. */
+  anchorId: string;
+  mode: DropHintMode;
+  /** 0-based projected depth — the insertion line's indent. */
+  depth: number;
+}
+
+/**
+ * Where the drop would land, from the live projection (TASK-423).
+ *
+ * `items` is the DRAG list — the flattened tree with the dragged node's children
+ * removed, exactly what `handleDragEnd` reconstructs — so this reads the same
+ * geometry the drop reducer will.
+ *
+ * The distinction the operator needs is "does the row above become my PARENT, or
+ * my SIBLING?", and that is precisely `projection.depth > previous.depth`: the
+ * vendored `getProjection` resolves `parentId` to `previous.id` in that case and
+ * to `previous.parentId` otherwise. Anchoring on `previous` rather than on the
+ * `over` row matters — dnd-kit's `over` is whichever row the pointer is inside,
+ * and after the array move the node lands BELOW it or above it depending on
+ * direction, so hinting on `over` would point at the wrong row half the time.
+ */
+export function resolveDropHint(
+  items: FlattenedItem[],
+  activeId: string,
+  overId: string,
+  offsetLeft: number,
+  indentationWidth: number,
+  maxDepthClamp: number,
+): DropHint | null {
+  const overIndex = items.findIndex((i) => i.id === overId);
+  const activeIndex = items.findIndex((i) => i.id === activeId);
+  if (overIndex === -1 || activeIndex === -1) return null;
+
+  const projection = getProjection(
+    items,
+    activeId,
+    overId,
+    offsetLeft,
+    indentationWidth,
+    maxDepthClamp,
+  );
+
+  const moved = arrayMove(items, activeIndex, overIndex);
+  const previous = moved[overIndex - 1];
+
+  // Dropped at the very top: there is no row above to hang a line under, so the
+  // line goes on the TOP edge of the row that will follow.
+  if (!previous) {
+    const next = moved[overIndex + 1];
+    return {
+      anchorId: next ? next.id : overId,
+      mode: "before",
+      depth: projection.depth,
+    };
+  }
+
+  return {
+    anchorId: previous.id,
+    mode: projection.depth > previous.depth ? "nest" : "after",
+    depth: projection.depth,
+  };
+}
+
+/**
+ * The hint's CSS. Design tokens only — `var(--color-primary)` is the panel's
+ * accent in both themes, and there is no Tailwind class that can carry a
+ * computed indent.
+ *
+ * The line is a background gradient rather than a border or a box-shadow
+ * because the hint is painted on a `<tr>` in every consumer: with
+ * `border-collapse: collapse` a row's own border is shared with its neighbour
+ * (so a border-bottom would move the table by a pixel) and box-shadows on
+ * collapsed rows are unreliable across engines. A background gradient clips to
+ * the row's border box in all of them, and the colour stop is what indents the
+ * line to the projected depth.
+ */
+export function dropHintStyle(
+  hint: DropHint,
+  indentationWidth: number,
+): CSSProperties {
+  if (hint.mode === "nest") {
+    return {
+      outline: "2px solid var(--color-primary)",
+      outlineOffset: "-2px",
+    };
+  }
+  const indent = Math.max(0, hint.depth) * indentationWidth;
+  return {
+    backgroundImage: `linear-gradient(to right, transparent ${indent}px, var(--color-primary) ${indent}px)`,
+    backgroundSize: "100% 2px",
+    backgroundRepeat: "no-repeat",
+    backgroundPosition: hint.mode === "before" ? "left top" : "left bottom",
+  };
 }
 
 export interface SortableTreeHandleProps extends HTMLAttributes<HTMLElement> {
@@ -171,6 +293,7 @@ export function SortableTree({
 }: SortableTreeProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [offsetLeft, setOffsetLeft] = useState(0);
+  const [overId, setOverId] = useState<string | null>(null);
   const { announcePolite } = useAnnouncer();
 
   // dnd-kit unconditionally renders its own LiveRegion + HiddenText. Portal them
@@ -194,21 +317,44 @@ export function SortableTree({
   const byId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const rowIds = useMemo(() => rows.map((r) => r.id), [rows]);
 
+  /** Where a release right now would put the row — recomputed on every move. */
+  const dropHint = useMemo(() => {
+    if (!activeId || !overId) return null;
+    const dragList = removeChildrenOf(flattenTree(toNested(items)), [activeId]);
+    return resolveDropHint(
+      dragList,
+      activeId,
+      overId,
+      offsetLeft,
+      indentationWidth,
+      depthClampFor(items, activeId, maxDepth),
+    );
+  }, [activeId, indentationWidth, items, maxDepth, offsetLeft, overId]);
+
   const handleDragStart = ({ active }: DragStartEvent) => {
     const id = String(active.id);
     setActiveId(id);
     setOffsetLeft(0);
+    setOverId(null);
     const item = byId.get(id);
     if (item && announcements?.grabbed) {
       announcePolite(announcements.grabbed(item));
     }
   };
 
-  const handleDragMove = ({ delta }: DragMoveEvent) => setOffsetLeft(delta.x);
+  // `over` rides along on the move event rather than coming from a separate
+  // `onDragOver`: the hint is a function of BOTH the row under the pointer and
+  // the horizontal offset, and reading them from two events can paint a frame
+  // one frame out of step with the indent that justifies it.
+  const handleDragMove = ({ delta, over }: DragMoveEvent) => {
+    setOffsetLeft(delta.x);
+    setOverId(over ? String(over.id) : null);
+  };
 
   const reset = () => {
     setActiveId(null);
     setOffsetLeft(0);
+    setOverId(null);
   };
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
@@ -288,6 +434,8 @@ export function SortableTree({
               level={maxDepth === 1 ? 1 : row.depth + 1}
               index={index}
               disabled={disabled || item.disabled === true}
+              hint={dropHint?.anchorId === row.id ? dropHint : null}
+              indentationWidth={indentationWidth}
               renderRow={renderRow}
             />
           );
@@ -303,6 +451,9 @@ interface SortableTreeRowProps {
   level: number;
   index: number;
   disabled: boolean;
+  /** Set only on the ONE row the live drop hint is anchored to. */
+  hint: DropHint | null;
+  indentationWidth: number;
   renderRow: (props: SortableTreeRowRenderProps) => ReactNode;
 }
 
@@ -311,6 +462,8 @@ function SortableTreeRow({
   level,
   index,
   disabled,
+  hint,
+  indentationWidth,
   renderRow,
 }: SortableTreeRowProps) {
   const {
@@ -326,6 +479,7 @@ function SortableTreeRow({
   const style: CSSProperties = {
     transform: CSS.Translate.toString(transform),
     transition: transition ?? undefined,
+    ...(hint ? dropHintStyle(hint, indentationWidth) : {}),
   };
 
   const handleProps: SortableTreeHandleProps = {

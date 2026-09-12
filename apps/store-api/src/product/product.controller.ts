@@ -30,6 +30,7 @@ import {
   SetDeviceCompatDto,
   UpdateProductSpecsDto,
   BulkProductStatusDto,
+  BulkProductGroupDto,
 } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import {
@@ -109,6 +110,20 @@ class BulkProductStatusResult {
 class BulkProductStatusResponse {
   @ApiProperty({ type: BulkProductStatusResult })
   data!: BulkProductStatusResult;
+}
+
+/**
+ * What a bulk group reassignment reports back (TASK-423) — the rows actually
+ * written, for the same reason {@link BulkProductStatusResult} does.
+ */
+class BulkProductGroupResult {
+  @ApiProperty({ description: 'Products whose groupId was written', example: 9 })
+  updatedCount!: number;
+}
+
+class BulkProductGroupResponse {
+  @ApiProperty({ type: BulkProductGroupResult })
+  data!: BulkProductGroupResult;
 }
 
 /**
@@ -554,6 +569,60 @@ export class ProductController {
   @ApiResponse({ status: 404, description: 'Unknown product id — nothing was written' })
   async setStatusMany(@Body() dto: BulkProductStatusDto): Promise<BulkProductStatusResponse> {
     const updatedCount = await this.productService.setStatusMany(dto.ids, dto.isActive);
+
+    return { data: { updatedCount } };
+  }
+
+  /**
+   * PATCH /api/products/group
+   *
+   * Bulk reassign the variant group (TASK-423). `groupId: null` takes the named
+   * products out of whatever group they were in.
+   *
+   * This is the bulk action the product list was missing. Activate/deactivate
+   * already existed; grouping is the operation nobody wants to do one product at
+   * a time, because a variant group means nothing until EVERY position in it
+   * points at the same group — so a colour family of nine used to cost nine full
+   * form saves, with the family half-formed in between.
+   *
+   * DECLARED BEFORE the `:id` routes below, alongside `status`, for the reason the
+   * category controller declares its own literal routes first: nothing shadows
+   * `group` today, but adding a single-segment `@Patch(':id')` later would
+   * silently capture it, and the failure would look like a malformed-UUID error.
+   *
+   * Note the unrelated `PUT group/:groupId/device-compat` above — two segments,
+   * a different verb, and a different subject (that one writes compat onto a
+   * group's members; this one writes membership).
+   *
+   * Returns the number of rows written rather than the products: the panel
+   * refetches its page anyway.
+   *
+   * Still no bulk delete — see `status` above for why.
+   */
+  @Patch('group')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:write')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Bulk reassign products to a variant group (admin)',
+    operationId: 'productControllerSetGroupMany',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Number of products moved',
+    type: BulkProductGroupResponse,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error — empty, oversized, duplicated or non-UUID ids',
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({
+    status: 404,
+    description: 'Unknown product id or unknown target group — nothing was written',
+  })
+  async setGroupMany(@Body() dto: BulkProductGroupDto): Promise<BulkProductGroupResponse> {
+    const updatedCount = await this.productService.setGroupMany(dto.ids, dto.groupId);
 
     return { data: { updatedCount } };
   }

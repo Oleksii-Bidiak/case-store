@@ -3,6 +3,7 @@ import { NotFoundException, ConflictException, BadRequestException } from '@nest
 import { ConfigService } from '@nestjs/config';
 import {
   ProductRepository,
+  ProductGroupNotFoundError,
   ProductsNotFoundError,
   CreateProductInput,
   UpdateProductInput,
@@ -68,6 +69,10 @@ const productRepositoryMock = {
   deactivate: jest.fn(),
   activate: jest.fn(),
   setActiveMany: jest.fn(),
+  // TASK-423: bulk variant-group reassignment. Resolves the two-part shape the
+  // real repository returns — the rows it wrote plus the untouched siblings whose
+  // cached `variantSiblings` the write invalidated.
+  setGroupMany: jest.fn(),
   softDelete: jest.fn(),
   // TASK-254: derived reserved-qty aggregate. Defaults to an empty map (no
   // reservations); individual tests override to assert the enrichment.
@@ -1076,6 +1081,122 @@ describe('ProductService', () => {
       productRepositoryMock.setActiveMany.mockRejectedValue(boom);
 
       await expect(service.setStatusMany(['product-uuid-1'], true)).rejects.toThrow(boom);
+    });
+  });
+
+  // ─── setGroupMany (admin, TASK-423) ──────────────────────────────────────────
+
+  describe('setGroupMany', () => {
+    const moved = [
+      { id: 'product-uuid-1', slug: 'iphone-15-pro-case', isActive: true, groupId: 'group-1' },
+      { id: 'product-uuid-2', slug: 'galaxy-s24-case', isActive: true, groupId: 'group-1' },
+    ];
+
+    it('evicts each moved product by BOTH id and slug, and re-indexes it', async () => {
+      productRepositoryMock.setGroupMany.mockResolvedValue({ updated: moved, siblings: [] });
+
+      const count = await service.setGroupMany(['product-uuid-1', 'product-uuid-2'], 'group-1');
+
+      expect(count).toBe(2);
+      expect(productRepositoryMock.setGroupMany).toHaveBeenCalledWith(
+        ['product-uuid-1', 'product-uuid-2'],
+        'group-1',
+      );
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(expect.stringContaining('product-uuid-1'));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(
+        expect.stringContaining('iphone-15-pro-case'),
+      );
+      expect(productIndexerMock.index).toHaveBeenCalledWith('product-uuid-1');
+      expect(productIndexerMock.index).toHaveBeenCalledWith('product-uuid-2');
+    });
+
+    /**
+     * The assertion that makes the feature real. A cached product detail carries
+     * its `variantSiblings`, so a regrouping changes what the UNTOUCHED members of
+     * the old and new groups should say. Skip this and the storefront keeps
+     * offering a variant that left the family and omits the one that joined —
+     * which the operator reads as "the bulk action did nothing".
+     */
+    it('also evicts the untouched siblings of the source and destination groups', async () => {
+      productRepositoryMock.setGroupMany.mockResolvedValue({
+        updated: moved,
+        siblings: [{ id: 'sibling-uuid', slug: 'iphone-15-pro-case-blue' }],
+      });
+
+      await service.setGroupMany(['product-uuid-1', 'product-uuid-2'], 'group-1');
+
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(expect.stringContaining('sibling-uuid'));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(
+        expect.stringContaining('iphone-15-pro-case-blue'),
+      );
+      // A sibling was not WRITTEN, only invalidated — re-indexing it would be a
+      // search write nothing asked for.
+      expect(productIndexerMock.index).not.toHaveBeenCalledWith('sibling-uuid');
+    });
+
+    it('removes an inactive moved product from the index rather than indexing it', async () => {
+      // The visibility travels with the row precisely so this path cannot guess:
+      // indexing a hidden product is how it reappears in storefront search.
+      productRepositoryMock.setGroupMany.mockResolvedValue({
+        updated: [{ ...moved[0], isActive: false }],
+        siblings: [],
+      });
+
+      await service.setGroupMany(['product-uuid-1'], 'group-1');
+
+      expect(productIndexerMock.remove).toHaveBeenCalledWith('product-uuid-1');
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+    });
+
+    it('ungroups on a null target', async () => {
+      productRepositoryMock.setGroupMany.mockResolvedValue({
+        updated: [{ ...moved[0], groupId: null }],
+        siblings: [],
+      });
+
+      await service.setGroupMany(['product-uuid-1'], null);
+
+      expect(productRepositoryMock.setGroupMany).toHaveBeenCalledWith(['product-uuid-1'], null);
+    });
+
+    it('evicts the list prefix once, not once per product', async () => {
+      productRepositoryMock.setGroupMany.mockResolvedValue({ updated: moved, siblings: [] });
+
+      await service.setGroupMany(['product-uuid-1', 'product-uuid-2'], 'group-1');
+
+      expect(cacheServiceMock.delByPrefix).toHaveBeenCalledTimes(1);
+    });
+
+    it('maps an unknown product id to 404 and touches no cache', async () => {
+      productRepositoryMock.setGroupMany.mockRejectedValue(
+        new ProductsNotFoundError(['missing-uuid']),
+      );
+
+      await expect(
+        service.setGroupMany(['product-uuid-1', 'missing-uuid'], 'group-1'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+    });
+
+    it('maps an unknown destination group to 404 as well', async () => {
+      // Otherwise it surfaces as a Prisma foreign-key error — a 500 for what is
+      // plainly a bad request.
+      productRepositoryMock.setGroupMany.mockRejectedValue(
+        new ProductGroupNotFoundError('missing-group'),
+      );
+
+      await expect(service.setGroupMany(['product-uuid-1'], 'missing-group')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('lets an unexpected repository failure through untouched', async () => {
+      const boom = new Error('connection reset');
+      productRepositoryMock.setGroupMany.mockRejectedValue(boom);
+
+      await expect(service.setGroupMany(['product-uuid-1'], 'group-1')).rejects.toThrow(boom);
     });
   });
 

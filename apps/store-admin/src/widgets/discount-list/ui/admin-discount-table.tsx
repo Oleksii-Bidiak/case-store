@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -10,7 +9,6 @@ import {
 import { DiscountStatusToggle } from "@/features/discount-status-toggle";
 import {
   Button,
-  Input,
   LiveAnnouncer,
   SortableColumnHeader,
   Table,
@@ -18,16 +16,17 @@ import {
   TableCell,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableToolbar,
+  pageSizeFrom,
 } from "@/shared/ui";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { formatDate } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { AdminDiscountTableSkeleton } from "./admin-discount-table-skeleton";
-
-const PAGE_SIZE = 20;
 
 /** Format a discount's value cell by type (e.g. "10%" or "₴50.00"). */
 function formatValue(discount: DiscountEntity): string {
@@ -45,9 +44,14 @@ function formatExpiry(expiresAt: string | null): string {
 /**
  * Paginated, searchable, sortable discount table for the admin panel.
  *
- * Search, page and sort state all live in the URL (`?search=`, `?page=`,
- * `?sortBy=&sortOrder=`), so a view survives a refresh and can be pasted to a
- * colleague.
+ * Search, page, page size and sort state all live in the URL (`?search=`,
+ * `?page=`, `?limit=`, `?sortBy=&sortOrder=`), so a view survives a refresh and
+ * can be pasted to a colleague.
+ *
+ * TASK-423 replaced the search FORM — a text box plus a «Пошук» button the
+ * operator had to find and press — with the shared search-as-you-type box. Eight
+ * tables worked that way and five did not, which is the inconsistency the owner
+ * found when auditing the panel as a CRM.
  *
  * The sort is SERVER-side and was already implemented: `DiscountListQueryDto`
  * has accepted `sortBy`/`sortOrder` since TASK-147, but this table hard-coded
@@ -75,8 +79,7 @@ function AdminDiscountView() {
 
   const searchParam = searchParams.get("search") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
-
-  const [searchInput, setSearchInput] = useState(searchParam);
+  const pageSize = pageSizeFrom(searchParams);
 
   const updateParams = useUrlParams();
 
@@ -88,7 +91,7 @@ function AdminDiscountView() {
   const { data, isLoading, isError, isFetching, refetch } =
     useAdminListDiscounts({
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       search: searchParam || undefined,
       sortBy,
       sortOrder,
@@ -97,11 +100,6 @@ function AdminDiscountView() {
   const discounts = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
 
-  const handleSearchSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    updateParams({ search: searchInput.trim() || undefined, page: undefined });
-  };
-
   return (
     <div className="flex flex-col gap-4">
       <TableToolbar
@@ -109,23 +107,11 @@ function AdminDiscountView() {
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
         search={
-          <form
-            onSubmit={handleSearchSubmit}
-            className="flex gap-2"
-            role="search"
-          >
-            <Input
-              type="search"
-              placeholder={dict.discounts.searchPlaceholder}
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              className="max-w-xs"
-              aria-label={dict.discounts.searchAria}
-            />
-            <Button type="submit" variant="outline">
-              {dict.common.search}
-            </Button>
-          </form>
+          <TableSearch
+            value={searchParam}
+            placeholder={dict.discounts.searchPlaceholder}
+            label={dict.discounts.searchAria}
+          />
         }
       />
 
@@ -216,33 +202,11 @@ function AdminDiscountView() {
       )}
 
       {!isLoading && !isError && discounts.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {dict.common.pageOf(page, totalPages)}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() =>
-                updateParams({
-                  page: page - 1 <= 1 ? undefined : String(page - 1),
-                })
-              }
-            >
-              {dict.common.previous}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: String(page + 1) })}
-            >
-              {dict.common.next}
-            </Button>
-          </div>
-        </div>
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+        />
       )}
     </div>
   );

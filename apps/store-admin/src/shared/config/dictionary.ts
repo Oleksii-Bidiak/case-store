@@ -231,6 +231,20 @@ export const dict = {
         `„${name}“ знято. Усього вибрано: ${count}`,
       announceSelectedAll: (count: number) => `Вибрано рядків: ${count}`,
       announceCleared: "Вибір знято",
+
+      // One search, one filter idiom, one page size (TASK-423). These strings
+      // are the reason the shared controls can be dropped into a table without
+      // it inventing its own copy — which is how the panel ended up with four
+      // different search behaviours in the first place.
+      searchLabel: "Пошук",
+      searchHint: "Escape очищає пошук",
+      clearFilterAria: (filter: string, value: string) =>
+        `Прибрати фільтр «${filter}: ${value}»`,
+      clearAllFilters: "Скинути фільтри",
+      pageSizeLabel: "Рядків",
+      // Shown instead of «нічого не знайдено» when filters (not a search term)
+      // are what emptied the table: the operator needs the cause, not the fact.
+      emptyFiltered: "За поточними фільтрами нічого не знайдено",
     },
   },
 
@@ -299,6 +313,24 @@ export const dict = {
           ? `Активовано товарів: ${count}`
           : `Деактивовано товарів: ${count}`,
       announceFailed: "Не вдалося змінити статус товарів",
+
+      // «Перемістити до групи» (TASK-423) — the bulk action the product list was
+      // missing. A variant group only means anything once EVERY position in it
+      // points at the same group, so doing it one product at a time left the
+      // family half-formed in between.
+      moveToGroup: (count: number) => `Перемістити до групи (${count})`,
+      groupDialogTitle: "Перемістити до групи",
+      groupDialogDescription: (count: number) =>
+        `Обрані товари (${count}) буде додано до однієї групи варіантів. ` +
+        `Оберіть «Без групи», щоб вивести їх із поточної.`,
+      groupDialogLabel: "Група варіантів",
+      groupDialogPlaceholder: "Почніть вводити назву групи…",
+      groupDialogEmpty: "Групи не знайдено",
+      groupNone: "Без групи",
+      groupSubmit: "Перемістити",
+      announceGroupSaving: (count: number) => `Переміщення ${count} тов.…`,
+      announceGroupDone: (count: number) => `Переміщено товарів: ${count}`,
+      announceGroupFailed: "Не вдалося перемістити товари",
     },
     back: "← Назад до товарів",
     createHeading: "Створення товару",
@@ -539,6 +571,13 @@ export const dict = {
       metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
       metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
     },
+
+    // Type-to-filter pickers (TASK-423). The category, group and brand selects
+    // list the whole tree / table — a hundred-plus options a drop-down can only
+    // be scrolled through — so they became comboboxes.
+    comboboxPlaceholder: "Почніть вводити назву…",
+    comboboxEmpty: "Нічого не знайдено",
+    comboboxClear: "Очистити вибір",
   },
 
   // --- Categories (TASK-115) --------------------------------------------------
@@ -666,6 +705,13 @@ export const dict = {
         cancel: "Скасувати",
         loading: "Завантаження…",
       },
+
+      // TASK-423: «Підняти на рівень вище» moves ONE level, so a level-3
+      // category needed two trips through the menu to reach the root — and
+      // nothing on screen said that a second trip was even possible. This is the
+      // whole journey in one item; it runs the same outdent step repeatedly, so
+      // it lands exactly where pressing «Підняти на рівень вище» twice would.
+      makeRoot: "Зробити кореневою",
     },
     // TASK-285: slug-rename guard on a publicly visible category.
     slugChangeConfirm: (oldSlug: string, newSlug: string) =>
@@ -702,6 +748,25 @@ export const dict = {
       parentInvalid: "Оберіть коректну категорію",
       metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
       metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
+    },
+    // TASK-424: the image field accepts a FILE as well as a link. «Прибрати» is
+    // deliberately not «Видалити» — it clears this form's field and nothing else.
+    imageUpload: {
+      alt: "Зображення категорії",
+      empty: "Файл ще не завантажено.",
+      upload: "Завантажити файл",
+      replace: "Замінити файл",
+      remove: "Прибрати",
+      removeTitle: "Прибрати зображення категорії?",
+      removeDescription:
+        "Поле очиститься, і після збереження категорія буде без зображення. Сам файл залишиться у сховищі.",
+      hint: "JPEG, PNG, WebP або GIF — до 5 МБ. Або вставте посилання на зовнішнє зображення в поле нижче.",
+      toastUploaded: "Зображення завантажено — не забудьте зберегти категорію",
+      errorTooLarge:
+        "Файл завеликий — максимум 5 МБ. Стисніть зображення і спробуйте ще раз.",
+      errorUnsupportedType:
+        "Непідтримуваний формат. Дозволені JPEG, PNG, WebP і GIF.",
+      errorGeneric: "Не вдалося завантажити файл. Спробуйте ще раз.",
     },
   },
 
@@ -751,6 +816,20 @@ export const dict = {
     toastModelUpdated: "Модель пристрою оновлено",
     toastModelUpdateFailed: "Не вдалося оновити модель пристрою",
     toastStatusFailed: "Не вдалося змінити статус",
+
+    // Model-list filters (TASK-423 / AD-DEV-04). The endpoint has accepted
+    // `deviceBrandId` and `isActive` since TASK-190 — the table simply never
+    // passed them, so the only way to see one brand's models was to search by a
+    // name fragment and hope the brand name was part of it.
+    filterBrandAria: "Фільтр за брендом",
+    allBrands: "Усі бренди",
+    filterStatusAria: "Фільтр за статусом",
+    allStatuses: "Усі статуси",
+    // The list also shows brands that are hidden themselves, so the operator can
+    // still reach their models.
+    brandsSearchPlaceholder: "Пошук за назвою бренду…",
+    brandsSearchLabel: "Пошук брендів пристроїв",
+    brandsEmptyMatch: (q: string) => `Немає брендів за запитом «${q}».`,
   },
 
   deviceBrandForm: {
@@ -1124,6 +1203,24 @@ export const dict = {
       readingInt: "Час читання має бути додатним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої статті",
     },
+    // TASK-424: the cover accepts a FILE as well as a link.
+    coverUpload: {
+      alt: "Обкладинка статті",
+      empty: "Файл ще не завантажено.",
+      upload: "Завантажити файл",
+      replace: "Замінити файл",
+      remove: "Прибрати",
+      removeTitle: "Прибрати обкладинку?",
+      removeDescription:
+        "Поле очиститься, і після збереження стаття буде без обкладинки. Сам файл залишиться у сховищі.",
+      hint: "JPEG, PNG, WebP або GIF — до 5 МБ. Або вставте посилання на зовнішнє зображення в поле нижче.",
+      toastUploaded: "Обкладинку завантажено — не забудьте зберегти статтю",
+      errorTooLarge:
+        "Файл завеликий — максимум 5 МБ. Стисніть зображення і спробуйте ще раз.",
+      errorUnsupportedType:
+        "Непідтримуваний формат. Дозволені JPEG, PNG, WebP і GIF.",
+      errorGeneric: "Не вдалося завантажити файл. Спробуйте ще раз.",
+    },
   },
 
   // --- Rich-text "edit / preview" tab pair (page + blog forms, TASK-266) ------
@@ -1272,6 +1369,24 @@ export const dict = {
       themeMax: "Тема має містити не більше 50 символів",
       scheduledAtRequired: "Вкажіть дату публікації для запланованого банера",
     },
+    // TASK-424: the banner image accepts a FILE as well as a link.
+    imageUpload: {
+      alt: "Зображення банера",
+      empty: "Файл ще не завантажено.",
+      upload: "Завантажити файл",
+      replace: "Замінити файл",
+      remove: "Прибрати",
+      removeTitle: "Прибрати зображення банера?",
+      removeDescription:
+        "Поле очиститься, і після збереження банер буде без зображення. Сам файл залишиться у сховищі.",
+      hint: "JPEG, PNG, WebP або GIF — до 5 МБ. Або вставте посилання (наприклад, /images/banners/…) у поле нижче.",
+      toastUploaded: "Зображення завантажено — не забудьте зберегти банер",
+      errorTooLarge:
+        "Файл завеликий — максимум 5 МБ. Стисніть зображення і спробуйте ще раз.",
+      errorUnsupportedType:
+        "Непідтримуваний формат. Дозволені JPEG, PNG, WebP і GIF.",
+      errorGeneric: "Не вдалося завантажити файл. Спробуйте ще раз.",
+    },
   },
 
   // --- Live banner preview in the banner form (TASK-265) ----------------------
@@ -1336,6 +1451,24 @@ export const dict = {
       slugPattern:
         "Slug має бути у нижньому регістрі: лише літери, цифри та дефіси",
       logoUrl: "Вкажіть коректний URL логотипа",
+    },
+    // TASK-424: the brand logo accepts a FILE as well as a link.
+    logoUpload: {
+      alt: "Логотип бренду",
+      empty: "Файл ще не завантажено.",
+      upload: "Завантажити файл",
+      replace: "Замінити файл",
+      remove: "Прибрати",
+      removeTitle: "Прибрати логотип бренду?",
+      removeDescription:
+        "Поле очиститься, і після збереження бренд буде без логотипа. Сам файл залишиться у сховищі.",
+      hint: "JPEG, PNG, WebP або GIF — до 5 МБ. Найкраще виглядає логотип на прозорому фоні. Або вставте посилання в поле нижче.",
+      toastUploaded: "Логотип завантажено — не забудьте зберегти бренд",
+      errorTooLarge:
+        "Файл завеликий — максимум 5 МБ. Стисніть зображення і спробуйте ще раз.",
+      errorUnsupportedType:
+        "Непідтримуваний формат. Дозволені JPEG, PNG, WebP і GIF.",
+      errorGeneric: "Не вдалося завантажити файл. Спробуйте ще раз.",
     },
   },
 
@@ -1696,8 +1829,11 @@ export const dict = {
     // counterparty in the client's NP account, so the number is copied in from
     // the courier's own interface.
     trackingNumberHint:
-      "Введіть номер накладної з кабінету Нової Пошти. Якщо замовлення вже «Відправлено», клієнт отримає лист із номером для відстеження.",
-    trackingNumberInvalid: "ТТН — до 64 символів.",
+      "Введіть номер накладної з кабінету Нової Пошти — рівно 14 цифр (пробіли можна). Якщо замовлення вже «Відправлено», клієнт отримає лист із номером для відстеження.",
+    // TASK-426: the rule is 14 DIGITS, not «до 64 символів» — and the operator
+    // must read the real rule off the field, because saving a wrong ТТН on a
+    // SHIPPED order emails the customer a tracking link that leads nowhere.
+    trackingNumberInvalid: "ТТН Нової Пошти — це рівно 14 цифр.",
     internalNotes: "Внутрішні примітки",
     internalNotesPlaceholder: "Нотатка для команди…",
     // The whole point of TASK-336: this field and `notes` are different things,
@@ -1743,6 +1879,16 @@ export const dict = {
 
     // --- Returns cross-link (TASK-340) ----------------------------------------
     returnsForOrder: "Повернення",
+
+    // --- A rejected save says WHICH field and WHICH rule (TASK-426) -----------
+    // `detailsFailed` above is the honest fallback for a failure nobody can act
+    // on. It is the wrong answer when the server refused one named field: the
+    // operator was editing the notes, the ТТН they never touched was what the
+    // API rejected, and «не вдалося зберегти» sends them looking in the wrong
+    // place. The English constraint text from class-validator never reaches the
+    // screen — this is our sentence for our own rule.
+    detailsFailedTracking:
+      "Замовлення не збережено: ТТН Нової Пошти — це рівно 14 цифр. Виправте номер або очистіть поле.",
   },
 
   reviews: {
@@ -1783,6 +1929,13 @@ export const dict = {
       announceRejected: (count: number) => `Видалено відгуків: ${count}`,
       announceFailed: "Не вдалося виконати масову дію",
     },
+
+    // Free-text search (TASK-423). The queue had none at all, so triaging a
+    // backlog meant paging through it, and "what did this customer write about
+    // that product?" was a question this screen could not answer.
+    searchPlaceholder: "Пошук за текстом, автором або товаром…",
+    searchAria: "Пошук відгуків",
+    emptyMatch: (q: string) => `Немає відгуків за запитом «${q}».`,
   },
 
   // --- Contact messages (TASK-177) --------------------------------------------
@@ -1848,6 +2001,13 @@ export const dict = {
       announceDone: (count: number) => `Оновлено повідомлень: ${count}`,
       announceFailed: "Не вдалося виконати масову дію",
     },
+
+    // Free-text search (TASK-423). A customer's second message lands weeks after
+    // the first, and without this the only way to find what we already told them
+    // was to page through the archive.
+    searchPlaceholder: "Імʼя, пошта, телефон, тема або текст…",
+    searchAria: "Пошук повідомлень",
+    emptyMatch: (q: string) => `Немає повідомлень за запитом «${q}».`,
   },
 
   orderStatus: {
@@ -1966,6 +2126,14 @@ export const dict = {
       "Повернення вже змінилося — оновіть сторінку й прийміть рішення ще раз.",
     resolveBadRequest:
       "Повернення товару на склад доступне лише для статусу «Товар отримано».",
+
+    // Free-text search (TASK-423). The queue had none, so an operator with the
+    // customer on the phone could only page through it. The placeholder names
+    // what the term is actually matched against — the return id, the order
+    // number, the customer's email or phone, and the reason they wrote.
+    searchPlaceholder: "Номер повернення, замовлення, пошта або телефон…",
+    searchAria: "Пошук повернень",
+    emptyMatch: (q: string) => `Немає повернень за запитом «${q}».`,
   },
 
   // --- Operator-created (phone) orders (TASK-341) ------------------------------
@@ -1977,11 +2145,12 @@ export const dict = {
     modeAccount: "Існуючий акаунт",
     modeGuest: "Без акаунта (за телефоном)",
     modeAria: "Кому належить замовлення",
-    userId: "ID користувача",
-    userIdPlaceholder: "550e8400-e29b-41d4-a716-446655440001",
-    userIdHint:
-      "Скопіюйте ID зі сторінки користувача. Без нього замовлення буде оформлено як гостьове.",
-    userIdInvalid: "Вкажіть коректний ID користувача (UUID).",
+    // TASK-426 removed `userId` / `userIdPlaceholder` / `userIdHint` /
+    // `userIdInvalid`: the field they labelled asked an operator to paste a
+    // customer's UUID, and the hint told them to go to another screen and copy it.
+    // The customer picker replaced it — see `customerSearch*` at the end of this
+    // block. The keys are gone rather than left unused, because a dictionary that
+    // still tells operators to copy an ID describes a panel that no longer exists.
     contactName: "Імʼя",
     contactEmail: "Електронна пошта",
     contactPhone: "Телефон",
@@ -2031,6 +2200,61 @@ export const dict = {
     // unavailable" and "stock is short" — all things the operator can fix.
     failedBadRequest:
       "Замовлення не створено: перевірте клієнта, товари та наявність на складі.",
+
+    // --- Customer picker (TASK-426) --------------------------------------------
+    // Nobody knows a customer's UUID. The field used to ask for one outright, and
+    // the hint told the operator to go to another page and copy it.
+    customerSearchLabel: "Клієнт",
+    customerSearchPlaceholder: "Пошук за іменем, прізвищем або поштою…",
+    customerSearchAria: "Пошук клієнта для замовлення",
+    customerSearchHint:
+      "Знайдіть клієнта за іменем, прізвищем або електронною поштою — ID вводити не потрібно.",
+    customerSearching: "Пошук…",
+    customerNoResults: "Клієнтів не знайдено.",
+    // A failed lookup is not an empty one: «не знайдено» blames the operator's
+    // spelling for our own outage — the storefront defect of TASK-402.
+    customerSearchFailed:
+      "Не вдалося виконати пошук клієнтів. Спробуйте ще раз.",
+    customerPick: "Вибрати",
+    customerPickAria: (name: string) => `Вибрати клієнта ${name}`,
+    customerChange: "Змінити клієнта",
+    customerNoName: "Без імені",
+    customerInactive: "Деактивовано",
+    // The API refuses an order for a deactivated account (403), so say so here
+    // rather than after the operator has filled in the whole form.
+    customerInactiveHint:
+      "Акаунт деактивовано — оформити на нього замовлення не можна.",
+    customerRequired: "Виберіть клієнта зі списку.",
+    customerSelectedHint:
+      "Порожні поля отримувача заповнено з картки клієнта — за потреби змініть їх.",
+
+    // --- Phone (TASK-426) ------------------------------------------------------
+    // Says «будь-яка країна» out loud, because the operator's own form used to
+    // refuse a +48 number the API accepts. A phone order is taken from whoever
+    // is on the line — roaming and border-region numbers included (TASK-338,
+    // rule restated by the owner 2026-09-10).
+    phoneHint:
+      "Наприклад: +380 50 123 4567. Приймаємо номер будь-якої країни — від 9 до 15 цифр.",
+    // The API made email optional for an operator-created order (TASK-426) — say
+    // so, or the operator invents an address to get past a required field.
+    contactEmailOptional:
+      "Необовʼязково: якщо пошти немає, залиште порожнім — зв'язок за телефоном.",
+
+    // --- Nova Poshta directory (TASK-426) --------------------------------------
+    cityPlaceholder: "Почніть вводити назву міста",
+    citySearchAria: "Пошук міста в довіднику Нової Пошти",
+    warehousePlaceholder: "Оберіть відділення або введіть адресу",
+    warehouseSearchAria: "Пошук відділення в довіднику Нової Пошти",
+    warehouseHint: "Спершу оберіть місто, щоб побачити відділення Нової Пошти.",
+    npSearching: "Пошук…",
+    npEmpty: "Нічого не знайдено.",
+    // Nova Poshta refuses keyless calls in production, so this is the NORMAL state
+    // of a deployment without an NP key: both fields stay free text and the order
+    // still goes through. Never a blocker — an operator has a customer on the line.
+    npUnavailable:
+      "Довідник Нової Пошти недоступний — введіть місто та відділення вручну.",
+    npPickAria: (name: string) => `Вибрати «${name}»`,
+    npPicked: "Обрано з довідника Нової Пошти.",
   },
 
   // --- Users (TASK-115) -------------------------------------------------------
@@ -2212,9 +2436,8 @@ export const dict = {
     colEntity: "Об'єкт",
     filterActionPlaceholder: "Дія (напр. product.update)",
     filterActionAria: "Фільтр за дією",
-    filterEntityPlaceholder: "Тип об'єкта (напр. Product)",
     filterEntityAria: "Фільтр за типом об'єкта",
-    filterReset: "Скинути фільтри",
+    filterEntityAll: "Усі об'єкти",
     systemActor: "Система",
     // The log denormalises the actor's email on purpose, so an entry stays
     // readable after the account is deleted. Show that, never a raw id.
@@ -2224,6 +2447,45 @@ export const dict = {
     diffFrom: "Було",
     diffTo: "Стало",
     noDiff: "Деталі змін не записані.",
+
+    // TASK-423 — the entity filter's options, and the panel's names for the raw
+    // `entityType` values the interceptor writes (a controller's class name,
+    // lowercased). The KEY is the wire value and must match the server exactly;
+    // the label is what the owner reads. Ordered by the Ukrainian label so the
+    // Select reads as a list rather than as an inventory of our modules.
+    //
+    // The filter was a free-text box until now, matched EXACTLY on the server —
+    // so «Product» (as the old placeholder suggested!) matched nothing and said
+    // «Немає записів», which is what an empty log says too.
+    entityLabels: {
+      banner: "Банери",
+      blog: "Блог",
+      brand: "Бренди",
+      review: "Відгуки",
+      productGroup: "Групи товарів",
+      addonService: "Додаткові послуги",
+      delivery: "Доставка",
+      uploads: "Завантаження файлів",
+      order: "Замовлення",
+      catalogImport: "Імпорт каталогу",
+      carousel: "Каруселі",
+      category: "Категорії",
+      siteContact: "Контакти сайту",
+      user: "Користувачі",
+      payment: "Оплати",
+      faq: "Питання й відповіді",
+      return: "Повернення",
+      contact: "Повідомлення",
+      search: "Пошуковий індекс",
+      permission: "Права доступу",
+      device: "Пристрої",
+      discount: "Промокоди",
+      page: "Сторінки",
+      product: "Товари",
+      productImage: "Фото товарів",
+      attributeDefinition: "Характеристики",
+      seoSettings: "SEO-налаштування",
+    },
   },
 
   // --- Own admin profile (TASK-317) -------------------------------------------
@@ -2361,6 +2623,32 @@ export const dict = {
     toastReorderFailed: "Не вдалося змінити порядок зображень",
     toastDeleted: "Зображення видалено",
     toastDeleteFailed: "Не вдалося видалити зображення",
+    // TASK-424 — drag-and-drop a batch. Each photo is its own request, so one
+    // rejected file no longer takes the whole batch down with it; the queue below
+    // reports each file separately and offers a retry per file.
+    dropZone: "Перетягніть фото сюди",
+    dropZoneOr: "або",
+    dropZoneActive: "Відпустіть, щоб завантажити",
+    dropZoneAria:
+      "Зона для перетягування зображень товару. Або скористайтеся кнопкою «Завантажити зображення».",
+    queueHeading: "Завантаження",
+    queueProgress: (done: number, total: number) => `Готово ${done} з ${total}`,
+    statusQueued: "У черзі",
+    statusUploading: "Завантаження…",
+    statusDone: "Готово",
+    statusFailed: "Не вдалося",
+    retry: "Повторити",
+    retryAll: "Повторити невдалі",
+    clearQueue: "Очистити список",
+    errorTooLarge: "Файл завеликий — максимум 5 МБ.",
+    errorUnsupportedType: "Не зображення або непідтримуваний формат.",
+    errorGeneric: "Не вдалося завантажити. Спробуйте ще раз.",
+    announceUploaded: (name: string) => `${name} — завантажено`,
+    announceFailed: (name: string, reason: string) => `${name} — ${reason}`,
+    announceAllDone: (done: number, failed: number) =>
+      failed === 0
+        ? `Завантаження завершено: ${done}`
+        : `Завантаження завершено: ${done}, не вдалося ${failed}`,
   },
 
   // Content map («Де що на сайті», TASK-264) — an orientation page that maps each

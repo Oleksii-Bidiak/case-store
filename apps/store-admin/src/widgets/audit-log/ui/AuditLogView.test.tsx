@@ -137,20 +137,22 @@ describe("AuditLogView — sorting", () => {
  * colleague — backwards for the screen you open to show someone what happened.
  */
 describe("AuditLogView — URL-driven filters", () => {
-  it("seeds the filter inputs from the URL so a reload keeps the view", async () => {
+  it("seeds both controls from the URL so a reload keeps the view", async () => {
     mockSearchParamsRef.current = new URLSearchParams(
-      "action=order.refund&entityType=Order",
+      "action=order.updateStatus&entityType=order",
     );
     const state = stubLog();
     renderWithProviders(<AuditLogView />);
     await screen.findByText("manager@example.com");
 
     expect(screen.getByLabelText(d.filterActionAria)).toHaveValue(
-      "order.refund",
+      "order.updateStatus",
     );
-    expect(screen.getByLabelText(d.filterEntityAria)).toHaveValue("Order");
-    expect(lastParams(state).get("action")).toBe("order.refund");
-    expect(lastParams(state).get("entityType")).toBe("Order");
+    expect(
+      screen.getByRole("combobox", { name: d.filterEntityAria }),
+    ).toHaveTextContent(d.entityLabels.order);
+    expect(lastParams(state).get("action")).toBe("order.updateStatus");
+    expect(lastParams(state).get("entityType")).toBe("order");
   });
 
   it("pushes the debounced action filter into the URL", async () => {
@@ -160,27 +162,113 @@ describe("AuditLogView — URL-driven filters", () => {
 
     await userEvent.type(
       screen.getByLabelText(d.filterActionAria),
-      "order.refund",
+      "order.updateStatus",
     );
 
     await waitFor(() =>
       expect(mockReplace).toHaveBeenCalledWith(
-        expect.stringContaining("action=order.refund"),
+        expect.stringContaining("action=order.updateStatus"),
       ),
     );
   });
 
-  it("drops both filters from the URL on reset", async () => {
-    mockSearchParamsRef.current = new URLSearchParams(
-      "action=order.refund&entityType=Order",
-    );
+  /**
+   * TASK-423. `AuditRepository` matches `entityType` EXACTLY, so the free-text
+   * box this replaces could only be used by someone who already knew the exact
+   * wire value — and its own placeholder suggested «Product» while the
+   * interceptor writes `product`. Every near miss answered «Немає записів»,
+   * which is also what an empty log says, so the mistake was invisible.
+   */
+  it("offers the entity type as a CHOICE, spelled the way the server stores it", async () => {
     stubLog();
     renderWithProviders(<AuditLogView />);
     await screen.findByText("manager@example.com");
 
-    await userEvent.click(screen.getByRole("button", { name: d.filterReset }));
+    await userEvent.click(
+      screen.getByRole("combobox", { name: d.filterEntityAria }),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: d.entityLabels.product }),
+    );
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("entityType=product"),
+      ),
+    );
+    // The wire value, not the Ukrainian label the operator picked.
+    expect(mockReplace).not.toHaveBeenCalledWith(
+      expect.stringContaining(encodeURIComponent(d.entityLabels.product)),
+    );
+  });
+
+  it("clears the entity filter from its chip", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("entityType=product");
+    stubLog();
+    renderWithProviders(<AuditLogView />);
+    await screen.findByText("manager@example.com");
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: dict.common.table.clearFilterAria(
+          d.filterEntityAria,
+          d.entityLabels.product,
+        ),
+      }),
+    );
 
     expect(mockReplace).toHaveBeenCalledWith("/audit-log");
+  });
+
+  /**
+   * The list of entity types is a hand-kept mirror of a server-side rule
+   * (controller class name → `entityType`), so it can fall behind a new module.
+   * When it does, the value still filters and must still be clearable — the
+   * guarantee is "everything offered exists", not "everything that exists is
+   * offered".
+   */
+  it("still names and clears an entity type it does not know about", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("entityType=warehouse");
+    const state = stubLog();
+    renderWithProviders(<AuditLogView />);
+    await screen.findByText("manager@example.com");
+
+    expect(lastParams(state).get("entityType")).toBe("warehouse");
+    expect(
+      screen.getByRole("button", {
+        name: dict.common.table.clearFilterAria(
+          d.filterEntityAria,
+          "warehouse",
+        ),
+      }),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-423 — the log used to page at 50 with no control anywhere, while every
+ * other admin table paged at 20. "Page 3" meant a different position here than
+ * on the screen next door.
+ */
+describe("AuditLogView — page size", () => {
+  it("asks for the shared default of 20 and offers the rows-per-page control", async () => {
+    const state = stubLog();
+    renderWithProviders(<AuditLogView />);
+    await screen.findByText("manager@example.com");
+
+    expect(lastParams(state).get("limit")).toBe("20");
+    expect(
+      screen.getByRole("combobox", { name: dict.common.table.pageSizeLabel }),
+    ).toBeInTheDocument();
+  });
+
+  it("forwards a chosen page size to the API", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("limit=100");
+    const state = stubLog();
+    renderWithProviders(<AuditLogView />);
+    await screen.findByText("manager@example.com");
+
+    expect(lastParams(state).get("limit")).toBe("100");
   });
 });
 

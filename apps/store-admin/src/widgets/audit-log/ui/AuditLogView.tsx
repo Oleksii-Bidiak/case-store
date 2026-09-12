@@ -12,28 +12,49 @@ import { roleLabel } from "@/entities/user";
 import {
   Badge,
   Button,
-  Input,
   LiveAnnouncer,
   Skeleton,
   SortableColumnHeader,
   Table,
   TableBody,
   TableCell,
+  TableFilters,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableToolbar,
+  pageSizeFrom,
+  type TableFilterDef,
 } from "@/shared/ui";
 import { useUrlParams } from "@/shared/lib/use-url-params";
-import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import { formatDateTime } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
 const d = dict.auditLog;
-const PAGE_SIZE = 50;
-const FILTER_DEBOUNCE_MS = 300;
+
+/**
+ * The entity types the log can contain, in the order they are offered.
+ *
+ * They are DERIVED, not invented: `AuditInterceptor` writes
+ * `entityTypeFromController(class.name)` — the controller's class name with
+ * `Controller` and a leading `Admin` stripped, first letter lowercased — on
+ * every mutating request that carries an RBAC annotation. This list is that
+ * derivation applied to the annotated controllers, which is why the values look
+ * like `seoSettings` and not like `SEO settings`.
+ *
+ * It is a hand-kept mirror of a server-side rule, so it can fall behind a newly
+ * added module. That costs one missing OPTION and nothing else: a value typed
+ * into the URL still filters, and `TableFilters` still shows (and clears) its
+ * chip — the guarantee is that everything offered here exists, not that
+ * everything that exists is offered.
+ */
+const ENTITY_TYPES = Object.keys(
+  d.entityLabels,
+) as (keyof typeof d.entityLabels)[];
 
 /** Loading placeholder shaped like the table underneath. */
 export function AuditLogSkeleton() {
@@ -128,6 +149,26 @@ function DiffCell({ entry }: { entry: AuditEntry }) {
  * refund fired twice — and the entry you are waiting for is by definition the
  * one written seconds ago. A five-minute-old view of an append-only log looks
  * exactly like "it never happened".
+ *
+ * ── Why the entity filter became a Select (TASK-423) ───────────────────────
+ * Both filters used to be free-text boxes, and the repository matches them
+ * EXACTLY (`where.entityType = entityType`, no `contains`). A free-text box over
+ * an exact match is a trap: every near miss answers «Немає записів» — the same
+ * thing an empty log says — and the placeholder here actively baited it, since
+ * it suggested «Product» while the interceptor writes `product`. The entity axis
+ * is a closed set, so it is now offered rather than typed, and cannot be
+ * mistyped.
+ *
+ * `action` stays a text field because it is NOT a closed set — it is
+ * `entityType.handlerName`, one per guarded mutating route, and a list of
+ * ninety-odd of them derived by hand in the frontend would be both unusable and
+ * wrong within a release. It is the shared search box bound to the `action`
+ * param rather than a `?search=` the API does not have.
+ *
+ * There is deliberately no page-size cap trick here: the DTO allows `limit` up
+ * to 200, but the shared control offers 20 / 50 / 100 like every other table, so
+ * "page 3" means the same thing on this screen as on the others. It used to
+ * default to 50 with no control at all.
  */
 export function AuditLogView() {
   const searchParams = useSearchParams();
@@ -135,9 +176,7 @@ export function AuditLogView() {
   const action = searchParams.get("action") ?? "";
   const entityType = searchParams.get("entityType") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
-
-  const [actionInput, setActionInput] = useState(action);
-  const [entityInput, setEntityInput] = useState(entityType);
+  const pageSize = pageSizeFrom(searchParams);
 
   const updateParams = useUrlParams();
 
@@ -146,18 +185,10 @@ export function AuditLogView() {
     updateParams,
   );
 
-  const debouncedAction = useDebouncedCallback((value: string) => {
-    updateParams({ action: value.trim() || undefined, page: undefined });
-  }, FILTER_DEBOUNCE_MS);
-
-  const debouncedEntity = useDebouncedCallback((value: string) => {
-    updateParams({ entityType: value.trim() || undefined, page: undefined });
-  }, FILTER_DEBOUNCE_MS);
-
   const { data, isLoading, isFetching, isError, refetch } = useGetAuditLog(
     {
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       action: action || undefined,
       entityType: entityType || undefined,
       sortBy,
@@ -170,11 +201,22 @@ export function AuditLogView() {
   const totalPages = data?.meta?.totalPages ?? 1;
   const isFiltered = action !== "" || entityType !== "";
 
-  const resetFilters = () => {
-    setActionInput("");
-    setEntityInput("");
-    updateParams({ action: undefined, entityType: undefined, page: undefined });
-  };
+  const filters: TableFilterDef[] = [
+    {
+      param: "entityType",
+      label: d.filterEntityAria,
+      allLabel: d.filterEntityAll,
+      options: ENTITY_TYPES.map((value) => ({
+        value,
+        label: d.entityLabels[value],
+      })),
+      // No `resolveLabel`: an entity type this list has not caught up with yet
+      // is shown raw by `TableFilters`, which is the right answer — the raw value
+      // IS what the URL says and what the rows were narrowed by, and the chip
+      // still clears it.
+      className: "w-56",
+    },
+  ];
 
   return (
     <LiveAnnouncer>
@@ -184,43 +226,17 @@ export function AuditLogView() {
           onRefresh={() => void refetch()}
           isRefreshing={isFetching}
           search={
-            <Input
-              type="search"
-              className="max-w-xs"
+            // Bound to `action`, not to a `search` param: that IS the filter the
+            // API offers, and inventing a free-text one here would send a param
+            // the DTO drops on the floor.
+            <TableSearch
+              param="action"
+              value={action}
               placeholder={d.filterActionPlaceholder}
-              aria-label={d.filterActionAria}
-              value={actionInput}
-              onChange={(event) => {
-                setActionInput(event.target.value);
-                debouncedAction(event.target.value);
-              }}
+              label={d.filterActionAria}
             />
           }
-          filters={
-            <>
-              <Input
-                type="search"
-                className="w-64"
-                placeholder={d.filterEntityPlaceholder}
-                aria-label={d.filterEntityAria}
-                value={entityInput}
-                onChange={(event) => {
-                  setEntityInput(event.target.value);
-                  debouncedEntity(event.target.value);
-                }}
-              />
-              {isFiltered && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={resetFilters}
-                >
-                  {d.filterReset}
-                </Button>
-              )}
-            </>
-          }
+          filters={<TableFilters filters={filters} values={{ entityType }} />}
         />
 
         {isLoading ? (
@@ -323,33 +339,11 @@ export function AuditLogView() {
         )}
 
         {!isLoading && !isError && entries.length > 0 && (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              {dict.common.pageOf(page, totalPages)}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() =>
-                  updateParams({
-                    page: page - 1 <= 1 ? undefined : String(page - 1),
-                  })
-                }
-              >
-                {dict.common.previous}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => updateParams({ page: String(page + 1) })}
-              >
-                {dict.common.next}
-              </Button>
-            </div>
-          </div>
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            pageSize={pageSize}
+          />
         )}
       </div>
     </LiveAnnouncer>

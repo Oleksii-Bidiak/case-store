@@ -14,7 +14,8 @@ import type { CreateReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dt
 import type { ReturnWithItems } from './return.types';
 
 const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 10;
+/** The one admin page size (TASK-423) — was 10, which no admin table uses now. */
+const DEFAULT_LIMIT = 20;
 
 /**
  * Statuses from which a customer may open a return (TASK-340).

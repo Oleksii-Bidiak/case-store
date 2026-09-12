@@ -11,10 +11,11 @@ import { MessageInbox } from "./message-inbox";
 
 // next/navigation is unavailable under jsdom — mock the router + URL state.
 const mockReplace = jest.fn();
+const mockSearchParamsRef = { current: new URLSearchParams("") };
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
   usePathname: () => "/messages",
-  useSearchParams: () => new URLSearchParams(""),
+  useSearchParams: () => mockSearchParamsRef.current,
 }));
 
 function makeMessageRow(overrides: Record<string, unknown> = {}) {
@@ -48,7 +49,10 @@ function listResponse(rows: unknown[]) {
 }
 
 describe("MessageInbox", () => {
-  beforeEach(() => mockReplace.mockClear());
+  beforeEach(() => {
+    mockReplace.mockClear();
+    mockSearchParamsRef.current = new URLSearchParams("");
+  });
 
   it("renders sender, topic, snippet, and status for each message", async () => {
     server.use(
@@ -446,5 +450,65 @@ describe("MessageInbox", () => {
     expect(
       screen.queryByRole("link", { name: "Olena Koval" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-423 — the inbox had no search. A customer's second message lands weeks
+ * after the first, so "what did we already tell this person?" meant paging
+ * through the archive.
+ */
+describe("MessageInbox — search and page size (TASK-423)", () => {
+  beforeEach(() => {
+    mockReplace.mockClear();
+    mockSearchParamsRef.current = new URLSearchParams("");
+  });
+
+  function stubInbox(rows = [makeMessageRow()]) {
+    const params: URLSearchParams[] = [];
+    server.use(
+      http.get("*/api/contact/admin", ({ request }) => {
+        params.push(new URL(request.url).searchParams);
+        return listResponse(rows);
+      }),
+    );
+    return params;
+  }
+
+  it("debounces the typed term into the URL", async () => {
+    stubInbox();
+    renderWithProviders(<MessageInbox />);
+    await screen.findByText("Ivan Petrenko");
+
+    await userEvent.type(
+      screen.getByLabelText(dict.messages.searchAria),
+      "ORD-10231",
+    );
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith("/messages?search=ORD-10231"),
+    );
+  });
+
+  it("forwards the term and the shared page size to the API", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("search=ivan");
+    const params = stubInbox();
+
+    renderWithProviders(<MessageInbox />);
+    await screen.findByText("Ivan Petrenko");
+
+    expect(params[0].get("search")).toBe("ivan");
+    expect(params[0].get("limit")).toBe("20");
+  });
+
+  it("names the term in the empty state instead of «немає повідомлень»", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("search=ghost");
+    stubInbox([]);
+
+    renderWithProviders(<MessageInbox />);
+
+    expect(
+      await screen.findByText(dict.messages.emptyMatch("ghost")),
+    ).toBeInTheDocument();
   });
 });

@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useUrlParams } from "@/shared/lib/use-url-params";
-import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import {
   OrderEntityStatus,
   orderStatusBadgeVariant,
@@ -20,31 +18,28 @@ import {
   Badge,
   Button,
   LiveAnnouncer,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Input,
   SortableColumnHeader,
   Table,
   TableBody,
   TableCell,
+  TableFilters,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableToolbar,
   Tabs,
   TabsList,
   TabsTrigger,
+  pageSizeFrom,
+  type TableFilterDef,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatCurrency, formatDateTime } from "@/shared/lib";
 import { AdminOrderTableSkeleton } from "./admin-order-table-skeleton";
 
-const PAGE_SIZE = 20;
 const ALL_OPTION = "__all__";
-const SEARCH_DEBOUNCE_MS = 300;
 
 const STATUS_FILTER_OPTIONS = [
   OrderEntityStatus.PENDING,
@@ -109,6 +104,7 @@ export function AdminOrderTable() {
   // for this compound preset — reconciling it is deferred to TASK-250's tabs.
   const unpaidInTransit = searchParams.get("unpaidInTransit") === "true";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
+  const pageSize = pageSizeFrom(searchParams);
 
   const updateParams = useUrlParams();
 
@@ -118,32 +114,16 @@ export function AdminOrderTable() {
     updateParams,
   );
 
-  // forms.md Rule 1b: the search box is focus-sensitive and its value round-trips
-  // through the URL, so the local state is re-seeded only on a genuine EXTERNAL
-  // change (a back button, a pasted link) — never on this component's own echo,
-  // which would steal focus mid-word.
-  const [searchInput, setSearchInput] = useState(searchParam);
-  const lastPushedRef = useRef(searchParam);
-
-  useEffect(() => {
-    if (searchParam !== lastPushedRef.current) {
-      setSearchInput(searchParam);
-      lastPushedRef.current = searchParam;
-    }
-  }, [searchParam]);
-
-  const debouncedSearch = useDebouncedCallback((value: string) => {
-    const trimmed = value.trim();
-    if (trimmed === searchParam) return;
-    lastPushedRef.current = trimmed;
-    updateParams({ search: trimmed || undefined, page: undefined });
-  }, SEARCH_DEBOUNCE_MS);
+  // TASK-423: the focus-sensitive `lastPushedRef` guard this table hand-rolled
+  // (forms.md rule 1b) now lives inside the shared `TableSearch` — it was the
+  // reference implementation for it, and keeping a local copy was how the other
+  // twelve tables ended up without one.
 
   const { data, isLoading, isFetching, isError, refetch } =
     useAdminOrderControllerFindAll(
       {
         page,
-        limit: PAGE_SIZE,
+        limit: pageSize,
         // The generated `status` param is a plain string (CSV) since TASK-250, so
         // single (`PENDING`) and multi (`CONFIRMED,PROCESSING`) values pass straight
         // through — no enum cast needed.
@@ -164,12 +144,24 @@ export function AdminOrderTable() {
   const orders = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
 
-  const handleStatusChange = (value: string) => {
-    updateParams({
-      status: value === ALL_OPTION ? undefined : value,
-      page: undefined,
-    });
-  };
+  const filters: TableFilterDef[] = [
+    {
+      param: "status",
+      label: dict.orders.filterStatusAria,
+      allLabel: dict.orders.allStatuses,
+      options: STATUS_FILTER_OPTIONS.map((status) => ({
+        value: status,
+        label: orderStatusLabel(status),
+      })),
+      // A lifecycle tab can set a multi-status preset this Select has no single
+      // option for; the chip still has to be readable and clearable.
+      resolveLabel: (raw) =>
+        raw
+          .split(",")
+          .map((status) => orderStatusLabel(status))
+          .join(", "),
+    },
+  ];
 
   // The active preset tab is the one whose value exactly matches the current
   // `?status=` string, with an absent filter standing for the "Всі" sentinel;
@@ -194,16 +186,10 @@ export function AdminOrderTable() {
           onRefresh={() => void refetch()}
           isRefreshing={isFetching}
           search={
-            <Input
-              type="search"
-              value={searchInput}
-              onChange={(event) => {
-                setSearchInput(event.target.value);
-                debouncedSearch(event.target.value);
-              }}
+            <TableSearch
+              value={searchParam}
               placeholder={dict.orders.searchPlaceholder}
-              aria-label={dict.orders.searchAria}
-              className="w-72 max-w-full"
+              label={dict.orders.searchAria}
             />
           }
           filters={
@@ -217,27 +203,10 @@ export function AdminOrderTable() {
                   ))}
                 </TabsList>
               </Tabs>
-              <Select
-                value={statusParam || ALL_OPTION}
-                onValueChange={handleStatusChange}
-              >
-                <SelectTrigger
-                  className="w-48"
-                  aria-label={dict.orders.filterStatusAria}
-                >
-                  <SelectValue placeholder={dict.orders.allStatuses} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_OPTION}>
-                    {dict.orders.allStatuses}
-                  </SelectItem>
-                  {STATUS_FILTER_OPTIONS.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {orderStatusLabel(status)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <TableFilters
+                filters={filters}
+                values={{ status: statusParam }}
+              />
             </div>
           }
           actions={
@@ -395,33 +364,11 @@ export function AdminOrderTable() {
         )}
 
         {!isLoading && !isError && orders.length > 0 && (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              {dict.common.pageOf(page, totalPages)}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() =>
-                  updateParams({
-                    page: page - 1 <= 1 ? undefined : String(page - 1),
-                  })
-                }
-              >
-                {dict.common.previous}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => updateParams({ page: String(page + 1) })}
-              >
-                {dict.common.next}
-              </Button>
-            </div>
-          </div>
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            pageSize={pageSize}
+          />
         )}
       </div>
     </LiveAnnouncer>

@@ -213,7 +213,15 @@ describe('ReviewService', () => {
 
       const result = await service.getReviewsForModeration({});
 
-      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith('pending', 1, 10);
+      // 20, not 10: the admin queue took the one admin page size in TASK-423.
+      // `undefined` is the search — absent, not an empty string, which would
+      // reach Prisma as `contains: ''` and match every review.
+      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith(
+        'pending',
+        1,
+        20,
+        undefined,
+      );
       expect(result.data[0].userEmail).toBe('olena@example.com');
       expect(result.data[0].productName).toBe('iPhone 15 Pro Case');
       expect(result.meta.total).toBe(1);
@@ -224,7 +232,28 @@ describe('ReviewService', () => {
 
       await service.getReviewsForModeration({ status: ReviewModerationStatus.APPROVED });
 
-      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith('approved', 1, 10);
+      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith(
+        'approved',
+        1,
+        20,
+        undefined,
+      );
+    });
+
+    // TASK-423: the queue had no search at all. A term that reached the service
+    // but not the repository would render a full, unfiltered queue — which looks
+    // like "nothing matched my typo" rather than "the filter was dropped".
+    it('forwards the search term and the requested page size', async () => {
+      reviewRepositoryMock.findForModeration.mockResolvedValue({ reviews: [], total: 0 });
+
+      await service.getReviewsForModeration({ page: 3, limit: 100, search: 'чохол' });
+
+      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith(
+        'pending',
+        3,
+        100,
+        'чохол',
+      );
     });
   });
 

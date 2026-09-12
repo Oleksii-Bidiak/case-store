@@ -1,13 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
-import { useUrlParams } from "@/shared/lib/use-url-params";
-import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import {
   getBrandControllerAdminFindAllQueryKey,
   useBrandControllerAdminFindAll,
@@ -17,29 +14,25 @@ import {
 import {
   Badge,
   Button,
-  Input,
   LiveAnnouncer,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Table,
   TableBody,
   TableCell,
+  TableFilters,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableToolbar,
+  pageSizeFrom,
+  type TableFilterDef,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { AdminBrandTableSkeleton } from "./admin-brand-table-skeleton";
 
-const PAGE_SIZE = 20;
-const ALL_OPTION = "__all__";
 const ACTIVE_OPTION = "active";
 const INACTIVE_OPTION = "inactive";
-const SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * Paginated, searchable admin brand table with a per-row active/inactive toggle.
@@ -51,6 +44,12 @@ const SEARCH_DEBOUNCE_MS = 300;
  * TASK-357 moved the existing search + status filter into the shared
  * `TableToolbar` and added the refresh control this table never had. Nothing
  * about the query changed; the toolbar is a container, not a rewrite.
+ *
+ * TASK-423 went one step further and replaced the CONTROLS themselves with the
+ * shared `TableSearch` / `TableFilters` / `TablePagination`, so `?limit=` now
+ * carries the page size too. Behaviour is unchanged — this was already one of the
+ * five tables that debounced to the URL — but it no longer keeps its own copy of
+ * the logic to drift.
  *
  * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
  * calls `useAnnouncer()` to confirm a refresh, and a hook called in the same
@@ -71,16 +70,7 @@ function AdminBrandView() {
   const searchParam = searchParams.get("search") ?? "";
   const statusParam = searchParams.get("status") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
-
-  const [searchInput, setSearchInput] = useState(searchParam);
-
-  const updateParams = useUrlParams();
-
-  const debouncedSearch = useDebouncedCallback((value: string) => {
-    const trimmed = value.trim();
-    if (trimmed === searchParam) return;
-    updateParams({ search: trimmed || undefined, page: undefined });
-  }, SEARCH_DEBOUNCE_MS);
+  const pageSize = pageSizeFrom(searchParams);
 
   const isActiveFilter =
     statusParam === ACTIVE_OPTION
@@ -92,7 +82,7 @@ function AdminBrandView() {
   const { data, isLoading, isFetching, isError, refetch } =
     useBrandControllerAdminFindAll({
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       search: searchParam || undefined,
       isActive: isActiveFilter,
     });
@@ -124,12 +114,17 @@ function AdminBrandView() {
     );
   };
 
-  const handleStatusChange = (value: string) => {
-    updateParams({
-      status: value === ALL_OPTION ? undefined : value,
-      page: undefined,
-    });
-  };
+  const filters: TableFilterDef[] = [
+    {
+      param: "status",
+      label: dict.brands.filterStatusAria,
+      allLabel: dict.brands.allStatuses,
+      options: [
+        { value: ACTIVE_OPTION, label: dict.brands.statusActive },
+        { value: INACTIVE_OPTION, label: dict.brands.statusInactive },
+      ],
+    },
+  ];
 
   return (
     <div className="flex flex-col gap-4">
@@ -138,41 +133,14 @@ function AdminBrandView() {
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
         search={
-          <Input
-            type="search"
+          <TableSearch
+            value={searchParam}
             placeholder={dict.brands.searchPlaceholder}
-            value={searchInput}
-            onChange={(event) => {
-              setSearchInput(event.target.value);
-              debouncedSearch(event.target.value);
-            }}
-            className="w-64"
-            aria-label={dict.brands.searchAria}
+            label={dict.brands.searchAria}
           />
         }
         filters={
-          <Select
-            value={statusParam || ALL_OPTION}
-            onValueChange={handleStatusChange}
-          >
-            <SelectTrigger
-              className="w-48"
-              aria-label={dict.brands.filterStatusAria}
-            >
-              <SelectValue placeholder={dict.brands.allStatuses} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_OPTION}>
-                {dict.brands.allStatuses}
-              </SelectItem>
-              <SelectItem value={ACTIVE_OPTION}>
-                {dict.brands.statusActive}
-              </SelectItem>
-              <SelectItem value={INACTIVE_OPTION}>
-                {dict.brands.statusInactive}
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          <TableFilters filters={filters} values={{ status: statusParam }} />
         }
       />
 
@@ -184,7 +152,12 @@ function AdminBrandView() {
         </p>
       ) : brands.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {dict.brands.empty}
+          {/* "There are no brands yet" and "your search matched nothing" are
+              different answers, and only the first one has an obvious next step
+              (TASK-423). */}
+          {searchParam || statusParam
+            ? dict.common.table.emptyFiltered
+            : dict.brands.empty}
         </div>
       ) : (
         <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
@@ -255,33 +228,11 @@ function AdminBrandView() {
       )}
 
       {!isLoading && !isError && brands.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {dict.common.pageOf(page, totalPages)}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() =>
-                updateParams({
-                  page: page - 1 <= 1 ? undefined : String(page - 1),
-                })
-              }
-            >
-              {dict.common.previous}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: String(page + 1) })}
-            >
-              {dict.common.next}
-            </Button>
-          </div>
-        </div>
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+        />
       )}
     </div>
   );

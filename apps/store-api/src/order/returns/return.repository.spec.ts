@@ -96,6 +96,113 @@ describe('ReturnRepository — admin queue sorting (TASK-354)', () => {
   });
 });
 
+/**
+ * The returns queue's free-text search (TASK-423).
+ *
+ * The queue had none, so an operator on the phone with a customer holding an
+ * order number could only page through it. Prisma is mocked: what is under test
+ * is the WHERE SHAPE, which is where all three realistic mistakes live — an id
+ * arm that forgets to lowercase (the operator reads back `ABC12345`, the column
+ * holds `abc12345…`), a text arm that forgets `mode: 'insensitive'`, and an
+ * unguarded phone arm that matches every row.
+ */
+describe('ReturnRepository — admin queue search (TASK-423)', () => {
+  let repository: ReturnRepository;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    prismaMock.return.count.mockResolvedValue(0);
+    prismaMock.return.findMany.mockResolvedValue([]);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReturnRepository,
+        { provide: PrismaService, useValue: prismaMock },
+        { provide: CacheService, useValue: cacheMock },
+      ],
+    }).compile();
+
+    repository = module.get(ReturnRepository);
+  });
+
+  /** The `where` the last page query was issued with. */
+  function issuedWhere(): { status?: unknown; OR?: Array<Record<string, unknown>> } {
+    return (
+      prismaMock.return.findMany.mock.calls.at(-1)?.[0] as {
+        where: { status?: unknown; OR?: Array<Record<string, unknown>> };
+      }
+    ).where;
+  }
+
+  it('adds no OR when no term is given', async () => {
+    await repository.findAll({});
+
+    expect(issuedWhere().OR).toBeUndefined();
+  });
+
+  it('matches the return id and the order number as lowercased prefixes', async () => {
+    // An operator reads an order number back in uppercase; the column holds the
+    // full lowercase uuid. Without the fold, the one search term every operator
+    // actually has matches nothing.
+    await repository.findAll({ search: 'ABC12345' });
+
+    expect(issuedWhere().OR).toContainEqual({ id: { startsWith: 'abc12345' } });
+    expect(issuedWhere().OR).toContainEqual({ order: { id: { startsWith: 'abc12345' } } });
+  });
+
+  it('reaches the customer through the order — guest AND account email', async () => {
+    await repository.findAll({ search: 'olena@example.com' });
+
+    expect(issuedWhere().OR).toContainEqual({
+      order: { guestEmail: { contains: 'olena@example.com', mode: 'insensitive' } },
+    });
+    expect(issuedWhere().OR).toContainEqual({
+      order: { user: { email: { contains: 'olena@example.com', mode: 'insensitive' } } },
+    });
+  });
+
+  it("searches the customer's stated reason", async () => {
+    await repository.findAll({ search: 'подряпина' });
+
+    expect(issuedWhere().OR).toContainEqual({
+      reason: { contains: 'подряпина', mode: 'insensitive' },
+    });
+  });
+
+  it('adds no phone arm for a term with too few digits', async () => {
+    // `normalizeUaPhone('подряпина')` is '', and `contains: ''` matches EVERY
+    // row — so an unguarded arm would turn a word search into "the whole queue".
+    await repository.findAll({ search: 'подряпина' });
+
+    expect(JSON.stringify(issuedWhere().OR)).not.toContain('Phone');
+    expect(JSON.stringify(issuedWhere().OR)).not.toContain('phone');
+  });
+
+  it('normalises a dictated phone number the way the order columns store it', async () => {
+    await repository.findAll({ search: '050 111 2233' });
+
+    expect(issuedWhere().OR).toContainEqual({
+      order: { guestPhone: { contains: '380501112233' } },
+    });
+    expect(issuedWhere().OR).toContainEqual({
+      order: { user: { phone: { contains: '380501112233' } } },
+    });
+  });
+
+  it('composes with the status filter instead of replacing it', async () => {
+    await repository.findAll({ status: ReturnStatus.REQUESTED, search: 'ABC12345' });
+
+    expect(issuedWhere().status).toBe(ReturnStatus.REQUESTED);
+    expect(issuedWhere().OR).toBeDefined();
+  });
+
+  it('narrows the count query identically, or the pager claims pages the list has not got', async () => {
+    await repository.findAll({ search: 'ABC12345' });
+
+    expect(prismaMock.return.count).toHaveBeenCalledWith({ where: issuedWhere() });
+  });
+});
+
 describe('ReturnListQueryDto — sort validation (TASK-354)', () => {
   const errorsOf = (payload: unknown): string[] =>
     validateSync(plainToInstance(ReturnListQueryDto, payload), {

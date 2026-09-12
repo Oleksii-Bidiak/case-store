@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,21 +14,20 @@ import {
 import {
   Badge,
   Button,
-  Input,
   LiveAnnouncer,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableToolbar,
+  pageSizeFrom,
 } from "@/shared/ui";
-import { useUrlParams } from "@/shared/lib/use-url-params";
 import { dict } from "@/shared/config";
 import { AdminPageTableSkeleton } from "./admin-page-table-skeleton";
-
-const PAGE_SIZE = 20;
 
 /**
  * Admin static-pages table: title, slug, status badge, sort order, and per-row
@@ -59,15 +57,12 @@ function AdminPageView() {
 
   const searchParam = searchParams.get("search") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
-
-  const [searchInput, setSearchInput] = useState(searchParam);
-
-  const updateParams = useUrlParams();
+  const pageSize = pageSizeFrom(searchParams);
 
   const { data, isLoading, isFetching, isError, refetch } =
     useAdminPageControllerFindAll({
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       search: searchParam || undefined,
     });
   const publish = useAdminPageControllerPublish();
@@ -82,11 +77,6 @@ function AdminPageView() {
     queryClient.invalidateQueries({
       queryKey: getAdminPageControllerFindAllQueryKey(),
     });
-
-  const handleSearchSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    updateParams({ search: searchInput.trim() || undefined, page: undefined });
-  };
 
   const handleToggle = (id: string, isActive: boolean) => {
     const mutation = isActive ? unpublish : publish;
@@ -128,23 +118,11 @@ function AdminPageView() {
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
         search={
-          <form
-            onSubmit={handleSearchSubmit}
-            className="flex gap-2"
-            role="search"
-          >
-            <Input
-              type="search"
-              placeholder={dict.pages.searchPlaceholder}
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              className="max-w-xs"
-              aria-label={dict.pages.searchAria}
-            />
-            <Button type="submit" variant="outline">
-              {dict.common.search}
-            </Button>
-          </form>
+          <TableSearch
+            value={searchParam}
+            placeholder={dict.pages.searchPlaceholder}
+            label={dict.pages.searchAria}
+          />
         }
       />
 
@@ -232,33 +210,11 @@ function AdminPageView() {
       )}
 
       {!isLoading && !isError && pages.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {dict.common.pageOf(page, totalPages)}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() =>
-                updateParams({
-                  page: page - 1 <= 1 ? undefined : String(page - 1),
-                })
-              }
-            >
-              {dict.common.previous}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: String(page + 1) })}
-            >
-              {dict.common.next}
-            </Button>
-          </div>
-        </div>
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+        />
       )}
     </div>
   );

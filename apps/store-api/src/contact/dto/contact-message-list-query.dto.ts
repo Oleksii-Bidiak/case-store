@@ -1,5 +1,5 @@
-import { IsOptional, IsInt, IsEnum, IsIn, IsString, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsOptional, IsInt, IsEnum, IsIn, IsString, Min, Max, MaxLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { ContactMessageStatus } from '@prisma/client';
 
@@ -54,6 +54,29 @@ export class ContactMessageListQueryDto {
     message: `status must be one of: ${Object.values(ContactMessageStatus).join(', ')}`,
   })
   status?: ContactMessageStatus;
+
+  @ApiProperty({
+    description:
+      'Free-text search across the sender name, email, phone, topic, referenced order and the ' +
+      'message body (TASK-423). The inbox had no search at all: finding "the message from that ' +
+      'customer last week" meant reading the queue page by page.',
+    required: false,
+    maxLength: 120,
+    example: 'Іван',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  // Read the ORIGINAL value off `obj` (the API-wide `enableImplicitConversion`
+  // guard), trim, and collapse an all-whitespace term to undefined — an empty
+  // string would reach Prisma as `contains: ''`, which matches every row.
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (typeof raw !== 'string') return undefined;
+    const trimmed = raw.trim();
+    return trimmed === '' ? undefined : trimmed;
+  })
+  search?: string;
 
   @ApiProperty({
     description: `Sort field (${CONTACT_MESSAGE_SORT_FIELDS.join(', ')})`,

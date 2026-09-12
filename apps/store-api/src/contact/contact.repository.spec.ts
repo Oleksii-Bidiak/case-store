@@ -151,6 +151,92 @@ describe('ContactRepository', () => {
         expect(orderByOfLastFindMany()).toEqual([{ createdAt: 'desc' }, { id: 'asc' }]);
       });
     });
+
+    /**
+     * Free-text search (TASK-423). The inbox had none — so "the message from that
+     * customer last week" meant reading the queue page by page.
+     *
+     * Every assertion is on the WHERE SHAPE. Both failures it guards against are
+     * invisible on screen: a missing `mode: 'insensitive'` stops «Іван» matching
+     * `іван` (Postgres `contains` is case-sensitive by default), and an
+     * un-normalised phone arm finds nothing at all, because the column holds
+     * `380XXXXXXXXX` while the operator types what the customer dictates.
+     */
+    describe('search (TASK-423)', () => {
+      beforeEach(() => {
+        prismaMock.contactMessage.findMany.mockResolvedValue([]);
+        prismaMock.contactMessage.count.mockResolvedValue(0);
+      });
+
+      /** The `where` the last page query was issued with. */
+      function issuedWhere(): { OR?: Array<Record<string, unknown>> } {
+        return (
+          prismaMock.contactMessage.findMany.mock.calls.at(-1)?.[0] as {
+            where: { OR?: Array<Record<string, unknown>> };
+          }
+        ).where;
+      }
+
+      it('ORs a text term across name, email, topic, order ref and body', async () => {
+        await repository.findAll({ page: 1, limit: 20, search: 'Іван' });
+
+        expect(issuedWhere().OR).toEqual([
+          { name: { contains: 'Іван', mode: 'insensitive' } },
+          { email: { contains: 'Іван', mode: 'insensitive' } },
+          { topic: { contains: 'Іван', mode: 'insensitive' } },
+          { orderRef: { contains: 'Іван', mode: 'insensitive' } },
+          { message: { contains: 'Іван', mode: 'insensitive' } },
+        ]);
+      });
+
+      it('adds no phone arm for a term with too few digits', async () => {
+        // `normalizeUaPhone('Іван')` is '', and `contains: ''` matches EVERY row —
+        // a name search would silently become "show me the whole inbox".
+        await repository.findAll({ page: 1, limit: 20, search: 'Іван' });
+
+        expect(JSON.stringify(issuedWhere().OR)).not.toContain('phone');
+      });
+
+      it('normalises a dictated phone number the way the column stores it', async () => {
+        await repository.findAll({ page: 1, limit: 20, search: '067 123 45 67' });
+
+        expect(issuedWhere().OR).toContainEqual({ phone: { contains: '380671234567' } });
+      });
+
+      it('matches a leading operator-code fragment as a prefix of the stored form', async () => {
+        // `067` normalises to `38067`, which IS a prefix of the stored
+        // `380671234567` — so narrowing by an operator code works, which is the
+        // reason the digit floor is 3 and not the full number's length.
+        await repository.findAll({ page: 1, limit: 20, search: '067' });
+
+        expect(issuedWhere().OR).toContainEqual({ phone: { contains: '38067' } });
+      });
+
+      it('composes with the status filter instead of replacing it', async () => {
+        await repository.findAll({
+          page: 1,
+          limit: 20,
+          status: ContactMessageStatus.NEW,
+          search: 'Іван',
+        });
+
+        const where = issuedWhere() as { status?: unknown; OR?: unknown };
+        expect(where.status).toBe(ContactMessageStatus.NEW);
+        expect(where.OR).toBeDefined();
+      });
+
+      it('narrows the count query identically, or the pager lies', async () => {
+        await repository.findAll({ page: 1, limit: 20, search: 'Іван' });
+
+        expect(prismaMock.contactMessage.count).toHaveBeenCalledWith({ where: issuedWhere() });
+      });
+
+      it('adds no OR when no term is given', async () => {
+        await repository.findAll({ page: 1, limit: 20 });
+
+        expect(issuedWhere().OR).toBeUndefined();
+      });
+    });
   });
 
   describe('findById', () => {

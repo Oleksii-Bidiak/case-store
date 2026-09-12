@@ -1,13 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
-import { useUrlParams } from "@/shared/lib/use-url-params";
-import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import {
   getAddonServiceControllerAdminFindAllQueryKey,
   useAddonServiceControllerAdminFindAll,
@@ -17,29 +14,25 @@ import {
 import {
   Badge,
   Button,
-  Input,
   LiveAnnouncer,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Table,
   TableBody,
   TableCell,
+  TableFilters,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableToolbar,
+  pageSizeFrom,
+  type TableFilterDef,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { AddonServiceTableSkeleton } from "./addon-service-table-skeleton";
 
-const PAGE_SIZE = 20;
-const ALL_OPTION = "__all__";
 const ACTIVE_OPTION = "active";
 const INACTIVE_OPTION = "inactive";
-const SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * Paginated, searchable admin table of add-on services (TASK-174) with a per-row
@@ -77,16 +70,7 @@ function AddonServiceView() {
   const searchParam = searchParams.get("search") ?? "";
   const statusParam = searchParams.get("status") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
-
-  const [searchInput, setSearchInput] = useState(searchParam);
-
-  const updateParams = useUrlParams();
-
-  const debouncedSearch = useDebouncedCallback((value: string) => {
-    const trimmed = value.trim();
-    if (trimmed === searchParam) return;
-    updateParams({ search: trimmed || undefined, page: undefined });
-  }, SEARCH_DEBOUNCE_MS);
+  const pageSize = pageSizeFrom(searchParams);
 
   const isActiveFilter =
     statusParam === ACTIVE_OPTION
@@ -98,7 +82,7 @@ function AddonServiceView() {
   const { data, isLoading, isFetching, isError, refetch } =
     useAddonServiceControllerAdminFindAll({
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       search: searchParam || undefined,
       isActive: isActiveFilter,
     });
@@ -130,12 +114,17 @@ function AddonServiceView() {
     );
   };
 
-  const handleStatusChange = (value: string) => {
-    updateParams({
-      status: value === ALL_OPTION ? undefined : value,
-      page: undefined,
-    });
-  };
+  const filters: TableFilterDef[] = [
+    {
+      param: "status",
+      label: dict.addonServices.filterStatusAria,
+      allLabel: dict.addonServices.allStatuses,
+      options: [
+        { value: ACTIVE_OPTION, label: dict.addonServices.statusActive },
+        { value: INACTIVE_OPTION, label: dict.addonServices.statusInactive },
+      ],
+    },
+  ];
 
   return (
     <div className="flex flex-col gap-4">
@@ -144,41 +133,14 @@ function AddonServiceView() {
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
         search={
-          <Input
-            type="search"
+          <TableSearch
+            value={searchParam}
             placeholder={dict.addonServices.searchPlaceholder}
-            value={searchInput}
-            onChange={(event) => {
-              setSearchInput(event.target.value);
-              debouncedSearch(event.target.value);
-            }}
-            className="w-64"
-            aria-label={dict.addonServices.searchAria}
+            label={dict.addonServices.searchAria}
           />
         }
         filters={
-          <Select
-            value={statusParam || ALL_OPTION}
-            onValueChange={handleStatusChange}
-          >
-            <SelectTrigger
-              className="w-48"
-              aria-label={dict.addonServices.filterStatusAria}
-            >
-              <SelectValue placeholder={dict.addonServices.allStatuses} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_OPTION}>
-                {dict.addonServices.allStatuses}
-              </SelectItem>
-              <SelectItem value={ACTIVE_OPTION}>
-                {dict.addonServices.statusActive}
-              </SelectItem>
-              <SelectItem value={INACTIVE_OPTION}>
-                {dict.addonServices.statusInactive}
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          <TableFilters filters={filters} values={{ status: statusParam }} />
         }
       />
 
@@ -190,7 +152,11 @@ function AddonServiceView() {
         </p>
       ) : services.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {dict.addonServices.empty}
+          {/* "No services yet" and "your filters matched nothing" are different
+              answers, and only the first has an obvious next step (TASK-423). */}
+          {searchParam || statusParam
+            ? dict.common.table.emptyFiltered
+            : dict.addonServices.empty}
         </div>
       ) : (
         <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
@@ -263,33 +229,11 @@ function AddonServiceView() {
       )}
 
       {!isLoading && !isError && services.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {dict.common.pageOf(page, totalPages)}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() =>
-                updateParams({
-                  page: page - 1 <= 1 ? undefined : String(page - 1),
-                })
-              }
-            >
-              {dict.common.previous}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: String(page + 1) })}
-            >
-              {dict.common.next}
-            </Button>
-          </div>
-        </div>
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+        />
       )}
     </div>
   );

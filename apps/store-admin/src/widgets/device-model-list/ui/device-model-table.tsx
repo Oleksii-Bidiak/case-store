@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -8,27 +7,29 @@ import { toast } from "@/shared/ui/toast";
 import {
   getAdminDeviceControllerFindModelsQueryKey,
   useAdminDeviceControllerFindModels,
+  useAdminDeviceControllerFindBrands,
   useAdminDeviceControllerActivateModel,
   useAdminDeviceControllerDeactivateModel,
 } from "@/entities/device";
 import {
   Badge,
   Button,
-  Input,
   LiveAnnouncer,
   Table,
   TableBody,
   TableCell,
+  TableFilters,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableToolbar,
+  pageSizeFrom,
+  type TableFilterDef,
 } from "@/shared/ui";
-import { useUrlParams } from "@/shared/lib/use-url-params";
 import { dict } from "@/shared/config";
 import { DeviceModelTableSkeleton } from "./device-model-table-skeleton";
-
-const PAGE_SIZE = 20;
 
 /**
  * Admin device-model table (TASK-190). Paginated + searchable (name), across all
@@ -38,6 +39,13 @@ const PAGE_SIZE = 20;
  * refresh control, and gave the input its own placeholder/label — it used to
  * borrow the section heading ("Моделі пристроїв"), which read to a screen reader
  * as a field named after the page it sits on.
+ *
+ * TASK-423 / AD-DEV-04 added the two filters the ENDPOINT had accepted all along.
+ * `AdminDeviceControllerFindModelsParams` has carried `deviceBrandId` and
+ * `isActive` since TASK-190 and this table passed neither, so "show me every
+ * iPhone model" could only be attempted as a name search — which works for
+ * «iPhone» and not for a brand whose name is absent from its models' names. The
+ * fix was entirely on this side of the wire.
  *
  * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
  * calls `useAnnouncer()` to confirm a refresh, and a hook called in the same
@@ -56,15 +64,24 @@ function DeviceModelView() {
   const queryClient = useQueryClient();
 
   const searchParam = searchParams.get("search") ?? "";
+  const brandParam = searchParams.get("deviceBrandId") ?? "";
+  const statusParam = searchParams.get("isActive") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
-  const [searchInput, setSearchInput] = useState(searchParam);
+  const pageSize = pageSizeFrom(searchParams);
 
   const { data, isLoading, isFetching, isError, refetch } =
     useAdminDeviceControllerFindModels({
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       search: searchParam || undefined,
+      deviceBrandId: brandParam || undefined,
+      isActive: statusParam ? statusParam === "true" : undefined,
     });
+  // The brand list feeds the filter's options. Device brands are a short,
+  // hand-curated taxonomy (Apple, Samsung, …), so one high-limit page is the
+  // whole thing — and it includes hidden brands, or their models would be
+  // unreachable from here.
+  const brandsQuery = useAdminDeviceControllerFindBrands({ limit: 100 });
   const activate = useAdminDeviceControllerActivateModel();
   const deactivate = useAdminDeviceControllerDeactivateModel();
   const pending = activate.isPending || deactivate.isPending;
@@ -72,12 +89,27 @@ function DeviceModelView() {
   const models = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
 
-  const updateParams = useUrlParams();
-
-  const handleSearchSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    updateParams({ search: searchInput.trim() || undefined, page: undefined });
-  };
+  const filters: TableFilterDef[] = [
+    {
+      param: "deviceBrandId",
+      label: dict.devices.filterBrandAria,
+      allLabel: dict.devices.allBrands,
+      options: (brandsQuery.data?.data ?? []).map((brand) => ({
+        value: brand.id,
+        label: brand.name,
+      })),
+      className: "w-44",
+    },
+    {
+      param: "isActive",
+      label: dict.devices.filterStatusAria,
+      allLabel: dict.devices.allStatuses,
+      options: [
+        { value: "true", label: dict.devices.statusActive },
+        { value: "false", label: dict.devices.statusInactive },
+      ],
+    },
+  ];
 
   const toggle = (id: string, isActive: boolean) => {
     const mutation = isActive ? deactivate : activate;
@@ -101,23 +133,17 @@ function DeviceModelView() {
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
         search={
-          <form
-            onSubmit={handleSearchSubmit}
-            className="flex gap-2"
-            role="search"
-          >
-            <Input
-              type="search"
-              placeholder={dict.devices.modelsSearchPlaceholder}
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              className="max-w-xs"
-              aria-label={dict.devices.modelsSearchAria}
-            />
-            <Button type="submit" variant="outline">
-              {dict.common.search}
-            </Button>
-          </form>
+          <TableSearch
+            value={searchParam}
+            placeholder={dict.devices.modelsSearchPlaceholder}
+            label={dict.devices.modelsSearchAria}
+          />
+        }
+        filters={
+          <TableFilters
+            filters={filters}
+            values={{ deviceBrandId: brandParam, isActive: statusParam }}
+          />
         }
       />
 
@@ -131,7 +157,9 @@ function DeviceModelView() {
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
           {searchParam
             ? dict.devices.modelsEmptyMatch(searchParam)
-            : dict.devices.modelsEmpty}
+            : brandParam || statusParam
+              ? dict.common.table.emptyFiltered
+              : dict.devices.modelsEmpty}
         </div>
       ) : (
         <div className="rounded-lg border border-border shadow-card overflow-hidden">
@@ -191,33 +219,11 @@ function DeviceModelView() {
       )}
 
       {!isLoading && !isError && models.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {dict.common.pageOf(page, totalPages)}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() =>
-                updateParams({
-                  page: page - 1 <= 1 ? undefined : String(page - 1),
-                })
-              }
-            >
-              {dict.common.previous}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: String(page + 1) })}
-            >
-              {dict.common.next}
-            </Button>
-          </div>
-        </div>
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+        />
       )}
     </div>
   );

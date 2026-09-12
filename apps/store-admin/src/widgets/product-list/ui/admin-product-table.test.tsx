@@ -237,14 +237,20 @@ describe("AdminProductTable — photo column and filters (TASK-362)", () => {
     expect(screen.getByText("IP15-CLR · Spigen")).toBeInTheDocument();
   });
 
+  // TASK-423: these were two bare native `<select>`s; they are now the shared
+  // `TableFilters`, so the interaction is open-the-listbox + click-the-option
+  // instead of `selectOptions`. What is asserted is unchanged — the URL, because
+  // that is what makes a restock worklist a link the operator can keep.
   it("puts the status filter in the URL so a worklist is a shareable link", async () => {
     stubEndpoints();
     renderWithProviders(<AdminProductTable />);
     await screen.findByText("iPhone 15 Pro Case");
 
-    await userEvent.selectOptions(
-      screen.getByLabelText(dict.products.filterStatus),
-      "hidden",
+    await userEvent.click(
+      screen.getByRole("combobox", { name: dict.products.filterStatus }),
+    );
+    await userEvent.click(
+      screen.getByRole("option", { name: dict.products.filterStatusHidden }),
     );
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalled());
@@ -256,12 +262,202 @@ describe("AdminProductTable — photo column and filters (TASK-362)", () => {
     renderWithProviders(<AdminProductTable />);
     await screen.findByText("iPhone 15 Pro Case");
 
-    await userEvent.selectOptions(
-      screen.getByLabelText(dict.products.filterStock),
-      "out",
+    await userEvent.click(
+      screen.getByRole("combobox", { name: dict.products.filterStock }),
+    );
+    await userEvent.click(
+      screen.getByRole("option", { name: dict.products.filterStockOut }),
     );
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalled());
     expect(mockReplace.mock.calls.at(-1)?.[0]).toContain("stock=out");
+  });
+});
+
+/**
+ * Bulk «Перемістити до групи» (TASK-423 / AD-PROD-33).
+ *
+ * The assertions are on the REQUEST BODY: the ids the operator selected and the
+ * group they picked. A dialog that looks right while sending the wrong group, or
+ * sending `groupId: undefined` where `null` means "ungroup", renders identically
+ * and silently reassigns the wrong products.
+ */
+describe("AdminProductTable — bulk move to group (TASK-423)", () => {
+  beforeEach(() => mockReplace.mockClear());
+
+  /** Stub the group list and the bulk endpoint; hand back the recorded bodies. */
+  function stubGroupBulk() {
+    const bodies: unknown[] = [];
+    server.use(
+      http.get("*/api/product-groups", () =>
+        HttpResponse.json({
+          data: [
+            { id: "group-a", name: "Чохли Clear", isActive: true, axes: [] },
+            { id: "group-b", name: "Чохли Silicone", isActive: true, axes: [] },
+          ],
+        }),
+      ),
+      http.patch("*/api/products/group", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({ data: { updatedCount: 1 } });
+      }),
+    );
+    return bodies;
+  }
+
+  /** Select the single row the list stub returns. */
+  async function selectTheRow() {
+    await userEvent.click(
+      screen.getByRole("checkbox", {
+        name: dict.products.bulk.selectRow("iPhone 15 Pro Case"),
+      }),
+    );
+  }
+
+  it("offers the action only while rows are selected", async () => {
+    stubEndpoints();
+    renderWithProviders(<AdminProductTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    // The bulk bar renders nothing at zero — an always-present bar of disabled
+    // buttons reads as broken.
+    expect(
+      screen.queryByRole("button", {
+        name: dict.products.bulk.moveToGroup(1),
+      }),
+    ).not.toBeInTheDocument();
+
+    await selectTheRow();
+
+    expect(
+      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(1) }),
+    ).toBeInTheDocument();
+  });
+
+  it("sends the selected ids and the chosen group", async () => {
+    stubEndpoints();
+    const bodies = stubGroupBulk();
+    renderWithProviders(<AdminProductTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(1) }),
+    );
+    await userEvent.click(
+      await screen.findByLabelText(dict.products.bulk.groupDialogLabel),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Чохли Silicone" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.groupSubmit }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ ids: ["product-1"], groupId: "group-b" });
+  });
+
+  it("sends groupId: null — not undefined — for «Без групи»", async () => {
+    // `null` is the MEANING "take these out of their group"; the DTO requires the
+    // field, precisely so that an omission cannot be read as a destructive clear.
+    stubEndpoints();
+    const bodies = stubGroupBulk();
+    renderWithProviders(<AdminProductTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(1) }),
+    );
+    await userEvent.click(
+      await screen.findByLabelText(dict.products.bulk.groupDialogLabel),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", {
+        name: dict.products.bulk.groupNone,
+      }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.groupSubmit }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ ids: ["product-1"], groupId: null });
+  });
+
+  it("refuses to submit until a target is picked", async () => {
+    stubEndpoints();
+    const bodies = stubGroupBulk();
+    renderWithProviders(<AdminProductTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(1) }),
+    );
+    const submit = await screen.findByRole("button", {
+      name: dict.products.bulk.groupSubmit,
+    });
+
+    // Defaulting to the first group would be a silent guess about which family
+    // these products belong to.
+    expect(submit).toBeDisabled();
+    await userEvent.click(submit);
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("does not fetch the group list until the dialog is opened", async () => {
+    stubEndpoints();
+    let groupRequests = 0;
+    server.use(
+      http.get("*/api/product-groups", () => {
+        groupRequests += 1;
+        return HttpResponse.json({ data: [] });
+      }),
+    );
+
+    renderWithProviders(<AdminProductTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    // A request per page view, for a control most visits never touch.
+    expect(groupRequests).toBe(0);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(1) }),
+    );
+    await waitFor(() => expect(groupRequests).toBe(1));
+  });
+
+  it("clears the selection once the server confirms", async () => {
+    stubEndpoints();
+    stubGroupBulk();
+    renderWithProviders(<AdminProductTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(1) }),
+    );
+    await userEvent.click(
+      await screen.findByLabelText(dict.products.bulk.groupDialogLabel),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Чохли Clear" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.groupSubmit }),
+    );
+
+    // Bar gone ⇒ selection cleared ⇒ the dialog closed on a real confirmation,
+    // not optimistically.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", {
+          name: dict.products.bulk.moveToGroup(1),
+        }),
+      ).not.toBeInTheDocument(),
+    );
   });
 });

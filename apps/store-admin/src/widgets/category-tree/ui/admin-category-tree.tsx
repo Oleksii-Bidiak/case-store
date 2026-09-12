@@ -31,7 +31,7 @@ import {
   type FocusEvent as ReactFocusEvent,
   type ReactNode,
 } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight, GripVertical } from "lucide-react";
 import { flattenAdminCategoryTree } from "@/entities/category";
 import {
@@ -62,7 +62,6 @@ import {
   Badge,
   Button,
   Checkbox,
-  Input,
   LiveAnnouncer,
   SortableTree,
   Table,
@@ -71,6 +70,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableSearch,
   useAnnouncer,
   type SortableTreeAnnouncements,
   type SortableTreeRowRenderProps,
@@ -243,12 +243,10 @@ interface MoveState {
 
 function CategoryTreeView() {
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { announcePolite } = useAnnouncer();
 
   const search = (searchParams.get("search") ?? "").trim();
-  const [searchInput, setSearchInput] = useState(search);
 
   const query = useAdminCategoryTreeQuery();
   const serverItems = useMemo(
@@ -1036,16 +1034,6 @@ function CategoryTreeView() {
 
   /* ── render ─────────────────────────────────────────────────────────────── */
 
-  const handleSearchSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    const params = new URLSearchParams(searchParams.toString());
-    const value = searchInput.trim();
-    if (value) params.set("search", value);
-    else params.delete("search");
-    const qs = params.toString();
-    router.push(qs ? `${pathname}?${qs}` : pathname);
-  };
-
   const renderRow = (props: SortableTreeRowRenderProps): ReactNode => {
     const row = rows.find((r) => r.item.id === props.item.id);
     if (!row) return null;
@@ -1099,23 +1087,24 @@ function CategoryTreeView() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <form
-          onSubmit={handleSearchSubmit}
-          className="flex gap-2"
-          role="search"
-        >
-          <Input
-            type="search"
-            placeholder={dict.categories.searchPlaceholder}
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-            className="max-w-xs"
-            aria-label={dict.categories.searchAria}
-          />
-          <Button type="submit" variant="outline">
-            {dict.common.search}
-          </Button>
-        </form>
+        {/*
+          TASK-423: this was the panel's LAST search-on-Enter form — a text box
+          plus a «Пошук» button the operator had to find and press. It is the
+          shared search-as-you-type box now, like the other twenty tables.
+
+          Everything downstream is unchanged on purpose. The matching still
+          happens LOCALLY against the whole tree (the endpoint returns the tree
+          in one response, and a server-side search would break the ancestor
+          chain a match has to be shown inside), and an active term still LOCKS
+          every move affordance — see `isLocked`. That lock is not decoration: a
+          filtered view is not the real sibling order, so a drag inside it would
+          write a `sortOrder` computed from rows the operator cannot see.
+        */}
+        <TableSearch
+          value={search}
+          placeholder={dict.categories.searchPlaceholder}
+          label={dict.categories.searchAria}
+        />
         <CategoryReorderUndoButton
           canUndo={reorder.canUndo}
           onUndo={reorder.undo}

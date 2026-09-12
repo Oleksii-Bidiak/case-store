@@ -329,7 +329,10 @@ describe("AdminCarouselTable", () => {
       await waitFor(() => expect(requests).toHaveLength(2));
     });
 
-    it("submits the search into the URL and resets the page", async () => {
+    // TASK-423: was a form with a «Пошук» button; now search-as-you-type, the one
+    // idiom every admin table uses. The `page=3` is the other half of the
+    // assertion — a narrowed list renumbers its pages.
+    it("writes the search into the URL as you type and resets the page", async () => {
       mockSearchParams = new URLSearchParams("page=3");
       stubCarousels([
         makeCarouselRow("carousel-1", "Хіти тижня", "BESTSELLING", "PUBLISHED"),
@@ -342,13 +345,15 @@ describe("AdminCarouselTable", () => {
         screen.getByLabelText(dict.carousels.searchAria),
         "хіти",
       );
-      await userEvent.click(
-        screen.getByRole("button", { name: dict.common.search }),
-      );
 
-      expect(mockReplace).toHaveBeenCalledWith(
-        "/carousels?search=%D1%85%D1%96%D1%82%D0%B8",
+      await waitFor(() =>
+        expect(mockReplace).toHaveBeenCalledWith(
+          "/carousels?search=%D1%85%D1%96%D1%82%D0%B8",
+        ),
       );
+      expect(
+        screen.queryByRole("button", { name: dict.common.search }),
+      ).not.toBeInTheDocument();
     });
   });
 });

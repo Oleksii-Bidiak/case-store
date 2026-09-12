@@ -8,6 +8,8 @@ import type { CreateReviewDto, ReviewListQueryDto, AdminReviewQueryDto } from '.
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
+/** Admin moderation queue default — the one admin page size (TASK-423). */
+const DEFAULT_MODERATION_LIMIT = 20;
 
 /**
  * Pagination metadata returned alongside review lists.
@@ -145,10 +147,19 @@ export class ReviewService {
    */
   async getReviewsForModeration(query: AdminReviewQueryDto): Promise<ModerationReviewsResult> {
     const page = query.page ?? DEFAULT_PAGE;
-    const limit = query.limit ?? DEFAULT_LIMIT;
+    // The admin queue's own default, 20 — the one page size every admin table
+    // now uses (TASK-423). Deliberately NOT the storefront's DEFAULT_LIMIT: the
+    // public per-product list and a moderation backlog are read by different
+    // people for different reasons.
+    const limit = query.limit ?? DEFAULT_MODERATION_LIMIT;
     const status = query.status ?? ReviewModerationStatus.PENDING;
 
-    const { reviews, total } = await this.reviewRepository.findForModeration(status, page, limit);
+    const { reviews, total } = await this.reviewRepository.findForModeration(
+      status,
+      page,
+      limit,
+      query.search,
+    );
 
     return {
       data: reviews.map((row) => AdminReviewEntity.fromModerationRow(row)),

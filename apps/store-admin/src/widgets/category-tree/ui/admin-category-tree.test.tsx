@@ -107,9 +107,13 @@ function treeResponse(roots: Node[] = DEFAULT_ROOTS()) {
 /* ────────────────────────────── environment ────────────────────────────── */
 
 const mockPush = jest.fn();
+// TASK-423: the search box writes through the shared `useUrlParams`, which
+// REPLACES rather than pushes — a filter keystroke is view state, not a
+// navigation the Back button should have to undo.
+const mockReplace = jest.fn();
 let mockSearchParams = new URLSearchParams("");
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: () => ({ push: mockPush, replace: mockReplace }),
   usePathname: () => "/categories",
   useSearchParams: () => mockSearchParams,
 }));
@@ -136,6 +140,7 @@ beforeEach(() => {
   resetReorderLock();
   bodies = [];
   mockPush.mockClear();
+  mockReplace.mockClear();
   mockSearchParams = new URLSearchParams("");
   window.localStorage.clear();
 });
@@ -531,6 +536,32 @@ describe("AdminCategoryTree — expand / collapse (§7.5, §3.11)", () => {
 });
 
 describe("AdminCategoryTree — search filter (§3.11)", () => {
+  /**
+   * TASK-423 — this was the panel's last search-on-Enter form. It is the shared
+   * search-as-you-type box now, and the two things that make this screen
+   * different are unchanged: the matching is still LOCAL (the tree arrives in
+   * one response, and a server-side search would cut the ancestor chain a match
+   * has to be shown inside) and an active term still locks reordering.
+   */
+  it("types the term into the URL — no submit button left on the screen", async () => {
+    mockReorder();
+    await renderTree();
+
+    await userEvent.type(
+      screen.getByLabelText(dict.categories.searchAria),
+      "Скло",
+    );
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("search="),
+      ),
+    );
+    expect(
+      screen.queryByRole("button", { name: dict.common.search }),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows matches with their ancestors, LOCKS every move affordance and announces the lock", async () => {
     mockSearchParams = new URLSearchParams("search=Силіконові");
     mockReorder();
@@ -795,6 +826,67 @@ describe("AdminCategoryTree — row-internal Tab cycle (§7.1, §7.2)", () => {
     expect(otherGrip.tabIndex).toBe(-1);
     expect(otherMenu.tabIndex).toBe(-1);
     assertAriaInvariants();
+  });
+});
+
+/**
+ * TASK-423 — «Зробити кореневою» is the journey «Підняти на рівень вище» could
+ * only make one step at a time, with nothing on screen saying a second step was
+ * possible. It composes that same step rather than building its own
+ * `{ targetParentId: null }` move, so it inherits the cycle guard, the depth
+ * check and the advisory lock instead of going around them.
+ */
+describe("AdminCategoryTree — «Зробити кореневою» (TASK-423)", () => {
+  it("lifts a level-3 category to the root in ONE action, emptying the bucket it left", async () => {
+    mockReorder();
+    await renderTree();
+
+    rowEl(A1).focus();
+    fireEvent.keyDown(rowEl(A1), { key: "ArrowRight" }); // expand Чохли
+    await waitFor(() => expect(visibleIds()).toContain(A1A));
+
+    rowEl(A1A).focus();
+    fireEvent.keyDown(rowEl(A1A), { key: "F10", shiftKey: true });
+    fireEvent.keyDown(
+      await screen.findByRole("menuitem", {
+        name: dict.categories.tree.makeRoot,
+      }),
+      { key: "Enter" },
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    const { groups } = bodies[0] as {
+      groups: { parentId: string | null; orderedIds: string[] }[];
+    };
+
+    // Two outdents' worth of tree in one PATCH: Силіконові lands at the root
+    // directly after the top-level ancestor it came out of…
+    expect(groups.find((g) => g.parentId === null)?.orderedIds).toEqual([
+      A,
+      A1A,
+      B,
+      C,
+    ]);
+    // …and Чохли is left with no children at all — an empty `orderedIds` is the
+    // contract's way of saying "this parent lost its last child".
+    expect(groups.find((g) => g.parentId === A1)?.orderedIds).toEqual([]);
+  });
+
+  it("is hidden — not disabled — on a row that is already at the root", async () => {
+    mockReorder();
+    await renderTree();
+
+    rowEl(B).focus();
+    fireEvent.keyDown(rowEl(B), { key: "F10", shiftKey: true });
+    // The menu is open: its first item is there…
+    await screen.findByRole("menuitem", { name: dict.categories.tree.moveUp });
+    // …and neither level-changing item is, exactly like «Підняти на рівень вище».
+    expect(
+      screen.queryByRole("menuitem", { name: dict.categories.tree.makeRoot }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: dict.categories.tree.outdent }),
+    ).not.toBeInTheDocument();
   });
 });
 

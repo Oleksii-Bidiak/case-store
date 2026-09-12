@@ -54,3 +54,84 @@ describe('ReviewRepository — findVerifiedPurchaserIds', () => {
     expect(orderFindMany).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The moderation queue's free-text search (TASK-423).
+ *
+ * Prisma is mocked, so what is under test is the WHERE SHAPE — which is the whole
+ * risk here. The two failures this catches are both invisible on screen: an arm
+ * that forgets `mode: 'insensitive'` quietly stops matching «Чохол» for `чохол`
+ * (Postgres `contains` is case-SENSITIVE by default), and an unguarded empty term
+ * becomes `contains: ''`, which matches every row — i.e. the search silently
+ * turns into "show me everything" instead of "show me nothing".
+ */
+describe('ReviewRepository — findForModeration search', () => {
+  let repo: ReviewRepository;
+
+  const reviewFindMany = jest.fn();
+  const reviewCount = jest.fn();
+
+  const prismaMock = {
+    order: { findMany: jest.fn() },
+    orderItem: { findFirst: jest.fn() },
+    review: { findMany: reviewFindMany, count: reviewCount },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    reviewFindMany.mockResolvedValue([]);
+    reviewCount.mockResolvedValue(0);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [ReviewRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(ReviewRepository);
+  });
+
+  /** The `where` the page query was actually issued with. */
+  function issuedWhere() {
+    return reviewFindMany.mock.calls[0][0].where;
+  }
+
+  it('filters on the moderation gate alone when no term is given', async () => {
+    await repo.findForModeration('pending', 1, 20);
+
+    expect(issuedWhere()).toEqual({ isActive: false });
+    // The COUNT must carry the same `where`, or the pager claims pages the list
+    // cannot show.
+    expect(reviewCount).toHaveBeenCalledWith({ where: { isActive: false } });
+  });
+
+  it('ORs the term across review text, author email and product name', async () => {
+    await repo.findForModeration('approved', 1, 20, 'чохол');
+
+    expect(issuedWhere()).toEqual({
+      isActive: true,
+      OR: [
+        { comment: { contains: 'чохол', mode: 'insensitive' } },
+        { user: { email: { contains: 'чохол', mode: 'insensitive' } } },
+        { product: { name: { contains: 'чохол', mode: 'insensitive' } } },
+      ],
+    });
+  });
+
+  it('searches case-insensitively on every arm', async () => {
+    await repo.findForModeration('pending', 1, 20, 'Чохол');
+
+    for (const arm of issuedWhere().OR) {
+      expect(JSON.stringify(arm)).toContain('insensitive');
+    }
+  });
+
+  it('narrows the count query the same way as the page query', async () => {
+    await repo.findForModeration('pending', 1, 20, 'чохол');
+
+    expect(reviewCount).toHaveBeenCalledWith({ where: issuedWhere() });
+  });
+
+  it('adds no OR at all for an absent term', async () => {
+    await repo.findForModeration('pending', 2, 50, undefined);
+
+    expect(issuedWhere().OR).toBeUndefined();
+    expect(reviewFindMany.mock.calls[0][0]).toMatchObject({ skip: 50, take: 50 });
+  });
+});

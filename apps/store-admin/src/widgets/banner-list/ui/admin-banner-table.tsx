@@ -43,7 +43,6 @@ import {
 import {
   Badge,
   Button,
-  Input,
   LiveAnnouncer,
   ReorderUndoButton,
   SortableTree,
@@ -53,6 +52,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableSearch,
   TableToolbar,
   type SortableTreeRowRenderProps,
 } from "@/shared/ui";
@@ -173,13 +173,16 @@ function AdminBannerView() {
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
         search={
-          <Input
-            type="search"
+          // `mode="local"` (TASK-423): the needle hides ROWS and is not a server
+          // narrowing, so it must not pretend to be one by living in the URL. See
+          // the header — this view is unpaginated on purpose and its search LOCKS
+          // reordering rather than PATCHing a partial ordering.
+          <TableSearch
+            mode="local"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(next) => setSearch(next ?? "")}
             placeholder={dict.reorderList.searchPlaceholder}
-            aria-label={dict.reorderList.searchLabel}
-            className="max-w-xs"
+            label={dict.reorderList.searchLabel}
           />
         }
       />

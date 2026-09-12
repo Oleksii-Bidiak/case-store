@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { AttributeDefinition, AttributeType } from '@prisma/client';
 import {
   ProductRepository,
+  ProductGroupNotFoundError,
   ProductsNotFoundError,
   CreateProductInput,
   UpdateProductInput,
@@ -655,6 +656,57 @@ export class ProductService {
     }
 
     return updated.length;
+  }
+
+  /**
+   * Bulk reassign the variant group (TASK-423) — «Перемістити до групи» on the
+   * product list's selection. `groupId: null` takes the products out of whatever
+   * group they were in.
+   *
+   * The side effects follow the rule every bulk endpoint here follows: be
+   * indistinguishable from running the single-row action N times — list-cache
+   * eviction once, detail-cache eviction per product, one search re-sync per
+   * product (`groupId` is not an indexed field, but a product's indexed document
+   * is rebuilt wholesale, so skipping the sync would be a silent divergence).
+   *
+   * ── Plus the neighbours ─────────────────────────────────────────────────────
+   * It goes ONE STEP FURTHER than parity, deliberately: the siblings of the
+   * source and destination groups get their detail caches evicted too. A cached
+   * product detail carries its `variantSiblings`, so this write changes what the
+   * UNTOUCHED members of both groups should say. Without that eviction the
+   * storefront keeps offering a variant that left the family, and omitting the one
+   * that joined — i.e. exactly the thing the operator ran this action to fix stays
+   * visibly broken until the TTL expires, which reads as "the bulk action did
+   * nothing".
+   *
+   * The single-product write path (`update`, with `groupId` in the body) has the
+   * same gap and is left alone here: fixing it is a separate change with its own
+   * test, not a rider on a bulk endpoint.
+   *
+   * @throws NotFoundException when an id is unknown/soft-deleted, or the
+   *         destination group does not exist. Nothing is written in either case.
+   */
+  async setGroupMany(ids: string[], groupId: string | null): Promise<number> {
+    let result;
+    try {
+      result = await this.productRepository.setGroupMany(ids, groupId);
+    } catch (error) {
+      if (error instanceof ProductsNotFoundError || error instanceof ProductGroupNotFoundError) {
+        throw new NotFoundException(error.message);
+      }
+      throw error;
+    }
+
+    await this.invalidateProductLists();
+    for (const product of result.updated) {
+      await this.evictProductDetail(product.id, product.slug);
+      await this.syncSearchIndex(product);
+    }
+    for (const sibling of result.siblings) {
+      await this.evictProductDetail(sibling.id, sibling.slug);
+    }
+
+    return result.updated.length;
   }
 
   /**

@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -16,21 +15,20 @@ import {
 import {
   Badge,
   Button,
-  Input,
   LiveAnnouncer,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableToolbar,
+  pageSizeFrom,
 } from "@/shared/ui";
-import { useUrlParams } from "@/shared/lib/use-url-params";
 import { dict } from "@/shared/config";
 import { AdminCarouselTableSkeleton } from "./admin-carousel-table-skeleton";
-
-const PAGE_SIZE = 20;
 
 /**
  * Admin carousels view: title, source badge, placement badge (TASK-288), status
@@ -61,15 +59,12 @@ function AdminCarouselView() {
 
   const searchParam = searchParams.get("search") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
-
-  const [searchInput, setSearchInput] = useState(searchParam);
-
-  const updateParams = useUrlParams();
+  const pageSize = pageSizeFrom(searchParams);
 
   const { data, isLoading, isFetching, isError, refetch } =
     useAdminCarouselControllerFindAll({
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       search: searchParam || undefined,
     });
   const publish = useAdminCarouselControllerPublish();
@@ -84,11 +79,6 @@ function AdminCarouselView() {
     queryClient.invalidateQueries({
       queryKey: getAdminCarouselControllerFindAllQueryKey(),
     });
-
-  const handleSearchSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    updateParams({ search: searchInput.trim() || undefined, page: undefined });
-  };
 
   const handleToggle = (id: string, isPublished: boolean) => {
     const mutation = isPublished ? unpublish : publish;
@@ -132,23 +122,11 @@ function AdminCarouselView() {
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
         search={
-          <form
-            onSubmit={handleSearchSubmit}
-            className="flex gap-2"
-            role="search"
-          >
-            <Input
-              type="search"
-              placeholder={dict.carousels.searchPlaceholder}
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              className="max-w-xs"
-              aria-label={dict.carousels.searchAria}
-            />
-            <Button type="submit" variant="outline">
-              {dict.common.search}
-            </Button>
-          </form>
+          <TableSearch
+            value={searchParam}
+            placeholder={dict.carousels.searchPlaceholder}
+            label={dict.carousels.searchAria}
+          />
         }
       />
 
@@ -195,33 +173,11 @@ function AdminCarouselView() {
       )}
 
       {!isLoading && !isError && carousels.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {dict.common.pageOf(page, totalPages)}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() =>
-                updateParams({
-                  page: page - 1 <= 1 ? undefined : String(page - 1),
-                })
-              }
-            >
-              {dict.common.previous}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: String(page + 1) })}
-            >
-              {dict.common.next}
-            </Button>
-          </div>
-        </div>
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+        />
       )}
     </div>
   );

@@ -22,30 +22,28 @@ import {
   Button,
   Checkbox,
   LiveAnnouncer,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   SortableColumnHeader,
   Table,
   TableBody,
   TableCell,
+  TableFilters,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableSelectCell,
   TableSelectHead,
   TableToolbar,
+  pageSizeFrom,
+  type TableFilterDef,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { MessageInboxSkeleton } from "./message-inbox-skeleton";
 import { MessageDetailDialog } from "./message-detail-dialog";
 import { statusBadgeVariant, statusLabel } from "./status-meta";
 
-const PAGE_SIZE = 20;
 const MESSAGE_MAX = 80;
-const ALL = "ALL";
 
 /** Truncate a message body to a fixed length for the table cell. */
 function truncate(value: string): string {
@@ -80,6 +78,14 @@ function parseStatus(raw: string | null): AdminContactListStatus | undefined {
  * stable rather than having "no param" and "the default param" be two caches of
  * the same page.
  *
+ * TASK-423 added search (`?search=`) and the shared rows-per-page control. The
+ * inbox is where a customer's second message lands weeks after the first, and
+ * without a search the only way to find "what did we already tell this person?"
+ * was to page through the archive. The term matches the sender's name, email,
+ * topic, order reference and the message body — and the phone number too, but
+ * only once the term carries enough digits to BE a phone: `contains: ''` on a
+ * normalised phone would quietly match every row.
+ *
  * `LiveAnnouncer` MUST wrap the inbox rather than sit inside it — the same split
  * `AdminCategoryTree` makes, for the same reason. `useRowSelection` and
  * `useMessageBulkStatus` both call `useAnnouncer()`, and a hook called in the
@@ -99,7 +105,9 @@ function MessageInboxView() {
   const searchParams = useSearchParams();
 
   const status = parseStatus(searchParams.get("status"));
+  const searchParam = searchParams.get("search") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
+  const pageSize = pageSizeFrom(searchParams);
 
   const [selected, setSelected] = useState<ContactMessageEntity | null>(null);
 
@@ -115,8 +123,9 @@ function MessageInboxView() {
   const { data, isLoading, isFetching, isError, refetch } = useAdminContactList(
     {
       ...(status !== undefined && { status }),
+      search: searchParam || undefined,
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       sortBy,
       sortOrder,
     },
@@ -128,12 +137,32 @@ function MessageInboxView() {
   const messages = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
 
-  const handleStatusChange = (value: string) => {
-    updateParams({
-      status: value === ALL ? undefined : value,
-      page: undefined,
-    });
-  };
+  const filters: TableFilterDef[] = [
+    {
+      param: "status",
+      label: dict.messages.filterStatusAria,
+      allLabel: dict.messages.filterAll,
+      options: [
+        {
+          value: AdminContactListStatus.NEW,
+          label: dict.messages.filterNew,
+        },
+        {
+          value: AdminContactListStatus.IN_PROGRESS,
+          label: dict.messages.filterInProgress,
+        },
+        {
+          value: AdminContactListStatus.READ,
+          label: dict.messages.filterRead,
+        },
+        {
+          value: AdminContactListStatus.ARCHIVED,
+          label: dict.messages.filterArchived,
+        },
+      ],
+      className: "w-48",
+    },
+  ];
 
   const senderOf = new Map(
     messages.map((message) => [message.id, message.name]),
@@ -159,30 +188,15 @@ function MessageInboxView() {
         className="mb-0"
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
+        search={
+          <TableSearch
+            value={searchParam}
+            placeholder={dict.messages.searchPlaceholder}
+            label={dict.messages.searchAria}
+          />
+        }
         filters={
-          <Select value={status ?? ALL} onValueChange={handleStatusChange}>
-            <SelectTrigger
-              className="w-48"
-              aria-label={dict.messages.filterStatusAria}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>{dict.messages.filterAll}</SelectItem>
-              <SelectItem value={AdminContactListStatus.NEW}>
-                {dict.messages.filterNew}
-              </SelectItem>
-              <SelectItem value={AdminContactListStatus.IN_PROGRESS}>
-                {dict.messages.filterInProgress}
-              </SelectItem>
-              <SelectItem value={AdminContactListStatus.READ}>
-                {dict.messages.filterRead}
-              </SelectItem>
-              <SelectItem value={AdminContactListStatus.ARCHIVED}>
-                {dict.messages.filterArchived}
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          <TableFilters filters={filters} values={{ status: status ?? "" }} />
         }
         selectAll={
           messages.length > 0 ? (
@@ -236,7 +250,9 @@ function MessageInboxView() {
         </p>
       ) : messages.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {dict.messages.empty}
+          {searchParam
+            ? dict.messages.emptyMatch(searchParam)
+            : dict.messages.empty}
         </div>
       ) : (
         <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
@@ -364,33 +380,11 @@ function MessageInboxView() {
       )}
 
       {!isLoading && !isError && messages.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {dict.common.pageOf(page, totalPages)}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() =>
-                updateParams({
-                  page: page - 1 <= 1 ? undefined : String(page - 1),
-                })
-              }
-            >
-              {dict.common.previous}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: String(page + 1) })}
-            >
-              {dict.common.next}
-            </Button>
-          </div>
-        </div>
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+        />
       )}
 
       {selected && (

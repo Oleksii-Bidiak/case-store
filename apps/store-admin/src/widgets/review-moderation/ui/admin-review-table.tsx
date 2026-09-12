@@ -13,7 +13,6 @@ import {
 } from "@/entities/review";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
 import { useReviewBulkModeration } from "@/features/review-bulk-moderation";
-import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useRowSelection } from "@/shared/lib/use-row-selection";
 import { formatDate } from "@/shared/lib";
 import {
@@ -21,25 +20,24 @@ import {
   Button,
   Checkbox,
   LiveAnnouncer,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Table,
   TableBody,
   TableCell,
+  TableFilters,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableSelectCell,
   TableSelectHead,
   TableToolbar,
+  pageSizeFrom,
+  type TableFilterDef,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { AdminReviewTableSkeleton } from "./admin-review-table-skeleton";
 
-const PAGE_SIZE = 20;
 const COMMENT_MAX = 80;
 
 /** Non-interactive star row for a single review's rating (1–5). */
@@ -75,9 +73,22 @@ function truncate(value: string | null | undefined): string {
 
 /**
  * AdminReviewTable — moderation queue for product reviews. The status filter
- * (`?status=pending|approved`, default `pending`) and page (`?page=`) live in
- * the URL. Pending rows expose Approve / Reject actions; approved rows are
- * read-only. Mutations invalidate the list so the queue refreshes in place.
+ * (`?status=pending|approved`, default `pending`), the search (`?search=`), the
+ * page (`?page=`) and the page size (`?limit=`) live in the URL. Pending rows
+ * expose Approve / Reject actions; approved rows are read-only. Mutations
+ * invalidate the list so the queue refreshes in place.
+ *
+ * ── TASK-423: the queue had no search at all ────────────────────────────────
+ * Triaging a backlog meant paging through it, and "what did this customer write
+ * about that product?" was a question this screen could not answer — the
+ * operator had to go to the product page and read the storefront. The box is the
+ * shared one, and it searches what the queue shows: the review text, the author's
+ * email and the product name.
+ *
+ * The status control's "no filter" option is «На розгляді» rather than a third
+ * «Усі» state, because there is no such state to offer: the API treats an absent
+ * `status` as `pending`. An «Усі» that silently returned the pending queue would
+ * be a lie the operator could not see through.
  *
  * `LiveAnnouncer` MUST wrap the queue rather than sit inside it — the same split
  * `AdminCategoryTree` and `MessageInbox` make, for the same reason.
@@ -103,15 +114,16 @@ function AdminReviewTableView() {
     searchParams.get("status") === AdminReviewControllerListStatus.approved
       ? AdminReviewControllerListStatus.approved
       : AdminReviewControllerListStatus.pending;
+  const searchParam = searchParams.get("search") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
-
-  const updateParams = useUrlParams();
+  const pageSize = pageSizeFrom(searchParams);
 
   const { data, isLoading, isFetching, isError, refetch } =
     useAdminReviewControllerList({
       status: statusParam,
+      search: searchParam || undefined,
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
     });
 
   const approve = useAdminReviewControllerApprove();
@@ -158,9 +170,28 @@ function AdminReviewTableView() {
     );
   };
 
-  const handleStatusChange = (value: string) => {
-    updateParams({ status: value, page: undefined });
-  };
+  const filters: TableFilterDef[] = [
+    {
+      param: "status",
+      label: dict.reviews.filterStatusAria,
+      // The URL-absent shape IS the pending queue — see the component header.
+      allLabel: dict.reviews.filterPending,
+      options: [
+        {
+          value: AdminReviewControllerListStatus.approved,
+          label: dict.reviews.filterApproved,
+        },
+      ],
+      // A link someone shared may spell the default out (`?status=pending`).
+      // The rows are the same either way, so the chip must read as the filter it
+      // is rather than as the raw enum value.
+      resolveLabel: (value) =>
+        value === AdminReviewControllerListStatus.pending
+          ? dict.reviews.filterPending
+          : value,
+      className: "w-48",
+    },
+  ];
 
   // Selection is offered only on the PENDING queue, matching the per-row
   // buttons: approved rows are read-only here, and a checkbox column with
@@ -200,23 +231,18 @@ function AdminReviewTableView() {
         className="mb-0"
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
+        search={
+          <TableSearch
+            value={searchParam}
+            placeholder={dict.reviews.searchPlaceholder}
+            label={dict.reviews.searchAria}
+          />
+        }
         filters={
-          <Select value={statusParam} onValueChange={handleStatusChange}>
-            <SelectTrigger
-              className="w-48"
-              aria-label={dict.reviews.filterStatusAria}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={AdminReviewControllerListStatus.pending}>
-                {dict.reviews.filterPending}
-              </SelectItem>
-              <SelectItem value={AdminReviewControllerListStatus.approved}>
-                {dict.reviews.filterApproved}
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          <TableFilters
+            filters={filters}
+            values={{ status: searchParams.get("status") ?? "" }}
+          />
         }
         selectAll={
           selectableIds.length > 0 ? (
@@ -255,7 +281,9 @@ function AdminReviewTableView() {
         </p>
       ) : reviews.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {dict.reviews.emptyQueue}
+          {searchParam
+            ? dict.reviews.emptyMatch(searchParam)
+            : dict.reviews.emptyQueue}
         </div>
       ) : (
         <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
@@ -390,33 +418,11 @@ function AdminReviewTableView() {
       )}
 
       {!isLoading && !isError && reviews.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {dict.common.pageOf(page, totalPages)}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() =>
-                updateParams({
-                  page: page - 1 <= 1 ? undefined : String(page - 1),
-                })
-              }
-            >
-              {dict.common.previous}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: String(page + 1) })}
-            >
-              {dict.common.next}
-            </Button>
-          </div>
-        </div>
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+        />
       )}
     </div>
   );

@@ -23,17 +23,13 @@ import {
   Label,
   RichTextEditor,
   RichTextPreview,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   SeoSnippetPreview,
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
   Textarea,
+  type ComboboxOption,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
@@ -41,12 +37,7 @@ import {
   type ProductFormInput,
   type ProductFormValues,
 } from "../model/product-schema";
-
-/** Radix Select forbids an empty-string item value; this stands in for "no group". */
-const NO_GROUP = "__none__";
-
-/** Radix Select forbids an empty-string item value; this stands in for "no brand". */
-const NO_BRAND = "__no_brand__";
+import { OptionCombobox } from "./option-combobox";
 
 /** A selectable LEAF category, flattened out of the admin tree with its depth. */
 interface LeafCategoryOption {
@@ -216,6 +207,26 @@ export function ProductForm({
   const brandsQuery = useBrandControllerAdminFindAll({ limit: 100 });
   const brands = brandsQuery.data?.data ?? [];
 
+  // TASK-423: the three reference pickers as combobox option lists. The
+  // category labels keep the em-dash indentation that showed tree depth in the
+  // old Select — typing narrows the list, but the operator still needs to see
+  // which «Чохли» is which.
+  const categoryOptions: ComboboxOption[] = leafCategories.map((category) => ({
+    value: category.id,
+    label:
+      category.depth > 0
+        ? `${"— ".repeat(category.depth)}${category.name}`
+        : category.name,
+  }));
+  const groupOptions: ComboboxOption[] = groups.map((group) => ({
+    value: group.id,
+    label: group.name,
+  }));
+  const brandOptions: ComboboxOption[] = brands.map((brand) => ({
+    value: brand.id,
+    label: brand.name,
+  }));
+
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
@@ -354,46 +365,25 @@ export function ProductForm({
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="product-category">{dict.productForm.category}</Label>
+          {/* TASK-423: a combobox, not a Select. The options are every LEAF of
+              the whole admin tree — well past a hundred on a real catalogue —
+              and a Select's only way to find one is to scroll.
+              The native bubble-<select> "" bounce that both this picker and the
+              two below had to defend against (TASK-232 / TASK-201) is gone with
+              the Select: there is no hidden native select to coerce. */}
           <Controller
             control={control}
             name="categoryId"
             render={({ field }) => (
-              <Select
+              <OptionCombobox
+                id="product-category"
                 value={field.value}
-                onValueChange={(value) => {
-                  // Radix Select renders a hidden native <select> (bubble
-                  // input) inside the form and re-dispatches a `change` event
-                  // whenever the controlled value changes. When the edit page
-                  // seeds categoryId BEFORE the category options have loaded,
-                  // that native select has no matching <option>, so the
-                  // browser coerces its value to "" and Radix's autofill
-                  // handler feeds "" back here — silently clearing the seeded
-                  // category (TASK-232, same bounce as TASK-201). A real user
-                  // action is never "": every item carries a category id. So
-                  // "" can only be that bounce — ignore it.
-                  if (value === "") return;
-                  field.onChange(value);
-                }}
-              >
-                <SelectTrigger id="product-category">
-                  <SelectValue
-                    placeholder={
-                      categoriesQuery.isLoading
-                        ? dict.productForm.loading
-                        : dict.productForm.categoryPlaceholder
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {leafCategories.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.depth > 0
-                        ? `${"— ".repeat(category.depth)}${category.name}`
-                        : category.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={field.onChange}
+                options={categoryOptions}
+                isLoading={categoriesQuery.isLoading}
+                placeholder={dict.productForm.categoryPlaceholder}
+                aria-invalid={errors.categoryId ? true : undefined}
+              />
             )}
           />
           {errors.categoryId && (
@@ -459,39 +449,18 @@ export function ProductForm({
           control={control}
           name="groupId"
           render={({ field }) => (
-            <Select
-              value={field.value ? field.value : NO_GROUP}
-              onValueChange={(value) => {
-                // Same native bubble-<select> "" bounce as the category
-                // select above (TASK-232 / TASK-201): a groupId seeded before
-                // the group options mount coerces the native select to "" and
-                // Radix feeds that "" back here. A real user action is never
-                // "" — clearing the group arrives as the NO_GROUP sentinel —
-                // so "" can only be the bounce; ignore it.
-                if (value === "") return;
-                field.onChange(value === NO_GROUP ? "" : value);
-              }}
-            >
-              <SelectTrigger id="product-group">
-                <SelectValue
-                  placeholder={
-                    groupsQuery.isLoading
-                      ? dict.productForm.loading
-                      : dict.productForm.groupNone
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_GROUP}>
-                  {dict.productForm.groupNone}
-                </SelectItem>
-                {groups.map((group) => (
-                  <SelectItem key={group.id} value={group.id}>
-                    {group.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <OptionCombobox
+              id="product-group"
+              value={field.value ?? ""}
+              onChange={field.onChange}
+              options={groupOptions}
+              isLoading={groupsQuery.isLoading}
+              placeholder={dict.productForm.groupNone}
+              // Optional field: «Без групи» is a real entry in the list, so the
+              // operator can take the product back out of a group.
+              clearLabel={dict.productForm.groupNone}
+              aria-invalid={errors.groupId ? true : undefined}
+            />
           )}
         />
         {errors.groupId && (
@@ -507,39 +476,16 @@ export function ProductForm({
           control={control}
           name="brandId"
           render={({ field }) => (
-            <Select
-              value={field.value ? field.value : NO_BRAND}
-              onValueChange={(value) => {
-                // Same native bubble-<select> "" bounce as the category/group
-                // selects above (TASK-232 / TASK-201): a brandId seeded before
-                // the brand options mount coerces the native select to "" and
-                // Radix feeds that "" back here. A real user action is never
-                // "" — clearing the brand arrives as the NO_BRAND sentinel —
-                // so "" can only be the bounce; ignore it.
-                if (value === "") return;
-                field.onChange(value === NO_BRAND ? "" : value);
-              }}
-            >
-              <SelectTrigger id="product-brand">
-                <SelectValue
-                  placeholder={
-                    brandsQuery.isLoading
-                      ? dict.productForm.loading
-                      : dict.productForm.brandNone
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_BRAND}>
-                  {dict.productForm.brandNone}
-                </SelectItem>
-                {brands.map((brand) => (
-                  <SelectItem key={brand.id} value={brand.id}>
-                    {brand.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <OptionCombobox
+              id="product-brand"
+              value={field.value ?? ""}
+              onChange={field.onChange}
+              options={brandOptions}
+              isLoading={brandsQuery.isLoading}
+              placeholder={dict.productForm.brandNone}
+              clearLabel={dict.productForm.brandNone}
+              aria-invalid={errors.brandId ? true : undefined}
+            />
           )}
         />
         {errors.brandId && (

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Review } from '@prisma/client';
+import { Prisma, Review } from '@prisma/client';
 import { PrismaService } from '../prisma';
 
 /**
@@ -143,9 +143,26 @@ export class ReviewRepository {
     status: 'pending' | 'approved',
     page: number,
     limit: number,
+    search?: string,
   ): Promise<PaginatedModerationResult> {
     const skip = (page - 1) * limit;
-    const where = { isActive: status === 'approved' };
+    const where: Prisma.ReviewWhereInput = { isActive: status === 'approved' };
+
+    // TASK-423: free-text search over the three things the queue actually
+    // displays — the review text, who wrote it, and what it is about. The arms
+    // mirror the semantics of `OrderRepository.findAllForAdmin` (case-insensitive
+    // `contains`, OR-ed): an operator types a fragment of a name or a product,
+    // not a prefix, and «Чохол» must match `чохол`.
+    //
+    // No phone arm here (unlike orders): a review carries no phone, and the join
+    // to `user` would have to widen for a column the queue never shows.
+    if (search) {
+      where.OR = [
+        { comment: { contains: search, mode: 'insensitive' } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+        { product: { name: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
     const [reviews, total] = await Promise.all([
       this.prisma.review.findMany({
         where,

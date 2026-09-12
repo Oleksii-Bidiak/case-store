@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -16,21 +15,20 @@ import {
 import {
   Badge,
   Button,
-  Input,
   LiveAnnouncer,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableToolbar,
+  pageSizeFrom,
 } from "@/shared/ui";
-import { useUrlParams } from "@/shared/lib/use-url-params";
 import { dict } from "@/shared/config";
 import { AdminFaqTableSkeleton } from "./faq-table-skeleton";
-
-const PAGE_SIZE = 20;
 
 /**
  * Admin FAQ list: every item (any status) ordered by `sortOrder`, with per-row
@@ -60,15 +58,12 @@ function AdminFaqView() {
 
   const searchParam = searchParams.get("search") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
-
-  const [searchInput, setSearchInput] = useState(searchParam);
-
-  const updateParams = useUrlParams();
+  const pageSize = pageSizeFrom(searchParams);
 
   const { data, isLoading, isFetching, isError, refetch } =
     useAdminFaqControllerFindAll({
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       search: searchParam || undefined,
     });
   const update = useAdminFaqControllerUpdate();
@@ -82,11 +77,6 @@ function AdminFaqView() {
     queryClient.invalidateQueries({
       queryKey: getAdminFaqControllerFindAllQueryKey(),
     });
-
-  const handleSearchSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    updateParams({ search: searchInput.trim() || undefined, page: undefined });
-  };
 
   const handleToggle = (item: FaqItemEntity) => {
     update.mutate(
@@ -124,23 +114,11 @@ function AdminFaqView() {
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
         search={
-          <form
-            onSubmit={handleSearchSubmit}
-            className="flex gap-2"
-            role="search"
-          >
-            <Input
-              type="search"
-              placeholder={dict.faq.searchPlaceholder}
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              className="max-w-xs"
-              aria-label={dict.faq.searchAria}
-            />
-            <Button type="submit" variant="outline">
-              {dict.common.search}
-            </Button>
-          </form>
+          <TableSearch
+            value={searchParam}
+            placeholder={dict.faq.searchPlaceholder}
+            label={dict.faq.searchAria}
+          />
         }
       />
 
@@ -233,33 +211,11 @@ function AdminFaqView() {
       )}
 
       {!isLoading && !isError && items.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {dict.common.pageOf(page, totalPages)}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() =>
-                updateParams({
-                  page: page - 1 <= 1 ? undefined : String(page - 1),
-                })
-              }
-            >
-              {dict.common.previous}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: String(page + 1) })}
-            >
-              {dict.common.next}
-            </Button>
-          </div>
-        </div>
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+        />
       )}
     </div>
   );
