@@ -11,6 +11,8 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CartRepository, CartWithItems } from '../src/cart/cart.repository';
 import { OrderRepository } from '../src/order/order.repository';
+// TASK-425: the export's row cap, asserted rather than restated as a literal.
+import { ORDER_EXPORT_MAX_ROWS } from '../src/order/order.service';
 import { DiscountRepository } from '../src/discount';
 import { MailService } from '../src/mail/mail.service';
 import { MailOutboxService } from '../src/mail-outbox';
@@ -56,6 +58,8 @@ describe('OrderController (e2e)', () => {
     findOrderableProducts: jest.fn(),
     createManual: jest.fn(),
     updateDetails: jest.fn(),
+    // TASK-425: the CSV export reads a slim, unpaginated row set of its own.
+    findAllForExport: jest.fn(),
   };
 
   // TASK-079: DiscountRepository is mocked so the order-with-discount path can
@@ -854,6 +858,49 @@ describe('OrderController (e2e)', () => {
       );
     });
 
+    it('should pass the payment + overdue filters to the repository (TASK-425)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAll.mockResolvedValue({ orders: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders?paymentStatus=FAILED&paymentMethod=ONLINE&pendingOverdue=true')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(orderRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          paymentStatus: PaymentStatus.FAILED,
+          paymentMethod: 'ONLINE',
+          pendingOverdue: true,
+        }),
+      );
+    });
+
+    it('should return 400 for an unknown payment status (TASK-425)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders?paymentStatus=BOGUS')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+
+      expect(orderRepositoryMock.findAll).not.toHaveBeenCalled();
+    });
+
+    it('should read ?pendingOverdue=false as false, not as true (TASK-425)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAll.mockResolvedValue({ orders: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders?pendingOverdue=false')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(orderRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ pendingOverdue: false }),
+      );
+    });
+
     it('should return 400 for an invalid userId filter', async () => {
       const token = generateAccessToken(admin.id, admin.role);
 
@@ -878,6 +925,160 @@ describe('OrderController (e2e)', () => {
 
     it('should return 401 without a JWT', async () => {
       await request(app.getHttpServer()).get('/api/admin/orders').expect(401);
+    });
+  });
+
+  // ─── GET /api/admin/orders/export (admin) (TASK-425) ────────────────────────────
+
+  describe('GET /api/admin/orders/export', () => {
+    /** One row of the slim export read (see ORDER_EXPORT_SELECT). */
+    const makeExportRow = (overrides: Record<string, unknown> = {}) => ({
+      id: 'abc12345-0000-0000-0000-000000000001',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      status: OrderStatus.PENDING,
+      paymentStatus: PaymentStatus.PENDING,
+      paymentMethod: 'ON_DELIVERY',
+      paidAt: null,
+      subtotal: { toString: () => '1000.00' },
+      discount: { toString: () => '100.00' },
+      discountCode: 'SUMMER10',
+      addonsTotal: '499.00',
+      shippingCost: { toString: () => '70.00' },
+      tax: { toString: () => '0.00' },
+      total: { toString: () => '1469.00' },
+      trackingNumber: null,
+      guestEmail: null,
+      guestPhone: null,
+      guestName: null,
+      shippingAddress: { city: 'Київ' },
+      user: {
+        email: 'buyer@example.com',
+        firstName: 'Іван',
+        lastName: 'Петренко',
+        phone: '380501234567',
+      },
+      _count: { items: 2 },
+      ...overrides,
+    });
+
+    it('should return a CSV of the current selection for an admin', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAllForExport.mockResolvedValue([makeExportRow()]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/export')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.headers['content-type']).toContain('text/csv');
+      expect(response.headers['content-disposition']).toContain('attachment');
+
+      // A UTF-8 BOM, without which Excel on Windows renders every Ukrainian name
+      // as mojibake and it looks like OUR data is broken.
+      expect(response.text.startsWith('\uFEFF')).toBe(true);
+
+      const [header, row] = response.text.replace('\uFEFF', '').split('\r\n');
+      expect(header.split(',')).toEqual([
+        'orderNumber',
+        'orderId',
+        'createdAt',
+        'status',
+        'paymentStatus',
+        'paymentMethod',
+        'paidAt',
+        'customerType',
+        'customerName',
+        'customerEmail',
+        'customerPhone',
+        'city',
+        'itemLines',
+        'subtotal',
+        'addonsTotal',
+        'discount',
+        'discountCode',
+        'shippingCost',
+        'tax',
+        'total',
+        'trackingNumber',
+      ]);
+      // The order NUMBER is the uppercased id prefix the customer reads off their
+      // email, and the full uuid is beside it for support.
+      expect(row).toContain('ABC12345,abc12345-0000-0000-0000-000000000001');
+      expect(row).toContain('ACCOUNT');
+      expect(row).toContain('buyer@example.com');
+      expect(row).toContain('SUMMER10');
+      expect(row).toContain('499.00');
+    });
+
+    it('should carry the guest contact for a guest order, typed as GUEST', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAllForExport.mockResolvedValue([
+        makeExportRow({
+          user: null,
+          guestEmail: 'olena@example.com',
+          guestPhone: '380671112233',
+          // A comma in the name must not shift every later column by one.
+          guestName: 'Шевченко, Олена',
+        }),
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/export')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const row = response.text.replace('\uFEFF', '').split('\r\n')[1];
+      expect(row).toContain('GUEST');
+      expect(row).toContain('"Шевченко, Олена"');
+      expect(row).toContain('olena@example.com');
+    });
+
+    it('should apply the list filters and cap the row count', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAllForExport.mockResolvedValue([]);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/export?status=PENDING&paymentStatus=PENDING&search=ABC12345')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(orderRepositoryMock.findAllForExport).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: [OrderStatus.PENDING],
+          paymentStatus: PaymentStatus.PENDING,
+          search: 'ABC12345',
+        }),
+        ORDER_EXPORT_MAX_ROWS,
+      );
+    });
+
+    it('should refuse a paged export rather than return an ambiguous file', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      // The export is the whole selection; `page`/`limit` are not part of its DTO,
+      // and the global pipe whitelists, so asking for one is a 400 rather than a
+      // file that is neither the page nor the selection.
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/export?page=2')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+
+      expect(orderRepositoryMock.findAllForExport).not.toHaveBeenCalled();
+    });
+
+    it('should return 403 for a non-admin user', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/export')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      expect(orderRepositoryMock.findAllForExport).not.toHaveBeenCalled();
+    });
+
+    it('should return 401 without a JWT', async () => {
+      await request(app.getHttpServer()).get('/api/admin/orders/export').expect(401);
     });
   });
 

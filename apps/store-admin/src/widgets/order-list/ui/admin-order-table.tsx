@@ -1,17 +1,28 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { Clock3, Download, Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useUrlParams } from "@/shared/lib/use-url-params";
+import { toast } from "@/shared/ui/toast";
 import {
   OrderEntityStatus,
+  OrderEntityPaymentStatus,
   orderStatusBadgeVariant,
   orderStatusLabel,
   paymentStatusBadgeVariant,
   paymentStatusLabel,
   useAdminOrderControllerFindAll,
 } from "@/entities/order";
+// The payment-METHOD enum and the CSV endpoint are not part of what
+// `@/entities/order` re-exports, and that barrel is another wave's file. A widget
+// may read `@/shared` directly (the product list already does), so this is the
+// honest import rather than a duplicated string union.
+import {
+  adminOrderControllerExport,
+  OrderEntityPaymentMethod,
+} from "@/shared/api";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import {
@@ -37,9 +48,39 @@ import {
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatCurrency, formatDateTime } from "@/shared/lib";
+import { downloadCsv } from "../model/download-csv";
 import { AdminOrderTableSkeleton } from "./admin-order-table-skeleton";
 
 const ALL_OPTION = "__all__";
+
+const EXPORT_FILENAME = "orders.csv";
+
+/**
+ * Payment-status filter options (TASK-425). Every value of the enum: an
+ * operator's question is as often "what failed" as it is "what is unpaid".
+ */
+const PAYMENT_STATUS_FILTER_OPTIONS = [
+  OrderEntityPaymentStatus.PENDING,
+  OrderEntityPaymentStatus.PAID,
+  OrderEntityPaymentStatus.FAILED,
+  OrderEntityPaymentStatus.REFUNDED,
+];
+
+/**
+ * Ukrainian labels for the payment METHOD (TASK-425).
+ *
+ * A near-copy of the map in `features/order-create` — deliberately not imported
+ * from there: a widget reaching into a feature's UI file for a constant is a
+ * worse dependency than three duplicated strings. Their shared home is
+ * `entities/order` beside `paymentStatusLabel`, which is where this belongs the
+ * moment either file is touched again.
+ */
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  [OrderEntityPaymentMethod.ON_DELIVERY]: dict.orders.paymentMethodOnDelivery,
+  [OrderEntityPaymentMethod.ONLINE]: dict.orders.paymentMethodOnline,
+  [OrderEntityPaymentMethod.INSTALLMENTS]:
+    dict.orders.paymentMethodInstallments,
+};
 
 const STATUS_FILTER_OPTIONS = [
   OrderEntityStatus.PENDING,
@@ -103,6 +144,13 @@ export function AdminOrderTable() {
   // orders (the needs-action widget's target). The status <Select> has no option
   // for this compound preset — reconciling it is deferred to TASK-250's tabs.
   const unpaidInTransit = searchParams.get("unpaidInTransit") === "true";
+  // TASK-425: the queue filters. Payment status and method are ordinary
+  // single-value filters; `pendingOverdue` is a SERVER-side predicate — the
+  // threshold lives in the API's PENDING_STALE_HOURS, shared with the dashboard
+  // tile, so the chip and the tile can never answer differently.
+  const paymentStatusParam = searchParams.get("paymentStatus") ?? "";
+  const paymentMethodParam = searchParams.get("paymentMethod") ?? "";
+  const pendingOverdue = searchParams.get("pendingOverdue") === "true";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
 
@@ -133,6 +181,16 @@ export function AdminOrderTable() {
         search: searchParam || undefined,
         // TASK-248 deep-link: active-but-unpaid ("in-transit") filter.
         unpaidInTransit: unpaidInTransit || undefined,
+        // TASK-425. Cast for the same reason the subscriber table casts its
+        // status: the value comes off the URL as a string, and an illegal one is
+        // rejected by the DTO rather than pretended away here.
+        paymentStatus: paymentStatusParam
+          ? (paymentStatusParam as OrderEntityPaymentStatus)
+          : undefined,
+        paymentMethod: paymentMethodParam
+          ? (paymentMethodParam as OrderEntityPaymentMethod)
+          : undefined,
+        pendingOverdue: pendingOverdue || undefined,
         sortBy,
         sortOrder,
       },
@@ -143,6 +201,49 @@ export function AdminOrderTable() {
 
   const orders = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
+  const total = data?.meta?.total ?? 0;
+
+  const [isExporting, setIsExporting] = useState(false);
+
+  /**
+   * CSV of the CURRENT SELECTION — every active filter, not the visible page
+   * (TASK-425). The server caps the row count; rather than restating that cap
+   * here (two copies of a number is how they drift), the file's own row count is
+   * compared against `meta.total`, which this table already holds. A truncated
+   * export reports itself through `toast.error`, which stays on screen: a
+   * spreadsheet that is quietly missing half the orders is the one outcome the
+   * operator must not scroll past.
+   */
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const csv = await adminOrderControllerExport({
+        status: statusParam || undefined,
+        search: searchParam || undefined,
+        unpaidInTransit: unpaidInTransit || undefined,
+        paymentStatus: paymentStatusParam
+          ? (paymentStatusParam as OrderEntityPaymentStatus)
+          : undefined,
+        paymentMethod: paymentMethodParam
+          ? (paymentMethodParam as OrderEntityPaymentMethod)
+          : undefined,
+        pendingOverdue: pendingOverdue || undefined,
+      });
+      // Rows = lines minus the header. No exported field can contain a newline:
+      // the export omits `notes` precisely so the file stays one line per order.
+      const exported = Math.max(0, csv.split("\r\n").length - 1);
+      downloadCsv(csv, EXPORT_FILENAME);
+      if (total > exported) {
+        toast.error(dict.orders.exportTruncated(exported, total));
+      } else {
+        toast.success(dict.orders.exportSuccess(exported));
+      }
+    } catch {
+      toast.error(dict.orders.exportError);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const filters: TableFilterDef[] = [
     {
@@ -160,6 +261,29 @@ export function AdminOrderTable() {
           .split(",")
           .map((status) => orderStatusLabel(status))
           .join(", "),
+    },
+    // TASK-425: "has the money arrived" was not answerable from this table at
+    // all — the payment column could be read but never filtered on.
+    {
+      param: "paymentStatus",
+      label: dict.orders.filterPaymentStatusAria,
+      allLabel: dict.orders.allPaymentStatuses,
+      options: PAYMENT_STATUS_FILTER_OPTIONS.map((status) => ({
+        value: status,
+        label: paymentStatusLabel(status),
+      })),
+    },
+    // Separate from the status above because they answer different questions: a
+    // cash-on-delivery order is unpaid until the courier hands it over, a card
+    // order that is unpaid means the money never arrived.
+    {
+      param: "paymentMethod",
+      label: dict.orders.filterPaymentMethodAria,
+      allLabel: dict.orders.allPaymentMethods,
+      options: Object.values(OrderEntityPaymentMethod).map((method) => ({
+        value: method,
+        label: PAYMENT_METHOD_LABELS[method] ?? method,
+      })),
     },
   ];
 
@@ -205,15 +329,57 @@ export function AdminOrderTable() {
               </Tabs>
               <TableFilters
                 filters={filters}
-                values={{ status: statusParam }}
+                values={{
+                  status: statusParam,
+                  paymentStatus: paymentStatusParam,
+                  paymentMethod: paymentMethodParam,
+                }}
               />
+              {/* TASK-425: "waiting too long". A toggle rather than a Select
+                  option, because it is not a value of any one column — it is a
+                  server predicate over status AND age. `aria-pressed` is what
+                  makes it a toggle for a screen reader; the visual state is the
+                  filled variant. */}
+              <Button
+                type="button"
+                variant={pendingOverdue ? "secondary" : "outline"}
+                size="sm"
+                aria-pressed={pendingOverdue}
+                aria-label={dict.orders.overdueChipAria}
+                onClick={() =>
+                  updateParams({
+                    pendingOverdue: pendingOverdue ? undefined : "true",
+                    page: undefined,
+                  })
+                }
+              >
+                <Clock3 aria-hidden="true" className="size-3.5" />
+                {dict.orders.overdueChip}
+              </Button>
             </div>
           }
           actions={
-            /* TASK-341: a phone order starts here. */
-            <Button asChild>
-              <Link href="/orders/new">{dict.orders.createCta}</Link>
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* TASK-425: the CURRENT SELECTION as CSV — the filters as applied,
+                  not the page on screen. */}
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isExporting}
+                onClick={() => void handleExport()}
+              >
+                {isExporting ? (
+                  <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+                ) : (
+                  <Download aria-hidden="true" className="size-4" />
+                )}
+                {dict.orders.exportCsv}
+              </Button>
+              {/* TASK-341: a phone order starts here. */}
+              <Button asChild>
+                <Link href="/orders/new">{dict.orders.createCta}</Link>
+              </Button>
+            </div>
           }
         />
 
@@ -248,6 +414,10 @@ export function AdminOrderTable() {
                 <TableRow>
                   <TableHead>{dict.orders.colOrder}</TableHead>
                   <TableHead>{dict.orders.colCustomer}</TableHead>
+                  {/* TASK-425: account or guest, as its own column. It was
+                      inferable from whether a name sat under the email; an
+                      operator should not have to infer it. */}
+                  <TableHead>{dict.orders.colCustomerType}</TableHead>
                   <SortableColumnHeader
                     field="status"
                     label={dict.orders.colStatus}
@@ -320,6 +490,19 @@ export function AdminOrderTable() {
                         <span className="font-mono text-xs text-muted-foreground">
                           {order.userId ? `${order.userId.slice(0, 8)}…` : "—"}
                         </span>
+                      )}
+                    </TableCell>
+                    <TableCell label={dict.orders.colCustomerType}>
+                      {order.customer ? (
+                        <Badge variant="secondary">
+                          {dict.orders.customerTypeAccount}
+                        </Badge>
+                      ) : order.guest ? (
+                        <Badge variant="warning">
+                          {dict.orders.customerTypeGuest}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
                     <TableCell label={dict.orders.colStatus}>

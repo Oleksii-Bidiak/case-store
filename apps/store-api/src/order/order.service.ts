@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { createHash, randomBytes } from 'crypto';
 import { OrderStatus, PaymentStatus, PaymentAttemptStatus, PaymentMethod } from '@prisma/client';
-import { OrderRepository } from './order.repository';
+import { OrderRepository, type AdminOrderExportRow } from './order.repository';
 import { CartRepository, type CartWithItems } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
 import { MailOutboxService } from '../mail-outbox';
@@ -19,7 +19,7 @@ import { OrderEntity, OrderStatusHistoryEntity } from './entities';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
 import { allowedTransitions, canTransition } from './order-state-machine';
 import { invalidTransitionError, staleOrderError } from './order.errors';
-import { AddonApplicabilityResolver } from '../addon-service';
+import { AddonApplicabilityResolver, toTwoDecimals } from '../addon-service';
 import type {
   CreateOrderDto,
   CreateManualOrderDto,
@@ -27,6 +27,8 @@ import type {
   AdminOrderListQueryDto,
   AddressDto,
 } from './dto';
+// Declared beside the list query it narrows; deliberately not in the DTO barrel.
+import type { AdminOrderExportQueryDto } from './dto/admin-order-list-query.dto';
 import type {
   CreateOrderParams,
   OrderActor,
@@ -34,12 +36,64 @@ import type {
   OrderWithItems,
   PaymentApplyPlan,
   PaymentWithOrderRow,
+  ShippingAddressData,
 } from './order.types';
 import type { PaymentApplyResult, PaymentEventInput } from '../payment/payment.types';
 import { PaymentOutcome } from '../payment/payment.types';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
+
+/**
+ * Hard cap on one admin CSV export (TASK-425).
+ *
+ * The export is unpaginated by design — "the orders I am looking at", not "this
+ * page of them" — but unpaginated must not mean unbounded: the request holds
+ * every matching row in memory AND the whole CSV string built from it, so
+ * "export everything" over a few years of orders is how an admin panel takes the
+ * API down. 5 000 rows is roughly a megabyte of text, which any server we would
+ * deploy on shrugs off.
+ *
+ * The rows kept are the NEWEST ones, so a truncated export still contains what
+ * an operator opened a spreadsheet for; narrowing by date or status is how they
+ * reach the rest. The admin table warns when the filtered total exceeds this,
+ * because a silently truncated file is worse than a refused one.
+ */
+export const ORDER_EXPORT_MAX_ROWS = 5000;
+
+/**
+ * CSV header for the admin order export (TASK-425).
+ *
+ * Machine-readable keys and RAW enum values, matching the newsletter export: the
+ * file is as often re-imported or pivoted as it is read, and a column translated
+ * to «Очікує підтвердження» cannot be filtered back to PENDING. `orderNumber` is
+ * the 8-character number printed on the customer's email; `orderId` is the full
+ * uuid support needs. `notes` is deliberately absent — free text with newlines
+ * in it is what turns a CSV into an unopenable file.
+ */
+const ORDER_EXPORT_HEADER = [
+  'orderNumber',
+  'orderId',
+  'createdAt',
+  'status',
+  'paymentStatus',
+  'paymentMethod',
+  'paidAt',
+  'customerType',
+  'customerName',
+  'customerEmail',
+  'customerPhone',
+  'city',
+  'itemLines',
+  'subtotal',
+  'addonsTotal',
+  'discount',
+  'discountCode',
+  'shippingCost',
+  'tax',
+  'total',
+  'trackingNumber',
+] as const;
 
 /**
  * How long a guest's order-status link stays usable when
@@ -505,6 +559,76 @@ export class OrderService {
       data: orders.map((order) => OrderEntity.fromPrisma(order, { includeInternal: true })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
+  }
+
+  /**
+   * Admin — build the order CSV for the CURRENT filter set (TASK-425).
+   *
+   * Same filters as the list, no pagination, capped at
+   * {@link ORDER_EXPORT_MAX_ROWS} newest-first rows. The leading BOM is not
+   * decoration: without it Excel on Windows reads a UTF-8 CSV as the system
+   * codepage, and every Ukrainian customer name in the file arrives as mojibake
+   * — which looks like OUR data being corrupt, not the spreadsheet's guess.
+   */
+  async adminExportOrdersCsv(query: AdminOrderExportQueryDto): Promise<string> {
+    const rows = await this.orderRepository.findAllForExport(query, ORDER_EXPORT_MAX_ROWS);
+
+    const lines = [ORDER_EXPORT_HEADER.join(','), ...rows.map((row) => this.toCsvRow(row))];
+
+    return `\uFEFF${lines.join('\r\n')}`;
+  }
+
+  /** One export row → one CSV line, in {@link ORDER_EXPORT_HEADER} order. */
+  private toCsvRow(row: AdminOrderExportRow): string {
+    // An account order and a guest order carry the customer in two different
+    // places (TASK-338). The CSV has ONE customer column set, so the type column
+    // says which record the contact came from — a guest has no account to look
+    // up, and that is the operator's first question.
+    const isGuest = row.user == null;
+    const accountName = row.user
+      ? [row.user.firstName, row.user.lastName].filter(Boolean).join(' ')
+      : '';
+    const address = (row.shippingAddress as ShippingAddressData | null) ?? null;
+
+    return [
+      // The number the customer reads off their email — uppercased id prefix,
+      // exactly what the storefront and the admin search show.
+      row.id.slice(0, 8).toUpperCase(),
+      row.id,
+      row.createdAt.toISOString(),
+      row.status,
+      row.paymentStatus,
+      row.paymentMethod ?? '',
+      row.paidAt ? row.paidAt.toISOString() : '',
+      isGuest ? 'GUEST' : 'ACCOUNT',
+      isGuest ? (row.guestName ?? '') : accountName,
+      isGuest ? (row.guestEmail ?? '') : (row.user?.email ?? ''),
+      isGuest ? (row.guestPhone ?? '') : (row.user?.phone ?? ''),
+      address?.city ?? '',
+      String(row._count.items),
+      row.subtotal.toString(),
+      toTwoDecimals(row.addonsTotal ?? '0'),
+      row.discount.toString(),
+      row.discountCode ?? '',
+      row.shippingCost.toString(),
+      row.tax.toString(),
+      row.total.toString(),
+      row.trackingNumber ?? '',
+    ]
+      .map((value) => this.escapeCsv(value))
+      .join(',');
+  }
+
+  /**
+   * RFC-4180 field escape: quote when the value contains a comma, quote or
+   * newline, doubling any embedded quote. Same rule as the newsletter export —
+   * a customer named «Петренко, Олена» must not shift every later column by one.
+   */
+  private escapeCsv(value: string): string {
+    if (/[",\r\n]/.test(value)) {
+      return `"${value.replace(/"/g, '""')}"`;
+    }
+    return value;
   }
 
   /**

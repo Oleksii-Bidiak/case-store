@@ -380,6 +380,95 @@ export const dict = {
     previewNoDescription: "Опис відсутній",
     previewActive: "Активний",
     previewInactive: "Деактивований",
+
+    // ── Видалення товару (TASK-427) ─────────────────────────────────────────
+    //
+    // DELETE /api/products/:id has existed since TASK-140 and had no button
+    // anywhere. The copy below has one job: say what the server actually does.
+    // An operator who reads «видалити» as «стерти назавжди разом із
+    // замовленнями» never touches the button; one who reads it as «приховати»
+    // clicks it instead of «Деактивувати» and then cannot get the товар back,
+    // because the slug and артикул have already been freed for a new position.
+    deleteAction: "Видалити",
+    deleteHeading: "Видалити товар?",
+    deleteDescription: (name: string) =>
+      `Товар «${name}» зникне з вітрини й зі списку товарів.`,
+    deleteKeeps:
+      "Замовлення, у яких він уже є, залишаться цілими — товар зберігається в базі " +
+      "саме для них, тому історія й звіти не постраждають.",
+    deleteFrees:
+      "Його адреса (slug) і артикул звільняться: їх зможе зайняти інший товар. " +
+      "Тому це не «приховати» — повернути товар у попередньому вигляді самотужки " +
+      "не вийде.",
+    deleteAlternative:
+      "Якщо треба лише тимчасово прибрати товар із продажу — закрийте це вікно й " +
+      "скористайтеся перемикачем статусу: деактивований товар можна увімкнути будь-коли.",
+    deleteConfirm: "Так, видалити",
+    deleteToastDone: (name: string) => `Товар «${name}» видалено`,
+    deleteToastFailed: "Не вдалося видалити товар",
+
+    // ── Фільтр «видалені» (TASK-427) ────────────────────────────────────────
+    //
+    // Соft-deleted rows were unreachable from every admin read, so a delete was
+    // an action with no way back to its own result. The filter shows the
+    // tombstones INSTEAD of the live rows (the API has no mixed mode — the row
+    // entity carries no per-product deleted marker to tell them apart).
+    filterDeleted: "Видалені",
+    filterDeletedAll: "Без видалених",
+    filterDeletedOnly: "Лише видалені",
+    deletedBadge: "видалено",
+    deletedNotice:
+      "Показано видалені товари. Вони лише для довідки: редагувати, відкрити картку " +
+      "чи повернути їх із адмінки не можна — адресу й артикул уже звільнено.",
+
+    // ── Картка товару, лише для перегляду (TASK-427) ────────────────────────
+    metaTitleCard: "Картка товару — Адмін",
+    cardAction: "Картка",
+    cardBack: "← Назад до товарів",
+    cardEditLink: "Редагувати",
+    cardLoadError: "Не вдалося завантажити товар. Спробуйте ще раз.",
+    cardNotFound:
+      "Товар не знайдено — можливо, його видалили. Перевірте список товарів.",
+    cardSectionMain: "Основне",
+    cardSectionStock: "Залишки",
+    cardSectionDescription: "Опис",
+    cardSectionSpecs: "Характеристики",
+    cardSectionImages: "Зображення",
+    cardSectionAddons: "Додаткові послуги",
+    cardSectionCompat: "Сумісні пристрої",
+    cardSectionSeo: "SEO",
+    cardSectionHistory: "Історія змін",
+    cardFieldSlug: "Адреса (slug)",
+    cardFieldPrice: "Ціна",
+    cardFieldCompareAt: "Стара ціна",
+    cardFieldGroup: "Група варіантів",
+    cardFieldBrand: "Бренд",
+    cardFieldPosition: "Порядок у групі",
+    cardFieldCreated: "Створено",
+    cardFieldUpdated: "Оновлено",
+    cardFieldMetaTitle: "Meta title",
+    cardFieldMetaDescription: "Meta description",
+    cardEmptyValue: "—",
+    cardNoSpecs: "Характеристики ще не заповнені.",
+    cardNoAddons: "Для цього товару не пропонується жодної послуги.",
+    cardNoCompat: "Сумісність із пристроями не вказана.",
+    cardSeoFallback:
+      "Порожні поля означають, що вітрина візьме назву та опис товару.",
+    cardImageCount: (n: number) => `Фото: ${n}`,
+
+    // Історія змін читається з журналу дій, а він @OwnerOnly() і НЕ є правом,
+    // яке можна видати (audit.controller.ts): у ньому дії всіх працівників і
+    // персональні дані покупців. Тож менеджер не бачить ані таблиці, ані
+    // помилки — бачить цей рядок, який пояснює, чому її тут немає.
+    historyOwnerOnly:
+      "Історію змін бачить лише власник магазину: журнал дій містить записи про " +
+      "роботу всіх працівників і персональні дані покупців.",
+    historyEmpty: "Записів про зміни цього товару ще немає.",
+    historyLoadError: "Не вдалося завантажити історію змін.",
+    historyColWhen: "Коли",
+    historyColWho: "Хто",
+    historyColWhat: "Дія",
+    historyUnknownActor: "невідомо",
   },
 
   // TASK-360: supplier-catalogue import.
@@ -1043,7 +1132,6 @@ export const dict = {
     colTitle: "Заголовок",
     colSlug: "Slug",
     colStatus: "Статус",
-    colSort: "Порядок",
     colCreated: "Створено",
     statusPublished: "Опубліковано",
     statusDraft: "Чернетка",
@@ -1075,6 +1163,12 @@ export const dict = {
     toastStatusFailed: "Не вдалося змінити статус сторінки",
     toastDeleted: "Сторінку видалено",
     toastDeleteFailed: "Не вдалося видалити сторінку",
+
+    // TASK-428: the list became a drag-reorderable grid — the hand-typed «Порядок»
+    // column and its form field are gone, so the grid needs its own accessible name.
+    gridLabel: "Службові сторінки — порядок",
+    reorderHint:
+      "Порядок сторінок у розділі «Правова інформація» = порядок рядків тут. Перетягніть рядок за значок ліворуч або скористайтеся клавіатурою.",
   },
 
   pageForm: {
@@ -1088,7 +1182,6 @@ export const dict = {
     excerptPlaceholder: "Короткий підсумок (необов'язково)",
     metaTitle: "SEO заголовок",
     metaDescription: "SEO опис",
-    sortOrder: "Порядок сортування",
     status: "Статус публікації",
     statusDraft: "Чернетка",
     statusScheduled: "Заплановано",
@@ -1700,7 +1793,6 @@ export const dict = {
       "Ці запитання й відповіді показуються на сторінці «Інформація та підтримка» і допомагають клієнтам (та пошуковим системам) швидко знайти відповідь.",
     add: "Додати запитання",
     colQuestion: "Запитання",
-    colOrder: "Порядок",
     colStatus: "Статус",
     statusActive: "Показується",
     statusInactive: "Приховано",
@@ -1726,6 +1818,12 @@ export const dict = {
     toastStatusFailed: "Не вдалося змінити статус запитання",
     toastDeleted: "Запитання видалено",
     toastDeleteFailed: "Не вдалося видалити запитання",
+
+    // TASK-428: the list became a drag-reorderable grid — the hand-typed «Порядок»
+    // column and its form field are gone, so the grid needs its own accessible name.
+    gridLabel: "Часті запитання — порядок",
+    reorderHint:
+      "Порядок запитань на сайті = порядок рядків тут. Перетягніть рядок за значок ліворуч або скористайтеся клавіатурою.",
   },
 
   faqForm: {
@@ -1738,9 +1836,6 @@ export const dict = {
       "Доставка Новою Поштою — за тарифами перевізника, безкоштовно від 1 000 ₴…",
     answerHint:
       "Повна відповідь простою мовою. Її бачитиме клієнт, коли розгорне запитання.",
-    sortOrder: "Порядок сортування",
-    sortOrderHint:
-      "Число, що визначає порядок показу: менші числа — вище у списку. Залиште 0, якщо порядок не важливий.",
     isActive: "Показувати на сайті",
     isActiveHint:
       "Приховані запитання не показуються клієнтам, але залишаються тут для повторного увімкнення.",
@@ -1750,7 +1845,6 @@ export const dict = {
       questionMax: "Запитання має містити не більше 500 символів",
       answerRequired: "Вкажіть відповідь",
       answerMax: "Відповідь має містити не більше 5000 символів",
-      sortOrderInt: "Порядок має бути цілим числом (0 або більше)",
     },
   },
 
@@ -1889,6 +1983,49 @@ export const dict = {
     // screen — this is our sentence for our own rule.
     detailsFailedTracking:
       "Замовлення не збережено: ТТН Нової Пошти — це рівно 14 цифр. Виправте номер або очистіть поле.",
+
+    // --- What the order actually contains (TASK-425) --------------------------
+    // The add-ons were on the wire and off the screen, which is why the summary
+    // did not add up: they are inside `total` but were in none of the rows above
+    // it. `lineTotal` deliberately EXCLUDES them (order-item.entity.ts), so the
+    // sub-row says so rather than letting the operator add the column up wrong.
+    addonsTotal: "Додаткові послуги",
+    addonsHint:
+      "Додаткові послуги не входять у суму позиції — вони підсумовані окремо в блоці «Підсумок».",
+    // A discount an operator cannot name is one they cannot explain on the phone.
+    discountWithCode: (code: string) => `Знижка (${code})`,
+    // Whether there is an account behind this order. The operator's first
+    // question: a guest has no order history and no login to look them up by.
+    customerTypeAccount: "Акаунт",
+    customerTypeGuest: "Гість",
+    colCustomerType: "Тип клієнта",
+
+    // --- Queue filters (TASK-425) ---------------------------------------------
+    filterPaymentStatusAria: "Фільтр за статусом оплати",
+    allPaymentStatuses: "Будь-яка оплата",
+    filterPaymentMethodAria: "Фільтр за способом оплати",
+    allPaymentMethods: "Будь-який спосіб оплати",
+    paymentMethodOnDelivery: "Оплата при отриманні",
+    paymentMethodOnline: "Картка онлайн",
+    paymentMethodInstallments: "Оплата частинами",
+    // No number in this label, on purpose: the threshold lives in ONE place
+    // (the API's PENDING_STALE_HOURS, shared with the dashboard tile). A «понад
+    // 48 год» written here would be a second copy of it, and the day it moves
+    // this label is the one that lies.
+    overdueChip: "Чекають занадто довго",
+    overdueChipAria:
+      "Показати лише замовлення, які надто довго чекають підтвердження",
+
+    // --- CSV export (TASK-425) ------------------------------------------------
+    exportCsv: "Експорт CSV",
+    exportSuccess: (count: number) => `Експортовано ${count} замовл. у CSV.`,
+    // Sticky (it goes through toast.error) because an incomplete file that looks
+    // complete is the one failure the operator must not scroll past. The count
+    // comes from the file itself and the total from the list's own meta — the
+    // server's row cap is never restated here.
+    exportTruncated: (exported: number, total: number) =>
+      `Експортовано лише ${exported} із ${total} замовл. — файл обмежено. Звузьте фільтри (дата, статус), щоб отримати решту.`,
+    exportError: "Не вдалося сформувати CSV. Спробуйте ще раз.",
   },
 
   reviews: {
@@ -2817,7 +2954,6 @@ export const dict = {
     colSource: "Джерело",
     colPlacement: "Місце на сайті",
     colStatus: "Статус",
-    colSort: "Порядок",
     placementLabels: {
       HOME_TABS: "Таб у «Популярному»",
       HOME_RAILS: "Окремий рейл",
@@ -2852,6 +2988,12 @@ export const dict = {
     toastStatusFailed: "Не вдалося змінити статус каруселі",
     toastDeleted: "Карусель видалено",
     toastDeleteFailed: "Не вдалося видалити карусель",
+
+    // TASK-428: each placement is its own drag-reorderable grid — the hand-typed
+    // «Порядок» column and its form field are gone.
+    gridLabel: (placement: string) => `Каруселі: ${placement} — порядок`,
+    reorderHint:
+      "Порядок каруселей на головній = порядок рядків у межах кожного блоку. Перетягніть рядок за значок ліворуч або скористайтеся клавіатурою.",
   },
 
   // --- Recommendation carousel form (TASK-139) --------------------------------
@@ -2871,13 +3013,12 @@ export const dict = {
       HOME_RAILS: "Окремий рейл нижче",
     },
     placementHint:
-      "«Таб у секції «Популярне»» — карусель стає вкладкою у блоці «Популярне» вгорі головної (клієнт перемикає таби). «Окремий рейл нижче» — карусель показується окремим рядком товарів нижче на головній. Порядок табів і рейлів визначається полем «Порядок сортування»: менше число — вище/лівіше.",
+      "«Таб у секції «Популярне»» — карусель стає вкладкою у блоці «Популярне» вгорі головної (клієнт перемикає таби). «Окремий рейл нижче» — карусель показується окремим рядком товарів нижче на головній. Порядок табів і рейлів задається перетягуванням рядків у списку каруселей — окремо для кожного блоку.",
     category: "Категорія",
     categoryPlaceholder: "Оберіть категорію",
     itemLimit: "Кількість товарів",
     itemLimitHint:
       "Від 1 до 24. Ігнорується для джерела «Вибрані вручну» — там показуються всі додані товари.",
-    sortOrder: "Порядок сортування",
     status: "Статус публікації",
     statusDraft: "Чернетка",
     statusScheduled: "Заплановано",

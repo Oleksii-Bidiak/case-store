@@ -8,8 +8,10 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { CurrentUser } from '../auth';
 import {
   ApiTags,
@@ -19,6 +21,7 @@ import {
   ApiParam,
   ApiProperty,
   ApiQuery,
+  ApiProduces,
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
@@ -37,6 +40,9 @@ import {
   UpdateOrderDetailsDto,
   CreateManualOrderDto,
 } from './dto';
+// The export query narrows the list query and is declared beside it; it is not
+// part of the module's DTO barrel because only this route ever names it.
+import { AdminOrderExportQueryDto } from './dto/admin-order-list-query.dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /**
@@ -131,6 +137,7 @@ class AdminOrderAllowedTransitionsResponse {
  * Admin endpoints (ADMIN role required):
  *   POST   /admin/orders                              — Operator-created (phone) order (341)
  *   GET    /admin/orders                              — List all orders across all users
+ *   GET    /admin/orders/export                       — CSV of the current filter set (425)
  *   GET    /admin/orders/:orderId                     — Get any order by ID
  *   GET    /admin/orders/:orderId/allowed-transitions — Legal next statuses (TASK-332)
  *   PATCH  /admin/orders/:orderId                     — Waybill / internal notes (335, 336)
@@ -220,6 +227,44 @@ export class AdminOrderController {
     const order = await this.orderService.adminCreateOrder(dto, adminUserId);
 
     return { data: order };
+  }
+
+  /**
+   * GET /api/admin/orders/export
+   *
+   * CSV of the orders matching the CURRENT filters (TASK-425) — the selection,
+   * not the page. Capped at `ORDER_EXPORT_MAX_ROWS` newest-first rows; see the
+   * service for why the cap exists and why it is not a query parameter.
+   *
+   * Declared BEFORE `:orderId`: routes match in declaration order, so the other
+   * way round `/admin/orders/export` is read as an order whose id is "export"
+   * and answers 404.
+   *
+   * Reading orders is the permission it needs — the class-level `orders:read` —
+   * because that is exactly what it does. It is throttled separately from the
+   * list: this is the one admin GET that can ask the database for thousands of
+   * rows at once.
+   */
+  @Get('export')
+  @ApiBearerAuth('access-token')
+  @ApiProduces('text/csv')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Export the filtered orders as CSV (admin)',
+    operationId: 'adminOrderControllerExport',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'CSV of the filtered orders, newest first',
+    content: { 'text/csv': { schema: { type: 'string' } } },
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async export(@Query() query: AdminOrderExportQueryDto, @Res() response: Response): Promise<void> {
+    const csv = await this.orderService.adminExportOrdersCsv(query);
+
+    response.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    response.setHeader('Content-Disposition', 'attachment; filename="orders.csv"');
+    response.send(csv);
   }
 
   /**
