@@ -18,12 +18,12 @@ import {
 import { dict } from "@/shared/config";
 import type { BannerEntity } from "@/shared/api/generated/models";
 import { SearchAutocomplete } from "@/features/search";
+import { ThemeToggle } from "@/features/theme";
 import { AnnouncementBar } from "./announcement-bar";
 import { HeaderSearch } from "./header-search";
 import { HeaderAuth } from "./header-auth";
 import { HeaderCartBadge } from "./header-cart-badge";
 import { HeaderWishlistBadge } from "./header-wishlist-badge";
-import { HeaderThemeToggle } from "./header-theme-toggle";
 import {
   HeaderMobileCategories,
   MOBILE_LINK_CLASS,
@@ -229,7 +229,7 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
                     visible here: on a phone this is the only place it appears,
                     since the header cluster has no room for it. */}
                 <div className="mt-2 border-t border-border px-2 pt-3 pb-4">
-                  <HeaderThemeToggle variant="full" />
+                  <ThemeToggle variant="full" />
                 </div>
               </SheetContent>
             </Sheet>
@@ -286,7 +286,7 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
                 actions 402 + gaps 36, which leaves the search pill 253 — above
                 its 165px floor, so nothing is squeezed. At 768 the same cluster
                 needs 886 of 736 and the brand pays; hence the menu to `lg`. */}
-            <HeaderThemeToggle className="mr-1 hidden lg:flex" />
+            <ThemeToggle className="mr-1 hidden lg:flex" />
             <Link
               href="/promo"
               className="hidden min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-sale transition-colors hover:bg-sale/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"

@@ -31,19 +31,32 @@ const neverChanges = () => () => {};
 const hydratedSnapshot = () => true;
 const serverSnapshot = () => false;
 
-export interface HeaderThemeToggleProps {
+export interface ThemeToggleProps {
   /**
    * `compact` (default) — icon-only segments sized for the header action
    * cluster. `full` — labelled, full-width segments under a visible caption,
-   * for the mobile slide-out menu where there is room and no icon vocabulary
-   * to lean on.
+   * for the mobile slide-out menu and the account settings card, where there is
+   * room and no icon vocabulary to lean on.
    */
   variant?: "compact" | "full";
+  /**
+   * Drop the visible caption while keeping it as the group's accessible name.
+   * For hosts that title the control themselves: the account settings card
+   * already heads the card «Оформлення» and explains it in a line of copy, so a
+   * third «Тема оформлення» above the pill would only repeat them.
+   */
+  hideLabel?: boolean;
   className?: string;
 }
 
 /**
- * HeaderThemeToggle — the light / system / dark switch (TASK-412).
+ * ThemeToggle — the light / system / dark switch (TASK-412).
+ *
+ * It lives in `features/`, not `shared/ui`: it does not merely render, it reads
+ * and writes a persisted visitor preference (localStorage, through next-themes),
+ * and that is the line between the two layers. It started inside
+ * `widgets/header`, where the account page could not reach it without a lateral
+ * widget→widget import — the move down is TASK-505.
  *
  * A segmented control rather than a one-button cycle: with three states a cycle
  * hides both where you are and where the next press lands, and "system" is
@@ -65,10 +78,11 @@ export interface HeaderThemeToggleProps {
  * `theme` — the stored CHOICE — drives the highlight, not `resolvedTheme`:
  * a visitor who picked "Системна" must see that, not the dark it resolved to.
  */
-export function HeaderThemeToggle({
+export function ThemeToggle({
   variant = "compact",
+  hideLabel = false,
   className,
-}: HeaderThemeToggleProps) {
+}: ThemeToggleProps) {
   const { theme, setTheme } = useTheme();
   const hydrated = useSyncExternalStore(
     neverChanges,
@@ -83,6 +97,7 @@ export function HeaderThemeToggle({
     : -1;
 
   const isFull = variant === "full";
+  const captionVisible = isFull && !hideLabel;
 
   function select(index: number) {
     const option = THEME_OPTIONS[index];
@@ -123,12 +138,15 @@ export function HeaderThemeToggle({
 
   return (
     <div className={cn(isFull && "flex flex-col gap-1.5", className)}>
-      {/* One accessible name, shown as a caption in the slide-out menu and
-          screen-reader-only in the header, where the icons carry the meaning. */}
+      {/* One accessible name: a caption in the slide-out menu, and
+          screen-reader-only in the header, where the icons carry the meaning —
+          and in any host that titles the control itself (`hideLabel`). */}
       <span
         id={labelId}
         className={cn(
-          isFull ? "px-1 text-xs font-medium text-muted-foreground" : "sr-only",
+          captionVisible
+            ? "px-1 text-xs font-medium text-muted-foreground"
+            : "sr-only",
         )}
       >
         {dict.header.themeAria}

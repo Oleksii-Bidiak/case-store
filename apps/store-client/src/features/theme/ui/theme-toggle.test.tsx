@@ -6,7 +6,7 @@ import {
   type RenderResult,
 } from "@/shared/test/render";
 import { dict } from "@/shared/config";
-import { HeaderThemeToggle } from "./header-theme-toggle";
+import { ThemeToggle } from "./theme-toggle";
 
 /** The three option labels, shared with the account settings copy. */
 const LABEL = {
@@ -25,11 +25,11 @@ const LABEL = {
  * resolved theme" assertion below meaningful.
  */
 function renderToggle(
-  props: Partial<React.ComponentProps<typeof HeaderThemeToggle>> = {},
+  props: Partial<React.ComponentProps<typeof ThemeToggle>> = {},
 ): RenderResult {
   return renderWithProviders(
     <ThemeProvider attribute="data-theme" defaultTheme="system" enableSystem>
-      <HeaderThemeToggle {...props} />
+      <ThemeToggle {...props} />
     </ThemeProvider>,
   );
 }
@@ -41,7 +41,7 @@ beforeEach(() => {
   document.documentElement.removeAttribute("data-theme");
 });
 
-describe("HeaderThemeToggle", () => {
+describe("ThemeToggle", () => {
   it("exposes a named group with the three themes as radios", () => {
     renderToggle();
 
@@ -132,6 +132,20 @@ describe("HeaderThemeToggle", () => {
     expect(
       screen.getByRole("radiogroup", { name: dict.header.themeAria }),
     ).toBeInTheDocument();
+    expect(radio(LABEL.system)).toHaveTextContent(LABEL.system);
+  });
+
+  it("keeps the group named when the caption is hidden", () => {
+    // `hideLabel` is for hosts that title the control themselves (the account
+    // settings card). The caption must leave the SCREEN, never the a11y tree —
+    // a radiogroup with no accessible name is the bug this guards against.
+    renderToggle({ variant: "full", hideLabel: true });
+
+    expect(
+      screen.getByRole("radiogroup", { name: dict.header.themeAria }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(dict.header.themeAria)).toHaveClass("sr-only");
+    // The segments themselves stay labelled — that is what `full` buys.
     expect(radio(LABEL.system)).toHaveTextContent(LABEL.system);
   });
 });
