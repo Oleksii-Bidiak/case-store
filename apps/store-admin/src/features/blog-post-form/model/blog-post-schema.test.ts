@@ -16,6 +16,7 @@ const baseValues: BlogPostFormValues = {
   coverImageUrl: "",
   readingMinutes: 8,
   featured: false,
+  listed: true,
   status: "DRAFT",
   scheduledAt: "",
 };
@@ -31,6 +32,7 @@ const baseInput: BlogPostFormInput = {
   coverImageUrl: "",
   readingMinutes: "8",
   featured: false,
+  listed: true,
   status: "DRAFT",
   scheduledAt: "",
 };

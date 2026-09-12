@@ -68,7 +68,14 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
   const limit = INITIAL_LIMIT + (pageNum - 1) * LOAD_STEP + featuredExtra;
 
   const [{ posts, meta }, categories] = await Promise.all([
-    fetchPublishedPosts({ category, q: query, page: 1, limit }),
+    // A list surface: unlisted posts stay out of the grid (TASK-436).
+    fetchPublishedPosts({
+      category,
+      q: query,
+      page: 1,
+      limit,
+      includeUnlisted: false,
+    }),
     fetchBlogCategories(),
   ]);
 

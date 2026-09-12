@@ -102,7 +102,31 @@ describe('BlogService', () => {
         limit: 9,
         category: 'compare',
         q: 'iphone',
+        includeUnlisted: false,
       });
+    });
+
+    // TASK-436 — the two halves of the `listed` invariant, asserted at the seam
+    // where they are decided. A list surface sends no flag and must get the
+    // filtered read; sitemap.xml asks for everything and must get it.
+    it('hides unlisted posts unless the caller asks for them', async () => {
+      repositoryMock.findAll.mockResolvedValue({ posts: [mockPost], total: 1 });
+
+      await service.findAll({ page: 1, limit: 9 });
+
+      expect(repositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ includeUnlisted: false }),
+      );
+    });
+
+    it('passes the sitemap opt-in through, so unlisted posts stay indexable', async () => {
+      repositoryMock.findAll.mockResolvedValue({ posts: [mockPost], total: 1 });
+
+      await service.findAll({ page: 1, limit: 9, includeUnlisted: true });
+
+      expect(repositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ includeUnlisted: true }),
+      );
     });
   });
 

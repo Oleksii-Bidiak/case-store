@@ -110,22 +110,52 @@ describe('BlogRepository', () => {
       prismaMock.blogPost.findMany.mockResolvedValue([]);
       prismaMock.blogPost.count.mockResolvedValue(0);
 
-      await repository.findAll({ page: 2, limit: 9 });
+      await repository.findAll({ page: 2, limit: 9, includeUnlisted: false });
 
       expect(prismaMock.blogPost.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { status: PublishStatus.PUBLISHED },
+          where: { status: PublishStatus.PUBLISHED, listed: true },
           skip: 9,
           take: 9,
         }),
       );
     });
 
+    // TASK-436 — both halves of the `listed` invariant, in the one query that
+    // serves both the /blog grid and sitemap.xml. If these ever agree with each
+    // other, the feature is broken in one direction or the other.
+    it('hides unlisted posts from a list read', async () => {
+      prismaMock.blogPost.findMany.mockResolvedValue([]);
+      prismaMock.blogPost.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 9, includeUnlisted: false });
+
+      const where = prismaMock.blogPost.findMany.mock.calls[0][0].where;
+      expect(where.listed).toBe(true);
+    });
+
+    it('keeps unlisted posts in a sitemap read — they are still indexable', async () => {
+      prismaMock.blogPost.findMany.mockResolvedValue([]);
+      prismaMock.blogPost.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 100, includeUnlisted: true });
+
+      const where = prismaMock.blogPost.findMany.mock.calls[0][0].where;
+      expect(where.status).toBe(PublishStatus.PUBLISHED);
+      expect(where).not.toHaveProperty('listed');
+    });
+
     it('applies category and search filters', async () => {
       prismaMock.blogPost.findMany.mockResolvedValue([]);
       prismaMock.blogPost.count.mockResolvedValue(0);
 
-      await repository.findAll({ page: 1, limit: 9, category: 'guides', q: 'навушники' });
+      await repository.findAll({
+        page: 1,
+        limit: 9,
+        category: 'guides',
+        q: 'навушники',
+        includeUnlisted: false,
+      });
 
       const where = prismaMock.blogPost.findMany.mock.calls[0][0].where;
       expect(where.status).toBe(PublishStatus.PUBLISHED);

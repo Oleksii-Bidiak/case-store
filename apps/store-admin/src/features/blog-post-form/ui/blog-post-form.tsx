@@ -9,6 +9,7 @@ import {
   Label,
   RichTextEditor,
   RichTextPreview,
+  Switch,
   Tabs,
   TabsContent,
   TabsList,
@@ -44,6 +45,7 @@ const EMPTY_VALUES: BlogPostFormInput = {
   coverImageUrl: "",
   readingMinutes: "",
   featured: false,
+  listed: true,
   status: "DRAFT",
   scheduledAt: "",
 };
@@ -250,10 +252,54 @@ export function BlogPostForm({
         )}
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-foreground">
-        <input type="checkbox" {...register("featured")} />
-        {dict.blogPostForm.featured}
-      </label>
+      {/* TASK-436 — both flags decide where the article APPEARS, so they sit
+          together, each with a hint: a bare toggle tells the owner nothing about
+          what it will do to the site. */}
+      <div className="flex flex-col gap-4">
+        <Controller
+          control={control}
+          name="featured"
+          render={({ field }) => (
+            <div className="flex items-start gap-3">
+              <Switch
+                id="post-featured"
+                checked={field.value}
+                onCheckedChange={field.onChange}
+                disabled={isPending}
+              />
+              <div className="flex flex-col gap-0.5">
+                <Label htmlFor="post-featured">
+                  {dict.blogPostForm.featured}
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  {dict.blogPostForm.featuredHint}
+                </p>
+              </div>
+            </div>
+          )}
+        />
+
+        <Controller
+          control={control}
+          name="listed"
+          render={({ field }) => (
+            <div className="flex items-start gap-3">
+              <Switch
+                id="post-listed"
+                checked={field.value}
+                onCheckedChange={field.onChange}
+                disabled={isPending}
+              />
+              <div className="flex flex-col gap-0.5">
+                <Label htmlFor="post-listed">{dict.blogPostForm.listed}</Label>
+                <p className="text-sm text-muted-foreground">
+                  {dict.blogPostForm.listedHint}
+                </p>
+              </div>
+            </div>
+          )}
+        />
+      </div>
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="post-status">{dict.blogPostForm.status}</Label>

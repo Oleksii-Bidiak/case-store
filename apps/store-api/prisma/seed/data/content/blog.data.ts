@@ -48,6 +48,8 @@ export const postsData: {
   readingMinutes: number;
   publishedAt: string;
   featured?: boolean;
+  /** TASK-436 — omitted means listed (the column default). */
+  listed?: boolean;
 }[] = [
   {
     slug: 'iphone16-vs-15',
@@ -109,6 +111,12 @@ export const postsData: {
     author: 'Андрій Мороз',
     readingMinutes: 4,
     publishedAt: '2026-06-14',
+    // TASK-436 — the one seeded post that demonstrates `listed = false`: it is
+    // published and opens at /blog/trade-in-how, but stays out of the blog grid,
+    // the header search suggestions and "Читайте також". Without an example in
+    // the seed the state is invisible on the demo stand and check SF-CNT-05 has
+    // nothing to look at.
+    listed: false,
   },
   {
     slug: 'smart-home-start',

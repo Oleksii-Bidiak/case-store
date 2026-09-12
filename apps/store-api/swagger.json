@@ -6481,6 +6481,17 @@
               "example": 9,
               "type": "number"
             }
+          },
+          {
+            "name": "includeUnlisted",
+            "required": false,
+            "in": "query",
+            "description": "Include posts flagged `listed = false` (TASK-436). Omitted / false — the default — returns only listed posts, which is what every LIST surface wants (the /blog grid, the header search suggestions, related posts). `sitemap.xml` is the one caller that passes true: an unlisted post is still a public, indexable document, so leaving it out of the sitemap while it stays reachable is the cloaking-shaped design this flag replaced. Deliberately a PUBLIC parameter — nothing here is a secret; an unlisted post is simply not advertised in feeds.",
+            "schema": {
+              "default": false,
+              "example": false,
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -16867,6 +16878,11 @@
             "description": "Whether the post is the featured hero post",
             "example": false
           },
+          "listed": {
+            "type": "boolean",
+            "description": "Whether the post appears in listings. `false` keeps it published and reachable at its own URL (and in sitemap.xml) while omitting it from the /blog grid, the search suggestions and the related-posts block (TASK-436).",
+            "example": true
+          },
           "category": {
             "description": "Category summary",
             "allOf": [
@@ -16920,6 +16936,7 @@
           "content",
           "authorName",
           "featured",
+          "listed",
           "category",
           "status",
           "createdAt",
@@ -17242,6 +17259,12 @@
             "description": "Whether the post is the featured hero post",
             "example": false,
             "default": false
+          },
+          "listed": {
+            "type": "boolean",
+            "description": "Whether the post appears in listings (TASK-436). `false` = published and reachable at its own URL and listed in sitemap.xml, but absent from the /blog grid, the search suggestions and the related-posts block. Defaults to true.",
+            "example": true,
+            "default": true
           }
         },
         "required": [
@@ -17320,6 +17343,11 @@
             "type": "boolean",
             "description": "Whether the post is the featured hero post",
             "example": false
+          },
+          "listed": {
+            "type": "boolean",
+            "description": "Whether the post appears in listings (TASK-436). `false` keeps it published and reachable at its own URL and in sitemap.xml, but out of the /blog grid, the search suggestions and the related-posts block.",
+            "example": true
           }
         }
       },

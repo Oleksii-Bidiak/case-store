@@ -108,4 +108,16 @@ export class UpdateBlogPostDto extends PublishFieldsDto {
   @IsOptional()
   @IsBoolean({ message: 'featured must be a boolean' })
   featured?: boolean;
+
+  @ApiProperty({
+    description:
+      'Whether the post appears in listings (TASK-436). `false` keeps it published and ' +
+      'reachable at its own URL and in sitemap.xml, but out of the /blog grid, the search ' +
+      'suggestions and the related-posts block.',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'listed must be a boolean' })
+  listed?: boolean;
 }

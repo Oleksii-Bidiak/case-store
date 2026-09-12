@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
-import { BlogArticleView, toBlogPostView } from "@/widgets/blog";
+import {
+  BlogArticleView,
+  toBlogPostView,
+  type BlogPostView,
+} from "@/widgets/blog";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import {
   fetchPublishedPost,
@@ -88,15 +92,7 @@ export default async function BlogArticlePage({
 
   const post = toBlogPostView(entity);
 
-  // Same-category related posts (fetch a few extra to drop the current one).
-  const { posts: relatedEntities } = await fetchPublishedPosts({
-    category: post.categorySlug,
-    limit: RELATED_LIMIT + 1,
-  });
-  const related = relatedEntities
-    .map(toBlogPostView)
-    .filter((p) => p.slug !== post.slug)
-    .slice(0, RELATED_LIMIT);
+  const related = await fetchRelatedPosts(post.slug, post.categorySlug);
 
   const canonical = `${SITE_URL}/blog/${post.slug}`;
 
@@ -123,4 +119,53 @@ export default async function BlogArticlePage({
       <BlogArticleView post={post} related={related} />
     </div>
   );
+}
+
+/**
+ * The three posts under "Читайте також" (TASK-436).
+ *
+ * Same category first, because a reader who finished a charger guide wants
+ * another charger guide. But a thin category used to produce a block of one
+ * card, or none at all — the section simply looked broken on a young blog. So a
+ * short category result is topped up with the newest posts from anywhere, in
+ * publication order, and only the current article and duplicates are removed.
+ *
+ * Both reads pass `includeUnlisted: false`: "Читайте також" is a list, and a
+ * post the owner kept out of the feed should not reappear here through the side
+ * door. Both are tagged `blog`, so publishing anything purges this block too.
+ */
+async function fetchRelatedPosts(
+  currentSlug: string,
+  categorySlug: string,
+): Promise<BlogPostView[]> {
+  const { posts: sameCategory } = await fetchPublishedPosts({
+    category: categorySlug,
+    // One extra: the current article is almost always in its own category.
+    limit: RELATED_LIMIT + 1,
+    includeUnlisted: false,
+  });
+
+  const picked = sameCategory
+    .map(toBlogPostView)
+    .filter((p) => p.slug !== currentSlug)
+    .slice(0, RELATED_LIMIT);
+
+  if (picked.length >= RELATED_LIMIT) return picked;
+
+  // Top-up pass. Ask for enough that the current article and everything already
+  // picked can all be discarded and still leave three.
+  const { posts: latest } = await fetchPublishedPosts({
+    limit: RELATED_LIMIT + picked.length + 1,
+    includeUnlisted: false,
+  });
+
+  const seen = new Set([currentSlug, ...picked.map((p) => p.slug)]);
+  for (const entity of latest) {
+    if (picked.length >= RELATED_LIMIT) break;
+    if (seen.has(entity.slug)) continue;
+    seen.add(entity.slug);
+    picked.push(toBlogPostView(entity));
+  }
+
+  return picked;
 }

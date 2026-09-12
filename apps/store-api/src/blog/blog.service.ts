@@ -65,13 +65,21 @@ export class BlogService {
 
   // ─── posts: public ──────────────────────────────────────────────────────────
 
-  /** List PUBLISHED posts (public storefront) with category/search/pagination. */
+  /**
+   * List PUBLISHED posts (public storefront) with category/search/pagination.
+   *
+   * `includeUnlisted` defaults to FALSE here — the safe side for the callers that
+   * are lists (the `/blog` grid, the header search suggestions, related posts).
+   * `sitemap.xml` is the only caller that flips it, and it has to say so out loud
+   * (see `FindAllPostsParams`).
+   */
   async findAll(query: BlogPostListQueryDto): Promise<PaginatedPostsResponse> {
     const params: FindAllPostsParams = {
       page: query.page ?? 1,
       limit: query.limit ?? 9,
       category: query.category,
       q: query.q,
+      includeUnlisted: query.includeUnlisted ?? false,
     };
 
     const { posts, total } = await this.blogRepository.findAll(params);
@@ -154,6 +162,7 @@ export class BlogService {
       coverBlurDataUrl: dto.coverBlurDataUrl,
       readingMinutes: dto.readingMinutes,
       featured: dto.featured,
+      listed: dto.listed,
       status: publishState.status,
       publishedAt: publishState.publishedAt,
       scheduledAt: publishState.scheduledAt,
@@ -219,6 +228,7 @@ export class BlogService {
       coverBlurDataUrl: dto.coverBlurDataUrl,
       readingMinutes: dto.readingMinutes,
       featured: dto.featured,
+      listed: dto.listed,
     };
 
     if (dto.status !== undefined) {

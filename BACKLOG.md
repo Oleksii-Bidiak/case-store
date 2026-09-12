@@ -565,7 +565,7 @@
 | TASK-433 | Хост SERP-прев'ю з env (зараз `mobilestore.ua`); назва магазину в одному місці | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
 | TASK-434 | Редактор: посилання, зображення, таблиці | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
 | TASK-435 | `/info` як CMS (`Page.kind`), розділення `/legal` і `/info`, SEO хабів із БД | ✅ | [176](docs/plans/176-content-seo-wave.md) |
-| TASK-436 | Блог: featured як Switch, «Читайте також», `listed=false` замість клоакінгу | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-436 | Блог: featured як Switch, «Читайте також», `listed=false` замість клоакінгу | ✅ | [176](docs/plans/176-content-seo-wave.md) |
 | TASK-437 | SEO-поля: теги (keywords), `ogImage` на сутностях, повторний GEO-аудит | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
 | TASK-438 | `docs/search-guide.md` для оператора; пізніше синоніми з адмінки | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
 

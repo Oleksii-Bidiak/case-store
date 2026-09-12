@@ -32,6 +32,7 @@ export async function seedBlog(prisma: PrismaClient) {
       authorName: post.author,
       readingMinutes: post.readingMinutes,
       featured: post.featured ?? false,
+      listed: post.listed ?? true,
       categoryId: categoryIds[post.cat],
       status: 'PUBLISHED' as const,
       publishedAt,

@@ -34,6 +34,17 @@ export interface FetchPublishedPostsParams {
   q?: string;
   page?: number;
   limit?: number;
+  /**
+   * Whether to include posts flagged `listed = false` (TASK-436). REQUIRED, and
+   * that is the point: this one read serves surfaces that need opposite answers.
+   * Every LIST — the `/blog` grid, the header search suggestions, "Читайте
+   * також" — passes `false`. `sitemap.xml` passes `true`, because an unlisted
+   * post is still a public, indexable document, and dropping it from the sitemap
+   * while its URL keeps answering is the cloaking-shaped design the owner
+   * rejected. Neither default is safe, so there is none: a caller that does not
+   * say which side it is on does not compile.
+   */
+  includeUnlisted: boolean;
 }
 
 export interface PublishedPostsResult {
@@ -54,13 +65,16 @@ const EMPTY_META: BlogPaginationMeta = {
  * empty result on error.
  */
 export async function fetchPublishedPosts(
-  params: FetchPublishedPostsParams = {},
+  params: FetchPublishedPostsParams,
 ): Promise<PublishedPostsResult> {
   const search = new URLSearchParams();
   if (params.category) search.set("category", params.category);
   if (params.q) search.set("q", params.q);
   search.set("page", String(params.page ?? 1));
   search.set("limit", String(params.limit ?? 9));
+  // Only sent when true: the API already defaults to "listed only", and an
+  // explicit `false` in the URL would just be noise in the cache key.
+  if (params.includeUnlisted) search.set("includeUnlisted", "true");
 
   try {
     const res = await serverFetch(

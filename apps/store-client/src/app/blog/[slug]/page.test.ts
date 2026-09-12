@@ -38,7 +38,10 @@ jest.mock("@/shared/api/seo-settings-server", () => ({
 
 import BlogArticlePage, { generateMetadata } from "./page";
 import { notFound, permanentRedirect } from "next/navigation";
-import { fetchPublishedPost } from "@/shared/api/blog-server";
+import {
+  fetchPublishedPost,
+  fetchPublishedPosts,
+} from "@/shared/api/blog-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { BRAND_OG_IMAGE_PATH, SITE_NAME, SITE_URL } from "@/shared/config";
@@ -49,6 +52,9 @@ const fetchSeo = fetchSeoSettings as jest.MockedFunction<
 
 const fetchPost = fetchPublishedPost as jest.MockedFunction<
   typeof fetchPublishedPost
+>;
+const fetchPosts = fetchPublishedPosts as jest.MockedFunction<
+  typeof fetchPublishedPosts
 >;
 const resolveRedirect = resolveSlugRedirect as jest.MockedFunction<
   typeof resolveSlugRedirect
@@ -66,6 +72,7 @@ function makePost(): BlogPostEntity {
     authorName: "Автор",
     readingMinutes: 5,
     featured: false,
+    listed: true,
     categoryId: "cat-1",
     category: { id: "cat-1", slug: "guides", name: "Гайди" },
     status: "PUBLISHED",
@@ -183,5 +190,67 @@ describe("blog/[slug] generateMetadata — the openGraph block it must re-state"
     const meta = await runMeta("never-existed");
 
     expect(meta.openGraph).toBeUndefined();
+  });
+});
+
+// TASK-436 — "Читайте також" used to be one same-category query, so a thin
+// category rendered a block of a single card, or none at all. These pin the
+// top-up pass and the fact that the block never reaches for unlisted posts.
+describe("blog/[slug] related posts", () => {
+  const runPage = (slug: string) =>
+    BlogArticlePage({ params: Promise.resolve({ slug }) });
+
+  const meta = { total: 3, page: 1, limit: 4, totalPages: 1 };
+
+  function otherPost(slug: string, categorySlug = "guides"): BlogPostEntity {
+    return {
+      ...makePost(),
+      id: `id-${slug}`,
+      slug,
+      category: { id: "cat-x", slug: categorySlug, name: categorySlug },
+    } as BlogPostEntity;
+  }
+
+  it("tops the block up from the newest posts when the category is thin", async () => {
+    fetchPost.mockResolvedValue(makePost());
+    // Category pass returns only the article itself — nothing usable.
+    fetchPosts.mockResolvedValueOnce({ posts: [makePost()], meta });
+    fetchPosts.mockResolvedValueOnce({
+      posts: [otherPost("a"), otherPost("b", "news"), otherPost("c")],
+      meta,
+    });
+
+    await runPage("iphone-16-oglyad");
+
+    expect(fetchPosts).toHaveBeenCalledTimes(2);
+    // The top-up is category-blind on purpose: that is where the extra cards
+    // have to come from when the article's own category has nothing left.
+    expect(fetchPosts.mock.calls[1][0]).not.toHaveProperty("category");
+  });
+
+  it("does not run the top-up when the category already fills the block", async () => {
+    fetchPost.mockResolvedValue(makePost());
+    fetchPosts.mockResolvedValueOnce({
+      posts: [otherPost("a"), otherPost("b"), otherPost("c")],
+      meta,
+    });
+
+    await runPage("iphone-16-oglyad");
+
+    expect(fetchPosts).toHaveBeenCalledTimes(1);
+  });
+
+  it("never asks for unlisted posts — the block is a list", async () => {
+    fetchPost.mockResolvedValue(makePost());
+    fetchPosts.mockResolvedValue({ posts: [makePost()], meta });
+
+    await runPage("iphone-16-oglyad");
+
+    expect(fetchPosts.mock.calls.length).toBeGreaterThan(0);
+    for (const call of fetchPosts.mock.calls) {
+      expect(call[0]).toEqual(
+        expect.objectContaining({ includeUnlisted: false }),
+      );
+    }
   });
 });

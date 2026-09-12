@@ -131,7 +131,14 @@ async function fetchCategoryRoutes(): Promise<MetadataRoute.Sitemap> {
 async function fetchBlogRoutes(now: Date): Promise<MetadataRoute.Sitemap> {
   try {
     // One page of up to 100 published posts covers the current catalogue.
-    const { posts } = await fetchPublishedPosts({ limit: 100 });
+    // `includeUnlisted: true` is the whole reason that flag exists (TASK-436): a
+    // post kept out of the feed is still a public document, and a sitemap that
+    // omitted it while its URL answered 200 would be the cloaking-shaped design
+    // the owner rejected. This is the ONE caller allowed to pass true.
+    const { posts } = await fetchPublishedPosts({
+      limit: 100,
+      includeUnlisted: true,
+    });
     return posts.map((post) => ({
       url: `${SITE_URL}/blog/${post.slug}`,
       lastModified: post.publishedAt ? new Date(post.publishedAt) : now,

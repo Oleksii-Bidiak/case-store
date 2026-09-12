@@ -66,6 +66,7 @@ export const blogPostSchema = z
       .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
 
     featured: z.boolean(),
+    listed: z.boolean(),
 
     status: z.enum(BLOG_POST_STATUS),
 
@@ -111,6 +112,7 @@ export function blogPostFormValuesToCreateDto(
     coverImageUrl: coverImageUrl ? coverImageUrl : undefined,
     readingMinutes: values.readingMinutes,
     featured: values.featured,
+    listed: values.listed,
     status: values.status,
     scheduledAt,
   };

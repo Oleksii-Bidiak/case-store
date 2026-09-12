@@ -84,6 +84,15 @@ export class BlogPostEntity {
   @ApiProperty({ description: 'Whether the post is the featured hero post', example: false })
   featured!: boolean;
 
+  @ApiProperty({
+    description:
+      'Whether the post appears in listings. `false` keeps it published and reachable at ' +
+      'its own URL (and in sitemap.xml) while omitting it from the /blog grid, the search ' +
+      'suggestions and the related-posts block (TASK-436).',
+    example: true,
+  })
+  listed!: boolean;
+
   @ApiProperty({ description: 'Category summary', type: BlogPostCategorySummary })
   category!: BlogPostCategorySummary;
 
@@ -135,6 +144,7 @@ export class BlogPostEntity {
     authorName: string;
     readingMinutes: number | null;
     featured: boolean;
+    listed: boolean;
     status: PublishStatus;
     publishedAt: Date | null;
     scheduledAt: Date | null;
@@ -153,6 +163,7 @@ export class BlogPostEntity {
     entity.authorName = post.authorName;
     entity.readingMinutes = post.readingMinutes;
     entity.featured = post.featured;
+    entity.listed = post.listed;
     entity.category = {
       id: post.category.id,
       slug: post.category.slug,

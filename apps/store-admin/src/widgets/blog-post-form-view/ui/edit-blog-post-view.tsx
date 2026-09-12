@@ -132,6 +132,7 @@ function mapPostToFormValues(post: BlogPostEntity): Partial<BlogPostFormInput> {
     readingMinutes:
       post.readingMinutes != null ? String(post.readingMinutes) : "",
     featured: post.featured,
+    listed: post.listed,
     status: post.status,
     scheduledAt: post.scheduledAt ? toDateTimeLocal(post.scheduledAt) : "",
   };

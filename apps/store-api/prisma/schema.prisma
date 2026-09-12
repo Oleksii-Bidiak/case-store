@@ -915,6 +915,21 @@ model BlogPost {
   authorName       String        @map("author_name")
   readingMinutes   Int?          @map("reading_minutes")
   featured         Boolean       @default(false)
+  /// Listing visibility (TASK-436). `true` (the default) is the normal post.
+  /// `false` means: still PUBLISHED, still reachable at `/blog/<slug>`, still in
+  /// `sitemap.xml` — but omitted from every LIST: the `/blog` grid, the header
+  /// search suggestions, and the "Читайте також" block. For evergreen or
+  /// deep-link-only material the owner does not want crowding the feed.
+  ///
+  /// This is NOT "hidden from people but visible to robots". That idea was
+  /// rejected by the owner as cloaking — serving crawlers something a human
+  /// cannot see. `listed = false` is not cloaking precisely BECAUSE the human
+  /// and the crawler see the same thing: both can open the URL, neither finds it
+  /// in a list. So do not "optimise" this field into a status that hides the
+  /// page from visitors while keeping it in the sitemap, and do not drop the
+  /// unlisted rows from the sitemap either — one half without the other turns it
+  /// back into the rejected design.
+  listed           Boolean       @default(true)
   categoryId       String        @map("category_id")
   category         BlogCategory  @relation(fields: [categoryId], references: [id])
   /// Publish lifecycle — the single source of truth for public visibility.

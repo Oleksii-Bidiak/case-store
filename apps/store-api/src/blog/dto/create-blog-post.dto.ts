@@ -102,4 +102,17 @@ export class CreateBlogPostDto extends PublishFieldsDto {
   @IsOptional()
   @IsBoolean({ message: 'featured must be a boolean' })
   featured?: boolean;
+
+  @ApiProperty({
+    description:
+      'Whether the post appears in listings (TASK-436). `false` = published and reachable at ' +
+      'its own URL and listed in sitemap.xml, but absent from the /blog grid, the search ' +
+      'suggestions and the related-posts block. Defaults to true.',
+    example: true,
+    required: false,
+    default: true,
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'listed must be a boolean' })
+  listed?: boolean;
 }
