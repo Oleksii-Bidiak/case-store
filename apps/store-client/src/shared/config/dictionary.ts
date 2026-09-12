@@ -399,6 +399,11 @@ export const dict = {
       authorBioPlaceholder:
         "Тестує смартфони й ноутбуки для MobileStore понад 5 років. Любить довгі порівняння та чесні висновки без маркетингу.",
     },
+    // TASK-417 — the hub pages properly now (numbered pages, one slice each)
+    // instead of growing one ever-longer list, so the old "показати більше"
+    // link says what it actually does: it opens the next page.
+    nextPageLink: "Наступні статті",
+    paginationAria: "Навігація сторінками статей",
   },
 
   // Admin-authored static/legal pages (/legal + /legal/[slug], Legal.dc.html
@@ -480,6 +485,16 @@ export const dict = {
     paginationAria: "Навігація сторінками",
     paginationPreviousAria: "Попередня сторінка",
     paginationNextAria: "Наступна сторінка",
+    // `/search` results page (TASK-417). It now carries the catalogue's own
+    // filter panel, so its chrome lives beside the catalogue's: only the strings
+    // the catalogue has no equivalent for are here — the rest of the page's copy
+    // stays in the `search` block.
+    searchPage: {
+      sortAria: "Сортування результатів",
+      // Ranked full-text relevance — the engine's own order, which no column
+      // can express, and the reason /search does not reuse the catalogue sort.
+      sortRelevance: "За релевантністю",
+    },
   },
 
   // Info & support hub (/info, Info.dc.html import). Content is static (stub)
