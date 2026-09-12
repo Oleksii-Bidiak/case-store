@@ -40,11 +40,13 @@ export interface ReviewAggregateData {
 
 /**
  * A moderation-queue row: the review enriched with the author's email/name and
- * the product name, needed to render the admin table without extra lookups.
+ * the product's name and SKU, needed to render the admin table without extra
+ * lookups. `sku` is nullable because `Product.sku` is — a position may be saved
+ * before an article number is assigned.
  */
 export interface ReviewModerationRow extends Review {
   user: { email: string };
-  product: { name: string };
+  product: { name: string; sku: string | null };
 }
 
 /**
@@ -171,7 +173,11 @@ export class ReviewRepository {
         orderBy: { createdAt: 'desc' },
         include: {
           user: { select: { email: true } },
-          product: { select: { name: true } },
+          // `sku` joined since TASK-430: two positions in this catalogue can share
+          // a display name (the same case in two colours), so a moderator reading
+          // «Чохол силіконовий» could not tell WHICH one the review is about — and
+          // the SKU is what they then search the catalogue by.
+          product: { select: { name: true, sku: true } },
         },
       }),
       this.prisma.review.count({ where }),

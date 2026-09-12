@@ -205,7 +205,7 @@ describe('ReviewService', () => {
           {
             ...makeReview(),
             user: { email: 'olena@example.com' },
-            product: { name: 'iPhone 15 Pro Case' },
+            product: { name: 'iPhone 15 Pro Case', sku: 'CASE-IP15P-BLK' },
           },
         ],
         total: 1,
@@ -224,7 +224,30 @@ describe('ReviewService', () => {
       );
       expect(result.data[0].userEmail).toBe('olena@example.com');
       expect(result.data[0].productName).toBe('iPhone 15 Pro Case');
+      // TASK-430: the queue shows the SKU next to the name, because the name alone
+      // does not identify a position in a catalogue with colour variants.
+      expect(result.data[0].productSku).toBe('CASE-IP15P-BLK');
       expect(result.meta.total).toBe(1);
+    });
+
+    it('carries a null SKU through rather than inventing a placeholder', async () => {
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview(),
+            user: { email: 'olena@example.com' },
+            // `Product.sku` is nullable — a position can be saved before an
+            // article number is assigned. The wire value must stay null so the
+            // panel can say «без артикулу» instead of rendering "null".
+            product: { name: 'iPhone 15 Pro Case', sku: null },
+          },
+        ],
+        total: 1,
+      });
+
+      const result = await service.getReviewsForModeration({});
+
+      expect(result.data[0].productSku).toBeNull();
     });
 
     it('passes the approved status through to the repository', async () => {

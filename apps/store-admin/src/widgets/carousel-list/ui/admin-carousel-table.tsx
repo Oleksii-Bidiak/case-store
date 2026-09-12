@@ -30,6 +30,7 @@ import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { GripVertical } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
+import { formatDate } from "@/shared/lib";
 import {
   CarouselEntityPlacement,
   getAdminCarouselControllerFindAllQueryKey,
@@ -406,8 +407,26 @@ function CarouselRow({
         </Badge>
       </TableCell>
       <TableCell role="gridcell">
-        <Badge variant={isPublished ? "default" : "secondary"}>
-          {dict.carousels.statusLabels[carousel.status]}
+        {/*
+         * TASK-430. Carousels were never the defect the badge task was filed for —
+         * unlike pages, blog posts and banners, this label already said
+         * «Заплановано» rather than «Чернетка», so a scheduled carousel was never
+         * mistaken for a forgotten draft. What it lacked was the DATE, which is the
+         * half that answers the operator's actual question: scheduled for when?
+         * Carried here so all four lists with a PublishStatus read the same.
+         */}
+        <Badge
+          variant={
+            carousel.status === "SCHEDULED"
+              ? "warning"
+              : isPublished
+                ? "default"
+                : "secondary"
+          }
+        >
+          {carousel.status === "SCHEDULED" && carousel.scheduledAt
+            ? dict.carousels.statusScheduledOn(formatDate(carousel.scheduledAt))
+            : dict.carousels.statusLabels[carousel.status]}
         </Badge>
       </TableCell>
       <TableCell role="gridcell" className="text-right">

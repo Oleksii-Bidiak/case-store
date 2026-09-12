@@ -62,6 +62,7 @@ import {
   TableToolbar,
   type SortableTreeRowRenderProps,
 } from "@/shared/ui";
+import { formatDate } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { AdminPageTableSkeleton } from "./admin-page-table-skeleton";
 
@@ -276,6 +277,45 @@ function AdminPageGrid() {
   );
 }
 
+/**
+ * The status badge (TASK-430).
+ *
+ * Reads `status`, NOT `isActive`. `Page.isActive` is documented in the schema as a
+ * derived read-only MIRROR of `status == PUBLISHED`, kept only so the old badges and
+ * toggles keep working — which means it collapses DRAFT and SCHEDULED into one
+ * value, and this badge was reporting a page scheduled for Friday as «Чернетка».
+ * An operator could not tell it apart from one somebody forgot to publish, which is
+ * the difference the schedule exists to make.
+ *
+ * The publish/unpublish BUTTON below still reads `isActive`, correctly: "is it live
+ * right now" is exactly what that mirror answers.
+ *
+ * The date is `formatDate` — «Заплановано на 19.09.2026», the full year included.
+ * A day-and-month shorthand would hide the one mistake worth catching here: a
+ * schedule typed into the wrong year.
+ */
+function PageStatusBadge({ page }: { page: PageEntity }) {
+  if (page.status === "SCHEDULED") {
+    return (
+      <Badge variant="warning">
+        {page.scheduledAt
+          ? dict.pages.statusScheduledOn(formatDate(page.scheduledAt))
+          : // SCHEDULED with no instant should not exist (the API sets them
+            // together) — say «Заплановано» rather than render "Invalid Date".
+            dict.pages.statusScheduled}
+      </Badge>
+    );
+  }
+
+  const isPublished = page.status === "PUBLISHED";
+
+  return (
+    <Badge variant={isPublished ? "default" : "secondary"}>
+      {isPublished ? dict.pages.statusPublished : dict.pages.statusDraft}
+    </Badge>
+  );
+}
+
 interface PageRowProps {
   page: PageEntity;
   row: SortableListRow;
@@ -340,9 +380,7 @@ function PageRow({
         {page.slug}
       </TableCell>
       <TableCell role="gridcell">
-        <Badge variant={page.isActive ? "default" : "secondary"}>
-          {page.isActive ? dict.pages.statusPublished : dict.pages.statusDraft}
-        </Badge>
+        <PageStatusBadge page={page} />
       </TableCell>
       <TableCell role="gridcell" className="text-right">
         <div className="flex justify-end gap-2">

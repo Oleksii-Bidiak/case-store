@@ -92,6 +92,18 @@ describe('ReviewRepository — findForModeration search', () => {
     return reviewFindMany.mock.calls[0][0].where;
   }
 
+  it('joins the product SKU as well as its name (TASK-430)', async () => {
+    // The SKU column on the moderation queue is only as real as this select: the
+    // entity would happily map `row.product.sku` to `undefined` and the panel
+    // would render an empty cell for every row, with nothing failing.
+    await repo.findForModeration('pending', 1, 20);
+
+    expect(reviewFindMany.mock.calls[0][0].include).toEqual({
+      user: { select: { email: true } },
+      product: { select: { name: true, sku: true } },
+    });
+  });
+
   it('filters on the moderation gate alone when no term is given', async () => {
     await repo.findForModeration('pending', 1, 20);
 

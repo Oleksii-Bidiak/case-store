@@ -63,7 +63,8 @@ function makeBannerRow(
     sortOrder,
     status,
     publishedAt: status === "PUBLISHED" ? "2026-07-01T00:00:00.000Z" : null,
-    scheduledAt: null,
+    // Widened: the TASK-430 scheduled-badge tests override this with a date.
+    scheduledAt: null as string | null,
     createdAt: "2026-07-01T00:00:00.000Z",
     updatedAt: "2026-07-01T00:00:00.000Z",
   };
@@ -111,6 +112,40 @@ describe("AdminBannerTable", () => {
     );
     expect(
       screen.getByText(dict.banners.statusLabels.DRAFT),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * TASK-430 — the scheduled badge wore the same grey as a draft and named no date,
+   * so the row did not answer the question a schedule raises.
+   */
+  it("shows the scheduled date rather than a bare «Заплановано»", async () => {
+    stubBanners([
+      {
+        ...makeBannerRow("banner-3", "Friday Hero", "HERO_SLIDE", "SCHEDULED"),
+        scheduledAt: "2026-09-19T08:00:00.000Z",
+      },
+    ]);
+
+    renderWithProviders(<AdminBannerTable />);
+
+    expect(
+      await screen.findByText(dict.banners.statusScheduledOn("19.09.2026")),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.banners.statusLabels.DRAFT),
+    ).not.toBeInTheDocument();
+  });
+
+  it("falls back to «Заплановано» with no instant, never «Invalid Date»", async () => {
+    stubBanners([
+      makeBannerRow("banner-4", "No Date", "HERO_SLIDE", "SCHEDULED"),
+    ]);
+
+    renderWithProviders(<AdminBannerTable />);
+
+    expect(
+      await screen.findByText(dict.banners.statusLabels.SCHEDULED),
     ).toBeInTheDocument();
   });
 

@@ -80,4 +80,48 @@ describe('AuditRepository — findMany ordering (TASK-356)', () => {
       }),
     );
   });
+
+  // ─── actorRole filter (TASK-430) ────────────────────────────────────────────
+
+  it('narrows by the actor role recorded on the entry', async () => {
+    await repository.findMany({ page: 1, limit: 50, actorRole: 'MANAGER' });
+
+    expect(prismaMock.auditLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { actorRole: 'MANAGER' } }),
+    );
+  });
+
+  it('narrows the count query by the role too', async () => {
+    // A filter applied to the page but not to the count is a pager that offers
+    // pages the list cannot show — and on this screen that reads as "entries are
+    // missing", which is the one thing an audit log must never look like.
+    await repository.findMany({ page: 1, limit: 50, actorRole: 'ADMIN' });
+
+    expect(prismaMock.auditLog.count).toHaveBeenCalledWith({ where: { actorRole: 'ADMIN' } });
+  });
+
+  it('combines the role with the other filters rather than replacing them', async () => {
+    await repository.findMany({
+      page: 1,
+      limit: 50,
+      actorRole: 'MANAGER',
+      entityType: 'order',
+      actorId: 'manager-1',
+    });
+
+    expect(prismaMock.auditLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { actorId: 'manager-1', actorRole: 'MANAGER', entityType: 'order' },
+      }),
+    );
+  });
+
+  it('adds no actorRole clause when none is asked for', async () => {
+    // Otherwise every unfiltered read would silently drop the system entries
+    // (actorRole IS NULL) — payment callbacks and cron, i.e. exactly the rows
+    // someone opens this screen to find when an order changed on its own.
+    await repository.findMany({ page: 1, limit: 50 });
+
+    expect(prismaMock.auditLog.findMany.mock.calls[0][0].where).toEqual({});
+  });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { Loader2, Star } from "lucide-react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
@@ -307,6 +308,7 @@ function AdminReviewTableView() {
                   />
                 )}
                 <TableHead>{dict.reviews.colProduct}</TableHead>
+                <TableHead>{dict.reviews.colSku}</TableHead>
                 <TableHead>{dict.reviews.colAuthor}</TableHead>
                 <TableHead>{dict.reviews.colRating}</TableHead>
                 <TableHead>{dict.reviews.colComment}</TableHead>
@@ -351,11 +353,33 @@ function AdminReviewTableView() {
                         )}
                       />
                     )}
+                    {/* TASK-430: the product is a LINK to its read-only card, and
+                        the SKU rides next to it. Moderating «Чохол силіконовий»
+                        used to mean guessing which of four colour variants the
+                        complaint was about, then searching the catalogue by hand —
+                        and the name is not even a key you can search by. */}
                     <TableCell
                       label={dict.reviews.colProduct}
                       className="font-medium"
                     >
-                      {review.productName}
+                      <Link
+                        href={`/products/${review.productId}`}
+                        aria-label={dict.reviews.productLinkAria(
+                          review.productName,
+                        )}
+                        className="hover:underline"
+                      >
+                        {review.productName}
+                      </Link>
+                    </TableCell>
+                    <TableCell
+                      label={dict.reviews.colSku}
+                      className="font-mono text-xs text-muted-foreground"
+                    >
+                      {/* `Product.sku` is nullable — a position can exist before an
+                          article number is assigned. Say so in words; an empty cell
+                          reads as a rendering bug. */}
+                      {review.productSku ?? dict.reviews.noSku}
                     </TableCell>
                     <TableCell
                       label={dict.reviews.colAuthor}

@@ -12,6 +12,9 @@ import {
 import { orderStatusBadgeVariant, orderStatusLabel } from "@/entities/order";
 import { useAuth } from "@/entities/session";
 import { UserBanToggle } from "@/features/user-ban-toggle";
+// Imported from the slice, not the `@/features` barrel: the barrel is one file
+// every parallel branch appends to, and this widget needs nothing else from it.
+import { UserNotesPanel } from "@/features/user-notes";
 import {
   DeleteUserDialog,
   UserPasswordResetDialog,
@@ -28,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui";
-import { formatCurrency, formatDateTime } from "@/shared/lib";
+import { formatCurrency, formatDate, formatDateTime } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { UserDetailSkeleton } from "./UserDetailSkeleton";
 
@@ -52,10 +55,15 @@ function contactStatusLabel(status: string): string {
  * Admin customer-card page body (TASK-252).
  *
  * Fetches the enriched customer card by user ID via `useGetUserAdminCard` and
- * renders a two-column layout: profile + lifetime stats + recent orders,
- * reviews, redeemed coupons and email-matched contact messages on the left,
+ * renders a two-column layout: profile + staff notes + lifetime stats + recent
+ * orders, reviews, redeemed coupons and email-matched contact messages on the left,
  * account metadata + ban control on the right. A missing user (404) redirects to
  * the list.
+ *
+ * TASK-430 added two things an operator was missing here: whether the email address
+ * was ever confirmed (on the email field itself — see `EmailVerification`), and the
+ * staff-notes journal (`UserNotesPanel`, a section rather than a tab — see the
+ * comment at its call site).
  */
 export function UserDetailView({ userId }: UserDetailViewProps) {
   const router = useRouter();
@@ -149,7 +157,16 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
             <Separator />
 
             <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <DetailField label={dict.users.fieldEmail} value={user.email} />
+              {/* TASK-430 / AD-CRM-04 — the confirmation badge sits ON the email
+                  field, not in the «Метадані акаунта» card in the sidebar. The
+                  question it answers is «чому цей клієнт не отримує наших листів?»,
+                  which is asked about the address; putting the answer next to the
+                  ids and timestamps would file it where nobody looks during a
+                  support call — and that card is below the staff panel, off-screen
+                  on a laptop. */}
+              <DetailField label={dict.users.fieldEmail} value={user.email}>
+                <EmailVerification verifiedAt={user.emailVerifiedAt} />
+              </DetailField>
               <DetailField
                 label={dict.users.fieldFullName}
                 value={name || "—"}
@@ -163,6 +180,24 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
                 value={formatDateTime(user.createdAt)}
               />
             </dl>
+          </section>
+
+          {/* Staff notes (TASK-430).
+              A SECTION, not a tab. A tab strip would hide the notes behind a click
+              on the one screen an operator opens in order to read them — and this
+              card has no second tab to pair it with: every other block here
+              (orders, reviews, coupons, messages) is a section, so one tab strip
+              would either wrap all of them (a re-layout of a page three other
+              waves are touching) or stand alone as a strip of one.
+              Placed directly under the profile, above the lifetime stats: «що ми
+              знаємо про цю людину» is what the operator needs while the customer is
+              still on the phone, and six blocks of scrolling is how a journal stops
+              being read. */}
+          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+            <h3 className="text-sm font-semibold text-foreground">
+              {dict.users.notesHeading}
+            </h3>
+            <UserNotesPanel userId={user.id} />
           </section>
 
           {/* Lifetime stats (TASK-252) */}
@@ -496,10 +531,13 @@ function DetailField({
   label,
   value,
   mono = false,
+  children,
 }: {
   label: string;
   value: string;
   mono?: boolean;
+  /** Rendered inside the `<dd>`, under the value — a badge or a hint. */
+  children?: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-0.5">
@@ -510,7 +548,45 @@ function DetailField({
         className={`text-sm text-foreground${mono ? " break-all font-mono text-xs" : ""}`}
       >
         {value}
+        {children}
       </dd>
     </div>
+  );
+}
+
+/**
+ * Whether this address was ever proven (TASK-430 / AD-CRM-04).
+ *
+ * `emailVerifiedAt` has been on the wire since TASK-342 and the panel showed
+ * nothing at all, so the one fact behind "the customer says they get no emails from
+ * us" was invisible to the person taking the call.
+ *
+ * A TIMESTAMP, not a boolean, and the date is shown: "verified when" answers support
+ * questions that "verified: yes" cannot. And the null case is stated honestly —
+ * every account created before verification existed is null too, so it means "we do
+ * not know", not "they refused". Saying that in the hint is the difference between a
+ * useful field and one that starts arguments with customers.
+ */
+function EmailVerification({ verifiedAt }: { verifiedAt: string | null }) {
+  if (verifiedAt) {
+    return (
+      <span className="mt-1 flex flex-wrap items-center gap-2">
+        <Badge variant="success">{dict.users.emailVerified}</Badge>
+        <span className="text-xs text-muted-foreground">
+          {dict.users.emailVerifiedAt(formatDate(verifiedAt))}
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="mt-1 flex flex-col gap-1">
+      <Badge variant="warning" className="w-fit">
+        {dict.users.emailNotVerified}
+      </Badge>
+      <span className="text-xs text-muted-foreground">
+        {dict.users.emailNotVerifiedHint}
+      </span>
+    </span>
   );
 }

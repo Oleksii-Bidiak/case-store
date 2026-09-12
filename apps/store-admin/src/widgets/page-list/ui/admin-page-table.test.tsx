@@ -52,7 +52,8 @@ function listResponse(order: string[] = DEFAULT_ORDER) {
       metaDescription: null,
       status: id === B ? "DRAFT" : "PUBLISHED",
       publishedAt: id === B ? null : "2026-06-01T10:00:00.000Z",
-      scheduledAt: null,
+      // Widened: the TASK-430 scheduled-badge tests override this with a date.
+      scheduledAt: null as string | null,
       isActive: id !== B,
       sortOrder: i,
       createdAt: "2026-06-01T10:00:00.000Z",
@@ -171,6 +172,60 @@ describe("AdminPageTable — rendering", () => {
 
 // TASK-285: the delete-confirm copy warns about the Google index only for a
 // currently-published row.
+/**
+ * TASK-430 — a page scheduled for Friday was badged «Чернетка».
+ *
+ * The badge read `isActive`, which the schema documents as a derived mirror of
+ * `status == PUBLISHED` — so it collapses DRAFT and SCHEDULED into one value, and the
+ * operator could not tell a forgotten draft from a scheduled publication.
+ */
+describe("AdminPageTable — scheduled badge (TASK-430)", () => {
+  /** The list with page B SCHEDULED for 19.09.2026 instead of DRAFT. */
+  function stubScheduled(
+    scheduledAt: string | null = "2026-09-19T08:00:00.000Z",
+  ) {
+    server.use(
+      http.get("*/api/admin/pages", () => {
+        const body = listResponse();
+        body.data = body.data.map((page) =>
+          page.id === B
+            ? { ...page, status: "SCHEDULED", scheduledAt, isActive: false }
+            : page,
+        );
+        return HttpResponse.json(body);
+      }),
+    );
+  }
+
+  it("shows the date instead of «Чернетка»", async () => {
+    stubScheduled();
+    await renderGrid();
+
+    expect(
+      screen.getByText(dict.pages.statusScheduledOn("19.09.2026")),
+    ).toBeInTheDocument();
+    // The draft label must be GONE — B is the only non-published row.
+    expect(screen.queryByText(dict.pages.statusDraft)).not.toBeInTheDocument();
+  });
+
+  it("falls back to «Заплановано» when the instant is missing", async () => {
+    // Should not happen (the API writes status and instant together), but the cell
+    // must not render "Invalid Date" if it ever does.
+    stubScheduled(null);
+    await renderGrid();
+
+    expect(screen.getByText(dict.pages.statusScheduled)).toBeInTheDocument();
+  });
+
+  it("leaves the published and draft badges alone", async () => {
+    mockReorder();
+    await renderGrid();
+
+    expect(screen.getAllByText(dict.pages.statusPublished)).toHaveLength(2);
+    expect(screen.getByText(dict.pages.statusDraft)).toBeInTheDocument();
+  });
+});
+
 describe("AdminPageTable — delete confirm copy (TASK-285)", () => {
   let confirmSpy: jest.SpyInstance;
 

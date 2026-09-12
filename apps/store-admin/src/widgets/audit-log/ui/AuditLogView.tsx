@@ -7,8 +7,10 @@ import {
   toAuditEntry,
   useGetAuditLog,
   type AuditEntry,
+  type GetAuditLogParams,
 } from "@/entities/audit";
-import { roleLabel } from "@/entities/user";
+import { ROLE_VALUES, roleLabel } from "@/entities/user";
+import { useAuth } from "@/entities/session";
 import {
   Badge,
   Button,
@@ -33,6 +35,7 @@ import { useTableSort } from "@/shared/lib/use-table-sort";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import { formatDateTime } from "@/shared/lib";
 import { dict } from "@/shared/config";
+import { auditActionLabel } from "../model/action-label";
 
 const d = dict.auditLog;
 
@@ -83,6 +86,33 @@ function actorText(entry: AuditEntry): string {
   return entry.actorId === null
     ? d.deletedActor(entry.actorEmail)
     : entry.actorEmail;
+}
+
+/**
+ * The «Дія» cell (TASK-430).
+ *
+ * Ukrainian first, raw key second — and the raw key STAYS for a reason beyond
+ * nostalgia: the search box above filters on `action` with an EXACT match on the
+ * server, so the key is the only thing an operator can type to narrow the log to
+ * one kind of change. Hiding it would have made the panel readable and the filter
+ * unusable in the same commit.
+ *
+ * An action the dictionary cannot name renders exactly as it did before labels
+ * existed: the key alone, in the same `<code>`. See `auditActionLabel`.
+ */
+function ActionCell({ action }: { action: string }) {
+  const label = auditActionLabel(action);
+
+  if (!label) {
+    return <code className="text-xs">{action}</code>;
+  }
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      <code className="text-xs text-muted-foreground">{action}</code>
+    </div>
+  );
 }
 
 function DiffCell({ entry }: { entry: AuditEntry }) {
@@ -169,12 +199,31 @@ function DiffCell({ entry }: { entry: AuditEntry }) {
  * to 200, but the shared control offers 20 / 50 / 100 like every other table, so
  * "page 3" means the same thing on this screen as on the others. It used to
  * default to 50 with no control at all.
+ *
+ * ── Why the actions are readable now (TASK-430) ─────────────────────────────
+ * The «Дія» column printed the raw machine key, which is the first thing the owner
+ * sees here and the last thing they can read. `model/action-label.ts` composes a
+ * Ukrainian label out of the two halves the key already has; an action it cannot
+ * name still renders raw, so the map may be incomplete without the screen lying.
+ *
+ * ── Why there are two actor filters and not one (TASK-430) ──────────────────
+ * The ask was «мої дії / інші співробітники», which is not one axis: "mine" is an
+ * identity and "other staff" is a role. `TableFilters` owns exactly one query param
+ * per control, so they are two controls — `actorId` (one option, the viewer's own
+ * uuid) and `actorRole` (the new DTO filter). Neither is resolved server-side from
+ * the caller: `?actor=mine` would show a colleague THEIR actions when this view is
+ * pasted to them, and a pasteable view is the reason the state lives in the URL at
+ * all. What the API still cannot express is "everyone except me" — for a shop with
+ * one owner, «Менеджери» is that set, which is why no negative filter was invented.
  */
 export function AuditLogView() {
   const searchParams = useSearchParams();
+  const { userId } = useAuth();
 
   const action = searchParams.get("action") ?? "";
   const entityType = searchParams.get("entityType") ?? "";
+  const actorId = searchParams.get("actorId") ?? "";
+  const actorRole = searchParams.get("actorRole") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
 
@@ -191,6 +240,13 @@ export function AuditLogView() {
       limit: pageSize,
       action: action || undefined,
       entityType: entityType || undefined,
+      actorId: actorId || undefined,
+      // Cast: the generated param type is the API's `UserRole` union, and this
+      // value comes from the URL. An unknown role is refused by the DTO with a 400
+      // rather than silently widening the result, which is the honest outcome for a
+      // hand-edited link.
+      actorRole: (actorRole || undefined) as
+        GetAuditLogParams["actorRole"] | undefined,
       sortBy,
       sortOrder,
     },
@@ -199,9 +255,45 @@ export function AuditLogView() {
 
   const entries = (data?.data ?? []).map(toAuditEntry);
   const totalPages = data?.meta?.totalPages ?? 1;
-  const isFiltered = action !== "" || entityType !== "";
+  const isFiltered =
+    action !== "" || entityType !== "" || actorId !== "" || actorRole !== "";
 
   const filters: TableFilterDef[] = [
+    // ── «Мої дії» (TASK-430) ──────────────────────────────────────────────────
+    // One option, and it writes the viewer's own uuid into the existing `actorId`
+    // param. The option is offered only once the session is known — Radix forbids
+    // an empty `SelectItem` value, and a filter that silently means "everyone"
+    // would be worse than an absent one.
+    ...(userId
+      ? [
+          {
+            param: "actorId",
+            label: d.filterActorAria,
+            allLabel: d.filterActorAll,
+            options: [{ value: userId, label: d.filterActorMine }],
+            // A shared link may carry a COLLEAGUE's uuid. The rows are narrowed by
+            // it, so the chip has to name it and clear it rather than show a blank.
+            resolveLabel: (value: string) => d.filterActorOther(value),
+            className: "w-44",
+          },
+        ]
+      : []),
+    // ── «Інші співробітники», as a role ───────────────────────────────────────
+    // CUSTOMER is deliberately not offered: the interceptor only records routes
+    // behind an admin permission, so the option would be a guaranteed «Немає
+    // записів» — and this screen must never make an empty result look like a
+    // missing entry.
+    {
+      param: "actorRole",
+      label: d.filterRoleAria,
+      allLabel: d.filterRoleAll,
+      options: [
+        { value: ROLE_VALUES.ADMIN, label: roleLabel(ROLE_VALUES.ADMIN) },
+        { value: ROLE_VALUES.MANAGER, label: roleLabel(ROLE_VALUES.MANAGER) },
+      ],
+      resolveLabel: (value: string) => roleLabel(value),
+      className: "w-44",
+    },
     {
       param: "entityType",
       label: d.filterEntityAria,
@@ -236,7 +328,12 @@ export function AuditLogView() {
               label={d.filterActionAria}
             />
           }
-          filters={<TableFilters filters={filters} values={{ entityType }} />}
+          filters={
+            <TableFilters
+              filters={filters}
+              values={{ actorId, actorRole, entityType }}
+            />
+          }
         />
 
         {isLoading ? (
@@ -309,7 +406,7 @@ export function AuditLogView() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <code className="text-xs">{entry.action}</code>
+                      <ActionCell action={entry.action} />
                       {entry.summary && (
                         <p className="text-sm text-muted-foreground">
                           {entry.summary}

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { TopProductDto } from "@/entities/dashboard";
 import {
   Table,
@@ -19,6 +20,21 @@ interface DashboardTopProductsTableProps {
  * already-fetched, revenue-ranked list (PAID orders only; see the dashboard
  * repository, TASK-152). Renders an empty-state row when there are no paid
  * sales yet.
+ *
+ * ── TASK-430: the names are links now ───────────────────────────────────────
+ * They were plain text, which made this widget a dead end: the owner reads "this
+ * case earned 12 400 ₴", wants to know what it costs and how many are left, and had
+ * to go to /products and search for it by name.
+ *
+ * They link to `/products/[id]` — the READ-ONLY card (TASK-427) — and not to
+ * `/products/[id]/edit`. Clicking a number on a dashboard is a question, not an
+ * intent to change anything, and an edit form reached by accident is a form that
+ * can be saved by accident. `TopProductDto` carries `productId` and no slug, which
+ * is also why the id-keyed card is the right target: the customer-facing preview at
+ * `/products/preview/[slug]` is not reachable from here without a second lookup.
+ *
+ * Still no `"use client"`: `next/link` renders fine in a server component, and this
+ * widget has no state to own.
  */
 export function DashboardTopProductsTable({
   products,
@@ -56,7 +72,15 @@ export function DashboardTopProductsTable({
                 <TableCell hideOnMobile className="text-muted-foreground">
                   {index + 1}
                 </TableCell>
-                <TableCell className="font-medium">{product.name}</TableCell>
+                <TableCell className="font-medium">
+                  <Link
+                    href={`/products/${product.productId}`}
+                    aria-label={dict.dashboard.topProductLinkAria(product.name)}
+                    className="hover:underline"
+                  >
+                    {product.name}
+                  </Link>
+                </TableCell>
                 <TableCell className="text-right">
                   {formatCurrency(product.totalRevenue)}
                 </TableCell>

@@ -30,6 +30,8 @@ function makeReviewRow(overrides: Record<string, unknown> = {}) {
     createdAt: "2026-06-01T10:00:00.000Z",
     userEmail: "olena@example.com",
     productName: "iPhone 15 Pro Case",
+    // TASK-430 — on the wire since the same task added it to AdminReviewEntity.
+    productSku: "CASE-IP15P-BLK",
     ...overrides,
   };
 }
@@ -72,6 +74,44 @@ describe("AdminReviewTable", () => {
     expect(
       screen.getAllByLabelText(dict.reviews.ratingAria(5)).length,
     ).toBeGreaterThanOrEqual(2);
+  });
+
+  /**
+   * TASK-430 — the queue showed a product NAME and nothing else. This catalogue has
+   * several positions per display name (the same case in four colours), so a
+   * moderator could not tell which one a complaint was about, and the name is not a
+   * key the catalogue can be searched by.
+   */
+  it("shows the SKU and links the product to its read-only card", async () => {
+    server.use(
+      http.get("*/api/admin/reviews", () => listResponse([makeReviewRow()])),
+    );
+
+    renderWithProviders(<AdminReviewTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(screen.getByText("CASE-IP15P-BLK")).toBeInTheDocument();
+
+    const link = screen.getByRole("link", {
+      name: dict.reviews.productLinkAria("iPhone 15 Pro Case"),
+    });
+    expect(link).toHaveAttribute("href", "/products/product-uuid-1");
+    expect(link.getAttribute("href")).not.toContain("/edit");
+  });
+
+  it("says «без артикулу» rather than leaving the cell blank", async () => {
+    // `Product.sku` is nullable: a position can exist before an article number is
+    // assigned, and an empty cell reads as a rendering fault.
+    server.use(
+      http.get("*/api/admin/reviews", () =>
+        listResponse([makeReviewRow({ productSku: null })]),
+      ),
+    );
+
+    renderWithProviders(<AdminReviewTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(screen.getByText(dict.reviews.noSku)).toBeInTheDocument();
   });
 
   it("calls the approve mutation when Approve is clicked", async () => {

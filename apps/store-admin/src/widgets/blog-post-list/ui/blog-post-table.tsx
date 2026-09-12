@@ -26,6 +26,7 @@ import {
   TableToolbar,
   pageSizeFrom,
 } from "@/shared/ui";
+import { formatDate } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { BlogPostTableSkeleton } from "./blog-post-table-skeleton";
 
@@ -34,6 +35,42 @@ const STATUS_LABEL: Record<string, string> = {
   SCHEDULED: dict.blogPosts.statusScheduled,
   PUBLISHED: dict.blogPosts.statusPublished,
 };
+
+/**
+ * The status badge (TASK-430).
+ *
+ * A scheduled post already read «Заплановано» here — but in the same grey as a
+ * draft and without the date, so the row still did not answer the only question it
+ * raises: WHEN does this go live. The date is what separates a post going out on
+ * Friday from one somebody forgot, and «Заплановано» alone made the operator open
+ * the post to find out.
+ *
+ * `formatDate`, so the year is visible — a schedule typed into the wrong year is the
+ * one mistake worth catching from the list.
+ */
+function BlogStatusBadge({
+  status,
+  scheduledAt,
+}: {
+  status: string;
+  scheduledAt?: string | null;
+}) {
+  if (status === "SCHEDULED") {
+    return (
+      <Badge variant="warning">
+        {scheduledAt
+          ? dict.blogPosts.statusScheduledOn(formatDate(scheduledAt))
+          : dict.blogPosts.statusScheduled}
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge variant={status === "PUBLISHED" ? "default" : "secondary"}>
+      {STATUS_LABEL[status] ?? status}
+    </Badge>
+  );
+}
 
 /**
  * Admin blog-post table: title, category, status badge, featured flag, and
@@ -181,9 +218,10 @@ function BlogPostView() {
                       {post.category.name}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={isPublished ? "default" : "secondary"}>
-                        {STATUS_LABEL[post.status] ?? post.status}
-                      </Badge>
+                      <BlogStatusBadge
+                        status={post.status}
+                        scheduledAt={post.scheduledAt}
+                      />
                     </TableCell>
                     <TableCell hideOnMobile>
                       {post.featured ? dict.blogPosts.featuredYes : "—"}

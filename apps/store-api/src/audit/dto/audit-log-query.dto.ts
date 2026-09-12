@@ -1,6 +1,17 @@
-import { IsDate, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsDate,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
 
 /**
  * Sortable columns of the log viewer (TASK-356).
@@ -42,6 +53,30 @@ export class AuditLogQueryDto {
   @IsString()
   @MaxLength(64)
   actorId?: string;
+
+  /**
+   * Filter by the actor's role AS RECORDED ON THE ENTRY (TASK-430).
+   *
+   * The column has been there since TASK-318 and nothing could filter on it, which
+   * left the owner's question — "what did I change, and what did my staff change?"
+   * — answerable only by pasting a uuid into `actorId`. With this, «Менеджери» is
+   * one click, and it keeps being the right answer after that manager is
+   * dismissed: the role is denormalised onto the row, so filtering by it does not
+   * depend on the account still existing (or on it still holding the same role).
+   *
+   * CUSTOMER is accepted even though no such entry can exist today — the
+   * interceptor only records routes behind an admin permission. Restricting the
+   * enum to two of its three members would be a second, narrower copy of
+   * `UserRole` that goes stale the day a customer-facing route becomes audited.
+   */
+  @ApiProperty({
+    description: 'Filter by the actor role recorded on the entry',
+    required: false,
+    enum: UserRole,
+  })
+  @IsOptional()
+  @IsEnum(UserRole, { message: `actorRole must be one of: ${Object.keys(UserRole).join(', ')}` })
+  actorRole?: UserRole;
 
   @ApiProperty({ description: 'Filter by action, e.g. product.update', required: false })
   @IsOptional()

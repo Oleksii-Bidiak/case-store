@@ -56,6 +56,7 @@ import {
   TableToolbar,
   type SortableTreeRowRenderProps,
 } from "@/shared/ui";
+import { formatDate } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { AdminBannerTableSkeleton } from "./admin-banner-table-skeleton";
 
@@ -424,9 +425,22 @@ function BannerRow({
         </div>
       </TableCell>
       <TableCell role="gridcell">
-        <Badge variant={isPublished ? "default" : "secondary"}>
-          {dict.banners.statusLabels[banner.status]}
-        </Badge>
+        {/* TASK-430: a scheduled banner says WHEN — and in its own colour. It read
+            «Заплановано» in the same grey as a draft, so the row did not answer the
+            question it raises, and the operator had to open the banner to find out.
+            `formatDate` keeps the year visible: a schedule typed into the wrong year
+            is the mistake worth catching from the list. */}
+        {banner.status === "SCHEDULED" ? (
+          <Badge variant="warning">
+            {banner.scheduledAt
+              ? dict.banners.statusScheduledOn(formatDate(banner.scheduledAt))
+              : dict.banners.statusLabels.SCHEDULED}
+          </Badge>
+        ) : (
+          <Badge variant={isPublished ? "default" : "secondary"}>
+            {dict.banners.statusLabels[banner.status]}
+          </Badge>
+        )}
       </TableCell>
       <TableCell role="gridcell" className="text-right">
         <div className="flex justify-end gap-2">

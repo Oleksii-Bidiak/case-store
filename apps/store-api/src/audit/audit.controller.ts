@@ -45,8 +45,8 @@ export class AuditController {
   /**
    * GET /api/admin/audit-log
    *
-   * Newest first, paginated, filterable by actor / action / entity / time range
-   * and sortable by time, actor or action.
+   * Newest first, paginated, filterable by actor (id or role) / action / entity /
+   * time range and sortable by time, actor or action.
    */
   @Get()
   @ApiBearerAuth('access-token')
@@ -65,6 +65,7 @@ export class AuditController {
       page: query.page ?? 1,
       limit: query.limit ?? 50,
       actorId: query.actorId,
+      actorRole: query.actorRole,
       action: query.action,
       entityType: query.entityType,
       entityId: query.entityId,

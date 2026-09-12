@@ -175,6 +175,10 @@ model User {
   oauthAccounts           OAuthAccount[]
   emailVerificationTokens EmailVerificationToken[]
   totpBackupCodes         TotpBackupCode[]
+  /// Staff notes ABOUT this customer (TASK-430). There is deliberately no inverse
+  /// relation for notes this user WROTE — `UserNote.authorId` has no foreign key,
+  /// so an author's account can be deleted without taking their notes with it.
+  notes                   UserNote[]
 
   @@index([deletedAt])
   @@map("users")
@@ -1745,4 +1749,46 @@ model CatalogImportItem {
 
   @@index([lastSeenRunId])
   @@map("catalog_import_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Customer notes (TASK-430)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A staff-written note on a customer card — a JOURNAL, not a field.
+///
+/// The owner decided this shape on 2026-09-11, against the obvious cheaper one: a
+/// single `notes` column on `User`, like `Order.internalNotes`. A single column is
+/// useless to a team, because the only way to add to it is to overwrite what a
+/// colleague wrote — «передзвонити після 18:00» replaced by «просив рахунок на
+/// ФОП», with nothing left to show the first note ever existed. Entries accumulate
+/// here instead: append-only, each stamped with who wrote it and when. There is no
+/// update and no delete route, which is why this model has no `updatedAt`.
+///
+/// `authorId` carries NO foreign key, deliberately — the same decision as
+/// `AuditLog.actorId` and `OrderStatusHistory.changedBy`, for the same reason. A
+/// note is the record of what someone said about a customer, and dismissing the
+/// employee who said it must not erase it. A real relation would either cascade
+/// the note away or block the deletion, and both outcomes are wrong.
+///
+/// `authorEmail` is denormalised next to it for exactly the reason the audit log
+/// denormalises its actor: once the account is gone a join returns nothing, and a
+/// journal whose entries read "хтось, 12.09.2026" is a journal nobody trusts.
+///
+/// `userId` DOES carry a real relation with a cascade: a note about a customer has
+/// no meaning without the customer. In practice it never fires — users are
+/// soft-deleted (`deletedAt`), never removed — but the constraint states the intent
+/// for anyone reading the schema, and it holds for a hard delete in a test.
+model UserNote {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  authorId    String?  @map("author_id")
+  authorEmail String?  @map("author_email")
+  body        String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  /// The only read this table has: one customer's notes, newest first.
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("user_notes")
 }
