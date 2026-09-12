@@ -350,6 +350,20 @@ export function HeaderSearch() {
   return (
     <div
       ref={containerRef}
+      // Tabbing out of an open catalogue panel closes it (TASK-413). Without
+      // this the panel stays open behind a focus ring the visitor has already
+      // left, and — now that the page under it is scroll-locked — focus can
+      // walk down to something it cannot scroll into view. `relatedTarget` is
+      // where focus is heading; inside our own box it is pane-to-pane movement,
+      // which must not close anything. A NULL relatedTarget is deliberately
+      // ignored: that is focus dropping to <body> — a click on the panel's own
+      // padding looks exactly like that, and real outside clicks are already
+      // the pointerdown handler's job.
+      onBlur={(event) => {
+        if (!catalogOpen || !event.relatedTarget) return;
+        if (containerRef.current?.contains(event.relatedTarget)) return;
+        setCatalogOpen(false);
+      }}
       // Only from `lg` does the pill claim the row's free space; in the md–lg
       // band the widget is as wide as its content (Каталог + magnifier).
       //

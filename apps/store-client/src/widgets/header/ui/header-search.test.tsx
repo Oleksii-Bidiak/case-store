@@ -863,6 +863,21 @@ describe("HeaderSearch — mega-menu keyboard, scroll-lock and the second exit (
       expect(glass).toHaveFocus();
     });
 
+    it("closes the panel when focus leaves it altogether", async () => {
+      setupHandlers({ categories: makeTree() });
+      await openOnFirstRoot();
+
+      // Somewhere outside the widget — a Tab-out, in effect. Leaving the panel
+      // open behind departed focus would strand the visitor under a
+      // scroll-locked page.
+      const outside = document.createElement("button");
+      document.body.append(outside);
+      act(() => outside.focus());
+
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      outside.remove();
+    });
+
     it("leaves ArrowLeft and Escape doing what they always did", async () => {
       setupHandlers({ categories: makeTree() });
       const { user, first } = await openOnFirstRoot();
