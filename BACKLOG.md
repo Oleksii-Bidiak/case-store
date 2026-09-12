@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-497**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-500**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -666,6 +666,9 @@
 | TASK-494 | `scripts/env-check.js` звіряє чотири джерела, але **не читає `.github/workflows/**`** — а задеплоєні образи збирають саме списки `build-args:` у `ci.yml`, не `build.args` у compose. Тому пропуск змінної в джобі нічим не ловиться: так пройшли і TASK-461, і TASK-495. Додати workflow п'ятим джерелом гейта | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
 | TASK-495 | [🔴 CI] Блокуючий джоб `Env Drift Gate` червоний: (1) сканер `scanCode()` читав і коментарі, тож фраза «literal `process.env.X`» у JSDoc `login-form.tsx:51` завела змінну на ім'я `X`; (2) `NEXT_PUBLIC_GOOGLE_AUTH_ENABLED` читається кодом, але відсутній у Dockerfile вітрини, compose, `build-args:` у `ci.yml`, прод-прикладі й таблиці `VARS` — тобто кнопку «Увійти через Google» не можна було ввімкнути в жодній контейнерній збірці, попри налаштовані `GOOGLE_CLIENT_ID/_SECRET` на API | ✅ | [179](docs/plans/179-quality-security-docs-infra.md) |
 | TASK-496 | `AuthService.refreshToken` відкликає пред'явлений токен **до** того, як змінтить заміну (`auth.service.ts`, `revokeToken` → `generateTokenPair`), тож будь-яка помилка мінту лишає сесію без жодного живого токена — клієнт повторює вже відкликаним кукі, це читається як крадіжка, і відкликаються всі сесії. Колізію, що робила це досяжним, закрито в TASK-463 (`jti`), **порядок — ні**. Мінтити й персистити нове, і лише потім відкликати старе | ⬜ | [179](docs/plans/179-quality-security-docs-infra.md) |
+| TASK-497 | «Розумний» пошук товарів в адмінці через Meilisearch (план 175, TASK-423 п.6). Відкладено рішенням власника 2026-09-11: залежить від SKU в індексі (TASK-417, хвиля 174), а головне — адмінський список мусить показувати приховані й **видалені** товари, яких в індексі немає, тож наївне перемикання зробило б пошук гіршим за нинішній. Робити після мержу 174, з фолбеком на Postgres для рядків поза індексом | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-498 | [🟡] Форма редагування адреси замовлення перевіряє телефон лише на непорожність (`features/order-address-edit/model/address-schema.ts:19`, `min(1)`), а той самий ендпоінт вимагає `@IsInternationalPhone` (`address.dto.ts:112`) — тобто `123` проходить форму і падає 400 на API. Гірше за саму невідповідність те, як вона виглядає: `order-address-form.tsx:123-133` віддає 400 у `orderConflictMessage`, а `isOrderConflict` матчить конверт Nest `error: "Bad Request"`, тож оператор бачить «замовлення змінилося, оновіть сторінку» через одруківку в номері. Передіснуюче, знайдено при ревʼю TASK-426 (який вирівняв решту телефонних полів); виправляється тим самим `isValidInternationalPhone` | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-499 | Підказка місця вставки в дереві категорій рахує `getProjection` **двічі** — у мемо підказки (`sortable-tree.tsx:321-332`) і вдруге на drop (`:367`). Геометрія однакова (та сама чиста функція й ті самі входи), різниться лише джерело `over id`: мемо бере збережений станом `overId`, а `handleDragEnd` — `over.id` із події. На практиці dnd-kit виводить обидва з однієї колізії, але жоден тест не стверджує, що показана підказка збігається з фактичним приземленням. Або звести до одного обчислення, або накрити тестом «куди показали — туди й поклали» | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
 
 ---
 
@@ -675,6 +678,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-497**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-500**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
