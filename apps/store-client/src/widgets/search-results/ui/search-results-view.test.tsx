@@ -3,6 +3,7 @@ import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { SearchResultsView } from "./search-results-view";
+import { SearchResultsSkeleton } from "./search-results-skeleton";
 
 function variantSummary(overrides: Record<string, unknown> = {}) {
   return {
@@ -104,6 +105,65 @@ describe("SearchResultsView", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       dict.search.error,
     );
+  });
+
+  // ── TASK-415: the 1 / 2 / 4 card ladder ────────────────────────────────────
+  // /search renders the very same ProductCard as /products, so it must settle
+  // on the same column count — one card below 390px (two were unreadable on the
+  // smallest phones), two from 390px, four from `lg`. The skeleton has to
+  // declare the identical columns, or the page reflows the instant real cards
+  // replace it. Same pair of guards as in `product-list.test.tsx`.
+  describe("results grid (TASK-415)", () => {
+    function installOneResult() {
+      server.use(
+        http.get("*/api/search", () =>
+          HttpResponse.json(resultsEnvelope([makeProduct()])),
+        ),
+      );
+    }
+
+    it("renders the grid one-up under 390px, two-up from 390px and four-up from lg", async () => {
+      installOneResult();
+
+      renderWithProviders(<SearchResultsView query="айфон" page={1} />);
+
+      const grid = (await screen.findByText("iPhone 15 Case")).closest(".grid");
+      expect(grid).not.toBeNull();
+      expect(grid).toHaveClass(
+        "grid-cols-1",
+        "min-[390px]:grid-cols-2",
+        "lg:grid-cols-4",
+      );
+      // Cards in a row share one height whatever their title/badge count.
+      expect(grid).toHaveClass("items-stretch");
+      // The old sm:2 / md:3 ladder is gone, not merely overridden.
+      expect(grid).not.toHaveClass("sm:grid-cols-2");
+      expect(grid).not.toHaveClass("md:grid-cols-3");
+    });
+
+    it("lays the skeleton out in exactly the same columns as the real grid", async () => {
+      installOneResult();
+
+      renderWithProviders(<SearchResultsView query="айфон" page={1} />);
+      const realGrid = (await screen.findByText("iPhone 15 Case")).closest(
+        ".grid",
+      );
+
+      const { container } = renderWithProviders(<SearchResultsSkeleton />);
+      const skeletonGrid = container.querySelector(".grid");
+
+      // Both sides must exist — otherwise the comparison below would pass
+      // vacuously on two `undefined`s.
+      expect(realGrid).not.toBeNull();
+      expect(skeletonGrid).toHaveClass(
+        "grid-cols-1",
+        "min-[390px]:grid-cols-2",
+        "lg:grid-cols-4",
+      );
+      // Byte-identical, not merely "both responsive": any drift here is a
+      // visible reflow when the skeleton is replaced by cards.
+      expect(skeletonGrid?.className).toBe(realGrid?.className);
+    });
   });
 
   // ── TASK-261: search analytics ─────────────────────────────────────────────
