@@ -1,3 +1,4 @@
+import { STORE_NAME } from '../../lib/store';
 import type { CatalogueEntry } from '../../types';
 
 /** Тримачі та підставки — 7 catalogue entries / 12 positions. */
@@ -12,6 +13,9 @@ export const holders: CatalogueEntry[] = [
     sku: 'HLD-BSU-VENT',
     categorySlug: 'car-holders',
     brandSlug: 'baseus',
+    metaTitle: `Магнітний автотримач Baseus на дефлектор | ${STORE_NAME}`,
+    metaDescription:
+      'Магнітний автотримач Baseus на дефлектор: шість неодимових магнітів тримають телефон у чохлі навіть на ямах, а потік повітря його охолоджує.',
     specs: {
       mount: 'Дефлектор',
       fixation: 'Магніт',
@@ -70,6 +74,9 @@ export const holders: CatalogueEntry[] = [
     sku: 'HLD-BLK-DASH',
     categorySlug: 'car-holders',
     brandSlug: 'belkin',
+    metaTitle: `Автотримач Belkin MagSafe на панель | ${STORE_NAME}`,
+    metaDescription:
+      'Автотримач Belkin MagSafe на панель: офіційний магніт ставить iPhone на місце з клацанням, а клейова основа 3M знімається без слідів.',
     specs: {
       mount: 'Панель',
       fixation: 'MagSafe',

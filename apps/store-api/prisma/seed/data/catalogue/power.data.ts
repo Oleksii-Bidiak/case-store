@@ -1,3 +1,4 @@
+import { STORE_NAME } from '../../lib/store';
 import type { CatalogueEntry } from '../../types';
 
 /** Зарядні пристрої — 8 catalogue entries / 12 positions. */
@@ -12,6 +13,9 @@ export const chargers: CatalogueEntry[] = [
     sku: 'CHG-ANK-20W',
     categorySlug: 'wall-chargers',
     brandSlug: 'anker',
+    metaTitle: `Зарядний пристрій Anker 20 Вт USB-C | ${STORE_NAME}`,
+    metaDescription:
+      'Компактний мережевий зарядний пристрій Anker на 20 Вт з USB-C і Power Delivery: половина заряду iPhone за пів години. Білий або чорний.',
     specs: {
       'charger-power': '20 Вт',
       'charger-type': 'Мережева',
@@ -47,6 +51,9 @@ export const chargers: CatalogueEntry[] = [
     sku: 'CHG-BSU-65W',
     categorySlug: 'wall-chargers',
     brandSlug: 'baseus',
+    metaTitle: `Зарядний пристрій Baseus GaN 65 Вт | ${STORE_NAME}`,
+    metaDescription:
+      'Зарядний пристрій Baseus GaN на 65 Вт: два USB-C і USB-A в корпусі, меншому за старий блок на 30 Вт. Ноутбук і телефон з однієї розетки.',
     specs: {
       'charger-power': '65 Вт',
       'charger-type': 'Мережева',

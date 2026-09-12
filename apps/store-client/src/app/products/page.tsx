@@ -13,6 +13,7 @@ import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import {
   buildListingMetadata,
+  buildOgImages,
   resolveSeo,
   toMetadataTitle,
   type ListingFilterParams,
@@ -48,8 +49,11 @@ async function resolveCategoryNode(
  * precedence helper so they are category-specific and SeoSettings-aware instead
  * of the generic "Товари", across all three tiers:
  *
- *   category metaTitle/metaDescription (tier 1) → SeoSettings defaults (tier 2)
- *   → category name/description (tier 3).
+ *   category metaTitle/metaDescription (tier 1) → category name/description
+ *   (tier 2) → SeoSettings defaults (tier 3).
+ *
+ * TASK-432 inverted tiers 2 and 3: the global default used to outrank real
+ * category content, so one line in /settings/seo described every listing.
  *
  * The category's own `metaTitle`/`metaDescription` admin overrides (tier 1) are
  * now surfaced on the public category tree (TASK-247), so they are passed here
@@ -105,26 +109,52 @@ export async function generateMetadata({
       entityDescription: node.metaDescription,
       content: { name: node.name, description: node.description },
     });
+    const title = toMetadataTitle(seoMeta, {
+      settings: seo,
+      siteName: SITE_NAME,
+      fallback: dict.meta.productsTitle,
+    });
+    const description = seoMeta.description ?? dict.meta.productsDescription;
     return {
-      title: toMetadataTitle(seoMeta, {
-        settings: seo,
-        siteName: SITE_NAME,
-        fallback: dict.meta.productsTitle,
-      }),
-      description: seoMeta.description ?? dict.meta.productsDescription,
+      title,
+      description,
       ...canonicalAndRobots,
+      // TASK-432 — the catalogue had no openGraph block at all, so every shared
+      // `/products?categoryId=…` link previewed as the site-wide root card. The
+      // canonical URL is the one the listing policy already picked (a clean
+      // category view canonicalizes onto /categories/<slug>), so the preview and
+      // the canonical never disagree.
+      openGraph: {
+        title: title.absolute,
+        description,
+        url: `${SITE_URL}${listingMeta.canonicalPath ?? "/products"}`,
+        siteName: SITE_NAME,
+        locale: "uk_UA",
+        type: "website",
+        images: buildOgImages({ ogImage: seoMeta.ogImage }),
+      },
     };
   }
 
   // Unfiltered / keyword-search / unknown-category → generic listing metadata,
   // still branded through the same helper so the title carries the store name.
+  const title = toMetadataTitle(
+    { title: dict.meta.productsTitle, titleAbsolute: false },
+    { settings: seo, siteName: SITE_NAME, fallback: dict.meta.productsTitle },
+  );
   return {
-    title: toMetadataTitle(
-      { title: dict.meta.productsTitle, titleAbsolute: false },
-      { settings: seo, siteName: SITE_NAME, fallback: dict.meta.productsTitle },
-    ),
+    title,
     description: dict.meta.productsDescription,
     ...canonicalAndRobots,
+    openGraph: {
+      title: title.absolute,
+      description: dict.meta.productsDescription,
+      url: `${SITE_URL}${listingMeta.canonicalPath ?? "/products"}`,
+      siteName: SITE_NAME,
+      locale: "uk_UA",
+      type: "website",
+      images: buildOgImages({ ogImage: seo?.defaultOgImage }),
+    },
   };
 }
 

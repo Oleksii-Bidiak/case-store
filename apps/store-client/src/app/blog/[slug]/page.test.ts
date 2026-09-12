@@ -31,10 +31,11 @@ jest.mock("@/shared/lib/slug-redirect", () => ({
   resolveSlugRedirect: jest.fn(),
 }));
 
-import BlogArticlePage from "./page";
+import BlogArticlePage, { generateMetadata } from "./page";
 import { notFound, permanentRedirect } from "next/navigation";
 import { fetchPublishedPost } from "@/shared/api/blog-server";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
+import { BRAND_OG_IMAGE_PATH, SITE_NAME, SITE_URL } from "@/shared/config";
 
 const fetchPost = fetchPublishedPost as jest.MockedFunction<
   typeof fetchPublishedPost
@@ -102,5 +103,59 @@ describe("blog/[slug] slug-redirect (TASK-285)", () => {
     expect(resolveRedirect).not.toHaveBeenCalled();
     expect(permanentRedirect).not.toHaveBeenCalled();
     expect(notFound).not.toHaveBeenCalled();
+  });
+});
+
+// Next merges metadata SHALLOWLY: a route that declares its own `openGraph`
+// replaces the root layout's object entirely. So every such block owes the
+// preview three things the root used to supply — siteName, locale and images —
+// and forgetting one is invisible in a helper-level unit test. These assert the
+// assembled object, which is where that omission actually shows up (TASK-432).
+describe("blog/[slug] generateMetadata — the openGraph block it must re-state", () => {
+  const runMeta = (slug: string) =>
+    generateMetadata({ params: Promise.resolve({ slug }) });
+
+  it("re-states siteName and locale lost with the root openGraph", async () => {
+    fetchPost.mockResolvedValue(makePost());
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.openGraph).toMatchObject({
+      siteName: SITE_NAME,
+      locale: "uk_UA",
+      type: "article",
+      url: `${SITE_URL}/blog/iphone-16-oglyad`,
+    });
+  });
+
+  it("uses the article's own cover as the OG card when it has one", async () => {
+    fetchPost.mockResolvedValue({
+      ...makePost(),
+      coverImageUrl: "https://cdn.example/cover.webp",
+    });
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.openGraph?.images).toEqual([
+      { url: "https://cdn.example/cover.webp" },
+    ]);
+  });
+
+  it("falls back to the brand card rather than shipping no image at all", async () => {
+    fetchPost.mockResolvedValue(makePost()); // coverImageUrl: null
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.openGraph?.images).toEqual([
+      expect.objectContaining({ url: BRAND_OG_IMAGE_PATH }),
+    ]);
+  });
+
+  it("404s an unknown slug instead of inventing metadata", async () => {
+    fetchPost.mockResolvedValue(null);
+
+    const meta = await runMeta("never-existed");
+
+    expect(meta.openGraph).toBeUndefined();
   });
 });

@@ -27,22 +27,33 @@ describe("resolveSeo — title precedence", () => {
     expect(r.titleAbsolute).toBe(true);
   });
 
-  it("tier 2: settings.defaultMetaTitle wins over content when no entity title (absolute)", () => {
+  // TASK-432 — deliberately inverted: before, the ONE store-wide default title
+  // outranked every page's own name, so each product/category shipped the same
+  // <title>. Content is more specific than a site-wide default, so it wins.
+  it("tier 2: content name wins over settings.defaultMetaTitle when no entity title (not absolute)", () => {
     const r = resolveSeo({
       settings,
       content: { name: "iPhone 15 Case" },
     });
+    expect(r.title).toBe("iPhone 15 Case");
+    // Not absolute → the caller's template appends the brand.
+    expect(r.titleAbsolute).toBe(false);
+  });
+
+  it("tier 3: settings.defaultMetaTitle only fires when there is no entity title AND no content (absolute)", () => {
+    const r = resolveSeo({ settings, content: { name: "   " } });
     expect(r.title).toBe("Найкращі аксесуари");
+    // Still an admin-typed string → used verbatim, no brand suffix appended.
     expect(r.titleAbsolute).toBe(true);
   });
 
-  it("tier 3: content name only fires when both higher tiers are absent (not absolute)", () => {
-    const r = resolveSeo({
-      settings: { ...settings, defaultMetaTitle: null },
-      content: { name: "iPhone 15 Case" },
-    });
-    expect(r.title).toBe("iPhone 15 Case");
-    expect(r.titleAbsolute).toBe(false);
+  it("keeps the titleAbsolute mapping bound to the tier, not to the winner's rank", () => {
+    // entity → verbatim; derived → branded; global default → verbatim.
+    expect(resolveSeo({ entityTitle: "X", settings }).titleAbsolute).toBe(true);
+    expect(
+      resolveSeo({ settings, content: { name: "Чохли" } }).titleAbsolute,
+    ).toBe(false);
+    expect(resolveSeo({ settings }).titleAbsolute).toBe(true);
   });
 
   it("treats a blank/whitespace entity title as absent and falls through", () => {
@@ -81,20 +92,53 @@ describe("resolveSeo — description precedence", () => {
     expect(r.description).toBe("Опис від адміна");
   });
 
-  it("tier 2: settings.defaultMetaDescription wins over content", () => {
+  // TASK-432 — deliberately inverted; see the title block above.
+  it("tier 2: content description wins over settings.defaultMetaDescription", () => {
     const r = resolveSeo({
       settings,
-      content: { description: "Похідний опис" },
-    });
-    expect(r.description).toBe("Магазин преміальних аксесуарів");
-  });
-
-  it("tier 3: content description fires when both higher tiers are absent", () => {
-    const r = resolveSeo({
-      settings: { ...settings, defaultMetaDescription: null },
       content: { description: "  Похідний опис товару  " },
     });
     expect(r.description).toBe("Похідний опис товару");
+  });
+
+  it("tier 3: settings.defaultMetaDescription fires only when the entity has no content of its own", () => {
+    const r = resolveSeo({ settings, content: { description: "   " } });
+    expect(r.description).toBe("Магазин преміальних аксесуарів");
+  });
+
+  /**
+   * The requirement the owner actually reported (plan 176 «Навіщо»): with a
+   * global default filled in, every product's <meta name="description"> read as
+   * a description of the SHOP. The product's own text must win.
+   */
+  it("a product's own content beats the global defaultMetaDescription (the regression TASK-432 fixes)", () => {
+    const r = resolveSeo({
+      settings,
+      content: {
+        name: "Чохол Spigen Ultra Hybrid для iPhone 15",
+        description:
+          "Прозорий чохол із протиударними кутами та підтримкою MagSafe.",
+      },
+    });
+
+    expect(r.description).toBe(
+      "Прозорий чохол із протиударними кутами та підтримкою MagSafe.",
+    );
+    expect(r.description).not.toBe(settings.defaultMetaDescription);
+    expect(r.title).toBe("Чохол Spigen Ultra Hybrid для iPhone 15");
+    expect(r.title).not.toBe(settings.defaultMetaTitle);
+  });
+
+  it("an explicit entity override still outranks the entity's own content", () => {
+    const r = resolveSeo({
+      entityTitle: "Купити чохол Spigen — офіційний магазин",
+      entityDescription: "Адмінський опис для пошуку.",
+      settings,
+      content: { name: "Чохол Spigen", description: "Похідний опис" },
+    });
+    expect(r.title).toBe("Купити чохол Spigen — офіційний магазин");
+    expect(r.titleAbsolute).toBe(true);
+    expect(r.description).toBe("Адмінський опис для пошуку.");
   });
 
   it("strips HTML/markdown and truncates a derived description to ~155 chars", () => {

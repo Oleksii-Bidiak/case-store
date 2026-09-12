@@ -1,6 +1,9 @@
 import * as Sentry from "@sentry/nextjs";
 import { SITE_URL, SITE_NAME, CURRENCY, dict } from "@/shared/config";
 import { fetchAllActiveProducts } from "@/shared/lib/schema";
+import { buildCategoryPathMap } from "@/shared/lib/category-path";
+import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
+import type { CategoryTreeNodeEntity } from "@/shared/api/generated/models";
 import {
   buildMerchantFeedXml,
   type MerchantFeedProduct,
@@ -22,7 +25,23 @@ import {
 export async function GET(): Promise<Response> {
   let products: MerchantFeedProduct[] = [];
   try {
-    const all = await fetchAllActiveProducts();
+    // The category tree feeds `g:product_type` (TASK-432). It is fetched in
+    // parallel with the products and its failure is contained: an empty path map
+    // costs the feed its (optional) product_type elements, while a rejection here
+    // would drop the whole catalogue. Walked once into an id → breadcrumb map, so
+    // the per-product lookup below stays O(1).
+    const [all, categoryTree] = await Promise.all([
+      fetchAllActiveProducts(),
+      categoryControllerGetCategoryTree().catch((err: unknown) => {
+        console.error("[merchant-feed] Failed to fetch category tree:", err);
+        Sentry.captureException(err, {
+          tags: { route: "merchant-feed", part: "category-tree" },
+        });
+        return { data: [] as CategoryTreeNodeEntity[] };
+      }),
+    ]);
+    const categoryPaths = buildCategoryPathMap(categoryTree.data ?? []);
+
     products = all.map((p) => ({
       id: p.id,
       name: p.name,
@@ -32,6 +51,9 @@ export async function GET(): Promise<Response> {
       inStock: p.inStock,
       brand: p.brand ? { name: p.brand.name } : null,
       primaryImage: p.primaryImage ? { url: p.primaryImage.url } : null,
+      categoryPath: p.categoryId
+        ? (categoryPaths.get(p.categoryId) ?? null)
+        : null,
     }));
   } catch (err) {
     console.error("[merchant-feed] Failed to fetch products:", err);

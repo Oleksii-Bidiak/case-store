@@ -1,3 +1,4 @@
+import { STORE_NAME } from '../../lib/store';
 import type { CatalogueEntry } from '../../types';
 
 /**
@@ -18,6 +19,9 @@ export const protection: CatalogueEntry[] = [
     sku: 'SP-GL-IP15',
     categorySlug: 'tempered-glass',
     brandSlug: 'spigen',
+    metaTitle: `Захисне скло 9H для iPhone 15 з рамкою | ${STORE_NAME}`,
+    metaDescription:
+      'Гартоване скло 9H для iPhone 15 з рамкою-позиціонером: лягає рівно з першого разу, без бульбашок. Олеофобне покриття, Full Glue, 1 або 2 шт.',
     specs: {
       'protector-type': 'Гартоване скло',
       coverage: 'Увесь екран (Full Glue)',
@@ -52,6 +56,9 @@ export const protection: CatalogueEntry[] = [
     sku: 'SP-GL-IP15P',
     categorySlug: 'tempered-glass',
     brandSlug: 'baseus',
+    metaTitle: `Захисне скло Baseus 9H для iPhone 15 Pro | ${STORE_NAME}`,
+    metaDescription:
+      'Захисне скло Baseus 9H для iPhone 15 Pro з чорною рамкою по краю та клеєм на всю площу: краї не відходять, під ними не збирається пил.',
     specs: {
       'protector-type': 'Гартоване скло',
       coverage: 'Увесь екран (Full Glue)',

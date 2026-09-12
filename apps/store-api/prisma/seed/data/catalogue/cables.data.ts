@@ -1,3 +1,4 @@
+import { STORE_NAME } from '../../lib/store';
 import type { CatalogueEntry } from '../../types';
 
 /** Кабелі та перехідники — 10 catalogue entries / 19 positions. */
@@ -12,6 +13,9 @@ export const cables: CatalogueEntry[] = [
     sku: 'CAB-ANK-CL',
     categorySlug: 'lightning-cables',
     brandSlug: 'anker',
+    metaTitle: `Кабель Anker USB-C — Lightning MFi | ${STORE_NAME}`,
+    metaDescription:
+      'Кабель Anker USB-C — Lightning із сертифікацією MFi: 20 Вт швидкої зарядки і жодних повідомлень «аксесуар не підтримується». 1 і 2 м.',
     specs: {
       'connector-out': 'Lightning',
       'connector-in': 'USB-C',
@@ -79,6 +83,9 @@ export const cables: CatalogueEntry[] = [
     sku: 'CAB-UGR-CC100',
     categorySlug: 'usb-c-cables',
     brandSlug: 'ugreen',
+    metaTitle: `Кабель UGREEN USB-C 100 Вт у нейлоні | ${STORE_NAME}`,
+    metaDescription:
+      'Кабель UGREEN USB-C — USB-C на 100 Вт у нейлоновому обплетенні: заряджає телефон, планшет і MacBook Pro. Гнучкий хвостик біля штекера.',
     specs: {
       'connector-out': 'USB-C',
       'connector-in': 'USB-C',

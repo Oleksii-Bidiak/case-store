@@ -5,9 +5,6 @@ import { Providers } from "./providers";
 import { Header } from "@/widgets/header";
 import { Footer } from "@/widgets";
 import {
-  BRAND_OG_IMAGE_HEIGHT,
-  BRAND_OG_IMAGE_PATH,
-  BRAND_OG_IMAGE_WIDTH,
   PRIMARY_COLOR,
   PRIMARY_COLOR_DARK,
   SITE_URL,
@@ -19,7 +16,11 @@ import {
 } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { resolveSeo, resolveTitleTemplate } from "@/shared/lib/seo";
+import {
+  buildOgImages,
+  resolveSeo,
+  resolveTitleTemplate,
+} from "@/shared/lib/seo";
 import "./globals.css";
 
 /**
@@ -76,17 +77,16 @@ export const viewport: Viewport = {
 export async function generateMetadata(): Promise<Metadata> {
   const seo = await fetchSeoSettings();
 
-  // Root defaults resolved through the shared precedence helper: the SeoSettings
-  // defaults win (tier 2), else the hardcoded localized strings (tier 3). The
-  // brand title template is picked separately and applied by Next to each page's
+  // Root defaults resolved through the shared precedence helper. The root layout
+  // is not an entity — it has no content of its own — so ONLY `settings` is fed
+  // in, and the hardcoded localized strings stay where they belong: as the outer
+  // `||` / `??` fallback below. (Before TASK-432 the dict strings were passed as
+  // `content`; harmless while the global default outranked content, a regression
+  // the moment content started winning — the admin's /settings/seo defaults would
+  // have been shadowed by a constant that is never empty.) The brand title
+  // template is picked separately and applied by Next to each page's
   // plain-string `<title>` (`title.default` itself is never templated).
-  const resolved = resolveSeo({
-    settings: seo,
-    content: {
-      name: dict.meta.rootTitle,
-      description: dict.meta.rootDescription,
-    },
-  });
+  const resolved = resolveSeo({ settings: seo });
 
   return {
     metadataBase: new URL(SITE_URL),
@@ -100,23 +100,15 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: SITE_NAME,
       url: SITE_URL,
       locale: "uk_UA",
-      // Admin-uploaded default OG image (tier 2) wins verbatim; otherwise the
-      // committed brand card ships so link previews are never image-less
-      // (TASK-279, plan 145 Design Decision 1). The relative path resolves to
-      // an absolute URL via `metadataBase` above. Deliberately explicit code —
-      // NOT the app/opengraph-image.png file convention — so the fallback sits
-      // next to the tier logic instead of being merged in invisibly (segments
-      // that define their own `openGraph` would silently opt out either way).
-      images: resolved.ogImage
-        ? [{ url: resolved.ogImage }]
-        : [
-            {
-              url: BRAND_OG_IMAGE_PATH,
-              width: BRAND_OG_IMAGE_WIDTH,
-              height: BRAND_OG_IMAGE_HEIGHT,
-              alt: dict.meta.rootTitle,
-            },
-          ],
+      // Admin-uploaded default OG image wins verbatim; otherwise the committed
+      // brand card ships so link previews are never image-less (TASK-279, plan
+      // 145 Design Decision 1). The relative path resolves to an absolute URL
+      // via `metadataBase` above. Deliberately explicit code — NOT the
+      // app/opengraph-image.png file convention — so the fallback sits next to
+      // the tier logic instead of being merged in invisibly (segments that
+      // define their own `openGraph` would silently opt out either way, which
+      // is why they call the same `buildOgImages` helper — TASK-432).
+      images: buildOgImages({ ogImage: resolved.ogImage }),
     },
     // Search-console ownership verification (TASK-280, plan 146 Decision 2).
     // Each key is emitted only when its admin-managed token is a non-empty

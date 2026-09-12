@@ -1,3 +1,4 @@
+import { STORE_NAME } from '../../lib/store';
 import type { CatalogueEntry } from '../../types';
 
 /** Чохли — 12 catalogue entries / 30 positions across iPhone, Samsung and Xiaomi. */
@@ -12,6 +13,9 @@ export const cases: CatalogueEntry[] = [
     sku: 'CASE-SPG-LA-IP15',
     categorySlug: 'iphone-cases',
     brandSlug: 'spigen',
+    metaTitle: `Чохол Spigen Liquid Air для iPhone 15 | ${STORE_NAME}`,
+    metaDescription:
+      'Матовий чохол Spigen Liquid Air для iPhone 15: посилені кути Air Cushion і бортик над екраном 1.2 мм. Чорний, темно-синій, бежевий.',
     specs: {
       material: 'TPU',
       'case-type': 'Накладка',
@@ -55,6 +59,9 @@ export const cases: CatalogueEntry[] = [
     sku: 'CASE-SIL-MAG-IP15',
     categorySlug: 'iphone-cases',
     brandSlug: 'apple',
+    metaTitle: `Силіконовий чохол для iPhone 15 з MagSafe | ${STORE_NAME}`,
+    metaDescription:
+      'Силіконовий чохол для iPhone 15 з магнітами MagSafe і мікрофібровим підкладом усередині: не дряпає корпус, тримає гаманець без люфту.',
     specs: {
       material: 'Силікон',
       'case-type': 'Накладка',

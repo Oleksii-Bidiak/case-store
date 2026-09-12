@@ -11,6 +11,7 @@ import {
   buildBlogPostingSchema,
   buildBreadcrumbSchema,
 } from "@/shared/lib/schema";
+import { buildOgImages } from "@/shared/lib/seo";
 import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
 
 const RELATED_LIMIT = 3;
@@ -29,15 +30,24 @@ export async function generateMetadata({
   }
 
   const canonical = `${SITE_URL}/blog/${post.slug}`;
+
   return {
     title: post.title,
     description: post.excerpt,
     alternates: { canonical },
+    // This block replaces the root layout's `openGraph` wholesale (Next merges
+    // metadata shallowly), so it must re-state siteName/locale/images itself —
+    // see `buildOgImages`. The article's own cover art is the right card for a
+    // shared link; `buildOgImages` falls back to the admin default and then the
+    // brand card, so a coverless post is still never image-less.
     openGraph: {
       title: post.title,
       description: post.excerpt,
       url: canonical,
+      siteName: SITE_NAME,
+      locale: "uk_UA",
       type: "article",
+      images: buildOgImages({ pageImage: post.coverImageUrl }),
     },
   };
 }

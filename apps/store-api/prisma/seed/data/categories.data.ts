@@ -32,6 +32,9 @@ export const categoryTree: CategoryNode[] = [
         name: 'iPhone',
         slug: 'iphone',
         description: 'Смартфони Apple iPhone — від 13-ї серії до найновіших Pro.',
+        metaTitle: 'Apple iPhone — купити в Україні',
+        metaDescription:
+          "Смартфони Apple iPhone від 13-ї серії до найновіших Pro: актуальні моделі, чесні залишки на складі, вибір за пам'яттю та кольором.",
       },
       {
         name: 'Samsung Galaxy',
@@ -58,6 +61,9 @@ export const categoryTree: CategoryNode[] = [
         name: 'Бездротові вкладиші (TWS)',
         slug: 'tws-earbuds',
         description: 'Повністю бездротові навушники з кейсом для заряджання.',
+        metaTitle: 'Бездротові навушники TWS із кейсом',
+        metaDescription:
+          'Повністю бездротові вкладиші з кейсом для заряджання: моделі з шумозаглушенням, сенсорним керуванням і захистом від бризок.',
       },
       {
         name: 'Накладні та повнорозмірні',
@@ -155,6 +161,9 @@ export const categoryTree: CategoryNode[] = [
         name: 'Чохли для iPhone',
         slug: 'iphone-cases',
         description: 'Чохли під усі актуальні моделі iPhone, зокрема з магнітом MagSafe.',
+        metaTitle: 'Чохли для iPhone — силікон, TPU, MagSafe',
+        metaDescription:
+          'Чохли під усі актуальні моделі iPhone: прозорий TPU, рідкий силікон і шкіра, з магнітом MagSafe і посиленими кутами.',
       },
       {
         name: 'Чохли для Samsung',
@@ -180,6 +189,9 @@ export const categoryTree: CategoryNode[] = [
         name: 'Захисне скло',
         slug: 'tempered-glass',
         description: 'Гартоване скло твердістю 9H з олеофобним покриттям.',
+        metaTitle: 'Захисне скло 9H для смартфонів',
+        metaDescription:
+          'Гартоване скло твердістю 9H з олеофобним покриттям і клеєм Full Glue: рамка-позиціонер у комплекті, наклеювання без бульбашок.',
       },
       {
         name: 'Гідрогелеві плівки',
@@ -210,6 +222,9 @@ export const categoryTree: CategoryNode[] = [
         name: 'Кабелі USB-C',
         slug: 'usb-c-cables',
         description: 'Кабелі USB-C на 60–240 Вт для телефонів, планшетів і ноутбуків.',
+        metaTitle: 'Кабелі USB-C — від 60 до 240 Вт',
+        metaDescription:
+          'Кабелі USB-C для телефонів, планшетів і ноутбуків: потужність від 60 до 240 Вт, нейлонове обплетення, довжина від 1 до 2 метрів.',
       },
       {
         name: 'Кабелі micro-USB',
@@ -235,6 +250,9 @@ export const categoryTree: CategoryNode[] = [
         name: 'Мережеві зарядки',
         slug: 'wall-chargers',
         description: 'Блоки живлення в розетку — компактні GaN і багатопортові станції.',
+        metaTitle: 'Мережеві зарядки GaN для телефона',
+        metaDescription:
+          'Блоки живлення в розетку: компактні GaN від 20 Вт і багатопортові станції до 100 Вт із Power Delivery для телефона та ноутбука.',
       },
       {
         name: 'Автомобільні зарядки',
@@ -260,6 +278,9 @@ export const categoryTree: CategoryNode[] = [
         name: 'Автотримачі',
         slug: 'car-holders',
         description: 'Кріплення на дефлектор, лобове скло чи панель — з магнітом або затискачем.',
+        metaTitle: 'Автотримачі для телефона в авто',
+        metaDescription:
+          'Кріплення на дефлектор, лобове скло чи панель — магнітні та із затискачем, з поворотом на 360° і регулюванням нахилу.',
       },
       {
         name: 'Настільні підставки',
@@ -286,6 +307,9 @@ export const categoryTree: CategoryNode[] = [
         name: 'Карти microSD',
         slug: 'microsd-cards',
         description: 'Карти microSD від 64 ГБ до 512 ГБ — для смартфонів, екшн-камер і консолей.',
+        metaTitle: 'Карти microSD від 64 до 512 ГБ',
+        metaDescription:
+          "Карти пам'яті microSD для смартфонів, екшн-камер і консолей: класи U3 і V30, запис 4K, адаптер на повнорозмірний SD у комплекті.",
       },
       {
         name: 'USB-флешки',

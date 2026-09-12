@@ -9,9 +9,14 @@ import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import { SITE_URL, dict } from "@/shared/config";
 
+// TASK-432 — /blog was the only storefront route with no `alternates.canonical`,
+// so every `?category=`/`?q=`/`?page=` variant of the hub self-canonicalized and
+// competed with the clean URL. The hub canonicalizes onto itself; the paged and
+// filtered views are navigation, not separate documents.
 export const metadata: Metadata = {
   title: dict.meta.blogTitle,
   description: dict.meta.blogDescription,
+  alternates: { canonical: `${SITE_URL}/blog` },
 };
 
 const INITIAL_LIMIT = 9;

@@ -19,33 +19,51 @@ import { fetchPublishedBanners } from "@/shared/api/banners-server";
 import { fetchPublishedCarouselsByPlacement } from "@/shared/api/carousels-server";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
+import { buildOgImages, resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
 
 /**
- * Homepage metadata routed through the shared precedence helper (SeoSettings
- * defaults → the localized home strings). `toMetadataTitle` brands the derived
- * title (`Головна | ${SITE_NAME}`) explicitly — Next 16 does not apply the root
- * `title.template` to a `generateMetadata` title — closing the geo-audit
- * "Головна without brand" gap (plan 116 gap 3). `fetchSeoSettings()` is a tagged
- * native fetch, deduped with the component's own call below within the request.
+ * Homepage metadata routed through the shared precedence helper (the SeoSettings
+ * defaults → the localized home strings). The homepage is not an entity, so no
+ * `content` is passed: since TASK-432 content outranks the global default, and a
+ * dictionary constant handed to `content` would permanently shadow whatever the
+ * owner types in /settings/seo. The localized strings stay as the call-site
+ * fallback (`fallback:` / `?? dict…`) instead.
+ *
+ * `toMetadataTitle` brands the derived title (`Головна | ${SITE_NAME}`)
+ * explicitly — Next 16 does not apply the root `title.template` to a
+ * `generateMetadata` title — closing the geo-audit "Головна without brand" gap
+ * (plan 116 gap 3). `fetchSeoSettings()` is a tagged native fetch, deduped with
+ * the component's own call below within the request.
  */
 export async function generateMetadata(): Promise<Metadata> {
   const seo = await fetchSeoSettings();
-  const resolved = resolveSeo({
+  const resolved = resolveSeo({ settings: seo });
+
+  const title = toMetadataTitle(resolved, {
     settings: seo,
-    content: {
-      name: dict.meta.homeTitle,
-      description: dict.meta.homeDescription,
-    },
+    siteName: SITE_NAME,
+    fallback: dict.meta.homeTitle,
   });
+  const description = resolved.description ?? dict.meta.homeDescription;
 
   return {
-    title: toMetadataTitle(resolved, {
-      settings: seo,
+    title,
+    description,
+    // TASK-432: the homepage had no openGraph block of its own, so a shared link
+    // showed the root layout's site-wide title/description rather than the
+    // homepage's own resolved pair. Same shape as /legal/[slug], plus explicit
+    // `images`: Next replaces the root `openGraph` wholesale once a segment
+    // declares one, so without this line the most-shared page of the store would
+    // lose its OG card entirely (see `buildOgImages`).
+    openGraph: {
+      title: title.absolute,
+      description,
+      url: SITE_URL,
       siteName: SITE_NAME,
-      fallback: dict.meta.homeTitle,
-    }),
-    description: resolved.description ?? dict.meta.homeDescription,
+      locale: "uk_UA",
+      type: "website",
+      images: buildOgImages({ ogImage: resolved.ogImage }),
+    },
   };
 }
 

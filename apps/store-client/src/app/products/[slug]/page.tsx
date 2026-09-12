@@ -10,7 +10,7 @@ import {
   buildBreadcrumbSchema,
   buildFaqPageSchema,
 } from "@/shared/lib/schema";
-import { resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
+import { buildOgImages, resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { fetchFaqItems } from "@/shared/api/faq-server";
 import { SITE_URL, SITE_NAME, CURRENCY, dict } from "@/shared/config";
@@ -31,9 +31,10 @@ export async function generateMetadata({
     ]);
 
     // Precedence via the shared helper: the product's own metaTitle/
-    // metaDescription (tier 1, admin override) → SeoSettings defaults (tier 2) →
-    // the product name/description (tier 3), with the localized fallback kept as
-    // the innermost description (TASK-241).
+    // metaDescription (tier 1, admin override) → the product name/description
+    // (tier 2) → SeoSettings defaults (tier 3), with the localized fallback kept
+    // as the innermost description (TASK-241; order inverted by TASK-432 so one
+    // global default can no longer describe every product in the catalogue).
     const resolved = resolveSeo({
       entityTitle: product.metaTitle,
       entityDescription: product.metaDescription,
@@ -48,18 +49,25 @@ export async function generateMetadata({
     const description =
       resolved.description ?? dict.meta.productFallbackDescription;
     const canonical = `${SITE_URL}/products/${product.slug}`;
-    const firstImage = images[0]?.url ?? resolved.ogImage;
 
     return {
       title,
       description,
       alternates: { canonical },
+      // Replaces the root layout's `openGraph` wholesale (Next merges metadata
+      // shallowly), so siteName/locale/images are re-stated here — see
+      // `buildOgImages` for the image chain.
       openGraph: {
         title: title.absolute,
         description,
         url: canonical,
+        siteName: SITE_NAME,
+        locale: "uk_UA",
         type: "website",
-        images: firstImage ? [{ url: firstImage }] : undefined,
+        images: buildOgImages({
+          pageImage: images[0]?.url,
+          ogImage: resolved.ogImage,
+        }),
       },
     };
   } catch {

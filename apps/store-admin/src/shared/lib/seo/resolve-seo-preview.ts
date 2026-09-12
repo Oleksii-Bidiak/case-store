@@ -14,6 +14,12 @@
  * the `%s` title-template logic). Any change to the storefront's limits or
  * precedence MUST be mirrored here by hand; the parity unit tests in
  * `resolve-seo-preview.test.ts` pin the exact behavior so a drift fails fast.
+ *
+ * Precedence, as of TASK-432 (plan 176) on BOTH sides:
+ * `own → derived-from-content → SeoSettings default`. The entity's own content
+ * outranks the single store-wide default, which previously produced the same
+ * store-level description on every product page. The `SeoPreviewTier` values
+ * themselves are unchanged — only which one wins when several are available.
  */
 
 /** Google renders ~60 chars of a `<title>` and ~155 of a meta description. */
@@ -101,9 +107,9 @@ export function applyTitleTemplate(template: string, title: string): string {
 export interface SeoPreviewTitleInput {
   /** Tier 1 — the form's own metaTitle field, live-watched. */
   entityTitle?: string | null;
-  /** Tier 2 — SeoSettings.defaultMetaTitle. */
+  /** Tier 3 — SeoSettings.defaultMetaTitle (last resort since TASK-432). */
   defaultTitle?: string | null;
-  /** Tier 3 — the entity's display name/title (product/category name, page title). */
+  /** Tier 2 — the entity's display name/title (product/category name, page title). */
   contentName?: string | null;
   /** Effective `%s`-template (from {@link resolveEffectiveTitleTemplate}). */
   titleTemplate: string;
@@ -117,25 +123,24 @@ export interface SeoPreviewTitleResult {
 }
 
 /**
- * Resolve the previewed `<title>` through the three-tier precedence chain.
+ * Resolve the previewed `<title>` through the three-tier precedence chain, in
+ * the TASK-432 order (own → derived → default; content outranks the one
+ * store-wide default, which used to shadow every page's own name):
  *
  * - `entityTitle` set → used verbatim, tier `"own"` (no template, matches the
  *   storefront's `titleAbsolute` override).
- * - blank own + `defaultTitle` set → verbatim, tier `"default"`.
- * - both blank + `contentName` set → the content-derived name (stripped +
+ * - blank own + `contentName` set → the content-derived name (stripped +
  *   truncated to {@link SEO_TITLE_MAX}) branded via `titleTemplate`, tier
  *   `"derived"`.
- * - all three blank (or a derived name that collapses to empty) → `""`, tier
- *   `"empty"`.
+ * - own blank and no usable content + `defaultTitle` set → verbatim, tier
+ *   `"default"`.
+ * - all three blank → `""`, tier `"empty"`.
  */
 export function resolveSeoPreviewTitle(
   input: SeoPreviewTitleInput,
 ): SeoPreviewTitleResult {
   const entityTitle = clean(input.entityTitle);
   if (entityTitle) return { text: entityTitle, tier: "own" };
-
-  const defaultTitle = clean(input.defaultTitle);
-  if (defaultTitle) return { text: defaultTitle, tier: "default" };
 
   const contentName = clean(input.contentName);
   if (contentName) {
@@ -148,15 +153,18 @@ export function resolveSeoPreviewTitle(
     }
   }
 
+  const defaultTitle = clean(input.defaultTitle);
+  if (defaultTitle) return { text: defaultTitle, tier: "default" };
+
   return { text: "", tier: "empty" };
 }
 
 export interface SeoPreviewDescriptionInput {
   /** Tier 1 — the form's own metaDescription field, live-watched. */
   entityDescription?: string | null;
-  /** Tier 2 — SeoSettings.defaultMetaDescription. */
+  /** Tier 3 — SeoSettings.defaultMetaDescription (last resort since TASK-432). */
   defaultDescription?: string | null;
-  /** Tier 3 — long-form content (may contain HTML/markdown) used to derive one. */
+  /** Tier 2 — long-form content (may contain HTML/markdown) used to derive one. */
   contentDescription?: string | null;
 }
 
@@ -167,18 +175,15 @@ export interface SeoPreviewDescriptionResult {
 }
 
 /**
- * Resolve the previewed meta description through the same three-tier chain. No
- * template is applied to descriptions (mirrors the storefront — only titles get
- * the `%s` template).
+ * Resolve the previewed meta description through the same three-tier chain, in
+ * the same TASK-432 order (own → derived → default). No template is applied to
+ * descriptions (mirrors the storefront — only titles get the `%s` template).
  */
 export function resolveSeoPreviewDescription(
   input: SeoPreviewDescriptionInput,
 ): SeoPreviewDescriptionResult {
   const own = clean(input.entityDescription);
   if (own) return { text: own, tier: "own" };
-
-  const def = clean(input.defaultDescription);
-  if (def) return { text: def, tier: "default" };
 
   const content = clean(input.contentDescription);
   if (content) {
@@ -188,6 +193,9 @@ export function resolveSeoPreviewDescription(
     );
     if (derived) return { text: derived, tier: "derived" };
   }
+
+  const def = clean(input.defaultDescription);
+  if (def) return { text: def, tier: "default" };
 
   return { text: "", tier: "empty" };
 }

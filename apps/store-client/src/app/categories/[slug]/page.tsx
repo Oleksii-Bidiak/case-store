@@ -19,6 +19,7 @@ import {
 } from "@/shared/lib/schema";
 import {
   buildListingMetadata,
+  buildOgImages,
   resolveSeo,
   toMetadataTitle,
   type ListingFilterParams,
@@ -56,8 +57,9 @@ async function resolveCategoryPath(
 
 /**
  * Category landing metadata (TASK-277): the shared precedence chain — the
- * category's own metaTitle/metaDescription (tier 1, admin override) →
- * SeoSettings defaults (tier 2) → category name/description (tier 3) — plus
+ * category's own metaTitle/metaDescription (tier 1, admin override) → category
+ * name/description (tier 2) → SeoSettings defaults (tier 3, order inverted by
+ * TASK-432 so the global default no longer outranks real content) — plus
  * the shared canonical/robots policy (TASK-278, plan 143): self-canonical
  * (with `?page=N` beyond page 1) when unfiltered, `noindex,follow` when any
  * filter param rides the query string.
@@ -106,18 +108,35 @@ export async function generateMetadata({
     filters,
   });
 
+  const title = toMetadataTitle(seoMeta, {
+    settings: seo,
+    siteName: SITE_NAME,
+    fallback: node.name,
+  });
+  const description =
+    seoMeta.description ?? dict.catalog.categorySubtitle(node.name);
+
   return {
-    title: toMetadataTitle(seoMeta, {
-      settings: seo,
-      siteName: SITE_NAME,
-      fallback: node.name,
-    }),
-    description:
-      seoMeta.description ?? dict.catalog.categorySubtitle(node.name),
+    title,
+    description,
     ...(listingMeta.canonicalPath
       ? { alternates: { canonical: `${SITE_URL}${listingMeta.canonicalPath}` } }
       : {}),
     ...(listingMeta.robots ? { robots: listingMeta.robots } : {}),
+    // TASK-432 — the landing page had no openGraph block, so a shared category
+    // link previewed as the site-wide root card instead of the category. `url`
+    // follows the same canonical the listing policy picked (self-canonical, with
+    // `?page=N` past page 1); `images` must be re-stated because declaring an
+    // `openGraph` here replaces the root layout's object wholesale.
+    openGraph: {
+      title: title.absolute,
+      description,
+      url: `${SITE_URL}${listingMeta.canonicalPath ?? `/categories/${node.slug}`}`,
+      siteName: SITE_NAME,
+      locale: "uk_UA",
+      type: "website",
+      images: buildOgImages({ ogImage: seoMeta.ogImage }),
+    },
   };
 }
 
