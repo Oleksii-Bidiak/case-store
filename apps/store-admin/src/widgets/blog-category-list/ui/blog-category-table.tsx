@@ -22,7 +22,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { GripVertical } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   getAdminBlogControllerFindCategoriesQueryKey,
   useAdminBlogControllerFindCategories,

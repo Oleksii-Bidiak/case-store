@@ -2,7 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Circle, Eye, EyeOff } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   getProductControllerAdminFindAllQueryKey,
   getProductControllerFindByIdQueryKey,

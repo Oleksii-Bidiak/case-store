@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Loader2, Upload } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   getCatalogImportControllerFindOneQueryKey,
   useCatalogImportControllerApply,

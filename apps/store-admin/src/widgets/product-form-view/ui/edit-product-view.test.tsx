@@ -16,7 +16,7 @@ jest.mock("next/navigation", () => ({
 
 const toastSuccess = jest.fn();
 const toastError = jest.fn();
-jest.mock("sonner", () => ({
+jest.mock("@/shared/ui/toast", () => ({
   toast: {
     success: (...args: unknown[]) => toastSuccess(...args),
     error: (...args: unknown[]) => toastError(...args),

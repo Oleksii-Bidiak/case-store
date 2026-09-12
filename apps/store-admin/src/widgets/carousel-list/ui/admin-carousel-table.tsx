@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   getAdminCarouselControllerFindAllQueryKey,
   useAdminCarouselControllerFindAll,

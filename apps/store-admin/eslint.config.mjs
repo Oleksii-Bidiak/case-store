@@ -4,6 +4,33 @@ import nextTs from 'eslint-config-next/typescript';
 import tailwindcss from 'eslint-plugin-tailwindcss';
 
 /**
+ * Toast policy guard (TASK-422).
+ *
+ * Errors must stay on screen until the operator dismisses them; successes fade
+ * after 6 s. sonner cannot express that at the `<Toaster>` — its `ToastOptions`
+ * is flat and type-agnostic, so the rule can only live at the call site. It
+ * lives in exactly one: `@/shared/ui/toast`. Importing `sonner` anywhere else
+ * re-opens the hole silently, because a `toast.error` from the raw package
+ * simply inherits the 6 s default and looks completely normal in review.
+ *
+ * Added to each FSD block's existing options object rather than declared in a
+ * config object of its own: ESLint flat config REPLACES a rule's options instead
+ * of merging them, so a second object carrying `no-restricted-imports` would
+ * silently delete the layer-boundary rules for every file it matched. (The same
+ * trap as `no-restricted-syntax` in `rawFetchGuard` below.)
+ *
+ * `paths`, not `patterns`, and that distinction is load-bearing: as a pattern,
+ * `sonner` also matches the RELATIVE `./sonner` — so `shared/ui/index.ts`, which
+ * legitimately re-exports the local `sonner.tsx` wrapper, was reported as a
+ * violation. `paths` matches the exact specifier only.
+ */
+const noSonnerOutsideWrapper = {
+  name: 'sonner',
+  message:
+    'Імпортуй toast із «@/shared/ui/toast», а не напряму з sonner: лише там помилки отримують duration: Infinity (успіх зникає за 6 с, помилка чекає, поки її прочитають). Прямий toast.error із sonner мовчки зникне за 6 с. Виняток — shared/ui/toast.ts і shared/ui/sonner.tsx.',
+};
+
+/**
  * FSD (Feature-Sliced Design) layer boundary rules.
  *
  * Import direction is strictly downward:
@@ -30,6 +57,7 @@ const fsdBoundaryRules = [
                 'FSD boundary violation: "shared" layer must not import from "app", "widgets", "features", or "entities" layers. Use @/shared/ instead.',
             },
           ],
+          paths: [noSonnerOutsideWrapper],
         },
       ],
     },
@@ -49,6 +77,7 @@ const fsdBoundaryRules = [
                 'FSD boundary violation: "entities" layer must not import from "app", "widgets", or "features" layers. Only @/shared/ and @/entities/ imports are allowed.',
             },
           ],
+          paths: [noSonnerOutsideWrapper],
         },
       ],
     },
@@ -68,6 +97,7 @@ const fsdBoundaryRules = [
                 'FSD boundary violation: "features" layer must not import from "app" or "widgets" layers. Only @/shared/, @/entities/, and @/features/ imports are allowed.',
             },
           ],
+          paths: [noSonnerOutsideWrapper],
         },
       ],
     },
@@ -85,6 +115,37 @@ const fsdBoundaryRules = [
               group: ['@/app/**'],
               message:
                 'FSD boundary violation: "widgets" layer must not import from "app" layer. Only @/shared/, @/entities/, and @/features/ imports are allowed.',
+            },
+          ],
+          paths: [noSonnerOutsideWrapper],
+        },
+      ],
+    },
+  },
+];
+
+/**
+ * The two files that are ALLOWED to import sonner: the `<Toaster>` wrapper and
+ * the `toast` wrapper that owns the per-type duration policy.
+ *
+ * This re-declares `no-restricted-imports` for them rather than switching it
+ * `off`, so they keep the shared-layer boundary check and lose only the sonner
+ * clause. Switching the rule off wholesale would let exactly these two files
+ * reach upward into `features`/`widgets` unnoticed.
+ */
+const sonnerWrapperExemption = [
+  {
+    name: 'sonner-wrapper-exemption',
+    files: ['src/shared/ui/sonner.tsx', 'src/shared/ui/toast.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/app/**', '@/widgets/**', '@/features/**', '@/entities/**'],
+              message:
+                'FSD boundary violation: "shared" layer must not import from "app", "widgets", "features", or "entities" layers. Use @/shared/ instead.',
             },
           ],
         },
@@ -227,6 +288,7 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   ...fsdBoundaryRules,
+  ...sonnerWrapperExemption,
   ...testOverrides,
   ...tailwindTokenGuard,
   ...rawFetchGuard,

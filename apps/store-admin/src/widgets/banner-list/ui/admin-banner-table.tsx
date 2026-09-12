@@ -24,7 +24,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { GripVertical } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   BannerEntityPlacement,
   getAdminBannerControllerFindAllQueryKey,

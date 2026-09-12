@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   PERMISSIONS_WITHOUT_ROUTES,
   getPermissionControllerGetMatrixQueryKey,

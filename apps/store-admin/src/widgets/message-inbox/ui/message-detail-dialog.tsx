@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   useAdminContactUpdate,
   getAdminContactListQueryKey,

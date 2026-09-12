@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   AddonServiceForm,
   addonServiceFormValuesToDto,

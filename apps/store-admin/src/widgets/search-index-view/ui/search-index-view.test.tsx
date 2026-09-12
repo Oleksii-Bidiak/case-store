@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import { server } from "@/shared/test/msw-server";
 import {
   renderWithProviders,
@@ -10,7 +10,7 @@ import {
 import { dict } from "@/shared/config";
 import { SearchIndexView } from "./search-index-view";
 
-jest.mock("sonner", () => ({
+jest.mock("@/shared/ui/toast", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
 }));
 
@@ -18,7 +18,7 @@ const d = dict.searchIndex;
 const REINDEX_URL = "*/api/admin/search/reindex";
 
 describe("SearchIndexView (TASK-377)", () => {
-  // The `sonner` mock lives at module scope, so its call log survives across
+  // The toast mock lives at module scope, so its call log survives across
   // tests unless it is cleared — which would let a previous test's success toast
   // satisfy an assertion here.
   beforeEach(() => jest.clearAllMocks());

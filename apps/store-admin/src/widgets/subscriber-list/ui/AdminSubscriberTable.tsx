@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { useTableSort } from "@/shared/lib/use-table-sort";
