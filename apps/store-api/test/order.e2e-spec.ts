@@ -51,6 +51,11 @@ describe('OrderController (e2e)', () => {
     // TASK-338: guest order access by emailed token, and claiming on registration.
     findByAccessTokenHash: jest.fn(),
     claimGuestOrders: jest.fn(),
+    // TASK-341 / TASK-426: the operator-created ("phone") order, and the
+    // tracking-number / internal-notes write beside it.
+    findOrderableProducts: jest.fn(),
+    createManual: jest.fn(),
+    updateDetails: jest.fn(),
   };
 
   // TASK-079: DiscountRepository is mocked so the order-with-discount path can
@@ -523,6 +528,25 @@ describe('OrderController (e2e)', () => {
         .send({
           shippingAddress: validAddress,
           contact: { email: 'not-an-email', phone: '+380671112233', name: 'Гість' },
+        })
+        .expect(400);
+
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    // TASK-426 made email OPTIONAL for an order an OPERATOR takes by phone. This
+    // case is the fence around that change: the public guest-checkout path still
+    // demands an address, because the confirmation letter carries the
+    // order-status link and is a guest's only way back to their own order.
+    it('still refuses a guest checkout with no email at all (400)', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue(makeCart(userA.id));
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+        .send({
+          shippingAddress: validAddress,
+          contact: { phone: '+380671112233', name: 'Гість' },
         })
         .expect(400);
 
@@ -1319,6 +1343,314 @@ describe('OrderController (e2e)', () => {
         .patch('/api/admin/orders/order-e2e-1/payment-status')
         .send({ paymentStatus: PaymentStatus.PAID })
         .expect(401);
+    });
+  });
+
+  // ─── POST /api/admin/orders — the phone order (TASK-341 / TASK-426) ───────────
+
+  describe('POST /api/admin/orders', () => {
+    // `ManualOrderItemDto.productId` is `@IsUUID('loose')`, so this suite's
+    // `prod-e2e-1` fixture id cannot appear in a request body.
+    const manualProductId = '550e8400-e29b-41d4-a716-446655440010';
+
+    const orderableProduct = {
+      id: manualProductId,
+      name: 'iPhone 15 Pro Case',
+      price: { toString: () => '29.99' },
+      stock: 50,
+      isActive: true,
+      category: { isActive: true },
+    };
+
+    /** Arm the catalogue + write so only the payload under test varies. */
+    function armCatalogue(): void {
+      orderRepositoryMock.findOrderableProducts.mockResolvedValue([orderableProduct]);
+      orderRepositoryMock.createManual.mockResolvedValue(makeOrder({ userId: null }));
+    }
+
+    const manualBody = (contact: Record<string, unknown>) => ({
+      contact,
+      shippingAddress: validAddress,
+      items: [{ productId: manualProductId, quantity: 2 }],
+    });
+
+    /** The params the service handed the repository, for the contact assertions. */
+    const guestArg = (): Record<string, unknown> =>
+      (orderRepositoryMock.createManual.mock.calls[0]?.[0] as { guest: Record<string, unknown> })
+        .guest;
+
+    /**
+     * TASK-426. An operator with the customer on the line has a phone number and
+     * frequently no email at all; `GuestContactDto` demanded one, so the choice
+     * was an invented address or no order. `ManualOrderContactDto` makes email
+     * optional and leaves the phone required — it is what the courier dials.
+     */
+    it('creates a phone order from a phone number alone, with no email (201)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена Шевченко', phone: '050 123 4567' }))
+        .expect(201);
+
+      // Normalised on the way in (TASK-466), so the admin order search finds this
+      // number however the next operator spells it.
+      expect(guestArg()).toEqual({ name: 'Олена Шевченко', phone: '380501234567' });
+      expect(guestArg().email).toBeUndefined();
+    });
+
+    it('treats an empty email field as "not given" rather than a bad address (201)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена', phone: '+380501234567', email: '' }))
+        .expect(201);
+
+      expect(guestArg().email).toBeUndefined();
+    });
+
+    it('keeps the email when the operator has one (201)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена', phone: '+380501234567', email: ' Olena@Example.COM ' }))
+        .expect(201);
+
+      // Inherited normalisation still applies: the "claim my guest orders" lookup
+      // is a plain equality match, not a case-folding guess.
+      expect(guestArg().email).toBe('olena@example.com');
+    });
+
+    it('still validates an email that IS supplied (400)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена', phone: '+380501234567', email: 'not-an-email' }))
+        .expect(400);
+
+      expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+    });
+
+    it('refuses a phone order with no phone number (400)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена', email: 'olena@example.com' }))
+        .expect(400);
+
+      expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+    });
+
+    it('refuses punctuation in place of a phone number (400)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена', phone: '(((((((((' }))
+        .expect(400);
+
+      expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The capability the owner carved out, pinned end to end (TASK-338, restated
+     * 2026-09-10; re-checked under TASK-426 after the admin FORM started refusing
+     * what this endpoint accepts).
+     *
+     * `@IsUaPhone` is deliberately NOT on these DTOs: an operator taking an order
+     * by phone is given whatever number the customer dictates, and a border-region
+     * or roaming one belongs to a real buyer. Strict Ukrainian validation lives on
+     * the storefront and contact forms only.
+     */
+    it('accepts a foreign number for BOTH the contact and the delivery address (201)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          contact: { name: 'Anna Kowalska', phone: '+48 123 456 789' },
+          shippingAddress: { ...validAddress, phone: '+48 22 123 4567' },
+          items: [{ productId: manualProductId, quantity: 1 }],
+        })
+        .expect(201);
+
+      // Separators stripped, country code untouched: `normalizeUaPhone` converges
+      // Ukrainian spellings and leaves a foreign number as its bare digits.
+      expect(guestArg()).toEqual({ name: 'Anna Kowalska', phone: '48123456789' });
+
+      const { shippingAddress } = orderRepositoryMock.createManual.mock.calls[0]?.[0] as {
+        shippingAddress: Record<string, unknown>;
+      };
+      expect(shippingAddress.phone).toBe('48221234567');
+    });
+
+    it('accepts an existing account instead of a contact block (201)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      // A real UUID: `userId` is `@IsUUID('loose')`, and the admin panel now fills
+      // it from a customer PICKER (TASK-426) instead of asking a human to paste one.
+      const pickedUserId = '550e8400-e29b-41d4-a716-446655440001';
+      armCatalogue();
+      userRepositoryMock.findById.mockResolvedValue({ id: pickedUserId, isActive: true });
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          userId: pickedUserId,
+          shippingAddress: validAddress,
+          items: [{ productId: manualProductId, quantity: 1 }],
+        })
+        .expect(201);
+
+      expect(orderRepositoryMock.createManual).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: pickedUserId }),
+        admin.id,
+      );
+    });
+
+    it('returns 403 for a customer', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена', phone: '+380501234567' }))
+        .expect(403);
+
+      expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── PATCH /api/admin/orders/:orderId — the ТТН (TASK-335 / TASK-426) ─────────
+
+  describe('PATCH /api/admin/orders/:orderId', () => {
+    /**
+     * AD-ORD-18. A Nova Poshta waybill is exactly 14 digits, and the field
+     * accepted anything up to 64 characters — while saving one on a SHIPPED order
+     * EMAILS THE CUSTOMER their tracking notice, so a typo leaves the building and
+     * points the buyer at a page NP knows nothing about.
+     */
+    it('accepts a 14-digit waybill and stores it without the separators (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ trackingNumber: null }));
+      orderRepositoryMock.updateDetails.mockResolvedValue(
+        makeOrder({ trackingNumber: '20450000000001' }),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ trackingNumber: '2045 0000 0000 01' })
+        .expect(200);
+
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
+        'order-e2e-1',
+        { trackingNumber: '20450000000001' },
+        {},
+      );
+    });
+
+    it('refuses a waybill that is not 14 digits (400)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ trackingNumber: '123' })
+        .expect(400);
+
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+    });
+
+    it('refuses a note where the waybill belongs (400)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ trackingNumber: 'ТТН буде пізніше' })
+        .expect(400);
+
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The rule must not reach fields it was never about (TASK-426, after review).
+     *
+     * Orders created under TASK-335 carry waybills the 14-digit rule refuses — a
+     * short number, or «ТТН уточнюється». The admin details form used to send
+     * `trackingNumber` on every save, so such an order could no longer have its
+     * INTERNAL NOTES saved at all: the PATCH 400'd on a field the operator never
+     * touched. The fix is on the client (it omits an unchanged waybill), and this
+     * pins the contract it relies on — an absent key leaves the field alone.
+     */
+    it('saves the internal notes of an order whose waybill predates the rule (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ trackingNumber: 'ТТН уточнюється' }),
+      );
+      orderRepositoryMock.updateDetails.mockResolvedValue(
+        makeOrder({
+          trackingNumber: 'ТТН уточнюється',
+          internalNotes: 'Передзвонити',
+        }),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ internalNotes: 'Передзвонити' })
+        .expect(200);
+
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
+        'order-e2e-1',
+        { internalNotes: 'Передзвонити' },
+        {},
+      );
+      // Not `{ trackingNumber: 'ТТН уточнюється', … }`: the legacy value is not
+      // re-sent, so it is never judged — and never rewritten either.
+      expect(orderRepositoryMock.updateDetails.mock.calls[0]?.[1]).not.toHaveProperty(
+        'trackingNumber',
+      );
+    });
+
+    it('still lets an operator clear a waybill they saved by mistake (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ trackingNumber: '20450000000001' }),
+      );
+      orderRepositoryMock.updateDetails.mockResolvedValue(makeOrder({ trackingNumber: null }));
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ trackingNumber: '   ' })
+        .expect(200);
+
+      // A blank field means "cleared", not "the empty string".
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
+        'order-e2e-1',
+        { trackingNumber: null },
+        {},
+      );
     });
   });
 });
