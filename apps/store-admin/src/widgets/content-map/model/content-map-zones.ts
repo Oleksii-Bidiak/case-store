@@ -18,7 +18,8 @@ export type ContentMapZoneId =
   | "legal-pages"
   | "blog"
   | "site-contact"
-  | "seo-settings";
+  | "seo-settings"
+  | "promo-codes";
 
 /**
  * How a zone's active count is derived. The `banner` variant is typed against
@@ -56,7 +57,7 @@ export interface ContentMapPageGroup {
 }
 
 /**
- * The nine content zones. Order within a group is the visual top-to-bottom
+ * The ten content zones. Order within a group is the visual top-to-bottom
  * storefront order. Banner `targetHref`s carry a `?placement=` deep-link that
  * `AdminBannerTable` reads (TASK-264-C) to pre-filter to that one section; if
  * that reader hasn't shipped, the link still lands on the full `/banners` view.
@@ -137,10 +138,30 @@ export const CONTENT_MAP_ZONES: readonly ContentMapZone[] = [
     appliesTo: dict.contentMap.zones.legalPages.appliesTo,
     count: { kind: "pages" },
   },
+  // AD-CNT-26 (TASK-429). `/promo` is a real storefront page linked from the
+  // header, and until now the map denied it existed — an owner looking for "where
+  // do I edit the Акції page" found nothing here and no path to /discounts.
+  //
+  // `count: null`, deliberately, and NOT because a count is unobtainable: the
+  // admin discount list can be asked for `isActive: true` and its `meta.total`
+  // read exactly as pages/blog are. It sits behind `discounts:write`, which is in
+  // the MARKETING permission zone, while this screen is a CONTENT screen. A
+  // content manager without that grant would get a 403 on the extra request and
+  // this row would show a permanent red «Не вдалося порахувати» — a broken-looking
+  // map instead of a working link. No badge beats a false alarm, and the union
+  // already allows it (the two settings singletons use the same value).
+  {
+    id: "promo-codes",
+    sourceLabel: dict.contentMap.zones.promoCodes.source,
+    targetLabel: dict.contentMap.zones.promoCodes.target,
+    targetHref: "/discounts",
+    appliesTo: dict.contentMap.zones.promoCodes.appliesTo,
+    count: null,
+  },
 ];
 
 /**
- * The five storefront "page frames", in visual top-to-bottom order. Every
+ * The six storefront "page frames", in visual top-to-bottom order. Every
  * `zoneIds` entry must resolve to a zone in {@link CONTENT_MAP_ZONES} (pinned by
  * the config test).
  */
@@ -154,6 +175,13 @@ export const CONTENT_MAP_PAGE_GROUPS: readonly ContentMapPageGroup[] = [
     id: "home",
     heading: dict.contentMap.groups.home,
     zoneIds: ["hero-slide", "promo-tile", "promo-banner"],
+  },
+  // Its own frame rather than a row inside another one: /promo is a distinct
+  // storefront page, exactly like the blog frame below (AD-CNT-26).
+  {
+    id: "promo",
+    heading: dict.contentMap.groups.promo,
+    zoneIds: ["promo-codes"],
   },
   {
     id: "info",

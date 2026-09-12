@@ -108,6 +108,18 @@ export class BannerEntity {
   })
   scheduledAt!: Date | null;
 
+  @ApiProperty({
+    description:
+      'End of the publication window — the instant the scheduler takes this banner ' +
+      'back down (null = no end, TASK-429)',
+    example: '2026-09-01T00:00:00.000Z',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    required: false,
+  })
+  scheduledUntil!: Date | null;
+
   @ApiProperty({ description: 'Creation timestamp', example: '2026-07-01T00:00:00.000Z' })
   createdAt!: Date;
 
@@ -131,6 +143,7 @@ export class BannerEntity {
     status: PublishStatus;
     publishedAt: Date | null;
     scheduledAt: Date | null;
+    scheduledUntil: Date | null;
     createdAt: Date;
     updatedAt: Date;
   }): BannerEntity {
@@ -148,6 +161,7 @@ export class BannerEntity {
     entity.status = banner.status;
     entity.publishedAt = banner.publishedAt;
     entity.scheduledAt = banner.scheduledAt;
+    entity.scheduledUntil = banner.scheduledUntil;
     entity.createdAt = banner.createdAt;
     entity.updatedAt = banner.updatedAt;
     return entity;

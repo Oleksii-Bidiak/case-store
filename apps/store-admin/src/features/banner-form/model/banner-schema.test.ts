@@ -19,6 +19,7 @@ const baseValues: BannerFormValues = {
   theme: "",
   status: "DRAFT",
   scheduledAt: "",
+  scheduledUntil: "",
 };
 
 // Input-shaped values (pre-parse) — used with `bannerSchema.safeParse`.
@@ -32,6 +33,7 @@ const baseInput: BannerFormInput = {
   theme: "",
   status: "DRAFT",
   scheduledAt: "",
+  scheduledUntil: "",
 };
 
 describe("bannerFormValuesToCreateDto", () => {
@@ -155,5 +157,103 @@ describe("bannerSchema validation", () => {
       scheduledAt: "2026-08-01T09:00",
     });
     expect(result.success).toBe(true);
+  });
+});
+
+// ─── publication window (TASK-429) ───────────────────────────────────────────
+
+describe("bannerSchema — publication window (TASK-429)", () => {
+  it("accepts a window whose end is after its start", () => {
+    const result = bannerSchema.safeParse({
+      ...baseInput,
+      status: "SCHEDULED",
+      scheduledAt: "2026-08-01T09:00",
+      scheduledUntil: "2026-09-01T09:00",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an end BEFORE the start", () => {
+    const result = bannerSchema.safeParse({
+      ...baseInput,
+      status: "SCHEDULED",
+      scheduledAt: "2026-09-01T09:00",
+      scheduledUntil: "2026-08-01T09:00",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0].path).toEqual(["scheduledUntil"]);
+  });
+
+  it("rejects an end EQUAL to the start — that is a zero-length window", () => {
+    const result = bannerSchema.safeParse({
+      ...baseInput,
+      status: "SCHEDULED",
+      scheduledAt: "2026-08-01T09:00",
+      scheduledUntil: "2026-08-01T09:00",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a lone end on a PUBLISHED banner — live now, down on the 1st", () => {
+    const result = bannerSchema.safeParse({
+      ...baseInput,
+      status: "PUBLISHED",
+      scheduledUntil: "2026-09-01T00:00",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts an empty end (no take-down date at all)", () => {
+    const result = bannerSchema.safeParse({
+      ...baseInput,
+      status: "PUBLISHED",
+      scheduledUntil: "",
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("bannerFormValuesToCreateDto — publication window (TASK-429)", () => {
+  it("sends the end as an ISO instant for a PUBLISHED banner", () => {
+    const dto = bannerFormValuesToCreateDto({
+      ...baseValues,
+      status: "PUBLISHED",
+      scheduledUntil: "2026-09-01T00:00",
+    });
+
+    expect(dto.scheduledUntil).toBe(new Date("2026-09-01T00:00").toISOString());
+  });
+
+  it("sends both ends for a SCHEDULED banner", () => {
+    const dto = bannerFormValuesToCreateDto({
+      ...baseValues,
+      status: "SCHEDULED",
+      scheduledAt: "2026-08-01T09:00",
+      scheduledUntil: "2026-09-01T09:00",
+    });
+
+    expect(dto.scheduledAt).toBe(new Date("2026-08-01T09:00").toISOString());
+    expect(dto.scheduledUntil).toBe(new Date("2026-09-01T09:00").toISOString());
+  });
+
+  it("omits the end for a DRAFT — nothing is up, so nothing comes down", () => {
+    const dto = bannerFormValuesToCreateDto({
+      ...baseValues,
+      status: "DRAFT",
+      scheduledUntil: "2026-09-01T00:00",
+    });
+
+    expect(dto.scheduledUntil).toBeUndefined();
+  });
+
+  it("omits the end when the field is left empty", () => {
+    const dto = bannerFormValuesToCreateDto({
+      ...baseValues,
+      status: "PUBLISHED",
+      scheduledUntil: "",
+    });
+
+    expect(dto.scheduledUntil).toBeUndefined();
   });
 });

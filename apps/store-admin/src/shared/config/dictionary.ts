@@ -180,6 +180,10 @@ export const dict = {
     trafficDeltaUp: (percent: number) => `+${percent}% до попередніх 7 днів`,
     trafficDeltaDown: (percent: number) => `${percent}% до попередніх 7 днів`,
     trafficSeconds: (seconds: number) => `${seconds} с`,
+    // TASK-430: the top-products rows are links to the read-only product card.
+    // A metric an owner clicks is a question about the position, not an intent to
+    // edit it — the card is where the answer is.
+    topProductLinkAria: (name: string) => `Відкрити картку товару «${name}»`,
   },
 
   common: {
@@ -1135,6 +1139,12 @@ export const dict = {
     colCreated: "Створено",
     statusPublished: "Опубліковано",
     statusDraft: "Чернетка",
+    // TASK-430: this table read `isActive` — a MIRROR of `status == PUBLISHED` —
+    // so a page scheduled for Friday was badged «Чернетка», indistinguishable from
+    // one somebody forgot. The status is the source of truth; `isActive` still
+    // drives the publish/unpublish button, which is what it is for.
+    statusScheduled: "Заплановано",
+    statusScheduledOn: (date: string) => `Заплановано на ${date}`,
     publish: "Опублікувати",
     unpublish: "Зняти з публікації",
     // TASK-285: the published variant reminds the admin the URL may still be
@@ -1226,6 +1236,9 @@ export const dict = {
     featuredYes: "Так",
     statusPublished: "Опубліковано",
     statusScheduled: "Заплановано",
+    // TASK-430: «Заплановано» alone left the operator to open the post to find out
+    // WHEN — and the date is the whole reason the row is not a draft.
+    statusScheduledOn: (date: string) => `Заплановано на ${date}`,
     statusDraft: "Чернетка",
     publish: "Опублікувати",
     unpublish: "Зняти з публікації",
@@ -1404,6 +1417,9 @@ export const dict = {
       SCHEDULED: "Заплановано",
       PUBLISHED: "Опубліковано",
     },
+    // TASK-430: same as the blog list — a scheduled banner says WHEN it goes live,
+    // since that date is the only thing separating it from a forgotten draft.
+    statusScheduledOn: (date: string) => `Заплановано на ${date}`,
     publish: "Опублікувати",
     unpublish: "Зняти з публікації",
     deleteConfirm: (title: string) =>
@@ -1448,7 +1464,7 @@ export const dict = {
     statusDraft: "Чернетка",
     statusScheduled: "Заплановано",
     statusPublished: "Опубліковано",
-    scheduledAt: "Дата публікації",
+    scheduledAt: "Публікувати з",
     scheduledAtHint:
       "Банер автоматично опублікується у вказаний час (для статусу «Заплановано»).",
     submit: "Зберегти банер",
@@ -1461,6 +1477,9 @@ export const dict = {
       ctaHrefMax: "Посилання кнопки має містити не більше 2048 символів",
       themeMax: "Тема має містити не більше 50 символів",
       scheduledAtRequired: "Вкажіть дату публікації для запланованого банера",
+      // TASK-429: an end before the start is not a window.
+      scheduledUntilBeforeStart:
+        "Дата зняття має бути пізніше за дату публікації",
     },
     // TASK-424: the banner image accepts a FILE as well as a link.
     imageUpload: {
@@ -1480,6 +1499,14 @@ export const dict = {
         "Непідтримуваний формат. Дозволені JPEG, PNG, WebP і GIF.",
       errorGeneric: "Не вдалося завантажити файл. Спробуйте ще раз.",
     },
+    // TASK-429: the publication WINDOW. `scheduledAt` above is its start; these
+    // strings describe its end — the instant the scheduler takes the banner down
+    // by itself, so a promo that must vanish on the 1st needs nobody awake at
+    // midnight to remove it.
+    windowLegend: "Вікно публікації",
+    scheduledUntil: "Знімати з публікації",
+    scheduledUntilHint:
+      "Необов'язково. У вказаний час банер автоматично стане чернеткою і зникне з сайту. Порожнє поле — банер лишається, доки ви не знімете його вручну.",
   },
 
   // --- Live banner preview in the banner form (TASK-265) ----------------------
@@ -1492,6 +1519,19 @@ export const dict = {
     emptyTitle: "Заголовок банера…",
     announcementBarNote:
       "Для «Смуга оголошень» використовуються лише заголовок і посилання кнопки.",
+    // TASK-429: the preview is a SCALE MODEL of the real slot, so it has to say
+    // which shape it is modelling — and, for the two placements that genuinely
+    // have no fixed proportions, admit that instead of inventing one.
+    scaleNote: "Прев'ю зменшене: пропорції відповідають сайту, розмір — ні.",
+    shape: {
+      HERO_SLIDE:
+        "Пропорції як на головній: ≈968×440 (2,2:1). На мобільному — на всю ширину, висота 420 px.",
+      PROMO_TILE:
+        "На сайті три плитки в рядку — кожна ≈1/3 ширини (сірі рамки поруч). Висота не фіксована: залежить від обсягу тексту.",
+      PROMO_BANNER:
+        "На всю ширину контенту (≈1280 px). Висота не фіксована: залежить від обсягу тексту.",
+      ANNOUNCEMENT_BAR: "Смуга фіксованої висоти 40 px на всю ширину сторінки.",
+    },
   },
 
   // --- Brands (TASK-189) ------------------------------------------------------
@@ -2073,6 +2113,14 @@ export const dict = {
     searchPlaceholder: "Пошук за текстом, автором або товаром…",
     searchAria: "Пошук відгуків",
     emptyMatch: (q: string) => `Немає відгуків за запитом «${q}».`,
+
+    // TASK-430: the queue showed a product NAME and nothing else, and this
+    // catalogue has several positions per name (the same case in four colours), so
+    // a moderator could not tell which one a complaint was about — nor look it up,
+    // because the SKU is the key the catalogue is searched by.
+    colSku: "Артикул",
+    noSku: "без артикулу",
+    productLinkAria: (product: string) => `Відкрити картку товару «${product}»`,
   },
 
   // --- Contact messages (TASK-177) --------------------------------------------
@@ -2513,6 +2561,40 @@ export const dict = {
     lastAdminRefusal:
       "Це останній адміністратор магазину — інакше увійти буде нікому. Спочатку створіть ще одного адміністратора.",
 
+    // --- Email confirmation (TASK-430 / AD-CRM-04) ----------------------------
+    // `emailVerifiedAt` has been on the wire since TASK-342 and the panel showed
+    // nothing, so «цей клієнт не отримує наших листів» was invisible to the person
+    // fielding the phone call about it. A timestamp, not a boolean, because
+    // "verified WHEN" is what answers the support question.
+    emailVerified: "Пошта підтверджена",
+    emailNotVerified: "Пошта не підтверджена",
+    emailVerifiedAt: (date: string) => `Підтверджено ${date}`,
+    // Honest about what null means: every account created before verification
+    // existed is null too, so this is "we do not know", not "they refused".
+    emailNotVerifiedHint:
+      "Адреса не проходила підтвердження. Це нормально для акаунтів, створених до " +
+      "запуску підтвердження пошти, — але якщо клієнт не отримує листів, перевіряйте " +
+      "адресу саме тут.",
+
+    // --- Customer notes (TASK-430) --------------------------------------------
+    notesHeading: "Нотатки",
+    notesIntro:
+      "Службовий журнал для команди — клієнт цих записів не бачить. Нотатки лише " +
+      "додаються: щоб уточнити попередню, напишіть нову.",
+    notesEmpty: "Нотаток ще немає.",
+    notesLoadError: "Не вдалося завантажити нотатки. Спробуйте ще раз.",
+    notesAddLabel: "Нова нотатка",
+    notesAddPlaceholder: "Що важливо знати про цього клієнта?",
+    notesAddSubmit: "Додати нотатку",
+    notesToastAdded: "Нотатку додано",
+    notesToastFailed: "Не вдалося додати нотатку",
+    notesAuthorUnknown: "Автор невідомий",
+    notesCharsLeft: (left: number) => `Залишилось ${left} символів`,
+    notesTooLong: (max: number) =>
+      `Нотатка не може бути довшою за ${max} символів`,
+    notesTruncated: (shown: number, total: number) =>
+      `Показано останні ${shown} з ${total} нотаток.`,
+
     lockoutHeading: "Блокування входу",
     lockoutUnavailable:
       "API поки не віддає стан блокування (`lockedUntil`, `failedLoginAttempts`), тож показати, чому користувач не може увійти, неможливо. Якщо працівник скаржиться на вхід — скиньте йому пароль: це знімає тимчасове блокування після невдалих спроб.",
@@ -2609,6 +2691,9 @@ export const dict = {
       category: "Категорії",
       siteContact: "Контакти сайту",
       user: "Користувачі",
+      // TASK-430 — the customer-notes journal is audited like everything else
+      // behind a permission, so its entries need a name here too.
+      userNote: "Нотатки про клієнтів",
       payment: "Оплати",
       faq: "Питання й відповіді",
       return: "Повернення",
@@ -2623,6 +2708,113 @@ export const dict = {
       attributeDefinition: "Характеристики",
       seoSettings: "SEO-налаштування",
     },
+
+    // ── TASK-430: the log in Ukrainian ────────────────────────────────────────
+    //
+    // Until now the «Дія» column printed the raw machine key — `order.updateStatus`,
+    // `seoSettings.uploadLogo` — which is the first thing an owner sees on this
+    // screen and the last thing they can read.
+    //
+    // The label is COMPOSED from two axes rather than kept as one map of 110
+    // strings, and that is the load-bearing decision here. An action is always
+    // `<entityType>.<handlerName>` (AuditInterceptor builds it from the controller
+    // class name and the method name), so the entity half is ALREADY named above
+    // for the entity filter, and only the verb half is new. Composition means a new
+    // module with familiar verbs — create / update / delete — needs exactly one new
+    // entry (its entityLabels name), not one per route; a flat per-action map would
+    // need six and would rot the moment somebody forgot.
+    //
+    // NOTHING GUARANTEES COMPLETENESS, and the UI never pretends otherwise: an
+    // action whose entity or verb is missing here renders as the raw key, exactly
+    // as it does today. What keeps the map from rotting is
+    // `audit-action-labels.spec.ts` in store-api, which walks the real controller
+    // metadata the way `permission.catalog.spec.ts` does and fails the build when an
+    // audited action has no label — and when a label here matches no route any more.
+    actionVerbs: {
+      activate: "активовано",
+      activateBrand: "активовано бренд",
+      activateModel: "активовано модель",
+      activateUser: "активовано акаунт",
+      apply: "застосовано",
+      approve: "схвалено",
+      cancel: "скасовано",
+      clearProductDelta: "скинуто винятки для товару",
+      create: "створено",
+      createBrand: "створено бренд",
+      createCategory: "створено категорію",
+      createModel: "створено модель",
+      deactivate: "деактивовано",
+      deactivateBrand: "деактивовано бренд",
+      deactivateModel: "деактивовано модель",
+      deactivateUser: "деактивовано акаунт",
+      delete: "видалено",
+      deleteCategory: "видалено категорію",
+      deleteLogo: "видалено логотип",
+      moderateMany: "промодеровано (масово)",
+      publish: "опубліковано",
+      refund: "повернено кошти",
+      reindex: "перебудовано",
+      reject: "відхилено",
+      remove: "видалено",
+      reorder: "змінено порядок",
+      reorderBrands: "змінено порядок брендів",
+      reorderCategories: "змінено порядок категорій",
+      resolve: "закрито",
+      setCategoryTemplate: "налаштовано шаблон категорії",
+      setGroupMany: "призначено групу (масово)",
+      setItems: "змінено склад",
+      setPassword: "скинуто пароль",
+      setProductDelta: "задано винятки для товару",
+      setStatus: "змінено статус",
+      setStatusMany: "змінено статус (масово)",
+      unpublish: "знято з публікації",
+      update: "змінено",
+      updateBrand: "змінено бренд",
+      updateCategory: "змінено категорію",
+      updateDetails: "змінено дані",
+      updateDeviceCompat: "змінено сумісність",
+      updateGrants: "змінено права",
+      updateGroupDeviceCompat: "змінено сумісність групи",
+      updateModel: "змінено модель",
+      updatePaymentStatus: "змінено статус оплати",
+      updateRole: "змінено роль",
+      updateSettings: "змінено налаштування",
+      updateSpecs: "змінено характеристики",
+      updateStatus: "змінено статус",
+      updateStatusMany: "змінено статус (масово)",
+      upload: "завантажено файл",
+      uploadBannerImage: "завантажено зображення банера",
+      uploadBlogCover: "завантажено обкладинку статті",
+      uploadBrandLogo: "завантажено логотип бренду",
+      uploadCategoryImage: "завантажено зображення категорії",
+      uploadLogo: "завантажено логотип",
+    },
+
+    /** How the two halves are joined: «Замовлення — змінено статус». */
+    actionLabel: (entity: string, verb: string) => `${entity} — ${verb}`,
+
+    // ── TASK-430: «мої дії / інші співробітники» ──────────────────────────────
+    //
+    // Two independent axes, one query param each, because `TableFilters` owns
+    // exactly one param per control — and because they answer different questions.
+    //
+    // «Мої дії» writes the viewer's OWN uuid into the existing `actorId` param
+    // rather than a server-resolved `actor=mine`: this screen's whole point is a
+    // link you can paste to a colleague (see the AuditLogView header), and a
+    // `mine` that resolves per-viewer would show the recipient their own actions.
+    // The uuid is ugly in the URL and exact in meaning; exact wins here.
+    //
+    // The role axis is the new `actorRole` filter. For this shop «інші
+    // співробітники» IS «Менеджери» — the owner is the ADMIN — and unlike a
+    // negated actor filter it keeps working after a manager is dismissed, because
+    // the role is denormalised onto every entry.
+    filterActorAria: "Фільтр за автором дії",
+    filterActorAll: "Усі співробітники",
+    filterActorMine: "Мої дії",
+    /** An `actorId` from a pasted link that is not the viewer's own. */
+    filterActorOther: (id: string) => `Співробітник ${id.slice(0, 8)}…`,
+    filterRoleAria: "Фільтр за роллю",
+    filterRoleAll: "Усі ролі",
   },
 
   // --- Own admin profile (TASK-317) -------------------------------------------
@@ -2814,6 +3006,8 @@ export const dict = {
       info: "«Інформація» та картка товару",
       blog: "Блог",
       legal: "Правові та інші сторінки",
+      // AD-CNT-26 (TASK-429): /promo — окрема сторінка вітрини, як і блог.
+      promo: "Сторінка «Акції»",
     },
     zones: {
       announcementBar: {
@@ -2860,6 +3054,13 @@ export const dict = {
         source: "Meta-заголовки та SEO за замовчуванням",
         target: "Налаштування → SEO",
         appliesTo: "Кожна сторінка (невидимо: title, meta, robots)",
+      },
+      // AD-CNT-26 (TASK-429): /promo існує в шапці магазину, але його не було на
+      // цій карті — і з адмінки не було видно, що ним керує розділ «Промокоди».
+      promoCodes: {
+        source: "Промокоди тижня на сторінці «Акції»",
+        target: "Промокоди",
+        appliesTo: "Сторінка «Акції» (/promo), посилання в шапці",
       },
     },
   },
@@ -2970,6 +3171,8 @@ export const dict = {
       SCHEDULED: "Заплановано",
       PUBLISHED: "Опубліковано",
     },
+    // TASK-430: the scheduled badge carries the date, like pages/blog/banners.
+    statusScheduledOn: (date: string) => `Заплановано на ${date}`,
     publish: "Опублікувати",
     unpublish: "Зняти з публікації",
     deleteConfirm: (title: string) =>
@@ -3054,6 +3257,14 @@ export const dict = {
     inactiveBadge: "Неактивний",
     toastSaved: "Список товарів збережено",
     toastSaveFailed: "Не вдалося зберегти список товарів",
+    // AD-CNT-25 (TASK-429): for every source except «Вибрані вручну» this section
+    // used to render NOTHING at all, so the operator concluded that reordering was
+    // broken rather than inapplicable. Now it says what is actually true.
+    autoHeading: "Порядок задає сайт автоматично",
+    autoHint: (sourceLabel: string) =>
+      `Ця карусель наповнюється автоматично — джерело «${sourceLabel}». Сайт сам обирає товари та їхню послідовність, тому вручну переставляти їх немає де.`,
+    autoSwitchHint:
+      "Щоб обрати товари самому й задати їхній порядок, змініть «Джерело товарів» на «Вибрані вручну» та збережіть карусель — після цього тут з'явиться список товарів.",
   },
 
   // --- Generic drag-and-drop / keyboard reorder tree (TASK-291, plan 158 §7.3–§7.4) ---

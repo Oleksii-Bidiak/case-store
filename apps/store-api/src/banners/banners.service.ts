@@ -133,6 +133,7 @@ export class BannerService {
       status: publishState.status,
       publishedAt: publishState.publishedAt,
       scheduledAt: publishState.scheduledAt,
+      scheduledUntil: this.resolveScheduledUntil(publishState.status, dto.scheduledUntil),
     };
 
     const banner = await this.bannerRepository.create(input);
@@ -175,6 +176,11 @@ export class BannerService {
       );
       input.status = resolved.status;
       input.scheduledAt = resolved.scheduledAt;
+      // The window end rides with `status` for the same reason `scheduledAt` does:
+      // the admin form owns the whole publish block and always submits it together,
+      // so writing the end only here keeps a partial PUT that carries no `status`
+      // (an API client renaming a title) from silently wiping a live window.
+      input.scheduledUntil = this.resolveScheduledUntil(resolved.status, dto.scheduledUntil);
       // Preserve the ORIGINAL publish time when the banner was already live and
       // stays live — re-saving a published banner must not reset publishedAt.
       input.publishedAt =
@@ -195,10 +201,26 @@ export class BannerService {
 
   /**
    * Publish a banner (status = PUBLISHED). Throws NotFoundException when missing.
+   *
+   * A window end that is STILL IN THE FUTURE survives the publish — «показати
+   * зараз, зняти 1-го» is a legitimate combination. One that has already closed is
+   * dropped (TASK-429): leaving it would hand the row straight back to
+   * {@link BannerRepository.unpublishExpired} on the next tick, so the operator's
+   * click would be undone within a minute and the banner would look broken.
    */
   async publish(id: string): Promise<BannerEntity> {
-    await this.ensureExists(id);
-    const banner = await this.bannerRepository.publish(id);
+    const existing = await this.bannerRepository.findById(id);
+    if (!existing) {
+      throw new NotFoundException('Banner not found');
+    }
+
+    const now = new Date();
+    const keptWindow =
+      existing.scheduledUntil && existing.scheduledUntil.getTime() > now.getTime()
+        ? existing.scheduledUntil
+        : null;
+
+    const banner = await this.bannerRepository.publish(id, now, keptWindow);
     const entity = BannerEntity.fromPrisma(banner);
     await this.notifyRevalidation();
     return entity;
@@ -315,6 +337,25 @@ export class BannerService {
   /** Parse an ISO date string from the DTO into a Date (or null when absent). */
   private parseScheduledAt(value?: string | null): Date | null {
     return value ? new Date(value) : null;
+  }
+
+  /**
+   * Resolve the persisted window end (TASK-429) from the admin's intent.
+   *
+   * A DRAFT has no window: "take it down at" is meaningless for something that is
+   * not up, and storing one would re-arm the scheduler against a banner the
+   * operator has deliberately parked. For PUBLISHED / SCHEDULED the submitted end
+   * is kept verbatim, `null` when omitted (= no end, stays live until a human
+   * says otherwise).
+   *
+   * An end that is already in the PAST is accepted rather than rejected here: the
+   * DTO enforces the only rule that is knowable without a clock (end after start),
+   * and the scheduler then takes the banner down on its next tick. That keeps one
+   * owner for expiry instead of two implementations that can disagree.
+   */
+  private resolveScheduledUntil(status: PublishStatus, value?: string | null): Date | null {
+    if (status === PublishStatus.DRAFT) return null;
+    return this.parseScheduledAt(value);
   }
 
   /** Best-effort storefront revalidation after an admin write. Never throws. */

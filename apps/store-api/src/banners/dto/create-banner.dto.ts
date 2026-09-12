@@ -1,8 +1,9 @@
-import { IsString, IsOptional, IsEnum, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsDateString, MaxLength, Validate } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { BannerPlacement } from '@prisma/client';
 import { PublishFieldsDto } from '../../publishing';
+import { PublicationWindowConstraint } from './publication-window.constraint';
 
 /** Trim leading/trailing whitespace from string inputs (leave non-strings as-is). */
 const trim = ({ value }: { value: unknown }): unknown =>
@@ -12,7 +13,8 @@ const trim = ({ value }: { value: unknown }): unknown =>
  * DTO for creating a homepage banner (admin-only). Banners are STRUCTURED text
  * (title / subtitle / CTA) — plain strings validated + trimmed here, never
  * Tiptap HTML, so no rich-text sanitization runs. Publish control comes from the
- * shared {@link PublishFieldsDto} (`status` + `scheduledAt`).
+ * shared {@link PublishFieldsDto} (`status` + `scheduledAt`), extended here with
+ * the banner-only window end (`scheduledUntil`, TASK-429).
  */
 export class CreateBannerDto extends PublishFieldsDto {
   @ApiProperty({
@@ -85,6 +87,22 @@ export class CreateBannerDto extends PublishFieldsDto {
   @IsString()
   @MaxLength(50, { message: 'Theme must be at most 50 characters' })
   theme?: string;
+
+  @ApiProperty({
+    description:
+      'ISO-8601 instant to auto-UNPUBLISH at — the end of the publication window ' +
+      '(TASK-429). Omit for a banner with no end. Meaningful for PUBLISHED as well ' +
+      'as SCHEDULED ("live now, down on the 1st"); ignored for DRAFT. Must be later ' +
+      'than scheduledAt when both are given.',
+    example: '2026-09-01T00:00:00.000Z',
+    required: false,
+    type: String,
+    format: 'date-time',
+  })
+  @IsOptional()
+  @IsDateString({}, { message: 'scheduledUntil must be an ISO-8601 date-time string' })
+  @Validate(PublicationWindowConstraint)
+  scheduledUntil?: string;
 
   // TASK-295: no `sortOrder` — a new row is appended by the repository (max + 1) and the
   // order is edited only through the reorder endpoint, never through this form.

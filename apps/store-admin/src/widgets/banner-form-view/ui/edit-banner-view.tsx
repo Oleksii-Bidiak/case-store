@@ -121,6 +121,13 @@ function mapBannerToFormValues(banner: BannerEntity): Partial<BannerFormInput> {
     status: banner.status,
     // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant.
     scheduledAt: banner.scheduledAt ? toDateTimeLocal(banner.scheduledAt) : "",
+    // TASK-429: the window END must be seeded too. Without it the field renders
+    // empty on every edit and the next save — which always carries `status` —
+    // would silently WIPE a live window: the operator renames a title and the
+    // promo quietly loses its take-down date.
+    scheduledUntil: banner.scheduledUntil
+      ? toDateTimeLocal(banner.scheduledUntil)
+      : "",
   };
 }
 

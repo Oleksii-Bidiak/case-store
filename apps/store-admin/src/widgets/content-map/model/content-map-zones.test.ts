@@ -6,14 +6,15 @@ import {
 } from "./content-map-zones";
 
 describe("content-map zone config (TASK-264-A)", () => {
-  it("has nine zones with unique ids", () => {
-    expect(CONTENT_MAP_ZONES).toHaveLength(9);
+  // Ten since TASK-429 added the /promo zone (AD-CNT-26).
+  it("has ten zones with unique ids", () => {
+    expect(CONTENT_MAP_ZONES).toHaveLength(10);
     const ids = CONTENT_MAP_ZONES.map((z) => z.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("groups into five page frames", () => {
-    expect(CONTENT_MAP_PAGE_GROUPS).toHaveLength(5);
+  it("groups into six page frames", () => {
+    expect(CONTENT_MAP_PAGE_GROUPS).toHaveLength(6);
     const groupIds = CONTENT_MAP_PAGE_GROUPS.map((g) => g.id);
     expect(new Set(groupIds).size).toBe(groupIds.length);
   });
@@ -50,13 +51,30 @@ describe("content-map zone config (TASK-264-A)", () => {
     }
   });
 
-  it("only the two settings singletons carry a null count", () => {
+  // The two settings singletons have no "N active items" notion at all; the
+  // /promo row (TASK-429) opts out for a different reason — its count lives behind
+  // the MARKETING permission zone, so fetching it here would show a content
+  // manager a red error badge instead of a working link. Anything ELSE with a null
+  // count is a mistake, which is what this list pins.
+  it("only the settings singletons and the /promo row carry a null count", () => {
     const nullCountIds = CONTENT_MAP_ZONES.filter((z) => z.count === null).map(
       (z) => z.id,
     );
     expect(new Set(nullCountIds)).toEqual(
-      new Set(["site-contact", "seo-settings"]),
+      new Set(["site-contact", "seo-settings", "promo-codes"]),
     );
+  });
+
+  it("puts the storefront /promo page on the map, pointing at /discounts", () => {
+    const promo = CONTENT_MAP_ZONES.find((z) => z.id === "promo-codes");
+
+    expect(promo).toBeDefined();
+    expect(promo?.targetHref).toBe("/discounts");
+    // It belongs to its own page frame, like the blog page.
+    expect(
+      CONTENT_MAP_PAGE_GROUPS.find((g) => g.zoneIds.includes("promo-codes"))
+        ?.id,
+    ).toBe("promo");
   });
 
   it("every zone exposes non-empty source/target labels", () => {

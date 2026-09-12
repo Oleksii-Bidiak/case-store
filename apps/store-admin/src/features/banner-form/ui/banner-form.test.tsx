@@ -84,6 +84,109 @@ describe("BannerForm — live placement preview (TASK-265)", () => {
     expect(previewPanel().className).toContain("hidden");
   });
 
+  it("shows no window fields for a DRAFT — nothing is up, so nothing comes down", () => {
+    renderWithProviders(<BannerForm onSubmit={noop} isPending={false} />);
+
+    // Default status is DRAFT.
+    expect(
+      screen.queryByLabelText(dict.bannerForm.scheduledUntil),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(dict.bannerForm.scheduledAt),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers the take-down date for a PUBLISHED banner, with no start date", async () => {
+    renderWithProviders(<BannerForm onSubmit={noop} isPending={false} />);
+
+    await userEvent.selectOptions(
+      screen.getByLabelText(dict.bannerForm.status),
+      "PUBLISHED",
+    );
+
+    // "Live now, down on the 1st" — the case that has no start instant at all.
+    expect(
+      screen.getByLabelText(dict.bannerForm.scheduledUntil),
+    ).toHaveAttribute("type", "datetime-local");
+    expect(
+      screen.queryByLabelText(dict.bannerForm.scheduledAt),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers BOTH ends of the window for a SCHEDULED banner", async () => {
+    renderWithProviders(<BannerForm onSubmit={noop} isPending={false} />);
+
+    await userEvent.selectOptions(
+      screen.getByLabelText(dict.bannerForm.status),
+      "SCHEDULED",
+    );
+
+    expect(
+      screen.getByLabelText(dict.bannerForm.scheduledAt),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(dict.bannerForm.scheduledUntil),
+    ).toBeInTheDocument();
+  });
+
+  it("refuses to submit a window whose end precedes its start", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<BannerForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(screen.getByLabelText(dict.bannerForm.title), "Акція");
+    await userEvent.selectOptions(
+      screen.getByLabelText(dict.bannerForm.status),
+      "SCHEDULED",
+    );
+    // fireEvent-style typing into a datetime-local input: userEvent.type on a
+    // date input needs the full value at once.
+    await userEvent.type(
+      screen.getByLabelText(dict.bannerForm.scheduledAt),
+      "2026-09-01T09:00",
+    );
+    await userEvent.type(
+      screen.getByLabelText(dict.bannerForm.scheduledUntil),
+      "2026-08-01T09:00",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.bannerForm.submit }),
+    );
+
+    expect(
+      await screen.findByText(dict.bannerForm.errors.scheduledUntilBeforeStart),
+    ).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("submits a valid from-to window", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<BannerForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(screen.getByLabelText(dict.bannerForm.title), "Акція");
+    await userEvent.selectOptions(
+      screen.getByLabelText(dict.bannerForm.status),
+      "SCHEDULED",
+    );
+    await userEvent.type(
+      screen.getByLabelText(dict.bannerForm.scheduledAt),
+      "2026-08-01T09:00",
+    );
+    await userEvent.type(
+      screen.getByLabelText(dict.bannerForm.scheduledUntil),
+      "2026-09-01T09:00",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.bannerForm.submit }),
+    );
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      status: "SCHEDULED",
+      scheduledAt: "2026-08-01T09:00",
+      scheduledUntil: "2026-09-01T09:00",
+    });
+  });
+
   it("keeps validation working: submitting an empty form shows the title error", async () => {
     const onSubmit = jest.fn();
     renderWithProviders(<BannerForm onSubmit={onSubmit} isPending={false} />);

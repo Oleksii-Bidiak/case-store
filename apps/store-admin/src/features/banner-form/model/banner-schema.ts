@@ -30,6 +30,11 @@ export type BannerStatusValue = (typeof BANNER_STATUS)[number];
  * Publish control (TASK-187): `status` drives visibility; when it is
  * `SCHEDULED` a `scheduledAt` datetime is required (bound to a
  * `datetime-local` input; the empty string means "unset").
+ *
+ * TASK-429 turns that single instant into a WINDOW: `scheduledUntil` is when the
+ * banner comes back down on its own. Optional everywhere, and never compared
+ * against the wall clock here — an end in the past is the scheduler's business,
+ * not a reason to refuse the save.
  */
 export const bannerSchema = z
   .object({
@@ -71,6 +76,12 @@ export const bannerSchema = z
 
     // `datetime-local` value ("YYYY-MM-DDTHH:mm") or empty string when unset.
     scheduledAt: z.string().optional().or(z.literal("")),
+
+    // TASK-429: the OTHER end of the publication window — when the scheduler
+    // takes the banner back down. Always optional (empty = no end), and offered
+    // for PUBLISHED as well as SCHEDULED: «показати зараз, зняти 1-го» is the
+    // common case, and it has no start date at all.
+    scheduledUntil: z.string().optional().or(z.literal("")),
   })
   .superRefine((values, ctx) => {
     if (values.status === "SCHEDULED" && !values.scheduledAt) {
@@ -79,6 +90,22 @@ export const bannerSchema = z
         path: ["scheduledAt"],
         message: e.scheduledAtRequired,
       });
+    }
+
+    // Mirrors the DTO's `PublicationWindowConstraint`: an end before (or at) the
+    // start is not a window. Only checked when BOTH ends exist — a lone end means
+    // "from now until then". Both values are `datetime-local` strings in the same
+    // local zone, so comparing their parsed instants is exact.
+    if (values.scheduledAt && values.scheduledUntil) {
+      const start = Date.parse(values.scheduledAt);
+      const until = Date.parse(values.scheduledUntil);
+      if (!Number.isNaN(start) && !Number.isNaN(until) && until <= start) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["scheduledUntil"],
+          message: e.scheduledUntilBeforeStart,
+        });
+      }
     }
   });
 
@@ -104,6 +131,14 @@ export function bannerFormValuesToCreateDto(
       ? new Date(values.scheduledAt).toISOString()
       : undefined;
 
+  // TASK-429: the window end travels for BOTH live states — a DRAFT has nothing to
+  // take down, and the backend clears it there anyway, so sending it would only
+  // invite an inverted-window 400 on a banner nobody can see.
+  const scheduledUntil =
+    values.status !== "DRAFT" && values.scheduledUntil
+      ? new Date(values.scheduledUntil).toISOString()
+      : undefined;
+
   return {
     placement: values.placement,
     title: values.title,
@@ -114,6 +149,7 @@ export function bannerFormValuesToCreateDto(
     theme: theme ? theme : undefined,
     status: values.status,
     scheduledAt,
+    scheduledUntil,
   };
 }
 

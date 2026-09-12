@@ -18,6 +18,7 @@ const mockBanner = {
   status: PublishStatus.PUBLISHED,
   publishedAt: new Date('2026-07-01T00:00:00.000Z'),
   scheduledAt: null,
+  scheduledUntil: null,
   createdAt: new Date('2026-07-01T00:00:00.000Z'),
   updatedAt: new Date('2026-07-01T00:00:00.000Z'),
 };
@@ -205,6 +206,7 @@ describe('BannerRepository', () => {
         status: PublishStatus.PUBLISHED,
         publishedAt: mockBanner.publishedAt,
         scheduledAt: null,
+        scheduledUntil: null,
       });
 
       expect(prismaMock.banner.create).toHaveBeenCalledWith({
@@ -232,6 +234,7 @@ describe('BannerRepository', () => {
         status: PublishStatus.DRAFT,
         publishedAt: null,
         scheduledAt: null,
+        scheduledUntil: null,
       });
 
       // The max is read per PLACEMENT, under that placement's advisory lock.
@@ -255,6 +258,7 @@ describe('BannerRepository', () => {
         status: PublishStatus.DRAFT,
         publishedAt: null,
         scheduledAt: null,
+        scheduledUntil: null,
       });
 
       expect(prismaMock.banner.aggregate).not.toHaveBeenCalled();
@@ -335,6 +339,26 @@ describe('BannerRepository', () => {
           status: PublishStatus.PUBLISHED,
           publishedAt: now,
           scheduledAt: null,
+          // TASK-429: written explicitly, defaulting to "no end".
+          scheduledUntil: null,
+        },
+      });
+    });
+
+    it('publish writes the window end the caller kept (TASK-429)', async () => {
+      prismaMock.banner.update.mockResolvedValue(mockBanner);
+      const now = new Date('2026-07-05T00:00:00.000Z');
+      const until = new Date('2026-08-01T00:00:00.000Z');
+
+      await repository.publish('banner-uuid-1', now, until);
+
+      expect(prismaMock.banner.update).toHaveBeenCalledWith({
+        where: { id: 'banner-uuid-1' },
+        data: {
+          status: PublishStatus.PUBLISHED,
+          publishedAt: now,
+          scheduledAt: null,
+          scheduledUntil: until,
         },
       });
     });
@@ -350,6 +374,8 @@ describe('BannerRepository', () => {
           status: PublishStatus.DRAFT,
           publishedAt: null,
           scheduledAt: null,
+          // TASK-429: a parked banner must not keep an armed window end.
+          scheduledUntil: null,
         },
       });
     });
@@ -371,6 +397,47 @@ describe('BannerRepository', () => {
           scheduledAt: null,
         },
       });
+    });
+
+    it('leaves scheduledUntil alone so a from-to window survives going live', async () => {
+      prismaMock.banner.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.publishDue(new Date('2026-07-05T12:00:00.000Z'));
+
+      const { data } = prismaMock.banner.updateMany.mock.calls[0][0];
+      expect(data).not.toHaveProperty('scheduledUntil');
+    });
+  });
+
+  describe('unpublishExpired (TASK-429)', () => {
+    it('takes down PUBLISHED rows whose window has closed and returns the count', async () => {
+      prismaMock.banner.updateMany.mockResolvedValue({ count: 3 });
+      const now = new Date('2026-09-01T00:00:00.000Z');
+
+      const count = await repository.unpublishExpired(now);
+
+      expect(count).toBe(3);
+      expect(prismaMock.banner.updateMany).toHaveBeenCalledWith({
+        where: { status: PublishStatus.PUBLISHED, scheduledUntil: { lte: now } },
+        data: {
+          status: PublishStatus.DRAFT,
+          publishedAt: null,
+          scheduledAt: null,
+          // Cleared so a later manual re-publish is not undone on the next tick.
+          scheduledUntil: null,
+        },
+      });
+    });
+
+    it('never touches rows without a window end (the filter is on scheduledUntil)', async () => {
+      prismaMock.banner.updateMany.mockResolvedValue({ count: 0 });
+
+      await repository.unpublishExpired(new Date('2026-09-01T00:00:00.000Z'));
+
+      const { where } = prismaMock.banner.updateMany.mock.calls[0][0];
+      // `{ lte: now }` cannot match NULL in SQL, so "no end" means "stays up".
+      expect(where.scheduledUntil).toEqual({ lte: new Date('2026-09-01T00:00:00.000Z') });
+      expect(where.status).toBe(PublishStatus.PUBLISHED);
     });
   });
 

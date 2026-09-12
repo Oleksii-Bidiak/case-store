@@ -925,6 +925,13 @@ model Banner {
   publishedAt      DateTime?       @map("published_at")
   /// Future publish instant while SCHEDULED; null otherwise.
   scheduledAt      DateTime?       @map("scheduled_at")
+  /// End of the publication window (TASK-429) — the instant the PublishingScheduler
+  /// takes this banner back down. Null = no end: it stays live until a human
+  /// unpublishes it. INDEPENDENT of `scheduledAt`, so both shapes are expressible:
+  /// "live now, down on the 1st" (PUBLISHED + scheduledUntil) and "up Friday, down
+  /// Monday" (SCHEDULED + both). The worker CLEARS it when it fires, so a later
+  /// manual re-publish is not undone a minute later by the same closed window.
+  scheduledUntil   DateTime?       @map("scheduled_until")
   createdAt        DateTime        @default(now()) @map("created_at")
   updatedAt        DateTime        @updatedAt @map("updated_at")
 

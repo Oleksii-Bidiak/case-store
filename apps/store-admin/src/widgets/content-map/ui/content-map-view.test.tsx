@@ -5,10 +5,7 @@ import { dict } from "@/shared/config";
 import { ContentMapView } from "./content-map-view";
 
 type Placement =
-  | "HERO_SLIDE"
-  | "PROMO_TILE"
-  | "PROMO_BANNER"
-  | "ANNOUNCEMENT_BAR";
+  "HERO_SLIDE" | "PROMO_TILE" | "PROMO_BANNER" | "ANNOUNCEMENT_BAR";
 
 /** Minimal banner row — only `placement` is read by the count filter. */
 function bannerRow(id: string, placement: Placement) {
@@ -166,6 +163,31 @@ describe("ContentMapView — counts (TASK-264-B)", () => {
         within(card).queryByLabelText(/Активних елементів/),
       ).not.toBeInTheDocument();
     }
+  });
+
+  // AD-CNT-26 (TASK-429): the storefront /promo page was missing from the map
+  // entirely, so nothing in the admin panel said that «Промокоди» drives it.
+  it("puts the /promo page on the map, linking to /discounts with no count badge", async () => {
+    stubCounts({ banners: [], faq: [], pagesTotal: 0, blogTotal: 0 });
+
+    const { container } = renderWithProviders(<ContentMapView />);
+    // Let the page settle so a wrongly rendered marker would be present.
+    await within(zoneCard(container, "blog")).findByText("0");
+
+    const card = zoneCard(container, "promo-codes");
+    expect(
+      within(card).getByRole("link", {
+        name: dict.contentMap.zones.promoCodes.target,
+      }),
+    ).toHaveAttribute("href", "/discounts");
+    // Its count lives behind another permission zone, so no badge is fetched —
+    // and, crucially, no error badge either.
+    expect(
+      within(card).queryByText(dict.contentMap.loadError),
+    ).not.toBeInTheDocument();
+    expect(
+      within(card).queryByLabelText(/Активних елементів/),
+    ).not.toBeInTheDocument();
   });
 
   it("links each banner zone to its ?placement= deep link", async () => {
