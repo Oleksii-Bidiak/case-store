@@ -67,12 +67,30 @@ export class BrandRepository {
    * List all active brands, ordered by name. Backs the public storefront filter
    * dropdown and the "Популярні бренди" strip — no pagination needed at the
    * expected brand-count scale (dozens).
+   *
+   * With `categoryIds` (TASK-414) the list is narrowed to brands that actually
+   * have something on sale in that category subtree. The nested `products.some`
+   * mirrors the PUBLIC listing's own visibility rules — active, not
+   * soft-deleted, and in the requested categories — so the dropdown can never
+   * offer a brand that filters the grid to nothing. The caller expands the
+   * subtree (`CategoryRepository.findSubtreeIds`); this repository does not own
+   * that cross-entity rule, exactly as `ProductRepository.findAll` does not.
+   *
+   * NOT filtered on the product's CATEGORY being active: a deactivated category
+   * is withdrawn by the listing's own `categoryActiveOnly`, and adding it here
+   * would mean a second rule to keep in step for a case the subtree filter has
+   * already narrowed to one branch.
    */
-  findAllActive(): Promise<Brand[]> {
-    return this.prisma.brand.findMany({
-      where: { isActive: true },
-      orderBy: { name: 'asc' },
-    });
+  findAllActive(categoryIds?: string[]): Promise<Brand[]> {
+    const where: Prisma.BrandWhereInput = { isActive: true };
+
+    if (categoryIds !== undefined) {
+      where.products = {
+        some: { isActive: true, deletedAt: null, categoryId: { in: categoryIds } },
+      };
+    }
+
+    return this.prisma.brand.findMany({ where, orderBy: { name: 'asc' } });
   }
 
   /**

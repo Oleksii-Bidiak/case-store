@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   BrandRepository,
   CreateBrandInput,
@@ -8,6 +9,13 @@ import {
 import { BrandEntity } from './entities';
 import { CreateBrandDto, UpdateBrandDto, BrandListQueryDto } from './dto';
 import { generateSlug } from '../common/utils';
+import { CategoryRepository } from '../category/category.repository';
+import { CacheService } from '../cache';
+// Direct file import: the `../cache` barrel is outside this change's file scope.
+import { brandListCategoryKey } from '../cache/cache-key.util';
+
+/** Fallback TTL (seconds) when REDIS_CACHE_TTL_SECONDS is not configured. */
+const DEFAULT_CACHE_TTL_SECONDS = 300;
 
 /**
  * Pagination metadata returned alongside paginated results.
@@ -41,14 +49,46 @@ interface PaginatedBrandsResponse {
  */
 @Injectable()
 export class BrandService {
-  constructor(private readonly brandRepository: BrandRepository) {}
+  private readonly cacheTtlSeconds: number;
+
+  constructor(
+    private readonly brandRepository: BrandRepository,
+    private readonly categoryRepository: CategoryRepository,
+    private readonly cache: CacheService,
+    private readonly config: ConfigService,
+  ) {
+    this.cacheTtlSeconds =
+      this.config.get<number>('REDIS_CACHE_TTL_SECONDS') ?? DEFAULT_CACHE_TTL_SECONDS;
+  }
 
   /**
-   * List all active brands (public storefront filter + strip). No pagination.
+   * List active brands (public storefront filter + strip). No pagination.
+   *
+   * With `categoryId` (TASK-414) the list is narrowed to brands that have a
+   * purchasable product in that category's SUBTREE — the same self+descendants
+   * rollup the product listing uses (TASK-236), so the filter dropdown and the
+   * grid it filters always agree. An unknown category id resolves to a subtree
+   * of just itself and therefore returns an empty list, which is the honest
+   * answer rather than a silent fallback to "every brand".
+   *
+   * Cache-aside, keyed per category, invalidated by `ProductService` on every
+   * catalogue write (the list is derived from products, not from brands).
    */
-  async findAllActive(): Promise<BrandListResponse> {
-    const brands = await this.brandRepository.findAllActive();
-    return { data: brands.map((brand) => BrandEntity.fromPrisma(brand)) };
+  async findAllActive(categoryId?: string): Promise<BrandListResponse> {
+    const cacheKey = brandListCategoryKey(categoryId);
+    const cached = await this.cache.get<BrandListResponse>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const categoryIds = categoryId
+      ? await this.categoryRepository.findSubtreeIds(categoryId)
+      : undefined;
+    const brands = await this.brandRepository.findAllActive(categoryIds);
+    const response = { data: brands.map((brand) => BrandEntity.fromPrisma(brand)) };
+
+    await this.cache.set(cacheKey, response, this.cacheTtlSeconds);
+    return response;
   }
 
   /**

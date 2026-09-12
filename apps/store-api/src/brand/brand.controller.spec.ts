@@ -35,10 +35,18 @@ describe('BrandController (public)', () => {
     const payload = { data: [] };
     serviceMock.findAllActive.mockResolvedValue(payload);
 
-    const result = await controller.findAll();
+    const result = await controller.findAll({});
 
     expect(result).toBe(payload);
-    expect(serviceMock.findAllActive).toHaveBeenCalledTimes(1);
+    expect(serviceMock.findAllActive).toHaveBeenCalledWith(undefined);
+  });
+
+  it('passes ?categoryId= through to the service (TASK-414)', async () => {
+    serviceMock.findAllActive.mockResolvedValue({ data: [] });
+
+    await controller.findAll({ categoryId: 'cat-1' });
+
+    expect(serviceMock.findAllActive).toHaveBeenCalledWith('cat-1');
   });
 
   it('is NOT admin-guarded (public endpoint)', () => {

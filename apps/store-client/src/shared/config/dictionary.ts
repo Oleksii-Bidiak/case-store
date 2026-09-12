@@ -783,6 +783,16 @@ export const dict = {
     specAnyOption: "Будь-яка",
     // TASK-084 — per-section collapse inside the mobile drawer (native <details>).
     sectionToggleAria: (section: string) => `Розгорнути/згорнути «${section}»`,
+    // TASK-414 — «Будь-який» clears a device select (until now the cascade could
+    // be set but never un-set from its own control).
+    deviceAnyOption: "Будь-який",
+    // TASK-414 — availability filter (`?inStock=true`, server-side `stock > 0`).
+    availabilityTitle: "Наявність",
+    inStockOnly: "Тільки в наявності",
+    inStockChip: "В наявності",
+    // TASK-414 — facets beyond the first few fold behind this toggle.
+    moreFacets: (n: number) => `Ще фільтри (${n})`,
+    fewerFacets: "Згорнути фільтри",
   },
 
   product: {

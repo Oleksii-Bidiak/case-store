@@ -1,22 +1,24 @@
 "use client";
 
+import { useState } from "react";
 import { useCategoryControllerGetFilterableSpecs } from "@/entities/category";
 import { dict } from "@/shared/config";
 import {
-  Label,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/shared/ui";
-import { parseSpecParam, toSpecParam } from "../model/spec-facet";
+  parseSpecParam,
+  selectedSpecValues,
+  toggleSpecValue,
+} from "../model/spec-facet";
+import { FilterCheckbox } from "./filter-checkbox";
 
-/** Radix Select forbids an empty item value; this stands in for "any value". */
-const ANY = "__any__";
+/**
+ * Hard ceiling on the facets offered at once, matching the API's own
+ * `MAX_SPEC_FACETS`: each extra facet is another EXISTS subquery server-side,
+ * and anything past this is silently dropped there anyway.
+ */
+const MAX_FACETS = 6;
 
-/** Max facet controls surfaced in the "basic" cut. */
-const MAX_FACETS = 2;
+/** Facets shown before the "Ще фільтри" disclosure. */
+const INITIAL_FACETS = 3;
 
 const cardClass =
   "rounded-2xl border border-border bg-card p-[18px] shadow-card";
@@ -26,7 +28,7 @@ const cardTitleClass =
 interface SpecFacetsProps {
   /** Active category id (from the URL). Facets are category-scoped. */
   categoryId?: string;
-  /** Current `specs=key:value` URL param, if any. */
+  /** Current `specs` URL param, if any (`key:v1,v2;key2:v3`). */
   specs?: string;
   onFilterChange: (updates: Record<string, string | undefined>) => void;
   idPrefix?: string;
@@ -41,12 +43,23 @@ interface SpecFacetsProps {
 }
 
 /**
- * SpecFacets — basic structured-spec facet controls for the catalog (TASK-191).
+ * SpecFacets — structured-spec facet controls for the catalog (TASK-191,
+ * multi-select since TASK-414 / owner decision B-10).
+ *
  * Rendered only when a category is active and it declares filterable specs;
- * offers up to {@link MAX_FACETS} select controls populated from
- * `GET /categories/:id/filterable-specs`. Selecting a value writes a single
- * `?specs=key:value` pair (the basic cut) — picking a value in one facet
- * replaces any prior selection.
+ * offers up to {@link MAX_FACETS} facets from
+ * `GET /categories/:id/filterable-specs`, the first {@link INITIAL_FACETS}
+ * expanded and the rest behind a "Ще фільтри" disclosure.
+ *
+ * Two defects this replaces, both from the single-`<Select>` version:
+ *   - only TWO facets were ever offered, whatever the category declared;
+ *   - selecting in one facet OVERWROTE the whole `specs` param, so a second
+ *     choice silently discarded the first — the control could express exactly
+ *     one key:value pair and nothing else.
+ *
+ * Now each value is its own checkbox: ticking accumulates within a facet (OR)
+ * and across facets (AND), via `toggleSpecValue`, which rewrites only the
+ * facet being clicked.
  */
 export function SpecFacets({
   categoryId,
@@ -59,56 +72,65 @@ export function SpecFacets({
   const query = useCategoryControllerGetFilterableSpecs(categoryId ?? "", {
     query: { enabled: Boolean(categoryId) },
   });
+  const [showAll, setShowAll] = useState(false);
 
   const facets = (query.data?.data ?? []).slice(0, MAX_FACETS);
-  const active = parseSpecParam(specs);
+  const selected = parseSpecParam(specs);
 
   if (!categoryId || facets.length === 0) {
     return null;
   }
 
+  const visible = showAll ? facets : facets.slice(0, INITIAL_FACETS);
+  const hiddenCount = facets.length - visible.length;
+
   return (
     <div className={cardClassName}>
       <h3 className={titleClassName}>{dict.filters.specsTitle}</h3>
-      <div className="flex flex-col gap-3.5">
-        {facets.map((facet) => {
+      <div className="flex flex-col gap-4">
+        {visible.map((facet) => {
           const key = facet.definition.key;
-          const selected = active?.key === key ? active.value : ANY;
-          const fieldId = `${idPrefix}-spec-${key}`;
+          const active = selectedSpecValues(selected, key);
+          const groupId = `${idPrefix}-spec-${key}`;
           return (
-            <div key={key} className="flex flex-col gap-1.5">
-              <Label
-                htmlFor={fieldId}
-                className="text-[13px] text-muted-foreground"
-              >
+            // A real <fieldset>/<legend>: a screen reader then announces which
+            // facet each checkbox belongs to, which a bare heading would not do.
+            <fieldset key={key} className="min-w-0 border-0 p-0">
+              <legend className="mb-1.5 text-[13px] text-muted-foreground">
                 {facet.definition.label}
-              </Label>
-              <Select
-                value={selected}
-                onValueChange={(value) =>
-                  onFilterChange({
-                    specs: value === ANY ? undefined : toSpecParam(key, value),
-                  })
-                }
-              >
-                <SelectTrigger id={fieldId} className="h-[42px]">
-                  <SelectValue placeholder={dict.filters.specAnyOption} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ANY}>
-                    {dict.filters.specAnyOption}
-                  </SelectItem>
-                  {facet.values.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {value}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              </legend>
+              <div className="flex max-h-56 flex-col overflow-y-auto overscroll-contain">
+                {facet.values.map((value) => (
+                  <FilterCheckbox
+                    key={value}
+                    id={`${groupId}-${value}`}
+                    label={value}
+                    checked={active.includes(value)}
+                    onCheckedChange={() =>
+                      onFilterChange({
+                        specs: toggleSpecValue(specs, key, value),
+                      })
+                    }
+                  />
+                ))}
+              </div>
+            </fieldset>
           );
         })}
       </div>
+
+      {facets.length > INITIAL_FACETS && (
+        <button
+          type="button"
+          onClick={() => setShowAll((previous) => !previous)}
+          aria-expanded={showAll}
+          className="mt-3 text-[13.5px] font-semibold text-muted-foreground underline decoration-1 underline-offset-2 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {showAll
+            ? dict.filters.fewerFacets
+            : dict.filters.moreFacets(hiddenCount)}
+        </button>
+      )}
     </div>
   );
 }

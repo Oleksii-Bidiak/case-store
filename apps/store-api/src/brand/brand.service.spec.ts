@@ -1,8 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { NotFoundException, ConflictException } from '@nestjs/common';
 import { BrandRepository } from './brand.repository';
 import { BrandService } from './brand.service';
 import { BrandEntity } from './entities';
+import { CategoryRepository } from '../category/category.repository';
+import { CacheService } from '../cache';
+import { brandListCategoryKey } from '../cache/cache-key.util';
 
 const mockBrand = {
   id: 'brand-uuid-1',
@@ -24,14 +28,34 @@ const brandRepositoryMock = {
   setActive: jest.fn(),
 };
 
+const categoryRepositoryMock = {
+  findSubtreeIds: jest.fn(),
+};
+
+const cacheServiceMock = {
+  get: jest.fn(),
+  set: jest.fn(),
+  del: jest.fn(),
+  delByPrefix: jest.fn(),
+};
+
 describe('BrandService', () => {
   let service: BrandService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Default to a cache MISS so each test exercises the real path; the caching
+    // block below overrides it where the hit is the subject.
+    cacheServiceMock.get.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [BrandService, { provide: BrandRepository, useValue: brandRepositoryMock }],
+      providers: [
+        BrandService,
+        { provide: BrandRepository, useValue: brandRepositoryMock },
+        { provide: CategoryRepository, useValue: categoryRepositoryMock },
+        { provide: CacheService, useValue: cacheServiceMock },
+        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(300) } },
+      ],
     }).compile();
 
     service = module.get<BrandService>(BrandService);
@@ -46,6 +70,57 @@ describe('BrandService', () => {
       expect(result.data).toHaveLength(1);
       expect(result.data[0]).toBeInstanceOf(BrandEntity);
       expect(result.data[0].slug).toBe('spigen');
+    });
+
+    it('queries every active brand when no category is requested (TASK-414)', async () => {
+      brandRepositoryMock.findAllActive.mockResolvedValue([mockBrand]);
+
+      await service.findAllActive();
+
+      expect(brandRepositoryMock.findAllActive).toHaveBeenCalledWith(undefined);
+      expect(categoryRepositoryMock.findSubtreeIds).not.toHaveBeenCalled();
+    });
+
+    // The dropdown must agree with the grid it filters: the catalogue rolls a
+    // parent category up to its descendants (TASK-236), so the brand list has
+    // to be narrowed by the SAME subtree — otherwise a brand stocked only in a
+    // subcategory would be missing from the parent category's filter.
+    it('narrows to the category SUBTREE, not just the category itself', async () => {
+      categoryRepositoryMock.findSubtreeIds.mockResolvedValue(['cat-1', 'cat-1-child']);
+      brandRepositoryMock.findAllActive.mockResolvedValue([mockBrand]);
+
+      await service.findAllActive('cat-1');
+
+      expect(categoryRepositoryMock.findSubtreeIds).toHaveBeenCalledWith('cat-1');
+      expect(brandRepositoryMock.findAllActive).toHaveBeenCalledWith(['cat-1', 'cat-1-child']);
+    });
+  });
+
+  describe('findAllActive — caching (TASK-414)', () => {
+    it('returns the cached envelope on HIT without touching the repository', async () => {
+      const cached = { data: [] };
+      cacheServiceMock.get.mockResolvedValue(cached);
+
+      const result = await service.findAllActive('cat-1');
+
+      expect(result).toBe(cached);
+      expect(brandRepositoryMock.findAllActive).not.toHaveBeenCalled();
+      expect(categoryRepositoryMock.findSubtreeIds).not.toHaveBeenCalled();
+    });
+
+    it('caches under a per-category key so two categories cannot collide', async () => {
+      brandRepositoryMock.findAllActive.mockResolvedValue([mockBrand]);
+      categoryRepositoryMock.findSubtreeIds.mockResolvedValue(['cat-1']);
+
+      await service.findAllActive('cat-1');
+
+      expect(cacheServiceMock.get).toHaveBeenCalledWith(brandListCategoryKey('cat-1'));
+      expect(cacheServiceMock.set).toHaveBeenCalledWith(
+        brandListCategoryKey('cat-1'),
+        expect.objectContaining({ data: expect.any(Array) }),
+        300,
+      );
+      expect(brandListCategoryKey('cat-1')).not.toBe(brandListCategoryKey(undefined));
     });
   });
 
