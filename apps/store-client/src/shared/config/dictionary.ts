@@ -79,6 +79,12 @@ export const dict = {
     catalogSubcategoriesAria: "Підкатегорії",
     toggleSubcategoriesAria: (name: string) =>
       `Підкатегорії категорії «${name}»`,
+    // TASK-412 — the light/system/dark switch. The three option labels are NOT
+    // repeated here: they live once in `account.dashboard.theme*` below, so the
+    // header and the account settings can never drift apart. Only the group's
+    // accessible name is new — "Оформлення" alone would read as "checkout" next
+    // to a cart icon.
+    themeAria: "Тема оформлення",
   },
 
   // TASK-075 — full-text search (header autocomplete + /search results page).
@@ -872,6 +878,15 @@ export const dict = {
         free: true,
       },
     ],
+    // Full-screen gallery lightbox (TASK-416).
+    zoomAria: "Відкрити фото на весь екран",
+    lightboxTitle: (name: string) => `Фото товару «${name}»`,
+    lightboxHint:
+      "Гортайте стрілками ← та → або свайпом. Натисніть Esc, щоб закрити.",
+    lightboxPrev: "Попереднє фото",
+    lightboxNext: "Наступне фото",
+    lightboxCounter: (current: number, total: number) =>
+      `${current} з ${total}`,
   },
 
   reviews: {

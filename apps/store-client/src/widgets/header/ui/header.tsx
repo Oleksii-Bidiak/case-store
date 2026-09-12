@@ -23,6 +23,7 @@ import { HeaderSearch } from "./header-search";
 import { HeaderAuth } from "./header-auth";
 import { HeaderCartBadge } from "./header-cart-badge";
 import { HeaderWishlistBadge } from "./header-wishlist-badge";
+import { HeaderThemeToggle } from "./header-theme-toggle";
 import {
   HeaderMobileCategories,
   MOBILE_LINK_CLASS,
@@ -212,6 +213,14 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
                       </>
                     ))}
                 </nav>
+
+                {/* Theme switch — a preference, not navigation, so it sits
+                    below the menu and outside the <nav> landmark. Always
+                    visible here: on a phone this is the only place it appears,
+                    since the header cluster has no room for it. */}
+                <div className="mt-2 border-t border-border px-2 pt-3 pb-4">
+                  <HeaderThemeToggle variant="full" />
+                </div>
               </SheetContent>
             </Sheet>
 
@@ -235,6 +244,18 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
               (both are in the slide-out menu above) rather than letting four
               targets collide on the narrowest phones. */}
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
+            {/* Theme switch — leftmost, so the commerce actions stay grouped
+                next to the cart.
+
+                `min-[1100px]` is measured, not guessed. The row is already
+                oversubscribed from `md`, where the 410px-wide search pill
+                appears: at 768px the wordmark is squeezed to 16px and the page
+                has ~10px of slack left BEFORE this control exists (TASK-504).
+                The header first has room for the 126px switch at ~1046px, so
+                1100 is that number plus headroom for a longer store name.
+                Below it the slide-out menu carries the switch (phones); the
+                768–1099 band is left to TASK-504 together with the squeeze. */}
+            <HeaderThemeToggle className="mr-1 hidden min-[1100px]:flex" />
             <Link
               href="/promo"
               className="hidden min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-sale transition-colors hover:bg-sale/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
