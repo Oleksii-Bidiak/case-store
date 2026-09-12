@@ -2204,6 +2204,16 @@
             }
           },
           {
+            "name": "deleted",
+            "required": false,
+            "in": "query",
+            "description": "Show the SOFT-DELETED (tombstoned) products instead of the live ones (TASK-427). Honoured ONLY on the admin listing — `ProductService.adminFindAll` is the single place that forwards it; every public read stays live-only whatever the caller sends. Absent or false = live products only (the default), true = tombstones only.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
             "name": "outOfStock",
             "required": false,
             "in": "query",
@@ -2406,6 +2416,16 @@
             "required": false,
             "in": "query",
             "description": "Filter by active status — honoured only on the admin listing; the public list is always active-only (TASK-230)",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "deleted",
+            "required": false,
+            "in": "query",
+            "description": "Show the SOFT-DELETED (tombstoned) products instead of the live ones (TASK-427). Honoured ONLY on the admin listing — `ProductService.adminFindAll` is the single place that forwards it; every public read stays live-only whatever the caller sends. Absent or false = live products only (the default), true = tombstones only.",
             "schema": {
               "example": true,
               "type": "boolean"
@@ -6347,9 +6367,8 @@
             "name": "page",
             "required": false,
             "in": "query",
-            "description": "Page number (1-based)",
+            "description": "Page number (1-based). Omit both page and limit to get the complete list.",
             "schema": {
-              "default": 1,
               "example": 1,
               "type": "number"
             }
@@ -6358,9 +6377,8 @@
             "name": "limit",
             "required": false,
             "in": "query",
-            "description": "Number of items per page",
+            "description": "Items per page. Omit both page and limit to get the complete list.",
             "schema": {
-              "default": 20,
               "example": 20,
               "type": "number"
             }
@@ -6393,7 +6411,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Paginated list of pages",
+            "description": "List of pages (complete list when page/limit are omitted)",
             "content": {
               "application/json": {
                 "schema": {
@@ -6411,7 +6429,7 @@
             "access-token": []
           }
         ],
-        "summary": "List all pages — published + drafts, paginated, optional search (admin)",
+        "summary": "List all pages — published + drafts, optional search + pagination (admin)",
         "tags": [
           "Pages"
         ]
@@ -6456,6 +6474,55 @@
           }
         ],
         "summary": "Create a page (admin)",
+        "tags": [
+          "Pages"
+        ]
+      }
+    },
+    "/api/admin/pages/reorder": {
+      "patch": {
+        "operationId": "adminPageControllerReorder",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderPagesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The full refreshed admin page list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPageListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, or REORDER_DUPLICATE_ID"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "REORDER_NOT_FOUND — an id is not in this list"
+          },
+          "409": {
+            "description": "REORDER_STALE — another admin changed the list first"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reorder the static-page list (admin)",
         "tags": [
           "Pages"
         ]
@@ -8019,6 +8086,55 @@
         ]
       }
     },
+    "/api/admin/carousels/reorder": {
+      "patch": {
+        "operationId": "adminCarouselControllerReorder",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderCarouselsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The full refreshed admin carousel list (all placements)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCarouselListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, an unknown placement, or REORDER_DUPLICATE_ID"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "REORDER_NOT_FOUND — an id is not in this bucket"
+          },
+          "409": {
+            "description": "REORDER_STALE — another admin changed this placement first"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reorder carousels within one placement (admin)",
+        "tags": [
+          "Carousels"
+        ]
+      }
+    },
     "/api/admin/carousels/{id}": {
       "get": {
         "operationId": "AdminCarouselController_findById",
@@ -8713,6 +8829,55 @@
           }
         ],
         "summary": "Create a FAQ item (admin)",
+        "tags": [
+          "FAQ"
+        ]
+      }
+    },
+    "/api/admin/faq/reorder": {
+      "patch": {
+        "operationId": "adminFaqControllerReorder",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderFaqItemsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The full refreshed admin FAQ list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminFaqListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, or REORDER_DUPLICATE_ID"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "REORDER_NOT_FOUND — an id is not in this list"
+          },
+          "409": {
+            "description": "REORDER_STALE — another admin changed the list first"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reorder the FAQ list (admin)",
         "tags": [
           "FAQ"
         ]
@@ -9561,6 +9726,47 @@
               "example": true,
               "type": "boolean"
             }
+          },
+          {
+            "name": "paymentStatus",
+            "required": false,
+            "in": "query",
+            "description": "Filter by payment status (TASK-425). Single-valued, unlike `status`: the queue is read as \"show me the unpaid ones\", never as a union of two payment states.",
+            "schema": {
+              "example": "PENDING",
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "PAID",
+                "FAILED",
+                "REFUNDED"
+              ]
+            }
+          },
+          {
+            "name": "paymentMethod",
+            "required": false,
+            "in": "query",
+            "description": "Filter by how the customer chose to pay (TASK-425) — the difference between a card order whose money never arrived and a cash-on-delivery order that is simply unpaid until the courier hands it over.",
+            "schema": {
+              "example": "ON_DELIVERY",
+              "type": "string",
+              "enum": [
+                "ONLINE",
+                "ON_DELIVERY",
+                "INSTALLMENTS"
+              ]
+            }
+          },
+          {
+            "name": "pendingOverdue",
+            "required": false,
+            "in": "query",
+            "description": "Filter to PENDING orders created more than 48 hours ago — the \"waiting too long\" queue (TASK-425). Deliberately a SERVER filter reusing the dashboard's PENDING_STALE_HOURS, so the list chip and the dashboard tile cannot drift apart.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -9625,6 +9831,139 @@
           }
         ],
         "summary": "Create an order on behalf of a customer (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
+      }
+    },
+    "/api/admin/orders/export": {
+      "get": {
+        "operationId": "adminOrderControllerExport",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Filter by one or more order statuses (comma-separated). A single value (`PENDING`) or CSV (`CONFIRMED,PROCESSING`) are both accepted; absent means all statuses.",
+            "schema": {
+              "example": "CONFIRMED,PROCESSING",
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "description": "Filter by owning user ID",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID.",
+            "schema": {
+              "maxLength": 120,
+              "example": "ABC12345",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateFrom",
+            "required": false,
+            "in": "query",
+            "description": "Include orders created on or after this ISO date",
+            "schema": {
+              "example": "2026-01-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateTo",
+            "required": false,
+            "in": "query",
+            "description": "Include orders created on or before this ISO date",
+            "schema": {
+              "example": "2026-12-31",
+              "type": "string"
+            }
+          },
+          {
+            "name": "unpaidInTransit",
+            "required": false,
+            "in": "query",
+            "description": "Filter to active-but-unpaid (\"in-transit\") orders — paymentStatus != PAID AND status NOT IN (CANCELLED, REFUNDED). Deep-link target for the dashboard needs-action widget (TASK-248).",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "paymentStatus",
+            "required": false,
+            "in": "query",
+            "description": "Filter by payment status (TASK-425). Single-valued, unlike `status`: the queue is read as \"show me the unpaid ones\", never as a union of two payment states.",
+            "schema": {
+              "example": "PENDING",
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "PAID",
+                "FAILED",
+                "REFUNDED"
+              ]
+            }
+          },
+          {
+            "name": "paymentMethod",
+            "required": false,
+            "in": "query",
+            "description": "Filter by how the customer chose to pay (TASK-425) — the difference between a card order whose money never arrived and a cash-on-delivery order that is simply unpaid until the courier hands it over.",
+            "schema": {
+              "example": "ON_DELIVERY",
+              "type": "string",
+              "enum": [
+                "ONLINE",
+                "ON_DELIVERY",
+                "INSTALLMENTS"
+              ]
+            }
+          },
+          {
+            "name": "pendingOverdue",
+            "required": false,
+            "in": "query",
+            "description": "Filter to PENDING orders created more than 48 hours ago — the \"waiting too long\" queue (TASK-425). Deliberately a SERVER filter reusing the dashboard's PENDING_STALE_HOURS, so the list chip and the dashboard tile cannot drift apart.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV of the filtered orders, newest first",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Export the filtered orders as CSV (admin)",
         "tags": [
           "Admin Orders"
         ]
@@ -16993,6 +17332,21 @@
           "meta"
         ]
       },
+      "ReorderPagesDto": {
+        "type": "object",
+        "properties": {
+          "orderedIds": {
+            "description": "The complete, final ordering of the list. The index becomes `sortOrder`.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "orderedIds"
+        ]
+      },
       "CreatePageDto": {
         "type": "object",
         "properties": {
@@ -17044,9 +17398,8 @@
           },
           "sortOrder": {
             "type": "number",
-            "description": "Sort order for display (lower values appear first)",
-            "example": 0,
-            "default": 0
+            "description": "Sort order for display (lower values appear first). OMIT IT (TASK-428): the page is then appended to the end of the list and the order is changed by dragging rows.",
+            "example": 0
           }
         },
         "required": [
@@ -18312,6 +18665,31 @@
           "data"
         ]
       },
+      "ReorderCarouselsDto": {
+        "type": "object",
+        "properties": {
+          "orderedIds": {
+            "description": "The complete, final ordering of the list. The index becomes `sortOrder`.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "placement": {
+            "type": "string",
+            "description": "The placement bucket whose complete ordering `orderedIds` describes",
+            "enum": [
+              "HOME_TABS",
+              "HOME_RAILS"
+            ],
+            "example": "HOME_RAILS"
+          }
+        },
+        "required": [
+          "orderedIds",
+          "placement"
+        ]
+      },
       "CreateCarouselDto": {
         "type": "object",
         "properties": {
@@ -18373,9 +18751,8 @@
           },
           "sortOrder": {
             "type": "number",
-            "description": "Homepage display order across all carousels (lower values appear first)",
-            "example": 0,
-            "default": 0
+            "description": "Display order WITHIN the placement (lower values appear first). OMIT IT (TASK-428): the carousel is then appended to the end of its placement bucket and the order is changed by dragging rows.",
+            "example": 0
           }
         },
         "required": [
@@ -18965,6 +19342,21 @@
           "data"
         ]
       },
+      "ReorderFaqItemsDto": {
+        "type": "object",
+        "properties": {
+          "orderedIds": {
+            "description": "The complete, final ordering of the list. The index becomes `sortOrder`.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "orderedIds"
+        ]
+      },
       "CreateFaqItemDto": {
         "type": "object",
         "properties": {
@@ -18980,9 +19372,8 @@
           },
           "sortOrder": {
             "type": "number",
-            "description": "Display order (ascending). Lower numbers appear first.",
-            "example": 0,
-            "default": 0
+            "description": "Display order (ascending). OMIT IT (TASK-428): the item is then appended to the end of the list and the order is changed by dragging rows, not by typing numbers.",
+            "example": 0
           },
           "isActive": {
             "type": "boolean",
