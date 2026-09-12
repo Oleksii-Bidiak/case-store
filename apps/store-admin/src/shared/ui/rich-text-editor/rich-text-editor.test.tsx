@@ -189,11 +189,18 @@ describe("RichTextEditor", () => {
   });
 
   /**
-   * TASK-467 — the server's allow-list (`sanitize-rich-text.ts`) keeps tables,
-   * images and H1/H4; this editor's Tiptap schema cannot represent any of them
-   * and drops them on seed. `getHTML()` is then already the truncated document,
-   * so the first keystroke would save the loss. The editor must say so and
-   * refuse to be typed into until the operator accepts that cost.
+   * TASK-467 — the server's allow-list (`sanitize-rich-text.ts`) keeps markup
+   * this editor's Tiptap schema may not be able to represent; whatever it
+   * cannot represent it drops on seed, and `getHTML()` is then already the
+   * truncated document, so the first keystroke would save the loss. The editor
+   * must say so and refuse to be typed into until the operator accepts that
+   * cost.
+   *
+   * TASK-434 shrank the gap to a single tag. Tables and H1/H4 are now part of
+   * the schema and must NOT warn any more; `img` is still dropped, because
+   * showing images means uploading them and that endpoint (TASK-424) is not
+   * merged. The two halves are tested together on purpose — a banner that
+   * fires on everything is as useless as one that never fires.
    */
   describe("markup the editor cannot render (TASK-467)", () => {
     const TABLE_HTML =
@@ -211,23 +218,37 @@ describe("RichTextEditor", () => {
       "<ul><li>Пункт один</li><li>Пункт два</li></ul>",
     ].join("");
 
-    it("warns and locks the editor when the value contains a table", async () => {
+    it("keeps a stored table and says nothing (TASK-434)", async () => {
       const onChange = jest.fn();
       render(<RichTextEditor value={TABLE_HTML} onChange={onChange} />);
 
       const editable = await screen.findByLabelText(EDITOR_LABEL);
-      await waitFor(() => expect(truncationBanner()).toBeInTheDocument());
+      await waitFor(() =>
+        expect(editable.querySelector("table")).not.toBeNull(),
+      );
 
-      expect(
-        screen.getByText(
-          new RegExp(dict.contentPreview.unsupportedTables, "i"),
-        ),
-      ).toBeInTheDocument();
-      expect(editable).toHaveAttribute("contenteditable", "false");
-      expect(screen.getByLabelText("Жирний")).toBeDisabled();
-      // Seeding alone must never report a change — the truncated HTML must not
-      // reach the form unless the operator chooses it.
+      expect(editable).toHaveTextContent("Вага");
+      expect(editable).toHaveTextContent("120 г");
+      expect(truncationBanner()).not.toBeInTheDocument();
+      expect(editable).toHaveAttribute("contenteditable", "true");
       expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it("keeps stored H1/H4 and says nothing (TASK-434)", async () => {
+      const onChange = jest.fn();
+      render(
+        <RichTextEditor
+          value="<h1>Один</h1><h4>Чотири</h4>"
+          onChange={onChange}
+        />,
+      );
+
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() => expect(editable.querySelector("h1")).not.toBeNull());
+
+      expect(editable.querySelector("h4")).not.toBeNull();
+      expect(truncationBanner()).not.toBeInTheDocument();
+      expect(editable).toHaveAttribute("contenteditable", "true");
     });
 
     it("warns and locks the editor when the value contains an image", async () => {
@@ -262,7 +283,7 @@ describe("RichTextEditor", () => {
 
     it("unlocks on «edit anyway» and keeps the warning standing", async () => {
       const onChange = jest.fn();
-      render(<RichTextEditor value={TABLE_HTML} onChange={onChange} />);
+      render(<RichTextEditor value={IMAGE_HTML} onChange={onChange} />);
 
       const editable = await screen.findByLabelText(EDITOR_LABEL);
       await waitFor(() => expect(truncationBanner()).toBeInTheDocument());
@@ -283,7 +304,7 @@ describe("RichTextEditor", () => {
     it("offers no «edit anyway» while the editor is disabled", async () => {
       const onChange = jest.fn();
       render(
-        <RichTextEditor value={TABLE_HTML} onChange={onChange} disabled />,
+        <RichTextEditor value={IMAGE_HTML} onChange={onChange} disabled />,
       );
 
       const editable = await screen.findByLabelText(EDITOR_LABEL);
@@ -300,7 +321,7 @@ describe("RichTextEditor", () => {
     it("gives the next entity a fresh verdict (forms.md Rule 2b)", async () => {
       const onChange = jest.fn();
       const { rerender } = render(
-        <RichTextEditor value={TABLE_HTML} onChange={onChange} resetKey="a" />,
+        <RichTextEditor value={IMAGE_HTML} onChange={onChange} resetKey="a" />,
       );
       const editable = await screen.findByLabelText(EDITOR_LABEL);
       await waitFor(() => expect(truncationBanner()).toBeInTheDocument());
@@ -315,6 +336,260 @@ describe("RichTextEditor", () => {
 
       await waitFor(() => expect(truncationBanner()).not.toBeInTheDocument());
       expect(editable).toHaveAttribute("contenteditable", "true");
+    });
+  });
+
+  /**
+   * TASK-434 — links.
+   *
+   * The URL field is the only toolbar action that takes input, and it lives
+   * inside the admin's page form, so two things are tested here that have
+   * nothing to do with Tiptap: Enter must NOT submit the surrounding form
+   * (hence no nested <form>), and Escape must close only the field.
+   */
+  describe("links (TASK-434)", () => {
+    /** Open the URL field and type into it; returns the input. */
+    async function openLinkField(text: string) {
+      fireEvent.click(screen.getByLabelText("Посилання"));
+      const input = await screen.findByLabelText("Адреса посилання");
+      fireEvent.change(input, { target: { value: text } });
+      return input;
+    }
+
+    it("turns a typed URL into a link", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value="<p>Текст</p>" onChange={onChange} />);
+      await screen.findByLabelText(EDITOR_LABEL);
+
+      const input = await openLinkField("https://example.com/specs");
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      await waitFor(() => expect(onChange).toHaveBeenCalled());
+      const html = onChange.mock.calls.at(-1)?.[0] as string;
+      expect(html).toContain('href="https://example.com/specs"');
+      // Applying closes the field.
+      expect(
+        screen.queryByLabelText("Адреса посилання"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("refuses a scheme the server would strip, and keeps the field open", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value="<p>Текст</p>" onChange={onChange} />);
+      await screen.findByLabelText(EDITOR_LABEL);
+
+      const input = await openLinkField("javascript:alert(1)");
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(screen.getByRole("alert")).toHaveTextContent(/Дозволені лише/);
+      expect(input).toBeInTheDocument();
+      expect(onChange).not.toHaveBeenCalled();
+
+      // `tel:` is a valid URI that Tiptap's own default accepts and our server
+      // does not — the whole reason `isAllowedUri` is overridden.
+      fireEvent.change(input, { target: { value: "tel:+380441234567" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(screen.getByRole("alert")).toHaveTextContent(/Дозволені лише/);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it("accepts a same-site relative address", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value="<p>Текст</p>" onChange={onChange} />);
+      await screen.findByLabelText(EDITOR_LABEL);
+
+      const input = await openLinkField("/legal/offer");
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      await waitFor(() => expect(onChange).toHaveBeenCalled());
+      expect(onChange.mock.calls.at(-1)?.[0]).toContain('href="/legal/offer"');
+    });
+
+    it("closes on Escape without touching the document", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value="<p>Текст</p>" onChange={onChange} />);
+      await screen.findByLabelText(EDITOR_LABEL);
+
+      const input = await openLinkField("https://example.com");
+      fireEvent.keyDown(input, { key: "Escape" });
+
+      await waitFor(() =>
+        expect(
+          screen.queryByLabelText("Адреса посилання"),
+        ).not.toBeInTheDocument(),
+      );
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it("enables «зняти посилання» only with the caret in a link", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value="<p>Текст</p>" onChange={onChange} />);
+      await screen.findByLabelText(EDITOR_LABEL);
+
+      expect(screen.getByLabelText("Зняти посилання")).toBeDisabled();
+
+      const input = await openLinkField("https://example.com");
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      // Selection-only transactions must reach the toolbar — without
+      // `shouldRerenderOnTransaction` this button answers for an old caret.
+      await waitFor(() =>
+        expect(screen.getByLabelText("Зняти посилання")).toBeEnabled(),
+      );
+
+      fireEvent.click(screen.getByLabelText("Зняти посилання"));
+      await waitFor(() =>
+        expect(onChange.mock.calls.at(-1)?.[0]).not.toContain("href"),
+      );
+    });
+
+    it("never keeps a dangerous href from seeded HTML", async () => {
+      const onChange = jest.fn();
+      render(
+        <RichTextEditor
+          value={
+            '<p><a href="javascript:alert(1)">клік</a> ' +
+            '<a href="data:text/html;base64,PHNjcmlwdD4=">ще</a></p>'
+          }
+          onChange={onChange}
+        />,
+      );
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() => expect(editable).toHaveTextContent("клік"));
+
+      // The text survives; the link mark never forms, so nothing is clickable.
+      expect(editable.querySelector("a")).toBeNull();
+
+      // And the same is true of what the form would be given to save.
+      fireEvent.click(screen.getByLabelText("Горизонтальна лінія"));
+      await waitFor(() => expect(onChange).toHaveBeenCalled());
+      const html = onChange.mock.calls.at(-1)?.[0] as string;
+      expect(html).not.toContain("javascript:");
+      expect(html).not.toContain("data:text/html");
+      expect(html).not.toContain("href");
+    });
+
+    it("keeps an http(s) link from seeded HTML", async () => {
+      const onChange = jest.fn();
+      render(
+        <RichTextEditor
+          value='<p><a href="https://example.com">умови</a></p>'
+          onChange={onChange}
+        />,
+      );
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() =>
+        expect(editable.querySelector("a")).toHaveAttribute(
+          "href",
+          "https://example.com",
+        ),
+      );
+    });
+  });
+
+  /** TASK-434 — tables. */
+  describe("tables (TASK-434)", () => {
+    const TABLE_ACTIONS = [
+      "Додати рядок",
+      "Видалити рядок",
+      "Додати стовпець",
+      "Видалити стовпець",
+      "Видалити таблицю",
+    ];
+
+    it("inserts a 3×3 table with a header row", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value="<p>Текст</p>" onChange={onChange} />);
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+
+      fireEvent.click(screen.getByLabelText("Вставити таблицю"));
+
+      await waitFor(() =>
+        expect(editable.querySelector("table")).not.toBeNull(),
+      );
+      expect(editable.querySelectorAll("tr")).toHaveLength(3);
+      expect(editable.querySelectorAll("th")).toHaveLength(3);
+      expect(editable.querySelectorAll("td")).toHaveLength(6);
+    });
+
+    it("enables row/column actions only inside a table", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value="<p>Текст</p>" onChange={onChange} />);
+      await screen.findByLabelText(EDITOR_LABEL);
+
+      for (const label of TABLE_ACTIONS) {
+        expect(screen.getByLabelText(label)).toBeDisabled();
+      }
+      // Inserting is the one action that must work outside a table.
+      expect(screen.getByLabelText("Вставити таблицю")).toBeEnabled();
+
+      fireEvent.click(screen.getByLabelText("Вставити таблицю"));
+
+      await waitFor(() =>
+        expect(screen.getByLabelText("Додати рядок")).toBeEnabled(),
+      );
+      for (const label of TABLE_ACTIONS) {
+        expect(screen.getByLabelText(label)).toBeEnabled();
+      }
+    });
+
+    it("adds and removes rows and columns", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value="<p>Текст</p>" onChange={onChange} />);
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+
+      fireEvent.click(screen.getByLabelText("Вставити таблицю"));
+      await waitFor(() =>
+        expect(editable.querySelector("table")).not.toBeNull(),
+      );
+
+      fireEvent.click(screen.getByLabelText("Додати рядок"));
+      await waitFor(() =>
+        expect(editable.querySelectorAll("tr")).toHaveLength(4),
+      );
+
+      fireEvent.click(screen.getByLabelText("Додати стовпець"));
+      await waitFor(() =>
+        expect(editable.querySelectorAll("tr")[0].children).toHaveLength(4),
+      );
+
+      fireEvent.click(screen.getByLabelText("Видалити рядок"));
+      await waitFor(() =>
+        expect(editable.querySelectorAll("tr")).toHaveLength(3),
+      );
+
+      fireEvent.click(screen.getByLabelText("Видалити стовпець"));
+      await waitFor(() =>
+        expect(editable.querySelectorAll("tr")[0].children).toHaveLength(3),
+      );
+
+      fireEvent.click(screen.getByLabelText("Видалити таблицю"));
+      await waitFor(() => expect(editable.querySelector("table")).toBeNull());
+    });
+
+    it("keeps merged cells through a round-trip", async () => {
+      const onChange = jest.fn();
+      render(
+        <RichTextEditor
+          value={
+            "<table><tbody>" +
+            '<tr><th colspan="2">Параметри</th></tr>' +
+            "<tr><td>Вага</td><td>120 г</td></tr>" +
+            "</tbody></table>"
+          }
+          onChange={onChange}
+        />,
+      );
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() =>
+        expect(editable.querySelector("th")).toHaveAttribute("colspan", "2"),
+      );
+
+      // What the form would be handed to save still carries the span — this is
+      // the half the server sanitizer had to be widened for (TASK-434).
+      fireEvent.click(screen.getByLabelText("Горизонтальна лінія"));
+      await waitFor(() => expect(onChange).toHaveBeenCalled());
+      expect(onChange.mock.calls.at(-1)?.[0]).toContain('colspan="2"');
     });
   });
 });

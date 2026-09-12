@@ -11,7 +11,8 @@ import sanitizeHtml from 'sanitize-html';
  * `<script>`, `<style>`, `<iframe>`, and every `on*` inline event handler, plus
  * any tag/attribute we do not explicitly permit. Links are forced to
  * `rel="noopener noreferrer nofollow"` and restricted to safe schemes; images
- * are restricted to `http`/`https`/`data` sources.
+ * are restricted to `http`/`https`/`data` sources; table cells keep `colspan`
+ * and `rowspan` (structure, not presentation) and nothing else.
  */
 const RICH_TEXT_POLICY: sanitizeHtml.IOptions = {
   allowedTags: [
@@ -46,6 +47,15 @@ const RICH_TEXT_POLICY: sanitizeHtml.IOptions = {
   allowedAttributes: {
     a: ['href', 'target', 'rel'],
     img: ['src', 'alt'],
+    // Merged cells (TASK-434). These two are the ONLY attributes that carry
+    // table structure rather than presentation: strip them and a 2×2 header
+    // spanning both columns silently becomes a 1-column header on the next
+    // save, with no error anywhere and no way back. Everything else a cell can
+    // carry (style, class, width, on*) stays off the list on purpose — the
+    // admin editor never emits it, and vendor HTML from the catalogue import
+    // is exactly the untrusted input this policy exists to flatten.
+    th: ['colspan', 'rowspan'],
+    td: ['colspan', 'rowspan'],
   },
   // Only these URL schemes survive on hrefs / srcs; `javascript:` and other
   // dangerous schemes are dropped entirely.

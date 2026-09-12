@@ -20,6 +20,20 @@ const PROSE = [
   "[&_li]:mb-2",
   "[&_a]:text-primary [&_a]:underline",
   "[&_blockquote]:mb-[22px] [&_blockquote]:rounded-r-xl [&_blockquote]:border-l-4 [&_blockquote]:border-primary [&_blockquote]:py-4 [&_blockquote]:pr-[22px] [&_blockquote]:pl-[22px] [&_blockquote]:text-[17px] [&_blockquote]:leading-[1.65] [&_blockquote]:text-foreground [&_blockquote]:italic",
+  // Tables (TASK-434) — the third hand-kept copy of these rules; the others are
+  // `TABLE_PROSE` in `../rich-text-editor/rich-text-editor.tsx` and the
+  // storefront's `RICH_TEXT_PROSE`. `table-fixed` + `w-full` is what keeps a
+  // wide table from pushing the page sideways on a narrow screen: a scroll
+  // container would need a wrapper element, and the server's allow-list has no
+  // tag to put one in.
+  "[&_table]:my-4 [&_table]:w-full [&_table]:table-fixed [&_table]:border-collapse",
+  "[&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2",
+  "[&_th]:text-left [&_th]:font-semibold [&_th]:text-foreground [&_th]:break-words",
+  "[&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-2",
+  "[&_td]:align-top [&_td]:text-foreground [&_td]:break-words",
+  // Tiptap wraps every cell's content in a paragraph; the 18px paragraph
+  // spacing above would make each cell twice as tall as its text.
+  "[&_th_p]:my-0 [&_td_p]:my-0",
 ].join(" ");
 
 export interface RichTextPreviewProps {
@@ -33,29 +47,46 @@ export interface RichTextPreviewProps {
  * through the storefront's prose typography, so page/blog authors see real
  * headings/lists/quotes before publishing.
  *
- * Sanitization decision (deliberate, not an oversight — plan 137): the HTML is
- * rendered via `dangerouslySetInnerHTML` with NO client-side sanitizer and no
- * new sanitizer dependency, because:
+ * Sanitization decision (plan 137, RE-ARGUED FROM SCRATCH for TASK-434): the
+ * HTML is rendered via `dangerouslySetInnerHTML` with NO client-side sanitizer
+ * and no new sanitizer dependency.
  *
- * 1. The input is schema-constrained by construction. `RichTextEditor` builds
- *    its Tiptap instance from `StarterKit.configure({ heading: { levels: [2,
- *    3] } })` only — no Image/Link/raw-HTML extension. Tiptap's `getHTML()` is
- *    ProseMirror's schema-driven serializer: it can only emit the registered
- *    node/mark types with no arbitrary attributes. There is no schema path
- *    that produces a <script> tag, an on* handler, or a javascript: URL —
- *    pasted HTML is re-parsed through the same schema, silently dropping
- *    anything it doesn't recognize.
- * 2. This preview renders the CURRENT admin's own in-memory, unsaved draft in
- *    their own tab — never a foreign/stored string, and never to a second
- *    user. The real security boundary is unchanged: the API's
- *    `sanitizeRichText()` still sanitizes on persist, and the storefront still
- *    sanitizes what it renders to visitors.
- * 3. Adding `isomorphic-dompurify`/`sanitize-html` to store-admin would be a
- *    new dependency for a redundant guarantee.
+ * The original argument was "the schema has no Image, Link or raw-HTML
+ * extension". Half of that was already untrue when it was written — StarterKit
+ * v3 bundles Link, so the schema has carried an `href`-bearing mark all along —
+ * and TASK-434 added TableKit and H1/H4 on top. An argument that was only ever
+ * true by accident must not be inherited, so here is the one that holds:
  *
- * REVISIT this decision if `RichTextEditor`'s extension set ever grows to
- * include Image, Link, or a raw-HTML/markdown paste extension — those are not
- * schema-constrained the same safe way.
+ * 1. The two attribute-bearing types are each constrained AT THE SCHEMA, not by
+ *    being absent.
+ *    - Link runs `isAllowedUri` on parse, on render, on `setLink`/`toggleLink`,
+ *      on autolink and on paste. `RichTextEditor` narrows it to the server's
+ *      own scheme list (http/https/mailto, plus same-site relative paths), so
+ *      `javascript:` and `data:` URIs never become a link mark in the first
+ *      place: the text stays text. A mark that cannot hold a dangerous href
+ *      cannot serialize one.
+ *    - Table cells hold `colspan`/`rowspan`/`colwidth` (numbers) and `align`
+ *      (one of three literals, rendered into a fixed `text-align: …` template).
+ *      None of them is free-form, and none of them is a URL or a handler.
+ * 2. Everything else is still schema-constrained by construction. `getHTML()`
+ *    is ProseMirror's schema-driven serializer: it emits registered node/mark
+ *    types and their declared attributes, nothing else. Pasted HTML is
+ *    re-parsed through the same schema, so `<script>`, `<iframe>`, `style=`
+ *    and every `on*` handler are dropped before they could reach this string.
+ * 3. The blast radius is one person. This preview renders the CURRENT admin's
+ *    own in-memory, unsaved draft in their own tab — never a stored string,
+ *    never another user's, never a visitor's. To attack themselves, an admin
+ *    would have to author the payload in their own editor, in a tab that
+ *    already holds their session.
+ * 4. The real barrier is unchanged and is on the server: `sanitizeRichText()`
+ *    runs on every write path, and the storefront renders only what came back
+ *    through it. This preview is a rendering of a draft, not a trust boundary.
+ *
+ * REVISIT if any of the four stops being true — in particular if a raw-HTML,
+ * markdown-paste or `Image`-with-src extension is added (none of those is
+ * constrained the same way), if `isAllowedUri` is loosened, or if this
+ * component is ever pointed at a string that did not come from the current
+ * admin's own editor session.
  */
 export function RichTextPreview({ html, emptyLabel }: RichTextPreviewProps) {
   // Text-based emptiness: Tiptap emits "<p></p>" for a cleared document, which
