@@ -88,6 +88,23 @@ describe("RegisterForm", () => {
     expect(mockPush).not.toHaveBeenCalledWith("https://evil.com");
   });
 
+  // The absolute-URL case above was never the dangerous one — a leading-slash
+  // check already caught it. `//evil.com` starts with "/" and sailed through,
+  // and the browser reads it as protocol-relative.
+  it("ignores a protocol-relative ?redirect= and falls back to '/'", async () => {
+    mockRedirectParam = "//evil.com";
+    const user = userEvent.setup();
+    renderWithProviders(<RegisterForm />);
+
+    await fillValidForm(user);
+    await user.click(
+      screen.getByRole("button", { name: dict.auth.register.submit }),
+    );
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/"));
+    expect(mockPush).not.toHaveBeenCalledWith("//evil.com");
+  });
+
   it("redirects away when already authenticated on mount", async () => {
     renderWithProviders(<RegisterForm />, {
       auth: { isAuthenticated: true, accessToken: "token" },
