@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { useTableSort } from "@/shared/lib/use-table-sort";
+import { formatDate } from "@/shared/lib";
 import {
   AdminNewsletterControllerFindAllStatus,
   adminNewsletterControllerExport,
@@ -39,8 +40,6 @@ const PAGE_SIZE = 20;
 const ALL_OPTION = "__all__";
 const SEARCH_DEBOUNCE_MS = 300;
 const EXPORT_FILENAME = "newsletter-subscribers.csv";
-
-const dateFormatter = new Intl.DateTimeFormat("uk-UA", { dateStyle: "medium" });
 
 type SubscriberStatus =
   (typeof AdminNewsletterControllerFindAllStatus)[keyof typeof AdminNewsletterControllerFindAllStatus];
@@ -264,7 +263,7 @@ export function AdminSubscriberTable() {
                       {subscriber.source || dict.subscribers.sourceEmpty}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {dateFormatter.format(new Date(subscriber.createdAt))}
+                      {formatDate(subscriber.createdAt)}
                     </TableCell>
                   </TableRow>
                 ))}

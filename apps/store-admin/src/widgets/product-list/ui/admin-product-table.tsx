@@ -29,7 +29,7 @@ import {
   TableToolbar,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatCurrency } from "@/shared/lib";
+import { formatCurrency, formatDate } from "@/shared/lib";
 import { AdminProductTableSkeleton } from "./admin-product-table-skeleton";
 
 const PAGE_SIZE = 10;
@@ -376,7 +376,7 @@ function AdminProductTableView() {
                     label={dict.products.colCreated}
                     className="text-muted-foreground"
                   >
-                    {new Date(product.createdAt).toLocaleDateString()}
+                    {formatDate(product.createdAt)}
                   </TableCell>
                   <TableCell
                     label={dict.common.actions}

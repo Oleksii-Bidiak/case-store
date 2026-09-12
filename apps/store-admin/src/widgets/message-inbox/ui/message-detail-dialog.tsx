@@ -23,12 +23,8 @@ import {
   Textarea,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { formatDateTime } from "@/shared/lib";
 import { statusLabel } from "./status-meta";
-
-const dateFormatter = new Intl.DateTimeFormat("uk-UA", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 interface NoteFormValues {
   adminNote: string;
@@ -122,9 +118,7 @@ export function MessageDetailDialog({
 
         <div className="flex flex-col gap-4">
           <p className="text-xs text-muted-foreground">
-            {dict.messages.receivedAt(
-              dateFormatter.format(new Date(message.createdAt)),
-            )}
+            {dict.messages.receivedAt(formatDateTime(message.createdAt))}
           </p>
 
           <div className="grid grid-cols-2 gap-3">

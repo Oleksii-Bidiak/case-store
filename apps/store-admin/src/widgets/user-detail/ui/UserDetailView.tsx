@@ -28,18 +28,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui";
-import { formatCurrency } from "@/shared/lib";
+import { formatCurrency, formatDateTime } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { UserDetailSkeleton } from "./UserDetailSkeleton";
 
 interface UserDetailViewProps {
   userId: string;
 }
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 /** Ukrainian labels for the contact-message inbox status (reused from messages). */
 const CONTACT_STATUS_LABELS: Record<string, string> = {
@@ -165,7 +160,7 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
               />
               <DetailField
                 label={dict.users.fieldMemberSince}
-                value={dateFormatter.format(new Date(user.createdAt))}
+                value={formatDateTime(user.createdAt)}
               />
             </dl>
           </section>
@@ -227,7 +222,7 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
                       </TableCell>
                       <TableCell>{formatCurrency(order.total)}</TableCell>
                       <TableCell className="text-muted-foreground">
-                        {dateFormatter.format(new Date(order.createdAt))}
+                        {formatDateTime(order.createdAt)}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button asChild variant="outline" size="sm">
@@ -278,7 +273,7 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
                       </p>
                     )}
                     <span className="text-xs text-muted-foreground">
-                      {dateFormatter.format(new Date(review.createdAt))}
+                      {formatDateTime(review.createdAt)}
                     </span>
                   </li>
                 ))}
@@ -320,7 +315,7 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
                         {coupon.orderId.slice(0, 8)}…
                       </Link>
                       <span className="text-xs text-muted-foreground">
-                        {dateFormatter.format(new Date(coupon.redeemedAt))}
+                        {formatDateTime(coupon.redeemedAt)}
                       </span>
                     </div>
                   </li>
@@ -448,11 +443,11 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
             <DetailField label={dict.users.fieldUserId} value={user.id} mono />
             <DetailField
               label={dict.users.fieldCreated}
-              value={dateFormatter.format(new Date(user.createdAt))}
+              value={formatDateTime(user.createdAt)}
             />
             <DetailField
               label={dict.users.fieldUpdated}
-              value={dateFormatter.format(new Date(user.updatedAt))}
+              value={formatDateTime(user.updatedAt)}
             />
           </section>
         </div>
@@ -480,7 +475,7 @@ function ContactMessageItem({
         {message.message}
       </p>
       <span className="text-xs text-muted-foreground">
-        {dateFormatter.format(new Date(message.createdAt))}
+        {formatDateTime(message.createdAt)}
       </span>
     </li>
   );

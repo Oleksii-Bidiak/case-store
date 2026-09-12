@@ -6,6 +6,7 @@ import {
   useAdminOrderControllerGetHistory,
 } from "@/entities/order";
 import { dict } from "@/shared/config";
+import { formatDateTime } from "@/shared/lib";
 import { OrderTimelineSkeleton } from "./order-timeline-skeleton";
 
 interface OrderTimelineProps {
@@ -13,11 +14,6 @@ interface OrderTimelineProps {
   /** The order's owner id — used to tell a customer self-action from an admin's. */
   customerUserId: string | null;
 }
-
-const timestampFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 /**
  * Order status/payment-status change timeline (TASK-251).
@@ -63,7 +59,7 @@ export function OrderTimeline({ orderId, customerUserId }: OrderTimelineProps) {
           </span>
           <span className="text-xs text-muted-foreground">
             {historyActorLabel(entry.changedBy, customerUserId)} ·{" "}
-            {timestampFormatter.format(new Date(entry.changedAt))}
+            {formatDateTime(entry.changedAt)}
           </span>
         </li>
       ))}

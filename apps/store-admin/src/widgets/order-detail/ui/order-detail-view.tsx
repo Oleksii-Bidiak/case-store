@@ -26,7 +26,7 @@ import {
   TableRow,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatCurrency } from "@/shared/lib";
+import { formatCurrency, formatDateTime, formatTime } from "@/shared/lib";
 import { OrderDetailSkeleton } from "./order-detail-skeleton";
 import { OrderTimeline } from "./order-timeline";
 
@@ -46,16 +46,6 @@ interface AddressFields {
   country?: string;
   phone?: string;
 }
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-
-/** Time-only variant for the restocked-at badge (TASK-254). */
-const timeFormatter = new Intl.DateTimeFormat("en-US", {
-  timeStyle: "short",
-});
 
 /**
  * Admin order detail page body.
@@ -138,16 +128,14 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                 </Badge>
               ) : order.restockedAt != null ? (
                 <Badge variant="secondary">
-                  {dict.orders.restockedAt(
-                    timeFormatter.format(new Date(order.restockedAt)),
-                  )}
+                  {dict.orders.restockedAt(formatTime(order.restockedAt))}
                 </Badge>
               ) : null}
             </div>
             <p className="text-sm text-muted-foreground">
               {dict.orders.timeline(
-                dateFormatter.format(new Date(order.createdAt)),
-                dateFormatter.format(new Date(order.updatedAt)),
+                formatDateTime(order.createdAt),
+                formatDateTime(order.updatedAt),
               )}
             </p>
             <Separator />

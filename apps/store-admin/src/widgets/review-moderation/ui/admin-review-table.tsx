@@ -15,6 +15,7 @@ import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/da
 import { useReviewBulkModeration } from "@/features/review-bulk-moderation";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useRowSelection } from "@/shared/lib/use-row-selection";
+import { formatDate } from "@/shared/lib";
 import {
   BulkActionsBar,
   Button,
@@ -40,10 +41,6 @@ import { AdminReviewTableSkeleton } from "./admin-review-table-skeleton";
 
 const PAGE_SIZE = 20;
 const COMMENT_MAX = 80;
-
-const dateFormatter = new Intl.DateTimeFormat("uk-UA", {
-  dateStyle: "medium",
-});
 
 /** Non-interactive star row for a single review's rating (1–5). */
 function ReviewStars({ rating }: { rating: number }) {
@@ -351,7 +348,7 @@ function AdminReviewTableView() {
                       label={dict.reviews.colDate}
                       className="text-sm text-muted-foreground"
                     >
-                      {dateFormatter.format(new Date(review.createdAt))}
+                      {formatDate(review.createdAt)}
                     </TableCell>
                     {isPending && (
                       <TableCell

@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { useTableSort } from "@/shared/lib/use-table-sort";
+import { formatDate } from "@/shared/lib";
 import {
   ROLE_VALUES,
   UserEntityRole,
@@ -40,10 +41,6 @@ import { AdminUserTableSkeleton } from "./AdminUserTableSkeleton";
 const PAGE_SIZE = 20;
 const ALL_OPTION = "__all__";
 const SEARCH_DEBOUNCE_MS = 300;
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-});
 
 function fullName(user: UserEntity): string {
   const name = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
@@ -314,7 +311,7 @@ export function AdminUserTable() {
                       </Badge>
                     </TableCell>
                     <TableCell hideOnMobile className="text-muted-foreground">
-                      {dateFormatter.format(new Date(user.createdAt))}
+                      {formatDate(user.createdAt)}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button asChild variant="outline" size="sm">

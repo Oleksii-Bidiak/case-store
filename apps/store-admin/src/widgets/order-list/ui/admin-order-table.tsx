@@ -39,7 +39,7 @@ import {
   TabsTrigger,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatCurrency } from "@/shared/lib";
+import { formatCurrency, formatDateTime } from "@/shared/lib";
 import { AdminOrderTableSkeleton } from "./admin-order-table-skeleton";
 
 const PAGE_SIZE = 20;
@@ -84,11 +84,6 @@ const STATUS_TABS: ReadonlyArray<{ value: string; label: string }> = [
  * it matches no `TabsTrigger`, so no tab renders active — the honest state.
  */
 const CUSTOM_TAB = "__custom__";
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 /**
  * Paginated order table for the admin panel, listing orders across all users.
@@ -380,7 +375,7 @@ export function AdminOrderTable() {
                       label={dict.orders.colCreated}
                       className="text-muted-foreground"
                     >
-                      {dateFormatter.format(new Date(order.createdAt))}
+                      {formatDateTime(order.createdAt)}
                     </TableCell>
                     <TableCell
                       label={dict.common.actions}

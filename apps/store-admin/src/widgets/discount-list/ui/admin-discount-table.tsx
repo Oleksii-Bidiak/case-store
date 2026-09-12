@@ -23,6 +23,7 @@ import {
 } from "@/shared/ui";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
+import { formatDate } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { AdminDiscountTableSkeleton } from "./admin-discount-table-skeleton";
 
@@ -38,7 +39,7 @@ function formatValue(discount: DiscountEntity): string {
 /** Format the expiry cell (date only, or an em dash when unbounded). */
 function formatExpiry(expiresAt: string | null): string {
   if (!expiresAt) return dict.discounts.noExpiry;
-  return new Date(expiresAt).toLocaleDateString("uk-UA");
+  return formatDate(expiresAt);
 }
 
 /**

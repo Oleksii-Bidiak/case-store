@@ -166,12 +166,32 @@ const tailwindTokenGuard = [
  * hatch that reads as deliberate evasion in review but passes lint.
  *
  * Exception: `shared/api/generated/**` (Orval output, never hand-edited).
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ * THIS OBJECT ALSO CARRIES THE DATE-FORMATTING GUARD (TASK-421), AND THAT IS
+ * DELIBERATE — DO NOT SPLIT IT OUT.
+ *
+ * ESLint flat config REPLACES a rule's options rather than merging them. A
+ * second config object that also sets `no-restricted-syntax` would win for every
+ * matched file and silently switch the raw-`fetch` selectors above OFF — lint
+ * would stay green while the guard no longer existed. Anything new that this
+ * rule should forbid is appended to the SAME array below.
+ *
+ * The date selectors close the drift documented in `shared/lib/format/
+ * formatDate.ts`: 18 hand-rolled `Intl.DateTimeFormat` singletons that disagreed
+ * with each other, plus bare `toLocale*String()` calls with no locale at all.
+ * `shared/lib/format/**` is exempted via `ignores` — that folder is where the
+ * canonical formatters are allowed to construct Intl objects.
+ *
+ * Only ZERO-ARGUMENT `toLocale*String()` is banned. `toLocaleString("uk-UA")` on
+ * a NUMBER is legitimate (see `DashboardTrafficCard`), and flagging it would
+ * push people back to hand-rolled formatting.
  */
 const rawFetchGuard = [
   {
     name: "no-raw-fetch",
     files: ["src/**/*.{ts,tsx,js,jsx,mjs,mts,cts}"],
-    ignores: ["src/shared/api/generated/**"],
+    ignores: ["src/shared/api/generated/**", "src/shared/lib/format/**"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -185,6 +205,18 @@ const rawFetchGuard = [
             "CallExpression[callee.object.name=/^(globalThis|global|window|self)$/][callee.property.name='fetch']",
           message:
             "Заборонений «голий» fetch (через globalThis/window/global/self) — обхід того самого правила. Використовуй згенеровані Orval-хуки поверх @/shared/api/instance.",
+        },
+        {
+          selector:
+            "CallExpression[arguments.length=0][callee.property.name=/^toLocale(Date|Time)?String$/]",
+          message:
+            "Дата без локалі: toLocaleDateString()/toLocaleTimeString()/toLocaleString() без аргументів беруть локаль і часовий пояс браузера, тож кожен оператор бачить свій формат — а сервер віддає UTC, тому час ще й з'їжджає на 2–3 години без жодної позначки. Використовуй спільні форматери з @/shared/lib: formatDate (09.09.2026), formatDateTime (09.09.2026, 18:40), formatTime (18:40), formatRelative («5 хвилин тому»). Вони фіксують uk-UA, 24-годинний час і timeZone Europe/Kyiv. Для ЧИСЕЛ toLocaleString(\"uk-UA\") з явною локаллю дозволений.",
+        },
+        {
+          selector:
+            "NewExpression[callee.object.name='Intl'][callee.property.name=/^(DateTimeFormat|RelativeTimeFormat)$/]",
+          message:
+            "Власний Intl.DateTimeFormat/RelativeTimeFormat поза shared/lib/format: саме так в адмінці з'явилося 18 різних форматерів — вісім з них в американському форматі («Sep 9, 2026, 6:40 PM») — і жоден не задавав timeZone, тому на сервері (UTC) час показувався зміщеним. Імпортуй formatDate / formatDateTime / formatTime / formatRelative з @/shared/lib. Якщо потрібен НОВИЙ формат дати — додай його у shared/lib/format/formatDate.ts, а не тут.",
         },
       ],
     },

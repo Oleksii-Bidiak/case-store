@@ -32,7 +32,7 @@ import {
   TableToolbar,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatCurrency } from "@/shared/lib";
+import { formatCurrency, formatDateTime } from "@/shared/lib";
 import { AdminReturnTableSkeleton } from "./admin-return-table-skeleton";
 
 const PAGE_SIZE = 20;
@@ -45,11 +45,6 @@ const STATUS_FILTER_OPTIONS = [
   ReturnEntityStatus.REFUNDED,
   ReturnEntityStatus.REJECTED,
 ];
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 /**
  * The returns queue (TASK-340).
@@ -238,7 +233,7 @@ export function AdminReturnTable() {
                       label={dict.returns.colRequested}
                       className="text-muted-foreground"
                     >
-                      {dateFormatter.format(new Date(item.requestedAt))}
+                      {formatDateTime(item.requestedAt)}
                     </TableCell>
                     <TableCell
                       label={dict.common.actions}

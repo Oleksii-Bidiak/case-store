@@ -15,6 +15,7 @@ import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { useRowSelection } from "@/shared/lib/use-row-selection";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
+import { formatDate } from "@/shared/lib";
 import {
   Badge,
   BulkActionsBar,
@@ -45,8 +46,6 @@ import { statusBadgeVariant, statusLabel } from "./status-meta";
 const PAGE_SIZE = 20;
 const MESSAGE_MAX = 80;
 const ALL = "ALL";
-
-const dateFormatter = new Intl.DateTimeFormat("uk-UA", { dateStyle: "medium" });
 
 /** Truncate a message body to a fixed length for the table cell. */
 function truncate(value: string): string {
@@ -343,7 +342,7 @@ function MessageInboxView() {
                     label={dict.messages.colDate}
                     className="text-sm text-muted-foreground"
                   >
-                    {dateFormatter.format(new Date(message.createdAt))}
+                    {formatDate(message.createdAt)}
                   </TableCell>
                   <TableCell
                     label={dict.common.actions}

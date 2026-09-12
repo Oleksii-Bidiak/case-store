@@ -28,16 +28,12 @@ import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
+import { formatDateTime } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
 const d = dict.auditLog;
 const PAGE_SIZE = 50;
 const FILTER_DEBOUNCE_MS = 300;
-
-const dateFormatter = new Intl.DateTimeFormat("uk-UA", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 /** Loading placeholder shaped like the table underneath. */
 export function AuditLogSkeleton() {
@@ -282,7 +278,7 @@ export function AuditLogView() {
                 {entries.map((entry) => (
                   <TableRow key={entry.id}>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {dateFormatter.format(new Date(entry.createdAt))}
+                      {formatDateTime(entry.createdAt)}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1">

@@ -16,18 +16,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui";
-import { formatCurrency } from "@/shared/lib";
+import { formatCurrency, formatDateTime } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { DashboardLastOrdersTableSkeleton } from "./DashboardLastOrdersTableSkeleton";
 
 /** Number of recent orders shown on the dashboard. */
 const LAST_ORDERS_LIMIT = 5;
-
-/** Mirrors AdminOrderTable's date rendering so the two tables read consistently. */
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 /**
  * «Останні замовлення» — the dashboard's last-5-orders widget (TASK-249).
@@ -133,7 +127,7 @@ export function DashboardLastOrdersTable() {
                 </TableCell>
                 <TableCell>{formatCurrency(order.total)}</TableCell>
                 <TableCell hideOnMobile className="text-muted-foreground">
-                  {dateFormatter.format(new Date(order.createdAt))}
+                  {formatDateTime(order.createdAt)}
                 </TableCell>
                 <TableCell className="text-right">
                   <Button asChild variant="outline" size="sm">

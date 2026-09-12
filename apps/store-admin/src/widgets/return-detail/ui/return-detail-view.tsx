@@ -20,17 +20,12 @@ import {
   TableRow,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatCurrency } from "@/shared/lib";
+import { formatCurrency, formatDateTime } from "@/shared/lib";
 import { ReturnDetailSkeleton } from "./return-detail-skeleton";
 
 interface ReturnDetailViewProps {
   returnId: string;
 }
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 /**
  * One return in full, with the resolve action (TASK-340).
@@ -152,21 +147,17 @@ export function ReturnDetailView({ returnId }: ReturnDetailViewProps) {
           <section className="flex flex-col gap-2 rounded-md border border-border p-4">
             <DetailRow
               label={dict.returns.requestedAt}
-              value={dateFormatter.format(new Date(rma.requestedAt))}
+              value={formatDateTime(rma.requestedAt)}
             />
             <DetailRow
               label={dict.returns.resolvedAt}
-              value={
-                rma.resolvedAt
-                  ? dateFormatter.format(new Date(rma.resolvedAt))
-                  : "—"
-              }
+              value={rma.resolvedAt ? formatDateTime(rma.resolvedAt) : "—"}
             />
             <DetailRow
               label={dict.returns.restockedAt}
               value={
                 rma.restockedAt
-                  ? dateFormatter.format(new Date(rma.restockedAt))
+                  ? formatDateTime(rma.restockedAt)
                   : dict.returns.notRestocked
               }
             />
