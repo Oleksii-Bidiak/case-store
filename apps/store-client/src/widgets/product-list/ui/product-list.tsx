@@ -21,7 +21,7 @@ import {
 } from "../model/load-more";
 import { ProductListSkeleton } from "./product-list-skeleton";
 import { ProductListItem } from "./product-list-item";
-import { Pagination } from "./pagination";
+import { Pagination } from "@/shared/ui/pagination";
 
 interface ProductListProps {
   /** Active filter params (all URL-derived). */
