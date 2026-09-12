@@ -594,3 +594,152 @@ describe("HeaderSearch — mega-menu flyout (TASK-082)", () => {
     ).toHaveAttribute("href", "/categories");
   });
 });
+
+describe("HeaderSearch — hover, Enter and the compact trigger (TASK-411)", () => {
+  /** The product listbox itself (the one named by the input's aria-label). */
+  function productList() {
+    return screen.getByRole("listbox", { name: dict.search.inputAria });
+  }
+
+  it("leaves the keyboard selection alone when the pointer crosses an option", async () => {
+    setupHandlers({
+      products: [
+        makeSuggestion(),
+        makeSuggestion({ id: "product-2", name: "Скло", slug: "glass" }),
+      ],
+    });
+
+    const { user, input } = await typeQuery("чохол");
+    await screen.findByText("Скло");
+    const [first, second] = within(productList()).getAllByRole("option");
+
+    // Hovering the SECOND row tints it (CSS only) but must not select it.
+    await user.hover(second);
+    expect(second).toHaveAttribute("aria-selected", "false");
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+
+    // So the first ArrowDown still lands on the FIRST row, and Enter commits
+    // that one — not whatever the cursor happens to be resting on.
+    await user.keyboard("{ArrowDown}");
+    expect(first).toHaveAttribute("aria-selected", "true");
+    expect(input).toHaveAttribute("aria-activedescendant", first.id);
+
+    await user.keyboard("{Enter}");
+    expect(mockPush).toHaveBeenCalledWith("/products/iphone-15-pro-case");
+  });
+
+  it("sends Enter with nothing highlighted to the results page", async () => {
+    setupHandlers({ products: [makeSuggestion()] });
+
+    const { user } = await typeQuery("чохол");
+    await screen.findByText("Чохол iPhone 15 Pro");
+
+    // The popup is open and has matches, but the user arrowed to none of them
+    // — Enter must search for what was typed rather than do nothing.
+    await user.keyboard("{Enter}");
+    expect(mockPush).toHaveBeenCalledWith(
+      `/search?q=${encodeURIComponent("чохол")}`,
+    );
+  });
+
+  it("turns an empty popup into a link to the full results page", async () => {
+    setupHandlers({ products: [], posts: [] });
+
+    await typeQuery("невідомо");
+
+    const link = await screen.findByRole("link", {
+      name: dict.search.showAllResults("невідомо"),
+    });
+    expect(link).toHaveAttribute(
+      "href",
+      `/search?q=${encodeURIComponent("невідомо")}`,
+    );
+    // It is a way OUT of the popup, not one of its rows: a focusable link is
+    // not a valid child of role="listbox".
+    expect(within(productList()).queryAllByRole("option")).toHaveLength(0);
+    expect(within(productList()).queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("does not claim 'nothing found' when only articles match", async () => {
+    setupHandlers({ products: [], posts: [makeBlogPost()] });
+
+    await typeQuery("чохол");
+
+    await screen.findByRole("listbox", { name: dict.search.blogSectionLabel });
+    expect(screen.queryByText(dict.search.empty)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: dict.search.showAllResults("чохол") }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the popup on the loading row while the debounce is still pending", async () => {
+    server.use(
+      http.get("*/api/categories/tree", () => HttpResponse.json({ data: [] })),
+      http.get("*/api/search/suggest", async () => {
+        await delay("infinite");
+        return HttpResponse.json({ data: [] });
+      }),
+      http.get("*/api/blog", async () => {
+        await delay("infinite");
+        return HttpResponse.json({ data: [], meta: {} });
+      }),
+    );
+
+    await typeQuery("ч");
+
+    // The request for "ч" has not even been sent yet (250ms debounce), so
+    // nothing is in flight and nothing has arrived — the popup must not
+    // announce a verdict it cannot have.
+    expect(screen.getByText(dict.search.loading)).toBeInTheDocument();
+    expect(screen.queryByText(dict.search.empty)).not.toBeInTheDocument();
+  });
+
+  it("opens a search panel from the magnifier and returns focus on Escape", async () => {
+    setupHandlers({ products: [makeSuggestion()] });
+    const user = userEvent.setup();
+    renderWithProviders(<HeaderSearch />);
+
+    const trigger = screen.getByRole("button", { name: dict.search.openPanel });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    // The panel owns a second combobox — the shared SearchAutocomplete — and
+    // takes focus, so the magnifier behaves like the input it stands in for.
+    expect(
+      screen.getAllByRole("combobox", { name: dict.search.inputAria }),
+    ).toHaveLength(2);
+    const panelInput = document.getElementById("compact-search");
+    expect(panelInput).toHaveFocus();
+
+    // aria-controls resolves to the element that actually holds that input.
+    const panel = document.getElementById(
+      trigger.getAttribute("aria-controls") ?? "",
+    );
+    expect(panel).toContainElement(panelInput);
+
+    await user.keyboard("{Escape}");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById("compact-search")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("closes the catalog panel when the magnifier opens the search panel", async () => {
+    setupHandlers({ categories: makeTree() });
+    const user = userEvent.setup();
+    renderWithProviders(<HeaderSearch />);
+
+    await user.click(
+      screen.getByRole("button", { name: dict.header.catalogAria }),
+    );
+    await screen.findByRole("menuitem", { name: "Смартфони" });
+
+    await user.click(
+      screen.getByRole("button", { name: dict.search.openPanel }),
+    );
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(document.getElementById("compact-search")).toBeInTheDocument();
+  });
+});
