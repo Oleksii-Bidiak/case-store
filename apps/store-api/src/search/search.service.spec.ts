@@ -92,10 +92,10 @@ describe('SearchService', () => {
   let repo: jest.Mocked<
     Pick<
       ProductRepository,
-      'findAll' | 'findByIdsForCards' | 'findOneForIndex' | 'findManyForIndex'
+      'findAll' | 'findByIdsForCards' | 'findOneForIndex' | 'findManyForIndex' | 'findBySku'
     >
   >;
-  let categoryRepo: jest.Mocked<Pick<CategoryRepository, 'findAncestorIds'>>;
+  let categoryRepo: jest.Mocked<Pick<CategoryRepository, 'findAncestorIds' | 'findSubtreeIds'>>;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -117,11 +117,16 @@ describe('SearchService', () => {
       findByIdsForCards: jest.fn(),
       findOneForIndex: jest.fn(),
       findManyForIndex: jest.fn(),
+      // TASK-417: the exact-article-number lookup. Answers "no such code" by
+      // default so every other test keeps taking the full-text path.
+      findBySku: jest.fn().mockResolvedValue(null),
     };
     // TASK-236: by default a category's ancestor chain is just itself; the
-    // toDocument tests override it to prove the rollup expansion.
+    // toDocument tests override it to prove the rollup expansion. `findSubtreeIds`
+    // is the mirror image used by the Postgres fallback's category facet.
     categoryRepo = {
       findAncestorIds: jest.fn((id: string) => Promise.resolve([id])),
+      findSubtreeIds: jest.fn((id: string) => Promise.resolve([id])),
     };
     service = new SearchService(
       meili as unknown as MeiliClient,
@@ -147,11 +152,16 @@ describe('SearchService', () => {
         'brandName',
         'searchTerms',
       ]);
+      // `price` + `inStock` are facets since TASK-417: the results page renders
+      // the catalogue filter panel, and those two have to narrow the ENGINE's
+      // answer, not the hydrated page.
       expect(PRODUCTS_INDEX_SETTINGS.filterableAttributes).toEqual([
         'isActive',
         'categoryIds',
         'brandId',
         'deviceModelIds',
+        'price',
+        'inStock',
       ]);
       expect(PRODUCTS_INDEX_SETTINGS.sortableAttributes).toEqual(['price', 'createdAt']);
       expect(PRODUCTS_INDEX_SETTINGS.typoTolerance).toBeDefined();
@@ -417,6 +427,175 @@ describe('SearchService', () => {
       expect(meili.search).not.toHaveBeenCalled();
       expect(repo.findAll).toHaveBeenCalled();
       expect(result.meta.limit).toBe(DEFAULT_SEARCH_LIMIT);
+    });
+  });
+
+  // ─── search: facets + ordering (TASK-417) ───────────────────────────────────
+
+  describe('search filters', () => {
+    it('translates every facet into the engine filter expression', async () => {
+      meili.search.mockResolvedValue({
+        hits: [{ id: 'product-1' }] as never,
+        estimatedTotalHits: 1,
+      });
+      repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
+
+      await service.search('case', 1, 20, {
+        categoryId: 'cat-1',
+        brandId: 'brand-1',
+        deviceModelId: 'dm-1',
+        inStock: true,
+        minPrice: 10,
+        maxPrice: 50,
+      });
+
+      expect(meili.search).toHaveBeenCalledWith(
+        'case',
+        expect.objectContaining({
+          filter: [
+            'isActive = true',
+            'categoryIds = "cat-1"',
+            'brandId = "brand-1"',
+            'deviceModelIds = "dm-1"',
+            'inStock = true',
+            'price >= 10',
+            'price <= 50',
+          ],
+        }),
+      );
+    });
+
+    it('sends no sort for relevance and a price sort otherwise', async () => {
+      meili.search.mockResolvedValue({
+        hits: [{ id: 'product-1' }] as never,
+        estimatedTotalHits: 1,
+      });
+      repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
+
+      await service.search('case', 1, 20, { sort: 'relevance' });
+      expect(meili.search).toHaveBeenLastCalledWith(
+        'case',
+        expect.objectContaining({ sort: undefined }),
+      );
+
+      await service.search('case', 1, 20, { sort: 'price_asc' });
+      expect(meili.search).toHaveBeenLastCalledWith(
+        'case',
+        expect.objectContaining({ sort: ['price:asc'] }),
+      );
+
+      await service.search('case', 1, 20, { sort: 'newest' });
+      expect(meili.search).toHaveBeenLastCalledWith(
+        'case',
+        expect.objectContaining({ sort: ['createdAt:desc'] }),
+      );
+    });
+
+    it('applies the SAME facets on the Postgres fallback, category subtree included', async () => {
+      // A filtered search that quietly widened when the engine went down would be
+      // worse than an error — nothing on screen would say the filter stopped
+      // applying.
+      meili.search.mockResolvedValue(null);
+      categoryRepo.findSubtreeIds.mockResolvedValue(['cat-1', 'cat-1-a']);
+      repo.findAll.mockResolvedValue({ products: [makeProduct()], total: 1 } as never);
+
+      await service.search('case', 2, 12, {
+        categoryId: 'cat-1',
+        brandId: 'brand-1',
+        deviceModelId: 'dm-1',
+        inStock: true,
+        minPrice: 10,
+        maxPrice: 50,
+        sort: 'price_desc',
+      });
+
+      expect(categoryRepo.findSubtreeIds).toHaveBeenCalledWith('cat-1');
+      expect(repo.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          page: 2,
+          limit: 12,
+          search: 'case',
+          isActive: true,
+          categoryActiveOnly: true,
+          categoryIds: ['cat-1', 'cat-1-a'],
+          brandId: 'brand-1',
+          deviceModelId: 'dm-1',
+          inStock: true,
+          minPrice: 10,
+          maxPrice: 50,
+          sortBy: 'price',
+          sortOrder: 'desc',
+        }),
+      );
+    });
+
+    it('leaves the fallback unfiltered when no facet was requested', async () => {
+      meili.search.mockResolvedValue(null);
+      repo.findAll.mockResolvedValue({ products: [], total: 0 } as never);
+
+      await service.search('case', 1, 20);
+
+      expect(categoryRepo.findSubtreeIds).not.toHaveBeenCalled();
+      expect(repo.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          categoryIds: undefined,
+          brandId: undefined,
+          inStock: undefined,
+          sortBy: 'createdAt',
+          sortOrder: 'desc',
+        }),
+      );
+    });
+  });
+
+  // ─── search: exact article number (SF-SRCH-09) ──────────────────────────────
+
+  describe('search by article number', () => {
+    it('answers a code-shaped query with the single product it names', async () => {
+      repo.findBySku.mockResolvedValue({ id: 'product-1' } as never);
+      repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
+
+      const result = await service.search('RN13PRO-BK2', 1, 20);
+
+      expect(repo.findBySku).toHaveBeenCalledWith('RN13PRO-BK2');
+      // An SKU is a code, not a phrase — it must not be typo-corrected or ranked.
+      expect(meili.search).not.toHaveBeenCalled();
+      expect(result.data.map((p) => p.id)).toEqual(['product-1']);
+      expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('falls through to full text when the code matches nothing', async () => {
+      repo.findBySku.mockResolvedValue(null);
+      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      repo.findAll.mockResolvedValue({ products: [makeProduct()], total: 1 } as never);
+
+      const result = await service.search('RN13PRO-BK2', 1, 20);
+
+      expect(meili.search).toHaveBeenCalled();
+      expect(result.data).toHaveLength(1);
+    });
+
+    it('drops the hit when the product is no longer card-visible (withdrawn category)', async () => {
+      repo.findBySku.mockResolvedValue({ id: 'product-1' } as never);
+      repo.findByIdsForCards.mockResolvedValue([] as never);
+      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      repo.findAll.mockResolvedValue({ products: [], total: 0 } as never);
+
+      const result = await service.search('RN13PRO-BK2', 1, 20);
+
+      expect(result.data).toEqual([]);
+      expect(repo.findAll).toHaveBeenCalled();
+    });
+
+    it('does not run for an ordinary phrase, a later page, or a filtered query', async () => {
+      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      repo.findAll.mockResolvedValue({ products: [], total: 0 } as never);
+
+      await service.search('case', 1, 20);
+      await service.search('RN13PRO-BK2', 2, 20);
+      await service.search('RN13PRO-BK2', 1, 20, { brandId: 'brand-1' });
+
+      expect(repo.findBySku).not.toHaveBeenCalled();
     });
   });
 

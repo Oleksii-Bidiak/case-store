@@ -1,7 +1,11 @@
 export { SearchModule } from './search.module';
 export { SearchService } from './search.service';
-export { MeiliClient, PRODUCTS_INDEX } from './meili.client';
-export type { ProductSearchDocument } from './meili.client';
+export { MeiliClient, PRODUCTS_INDEX, BLOG_POSTS_INDEX } from './meili.client';
+export type { ProductSearchDocument, BlogPostSearchDocument } from './meili.client';
 export { ProductIndexer, SearchProductIndexer } from './product-indexer';
+export { BlogIndexer, SearchBlogIndexer } from './blog-indexer';
+export type { BlogSearchHits } from './blog-indexer';
+export { BlogSearchService, BLOG_POSTS_INDEX_SETTINGS } from './blog-search.service';
+export type { BlogSearchQuery } from './blog-search.service';
 export { SearchCategorySubtreeIndexer } from './category-subtree-indexer';
 export { SearchSuggestionEntity } from './entities';

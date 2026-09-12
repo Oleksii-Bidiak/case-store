@@ -56,6 +56,9 @@ describe('Search (e2e)', () => {
     product: {
       findMany: jest.fn(async () => [] as unknown[]),
       count: jest.fn(async () => 0),
+      // The exact-article-number lookup (TASK-417 / SF-SRCH-09). Answers "no
+      // such code" by default so every other test keeps taking full text.
+      findFirst: jest.fn(async () => null as unknown),
     },
     productImage: {
       findMany: jest.fn(async () => [] as unknown[]),
@@ -118,6 +121,7 @@ describe('Search (e2e)', () => {
     meiliClientMock.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
     prismaServiceMock.product.findMany.mockResolvedValue([]);
     prismaServiceMock.product.count.mockResolvedValue(0);
+    prismaServiceMock.product.findFirst.mockResolvedValue(null);
     prismaServiceMock.productImage.findMany.mockResolvedValue([]);
     prismaServiceMock.review.groupBy.mockResolvedValue([]);
   });
@@ -173,6 +177,89 @@ describe('Search (e2e)', () => {
         .expect(200);
 
       expect(res.body.data).toHaveLength(1);
+    });
+  });
+
+  describe('GET /api/search — facets and ordering (TASK-417)', () => {
+    it('accepts the catalogue filter params and narrows the engine query with them', async () => {
+      meiliClientMock.search.mockResolvedValue({
+        hits: [{ id: 'product-1' }],
+        estimatedTotalHits: 1,
+      });
+      prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
+
+      await request(app.getHttpServer())
+        .get('/api/search')
+        .query({
+          q: 'case',
+          categoryId: 'cat-1',
+          brandId: 'brand-1',
+          inStock: 'true',
+          minPrice: '10',
+          maxPrice: '50',
+          sort: 'price_asc',
+        })
+        .expect(200);
+
+      expect(meiliClientMock.search).toHaveBeenCalledWith(
+        'case',
+        expect.objectContaining({
+          filter: [
+            'isActive = true',
+            'categoryIds = "cat-1"',
+            'brandId = "brand-1"',
+            'inStock = true',
+            'price >= 10',
+            'price <= 50',
+          ],
+          sort: ['price:asc'],
+        }),
+      );
+    });
+
+    it('reads inStock=false as false, not as a truthy string', async () => {
+      // `enableImplicitConversion` would otherwise Boolean-coerce 'false' to true
+      // before validation ever saw it (the documented store-api DTO trap).
+      await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'case', inStock: 'false' })
+        .expect(200);
+
+      expect(meiliClientMock.search).toHaveBeenCalledWith(
+        'case',
+        expect.objectContaining({ filter: ['isActive = true'] }),
+      );
+    });
+
+    it('rejects an unknown sort with 400', async () => {
+      await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'case', sort: 'cheapest' })
+        .expect(400);
+    });
+
+    it('rejects a negative minPrice with 400', async () => {
+      await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'case', minPrice: '-1' })
+        .expect(400);
+    });
+  });
+
+  describe('GET /api/search — exact article number (SF-SRCH-09)', () => {
+    it('answers a code query with the one product it names, without the engine', async () => {
+      prismaServiceMock.product.findFirst.mockResolvedValue(makeProductRow());
+      prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'IP15-1' })
+        .expect(200);
+
+      expect(meiliClientMock.search).not.toHaveBeenCalled();
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0]).toMatchObject({ id: 'product-1' });
+      expect(res.body.meta).toMatchObject({ total: 1, page: 1, totalPages: 1 });
     });
   });
 

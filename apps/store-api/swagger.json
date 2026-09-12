@@ -2051,6 +2051,80 @@
               "example": 20,
               "type": "number"
             }
+          },
+          {
+            "name": "categoryId",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to a category. Rolls up the whole subtree (a parent id also matches products filed in its subcategories), exactly like the catalogue listing.",
+            "schema": {
+              "example": "c1a2b3c4-0000-4000-8000-000000000000",
+              "type": "string"
+            }
+          },
+          {
+            "name": "brandId",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to one manufacturer (brand id).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceModelId",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to products compatible with one device model.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inStock",
+            "required": false,
+            "in": "query",
+            "description": "Keep only products a shopper can buy right now (`stock > 0`).",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "minPrice",
+            "required": false,
+            "in": "query",
+            "description": "Minimum price filter",
+            "schema": {
+              "example": "10.00",
+              "type": "number"
+            }
+          },
+          {
+            "name": "maxPrice",
+            "required": false,
+            "in": "query",
+            "description": "Maximum price filter",
+            "schema": {
+              "example": "100.00",
+              "type": "number"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Result order. `relevance` (default) keeps the engine ranking; the others sort by price or recency and apply on the Postgres fallback too.",
+            "schema": {
+              "example": "relevance",
+              "type": "string",
+              "enum": [
+                "relevance",
+                "price_asc",
+                "price_desc",
+                "newest"
+              ]
+            }
           }
         ],
         "responses": {
