@@ -9,6 +9,13 @@ import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { SubmitReviewForm } from "./submit-review-form";
 
+// `usePathname()` is null outside a Next router, which is exactly the shape the
+// component falls back on; the redirect test below swaps in a real path.
+let mockPathname: string | null = null;
+jest.mock("next/navigation", () => ({
+  usePathname: () => mockPathname,
+}));
+
 const PRODUCT_ID = "product-1";
 
 const authedUser = {
@@ -19,6 +26,10 @@ const authedUser = {
 };
 
 describe("SubmitReviewForm", () => {
+  beforeEach(() => {
+    mockPathname = null;
+  });
+
   it("shows a login prompt for guests and hides the form", () => {
     renderWithProviders(<SubmitReviewForm productId={PRODUCT_ID} />);
 
@@ -30,6 +41,22 @@ describe("SubmitReviewForm", () => {
     expect(
       screen.queryByRole("button", { name: dict.reviews.submitReview }),
     ).not.toBeInTheDocument();
+  });
+
+  // TASK-419: the prompt used to link to a bare "/login", which dropped the
+  // shopper on the homepage after signing in — the review they came to write
+  // was several clicks away again, with nothing saying where it went.
+  it("sends the guest back to the product page after signing in", () => {
+    mockPathname = "/products/chohol-dlya-iphone-15";
+
+    renderWithProviders(<SubmitReviewForm productId={PRODUCT_ID} />);
+
+    expect(
+      screen.getByRole("link", { name: dict.reviews.loginLink }),
+    ).toHaveAttribute(
+      "href",
+      "/login?redirect=%2Fproducts%2Fchohol-dlya-iphone-15",
+    );
   });
 
   it("submits the review with the chosen rating for an authenticated user", async () => {

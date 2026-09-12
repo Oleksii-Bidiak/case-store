@@ -16,7 +16,7 @@ import { CartSheet } from "@/widgets/cart";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { formatMoney, trackEvent } from "@/shared/lib";
-import { dict } from "@/shared/config";
+import { dict, FEATURE_STUBS } from "@/shared/config";
 import { Button, RatingStars } from "@/shared/ui";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
 import { ProductSiblingNavigator } from "./product-sibling-navigator";
@@ -292,26 +292,33 @@ export function ProductDetailView({ slug }: { slug: string }) {
                   />
                 )}
               </div>
-              {/* Compare — parked feature (TASK-085); stubbed as a toast. */}
-              <button
-                type="button"
-                onClick={() => toast(dict.product.compareStub)}
-                aria-label={dict.product.compareAria}
-                className="grid size-12 shrink-0 place-items-center rounded-lg border border-border bg-background text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <BarChart3 className="size-[19px]" aria-hidden="true" />
-              </button>
+              {/* Compare — parked feature (TASK-085); stubbed as a toast, and
+                  shown only where FEATURE_STUBS opts in (TASK-419). The markup
+                  stays put: TASK-085 replaces the handler, not the button. */}
+              {FEATURE_STUBS && (
+                <button
+                  type="button"
+                  onClick={() => toast(dict.product.compareStub)}
+                  aria-label={dict.product.compareAria}
+                  className="grid size-12 shrink-0 place-items-center rounded-lg border border-border bg-background text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <BarChart3 className="size-[19px]" aria-hidden="true" />
+                </button>
+              )}
             </div>
 
-            {/* Express order — no backend yet (TASK-178); stubbed as a toast. */}
-            <button
-              type="button"
-              onClick={() => toast(dict.product.oneClickStub)}
-              disabled={!product.inStock}
-              className="h-12 w-full rounded-lg border border-border bg-background text-[15px] font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {dict.product.buyOneClick}
-            </button>
+            {/* Express order — no backend yet (TASK-178); stubbed as a toast and
+                gated by the same flag as the compare control above. */}
+            {FEATURE_STUBS && (
+              <button
+                type="button"
+                onClick={() => toast(dict.product.oneClickStub)}
+                disabled={!product.inStock}
+                className="h-12 w-full rounded-lg border border-border bg-background text-[15px] font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {dict.product.buyOneClick}
+              </button>
+            )}
 
             <ProductTrustBadges />
           </div>

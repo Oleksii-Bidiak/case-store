@@ -9,7 +9,15 @@ import {
   type ReactNode,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { refreshSession, setAccessToken } from "@/shared/api";
+// Imported from the module rather than the `@/shared/api` barrel: the barrel
+// does not re-export the session-marker helpers yet (TASK-526 — it belongs to
+// another agent's file in this wave). Same module either way.
+import {
+  clearSessionMarker,
+  refreshSession,
+  setAccessToken,
+  shouldAttemptSessionRefresh,
+} from "@/shared/api/instance";
 import { getGetCartQueryKey } from "@/shared/api/generated/cart/cart";
 import { getGetWishlistQueryKey } from "@/shared/api/generated/wishlist/wishlist";
 
@@ -44,6 +52,17 @@ export const AuthContext = createContext<AuthContextValue | null>(null);
  * measurement.
  */
 async function bootstrapRefresh(): Promise<string | null> {
+  // Nothing to restore: this browser has never signed in (or signed out last).
+  // Asking anyway earns a 401 that the BROWSER logs to the console — a red line
+  // on every first visit that no handler in the app can swallow, because the
+  // app never logged it (SF-UX-13, TASK-419). Not asking is the only fix.
+  //
+  // The marker is a hint, not an authority: it says nothing about whether the
+  // cookie is still valid, and the server stays the only judge of that. Where
+  // storage is unreadable the helper answers "true" and the old unconditional
+  // behaviour is kept.
+  if (!shouldAttemptSessionRefresh()) return null;
+
   for (let attempt = 0; ; attempt++) {
     const { accessToken, status } = await refreshSession();
     if (accessToken) return accessToken;
@@ -92,6 +111,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setUserId(null);
     setRole(null);
+    // Every sign-out in the app funnels through here (header, account page,
+    // logout button, password change). Forget the marker too, so the next page
+    // load is a silent guest instead of one doomed refresh.
+    clearSessionMarker();
   }, []);
 
   // Restore the session once on mount via the refresh cookie.

@@ -7,7 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth, useAuthControllerLogout } from "@/entities/session";
 import { useUserControllerGetProfile, type UserEntity } from "@/entities/user";
 import { Skeleton } from "@/shared/ui";
-import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
+import { dict, FEATURE_STUBS, STICKY_ASIDE_TOP } from "@/shared/config";
 import {
   AccountIcon,
   AccountBackIcon,
@@ -21,12 +21,7 @@ import { AccountPlaceholderSection } from "./account-placeholder-section";
 
 /** Inline dashboard sections (link items — orders/favorites — route away). */
 type SectionKey =
-  | "profile"
-  | "purchases"
-  | "history"
-  | "bonuses"
-  | "compare"
-  | "settings";
+  "profile" | "purchases" | "history" | "bonuses" | "compare" | "settings";
 
 interface NavEntry {
   key: string;
@@ -35,7 +30,7 @@ interface NavEntry {
   href?: string;
 }
 
-const NAV: NavEntry[] = [
+const ALL_NAV: NavEntry[] = [
   { key: "profile", icon: "profile" },
   { key: "orders", icon: "orders", href: "/orders" },
   { key: "favorites", icon: "favorites", href: "/wishlist" },
@@ -45,6 +40,12 @@ const NAV: NavEntry[] = [
   { key: "compare", icon: "compare" },
   { key: "settings", icon: "settings" },
 ];
+
+// «Порівняння» only ever opens a placeholder for a feature that does not exist
+// (TASK-085), so the entry is hidden unless the deployment opts into stubs
+// (TASK-419). The entry itself stays in ALL_NAV — this filter is the one line
+// TASK-085 deletes.
+const NAV = ALL_NAV.filter((entry) => FEATURE_STUBS || entry.key !== "compare");
 
 /**
  * AccountView — the `/account` dashboard (Account.dc.html redesign). Auth-gated
@@ -256,13 +257,15 @@ function AccountContent({
         />
       );
     case "compare":
-      return (
+      // Unreachable while the nav entry is filtered out, but the section is
+      // gated too so the placeholder cannot surface by any other route.
+      return FEATURE_STUBS ? (
         <AccountPlaceholderSection
           title={d.nav.compare}
           body={d.compareBody}
           ctaLabel={d.compareCta}
           ctaHref="/products"
         />
-      );
+      ) : null;
   }
 }
