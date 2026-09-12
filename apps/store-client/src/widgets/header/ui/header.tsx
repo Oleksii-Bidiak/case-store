@@ -89,7 +89,17 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
                   // size-11 (44px): this is the only navigation control on a
                   // phone, so it gets a full touch target; `shrink-0` keeps it
                   // at that size when the row runs out of width.
-                  className="size-11 shrink-0 md:hidden"
+                  //
+                  // `lg:hidden`, not `md:hidden` (TASK-413/TASK-504). Measured:
+                  // the 768px row is 736px wide and the desktop cluster it
+                  // would have to carry — brand 168 + search 163 + section
+                  // links 117 + actions 402 + gaps 36 — is 886. Something has
+                  // to give, and before this it was the brand: the logo was
+                  // crushed to 8px. Keeping the slide-out menu to `lg` instead
+                  // means the 768–1023 tablet band reaches the section links,
+                  // «Акції», the theme switch and the account links through it,
+                  // which is exactly the fallback TASK-504 asks for.
+                  className="size-11 shrink-0 lg:hidden"
                   aria-label={dict.header.openMenu}
                 >
                   <Menu className="size-5" />
@@ -238,6 +248,25 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
           {/* Search pill (Каталог + search + submit) — desktop. */}
           <HeaderSearch />
 
+          {/* Section links — the desktop half of NAV_LINKS (TASK-413). They
+              appear at exactly the width the slide-out menu that carries them
+              disappears (`lg`), so the same two destinations are one gesture
+              away at every size and this row costs a phone nothing. */}
+          <nav
+            aria-label={dict.nav.primaryAria}
+            className="hidden shrink-0 items-center gap-1 lg:flex"
+          >
+            {NAV_LINKS.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="flex min-h-11 items-center rounded-lg px-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:px-3"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+
           {/* Right: action cluster. `shrink-0` — these are the commerce actions,
               so they keep their size and the brand block absorbs the squeeze.
               Below 390px only the cart survives: Обране and Кабінет are hidden
@@ -247,15 +276,17 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
             {/* Theme switch — leftmost, so the commerce actions stay grouped
                 next to the cart.
 
-                `min-[1100px]` is measured, not guessed. The row is already
-                oversubscribed from `md`, where the 410px-wide search pill
-                appears: at 768px the wordmark is squeezed to 16px and the page
-                has ~10px of slack left BEFORE this control exists (TASK-504).
-                The header first has room for the 126px switch at ~1046px, so
-                1100 is that number plus headroom for a longer store name.
-                Below it the slide-out menu carries the switch (phones); the
-                768–1099 band is left to TASK-504 together with the squeeze. */}
-            <HeaderThemeToggle className="mr-1 hidden min-[1100px]:flex" />
+                It appears at exactly `lg`, the width where the slide-out menu —
+                the only other place it lives — disappears, so the two together
+                cover every width with no gap. That is what TASK-504 caught
+                behind the old `min-[1100px]`: the menu stopped at `md` and the
+                switch only started at 1100, leaving 768–1099 with no way to
+                change the theme at all. The threshold is measured, not guessed:
+                at 1024 the row has 992px for brand 168 + search + links 133 +
+                actions 402 + gaps 36, which leaves the search pill 253 — above
+                its 165px floor, so nothing is squeezed. At 768 the same cluster
+                needs 886 of 736 and the brand pays; hence the menu to `lg`. */}
+            <HeaderThemeToggle className="mr-1 hidden lg:flex" />
             <Link
               href="/promo"
               className="hidden min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-sale transition-colors hover:bg-sale/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"

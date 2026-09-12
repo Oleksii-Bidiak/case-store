@@ -85,6 +85,10 @@ export const dict = {
     // accessible name is new — "Оформлення" alone would read as "checkout" next
     // to a cart icon.
     themeAria: "Тема оформлення",
+    // TASK-413 — the mega-menu footer's second exit. «Усі категорії» lands on
+    // the category index; a shopper who wants the goods themselves, not a
+    // taxonomy, needs the flat catalogue too.
+    catalogAllProducts: "Усі товари",
   },
 
   // TASK-075 — full-text search (header autocomplete + /search results page).
