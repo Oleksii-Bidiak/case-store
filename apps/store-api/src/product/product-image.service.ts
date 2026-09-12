@@ -1,12 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-  PayloadTooLargeException,
-  UnsupportedMediaTypeException,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { ProductRepository } from './product.repository';
 import {
@@ -21,29 +13,9 @@ import {
   productDetailSlugKey,
   PRODUCT_LIST_PREFIX,
 } from '../cache';
-import { IStorageService, ImageProcessor, PRODUCTS_SUBDIR, STORAGE_SERVICE } from '../storage';
+import { PRODUCTS_SUBDIR } from '../storage';
+import { ImageUploadService } from '../uploads';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
-
-/** Allowed image MIME types mapped to their canonical file extension. */
-const ALLOWED_MIME_EXT: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-  'image/gif': 'gif',
-};
-
-/**
- * Animated GIFs are passed through untouched: re-encoding to a single WebP frame
- * would kill the animation, so they keep their original bytes/extension and get
- * no LQIP (TASK-091).
- */
-const GIF_MIME = 'image/gif';
-
-/** Maximum accepted file size (bytes). Mirrors the Multer limit on the controller. */
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-
-/** The URL path segment under which images are served (ServeStaticModule root). */
-const PUBLIC_UPLOADS_PREFIX = '/uploads/';
 
 /** A reorder instruction for one image. */
 export interface ReorderImageInput {
@@ -53,27 +25,24 @@ export interface ReorderImageInput {
 }
 
 /**
- * Orchestrates product image management: file validation, storage, persistence,
- * and cache eviction. The storage backend is injected via {@link STORAGE_SERVICE}
- * so this service is unaware of whether files live on disk or a CDN.
+ * Orchestrates product image management: storage, persistence, and cache
+ * eviction.
+ *
+ * File validation, the WebP/LQIP re-encode, the animated-GIF passthrough and the
+ * public-URL assembly are NOT here — they live in {@link ImageUploadService},
+ * the one image pipeline in this API (TASK-424). This service is about what makes
+ * a product image a PRODUCT image: ownership, sort order, the primary flag, and
+ * the caches a new photo invalidates.
  */
 @Injectable()
 export class ProductImageService {
-  private readonly publicBaseUrl: string;
-
   constructor(
     private readonly productRepository: ProductRepository,
     private readonly imageRepository: ProductImageRepository,
-    @Inject(STORAGE_SERVICE) private readonly storage: IStorageService,
-    private readonly imageProcessor: ImageProcessor,
+    private readonly uploads: ImageUploadService,
     private readonly cache: CacheService,
-    private readonly config: ConfigService,
     private readonly revalidation: RevalidationNotifier,
-  ) {
-    this.publicBaseUrl = (
-      this.config.get<string>('PUBLIC_BASE_URL') ?? 'http://localhost:3001'
-    ).replace(/\/+$/, '');
-  }
+  ) {}
 
   /** List all images for a product, ordered for display. Admin management view. */
   async listImages(productId: string): Promise<ProductImageEntity[]> {
@@ -101,29 +70,22 @@ export class ProductImageService {
       throw new BadRequestException('No files provided');
     }
 
-    // Validate every file before writing anything to disk.
-    for (const file of files) {
-      this.assertValidFile(file);
-    }
-
     const maxSortOrder = await this.imageRepository.getMaxSortOrder(productId);
     const hasExisting = maxSortOrder >= 0;
 
-    const inputs: CreateImageInput[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const { buffer, ext, blurDataUrl } = await this.prepareFile(file);
-      const relativePath = await this.storage.save(buffer, ext, PRODUCTS_SUBDIR);
-      inputs.push({
-        id: randomUUID(),
-        productId,
-        url: `${this.publicBaseUrl}${PUBLIC_UPLOADS_PREFIX}${relativePath}`,
-        alt: altTexts[i] ?? null,
-        blurDataUrl,
-        sortOrder: maxSortOrder + 1 + i,
-        isPrimary: !hasExisting && i === 0,
-      });
-    }
+    // The shared pipeline validates EVERY file before writing ANY of them, so a
+    // rejected file in the middle of a batch leaves no orphaned bytes on disk.
+    const stored = await this.uploads.storeAll(files, PRODUCTS_SUBDIR);
+
+    const inputs: CreateImageInput[] = stored.map((image, i) => ({
+      id: randomUUID(),
+      productId,
+      url: image.url,
+      alt: altTexts[i] ?? null,
+      blurDataUrl: image.blurDataUrl,
+      sortOrder: maxSortOrder + 1 + i,
+      isPrimary: !hasExisting && i === 0,
+    }));
 
     await this.imageRepository.bulkCreate(inputs);
     await this.evictProductCaches(productId, product.slug);
@@ -138,30 +100,6 @@ export class ProductImageService {
         isPrimary: input.isPrimary,
       }),
     );
-  }
-
-  /**
-   * Pre-process one accepted upload for storage. JPEG/PNG/WebP are re-encoded to
-   * WebP (smaller payload) with a base64 LQIP for blur-up; animated GIFs are
-   * passed through untouched with no LQIP so the animation survives.
-   *
-   * The GIF branch is the only path that writes client bytes to disk verbatim, so
-   * it cannot trust the declared MIME type: the buffer is sniffed with `sharp`
-   * first. Without that, any file (an HTML/JS polyglot) uploaded as `image/gif`
-   * would be stored and then served from our own origin.
-   */
-  private async prepareFile(
-    file: Express.Multer.File,
-  ): Promise<{ buffer: Buffer; ext: string; blurDataUrl: string | null }> {
-    if (file.mimetype === GIF_MIME) {
-      const format = await this.imageProcessor.detectFormat(file.buffer);
-      if (format !== 'gif') {
-        throw new UnsupportedMediaTypeException('File contents are not a valid GIF image');
-      }
-      return { buffer: file.buffer, ext: ALLOWED_MIME_EXT[GIF_MIME], blurDataUrl: null };
-    }
-    const { webp, blurDataUrl } = await this.imageProcessor.process(file.buffer);
-    return { buffer: webp, ext: 'webp', blurDataUrl };
   }
 
   /**
@@ -201,31 +139,9 @@ export class ProductImageService {
     }
 
     await this.imageRepository.delete(imageId);
-
-    const relativePath = this.toRelativePath(image.url);
-    if (relativePath) {
-      await this.storage.delete(relativePath);
-    }
+    await this.uploads.removeByUrl(image.url);
 
     await this.evictProductCaches(productId, product.slug);
-  }
-
-  /** Reject files with a disallowed MIME type or that exceed the size cap. */
-  private assertValidFile(file: Express.Multer.File): void {
-    if (!ALLOWED_MIME_EXT[file.mimetype]) {
-      throw new UnsupportedMediaTypeException(
-        `Unsupported file type: ${file.mimetype}. Allowed: ${Object.keys(ALLOWED_MIME_EXT).join(', ')}`,
-      );
-    }
-    if (file.size > MAX_IMAGE_BYTES) {
-      throw new PayloadTooLargeException('File exceeds the 5 MB limit');
-    }
-  }
-
-  /** Convert a stored public URL back to its storage-relative path, or null. */
-  private toRelativePath(url: string): string | null {
-    const idx = url.indexOf(PUBLIC_UPLOADS_PREFIX);
-    return idx >= 0 ? url.slice(idx + PUBLIC_UPLOADS_PREFIX.length) : null;
   }
 
   /**

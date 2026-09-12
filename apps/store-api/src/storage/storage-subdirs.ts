@@ -21,7 +21,25 @@ export const BRANDING_SUBDIR = 'branding';
  */
 export const IMPORTS_SUBDIR = 'imports';
 
-export const STORAGE_SUBDIRS = [PRODUCTS_SUBDIR, BRANDING_SUBDIR, IMPORTS_SUBDIR] as const;
+/**
+ * Imagery attached to editorial content (TASK-424): category covers, brand
+ * logos, banner artwork, blog cover photos.
+ *
+ * One subdir for all four rather than one each, because the entity an image
+ * belongs to is recorded in the row that points at it, not in the path — and a
+ * path segment per entity would have to be derived from the request, which is
+ * exactly what this whitelist exists to prevent. Served publicly, like
+ * `products`/`branding`: the storefront's `next.config.ts` already allows
+ * `/uploads/**`, so `/uploads/content/**` needs no config change.
+ */
+export const CONTENT_SUBDIR = 'content';
+
+export const STORAGE_SUBDIRS = [
+  PRODUCTS_SUBDIR,
+  BRANDING_SUBDIR,
+  IMPORTS_SUBDIR,
+  CONTENT_SUBDIR,
+] as const;
 
 export type StorageSubdir = (typeof STORAGE_SUBDIRS)[number];
 

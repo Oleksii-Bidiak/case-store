@@ -15,6 +15,11 @@ import {
   TabsTrigger,
   Textarea,
 } from "@/shared/ui";
+import {
+  ContentImageField,
+  useImageUploadField,
+  useUploadsControllerUploadBlogCover,
+} from "@/features/content-image-upload";
 import { useAdminBlogControllerFindCategories } from "@/entities/blog";
 import { slugify } from "@/shared/lib/slug";
 import { dict } from "@/shared/config";
@@ -68,6 +73,7 @@ export function BlogPostForm({
     control,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<BlogPostFormInput, unknown, BlogPostFormValues>({
     resolver: zodResolver(blogPostSchema),
@@ -88,6 +94,20 @@ export function BlogPostForm({
   const statusValue = useWatch({ control, name: "status" });
   // Live body HTML for the preview tab (TASK-266).
   const contentValue = useWatch({ control, name: "content" }) ?? "";
+
+  // TASK-424: the cover field takes a FILE as well as a pasted link. The uploaded
+  // URL is written through `setValue`, so the form stays the single source of
+  // truth for the field (docs/conventions/forms.md).
+  const coverValue = useWatch({ control, name: "coverImageUrl" }) ?? "";
+  const coverUpload = useImageUploadField({
+    upload: useUploadsControllerUploadBlogCover(),
+    copy: dict.blogPostForm.coverUpload,
+    onUploaded: (url) =>
+      setValue("coverImageUrl", url, {
+        shouldDirty: true,
+        shouldValidate: true,
+      }),
+  });
 
   return (
     <form
@@ -219,19 +239,22 @@ export function BlogPostForm({
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="post-cover">{dict.blogPostForm.coverImageUrl}</Label>
-        <Input
-          id="post-cover"
-          placeholder={dict.blogPostForm.coverImageUrlPlaceholder}
-          {...register("coverImageUrl")}
-        />
-        {errors.coverImageUrl && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.coverImageUrl.message}
-          </p>
-        )}
-      </div>
+      <ContentImageField
+        id="post-cover"
+        label={dict.blogPostForm.coverImageUrl}
+        urlPlaceholder={dict.blogPostForm.coverImageUrlPlaceholder}
+        copy={dict.blogPostForm.coverUpload}
+        value={coverValue}
+        urlInput={register("coverImageUrl")}
+        onRemove={() =>
+          setValue("coverImageUrl", "", {
+            shouldDirty: true,
+            shouldValidate: true,
+          })
+        }
+        fieldError={errors.coverImageUrl?.message}
+        {...coverUpload}
+      />
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="post-reading">{dict.blogPostForm.readingMinutes}</Label>

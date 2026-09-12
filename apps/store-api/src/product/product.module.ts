@@ -8,6 +8,7 @@ import { ProductImageService } from './product-image.service';
 import { ProductImageController } from './product-image.controller';
 import { ProductSpecRepository } from './product-spec.repository';
 import { StorageModule } from '../storage';
+import { UploadsModule } from '../uploads';
 import { SearchModule } from '../search';
 import { CategoryModule } from '../category';
 import { BrandModule } from '../brand';
@@ -20,6 +21,9 @@ import { SlugRedirectModule } from '../slug-redirect';
   // before writing the join rows (TASK-190).
   imports: [
     StorageModule,
+    // ImageUploadService — the one image pipeline the gallery shares with the
+    // content-image routes (TASK-424).
+    UploadsModule,
     SearchModule,
     CategoryModule,
     BrandModule,

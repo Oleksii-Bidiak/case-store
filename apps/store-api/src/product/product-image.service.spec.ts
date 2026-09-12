@@ -11,6 +11,7 @@ import { ProductRepository } from './product.repository';
 import { ProductImageRepository } from './product-image.repository';
 import { CacheService } from '../cache';
 import { ImageProcessor, STORAGE_SERVICE } from '../storage';
+import { ImageUploadService } from '../uploads';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
 const PRODUCT_ID = '11111111-1111-1111-1111-111111111111';
@@ -80,6 +81,13 @@ describe('ProductImageService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProductImageService,
+        // The REAL shared pipeline (TASK-424), wired to the same storage and
+        // `sharp` doubles this spec already had. Substituting a mock here would
+        // turn every assertion below about WebP re-encoding, the GIF
+        // passthrough, byte-sniffing and the 413/415 gates into an assertion
+        // about the mock — the validation rules are the part of an image upload
+        // most worth keeping under test, and they now live one class away.
+        ImageUploadService,
         { provide: ProductRepository, useValue: productRepository },
         { provide: ProductImageRepository, useValue: imageRepository },
         { provide: STORAGE_SERVICE, useValue: storage },

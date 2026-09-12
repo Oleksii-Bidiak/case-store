@@ -13,6 +13,11 @@ import {
   TabsTrigger,
   Textarea,
 } from "@/shared/ui";
+import {
+  ContentImageField,
+  useImageUploadField,
+  useUploadsControllerUploadBannerImage,
+} from "@/features/content-image-upload";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
 import {
@@ -63,6 +68,7 @@ export function BannerForm({
     control,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<BannerFormInput, unknown, BannerFormValues>({
     resolver: zodResolver(bannerSchema),
@@ -91,6 +97,16 @@ export function BannerForm({
   const ctaLabelValue = useWatch({ control, name: "ctaLabel" }) ?? "";
   const ctaHrefValue = useWatch({ control, name: "ctaHref" }) ?? "";
   const themeValue = useWatch({ control, name: "theme" }) ?? "";
+
+  // TASK-424: the artwork field takes a FILE as well as a pasted link. The
+  // uploaded URL is written with `setValue`, which also refreshes the live
+  // preview above — it reads the same `imageUrlValue` watcher.
+  const imageUpload = useImageUploadField({
+    upload: useUploadsControllerUploadBannerImage(),
+    copy: dict.bannerForm.imageUpload,
+    onUploaded: (url) =>
+      setValue("imageUrl", url, { shouldDirty: true, shouldValidate: true }),
+  });
 
   // <md panel switch. Deliberate deviation from the app's usual Tabs usage:
   // Radix TabsContent unmounts the inactive panel, which would churn the form's
@@ -171,19 +187,22 @@ export function BannerForm({
             )}
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="banner-image">{dict.bannerForm.imageUrl}</Label>
-            <Input
-              id="banner-image"
-              placeholder={dict.bannerForm.imageUrlPlaceholder}
-              {...register("imageUrl")}
-            />
-            {errors.imageUrl && (
-              <p role="alert" className="text-sm text-destructive">
-                {errors.imageUrl.message}
-              </p>
-            )}
-          </div>
+          <ContentImageField
+            id="banner-image"
+            label={dict.bannerForm.imageUrl}
+            urlPlaceholder={dict.bannerForm.imageUrlPlaceholder}
+            copy={dict.bannerForm.imageUpload}
+            value={imageUrlValue}
+            urlInput={register("imageUrl")}
+            onRemove={() =>
+              setValue("imageUrl", "", {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+            }
+            fieldError={errors.imageUrl?.message}
+            {...imageUpload}
+          />
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="banner-cta-label">{dict.bannerForm.ctaLabel}</Label>

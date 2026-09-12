@@ -28,6 +28,11 @@ import {
   SeoSnippetPreview,
   Textarea,
 } from "@/shared/ui";
+import {
+  ContentImageField,
+  useImageUploadField,
+  useUploadsControllerUploadCategoryImage,
+} from "@/features/content-image-upload";
 import { dict } from "@/shared/config";
 import {
   categorySchema,
@@ -82,6 +87,7 @@ export function CategoryForm({
     control,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<CategoryFormInput, unknown, CategoryFormValues>({
     resolver: zodResolver(categorySchema),
@@ -124,6 +130,18 @@ export function CategoryForm({
   // storefront would render for this category page through the same three-tier
   // precedence. `name` is not otherwise watched, so add it here alongside the
   // meta fields; `SeoSettings` feeds tier-2 defaults + the title template.
+  // TASK-424: the image field takes a FILE as well as a pasted link. The
+  // uploaded URL is written through `setValue` — the form stays the single source
+  // of truth for the field, so no local copy can disagree with an id-keyed
+  // `reset()` (docs/conventions/forms.md).
+  const imageValue = useWatch({ control, name: "image" }) ?? "";
+  const imageUpload = useImageUploadField({
+    upload: useUploadsControllerUploadCategoryImage(),
+    copy: dict.categoryForm.imageUpload,
+    onUploaded: (url) =>
+      setValue("image", url, { shouldDirty: true, shouldValidate: true }),
+  });
+
   const nameValue = useWatch({ control, name: "name" }) ?? "";
   const descriptionValue = useWatch({ control, name: "description" }) ?? "";
   const metaTitleValue = useWatch({ control, name: "metaTitle" }) ?? "";
@@ -196,19 +214,19 @@ export function CategoryForm({
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="category-image">{dict.categoryForm.image}</Label>
-        <Input
-          id="category-image"
-          placeholder={dict.categoryForm.imagePlaceholder}
-          {...register("image")}
-        />
-        {errors.image && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.image.message}
-          </p>
-        )}
-      </div>
+      <ContentImageField
+        id="category-image"
+        label={dict.categoryForm.image}
+        urlPlaceholder={dict.categoryForm.imagePlaceholder}
+        copy={dict.categoryForm.imageUpload}
+        value={imageValue}
+        urlInput={register("image")}
+        onRemove={() =>
+          setValue("image", "", { shouldDirty: true, shouldValidate: true })
+        }
+        fieldError={errors.image?.message}
+        {...imageUpload}
+      />
 
       {/* TASK-291-K: the "Порядок сортування" number input that used to sit next
           to this Select is GONE — sibling order is owned by the treegrid alone.

@@ -17,6 +17,7 @@ import { AuditModule } from './audit';
 import { AuditInterceptor } from './audit/audit.interceptor';
 import { UserModule } from './user';
 import { ProductModule } from './product';
+import { UploadsModule } from './uploads';
 import { CatalogImportModule } from './catalog-import';
 import { ProductGroupModule } from './product-group';
 import { CategoryModule } from './category';
@@ -160,6 +161,10 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // User management
     UserModule,
+
+    // The shared image-upload pipeline + the admin content-image routes
+    // (TASK-424). Listed before ProductModule, which depends on it.
+    UploadsModule,
 
     // Product catalog
     ProductModule,
