@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-497**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-516**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -561,13 +561,44 @@
 
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
-| TASK-432 | description/og падають на глобальні (порядок тирів `resolveSeo`); og-блоки категорії/головної; `g:product_type` | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
-| TASK-433 | Хост SERP-прев'ю з env (зараз `mobilestore.ua`); назва магазину в одному місці | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
-| TASK-434 | Редактор: посилання, зображення, таблиці | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-432 | description/og падають на глобальні (порядок тирів `resolveSeo`); og-блоки категорії/головної; `g:product_type` | ✅ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-433 | Хост SERP-прев'ю з env (зараз `mobilestore.ua`); назва магазину в одному місці | ✅ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-434 | Редактор: посилання, зображення, таблиці | ✅ | [176](docs/plans/176-content-seo-wave.md) |
 | TASK-435 | `/info` як CMS (`Page.kind`), розділення `/legal` і `/info`, SEO хабів із БД | ✅ | [176](docs/plans/176-content-seo-wave.md) |
 | TASK-436 | Блог: featured як Switch, «Читайте також», `listed=false` замість клоакінгу | ✅ | [176](docs/plans/176-content-seo-wave.md) |
-| TASK-437 | SEO-поля: теги (keywords), `ogImage` на сутностях, повторний GEO-аудит | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
-| TASK-438 | `docs/search-guide.md` для оператора; пізніше синоніми з адмінки | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-437 | SEO-поля: теги (keywords), `ogImage` на сутностях, `metaTitle`/`metaDescription` статті, GEO-аудит по коду | ✅ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-438 | `docs/search-guide.md` для оператора; пізніше синоніми з адмінки | ✅ | [176](docs/plans/176-content-seo-wave.md) |
+
+#### Хвости хвилі 176 — знайдено під час виконання (не входило в сімку)
+
+> Сім задач плану закриті. Рядки нижче — те, що спливло по дорозі: частину знайшли
+> верифікатори дифів, частину — повторний GEO-аудит по коду
+> ([`docs/geo-audit-2026-09-13.md`](docs/geo-audit-2026-09-13.md)). Нічого з цього не
+> правилось у хвилі свідомо: правило сесії — сусідні знахідки рядком, а не «швидкою
+> правкою» в тій самій гілці. TASK-497 має бути першим: власник вирішив його в цій сесії,
+> і він чекає лише мержу хвилі 174.
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-497 | Назва магазину у видимому логотипі (хедер + футер) з `SeoSettings.siteName`, прибрати константу `SITE_NAME`. **Рішення власника 2026-09-12**, відкладено лише через те, що хвиля 174 переписує хедер — робити після мержу 174, на стабільному файлі | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-498 | Вставка зображень у редактор (tiptap Image + кнопка + завантаження) — єдина частина TASK-434, яку не зробили: ендпоінта `POST /api/admin/uploads/content` не існує до TASK-424. Коли приземлиться — прибрати останню пробу з `LOSSY_CONSTRUCTS` і банер втрат цілком | ⬜ | [177](docs/plans/177-media-pipeline.md) |
+| TASK-499 | Таблиці в редакторі — хвіст: `.legal-doc-body` у `globals.css` без правил `table/th/td` (таблиця в юридичній сторінці рендериться голою); санітайзер не клампить значення `colspan`/`rowspan` (`colspan="9999"` проходить); у редакторі немає обʼєднання/розділення комірок, хоч `mergeCells`/`splitCell` є в `TableKit` | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-500 | Канонікали, яких немає: головна `/` і хаби `/categories`, `/contact`, `/info`, `/promo`. Плюс `/products` — єдиний індексований маршрут, мету якого власник не може змінити ніде (не в `HUB_PAGES` і не проходить `resolveSeo`) | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-501 | [🔴 SEO] `noindexSite` не noindex-ить: `robots.ts` віддає `Disallow: /`, але page-level `robots` не виставляє ніхто, а `llms.txt`, `sitemap.xml` і `merchant-feed.xml` далі віддають 200. Тобто «вимкнути індексацію» на staging не працює так, як обіцяє назва прапорця | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-502 | `sitemap.ts` обрізає блог на 100 статтях — немає циклу по `totalPages`. Той самий ліміт у `fetchAllPublishedPages`/товарах варто перевірити разом | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-503 | Після перестановки тирів (TASK-432) прев'ю SERP у `/settings/seo` завищує роль глобального дефолта: форма подає `defaultMetaTitle`/`defaultMetaDescription` як тир 1 над зразковою сторінкою, тож показує, що дефолт виграє — а реальна сторінка з власною назвою його тепер ніколи не пропускає. Підказка `hintDefault` («Поле порожнє…») теж майже недосяжна: спрацьовує `hintDerived` | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-504 | Сідові кореневі категорії мають `metaTitle` без бренду («Смартфони — купити в Україні»), а `metaTitle` — це `titleAbsolute`, тож шаблон `%s \| <назва>` до них не застосовується: категорійні сторінки рендерять `<title>` без назви магазину. Товарні сіди бренд містять — неузгодженість на рішення власника | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-505 | Усі 12 сідових статей мають ОДИН текст на 164 слова (про камери iPhone — під заголовками про навушники й павербанки), а вигадана біографія автора живе в `dictionary.ts`, не в сіді. Потрібен власний текст на статтю і сутність автора замість рядка в коді | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-506 | `FAQPage` рендериться на КОЖНОМУ PDP із глобального списку FAQ, тобто розмітка стверджує Q&A, яких читач на цій сторінці не бачить (ризик ручної санкції), і містить `[вартість]`, `[адреса пункту самовивозу]` — заглушки в structured data. Або видимий акордеон на PDP, або прибрати розмітку звідти | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-507 | Прогалини структурованої розмітки: `image`/`dateModified` у `BlogPosting`; `ItemList` на `/products`, `/promo`, `/blog`; `hasMerchantReturnPolicy`/`shippingDetails` в `Offer`; `ContactPoint`/`PostalAddress` в Organization (у `SiteContactSettings` немає колонки адреси — потрібна міграція) | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-508 | `g:google_product_category` у Merchant-фіді: вимагає ручного мапінгу наших коренів на числову таксономію Google. Вгадувати не можна — неправильна категорія дає disapprovals, тому це рішення власника, а не автоматика | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-509 | `keywords` (TASK-437) зберігаються й віддаються API, але ще нічого не роблять: не заведені ні в `searchableAttributes` Meilisearch, ні в `llms.txt`. Свідомо — це змінює налаштування індексу й вимагає переіндексації | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-510 | Синоніми пошуку таблицею в БД + екран у `/settings/search` за зразком `SeoSettings` — друга половина TASK-438, яку план сам відкладав «на пізніше» | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-511 | `/info` — CMS лише на секцію «Про нас» (TASK-435). Решта блоків досі хардкод у `widgets/info-support/model/info-content.ts` (доставка, оплата, гарантія, послуги, цифри «про нас»). Плюс: INFO-сторінки, крім `about`, недосяжні з навігації — потрібен їх список на `/info` або у футері | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-512 | `/info` рекламує три послуги за цінами, яких немає в `addons.data.ts` — сторінка обіцяє те, чого не можна купити | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-513 | Фільтр за статусом у таблиці `/pages`: `AdminPageListQueryDto.status` існує й працює, а в UI його немає — після TASK-435 там зʼявились вкладки за видом, статус лишився без фільтра | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-514 | [L] Каталог рендериться на клієнті: у початковому HTML `/products`, `/categories`, PDP, головної й `/promo` — скелетони, і жодного посилання на товар чи категорію. PDP частково рятує серверний `Product` JSON-LD, `/products` і `/categories` — ніщо. Це головна причина низької оцінки цитованості в GEO-аудиті й найбільша робота зі списку | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
+| TASK-515 | Доки відстали від коду: `admin-guide.md` описує `/pages` без видів і вкладок. Плюс дві пастки інструментів, які варто записати, бо вони коштували часу: запуск Nest через `tsx` тихо ламає `enableImplicitConversion` (esbuild не емітить decorator metadata → падіння на валідації env), а `prisma migrate dev` без перенаправлення stdin повисає, тримаючи advisory lock, і наступні спроби падають з P1002 | ⬜ | [176](docs/plans/176-content-seo-wave.md) |
 
 ### План 177 — Медіа (🟡 до запуску; після TASK-424)
 
@@ -675,6 +706,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-497**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-516**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.

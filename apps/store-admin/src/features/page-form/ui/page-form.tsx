@@ -54,6 +54,8 @@ const EMPTY_VALUES: PageFormInput = {
   excerpt: "",
   metaTitle: "",
   metaDescription: "",
+  keywords: "",
+  ogImage: "",
   sortOrder: "0",
   status: "DRAFT",
   // LEGAL matches the API's own default, so "create page" without touching the
@@ -317,6 +319,43 @@ export function PageForm({
         {errors.metaDescription && (
           <p role="alert" className="text-sm text-destructive">
             {errors.metaDescription.message}
+          </p>
+        )}
+      </div>
+
+      {/* TASK-437 — tags and the social card, above the SERP preview for the
+          same reason as in the product and category forms: neither appears in
+          that preview. */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="page-keywords">{dict.seoFields.keywords}</Label>
+        <Input
+          id="page-keywords"
+          placeholder={dict.seoFields.keywordsPlaceholder}
+          {...register("keywords")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.seoFields.keywordsHint}
+        </p>
+        {errors.keywords && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.keywords.message}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="page-og-image">{dict.seoFields.ogImage}</Label>
+        <Input
+          id="page-og-image"
+          placeholder={dict.seoFields.ogImagePlaceholder(STOREFRONT_HOST)}
+          {...register("ogImage")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.seoFields.ogImageHint}
+        </p>
+        {errors.ogImage && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.ogImage.message}
           </p>
         )}
       </div>

@@ -51,6 +51,21 @@ export interface CatalogueEntry {
   metaTitle?: string;
   metaDescription?: string;
   /**
+   * Internal content tags (TASK-437) — the words a shopper might type that the
+   * name and description do not contain. NOT a `<meta name="keywords">` tag:
+   * nothing renders them into `<head>`. Seeded on a handful of demo entries so
+   * the admin field is not an empty box on the stand.
+   */
+  keywords?: string[];
+  /**
+   * Demo flag (TASK-437): give this entry an `ogImage` distinct from its cover,
+   * taken from the LAST image the seed renders for the position. The seed never
+   * invents an image URL — this points at a file it has just written — and the
+   * point of the demo is exactly that the link card can differ from the
+   * catalogue cover.
+   */
+  demoOgImage?: boolean;
+  /**
    * Structured spec values (TASK-191) keyed by `AttributeDefinition.key`. The
    * definitions themselves live in `data/attributes.data.ts`, declared on the
    * ROOT category and inherited down the subtree at read time.

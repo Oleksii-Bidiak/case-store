@@ -122,6 +122,8 @@ export interface CreateCategoryInput {
   isActive?: boolean;
   metaTitle?: string | null;
   metaDescription?: string | null;
+  keywords?: string[];
+  ogImage?: string | null;
 }
 
 /**
@@ -139,6 +141,9 @@ export interface UpdateCategoryInput {
   isActive?: boolean;
   metaTitle?: string | null;
   metaDescription?: string | null;
+  /** Absent leaves the stored tags alone; `[]` clears them (TASK-437). */
+  keywords?: string[];
+  ogImage?: string | null;
 }
 
 /**
@@ -432,6 +437,8 @@ export class CategoryRepository {
         sortOrder: true,
         metaTitle: true,
         metaDescription: true,
+        keywords: true,
+        ogImage: true,
         updatedAt: true,
         _count: { select: { products: { where: { isActive: true } } } },
       },
@@ -920,6 +927,8 @@ export class CategoryRepository {
           isActive: data.isActive ?? true,
           metaTitle: data.metaTitle ?? null,
           metaDescription: data.metaDescription ?? null,
+          keywords: data.keywords ?? [],
+          ogImage: data.ogImage ?? null,
         },
       });
     });

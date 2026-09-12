@@ -191,6 +191,71 @@ describe("blog/[slug] generateMetadata — the openGraph block it must re-state"
 
     expect(meta.openGraph).toBeUndefined();
   });
+
+  // TASK-437 — the article's own `ogImage` is the card a human chose; the cover is
+  // cropped for the article header. The chosen one wins.
+  it("prefers the article's own ogImage over its cover", async () => {
+    fetchPost.mockResolvedValue({
+      ...makePost(),
+      coverImageUrl: "https://cdn.example/cover.webp",
+      ogImage: "https://cdn.example/og-card.jpg",
+    });
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.openGraph?.images).toEqual([
+      { url: "https://cdn.example/og-card.jpg" },
+    ]);
+  });
+});
+
+// TASK-437 — before this task the route built its <head> by hand: `title:
+// post.title` (never branded, never truncated) and `description: post.excerpt`
+// (card copy, up to 500 chars, verbatim). It now runs the same `resolveSeo` chain
+// as every other route, and these tests are what keeps it there.
+describe("blog/[slug] generateMetadata — the shared resolveSeo chain", () => {
+  const runMeta = (slug: string) =>
+    generateMetadata({ params: Promise.resolve({ slug }) });
+
+  it("brands a derived title with the title template (tier 2)", async () => {
+    fetchPost.mockResolvedValue(makePost());
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.title).toEqual({
+      absolute: `Огляд iPhone 16 | ${SITE_NAME}`,
+    });
+    expect(meta.description).toBe("Короткий опис");
+  });
+
+  it("uses the admin's metaTitle verbatim, with no brand suffix (tier 1)", async () => {
+    fetchPost.mockResolvedValue({
+      ...makePost(),
+      metaTitle: "iPhone 16: що змінилось",
+      metaDescription: "Свій текст для видачі, не картковий.",
+    });
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.title).toEqual({ absolute: "iPhone 16: що змінилось" });
+    expect(meta.description).toBe("Свій текст для видачі, не картковий.");
+    // The OG block must carry the same pair, not the raw post fields.
+    expect(meta.openGraph).toMatchObject({
+      title: "iPhone 16: що змінилось",
+      description: "Свій текст для видачі, не картковий.",
+    });
+  });
+
+  it("truncates a long excerpt to snippet length instead of shipping 500 chars", async () => {
+    const longExcerpt = `${"Дуже довгий картковий текст. ".repeat(20)}кінець`;
+    fetchPost.mockResolvedValue({ ...makePost(), excerpt: longExcerpt });
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.description).not.toBe(longExcerpt);
+    expect((meta.description as string).length).toBeLessThanOrEqual(156);
+    expect(meta.description as string).toMatch(/…$/);
+  });
 });
 
 // TASK-436 — "Читайте також" used to be one same-category query, so a thin

@@ -9,6 +9,7 @@ import {
   Label,
   RichTextEditor,
   RichTextPreview,
+  SeoSnippetPreview,
   Switch,
   Tabs,
   TabsContent,
@@ -17,8 +18,14 @@ import {
   Textarea,
 } from "@/shared/ui";
 import { useAdminBlogControllerFindCategories } from "@/entities/blog";
+import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
 import { slugify } from "@/shared/lib/slug";
-import { dict } from "@/shared/config";
+import {
+  resolveEffectiveTitleTemplate,
+  resolveSeoPreviewDescription,
+  resolveSeoPreviewTitle,
+} from "@/shared/lib/seo";
+import { dict, STOREFRONT_HOST } from "@/shared/config";
 import {
   blogPostSchema,
   type BlogPostFormInput,
@@ -46,6 +53,10 @@ const EMPTY_VALUES: BlogPostFormInput = {
   readingMinutes: "",
   featured: false,
   listed: true,
+  metaTitle: "",
+  metaDescription: "",
+  keywords: "",
+  ogImage: "",
   status: "DRAFT",
   scheduledAt: "",
 };
@@ -90,6 +101,32 @@ export function BlogPostForm({
   const statusValue = useWatch({ control, name: "status" });
   // Live body HTML for the preview tab (TASK-266).
   const contentValue = useWatch({ control, name: "content" }) ?? "";
+
+  // Live SERP preview (TASK-437). The article form had no SEO section at all, so
+  // an operator could not see — let alone control — what Google would show. The
+  // tiers are the storefront's own (`resolveSeo`): the overrides below, then the
+  // post's title/excerpt, then the SeoSettings defaults.
+  const excerptValue = useWatch({ control, name: "excerpt" }) ?? "";
+  const metaTitleValue = useWatch({ control, name: "metaTitle" }) ?? "";
+  const metaDescriptionValue =
+    useWatch({ control, name: "metaDescription" }) ?? "";
+  const seoSettings = useSeoSettingsControllerGetSettings().data?.data;
+  const previewTitle = resolveSeoPreviewTitle({
+    entityTitle: metaTitleValue,
+    defaultTitle: seoSettings?.defaultMetaTitle,
+    contentName: titleValue,
+    titleTemplate: resolveEffectiveTitleTemplate(
+      seoSettings?.titleTemplate,
+      dict.brand,
+    ),
+  });
+  const previewDescription = resolveSeoPreviewDescription({
+    entityDescription: metaDescriptionValue,
+    defaultDescription: seoSettings?.defaultMetaDescription,
+    contentDescription: excerptValue,
+  });
+  const previewSlug =
+    slugValue || (titleValue.trim() ? slugify(titleValue) : "");
 
   return (
     <form
@@ -300,6 +337,93 @@ export function BlogPostForm({
           )}
         />
       </div>
+
+      {/* TASK-437 — the SEO block, built to the same shape as the product,
+          category and page forms: overrides first, then the shared tag/OG pair,
+          then the live SERP preview. */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="post-meta-title">{dict.blogPostForm.metaTitle}</Label>
+        <Input
+          id="post-meta-title"
+          placeholder={dict.blogPostForm.metaTitlePlaceholder}
+          {...register("metaTitle")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.blogPostForm.metaTitleHint}
+        </p>
+        {errors.metaTitle && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.metaTitle.message}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="post-meta-description">
+          {dict.blogPostForm.metaDescription}
+        </Label>
+        <Textarea
+          id="post-meta-description"
+          rows={3}
+          placeholder={dict.blogPostForm.metaDescriptionPlaceholder}
+          {...register("metaDescription")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.blogPostForm.metaDescriptionHint}
+        </p>
+        {errors.metaDescription && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.metaDescription.message}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="post-keywords">{dict.seoFields.keywords}</Label>
+        <Input
+          id="post-keywords"
+          placeholder={dict.seoFields.keywordsPlaceholder}
+          {...register("keywords")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.seoFields.keywordsHint}
+        </p>
+        {errors.keywords && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.keywords.message}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="post-og-image">{dict.seoFields.ogImage}</Label>
+        <Input
+          id="post-og-image"
+          placeholder={dict.seoFields.ogImagePlaceholder(STOREFRONT_HOST)}
+          {...register("ogImage")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.seoFields.ogImageHint}
+        </p>
+        {errors.ogImage && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.ogImage.message}
+          </p>
+        )}
+      </div>
+
+      {/* The green breadcrumb is the article's real address — `/blog/<slug>`,
+          the route the storefront serves — so the preview cannot imply a page
+          that does not exist. */}
+      <SeoSnippetPreview
+        title={previewTitle.text}
+        titleTier={previewTitle.tier}
+        description={previewDescription.text || undefined}
+        descriptionTier={previewDescription.tier}
+        url={`${STOREFRONT_HOST} › blog › ${previewSlug}`}
+        rawTitleLength={metaTitleValue.trim().length}
+        rawDescriptionLength={metaDescriptionValue.trim().length}
+      />
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="post-status">{dict.blogPostForm.status}</Label>

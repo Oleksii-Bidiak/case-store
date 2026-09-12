@@ -225,7 +225,11 @@ const image = (url: string, sortOrder = 0): ProductImageEntity => ({
 });
 
 describe("buildProductSchema", () => {
-  const opts = { siteUrl: SITE, currency: "UAH", brandName: "MobileStore" };
+  const opts = {
+    siteUrl: SITE,
+    currency: "UAH",
+    fallbackBrandName: "MobileStore",
+  };
 
   it("emits a Product node with name, sku, description, brand and image array", () => {
     const schema = buildProductSchema({
@@ -238,12 +242,30 @@ describe("buildProductSchema", () => {
     expect(schema.name).toBe("iPhone 15 Case");
     expect(schema.sku).toBe("CASE-15-BLK");
     expect(schema.description).toBe("A sturdy clear case");
+    // baseProduct has no brand of its own, so the store name stands in.
     expect(schema.brand).toMatchObject({
       "@type": "Brand",
       name: "MobileStore",
     });
     // Images sorted by sortOrder.
     expect(schema.image).toEqual(["https://cdn/a.jpg", "https://cdn/x.jpg"]);
+  });
+
+  // TASK-437 (GEO audit). This used to emit the store name for EVERY product,
+  // so an Anker cable was published to Google as brand "MobileStore" — while
+  // merchant-feed.xml sent "Anker" for the same item. Two of our own feeds
+  // disagreed about the manufacturer of every branded product we sell.
+  it("publishes the product's real manufacturer, not the shop, when it has one", () => {
+    const schema = buildProductSchema({
+      product: {
+        ...baseProduct,
+        brand: { id: "b-1", slug: "anker", name: "Anker" },
+      },
+      images: [],
+      ...opts,
+    });
+
+    expect(schema.brand).toMatchObject({ "@type": "Brand", name: "Anker" });
   });
 
   // Descriptions are rich text since TASK-361; Schema.org `description` is

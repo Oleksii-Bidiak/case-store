@@ -89,6 +89,8 @@ describe('Pages (e2e)', () => {
     excerpt: null,
     metaTitle: null,
     metaDescription: null,
+    keywords: [],
+    ogImage: null,
     status: 'PUBLISHED' as const,
     publishedAt: new Date('2026-01-01T00:00:00.000Z'),
     scheduledAt: null,
@@ -270,6 +272,50 @@ describe('Pages (e2e)', () => {
         .expect(201);
 
       expect(response.body.data).toMatchObject({ slug: 'privacy-policy' });
+    });
+
+    // TASK-437 — the tag list and the OG override travel the whole way through
+    // the pipe: transformed (trimmed, de-duplicated), validated, and written.
+    it('stores tags and an ogImage, normalising the tag list on the way in', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.create.mockResolvedValue({
+        ...publishedPage,
+        keywords: ['доставка', 'нова пошта'],
+        ogImage: 'https://cdn.example.com/og/delivery.jpg',
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/admin/pages')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          title: 'Доставка і оплата',
+          content: '<p>x</p>',
+          keywords: ['  доставка ', 'Доставка', '', 'нова пошта'],
+          ogImage: 'https://cdn.example.com/og/delivery.jpg',
+        })
+        .expect(201);
+
+      expect(pageRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          keywords: ['доставка', 'нова пошта'],
+          ogImage: 'https://cdn.example.com/og/delivery.jpg',
+        }),
+      );
+      expect(response.body.data.keywords).toEqual(['доставка', 'нова пошта']);
+    });
+
+    it('rejects an ogImage that is not a URL (400)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .post('/api/admin/pages')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'X', content: '<p>x</p>', ogImage: 'javascript:alert(1)' })
+        .expect(400);
+
+      expect(pageRepositoryMock.create).not.toHaveBeenCalled();
     });
 
     // TASK-435 — a HUB row is meta tags for an EXISTING hub route, named by its

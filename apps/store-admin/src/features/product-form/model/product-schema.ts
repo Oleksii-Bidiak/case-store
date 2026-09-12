@@ -1,8 +1,14 @@
 import { z } from "zod";
 import type { CreateProductDto, UpdateProductDto } from "@/entities/product";
 import { dict } from "@/shared/config";
+import {
+  KEYWORDS_MAX_COUNT,
+  KEYWORD_MAX_LENGTH,
+  parseKeywords,
+} from "@/shared/lib/seo";
 
 const e = dict.productForm.errors;
+const seoErrors = dict.seoFields.errors;
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -136,6 +142,27 @@ export const productSchema = z.object({
     .max(500, e.metaDescriptionMax)
     .optional()
     .or(z.literal("")),
+
+  // TASK-437 — internal tags, bound as one comma-separated text field and
+  // validated on the PARSED list, so "a, , a" is one tag rather than three.
+  keywords: z
+    .string()
+    .optional()
+    .refine(
+      (raw) => parseKeywords(raw).length <= KEYWORDS_MAX_COUNT,
+      seoErrors.keywordsCount(KEYWORDS_MAX_COUNT),
+    )
+    .refine(
+      (raw) => parseKeywords(raw).every((k) => k.length <= KEYWORD_MAX_LENGTH),
+      seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
+    ),
+
+  ogImage: z
+    .string()
+    .trim()
+    .url(seoErrors.ogImageUrl)
+    .optional()
+    .or(z.literal("")),
 });
 
 export type ProductFormInput = z.input<typeof productSchema>;
@@ -172,6 +199,7 @@ export function productFormValuesToDto(
   const brandId = values.brandId?.trim();
   const metaTitle = values.metaTitle?.trim();
   const metaDescription = values.metaDescription?.trim();
+  const ogImage = values.ogImage?.trim();
 
   // Collapse the key-value pairs into an attribute object, dropping blank keys
   // and de-duplicating on key (last value wins).
@@ -214,5 +242,10 @@ export function productFormValuesToDto(
       : options.isUpdate
         ? null
         : undefined,
+    // TASK-437 — a list clears by being EMPTY, not by being null, so the same
+    // array is correct for both verbs: `[]` on update wipes the tags, `[]` on
+    // create matches the column default.
+    keywords: parseKeywords(values.keywords),
+    ogImage: ogImage ? ogImage : options.isUpdate ? null : undefined,
   };
 }

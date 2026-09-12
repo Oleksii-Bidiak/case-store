@@ -15,6 +15,7 @@ export const headphones: CatalogueEntry[] = [
     metaTitle: 'Купити Apple AirPods Pro 2 — ціна в Україні',
     metaDescription:
       'Apple AirPods Pro 2: активне шумозаглушення, прозорий режим, до 30 годин із кейсом. Офіційна гарантія.',
+    keywords: ['ейрподс', 'airpods', 'шумозаглушення', 'anc'],
     specs: {
       'headphone-type': 'Вкладиші TWS',
       connection: 'Bluetooth',

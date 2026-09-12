@@ -68,6 +68,8 @@ export interface CreatePageInput {
   excerpt?: string | null;
   metaTitle?: string | null;
   metaDescription?: string | null;
+  keywords?: string[];
+  ogImage?: string | null;
   status: PublishStatus;
   publishedAt: Date | null;
   scheduledAt: Date | null;
@@ -87,6 +89,9 @@ export interface UpdatePageInput {
   excerpt?: string | null;
   metaTitle?: string | null;
   metaDescription?: string | null;
+  /** Absent leaves the stored tags alone; `[]` clears them (TASK-437). */
+  keywords?: string[];
+  ogImage?: string | null;
   status?: PublishStatus;
   publishedAt?: Date | null;
   scheduledAt?: Date | null;
@@ -235,6 +240,8 @@ export class PageRepository implements PublishablePort {
         excerpt: data.excerpt ?? null,
         metaTitle: data.metaTitle ?? null,
         metaDescription: data.metaDescription ?? null,
+        keywords: data.keywords ?? [],
+        ogImage: data.ogImage ?? null,
         status: data.status,
         publishedAt: data.publishedAt,
         scheduledAt: data.scheduledAt,

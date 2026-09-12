@@ -48,6 +48,31 @@ describe("blogPostFormValuesToCreateDto", () => {
     expect(dto.featured).toBe(false);
   });
 
+  // TASK-437 — the article's first SEO fields. Blank means CLEAR here, not
+  // "omit": one mapper serves create and update, and an omitted field on update
+  // would leave a wrong meta title on a live article forever.
+  it("sends null for blank SEO overrides and an empty tag list", () => {
+    const dto = blogPostFormValuesToCreateDto(baseValues);
+    expect(dto.metaTitle).toBeNull();
+    expect(dto.metaDescription).toBeNull();
+    expect(dto.ogImage).toBeNull();
+    expect(dto.keywords).toEqual([]);
+  });
+
+  it("splits the comma-separated tag field into the array the API takes", () => {
+    const dto = blogPostFormValuesToCreateDto({
+      ...baseValues,
+      metaTitle: "iPhone 16 чи 15 у 2026",
+      metaDescription: "Опис для видачі",
+      keywords: "iphone 16, порівняння ,  iPhone 16",
+      ogImage: "https://cdn.example.com/og/iphone16.jpg",
+    });
+    expect(dto.metaTitle).toBe("iPhone 16 чи 15 у 2026");
+    expect(dto.metaDescription).toBe("Опис для видачі");
+    expect(dto.keywords).toEqual(["iphone 16", "порівняння"]);
+    expect(dto.ogImage).toBe("https://cdn.example.com/og/iphone16.jpg");
+  });
+
   it("only sends scheduledAt (as ISO) for a SCHEDULED post", () => {
     const draft = blogPostFormValuesToCreateDto({
       ...baseValues,
@@ -111,6 +136,32 @@ describe("blogPostSchema", () => {
     const result = blogPostSchema.safeParse({
       ...baseInput,
       readingMinutes: "abc",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  // TASK-437 — the tag limits mirror the API's, so the form refuses what the
+  // backend would refuse instead of surfacing a bare 400.
+  it("rejects more than 20 tags", () => {
+    const result = blogPostSchema.safeParse({
+      ...baseInput,
+      keywords: Array.from({ length: 21 }, (_, i) => `tag-${i}`).join(", "),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("counts the PARSED tags, so blanks and duplicates do not trip the limit", () => {
+    const result = blogPostSchema.safeParse({
+      ...baseInput,
+      keywords: "iphone,,iphone, , IPHONE",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an ogImage that is not a URL", () => {
+    const result = blogPostSchema.safeParse({
+      ...baseInput,
+      ogImage: "og-image.jpg",
     });
     expect(result.success).toBe(false);
   });

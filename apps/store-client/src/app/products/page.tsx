@@ -135,7 +135,7 @@ export async function generateMetadata({
         siteName,
         locale: "uk_UA",
         type: "website",
-        images: buildOgImages({ ogImage: seoMeta.ogImage }),
+        images: buildOgImages({ defaultOgImage: seoMeta.ogImage }),
       },
     };
   }
@@ -157,7 +157,7 @@ export async function generateMetadata({
       siteName,
       locale: "uk_UA",
       type: "website",
-      images: buildOgImages({ ogImage: seo?.defaultOgImage }),
+      images: buildOgImages({ defaultOgImage: seo?.defaultOgImage }),
     },
   };
 }

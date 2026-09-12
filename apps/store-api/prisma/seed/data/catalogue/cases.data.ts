@@ -16,6 +16,8 @@ export const cases: CatalogueEntry[] = [
     metaTitle: `Чохол Spigen Liquid Air для iPhone 15 | ${STORE_NAME}`,
     metaDescription:
       'Матовий чохол Spigen Liquid Air для iPhone 15: посилені кути Air Cushion і бортик над екраном 1.2 мм. Чорний, темно-синій, бежевий.',
+    keywords: ['ударостійкий', 'матовий чохол', 'spigen', 'подарунок'],
+    demoOgImage: true,
     specs: {
       material: 'TPU',
       'case-type': 'Накладка',

@@ -94,7 +94,10 @@ export async function generateMetadata({
       siteName,
       locale: "uk_UA",
       type: "article",
-      images: buildOgImages({ ogImage: resolved.ogImage }),
+      images: buildOgImages({
+        entityOgImage: page.ogImage,
+        defaultOgImage: resolved.ogImage,
+      }),
     },
   };
 }

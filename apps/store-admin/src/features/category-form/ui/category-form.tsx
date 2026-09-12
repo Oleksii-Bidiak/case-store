@@ -61,6 +61,8 @@ const EMPTY_VALUES: CategoryFormInput = {
   isActive: true,
   metaTitle: "",
   metaDescription: "",
+  keywords: "",
+  ogImage: "",
 };
 
 /**
@@ -305,6 +307,43 @@ export function CategoryForm({
         {errors.metaDescription && (
           <p role="alert" className="text-sm text-destructive">
             {errors.metaDescription.message}
+          </p>
+        )}
+      </div>
+
+      {/* TASK-437 — same pair as the product form, in the same place: neither
+          field shows up in the SERP preview below (tags are internal, the OG
+          card is for messengers), so they sit above it, not inside it. */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="category-keywords">{dict.seoFields.keywords}</Label>
+        <Input
+          id="category-keywords"
+          placeholder={dict.seoFields.keywordsPlaceholder}
+          {...register("keywords")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.seoFields.keywordsHint}
+        </p>
+        {errors.keywords && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.keywords.message}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="category-og-image">{dict.seoFields.ogImage}</Label>
+        <Input
+          id="category-og-image"
+          placeholder={dict.seoFields.ogImagePlaceholder(STOREFRONT_HOST)}
+          {...register("ogImage")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.seoFields.ogImageHint}
+        </p>
+        {errors.ogImage && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.ogImage.message}
           </p>
         )}
       </div>

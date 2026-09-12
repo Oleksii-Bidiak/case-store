@@ -93,7 +93,14 @@ export async function buildHubMetadata({
       siteName,
       locale: "uk_UA",
       type: ogType,
-      images: buildOgImages({ ogImage: resolved.ogImage }),
+      // TASK-437 — a hub row is a Page row, so it can carry its own `ogImage`;
+      // without this line the field would be editable in the panel and dead on
+      // the six hubs. It outranks the store-wide default, same order as
+      // everywhere else.
+      images: buildOgImages({
+        entityOgImage: page?.ogImage,
+        defaultOgImage: resolved.ogImage,
+      }),
     },
   };
 }

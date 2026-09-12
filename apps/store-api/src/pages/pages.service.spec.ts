@@ -167,6 +167,27 @@ describe('PageService', () => {
       expect(passed.content).not.toContain('alert(1)');
     });
 
+    // TASK-437 — the service builds its repository input field by field, so a
+    // field missing from that list is dropped with no compile error.
+    it('passes tags and ogImage through to the repository', async () => {
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.create.mockResolvedValue(mockPage);
+
+      await service.create({
+        title: 'Доставка і оплата',
+        content: '<p>x</p>',
+        keywords: ['доставка', 'нова пошта'],
+        ogImage: 'https://cdn.example.com/og/delivery.jpg',
+      });
+
+      expect(pageRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          keywords: ['доставка', 'нова пошта'],
+          ogImage: 'https://cdn.example.com/og/delivery.jpg',
+        }),
+      );
+    });
+
     it('defaults to DRAFT (no publish, no revalidation) when status is omitted', async () => {
       pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
       pageRepositoryMock.create.mockResolvedValue(draftPage);

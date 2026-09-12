@@ -22,6 +22,7 @@ export const protection: CatalogueEntry[] = [
     metaTitle: `Захисне скло 9H для iPhone 15 з рамкою | ${STORE_NAME}`,
     metaDescription:
       'Гартоване скло 9H для iPhone 15 з рамкою-позиціонером: лягає рівно з першого разу, без бульбашок. Олеофобне покриття, Full Glue, 1 або 2 шт.',
+    keywords: ['захисне скло', 'бронескло', 'full glue'],
     specs: {
       'protector-type': 'Гартоване скло',
       coverage: 'Увесь екран (Full Glue)',

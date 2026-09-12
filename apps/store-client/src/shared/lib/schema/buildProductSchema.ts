@@ -15,7 +15,17 @@ export interface BuildProductSchemaInput {
   images: ProductImageEntity[];
   siteUrl: string;
   currency: string;
-  brandName: string;
+  /**
+   * Brand for a product that has none of its own — the store's name.
+   *
+   * Named `brandName` until the TASK-437 GEO audit caught what that name was
+   * hiding: the schema emitted it UNCONDITIONALLY, so an Anker cable was
+   * published to Google as brand "MobileStore" while `merchant-feed.xml` sent
+   * `product.brand?.name` for the same item. Two of our own feeds disagreed
+   * about the manufacturer of every branded product in the catalogue, and the
+   * call site's comment described the fallback behaviour this code did not have.
+   */
+  fallbackBrandName: string;
 }
 
 /**
@@ -35,7 +45,7 @@ export interface BuildProductSchemaInput {
 export function buildProductSchema(
   input: BuildProductSchemaInput,
 ): Record<string, unknown> {
-  const { product, images, siteUrl, currency, brandName } = input;
+  const { product, images, siteUrl, currency, fallbackBrandName } = input;
   const url = `${siteUrl}/products/${product.slug}`;
 
   const price = resolvePrice(product.price);
@@ -50,7 +60,13 @@ export function buildProductSchema(
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.name,
-    brand: { "@type": "Brand", name: brandName },
+    // The product's real manufacturer wins; the store name stands in only for an
+    // unbranded item. This is the rule `merchant-feed.xml` already applies to
+    // `g:brand`, so the two feeds finally agree.
+    brand: {
+      "@type": "Brand",
+      name: product.brand?.name ?? fallbackBrandName,
+    },
   };
 
   // Schema.org `description` is plain text, and product descriptions are rich

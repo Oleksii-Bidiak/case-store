@@ -16,6 +16,7 @@ export const holders: CatalogueEntry[] = [
     metaTitle: `Магнітний автотримач Baseus на дефлектор | ${STORE_NAME}`,
     metaDescription:
       'Магнітний автотримач Baseus на дефлектор: шість неодимових магнітів тримають телефон у чохлі навіть на ямах, а потік повітря його охолоджує.',
+    keywords: ['автотримач', 'тримач у машину', 'магнітний', 'magsafe'],
     specs: {
       mount: 'Дефлектор',
       fixation: 'Магніт',

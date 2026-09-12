@@ -139,7 +139,13 @@ export async function generateMetadata({
       siteName,
       locale: "uk_UA",
       type: "website",
-      images: buildOgImages({ ogImage: seoMeta.ogImage }),
+      // TASK-437 — a category can now carry its own card; the landing page has
+      // no automatic image of its own, so without one the chain still ends at
+      // the global default and then the brand card.
+      images: buildOgImages({
+        entityOgImage: node.ogImage,
+        defaultOgImage: seoMeta.ogImage,
+      }),
     },
   };
 }

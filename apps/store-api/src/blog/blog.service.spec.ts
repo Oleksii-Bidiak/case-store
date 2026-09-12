@@ -167,6 +167,36 @@ describe('BlogService', () => {
       expect(passed.content).not.toContain('script');
     });
 
+    // TASK-437 — the article was the one content entity with no admin-editable
+    // meta tags. The service maps the DTO field by field, so a new field that is
+    // not listed there is silently dropped with no type error anywhere.
+    it('passes the SEO overrides, tags and ogImage through to the repository', async () => {
+      repositoryMock.findBySlugAny.mockResolvedValue(null);
+      repositoryMock.findCategoryById.mockResolvedValue(category);
+      repositoryMock.create.mockResolvedValue(draftPost);
+
+      await service.create({
+        title: 'iPhone 16 vs 15',
+        excerpt: 'Картковий текст',
+        content: '<p>ok</p>',
+        categoryId: 'cat-1',
+        authorName: 'Олег',
+        metaTitle: 'iPhone 16 чи iPhone 15 у 2026',
+        metaDescription: 'Інший текст — для видачі, не для картки.',
+        keywords: ['iphone 16', 'порівняння'],
+        ogImage: 'https://cdn.example.com/og/iphone16.jpg',
+      });
+
+      expect(repositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metaTitle: 'iPhone 16 чи iPhone 15 у 2026',
+          metaDescription: 'Інший текст — для видачі, не для картки.',
+          keywords: ['iphone 16', 'порівняння'],
+          ogImage: 'https://cdn.example.com/og/iphone16.jpg',
+        }),
+      );
+    });
+
     it('rejects an unknown category with BadRequestException', async () => {
       repositoryMock.findBySlugAny.mockResolvedValue(null);
       repositoryMock.findCategoryById.mockResolvedValue(null);
@@ -298,6 +328,25 @@ describe('BlogService', () => {
 
       const passed = repositoryMock.update.mock.calls[0][1] as { content?: string };
       expect(passed.content).toBeUndefined();
+    });
+
+    // TASK-437 — clearing an override is a null, not an omission: `undefined`
+    // means "leave it alone", so a form that dropped its blank field could never
+    // take a wrong meta title back off a live article.
+    it('forwards an explicit null so an override can be cleared', async () => {
+      repositoryMock.findById.mockResolvedValue(mockPost);
+      repositoryMock.update.mockResolvedValue(mockPost);
+
+      await service.update('post-1', { metaTitle: null, ogImage: null, keywords: [] });
+
+      const passed = repositoryMock.update.mock.calls[0][1] as {
+        metaTitle: string | null;
+        ogImage: string | null;
+        keywords: string[];
+      };
+      expect(passed.metaTitle).toBeNull();
+      expect(passed.ogImage).toBeNull();
+      expect(passed.keywords).toEqual([]);
     });
 
     it('validates a moved category', async () => {

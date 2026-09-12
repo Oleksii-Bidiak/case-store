@@ -63,6 +63,28 @@ export class PageEntity {
   metaDescription!: string | null;
 
   @ApiProperty({
+    description:
+      'Internal content tags (TASK-437). Never rendered as a `<meta name="keywords">` tag.',
+    example: ['доставка', 'нова пошта'],
+    type: [String],
+    // Optional in the CONTRACT, never absent from a response — see
+    // ProductEntity.keywords for why (TASK-437).
+    required: false,
+  })
+  keywords!: string[];
+
+  @ApiProperty({
+    description:
+      'Open Graph image for this page — first tier of the storefront’s `buildOgImages` ' +
+      'chain (TASK-437).',
+    example: 'https://cdn.example.com/og/delivery.jpg',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  ogImage!: string | null;
+
+  @ApiProperty({
     description: 'Publish lifecycle state — PUBLISHED is the public-visibility gate',
     enum: PublishStatus,
     example: PublishStatus.PUBLISHED,
@@ -116,6 +138,8 @@ export class PageEntity {
     excerpt: string | null;
     metaTitle: string | null;
     metaDescription: string | null;
+    keywords?: string[];
+    ogImage?: string | null;
     status: PublishStatus;
     publishedAt: Date | null;
     scheduledAt: Date | null;
@@ -133,6 +157,8 @@ export class PageEntity {
     entity.excerpt = page.excerpt;
     entity.metaTitle = page.metaTitle;
     entity.metaDescription = page.metaDescription;
+    entity.keywords = page.keywords ?? [];
+    entity.ogImage = page.ogImage ?? null;
     entity.status = page.status;
     entity.publishedAt = page.publishedAt;
     entity.scheduledAt = page.scheduledAt;

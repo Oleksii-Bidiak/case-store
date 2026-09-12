@@ -123,6 +123,8 @@ const EMPTY_VALUES: ProductFormInput = {
   attributes: [],
   metaTitle: "",
   metaDescription: "",
+  keywords: "",
+  ogImage: "",
 };
 
 /**
@@ -624,6 +626,44 @@ export function ProductForm({
         {errors.metaDescription && (
           <p role="alert" className="text-sm text-destructive">
             {errors.metaDescription.message}
+          </p>
+        )}
+      </div>
+
+      {/* TASK-437 — tags and the social card sit inside the SEO block, above the
+          SERP preview, because neither of them shows up in that preview: the
+          preview is the Google snippet, these two are for internal search and
+          for Facebook/Telegram. */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="product-keywords">{dict.seoFields.keywords}</Label>
+        <Input
+          id="product-keywords"
+          placeholder={dict.seoFields.keywordsPlaceholder}
+          {...register("keywords")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.seoFields.keywordsHint}
+        </p>
+        {errors.keywords && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.keywords.message}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="product-og-image">{dict.seoFields.ogImage}</Label>
+        <Input
+          id="product-og-image"
+          placeholder={dict.seoFields.ogImagePlaceholder(STOREFRONT_HOST)}
+          {...register("ogImage")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.seoFields.ogImageHint}
+        </p>
+        {errors.ogImage && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.ogImage.message}
           </p>
         )}
       </div>

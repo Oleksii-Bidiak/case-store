@@ -1,8 +1,14 @@
 import { z } from "zod";
 import type { CreatePageDto, UpdatePageDto } from "@/entities/page";
 import { dict, hubRouteForSlug } from "@/shared/config";
+import {
+  KEYWORDS_MAX_COUNT,
+  KEYWORD_MAX_LENGTH,
+  parseKeywords,
+} from "@/shared/lib/seo";
 
 const e = dict.pageForm.errors;
+const seoErrors = dict.seoFields.errors;
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -69,6 +75,28 @@ export const pageSchema = z
       .optional()
       .or(z.literal("")),
 
+    // TASK-437 — internal tags as one comma-separated field, validated on the
+    // PARSED list (see the product form's twin).
+    keywords: z
+      .string()
+      .optional()
+      .refine(
+        (raw) => parseKeywords(raw).length <= KEYWORDS_MAX_COUNT,
+        seoErrors.keywordsCount(KEYWORDS_MAX_COUNT),
+      )
+      .refine(
+        (raw) =>
+          parseKeywords(raw).every((k) => k.length <= KEYWORD_MAX_LENGTH),
+        seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
+      ),
+
+    ogImage: z
+      .string()
+      .trim()
+      .url(seoErrors.ogImageUrl)
+      .optional()
+      .or(z.literal("")),
+
     sortOrder: z
       .string()
       .trim()
@@ -123,6 +151,7 @@ export function pageFormValuesToCreateDto(
   const excerpt = values.excerpt?.trim();
   const metaTitle = values.metaTitle?.trim();
   const metaDescription = values.metaDescription?.trim();
+  const ogImage = values.ogImage?.trim();
 
   const scheduledAt =
     values.status === "SCHEDULED" && values.scheduledAt
@@ -137,6 +166,11 @@ export function pageFormValuesToCreateDto(
     excerpt: excerpt ? excerpt : undefined,
     metaTitle: metaTitle ? metaTitle : undefined,
     metaDescription: metaDescription ? metaDescription : undefined,
+    // TASK-437 — unlike the meta text above, these two CLEAR properly: a tag
+    // list clears by being empty, and `ogImage` accepts an explicit null on both
+    // verbs, so one mapper still serves create and update.
+    keywords: parseKeywords(values.keywords),
+    ogImage: ogImage ? ogImage : null,
     sortOrder: values.sortOrder,
     status: values.status,
     scheduledAt,

@@ -15,6 +15,15 @@ interface CategoryNode {
   description: string;
   metaTitle?: string;
   metaDescription?: string;
+  /** Internal content tags (TASK-437) — never rendered as a meta keywords tag. */
+  keywords?: string[];
+  /**
+   * Demo flag (TASK-437): use this category's own rendered tile as its social
+   * preview image. The tile is a file the seed writes, so nothing is invented,
+   * and it demonstrates a card the category page could not otherwise have — the
+   * route passes no page image of its own.
+   */
+  demoOgImage?: boolean;
   children?: Omit<CategoryNode, 'children'>[];
 }
 
@@ -27,6 +36,8 @@ export const categoryTree: CategoryNode[] = [
     metaTitle: 'Смартфони — купити в Україні',
     metaDescription:
       'Смартфони Apple, Samsung та Xiaomi: актуальні моделі, чесні залишки, доставка Новою Поштою.',
+    keywords: ['телефони', 'мобільні телефони', 'смартфон купити'],
+    demoOgImage: true,
     children: [
       {
         name: 'iPhone',
@@ -35,6 +46,7 @@ export const categoryTree: CategoryNode[] = [
         metaTitle: 'Apple iPhone — купити в Україні',
         metaDescription:
           "Смартфони Apple iPhone від 13-ї серії до найновіших Pro: актуальні моделі, чесні залишки на складі, вибір за пам'яттю та кольором.",
+        keywords: ['айфон', 'iphone', 'apple'],
       },
       {
         name: 'Samsung Galaxy',
@@ -56,6 +68,8 @@ export const categoryTree: CategoryNode[] = [
     metaTitle: 'Навушники — бездротові та дротові',
     metaDescription:
       'TWS-вкладиші, накладні навушники з активним шумозаглушенням і дротові моделі. Гарантія та швидка доставка.',
+    keywords: ['навушники', 'tws', 'anc', 'бездротові навушники'],
+    demoOgImage: true,
     children: [
       {
         name: 'Бездротові вкладиші (TWS)',
@@ -348,6 +362,8 @@ export const categoriesData = categoryTree.map((node, index) => ({
   description: node.description,
   metaTitle: node.metaTitle ?? null,
   metaDescription: node.metaDescription ?? null,
+  keywords: node.keywords ?? [],
+  demoOgImage: node.demoOgImage ?? false,
   sortOrder: index + 1,
 }));
 
@@ -363,6 +379,8 @@ export function buildSubcategories(categories: Record<string, { id: string }>) {
       description: child.description,
       metaTitle: child.metaTitle ?? null,
       metaDescription: child.metaDescription ?? null,
+      keywords: child.keywords ?? [],
+      demoOgImage: child.demoOgImage ?? false,
       parentId: categories[root.slug].id,
       sortOrder: index + 1,
     })),

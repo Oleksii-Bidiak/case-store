@@ -148,6 +148,8 @@ export class PageService {
       excerpt: dto.excerpt,
       metaTitle: dto.metaTitle,
       metaDescription: dto.metaDescription,
+      keywords: dto.keywords,
+      ogImage: dto.ogImage,
       status: publishState.status,
       publishedAt: publishState.publishedAt,
       scheduledAt: publishState.scheduledAt,
@@ -210,6 +212,8 @@ export class PageService {
       excerpt: dto.excerpt,
       metaTitle: dto.metaTitle,
       metaDescription: dto.metaDescription,
+      keywords: dto.keywords,
+      ogImage: dto.ogImage,
       sortOrder: dto.sortOrder,
     };
 

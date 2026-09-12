@@ -248,4 +248,14 @@ describe("PageForm — page kind (TASK-435)", () => {
 
     expect(screen.getByText(dict.pageForm.hubContentHint)).toBeInTheDocument();
   });
+
+  // TASK-437 — the same tag/OG pair as the other three content forms, with the
+  // hint that keeps the tags from being mistaken for a Google ranking signal.
+  it("renders the tag and OG fields with their honest hint", () => {
+    renderWithProviders(<PageForm onSubmit={noop} isPending={false} />);
+
+    expect(screen.getByLabelText(dict.seoFields.keywords)).toBeInTheDocument();
+    expect(screen.getByLabelText(dict.seoFields.ogImage)).toBeInTheDocument();
+    expect(screen.getByText(dict.seoFields.keywordsHint)).toBeInTheDocument();
+  });
 });

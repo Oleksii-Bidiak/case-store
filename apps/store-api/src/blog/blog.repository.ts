@@ -126,6 +126,10 @@ export interface CreateBlogPostInput {
   featured?: boolean;
   /** Listing visibility; omitted, the column default (`true`) applies. */
   listed?: boolean;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  keywords?: string[];
+  ogImage?: string | null;
   status: PublishStatus;
   publishedAt: Date | null;
   scheduledAt: Date | null;
@@ -144,6 +148,11 @@ export interface UpdateBlogPostInput {
   readingMinutes?: number | null;
   featured?: boolean;
   listed?: boolean;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  /** Absent leaves the stored tags alone; `[]` clears them (TASK-437). */
+  keywords?: string[];
+  ogImage?: string | null;
   status?: PublishStatus;
   publishedAt?: Date | null;
   scheduledAt?: Date | null;
@@ -308,6 +317,10 @@ export class BlogRepository implements PublishablePort {
         readingMinutes: data.readingMinutes ?? null,
         featured: data.featured ?? false,
         listed: data.listed ?? true,
+        metaTitle: data.metaTitle ?? null,
+        metaDescription: data.metaDescription ?? null,
+        keywords: data.keywords ?? [],
+        ogImage: data.ogImage ?? null,
         status: data.status,
         publishedAt: data.publishedAt,
         scheduledAt: data.scheduledAt,

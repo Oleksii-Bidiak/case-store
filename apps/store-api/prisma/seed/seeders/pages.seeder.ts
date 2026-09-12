@@ -41,6 +41,7 @@ export async function seedPages(prisma: PrismaClient) {
       excerpt: page.excerpt,
       metaTitle: page.metaTitle,
       metaDescription: page.metaDescription,
+      keywords: page.keywords ?? [],
       status: 'PUBLISHED' as const,
       publishedAt,
       scheduledAt: null,

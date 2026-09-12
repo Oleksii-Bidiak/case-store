@@ -113,7 +113,7 @@ export async function generateMetadata(): Promise<Metadata> {
       // the tier logic instead of being merged in invisibly (segments that
       // define their own `openGraph` would silently opt out either way, which
       // is why they call the same `buildOgImages` helper — TASK-432).
-      images: buildOgImages({ ogImage: resolved.ogImage }),
+      images: buildOgImages({ defaultOgImage: resolved.ogImage }),
     },
     // Search-console ownership verification (TASK-280, plan 146 Decision 2).
     // Each key is emitted only when its admin-managed token is a non-empty

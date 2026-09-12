@@ -16,6 +16,7 @@ export const cables: CatalogueEntry[] = [
     metaTitle: `Кабель Anker USB-C — Lightning MFi | ${STORE_NAME}`,
     metaDescription:
       'Кабель Anker USB-C — Lightning із сертифікацією MFi: 20 Вт швидкої зарядки і жодних повідомлень «аксесуар не підтримується». 1 і 2 м.',
+    keywords: ['кабель', 'lightning', 'mfi', 'шнур для айфона'],
     specs: {
       'connector-out': 'Lightning',
       'connector-in': 'USB-C',

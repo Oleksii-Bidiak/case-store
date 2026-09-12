@@ -135,4 +135,37 @@ describe("categories hub generateMetadata", () => {
     expect(meta.description).toBe(dict.meta.categoriesDescription);
     expect(meta.openGraph).toBeDefined();
   });
+
+  // TASK-437 — a hub row is a Page row, so it can carry its own `ogImage`. Wiring
+  // it here is what keeps the new field from being editable in the panel and dead
+  // on the six hubs.
+  it("uses the hub row's own ogImage ahead of the store-wide default", async () => {
+    fetchPage.mockResolvedValue(
+      makeHubRow({ ogImage: "https://cdn.example.com/og/categories.jpg" }),
+    );
+    fetchSeo.mockResolvedValue({
+      ...settings,
+      defaultOgImage: "https://cdn.example.com/og/store.png",
+    });
+
+    const meta = await generateMetadata();
+
+    expect(meta.openGraph?.images).toEqual([
+      { url: "https://cdn.example.com/og/categories.jpg" },
+    ]);
+  });
+
+  it("falls back to the store-wide default when the hub row has no ogImage", async () => {
+    fetchPage.mockResolvedValue(makeHubRow());
+    fetchSeo.mockResolvedValue({
+      ...settings,
+      defaultOgImage: "https://cdn.example.com/og/store.png",
+    });
+
+    const meta = await generateMetadata();
+
+    expect(meta.openGraph?.images).toEqual([
+      { url: "https://cdn.example.com/og/store.png" },
+    ]);
+  });
 });

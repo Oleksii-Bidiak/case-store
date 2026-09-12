@@ -163,6 +163,10 @@ export class BlogService {
       readingMinutes: dto.readingMinutes,
       featured: dto.featured,
       listed: dto.listed,
+      metaTitle: dto.metaTitle,
+      metaDescription: dto.metaDescription,
+      keywords: dto.keywords,
+      ogImage: dto.ogImage,
       status: publishState.status,
       publishedAt: publishState.publishedAt,
       scheduledAt: publishState.scheduledAt,
@@ -229,6 +233,10 @@ export class BlogService {
       readingMinutes: dto.readingMinutes,
       featured: dto.featured,
       listed: dto.listed,
+      metaTitle: dto.metaTitle,
+      metaDescription: dto.metaDescription,
+      keywords: dto.keywords,
+      ogImage: dto.ogImage,
     };
 
     if (dto.status !== undefined) {

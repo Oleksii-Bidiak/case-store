@@ -50,6 +50,16 @@ export const postsData: {
   featured?: boolean;
   /** TASK-436 — omitted means listed (the column default). */
   listed?: boolean;
+  /**
+   * TASK-437 — SEO overrides. Seeded on a few posts only, and deliberately
+   * DIFFERENT from the excerpt: the excerpt is the card copy on /blog, the meta
+   * description is the sentence a search result shows. Omitted, the storefront
+   * derives both from title/excerpt as before.
+   */
+  metaTitle?: string;
+  metaDescription?: string;
+  /** Internal content tags — never rendered as a meta keywords tag. */
+  keywords?: string[];
 }[] = [
   {
     slug: 'iphone16-vs-15',
@@ -57,6 +67,10 @@ export const postsData: {
     title: 'iPhone 16 проти iPhone 15: чи варто оновлюватись',
     excerpt:
       'Розібрали камери, продуктивність A18 та автономність — кому справді потрібен апгрейд, а кому вистачить попередньої моделі.',
+    metaTitle: 'iPhone 16 чи iPhone 15: що брати у 2026 році',
+    metaDescription:
+      'Порівняння iPhone 16 та iPhone 15: камери, чип A18, автономність і ціна. Кому апгрейд вартий грошей, а кому ні.',
+    keywords: ['iphone 16', 'iphone 15', 'порівняння', 'апгрейд'],
     author: 'Олег Пилипенко',
     readingMinutes: 8,
     publishedAt: '2026-06-28',
@@ -68,6 +82,10 @@ export const postsData: {
     title: 'Як обрати бездротові навушники у 2026 році',
     excerpt:
       'ANC, кодеки, час роботи й затримка звуку — простий чек-лист, за яким ви не помилитесь із вибором.',
+    metaTitle: 'Як обрати бездротові навушники: чек-лист 2026',
+    metaDescription:
+      'ANC, кодеки, час роботи та затримка звуку — на що дивитись, обираючи TWS-навушники, і які характеристики можна ігнорувати.',
+    keywords: ['навушники', 'tws', 'anc', 'кодеки'],
     author: 'Ірина Ткач',
     readingMinutes: 6,
     publishedAt: '2026-06-25',
@@ -78,6 +96,10 @@ export const postsData: {
     title: 'Скільки mAh потрібно саме вам: гайд по павербанках',
     excerpt:
       'Рахуємо реальну ємність, розбираємось із швидкою зарядкою та GaN — і не переплачуємо за зайві грами.',
+    metaTitle: 'Скільки mAh потрібно павербанку: як порахувати',
+    metaDescription:
+      'Як порахувати реальну ємність павербанка під свій телефон, що дає GaN і швидка зарядка — і за що не варто переплачувати.',
+    keywords: ['павербанк', 'powerbank', 'mah', 'gan'],
     author: 'Ірина Ткач',
     readingMinutes: 5,
     publishedAt: '2026-06-22',

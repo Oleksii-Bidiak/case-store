@@ -18,6 +18,13 @@ export const pagesData: {
   excerpt: string;
   metaTitle: string;
   metaDescription: string;
+  /**
+   * Internal content tags (TASK-437) — never rendered as a meta keywords tag.
+   * Seeded on the pages a shopper actually searches for by other words
+   * («терміни доставки» → the delivery page), so the admin field shows what it
+   * is for instead of standing empty on the demo.
+   */
+  keywords?: string[];
   content: string;
 }[] = [
   {
@@ -31,6 +38,7 @@ export const pagesData: {
     excerpt: 'Мультибрендовий магазин аксесуарів та Apple-техніки в Україні.',
     metaTitle: `Про нас | ${STORE_NAME}`,
     metaDescription: `${STORE_NAME} — мультибрендовий інтернет-магазин аксесуарів для смартфонів та Apple-техніки. Оригінальні товари, гарантія, доставка по Україні.`,
+    keywords: ['про магазин', 'хто ми', 'реквізити'],
     content: `
         <h2>Хто ми</h2>
         <p>${STORE_NAME} — це український інтернет-магазин аксесуарів для смартфонів
@@ -62,6 +70,7 @@ export const pagesData: {
     metaTitle: `Доставка і оплата | ${STORE_NAME}`,
     metaDescription:
       'Доставка Новою Поштою по всій Україні, безкоштовно від 1000 ₴. Оплата карткою онлайн або при отриманні.',
+    keywords: ['доставка', 'нова пошта', 'оплата при отриманні', 'післяплата'],
     content: `
         <h2>Доставка</h2>
         <p>Ми відправляємо замовлення Новою Поштою по всій Україні. Товари в
@@ -112,6 +121,7 @@ export const pagesData: {
     metaTitle: `Гарантія | ${STORE_NAME}`,
     metaDescription:
       'Офіційна гарантія виробника від 12 до 24 місяців. Гарантійний талон додається до кожного замовлення.',
+    keywords: ['гарантія', 'гарантійний талон', 'сервіс'],
     content: `
         <h2>Гарантійні умови</h2>
         <p>Уся техніка має офіційну гарантію виробника від 12 до 24 місяців.

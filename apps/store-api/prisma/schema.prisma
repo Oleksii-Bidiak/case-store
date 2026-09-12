@@ -224,6 +224,15 @@ model Category {
   // gap 1).
   metaTitle       String?    @map("meta_title")
   metaDescription String?    @map("meta_description")
+  /// Internal content tags (TASK-437) — NOT `<meta name="keywords">`, which
+  /// Google has ignored since 2009 and which the storefront never renders. These
+  /// are the admin's own synonyms for the category, meant for store search and
+  /// AI-summary surfaces. See Product.keywords for the full rationale.
+  keywords        String[]   @default([])
+  /// Per-row Open Graph image (TASK-437). Wins over the category's `image` tile
+  /// and over the global `SeoSettings.defaultOgImage` in `buildOgImages`; null
+  /// keeps the automatic chain. See Product.ogImage.
+  ogImage         String?    @map("og_image")
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
 
@@ -303,6 +312,26 @@ model Product {
   // (TASK-240); these columns win as tier 1 (the admin's explicit override).
   metaTitle       String?       @map("meta_title")
   metaDescription String?       @map("meta_description")
+  /// Internal content tags (TASK-437) — NOT `<meta name="keywords">`.
+  ///
+  /// Google has ignored the keywords meta tag as a ranking signal since 2009,
+  /// and the storefront therefore does NOT render one: nothing in `<head>` ever
+  /// reads this column. Do not "finish the job" by adding that tag — shipping it
+  /// buys zero ranking and hands competitors a free list of the terms we target.
+  ///
+  /// What it IS: the admin's own tag vocabulary for a row — the words a shopper
+  /// might use that the name and description do not contain («ударостійкий»,
+  /// «magsafe», «подарунок»). Its intended consumers are internal: store search
+  /// and the AI-summary surfaces (llms.txt / structured data), where an
+  /// admin-curated synonym list is genuinely useful. Same field, same rule, on
+  /// Category / Page / BlogPost.
+  keywords        String[]      @default([])
+  /// Per-row Open Graph / social-preview image (TASK-437). Overrides BOTH the
+  /// product's first photo and the global `SeoSettings.defaultOgImage` in the
+  /// storefront's `buildOgImages` chain: the product photo is what the catalogue
+  /// picked automatically, this is what a human chose for the link card (a photo
+  /// cropped 1200×630, a promo card). Null = keep the automatic chain.
+  ogImage         String?       @map("og_image")
   // Audit tombstone (TASK-104). NULL = live; non-null = soft-deleted (hidden
   // from all reads). On soft-delete the unique `slug`/`sku` are mangled. The row
   // is kept so historical OrderItems still resolve the product name.
@@ -675,6 +704,15 @@ model Page {
   excerpt         String?
   metaTitle       String?       @map("meta_title")
   metaDescription String?       @map("meta_description")
+  /// Internal content tags (TASK-437) — NOT `<meta name="keywords">`, which
+  /// Google has ignored since 2009 and which the storefront never renders. These
+  /// are the admin's own synonyms for the page, meant for store search and
+  /// AI-summary surfaces. See Product.keywords for the full rationale.
+  keywords        String[]      @default([])
+  /// Per-row Open Graph image (TASK-437). A text page has no image of its own,
+  /// so without this its link card falls straight through to the global
+  /// `SeoSettings.defaultOgImage` and then the brand card. See Product.ogImage.
+  ogImage         String?       @map("og_image")
   /// Publish lifecycle — the single source of truth for public visibility.
   status          PublishStatus @default(DRAFT)
   /// Set when the page first transitions to PUBLISHED (or when a scheduled
@@ -930,6 +968,26 @@ model BlogPost {
   /// unlisted rows from the sitemap either — one half without the other turns it
   /// back into the rejected design.
   listed           Boolean       @default(true)
+  /// SEO overrides (TASK-437). Until now the article was the ONE content entity
+  /// with no admin-controlled meta tags at all: `/blog/<slug>` derived its
+  /// `<title>` from `title` and its description from `excerpt`, with no way to
+  /// write a different one. But the excerpt is card copy — it has a job on the
+  /// /blog grid — and a search-result description has another; forcing one
+  /// string to do both is what made every article's snippet read like a teaser.
+  /// Null (the normal case) keeps the derived behaviour: the route runs the same
+  /// `resolveSeo` chain as every other page, with title/excerpt as tier 2.
+  metaTitle        String?       @map("meta_title")
+  metaDescription  String?       @map("meta_description")
+  /// Internal content tags (TASK-437) — NOT `<meta name="keywords">`, which
+  /// Google has ignored since 2009 and which the storefront never renders. These
+  /// are the admin's own synonyms for the article, meant for store search and
+  /// AI-summary surfaces. See Product.keywords for the full rationale.
+  keywords         String[]      @default([])
+  /// Per-row Open Graph image (TASK-437). Wins over `coverImageUrl` in
+  /// `buildOgImages`: the cover is cropped for the article header, a link card
+  /// is 1200×630, and the two are not always the same picture. Null = use the
+  /// cover, then the global default, then the brand card. See Product.ogImage.
+  ogImage          String?       @map("og_image")
   categoryId       String        @map("category_id")
   category         BlogCategory  @relation(fields: [categoryId], references: [id])
   /// Publish lifecycle — the single source of truth for public visibility.

@@ -71,9 +71,13 @@ export async function generateMetadata({
         siteName,
         locale: "uk_UA",
         type: "website",
+        // TASK-437 — the product's own `ogImage` (an admin's deliberate 1200×630
+        // card) outranks `images[0]`, which is just whatever photo sorts first
+        // in the gallery. Unset, the chain is exactly what it was before.
         images: buildOgImages({
+          entityOgImage: product.ogImage,
           pageImage: images[0]?.url,
-          ogImage: resolved.ogImage,
+          defaultOgImage: resolved.ogImage,
         }),
       },
     };
@@ -149,11 +153,14 @@ async function buildProductPageSchemas(slug: string): Promise<{
     // accordion lives on the /info hub; the PDP only emits the FAQPage JSON-LD
     // (structured data) from the same source so it stays a single source of
     // truth. Null on failure → the block is simply omitted.
-    // The SEO singleton joins the fetch for one reason: `brandName` below is the
-    // FALLBACK brand of a product that has none of its own, and that fallback is
-    // the store's name — admin-managed since TASK-433, so it can no longer be
-    // read from a constant. Same tagged URL `generateMetadata` already fetched,
-    // so Next dedupes it within the request and this costs nothing.
+    // The SEO singleton joins the fetch for one reason: `fallbackBrandName`
+    // below is the brand of a product that has none of its own, and that
+    // fallback is the store's name — admin-managed since TASK-433, so it can no
+    // longer be read from a constant. Same tagged URL `generateMetadata` already
+    // fetched, so Next dedupes it within the request and this costs nothing.
+    // (This comment claimed "FALLBACK" before TASK-437 while the schema builder
+    // emitted the store name unconditionally — the rename is what makes the two
+    // agree.)
     const [{ data: product, images, category }, faqItems, seo] =
       await Promise.all([
         productControllerFindBySlug(slug),
@@ -178,7 +185,7 @@ async function buildProductPageSchemas(slug: string): Promise<{
         images,
         siteUrl: SITE_URL,
         currency: CURRENCY,
-        brandName: resolveSiteName(seo),
+        fallbackBrandName: resolveSiteName(seo),
       }),
       breadcrumb: buildBreadcrumbSchema([
         { name: dict.product.breadcrumbHome, item: SITE_URL },

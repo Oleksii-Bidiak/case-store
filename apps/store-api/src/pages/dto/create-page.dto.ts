@@ -2,6 +2,7 @@ import { IsString, IsOptional, IsInt, IsEnum, MaxLength, Min, Matches } from 'cl
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { PageKind } from '@prisma/client';
+import { IsKeywordsField, IsOgImageField } from '../../common/validators';
 import { PublishFieldsDto } from '../../publishing';
 import { HUB_SLUGS } from '../hub-routes';
 
@@ -83,6 +84,12 @@ export class CreatePageDto extends PublishFieldsDto {
   @IsString()
   @MaxLength(500, { message: 'Meta description must be at most 500 characters' })
   metaDescription?: string;
+
+  @IsKeywordsField()
+  keywords?: string[];
+
+  @IsOgImageField()
+  ogImage?: string | null;
 
   @ApiProperty({
     description: 'Sort order for display (lower values appear first)',

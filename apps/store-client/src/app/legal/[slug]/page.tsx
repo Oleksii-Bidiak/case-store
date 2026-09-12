@@ -77,8 +77,9 @@ export async function generateMetadata({
     alternates: { canonical },
     // Replaces the root layout's `openGraph` wholesale (Next merges metadata
     // shallowly), so siteName/locale/images are re-stated here — a legal page
-    // has no image of its own, so `buildOgImages` resolves to the admin default
-    // or the brand card rather than leaving the preview image-less.
+    // has no image of its own, so `buildOgImages` resolves to the page's own
+    // `ogImage` (TASK-437), then the admin default, then the brand card, rather
+    // than leaving the preview image-less.
     openGraph: {
       title: title.absolute,
       description,
@@ -86,7 +87,10 @@ export async function generateMetadata({
       siteName,
       locale: "uk_UA",
       type: "article",
-      images: buildOgImages({ ogImage: resolved.ogImage }),
+      images: buildOgImages({
+        entityOgImage: page.ogImage,
+        defaultOgImage: resolved.ogImage,
+      }),
     },
   };
 }

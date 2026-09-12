@@ -15,7 +15,12 @@ import {
   buildBlogPostingSchema,
   buildBreadcrumbSchema,
 } from "@/shared/lib/schema";
-import { buildOgImages, resolveSiteName } from "@/shared/lib/seo";
+import {
+  buildOgImages,
+  resolveSeo,
+  resolveSiteName,
+  toMetadataTitle,
+} from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { SITE_URL, dict } from "@/shared/config";
 
@@ -43,23 +48,51 @@ export async function generateMetadata({
 
   const canonical = `${SITE_URL}/blog/${post.slug}`;
 
+  // TASK-437 — this was the ONE content route that assembled its metadata by
+  // hand, bypassing the shared chain: `title: post.title` (never branded by the
+  // template, never truncated) and `description: post.excerpt` — card copy of up
+  // to 500 characters, written for the /blog grid, pushed verbatim into <head>.
+  // The article now has its own metaTitle/metaDescription, so it runs the same
+  // three tiers as every other page: the admin's override → the post's own
+  // title/excerpt → the SeoSettings defaults, with the 60/155 truncation and the
+  // `%s` brand template applied. With both overrides empty the visible change is
+  // only that: branded title, description trimmed to a snippet length.
+  const resolved = resolveSeo({
+    entityTitle: post.metaTitle,
+    entityDescription: post.metaDescription,
+    settings: seo,
+    content: { name: post.title, description: post.excerpt },
+  });
+  const siteName = resolveSiteName(seo);
+  const title = toMetadataTitle(resolved, {
+    settings: seo,
+    siteName,
+    fallback: post.title,
+  });
+  const description = resolved.description ?? post.excerpt;
+
   return {
-    title: post.title,
-    description: post.excerpt,
+    title,
+    description,
     alternates: { canonical },
     // This block replaces the root layout's `openGraph` wholesale (Next merges
     // metadata shallowly), so it must re-state siteName/locale/images itself —
-    // see `buildOgImages`. The article's own cover art is the right card for a
-    // shared link; `buildOgImages` falls back to the admin default and then the
-    // brand card, so a coverless post is still never image-less.
+    // see `buildOgImages`. The post's own `ogImage` (TASK-437) wins over the
+    // cover: the cover is cropped for the article header, a link card is
+    // 1200×630. Without either, the chain falls to the admin default and then
+    // the brand card, so a coverless post is still never image-less.
     openGraph: {
-      title: post.title,
-      description: post.excerpt,
+      title: title.absolute,
+      description,
       url: canonical,
-      siteName: resolveSiteName(seo),
+      siteName,
       locale: "uk_UA",
       type: "article",
-      images: buildOgImages({ pageImage: post.coverImageUrl }),
+      images: buildOgImages({
+        entityOgImage: post.ogImage,
+        pageImage: post.coverImageUrl,
+        defaultOgImage: resolved.ogImage,
+      }),
     },
   };
 }

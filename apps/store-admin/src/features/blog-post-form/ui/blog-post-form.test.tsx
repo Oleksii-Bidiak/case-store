@@ -115,6 +115,90 @@ describe("BlogPostForm — existing fields smoke (TASK-266 baseline coverage)", 
   });
 });
 
+// TASK-437 — the article form had no SEO section at all: no meta fields, no
+// tags, no snippet preview. These tests pin the section's existence and the one
+// thing an operator can get wrong silently — the address in the preview.
+describe("BlogPostForm — SEO section (TASK-437)", () => {
+  it("renders the meta overrides, the shared tag/OG pair and the snippet preview", async () => {
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);
+
+    expect(
+      screen.getByLabelText(dict.blogPostForm.metaTitle),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(dict.blogPostForm.metaDescription),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(dict.seoFields.keywords)).toBeInTheDocument();
+    expect(screen.getByLabelText(dict.seoFields.ogImage)).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("seo-snippet-preview"),
+    ).toBeInTheDocument();
+  });
+
+  it("says out loud that the tags are not a Google meta tag", () => {
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);
+
+    expect(screen.getByText(dict.seoFields.keywordsHint)).toBeInTheDocument();
+  });
+
+  it("previews the article's real address: /blog/<slug>", async () => {
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);
+
+    await userEvent.type(
+      screen.getByLabelText(dict.blogPostForm.slug),
+      "iphone16-vs-15",
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("seo-snippet-url")).toHaveTextContent(
+        "blog › iphone16-vs-15",
+      ),
+    );
+  });
+
+  it("falls back to the post title in the preview until a meta title is typed", async () => {
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);
+
+    await userEvent.type(
+      screen.getByLabelText(dict.blogPostForm.title),
+      "Огляд iPhone",
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("seo-snippet-title")).toHaveTextContent(
+        "Огляд iPhone",
+      ),
+    );
+
+    await userEvent.type(
+      screen.getByLabelText(dict.blogPostForm.metaTitle),
+      "Свій заголовок для видачі",
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("seo-snippet-title")).toHaveTextContent(
+        "Свій заголовок для видачі",
+      ),
+    );
+  });
+
+  it("rejects a tag list longer than the API accepts, before any request", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<BlogPostForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(
+      screen.getByLabelText(dict.seoFields.keywords),
+      Array.from({ length: 21 }, (_, i) => `tag${i}`).join(","),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.blogPostForm.submit }),
+    );
+
+    expect(
+      await screen.findByText(dict.seoFields.errors.keywordsCount(20)),
+    ).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
 describe("BlogPostForm — content preview tab (TASK-266)", () => {
   it("renders typed content in the «Перегляд» tab through RichTextPreview", async () => {
     renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);

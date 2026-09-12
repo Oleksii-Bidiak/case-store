@@ -12304,6 +12304,23 @@
             "example": "Shop premium protective phone cases for every model.",
             "nullable": true
           },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). NOT rendered as `<meta name=\"keywords\">` — see IsKeywordsField.",
+            "example": [
+              "чохли",
+              "cases"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image for this category; wins over the global default (TASK-437).",
+            "example": "https://cdn.example.com/og/cases.jpg",
+            "nullable": true
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -12377,6 +12394,23 @@
             "type": "string",
             "description": "SEO meta description override",
             "example": "Shop premium protective phone cases for every model.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). Never rendered as a `<meta name=\"keywords\">` tag.",
+            "example": [
+              "чохли",
+              "cases"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image for this category — first tier of the storefront’s `buildOgImages` chain (TASK-437).",
+            "example": "https://cdn.example.com/og/cases.jpg",
             "nullable": true
           },
           "updatedAt": {
@@ -12618,6 +12652,23 @@
             "example": "Shop premium protective phone cases for every model.",
             "nullable": true
           },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). Never rendered as a `<meta name=\"keywords\">` tag.",
+            "example": [
+              "чохли",
+              "cases"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image for this category — first tier of the storefront’s `buildOgImages` chain (TASK-437).",
+            "example": "https://cdn.example.com/og/cases.jpg",
+            "nullable": true
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string",
@@ -12846,6 +12897,24 @@
             "type": "string",
             "description": "SEO meta description override",
             "example": "Shop premium protective phone cases for every model."
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
           }
         },
         "required": [
@@ -12896,6 +12965,24 @@
             "type": "string",
             "description": "SEO meta description override",
             "example": "Shop premium protective phone cases for every model.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
             "nullable": true
           }
         }
@@ -13275,6 +13362,23 @@
             "example": "Shop the clear MagSafe-compatible case for iPhone 15 Pro.",
             "nullable": true
           },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). The storefront does NOT render these as a `<meta name=\"keywords\">` tag — they exist for internal search and AI-summary use.",
+            "example": [
+              "magsafe",
+              "ударостійкий"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image chosen for this product. First tier of the storefront’s `buildOgImages` chain — ahead of the product’s own first photo (TASK-437).",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -13597,6 +13701,23 @@
             "type": "string",
             "description": "SEO meta description override (falls back to the product description when empty)",
             "example": "Shop the clear MagSafe-compatible case for iPhone 15 Pro.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). NOT rendered as `<meta name=\"keywords\">` — see IsKeywordsField. Empty array when the admin set none.",
+            "example": [
+              "magsafe",
+              "ударостійкий"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image chosen for this product; wins over its first photo and over the global default (TASK-437). Null = use the automatic chain.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
             "nullable": true
           },
           "createdAt": {
@@ -14075,6 +14196,24 @@
             "type": "string",
             "description": "SEO meta description override (falls back to the product description when empty)",
             "example": "Shop the clear MagSafe-compatible case for iPhone 15 Pro."
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
           }
         },
         "required": [
@@ -14170,6 +14309,24 @@
             "type": "string",
             "description": "SEO meta description override (falls back to the product description when empty)",
             "example": "Shop the clear MagSafe-compatible case for iPhone 15 Pro.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
             "nullable": true
           }
         }
@@ -16488,6 +16645,23 @@
             "example": "Read how Mobile Store collects and protects your data.",
             "nullable": true
           },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). Never rendered as a `<meta name=\"keywords\">` tag.",
+            "example": [
+              "доставка",
+              "нова пошта"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image for this page — first tier of the storefront’s `buildOgImages` chain (TASK-437).",
+            "example": "https://cdn.example.com/og/delivery.jpg",
+            "nullable": true
+          },
           "status": {
             "type": "string",
             "description": "Publish lifecycle state — PUBLISHED is the public-visibility gate",
@@ -16719,6 +16893,24 @@
             "description": "SEO meta description",
             "example": "Read our privacy policy."
           },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
+          },
           "sortOrder": {
             "type": "number",
             "description": "Sort order for display (lower values appear first)",
@@ -16789,6 +16981,24 @@
             "type": "string",
             "description": "SEO meta description",
             "example": "Read our privacy policy."
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
           },
           "sortOrder": {
             "type": "number",
@@ -16882,6 +17092,35 @@
             "type": "boolean",
             "description": "Whether the post appears in listings. `false` keeps it published and reachable at its own URL (and in sitemap.xml) while omitting it from the /blog grid, the search suggestions and the related-posts block (TASK-436).",
             "example": true
+          },
+          "metaTitle": {
+            "type": "string",
+            "description": "SEO meta title override (TASK-437). Null = the storefront derives the title from `title` through the shared resolveSeo chain.",
+            "example": "iPhone 16 чи iPhone 15: що брати у 2026 році",
+            "nullable": true
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "SEO meta description override (TASK-437). Null = the storefront derives it from `excerpt`.",
+            "example": "Порівняли камери, автономність і ціну — кому апгрейд вартий грошей.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). Never rendered as a `<meta name=\"keywords\">` tag.",
+            "example": [
+              "iphone",
+              "порівняння"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image for this article — wins over `coverImageUrl` in the storefront’s `buildOgImages` chain (TASK-437).",
+            "example": "https://cdn.example.com/og/iphone16-vs-15.jpg",
+            "nullable": true
           },
           "category": {
             "description": "Category summary",
@@ -17265,6 +17504,36 @@
             "description": "Whether the post appears in listings (TASK-436). `false` = published and reachable at its own URL and listed in sitemap.xml, but absent from the /blog grid, the search suggestions and the related-posts block. Defaults to true.",
             "example": true,
             "default": true
+          },
+          "metaTitle": {
+            "type": "string",
+            "description": "SEO meta title override (falls back to the post title when empty)",
+            "example": "iPhone 16 чи iPhone 15: що брати у 2026 році",
+            "nullable": true
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "SEO meta description override (falls back to the excerpt when empty)",
+            "example": "Порівняли камери, автономність і ціну — кому апгрейд вартий грошей.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
           }
         },
         "required": [
@@ -17348,6 +17617,36 @@
             "type": "boolean",
             "description": "Whether the post appears in listings (TASK-436). `false` keeps it published and reachable at its own URL and in sitemap.xml, but out of the /blog grid, the search suggestions and the related-posts block.",
             "example": true
+          },
+          "metaTitle": {
+            "type": "string",
+            "description": "SEO meta title override (falls back to the post title when empty)",
+            "example": "iPhone 16 чи iPhone 15: що брати у 2026 році",
+            "nullable": true
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "SEO meta description override (falls back to the excerpt when empty)",
+            "example": "Порівняли камери, автономність і ціну — кому апгрейд вартий грошей.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
           }
         }
       },

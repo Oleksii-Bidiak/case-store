@@ -16,6 +16,7 @@ export const chargers: CatalogueEntry[] = [
     metaTitle: `Зарядний пристрій Anker 20 Вт USB-C | ${STORE_NAME}`,
     metaDescription:
       'Компактний мережевий зарядний пристрій Anker на 20 Вт з USB-C і Power Delivery: половина заряду iPhone за пів години. Білий або чорний.',
+    keywords: ['зарядка', 'блок живлення', 'power delivery', 'швидка зарядка'],
     specs: {
       'charger-power': '20 Вт',
       'charger-type': 'Мережева',
