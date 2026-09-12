@@ -6,12 +6,17 @@ import {
   waitFor,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
+import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { dict } from "@/shared/config";
 import { EditProductView } from "./edit-product-view";
 
-// next/navigation is unavailable under jsdom — mock the router.
+// next/navigation is unavailable under jsdom — mock the router. Stable
+// references (TASK-427): "saving keeps you on the page" is an assertion about
+// what the router was NOT asked to do.
+const mockPush = jest.fn();
+const mockReplace = jest.fn();
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush }),
 }));
 
 const toastSuccess = jest.fn();
@@ -104,7 +109,13 @@ function stubProduct(product: ReturnType<typeof makeProduct>) {
 
 async function renderAndWaitForForm(product: ReturnType<typeof makeProduct>) {
   const putCalls = stubProduct(product);
-  renderWithProviders(<EditProductView productId={PRODUCT_ID} />);
+  // TASK-427: the header's delete action calls `useAuth()`, which throws outside
+  // a provider. Owner — the session that sees every control.
+  renderWithProviders(
+    <WithAuth isOwner>
+      <EditProductView productId={PRODUCT_ID} />
+    </WithAuth>,
+  );
   await waitFor(() =>
     expect(screen.getByLabelText(dict.productForm.slug)).toHaveValue(
       product.slug,
@@ -224,5 +235,109 @@ describe("EditProductView — update failure toast (TASK-397)", () => {
 
     await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
     expect(toastError).toHaveBeenCalledWith(dict.products.toastUpdateFailed);
+  });
+});
+
+/**
+ * TASK-427. Saving used to `router.push("/products")`, so three edits to one
+ * product cost three trips back through the list — and threw away the page's
+ * other panels (images, specs, add-ons, compatibility), which save separately.
+ *
+ * Removing a redirect is only safe if the form then shows what the server holds,
+ * which is what `docs/conventions/forms.md` Rule 2 is about; the second case
+ * below is that guarantee, not a restatement of the first.
+ */
+describe("EditProductView — staying on the page after a save (TASK-427)", () => {
+  beforeEach(() => {
+    mockPush.mockClear();
+    mockReplace.mockClear();
+    toastSuccess.mockClear();
+    toastError.mockClear();
+  });
+
+  it("confirms with a toast and navigates nowhere", async () => {
+    const putCalls = await renderAndWaitForForm(makeProduct(true));
+
+    await submit();
+
+    await waitFor(() => expect(putCalls).toHaveLength(1));
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(dict.products.toastUpdated),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+    // Still the edit form, with its other panels intact.
+    expect(screen.getByLabelText(dict.productForm.slug)).toBeInTheDocument();
+  });
+
+  it("re-seeds untouched fields from the refetch rather than from the mount", async () => {
+    const product = makeProduct(true);
+    await renderAndWaitForForm(product);
+
+    let saved = false;
+    // Registered after the defaults — MSW gives the newest handler priority.
+    server.use(
+      // The server's answer changes after the write — the case a redirect used
+      // to hide and a stale form would now show forever.
+      http.get(`*/api/products/admin/${PRODUCT_ID}`, () =>
+        HttpResponse.json({
+          data: saved ? { ...product, stock: 42 } : product,
+        }),
+      ),
+      http.put(`*/api/products/${PRODUCT_ID}`, () => {
+        saved = true;
+        return HttpResponse.json({ data: product });
+      }),
+    );
+
+    await submit();
+
+    await waitFor(() => expect(saved).toBe(true));
+    // `values` + keepDirtyValues: the operator touched neither field, so both
+    // take the server's answer. A number, because the input is type="number".
+    await waitFor(() =>
+      expect(screen.getByLabelText(dict.productForm.stock)).toHaveValue(42),
+    );
+  });
+});
+
+/**
+ * TASK-427 — deleting from the edit page. Unlike the list row, this one has to
+ * leave: the URL it is on resolves to nothing once the product is tombstoned.
+ */
+describe("EditProductView — delete (TASK-427)", () => {
+  beforeEach(() => {
+    mockReplace.mockClear();
+  });
+
+  it("returns to the list after the server confirms the delete", async () => {
+    await renderAndWaitForForm(makeProduct(true));
+    let deleteCalls = 0;
+    server.use(
+      http.delete(`*/api/products/${PRODUCT_ID}`, () => {
+        deleteCalls += 1;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.deleteAction }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: dict.products.deleteConfirm }),
+    );
+
+    await waitFor(() => expect(deleteCalls).toBe(1));
+    // `replace`, not `push`: Back must not return to the edit URL of a product
+    // that no longer resolves.
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/products"));
+  });
+
+  it("links to the read-only card", async () => {
+    await renderAndWaitForForm(makeProduct(true));
+
+    expect(
+      screen.getByRole("link", { name: dict.products.cardAction }),
+    ).toHaveAttribute("href", `/products/${PRODUCT_ID}`);
   });
 });

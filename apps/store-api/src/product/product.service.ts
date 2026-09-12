@@ -175,6 +175,13 @@ export class ProductService {
       // it publicly would serve a sold-out-only page from — and into — the cache
       // entry for the unfiltered listing. Constant means it can never collide.
       outOfStock: undefined,
+      // Tombstones are admin-only (TASK-427), and forced off here for the same
+      // two reasons as `outOfStock` above: `toListParams` never carries the flag
+      // (so this is belt-and-braces, and says so in one line at the place a
+      // future edit would break it), and `buildProductListKey` does not know
+      // about it — honouring `?deleted=true` publicly would serve a page of
+      // withdrawn products from, and into, the unfiltered listing's cache entry.
+      deleted: undefined,
       categoryIds: await this.resolveSubtreeIds(query.categoryId),
     };
     const response = await this.listFromDb(params);
@@ -196,6 +203,10 @@ export class ProductService {
    * `categoryActiveOnly` is deliberately left unset (TASK-297): the operator must
    * still see — and be able to re-file — the products stranded by a category
    * deactivation, which is exactly the list they would vanish from.
+   *
+   * `deleted` (TASK-427) is forwarded here and NOWHERE else: this is the only
+   * read in the system that can return soft-deleted rows, and it returns them
+   * INSTEAD of the live ones, never mixed in.
    */
   async adminFindAll(query: ProductListQueryDto): Promise<AdminPaginatedProductsResponse> {
     const params: FindAllParams = {
@@ -206,6 +217,11 @@ export class ProductService {
       // with the public listing, and an SKU is an internal identifier that the
       // storefront search must not accept as a query.
       searchIncludesSku: true,
+      // TASK-427: the ONLY read in the system that may return tombstoned rows.
+      // Set here and nowhere else, for the same reason as the flag above —
+      // `toListParams` is shared with the public storefront listing, which must
+      // stay live-only whatever query string it is handed.
+      deleted: query.deleted,
     };
     return this.listFromDbForAdmin(params);
   }

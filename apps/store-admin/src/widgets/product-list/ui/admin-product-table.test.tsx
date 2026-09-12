@@ -6,15 +6,23 @@ import {
   waitFor,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
+import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { dict } from "@/shared/config";
 import { AdminProductTable } from "./admin-product-table";
 
 const mockReplace = jest.fn();
+// TASK-427: the «Видалені» view is a URL state, so the query string has to be
+// steerable per test — same ref pattern as AdminUserTable.
+const mockSearchParamsRef = { current: new URLSearchParams("") };
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
   usePathname: () => "/products",
-  useSearchParams: () => new URLSearchParams(""),
+  useSearchParams: () => mockSearchParamsRef.current,
 }));
+
+afterEach(() => {
+  mockSearchParamsRef.current = new URLSearchParams("");
+});
 
 function makeProductRow() {
   return {
@@ -51,12 +59,29 @@ function stubEndpoints() {
   );
 }
 
+/**
+ * TASK-427: the row's delete action calls `useAuth()`, which throws outside a
+ * provider — every render in this file therefore goes through the session
+ * fixture. Owner by default (the owner holds every permission implicitly), so
+ * the pre-existing sorting / filter / bulk assertions are unaffected.
+ */
+function renderTable(options: { permissions?: string[] } = {}) {
+  return renderWithProviders(
+    <WithAuth
+      isOwner={options.permissions === undefined}
+      permissions={options.permissions ?? []}
+    >
+      <AdminProductTable />
+    </WithAuth>,
+  );
+}
+
 describe("AdminProductTable — column sorting (TASK-147)", () => {
   beforeEach(() => mockReplace.mockClear());
 
   it("renders sortable Name/Price/Created headers", async () => {
     stubEndpoints();
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
 
     for (const label of [
@@ -72,7 +97,7 @@ describe("AdminProductTable — column sorting (TASK-147)", () => {
 
   it("updates the URL with the sort field on header click", async () => {
     stubEndpoints();
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
 
     await userEvent.click(
@@ -92,7 +117,7 @@ describe("AdminProductTable — stock column (TASK-254)", () => {
 
   it("renders the available / reserved / physical composite cell", async () => {
     stubEndpoints();
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     const nameCell = await screen.findByText("iPhone 15 Pro Case");
 
     const row = nameCell.closest("tr") as HTMLElement;
@@ -104,7 +129,7 @@ describe("AdminProductTable — stock column (TASK-254)", () => {
 
   it("sorts by stock (Вільно) when the column header is clicked", async () => {
     stubEndpoints();
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
 
     await userEvent.click(
@@ -122,7 +147,7 @@ describe("AdminProductTable — stock column (TASK-254)", () => {
 describe("AdminProductTable — mobile card layout (TASK-258)", () => {
   it("renders in card mode with per-cell labels", async () => {
     stubEndpoints();
-    const { container } = renderWithProviders(<AdminProductTable />);
+    const { container } = renderTable();
     await screen.findByText("iPhone 15 Pro Case");
 
     expect(container.querySelector('[data-slot="table"]')).toHaveClass(
@@ -140,7 +165,7 @@ describe("AdminProductTable — mobile card layout (TASK-258)", () => {
     const user = userEvent.setup();
     stubEndpoints();
 
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
 
     // Regression guard. `useRowSelection` and `useProductBulkStatus` both call
@@ -169,7 +194,7 @@ describe("AdminProductTable — photo column and filters (TASK-362)", () => {
   // column IS the operator's worklist.
   it("flags a product with no photo instead of showing an empty cell", async () => {
     stubEndpoints();
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
 
     expect(screen.getByText(dict.products.noPhoto)).toBeInTheDocument();
@@ -202,7 +227,7 @@ describe("AdminProductTable — photo column and filters (TASK-362)", () => {
         }),
       ),
     );
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
 
     expect(screen.queryByText(dict.products.noPhoto)).toBeNull();
@@ -229,7 +254,7 @@ describe("AdminProductTable — photo column and filters (TASK-362)", () => {
         }),
       ),
     );
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
 
     // After an import, 274 products share a name — the article number is what
@@ -243,7 +268,7 @@ describe("AdminProductTable — photo column and filters (TASK-362)", () => {
   // that is what makes a restock worklist a link the operator can keep.
   it("puts the status filter in the URL so a worklist is a shareable link", async () => {
     stubEndpoints();
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
 
     await userEvent.click(
@@ -259,7 +284,7 @@ describe("AdminProductTable — photo column and filters (TASK-362)", () => {
 
   it("puts the stock filter in the URL too", async () => {
     stubEndpoints();
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
 
     await userEvent.click(
@@ -316,7 +341,7 @@ describe("AdminProductTable — bulk move to group (TASK-423)", () => {
 
   it("offers the action only while rows are selected", async () => {
     stubEndpoints();
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
 
     // The bulk bar renders nothing at zero — an always-present bar of disabled
@@ -337,7 +362,7 @@ describe("AdminProductTable — bulk move to group (TASK-423)", () => {
   it("sends the selected ids and the chosen group", async () => {
     stubEndpoints();
     const bodies = stubGroupBulk();
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
     await selectTheRow();
 
@@ -363,7 +388,7 @@ describe("AdminProductTable — bulk move to group (TASK-423)", () => {
     // field, precisely so that an omission cannot be read as a destructive clear.
     stubEndpoints();
     const bodies = stubGroupBulk();
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
     await selectTheRow();
 
@@ -389,7 +414,7 @@ describe("AdminProductTable — bulk move to group (TASK-423)", () => {
   it("refuses to submit until a target is picked", async () => {
     stubEndpoints();
     const bodies = stubGroupBulk();
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
     await selectTheRow();
 
@@ -417,7 +442,7 @@ describe("AdminProductTable — bulk move to group (TASK-423)", () => {
       }),
     );
 
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
     await selectTheRow();
 
@@ -433,7 +458,7 @@ describe("AdminProductTable — bulk move to group (TASK-423)", () => {
   it("clears the selection once the server confirms", async () => {
     stubEndpoints();
     stubGroupBulk();
-    renderWithProviders(<AdminProductTable />);
+    renderTable();
     await screen.findByText("iPhone 15 Pro Case");
     await selectTheRow();
 
@@ -459,5 +484,172 @@ describe("AdminProductTable — bulk move to group (TASK-423)", () => {
         }),
       ).not.toBeInTheDocument(),
     );
+  });
+});
+
+/**
+ * TASK-427 — deleting from the row.
+ *
+ * `DELETE /api/products/:id` had existed since TASK-140, with a permission and a
+ * proper soft delete, and no button anywhere in the panel could reach it.
+ */
+describe("AdminProductTable — delete a product (TASK-427)", () => {
+  /** The list + categories + a counting DELETE handler for `product-1`. */
+  function stubDeletableRow() {
+    const counts = { list: 0, deletes: 0 };
+    server.use(
+      http.get("*/api/products/admin/list", () => {
+        counts.list += 1;
+        return HttpResponse.json({
+          data: [makeProductRow()],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        });
+      }),
+      http.get("*/api/categories", () =>
+        HttpResponse.json({
+          data: [{ id: "cat-1", name: "Cases" }],
+          meta: { total: 1, page: 1, limit: 100, totalPages: 1 },
+        }),
+      ),
+      http.delete("*/api/products/product-1", () => {
+        counts.deletes += 1;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    return counts;
+  }
+
+  const clickDelete = () =>
+    userEvent.click(
+      screen.getByRole("button", { name: dict.products.deleteAction }),
+    );
+
+  it("says what a soft delete actually does before asking to confirm", async () => {
+    stubDeletableRow();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    await clickDelete();
+
+    // The three facts an operator decides on: the order history survives, the
+    // slug and артикул are freed (so this is NOT «приховати»), and deactivation
+    // is the reversible action they may actually have wanted.
+    expect(
+      await screen.findByText(dict.products.deleteHeading),
+    ).toBeInTheDocument();
+    expect(screen.getByText(dict.products.deleteKeeps)).toBeInTheDocument();
+    expect(screen.getByText(dict.products.deleteFrees)).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.products.deleteAlternative),
+    ).toBeInTheDocument();
+  });
+
+  it("sends nothing while the confirm is open, and DELETEs once confirmed", async () => {
+    const counts = stubDeletableRow();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    await clickDelete();
+    expect(counts.deletes).toBe(0);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.deleteConfirm }),
+    );
+
+    await waitFor(() => expect(counts.deletes).toBe(1));
+    // The row has to leave the table: the list query is invalidated, not just
+    // the product's own cache entry.
+    await waitFor(() => expect(counts.list).toBeGreaterThan(1));
+  });
+
+  it("offers no delete control to a session without products:delete", async () => {
+    stubDeletableRow();
+    renderTable({ permissions: ["products:read"] });
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(
+      screen.queryByRole("button", { name: dict.products.deleteAction }),
+    ).toBeNull();
+  });
+
+  it("links the product name to its read-only card", async () => {
+    stubEndpoints();
+    renderTable();
+
+    expect(
+      await screen.findByRole("link", { name: "iPhone 15 Pro Case" }),
+    ).toHaveAttribute("href", "/products/product-1");
+  });
+});
+
+/**
+ * TASK-427 — finding what was deleted.
+ *
+ * Before this filter the repository hard-coded `deletedAt: null` on every admin
+ * read, so a deleted product was gone from the panel entirely: the operator had
+ * no way to confirm the delete had happened, and no way to see what was removed
+ * last week.
+ */
+describe("AdminProductTable — the deleted view (TASK-427)", () => {
+  /** Records the query string of every listing request. */
+  function stubListRecordingQueries() {
+    const queries: string[] = [];
+    server.use(
+      http.get("*/api/products/admin/list", ({ request }) => {
+        queries.push(new URL(request.url).search);
+        return HttpResponse.json({
+          data: [makeProductRow()],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        });
+      }),
+      http.get("*/api/categories", () =>
+        HttpResponse.json({
+          data: [{ id: "cat-1", name: "Cases" }],
+          meta: { total: 1, page: 1, limit: 100, totalPages: 1 },
+        }),
+      ),
+    );
+    return queries;
+  }
+
+  it("asks for live products by default — the flag is absent, not false", async () => {
+    const queries = stubListRecordingQueries();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(queries[0]).not.toContain("deleted");
+  });
+
+  it("switches the listing to tombstones on ?deleted=only", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    const queries = stubListRecordingQueries();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(queries[0]).toContain("deleted=true");
+    expect(screen.getByText(dict.products.deletedNotice)).toBeInTheDocument();
+    expect(screen.getByText(dict.products.deletedBadge)).toBeInTheDocument();
+  });
+
+  it("offers no write on a tombstoned row — it accepts none", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubListRecordingQueries();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    // No card link (every by-id read excludes the row → a 404), no edit link,
+    // no delete, no status toggle and nothing to select for a bulk action.
+    expect(
+      screen.queryByRole("link", { name: "iPhone 15 Pro Case" }),
+    ).toBeNull();
+    expect(screen.queryByRole("link", { name: dict.common.edit })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: dict.products.deleteAction }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("checkbox", {
+        name: dict.products.bulk.selectRow("iPhone 15 Pro Case"),
+      }),
+    ).toBeDisabled();
   });
 });

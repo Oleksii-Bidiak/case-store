@@ -20,6 +20,10 @@ export const PERM = {
 
   productsRead: "products:read",
   productsWrite: "products:write",
+  // TASK-427: the delete action in the product row / edit page / card. Its own
+  // key in the backend catalogue since TASK-140 — a manager who may edit prices
+  // is not automatically a manager who may retire a position.
+  productsDelete: "products:delete",
   categoriesWrite: "categories:write",
   brandsWrite: "brands:write",
   devicesWrite: "devices:write",

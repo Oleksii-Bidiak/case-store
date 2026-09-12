@@ -9,10 +9,12 @@ import { useProductControllerAdminFindAll } from "@/entities/product";
 import { useProductGroupControllerFindAll } from "@/entities/product-group";
 import { ProductStatusToggle } from "@/features/product-status-toggle";
 import { useProductBulkStatus } from "@/features/product-bulk-status";
+import { ProductDeleteAction } from "@/features/product-delete";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { useRowSelection } from "@/shared/lib/use-row-selection";
 import {
+  Badge,
   BulkActionsBar,
   Button,
   Checkbox,
@@ -60,6 +62,13 @@ import { MoveToGroupDialog } from "./move-to-group-dialog";
  * group, so nine positions used to cost nine full form saves with the family
  * half-formed in between.
  *
+ * TASK-427 added the three things a catalogue list could not do: open a product
+ * without opening its form (the name links to the read-only card), remove one
+ * (the row's delete action, behind `products:delete`), and find one that was
+ * removed (the «Видалені» filter). The deleted view is read-only by
+ * construction — a tombstoned product accepts no write, so its row carries no
+ * link, no status toggle, no checkbox and no actions.
+ *
  * `LiveAnnouncer` MUST wrap the table rather than sit inside it — the same split
  * `AdminCategoryTree` and `MessageInbox` make, for the same reason.
  * `useRowSelection` and `useProductBulkStatus` both call `useAnnouncer()`, and a
@@ -102,6 +111,12 @@ function AdminProductTableView() {
   // rather than a set of clicks the operator repeats every morning.
   const statusParam = searchParams.get("status") ?? "";
   const stockParam = searchParams.get("stock") ?? "";
+  // TASK-427: soft-deleted products were unreachable from every admin read —
+  // `DELETE` was an action with no way back to its own result. `?deleted=only`
+  // swaps the listing over to the tombstones; anything else lists the live
+  // products, which is what the operator wants 99 visits out of 100.
+  const deletedParam = searchParams.get("deleted") ?? "";
+  const isDeletedView = deletedParam === "only";
 
   const { data, isLoading, isFetching, isError, refetch } =
     useProductControllerAdminFindAll({
@@ -117,6 +132,9 @@ function AdminProductTableView() {
             ? false
             : undefined,
       outOfStock: stockParam === "out" ? true : undefined,
+      // Sent only when asked for: the API treats an absent flag as "live
+      // products", and the storefront listing ignores it entirely.
+      deleted: isDeletedView ? true : undefined,
     });
 
   const categoriesQuery = useCategoryControllerGetRootCategories({
@@ -147,6 +165,15 @@ function AdminProductTableView() {
       label: dict.products.filterStock,
       allLabel: dict.products.filterStockAll,
       options: [{ value: "out", label: dict.products.filterStockOut }],
+    },
+    // TASK-427. Two values, not three: the API returns the live rows or the
+    // tombstones, never a mixed page — `ProductEntity` carries no per-row
+    // deleted marker, so a mixed listing could not be read.
+    {
+      param: "deleted",
+      label: dict.products.filterDeleted,
+      allLabel: dict.products.filterDeletedAll,
+      options: [{ value: "only", label: dict.products.filterDeletedOnly }],
     },
   ];
 
@@ -201,11 +228,15 @@ function AdminProductTableView() {
         filters={
           <TableFilters
             filters={filters}
-            values={{ status: statusParam, stock: stockParam }}
+            values={{
+              status: statusParam,
+              stock: stockParam,
+              deleted: deletedParam,
+            }}
           />
         }
         selectAll={
-          products.length > 0 ? (
+          products.length > 0 && !isDeletedView ? (
             <Checkbox
               checked={selection.headerChecked}
               onCheckedChange={selection.toggleAll}
@@ -215,6 +246,17 @@ function AdminProductTableView() {
           ) : null
         }
       />
+
+      {/* Every bulk action and every row action writes to a product, and a
+          tombstoned product accepts no writes at all (`findById` excludes it, so
+          activate / move-to-group / edit all 404). The banner says why the row
+          actions are missing rather than leaving an operator clicking at
+          nothing. */}
+      {isDeletedView && (
+        <p className="rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          {dict.products.deletedNotice}
+        </p>
+      )}
 
       <BulkActionsBar
         selectedCount={selection.selectedCount}
@@ -278,7 +320,7 @@ function AdminProductTableView() {
                 <TableSelectHead
                   checked={selection.headerChecked}
                   onCheckedChange={selection.toggleAll}
-                  disabled={isMutating}
+                  disabled={isMutating || isDeletedView}
                   label={dict.common.table.selectAll}
                 />
                 <TableHead className="w-16">{dict.products.colPhoto}</TableHead>
@@ -334,7 +376,7 @@ function AdminProductTableView() {
                         ? selection.extendTo(product.id)
                         : selection.toggle(product.id)
                     }
-                    disabled={isMutating}
+                    disabled={isMutating || isDeletedView}
                     label={dict.products.bulk.selectRow(product.name)}
                   />
                   {/* Thumbnail + a «без фото» chip (TASK-362). `primaryImage`
@@ -361,7 +403,21 @@ function AdminProductTableView() {
                     label={dict.products.colName}
                     className="font-medium"
                   >
-                    <span className="block">{product.name}</span>
+                    {/* TASK-427: the name is the way into the read-only card —
+                        the one place an operator can LOOK at a product without
+                        opening a form full of inputs. A tombstoned product has
+                        no card (every by-id read excludes it), so its name is
+                        plain text rather than a link to a 404. */}
+                    {isDeletedView ? (
+                      <span className="block">{product.name}</span>
+                    ) : (
+                      <Link
+                        href={`/products/${product.id}`}
+                        className="block hover:text-primary hover:underline"
+                      >
+                        {product.name}
+                      </Link>
+                    )}
                     <span className="text-xs text-muted-foreground">
                       {[product.sku, product.brand?.name]
                         .filter(Boolean)
@@ -378,10 +434,16 @@ function AdminProductTableView() {
                     {formatCurrency(product.price)}
                   </TableCell>
                   <TableCell label={dict.products.colStatus}>
-                    <ProductStatusToggle
-                      productId={product.id}
-                      isActive={product.isActive}
-                    />
+                    {isDeletedView ? (
+                      <Badge variant="secondary">
+                        {dict.products.deletedBadge}
+                      </Badge>
+                    ) : (
+                      <ProductStatusToggle
+                        productId={product.id}
+                        isActive={product.isActive}
+                      />
+                    )}
                   </TableCell>
                   <TableCell
                     label={dict.products.colStock}
@@ -412,11 +474,26 @@ function AdminProductTableView() {
                     label={dict.common.actions}
                     className="text-right max-md:text-left"
                   >
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/products/${product.id}/edit`}>
-                        {dict.common.edit}
-                      </Link>
-                    </Button>
+                    {isDeletedView ? (
+                      <span className="text-sm text-muted-foreground">
+                        {dict.products.cardEmptyValue}
+                      </span>
+                    ) : (
+                      <span className="inline-flex flex-wrap justify-end gap-2 max-md:justify-start">
+                        <Button asChild variant="outline" size="sm">
+                          <Link href={`/products/${product.id}/edit`}>
+                            {dict.common.edit}
+                          </Link>
+                        </Button>
+                        {/* Renders nothing without `products:delete` — the
+                            server guard is the real boundary, this only keeps a
+                            manager from meeting a 403 they cannot act on. */}
+                        <ProductDeleteAction
+                          productId={product.id}
+                          name={product.name}
+                        />
+                      </span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

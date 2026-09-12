@@ -17,6 +17,7 @@ import {
   useProductControllerFindById,
   useProductControllerUpdate,
 } from "@/entities/product";
+import { ProductDeleteAction } from "@/features/product-delete";
 import { ProductImageManager } from "@/features/product-image-manager";
 import { ProductDeviceCompatManager } from "@/features/product-device-compat";
 import { ProductAddonDeltaPanel } from "@/features/product-addon-delta-panel";
@@ -32,8 +33,33 @@ interface EditProductViewProps {
 
 /**
  * Edit-product page body: fetches the product by UUID to pre-populate the form,
- * then wires the update mutation, cache invalidation, toasts, and redirect.
+ * then wires the update mutation, cache invalidation and toasts.
  * A missing product (404) redirects back to the list.
+ *
+ * STAYING PUT AFTER A SAVE (TASK-427). Saving used to `router.push("/products")`
+ * inside `onSuccess`, so an operator making three edits to one product navigated
+ * back three times — and everything below the form (images, structured specs,
+ * add-on deltas, device compatibility) saves through its own endpoints, so the
+ * redirect also threw away the half-finished page they were actually working on.
+ *
+ * Removing it puts the burden on re-seeding, which is what `docs/conventions/
+ * forms.md` Rule 2 exists for — a redirect hides a stale form, it does not fix
+ * one. Re-checked here, and the pieces were already in place:
+ *
+ *   - `ProductForm` is a Rule 2a form: `values` + `resetOptions:
+ *     { keepDirtyValues: true }`, not bare `defaultValues`. When the
+ *     invalidation below lands, every field the operator did NOT touch takes the
+ *     server's value; the fields they did touch keep what they just saved, which
+ *     is by definition what the server now holds (the mutation returned 200).
+ *   - Everything outside the form reads `data.data` directly, so the publish
+ *     panel, the stock split and the specs editor all re-render from the
+ *     refetch rather than from a snapshot taken at mount.
+ *
+ * The one thing `keepDirtyValues` cannot show is the server's own rewriting of a
+ * field the operator personally edited — leaving the slug blank makes the API
+ * generate one, and the (dirty) blank box stays blank. That is not a stale
+ * value: the field means "auto-generate", the live preview under it shows the
+ * slug the server would derive, and saving again derives the same one.
  */
 export function EditProductView({ productId }: EditProductViewProps) {
   const router = useRouter();
@@ -72,6 +98,9 @@ export function EditProductView({ productId }: EditProductViewProps) {
       },
       {
         onSuccess: () => {
+          // Unchanged, deliberately: the list must lose the stale row and this
+          // product's own detail cache must be refetched. The refetch is what
+          // makes staying on the page safe — see the note above the component.
           void queryClient.invalidateQueries({
             queryKey: getProductControllerAdminFindAllQueryKey(),
           });
@@ -79,7 +108,11 @@ export function EditProductView({ productId }: EditProductViewProps) {
             queryKey: getProductControllerFindByIdQueryKey(productId),
           });
           toast.success(dict.products.toastUpdated);
-          router.push("/products");
+          // TASK-427: no `router.push("/products")` here any more. Three edits
+          // to one product used to cost three trips back through the list, and
+          // the redirect also threw away the page the operator was working on
+          // (images, specs, add-ons, device compatibility all live below the
+          // form and all saved through their own endpoints).
         },
         onError: (mutationError) => {
           // TASK-397: the generic toast swallowed the server's own explanation,
@@ -108,14 +141,32 @@ export function EditProductView({ productId }: EditProductViewProps) {
             {dict.products.editHeading}
           </h2>
           {product && (
-            <Link
-              href={`/products/preview/${product.slug}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm font-medium text-primary hover:underline"
-            >
-              {dict.products.previewLink}
-            </Link>
+            <div className="flex flex-wrap items-center gap-4">
+              {/* TASK-427: the read-only card, linked both ways. */}
+              <Link
+                href={`/products/${productId}`}
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                {dict.products.cardAction}
+              </Link>
+              <Link
+                href={`/products/preview/${product.slug}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                {dict.products.previewLink}
+              </Link>
+              {/* Deleting from here leaves nothing to edit, so unlike the list
+                  row this one navigates away. `replace`, not `push`: the edit
+                  URL of a deleted product resolves to nothing, and Back must not
+                  return to it. */}
+              <ProductDeleteAction
+                productId={productId}
+                name={product.name}
+                onDeleted={() => router.replace("/products")}
+              />
+            </div>
           )}
         </div>
       </div>

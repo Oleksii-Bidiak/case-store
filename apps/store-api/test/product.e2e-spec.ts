@@ -69,6 +69,9 @@ describe('ProductController (e2e)', () => {
     deactivate: jest.fn(),
     activate: jest.fn(),
     setActiveMany: jest.fn(),
+    // TASK-427: DELETE /api/products/:id finally has a caller in the panel, so
+    // the soft-delete path is exercised here too.
+    softDelete: jest.fn(),
     // TASK-254: adminFindAll/findById/preview enrich with the derived reserved
     // aggregate; default to an empty map (no reservations) for these mocked reads.
     getReservedQtyByProductId: jest.fn().mockResolvedValue(new Map<string, number>()),
@@ -300,6 +303,23 @@ describe('ProductController (e2e)', () => {
         expect.objectContaining({ isActive: true }),
       );
     });
+
+    // TASK-427: the admin listing gained a tombstone filter. The DTO is shared
+    // with this public endpoint, so `?deleted=true` is now a query string any
+    // visitor can type — and a soft-deleted product is one whose slug and sku
+    // have been mangled and handed to whatever product took its place. The
+    // public service path must drop the flag, not forward it.
+    it('ignores ?deleted=true from a public caller (tombstones never leak)', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get(`/api/products?deleted=true&search=task427-public-${Date.now()}`)
+        .expect(200);
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ deleted: undefined, isActive: true }),
+      );
+    });
   });
 
   // ─── GET /api/products/admin/list (admin, TASK-230) ──────────────────────────
@@ -348,6 +368,53 @@ describe('ProductController (e2e)', () => {
 
       expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ isActive: false }),
+      );
+    });
+
+    // ── the tombstone filter (TASK-427) ──────────────────────────────────────
+
+    it('hides soft-deleted products unless they are asked for', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/products/admin/list')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ deleted: undefined }),
+      );
+    });
+
+    it('forwards deleted=true so the operator can find what they removed', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/products/admin/list?deleted=true')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ deleted: true }),
+      );
+    });
+
+    // The `enableImplicitConversion` trap (TASK-150 B5): `Boolean('false')` is
+    // `true`, so without the DTO's `obj[key]` transform this request would list
+    // ONLY the tombstones — the exact opposite of what it says.
+    it('reads deleted=false as false, not as a truthy string', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/products/admin/list?deleted=false')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ deleted: false }),
       );
     });
   });
@@ -985,6 +1052,64 @@ describe('ProductController (e2e)', () => {
         .patch('/api/products/nonexistent-id/activate')
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
+    });
+  });
+
+  // ─── DELETE /api/products/:id (admin, soft delete) ───────────────────────────
+  //
+  // The route has existed since TASK-140 and had no caller and no e2e case:
+  // TASK-427 gave the admin panel a delete button, so the contract it now
+  // depends on is pinned here — 204 with no body, a tombstone stamped through
+  // `softDelete` with BOTH unique columns mangled, and 404 rather than a silent
+  // success on an id that is already gone.
+  describe('DELETE /api/products/:id', () => {
+    it('should return 401 without auth token', async () => {
+      await request(app.getHttpServer()).delete('/api/products/product-e2e-1').expect(401);
+    });
+
+    it('should return 403 for non-admin user', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .delete('/api/products/product-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('soft-deletes with a mangled slug AND sku, and answers 204 with no body', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      productRepositoryMock.softDelete.mockResolvedValue({
+        ...testProduct,
+        isActive: false,
+        slug: `deleted:${testProduct.id}:${testProduct.slug}`,
+        sku: `deleted:${testProduct.id}:${testProduct.sku}`,
+        deletedAt: new Date('2026-09-12T10:00:00.000Z'),
+      });
+
+      const response = await request(app.getHttpServer())
+        .delete(`/api/products/${testProduct.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(204);
+
+      expect(response.body).toEqual({});
+      expect(productRepositoryMock.softDelete).toHaveBeenCalledWith(
+        testProduct.id,
+        `deleted:${testProduct.id}:${testProduct.slug}`,
+        `deleted:${testProduct.id}:${testProduct.sku}`,
+      );
+    });
+
+    it('should return 404 for an unknown or already deleted product', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .delete('/api/products/nonexistent-id')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+
+      expect(productRepositoryMock.softDelete).not.toHaveBeenCalled();
     });
   });
 });

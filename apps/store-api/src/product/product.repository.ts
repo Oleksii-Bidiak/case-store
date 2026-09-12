@@ -98,6 +98,21 @@ export interface FindAllParams {
   inStockFirst?: boolean;
   /** Keep only positions with zero free-to-sell stock (TASK-362). */
   outOfStock?: boolean;
+  /**
+   * Invert the tombstone filter: list the SOFT-DELETED products instead of the
+   * live ones (TASK-427).
+   *
+   * OFF by default and set ONLY from `ProductService.adminFindAll`, exactly like
+   * `searchIncludesSku` above and for a stricter version of the same reason:
+   * this `findAll` is shared by the public storefront listing and the admin
+   * table, and a deleted product is one whose slug and sku have already been
+   * mangled and freed for reuse — publishing those rows would resurrect
+   * withdrawn positions on the storefront. A deleted product had to be reachable
+   * from SOMEWHERE, though: before this flag the admin panel had no read at all
+   * that could see one, so `DELETE` was an action with no way back to its own
+   * result.
+   */
+  deleted?: boolean;
   minPrice?: number;
   maxPrice?: number;
   search?: string;
@@ -515,9 +530,16 @@ export class ProductRepository {
     } = params;
     const skip = (page - 1) * limit;
 
-    // Build the where clause from optional filters. Soft-deleted products
-    // (tombstoned) must never appear in any listing, regardless of filters.
-    const where: Prisma.ProductWhereInput = { deletedAt: null };
+    // Build the where clause from optional filters. The tombstone filter is
+    // applied FIRST and is never absent: a listing either shows the live
+    // products (`deletedAt: null` — every public read, and the admin default) or
+    // exactly the soft-deleted ones (`deletedAt: { not: null }` — the admin's
+    // TASK-427 «Лише видалені» filter). There is deliberately no "both" mode:
+    // a mixed page cannot be read without a per-row deleted marker, and the
+    // entity has none.
+    const where: Prisma.ProductWhereInput = {
+      deletedAt: params.deleted ? { not: null } : null,
+    };
 
     // Subtree rollup (TASK-236): the service passes the expanded category id set
     // (self + descendants), matched with `IN (...)` so a parent category returns

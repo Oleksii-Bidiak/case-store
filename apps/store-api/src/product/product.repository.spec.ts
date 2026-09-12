@@ -183,6 +183,62 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       expect(countArgs.where).toEqual(expect.objectContaining({ deletedAt: null }));
     });
 
+    // ── Tombstone filter, admin only (TASK-427) ──────────────────────────────
+    //
+    // The `deleted` flag INVERTS the tombstone filter rather than relaxing it:
+    // a listing shows the live products or exactly the deleted ones, never a
+    // mixed page. The public storefront listing calls this very method, so the
+    // "not set" case below is the one that keeps withdrawn products — whose slug
+    // and sku have been mangled and freed for reuse — off the shop.
+    describe('deleted filter (TASK-427)', () => {
+      beforeEach(() => {
+        prismaMock.product.findMany.mockResolvedValue([]);
+        prismaMock.product.count.mockResolvedValue(0);
+      });
+
+      const whereOf = () => prismaMock.product.findMany.mock.calls[0][0].where;
+      const countWhereOf = () => prismaMock.product.count.mock.calls[0][0].where;
+
+      it('keeps deletedAt: null when the flag is absent (the public path)', async () => {
+        await repository.findAll({ page: 1, limit: 20, isActive: true, categoryActiveOnly: true });
+
+        expect(whereOf()).toEqual(expect.objectContaining({ deletedAt: null }));
+        expect(countWhereOf()).toEqual(expect.objectContaining({ deletedAt: null }));
+      });
+
+      it('keeps deletedAt: null when the flag is explicitly false', async () => {
+        await repository.findAll({ page: 1, limit: 20, deleted: false });
+
+        expect(whereOf()).toEqual(expect.objectContaining({ deletedAt: null }));
+        expect(countWhereOf()).toEqual(expect.objectContaining({ deletedAt: null }));
+      });
+
+      it('asks for tombstones only when the flag is set (the admin path)', async () => {
+        await repository.findAll({ page: 1, limit: 20, deleted: true });
+
+        expect(whereOf()).toEqual(expect.objectContaining({ deletedAt: { not: null } }));
+        expect(countWhereOf()).toEqual(expect.objectContaining({ deletedAt: { not: null } }));
+      });
+
+      it('composes with the other filters instead of replacing them', async () => {
+        await repository.findAll({
+          page: 1,
+          limit: 20,
+          deleted: true,
+          categoryIds: ['cat-1'],
+          search: 'чохол',
+        });
+
+        expect(whereOf()).toEqual(
+          expect.objectContaining({
+            deletedAt: { not: null },
+            categoryId: { in: ['cat-1'] },
+          }),
+        );
+        expect(whereOf().OR).toHaveLength(2);
+      });
+    });
+
     // ── Search by article number, admin only (TASK-406 / AD-PROD-08) ──
     //
     // `findAll` is ONE method serving both the public storefront listing and the
