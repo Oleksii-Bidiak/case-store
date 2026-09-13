@@ -147,6 +147,68 @@ describe("TableSearch — url mode", () => {
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
+  it("kills the in-flight debounce on Escape — no resurrected term", async () => {
+    mockSearchParams = new URLSearchParams("search=usb");
+    const user = typist();
+    renderWithProviders(<TableSearch value="usb" />);
+
+    // The operator refines the committed term, then changes their mind while
+    // the 300 ms window is still open.
+    await user.type(box(), "-c");
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+    await user.keyboard("{Escape}");
+
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("/products");
+
+    // The assertion that matters: nothing else lands once the abandoned window
+    // would have elapsed. An uncancelled timer fired here with "usb-c", wrote
+    // `?search=usb-c` and advanced `lastPushedRef` with it — so the re-seed
+    // effect saw URL and ref agree and LEFT THE BOX EMPTY over a list filtered
+    // by the term the operator had just cancelled.
+    settle();
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(box()).toHaveValue("");
+  });
+
+  it("makes Escape silent — not dead — before the first commit", async () => {
+    const user = typist();
+    renderWithProviders(<TableSearch value="" />);
+
+    await user.type(box(), "usb");
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+    await user.keyboard("{Escape}");
+    settle();
+
+    // Nothing was ever committed, so there is nothing to clear — but the
+    // pending timer must not sneak `?search=usb` in afterwards either, which is
+    // what made Escape read as a dead key.
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(box()).toHaveValue("");
+  });
+
+  it("never commits a term abandoned inside one debounce window", async () => {
+    const user = typist();
+    renderWithProviders(<TableSearch value="" />);
+
+    // Type and clear without ever letting the debounce fire — the shape of an
+    // operator who starts typing, thinks better of it, and selects-all-deletes.
+    await user.type(box(), "sa");
+    await user.clear(box());
+    settle();
+
+    // The old keystroke-time guard compared the emptied box against
+    // `lastPushedRef`, which the pending timer had not advanced yet, found them
+    // equal, skipped the empty commit and left that timer standing: the list
+    // narrowed to "sa" under an empty box.
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(box()).toHaveValue("");
+  });
+
   it("honours a custom param name", async () => {
     const user = typist();
     renderWithProviders(<TableSearch value="" param="q" />);

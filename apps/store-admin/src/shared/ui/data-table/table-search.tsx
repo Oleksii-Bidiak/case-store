@@ -145,8 +145,22 @@ function SearchField({
   // filter, browser back/forward, a pasted link).
   const lastPushedRef = React.useRef<string | undefined>(normalise(value));
 
+  // The only place a commit is decided, and the comparison against
+  // `lastPushedRef` deliberately happens HERE — at FIRE time — rather than at
+  // the keystroke that schedules the debounce. `lastPushedRef` advances only
+  // when a send actually fires, so a keystroke-time guard reads a ref that the
+  // still-pending timer has not updated yet: emptying the box mid-window
+  // compared equal to it (`undefined` vs the not-yet-written `undefined`), the
+  // empty commit was SKIPPED, and the surviving timer then wrote the abandoned
+  // term. Typing "s", "sa", "s", "" inside one 300 ms window left an empty box
+  // over a list filtered by "s" — and the re-seed effect below cannot correct
+  // that, because by then the URL and the ref agree.
   const send = React.useCallback(
     (next: string | undefined) => {
+      // Nothing to change — a trailing space, a term typed and retyped inside
+      // one window, or an Escape on a box that never committed anything.
+      // Skipping costs nothing; committing costs a navigation and the page.
+      if (next === lastPushedRef.current) return;
       lastPushedRef.current = next;
       commit(next);
     },
@@ -180,18 +194,31 @@ function SearchField({
         onChange={(event) => {
           const raw = event.target.value;
           setText(raw);
-          const next = normalise(raw);
-          // Skip a commit that would change nothing — e.g. typing a trailing
-          // space, which would otherwise cost a navigation.
-          if (next !== lastPushedRef.current) debouncedSend(next);
+          // Scheduled UNCONDITIONALLY: every keystroke must replace the pending
+          // timer, and `send` decides at fire time whether the needle actually
+          // changed. A guard here skipped the reschedule instead, which left the
+          // previous keystroke's timer standing and let it commit a term the
+          // operator had already deleted — see the note on `send`.
+          debouncedSend(normalise(raw));
         }}
         onKeyDown={(event) => {
           if (event.key !== "Escape") return;
           // Escape clears NOW rather than in 300 ms: it is an explicit command,
           // not typing, and a delayed clear reads as a dropped keypress.
           event.preventDefault();
+          // …and clearing NOW is only half of it: the keystrokes just before
+          // Escape are still in flight, and a debounce that is not cancelled
+          // fires ~300 ms later with the term the operator cancelled. It then
+          // re-writes `?search=` AND advances `lastPushedRef` to it, so the
+          // re-seed effect above finds URL and ref in agreement and leaves the
+          // box empty over a filtered list — no chip, no other on-screen cause.
+          // On the `mode="local"` tables the resurrected needle also re-locks
+          // drag reordering, since a filtered view cannot send a full ordering.
+          debouncedSend.cancel();
           setText("");
-          if (lastPushedRef.current !== undefined) send(undefined);
+          // `send` no-ops when there is nothing committed to clear, so Escape in
+          // a box that never reached the URL is silent rather than a navigation.
+          send(undefined);
         }}
       />
     </div>
