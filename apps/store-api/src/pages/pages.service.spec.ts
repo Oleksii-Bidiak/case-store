@@ -4,7 +4,9 @@ import { PageKind, Prisma, PublishStatus } from '@prisma/client';
 import { PageRepository } from './pages.repository';
 import { PageService } from './pages.service';
 import { PageEntity } from './entities';
+import { PAGE_ROOT_PATHS } from './hub-routes';
 import { RevalidationNotifier } from '../publishing';
+import { ReorderNotFoundError, ReorderStaleError } from '../common/reorder';
 
 const mockPage = {
   id: 'page-uuid-1',
@@ -45,6 +47,7 @@ const pageRepositoryMock = {
   publish: jest.fn(),
   unpublish: jest.fn(),
   delete: jest.fn(),
+  reorderAll: jest.fn(),
 };
 
 const revalidationMock = { revalidate: jest.fn() };
@@ -120,6 +123,42 @@ describe('PageService', () => {
       expect(pageRepositoryMock.findAllAdmin).toHaveBeenCalledWith(
         expect.objectContaining({ search: 'достав' }),
       );
+    });
+
+    /**
+     * TASK-429 / review finding #12. `page` and `limit` became independently optional in
+     * TASK-428, and the two sides then disagreed about what a bare `?page=2` means: the
+     * repository sliced with its DEFAULT_ADMIN_PAGE_SIZE while the meta fell back to
+     * `limit = total`. With 45 rows the response carried rows 21-40 under
+     * `{ page: 2, limit: 45, totalPages: 1 }` — the panel renders "сторінка 2 з 1" and
+     * every row past the first page is unreachable. The meta must describe the slice the
+     * repository actually took.
+     */
+    it('reports the repository default page size for ?page=2 with no limit', async () => {
+      pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [mockPage], total: 45 });
+
+      const result = await service.findAllAdmin({ page: 2 });
+
+      expect(result.meta).toEqual({ total: 45, page: 2, limit: 20, totalPages: 3 });
+    });
+
+    it('keeps the complete-list meta when NEITHER page nor limit is given', async () => {
+      pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [mockPage, draftPage], total: 2 });
+
+      const result = await service.findAllAdmin({});
+
+      // One page holding everything — the mode the reorder UI depends on.
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
+    });
+
+    // `limit` alone is already a paginated read in the repository (`page ?? 1`), so the
+    // meta must not fall back to `total` there either.
+    it('honours a bare ?limit= as page 1 of that size', async () => {
+      pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [mockPage], total: 45 });
+
+      const result = await service.findAllAdmin({ limit: 10 });
+
+      expect(result.meta).toEqual({ total: 45, page: 1, limit: 10, totalPages: 5 });
     });
   });
 
@@ -475,6 +514,50 @@ describe('PageService', () => {
       expect(pageRepositoryMock.delete).toHaveBeenCalledWith('page-uuid-1');
     });
   });
+
+  // ─── reorder (TASK-428) ────────────────────────────────────────────────────
+
+  describe('reorder', () => {
+    it('returns the refreshed COMPLETE list with meta and revalidates the /legal hub', async () => {
+      pageRepositoryMock.reorderAll.mockResolvedValue({ pages: [mockPage, draftPage], total: 2 });
+
+      const result = await service.reorder({ orderedIds: ['page-uuid-1', 'page-uuid-2'] });
+
+      expect(pageRepositoryMock.reorderAll).toHaveBeenCalledWith(['page-uuid-1', 'page-uuid-2']);
+      expect(result.data[0]).toBeInstanceOf(PageEntity);
+      // The unpaginated shape: one page holding everything (the panel writes this
+      // response straight into the list query's cache).
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
+      // The hubs only: a reorder changes the sequence a hub renders, never the
+      // content of any single document route. Both hubs, not just /legal —
+      // TASK-435 gave pages a second surface, and this list is where that is
+      // kept honest.
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith({
+        tags: ['pages'],
+        paths: [...PAGE_ROOT_PATHS],
+      });
+    });
+
+    it('maps REORDER_STALE onto 409 with the stable code on the wire', async () => {
+      pageRepositoryMock.reorderAll.mockRejectedValue(new ReorderStaleError());
+
+      await expect(service.reorder({ orderedIds: ['page-uuid-1'] })).rejects.toMatchObject({
+        status: 409,
+        response: { error: 'REORDER_STALE' },
+      });
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+
+    it('maps REORDER_NOT_FOUND onto 404 with the stable code on the wire', async () => {
+      pageRepositoryMock.reorderAll.mockRejectedValue(new ReorderNotFoundError());
+
+      await expect(service.reorder({ orderedIds: ['ghost'] })).rejects.toMatchObject({
+        status: 404,
+        response: { error: 'REORDER_NOT_FOUND' },
+      });
+    });
+  });
+
   // TASK-435 — `kind` is what keeps /legal and /info from bleeding into each
   // other, and what keeps a HUB row (meta tags for an existing listing route)
   // from ever answering as a document. The rule is enforced in ONE place — the

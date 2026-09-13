@@ -4,12 +4,13 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   CarouselForm,
   carouselFormValuesToUpdateDto,
   type CarouselFormInput,
   type CarouselFormValues,
+  type CarouselSourceValue,
 } from "@/features/carousel-form";
 import { CarouselItemPicker } from "@/features/carousel-item-picker";
 import {
@@ -20,6 +21,7 @@ import {
   type CarouselEntity,
 } from "@/entities/carousel";
 import { dict } from "@/shared/config";
+import { toKyivDateTimeLocal } from "@/shared/lib";
 
 interface EditCarouselViewProps {
   carouselId: string;
@@ -33,6 +35,10 @@ interface EditCarouselViewProps {
  * source select value — flipping the select shows/hides the panel before
  * saving (client-side gate; the backend accepts staged item writes on any
  * source, they are inert until the source is MANUAL).
+ *
+ * AD-CNT-25 (TASK-429): every OTHER source now renders
+ * {@link AutoSourceItemsNotice} instead of nothing, so "no picker" reads as
+ * "this carousel fills itself" rather than as a broken screen.
  */
 export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
   const router = useRouter();
@@ -110,11 +116,47 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
           renderItemsSection={(source) =>
             source === "MANUAL" ? (
               <CarouselItemPicker carouselId={carouselId} />
-            ) : null
+            ) : (
+              <AutoSourceItemsNotice source={source} />
+            )
           }
         />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The panel that stands where the MANUAL item picker would be for every OTHER
+ * source (AD-CNT-25, TASK-429).
+ *
+ * Until now this slot rendered `null`, and that silence was read as a bug: the
+ * operator switched a carousel to «Хіти продажів», found no product list and no
+ * explanation, and reported that reordering was broken. Nothing was broken — an
+ * automatic carousel has no hand-made order to edit — but a screen that omits the
+ * section cannot say so. This says it, names the source that is in charge, and
+ * spells out the one action that brings the picker back.
+ *
+ * Deliberately NOT a disabled `CarouselItemPicker`: that component fetches the
+ * carousel's items and runs a product search, and a greyed-out search box that
+ * cannot be used is a worse answer than a sentence explaining why it is absent.
+ */
+function AutoSourceItemsNotice({ source }: { source: CarouselSourceValue }) {
+  return (
+    <section
+      aria-label={dict.carouselItems.heading}
+      className="flex max-w-2xl flex-col gap-2 rounded-lg border border-dashed border-border bg-muted/20 p-4"
+    >
+      <h3 className="text-lg font-semibold text-foreground">
+        {dict.carouselItems.autoHeading}
+      </h3>
+      <p className="text-sm text-muted-foreground">
+        {dict.carouselItems.autoHint(dict.carouselForm.sourceOptions[source])}
+      </p>
+      <p className="text-sm text-muted-foreground">
+        {dict.carouselItems.autoSwitchHint}
+      </p>
+    </section>
   );
 }
 
@@ -130,20 +172,13 @@ function mapCarouselToFormValues(
     itemLimit: String(carousel.itemLimit),
     sortOrder: String(carousel.sortOrder),
     status: carousel.status,
-    // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant.
+    // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant,
+    // in KYIV time. The local `toDateTimeLocal` this replaces read the BROWSER's
+    // zone, so outside Kyiv this field contradicted the carousel list, which
+    // renders the same instant through the Kyiv-pinned `formatDate`. See
+    // `shared/lib/format/datetime-local.ts`.
     scheduledAt: carousel.scheduledAt
-      ? toDateTimeLocal(carousel.scheduledAt)
+      ? toKyivDateTimeLocal(carousel.scheduledAt)
       : "",
   };
-}
-
-/** Convert an ISO instant to the `datetime-local` input value (local time). */
-function toDateTimeLocal(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  );
 }

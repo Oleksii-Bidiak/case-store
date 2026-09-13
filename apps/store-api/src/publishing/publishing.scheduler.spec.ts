@@ -105,6 +105,76 @@ describe('PublishingScheduler', () => {
       expect(revalidationMock.revalidate).not.toHaveBeenCalled();
     });
 
+    // ── publication window (TASK-429) ─────────────────────────────────────
+    it('also asks ports that implement it to unpublish expired rows, with the SAME instant', async () => {
+      const windowed: PublishablePort = {
+        publishDue: jest.fn().mockResolvedValue(0),
+        unpublishExpired: jest.fn().mockResolvedValue(0),
+      };
+      const scheduler = buildScheduler(discoveryWith(windowed));
+
+      await scheduler.tick();
+
+      expect(windowed.unpublishExpired).toHaveBeenCalledTimes(1);
+      const publishNow = (windowed.publishDue as jest.Mock).mock.calls[0][0];
+      const expireNow = (windowed.unpublishExpired as jest.Mock).mock.calls[0][0];
+      // One clock per tick: a row whose window opens and closes between two ticks
+      // must not be judged against two different "now"s.
+      expect(expireNow).toBe(publishNow);
+    });
+
+    it('revalidates when a tick ONLY expired rows (nothing was published)', async () => {
+      const expired: PublishablePort = {
+        publishDue: jest.fn().mockResolvedValue(0),
+        unpublishExpired: jest.fn().mockResolvedValue(1),
+        revalidateTarget: { tags: ['banners'], paths: ['/'] },
+      };
+      const scheduler = buildScheduler(discoveryWith(expired));
+
+      await scheduler.tick();
+
+      // The whole point of the window: a banner taken down must leave the cache too.
+      expect(revalidationMock.revalidate).toHaveBeenCalledTimes(1);
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith({
+        tags: ['banners'],
+        paths: ['/'],
+      });
+    });
+
+    it('does not revalidate when neither half changed anything', async () => {
+      const quiet: PublishablePort = {
+        publishDue: jest.fn().mockResolvedValue(0),
+        unpublishExpired: jest.fn().mockResolvedValue(0),
+        revalidateTarget: { tags: ['banners'] },
+      };
+      const scheduler = buildScheduler(discoveryWith(quiet));
+
+      await scheduler.tick();
+
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+
+    it('revalidates ONCE when a port both published and expired rows in one tick', async () => {
+      const both: PublishablePort = {
+        publishDue: jest.fn().mockResolvedValue(1),
+        unpublishExpired: jest.fn().mockResolvedValue(2),
+        revalidateTarget: { tags: ['banners'] },
+      };
+      const scheduler = buildScheduler(discoveryWith(both));
+
+      await scheduler.tick();
+
+      expect(revalidationMock.revalidate).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves a port WITHOUT unpublishExpired on its pre-TASK-429 behaviour', async () => {
+      const legacy: PublishablePort = { publishDue: jest.fn().mockResolvedValue(1) };
+      const scheduler = buildScheduler(discoveryWith(legacy));
+
+      await expect(scheduler.tick()).resolves.toBeUndefined();
+      expect(legacy.publishDue).toHaveBeenCalledTimes(1);
+    });
+
     it('swallows and logs a publisher error, still running the others', async () => {
       const bad: PublishablePort = {
         publishDue: jest.fn().mockRejectedValue(new Error('db down')),

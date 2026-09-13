@@ -11,6 +11,27 @@ export {
   isStaffPassword,
   isCustomerPassword,
 } from "./password-policy";
+// TASK-426. Pure logic, no "use client" — safe in this barrel. The MASKED INPUT
+// that uses it is not: import it as `@/shared/ui/phone-input`.
+//
+// Both rules are exported, and which one a field needs is NOT a style choice:
+// order fields (delivery address, guest contact) are validated by the API with
+// @IsInternationalPhone, because an operator taking an order by phone is
+// legitimately handed a roaming or border-region number (TASK-338, restated by
+// the owner 2026-09-10). Exporting only the UA rule here is what would nudge the
+// next author into re-creating the mismatch: a form stricter than the server
+// rejects input the API would have accepted, with no way for the operator to
+// tell why.
+export {
+  UA_PHONE_LOCAL_LENGTH,
+  UA_PHONE_PATTERN,
+  PHONE_MIN_DIGITS,
+  PHONE_MAX_DIGITS,
+  formatUAPhone,
+  normalizeUAPhone,
+  isValidUAPhone,
+  isValidInternationalPhone,
+} from "./phone";
 
 // NOTE: `use-debounced-callback` is intentionally NOT re-exported here. It is a
 // "use client" hook; adding a client module to this barrel (which server

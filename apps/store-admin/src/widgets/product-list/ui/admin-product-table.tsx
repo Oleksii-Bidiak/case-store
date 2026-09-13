@@ -6,33 +6,40 @@ import { Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useCategoryControllerGetRootCategories } from "@/shared/api";
 import { useProductControllerAdminFindAll } from "@/entities/product";
+import { useProductGroupControllerFindAll } from "@/entities/product-group";
 import { ProductStatusToggle } from "@/features/product-status-toggle";
 import { useProductBulkStatus } from "@/features/product-bulk-status";
+import { ProductDeleteAction } from "@/features/product-delete";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { useRowSelection } from "@/shared/lib/use-row-selection";
 import {
+  Badge,
   BulkActionsBar,
   Button,
   Checkbox,
-  Input,
   LiveAnnouncer,
   SortableColumnHeader,
   Table,
   TableBody,
   TableCell,
+  TableFilters,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableSelectCell,
   TableSelectHead,
   TableToolbar,
+  pageSizeFrom,
+  type TableFilterDef,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatCurrency } from "@/shared/lib";
+import { formatCurrency, formatDate } from "@/shared/lib";
+import { useProductBulkGroup } from "../model/use-product-bulk-group";
 import { AdminProductTableSkeleton } from "./admin-product-table-skeleton";
-
-const PAGE_SIZE = 10;
+import { MoveToGroupDialog } from "./move-to-group-dialog";
 
 /**
  * Paginated, searchable, sortable product table for the admin panel.
@@ -46,6 +53,21 @@ const PAGE_SIZE = 10;
  * bulk activate/deactivate. The selection is scoped to the page on screen — see
  * `useRowSelection`; rows picked on another page are remembered but never acted
  * on, so the count in the bulk bar is always something the operator can see.
+ *
+ * TASK-423 took this table's three hand-rolled controls — a search FORM with a
+ * «Пошук» button, two bare native `<select>`s, and a page size of 10 — and
+ * replaced them with the shared search-as-you-type box, `TableFilters` and
+ * `TablePagination`. It also added the third bulk action, «Перемістити до групи»:
+ * a variant group means nothing until every position in it points at the same
+ * group, so nine positions used to cost nine full form saves with the family
+ * half-formed in between.
+ *
+ * TASK-427 added the three things a catalogue list could not do: open a product
+ * without opening its form (the name links to the read-only card), remove one
+ * (the row's delete action, behind `products:delete`), and find one that was
+ * removed (the «Видалені» filter). The deleted view is read-only by
+ * construction — a tombstoned product accepts no write, so its row carries no
+ * link, no status toggle, no checkbox and no actions.
  *
  * `LiveAnnouncer` MUST wrap the table rather than sit inside it — the same split
  * `AdminCategoryTree` and `MessageInbox` make, for the same reason.
@@ -68,8 +90,10 @@ function AdminProductTableView() {
 
   const searchParam = searchParams.get("search") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
-
-  const [searchInput, setSearchInput] = useState(searchParam);
+  // TASK-423: 10 was the lowest page size in the panel and the reason the product
+  // list felt like the slowest screen in it. 20 is the one default everywhere now,
+  // and `?limit=` lets the operator ask for 50 or 100 when reconciling an import.
+  const pageSize = pageSizeFrom(searchParams);
 
   const updateParams = useUrlParams();
 
@@ -87,11 +111,17 @@ function AdminProductTableView() {
   // rather than a set of clicks the operator repeats every morning.
   const statusParam = searchParams.get("status") ?? "";
   const stockParam = searchParams.get("stock") ?? "";
+  // TASK-427: soft-deleted products were unreachable from every admin read —
+  // `DELETE` was an action with no way back to its own result. `?deleted=only`
+  // swaps the listing over to the tombstones; anything else lists the live
+  // products, which is what the operator wants 99 visits out of 100.
+  const deletedParam = searchParams.get("deleted") ?? "";
+  const isDeletedView = deletedParam === "only";
 
   const { data, isLoading, isFetching, isError, refetch } =
     useProductControllerAdminFindAll({
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       search: searchParam || undefined,
       sortBy,
       sortOrder,
@@ -102,6 +132,9 @@ function AdminProductTableView() {
             ? false
             : undefined,
       outOfStock: stockParam === "out" ? true : undefined,
+      // Sent only when asked for: the API treats an absent flag as "live
+      // products", and the storefront listing ignores it entirely.
+      deleted: isDeletedView ? true : undefined,
     });
 
   const categoriesQuery = useCategoryControllerGetRootCategories({
@@ -114,10 +147,35 @@ function AdminProductTableView() {
     ]),
   );
 
-  const handleSearchSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    updateParams({ search: searchInput.trim() || undefined, page: undefined });
-  };
+  // TASK-423: the same two filters, declared as data so the chips, the clear-all
+  // and the page reset come from the shared control rather than from two
+  // hand-rolled native <select>s that had none of them.
+  const filters: TableFilterDef[] = [
+    {
+      param: "status",
+      label: dict.products.filterStatus,
+      allLabel: dict.products.filterStatusAll,
+      options: [
+        { value: "active", label: dict.products.filterStatusActive },
+        { value: "hidden", label: dict.products.filterStatusHidden },
+      ],
+    },
+    {
+      param: "stock",
+      label: dict.products.filterStock,
+      allLabel: dict.products.filterStockAll,
+      options: [{ value: "out", label: dict.products.filterStockOut }],
+    },
+    // TASK-427. Two values, not three: the API returns the live rows or the
+    // tombstones, never a mixed page — `ProductEntity` carries no per-row
+    // deleted marker, so a mixed listing could not be read.
+    {
+      param: "deleted",
+      label: dict.products.filterDeleted,
+      allLabel: dict.products.filterDeletedAll,
+      options: [{ value: "only", label: dict.products.filterDeletedOnly }],
+    },
+  ];
 
   const products = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
@@ -136,7 +194,23 @@ function AdminProductTableView() {
 
   const bulk = useProductBulkStatus({ onSuccess: selection.clear });
 
+  // ── bulk «Перемістити до групи» (TASK-423 / AD-PROD-33) ───────────────────
+  const [isGroupDialogOpen, setGroupDialogOpen] = useState(false);
+  // Fetched only once the dialog is open: the group list is of no use to anyone
+  // reading the table, and loading it on every visit to /products would be a
+  // request per page view for a control most visits never touch.
+  const groupsQuery = useProductGroupControllerFindAll(undefined, {
+    query: { enabled: isGroupDialogOpen },
+  });
+  const bulkGroup = useProductBulkGroup({
+    onSuccess: () => {
+      selection.clear();
+      setGroupDialogOpen(false);
+    },
+  });
+
   const selectedIds = [...selection.selectedIds];
+  const isMutating = bulk.isPending || bulkGroup.isPending;
 
   return (
     <div className="flex flex-col gap-4">
@@ -145,68 +219,48 @@ function AdminProductTableView() {
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
         search={
-          <form
-            onSubmit={handleSearchSubmit}
-            className="flex gap-2"
-            role="search"
-          >
-            <Input
-              type="search"
-              placeholder={dict.products.searchPlaceholder}
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              className="max-w-xs"
-              aria-label={dict.products.searchAria}
-            />
-            <Button type="submit" variant="outline">
-              {dict.common.search}
-            </Button>
-            <select
-              value={statusParam}
-              aria-label={dict.products.filterStatus}
-              onChange={(event) =>
-                updateParams({
-                  status: event.target.value || undefined,
-                  page: undefined,
-                })
-              }
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-            >
-              <option value="">{dict.products.filterStatusAll}</option>
-              <option value="active">{dict.products.filterStatusActive}</option>
-              <option value="hidden">{dict.products.filterStatusHidden}</option>
-            </select>
-            <select
-              value={stockParam}
-              aria-label={dict.products.filterStock}
-              onChange={(event) =>
-                updateParams({
-                  stock: event.target.value || undefined,
-                  page: undefined,
-                })
-              }
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-            >
-              <option value="">{dict.products.filterStockAll}</option>
-              <option value="out">{dict.products.filterStockOut}</option>
-            </select>
-          </form>
+          <TableSearch
+            value={searchParam}
+            placeholder={dict.products.searchPlaceholder}
+            label={dict.products.searchAria}
+          />
+        }
+        filters={
+          <TableFilters
+            filters={filters}
+            values={{
+              status: statusParam,
+              stock: stockParam,
+              deleted: deletedParam,
+            }}
+          />
         }
         selectAll={
-          products.length > 0 ? (
+          products.length > 0 && !isDeletedView ? (
             <Checkbox
               checked={selection.headerChecked}
               onCheckedChange={selection.toggleAll}
-              disabled={bulk.isPending}
+              disabled={isMutating}
               aria-label={dict.common.table.selectAll}
             />
           ) : null
         }
       />
 
+      {/* Every bulk action and every row action writes to a product, and a
+          tombstoned product accepts no writes at all (`findById` excludes it, so
+          activate / move-to-group / edit all 404). The banner says why the row
+          actions are missing rather than leaving an operator clicking at
+          nothing. */}
+      {isDeletedView && (
+        <p className="rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          {dict.products.deletedNotice}
+        </p>
+      )}
+
       <BulkActionsBar
         selectedCount={selection.selectedCount}
-        isPending={bulk.isPending}
+        isPending={isMutating}
         onClear={selection.clear}
         actions={[
           {
@@ -217,7 +271,25 @@ function AdminProductTableView() {
             label: dict.products.bulk.deactivate(selection.selectedCount),
             onClick: () => bulk.setStatus(selectedIds, false),
           },
+          // TASK-423 / AD-PROD-33. Note what is NOT here: a bulk delete. Product
+          // deletion is a soft delete that mangles slug and sku, and is not
+          // something to hand an operator behind a checkbox column — the API has
+          // no bulk form of it for the same reason.
+          {
+            label: dict.products.bulk.moveToGroup(selection.selectedCount),
+            onClick: () => setGroupDialogOpen(true),
+          },
         ]}
+      />
+
+      <MoveToGroupDialog
+        open={isGroupDialogOpen}
+        onOpenChange={setGroupDialogOpen}
+        selectedCount={selection.selectedCount}
+        groups={groupsQuery.data?.data ?? []}
+        isLoadingGroups={groupsQuery.isLoading}
+        isPending={bulkGroup.isPending}
+        onConfirm={(groupId) => bulkGroup.setGroup(selectedIds, groupId)}
       />
 
       {isLoading ? (
@@ -248,7 +320,7 @@ function AdminProductTableView() {
                 <TableSelectHead
                   checked={selection.headerChecked}
                   onCheckedChange={selection.toggleAll}
-                  disabled={bulk.isPending}
+                  disabled={isMutating || isDeletedView}
                   label={dict.common.table.selectAll}
                 />
                 <TableHead className="w-16">{dict.products.colPhoto}</TableHead>
@@ -304,7 +376,7 @@ function AdminProductTableView() {
                         ? selection.extendTo(product.id)
                         : selection.toggle(product.id)
                     }
-                    disabled={bulk.isPending}
+                    disabled={isMutating || isDeletedView}
                     label={dict.products.bulk.selectRow(product.name)}
                   />
                   {/* Thumbnail + a «без фото» chip (TASK-362). `primaryImage`
@@ -331,7 +403,21 @@ function AdminProductTableView() {
                     label={dict.products.colName}
                     className="font-medium"
                   >
-                    <span className="block">{product.name}</span>
+                    {/* TASK-427: the name is the way into the read-only card —
+                        the one place an operator can LOOK at a product without
+                        opening a form full of inputs. A tombstoned product has
+                        no card (every by-id read excludes it), so its name is
+                        plain text rather than a link to a 404. */}
+                    {isDeletedView ? (
+                      <span className="block">{product.name}</span>
+                    ) : (
+                      <Link
+                        href={`/products/${product.id}`}
+                        className="block hover:text-primary hover:underline"
+                      >
+                        {product.name}
+                      </Link>
+                    )}
                     <span className="text-xs text-muted-foreground">
                       {[product.sku, product.brand?.name]
                         .filter(Boolean)
@@ -348,10 +434,16 @@ function AdminProductTableView() {
                     {formatCurrency(product.price)}
                   </TableCell>
                   <TableCell label={dict.products.colStatus}>
-                    <ProductStatusToggle
-                      productId={product.id}
-                      isActive={product.isActive}
-                    />
+                    {isDeletedView ? (
+                      <Badge variant="secondary">
+                        {dict.products.deletedBadge}
+                      </Badge>
+                    ) : (
+                      <ProductStatusToggle
+                        productId={product.id}
+                        isActive={product.isActive}
+                      />
+                    )}
                   </TableCell>
                   <TableCell
                     label={dict.products.colStock}
@@ -376,17 +468,32 @@ function AdminProductTableView() {
                     label={dict.products.colCreated}
                     className="text-muted-foreground"
                   >
-                    {new Date(product.createdAt).toLocaleDateString()}
+                    {formatDate(product.createdAt)}
                   </TableCell>
                   <TableCell
                     label={dict.common.actions}
                     className="text-right max-md:text-left"
                   >
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/products/${product.id}/edit`}>
-                        {dict.common.edit}
-                      </Link>
-                    </Button>
+                    {isDeletedView ? (
+                      <span className="text-sm text-muted-foreground">
+                        {dict.products.cardEmptyValue}
+                      </span>
+                    ) : (
+                      <span className="inline-flex flex-wrap justify-end gap-2 max-md:justify-start">
+                        <Button asChild variant="outline" size="sm">
+                          <Link href={`/products/${product.id}/edit`}>
+                            {dict.common.edit}
+                          </Link>
+                        </Button>
+                        {/* Renders nothing without `products:delete` — the
+                            server guard is the real boundary, this only keeps a
+                            manager from meeting a 403 they cannot act on. */}
+                        <ProductDeleteAction
+                          productId={product.id}
+                          name={product.name}
+                        />
+                      </span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -396,33 +503,11 @@ function AdminProductTableView() {
       )}
 
       {!isLoading && !isError && products.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {dict.common.pageOf(page, totalPages)}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() =>
-                updateParams({
-                  page: page - 1 <= 1 ? undefined : String(page - 1),
-                })
-              }
-            >
-              {dict.common.previous}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: String(page + 1) })}
-            >
-              {dict.common.next}
-            </Button>
-          </div>
-        </div>
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+        />
       )}
     </div>
   );

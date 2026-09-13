@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { AttributeDefinition, AttributeType } from '@prisma/client';
 import {
   ProductRepository,
+  ProductGroupNotFoundError,
   ProductsNotFoundError,
   CreateProductInput,
   UpdateProductInput,
@@ -180,6 +181,13 @@ export class ProductService {
       // it publicly would serve a sold-out-only page from — and into — the cache
       // entry for the unfiltered listing. Constant means it can never collide.
       outOfStock: undefined,
+      // Tombstones are admin-only (TASK-427), and forced off here for the same
+      // two reasons as `outOfStock` above: `toListParams` never carries the flag
+      // (so this is belt-and-braces, and says so in one line at the place a
+      // future edit would break it), and `buildProductListKey` does not know
+      // about it — honouring `?deleted=true` publicly would serve a page of
+      // withdrawn products from, and into, the unfiltered listing's cache entry.
+      deleted: undefined,
       categoryIds: await this.resolveSubtreeIds(query.categoryId),
     };
     const response = await this.listFromDb(params);
@@ -201,6 +209,10 @@ export class ProductService {
    * `categoryActiveOnly` is deliberately left unset (TASK-297): the operator must
    * still see — and be able to re-file — the products stranded by a category
    * deactivation, which is exactly the list they would vanish from.
+   *
+   * `deleted` (TASK-427) is forwarded here and NOWHERE else: this is the only
+   * read in the system that can return soft-deleted rows, and it returns them
+   * INSTEAD of the live ones, never mixed in.
    */
   async adminFindAll(query: ProductListQueryDto): Promise<AdminPaginatedProductsResponse> {
     const params: FindAllParams = {
@@ -211,6 +223,11 @@ export class ProductService {
       // with the public listing, and an SKU is an internal identifier that the
       // storefront search must not accept as a query.
       searchIncludesSku: true,
+      // TASK-427: the ONLY read in the system that may return tombstoned rows.
+      // Set here and nowhere else, for the same reason as the flag above —
+      // `toListParams` is shared with the public storefront listing, which must
+      // stay live-only whatever query string it is handed.
+      deleted: query.deleted,
     };
     return this.listFromDbForAdmin(params);
   }
@@ -667,6 +684,57 @@ export class ProductService {
     }
 
     return updated.length;
+  }
+
+  /**
+   * Bulk reassign the variant group (TASK-423) — «Перемістити до групи» on the
+   * product list's selection. `groupId: null` takes the products out of whatever
+   * group they were in.
+   *
+   * The side effects follow the rule every bulk endpoint here follows: be
+   * indistinguishable from running the single-row action N times — list-cache
+   * eviction once, detail-cache eviction per product, one search re-sync per
+   * product (`groupId` is not an indexed field, but a product's indexed document
+   * is rebuilt wholesale, so skipping the sync would be a silent divergence).
+   *
+   * ── Plus the neighbours ─────────────────────────────────────────────────────
+   * It goes ONE STEP FURTHER than parity, deliberately: the siblings of the
+   * source and destination groups get their detail caches evicted too. A cached
+   * product detail carries its `variantSiblings`, so this write changes what the
+   * UNTOUCHED members of both groups should say. Without that eviction the
+   * storefront keeps offering a variant that left the family, and omitting the one
+   * that joined — i.e. exactly the thing the operator ran this action to fix stays
+   * visibly broken until the TTL expires, which reads as "the bulk action did
+   * nothing".
+   *
+   * The single-product write path (`update`, with `groupId` in the body) has the
+   * same gap and is left alone here: fixing it is a separate change with its own
+   * test, not a rider on a bulk endpoint.
+   *
+   * @throws NotFoundException when an id is unknown/soft-deleted, or the
+   *         destination group does not exist. Nothing is written in either case.
+   */
+  async setGroupMany(ids: string[], groupId: string | null): Promise<number> {
+    let result;
+    try {
+      result = await this.productRepository.setGroupMany(ids, groupId);
+    } catch (error) {
+      if (error instanceof ProductsNotFoundError || error instanceof ProductGroupNotFoundError) {
+        throw new NotFoundException(error.message);
+      }
+      throw error;
+    }
+
+    await this.invalidateProductLists();
+    for (const product of result.updated) {
+      await this.evictProductDetail(product.id, product.slug);
+      await this.syncSearchIndex(product);
+    }
+    for (const sibling of result.siblings) {
+      await this.evictProductDetail(sibling.id, sibling.slug);
+    }
+
+    return result.updated.length;
   }
 
   /**

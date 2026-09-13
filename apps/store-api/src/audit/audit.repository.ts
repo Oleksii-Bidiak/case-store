@@ -23,6 +23,8 @@ export interface FindAuditLogsParams {
   page: number;
   limit: number;
   actorId?: string;
+  /** The role recorded ON THE ENTRY, not the actor's role today (TASK-430). */
+  actorRole?: UserRole;
   action?: string;
   entityType?: string;
   entityId?: string;
@@ -108,10 +110,14 @@ export class AuditRepository {
   }
 
   async findMany(params: FindAuditLogsParams): Promise<{ entries: AuditLog[]; total: number }> {
-    const { page, limit, actorId, action, entityType, entityId, from, to } = params;
+    const { page, limit, actorId, actorRole, action, entityType, entityId, from, to } = params;
 
     const where: Prisma.AuditLogWhereInput = {};
     if (actorId) where.actorId = actorId;
+    // Matched against the entry's own snapshot of the role. A row with a NULL
+    // actorRole is a system action (payment callback, cron) and is therefore
+    // excluded by any role filter, which is what "who did this" means here.
+    if (actorRole) where.actorRole = actorRole;
     if (action) where.action = action;
     if (entityType) where.entityType = entityType;
     if (entityId) where.entityId = entityId;

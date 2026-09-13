@@ -4,6 +4,7 @@ import { FaqRepository } from './faq.repository';
 import { FaqService } from './faq.service';
 import { FaqItemEntity } from './entities';
 import { RevalidationNotifier } from '../publishing';
+import { ReorderNotFoundError, ReorderStaleError } from '../common/reorder';
 
 const mockFaq = {
   id: 'faq-uuid-1',
@@ -22,6 +23,7 @@ const repositoryMock = {
   create: jest.fn(),
   update: jest.fn(),
   delete: jest.fn(),
+  reorderAll: jest.fn(),
 };
 
 const revalidationMock = {
@@ -169,6 +171,42 @@ describe('FaqService', () => {
       await expect(service.remove('ghost')).rejects.toBeInstanceOf(NotFoundException);
       expect(repositoryMock.delete).not.toHaveBeenCalled();
       expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── reorder (TASK-428) ────────────────────────────────────────────────────
+
+  describe('reorder', () => {
+    it('returns the refreshed COMPLETE list with meta, and revalidates the faq tag', async () => {
+      repositoryMock.reorderAll.mockResolvedValue({ items: [mockFaq], total: 1 });
+
+      const result = await service.reorder({ orderedIds: ['faq-uuid-1'] });
+
+      expect(repositoryMock.reorderAll).toHaveBeenCalledWith(['faq-uuid-1']);
+      expect(result.data[0]).toBeInstanceOf(FaqItemEntity);
+      // The unpaginated shape: one page holding everything (the panel writes this
+      // response straight into the list query's cache).
+      expect(result.meta).toEqual({ total: 1, page: 1, limit: 1, totalPages: 1 });
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith({ tags: ['faq'] });
+    });
+
+    it('maps REORDER_STALE onto 409 with the stable code on the wire', async () => {
+      repositoryMock.reorderAll.mockRejectedValue(new ReorderStaleError());
+
+      await expect(service.reorder({ orderedIds: ['faq-uuid-1'] })).rejects.toMatchObject({
+        status: 409,
+        response: { error: 'REORDER_STALE' },
+      });
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+
+    it('maps REORDER_NOT_FOUND onto 404 with the stable code on the wire', async () => {
+      repositoryMock.reorderAll.mockRejectedValue(new ReorderNotFoundError());
+
+      await expect(service.reorder({ orderedIds: ['ghost'] })).rejects.toMatchObject({
+        status: 404,
+        response: { error: 'REORDER_NOT_FOUND' },
+      });
     });
   });
 });

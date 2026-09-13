@@ -153,19 +153,26 @@ describe("carouselFormValuesToCreateDto", () => {
       status: "SCHEDULED",
       scheduledAt: "2026-08-01T09:00",
     });
-    expect(scheduled.scheduledAt).toBe(
-      new Date("2026-08-01T09:00").toISOString(),
-    );
+    // 09:00 Kyiv on 1 August is 06:00 UTC (EEST, UTC+3). Hard-coded on purpose:
+    // the expectation this replaced was `new Date("2026-08-01T09:00")
+    // .toISOString()` — the mapper's own expression, so it agreed with any
+    // implementation, including the browser-zone one that was wrong everywhere
+    // outside Kyiv (TASK-421 finding #10).
+    expect(scheduled.scheduledAt).toBe("2026-08-01T06:00:00.000Z");
   });
 
-  it("passes numeric itemLimit / sortOrder through", () => {
-    const dto = carouselFormValuesToCreateDto({
-      ...baseValues,
-      itemLimit: 6,
-      sortOrder: 2,
-    });
+  it("passes a numeric itemLimit through", () => {
+    const dto = carouselFormValuesToCreateDto({ ...baseValues, itemLimit: 6 });
     expect(dto.itemLimit).toBe(6);
-    expect(dto.sortOrder).toBe(2);
+  });
+
+  // TASK-428: the absence of the key IS the contract. On create the server appends the
+  // carousel to the END of its placement bucket; on update it leaves the position the
+  // operator dragged the row to untouched. Sending `0` — which the old form did for every
+  // new carousel — put them all in slot 0 and left the homepage order to the database.
+  it("does NOT send sortOrder, even when the inert input value is set", () => {
+    const dto = carouselFormValuesToCreateDto({ ...baseValues, sortOrder: 2 });
+    expect(dto).not.toHaveProperty("sortOrder");
   });
 
   it("always sends the selected placement (TASK-288)", () => {

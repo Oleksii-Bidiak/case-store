@@ -26,14 +26,18 @@ interface FaqFormProps {
 const EMPTY_VALUES: FaqFormInput = {
   question: "",
   answer: "",
-  sortOrder: "0",
   isActive: true,
 };
 
 /**
- * Reusable create/edit FAQ form: question, answer, sort order, and the active
- * toggle. Every field carries a plain-UA hint (`dict.faqForm.*Hint`) so a
- * non-technical admin understands what it controls (plan 116's core framing).
+ * Reusable create/edit FAQ form: question, answer and the active toggle. Every field
+ * carries a plain-UA hint (`dict.faqForm.*Hint`) so a non-technical admin understands
+ * what it controls (plan 116's core framing).
+ *
+ * TASK-428 removed the "Порядок сортування" number field: it defaulted to 0, so every
+ * question an operator created landed in the same slot and the list had no order at all.
+ * The position is now set where it is seen — by dragging a row in the FAQ list — and a new
+ * question is appended to the end by the server.
  */
 export function FaqForm({
   id,
@@ -98,25 +102,6 @@ export function FaqForm({
         {errors.answer && (
           <p role="alert" className="text-sm text-destructive">
             {errors.answer.message}
-          </p>
-        )}
-      </div>
-
-      {/* Sort order */}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="faq-sort-order">{f.sortOrder}</Label>
-        <p className="text-sm text-muted-foreground">{f.sortOrderHint}</p>
-        <Input
-          id="faq-sort-order"
-          type="number"
-          min={0}
-          step={1}
-          className="w-32"
-          {...register("sortOrder")}
-        />
-        {errors.sortOrder && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.sortOrder.message}
           </p>
         )}
       </div>

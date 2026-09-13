@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CreateBlogPostDto, UpdateBlogPostDto } from "@/entities/blog";
 import { dict } from "@/shared/config";
+import { fromKyivDateTimeLocal } from "@/shared/lib";
 import {
   KEYWORDS_MAX_COUNT,
   KEYWORD_MAX_LENGTH,
@@ -144,9 +145,13 @@ export function blogPostFormValuesToCreateDto(
   const metaDescription = values.metaDescription?.trim();
   const ogImage = values.ogImage?.trim();
 
+  // Read as KYIV wall-clock time. `new Date("YYYY-MM-DDTHH:mm")` — what stood
+  // here — parses a zone-less datetime in the RUNTIME's zone, which contradicts
+  // the Kyiv-pinned post list the operator read the date off in the first place.
+  // See `shared/lib/format/datetime-local.ts`.
   const scheduledAt =
     values.status === "SCHEDULED" && values.scheduledAt
-      ? new Date(values.scheduledAt).toISOString()
+      ? fromKyivDateTimeLocal(values.scheduledAt)?.toISOString()
       : undefined;
 
   return {

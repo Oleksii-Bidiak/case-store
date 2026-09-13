@@ -7,6 +7,7 @@ import {
   productDetailSlugKey,
   PRODUCT_LIST_PREFIX,
 } from '../../cache';
+import { normalizeUaPhone, phoneDigits } from '../../common/validators';
 import { ProductIndexer } from '../../search/product-indexer';
 import { RETURN_SORT_FIELDS } from './dto';
 import type { ReturnSortField } from './dto';
@@ -39,8 +40,20 @@ const ADMIN_RETURNS_INCLUDE = {
 } satisfies Prisma.ReturnInclude;
 
 const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 10;
+/** Kept in step with `ReturnService`'s default — the one admin page size (TASK-423). */
+const DEFAULT_LIMIT = 20;
 const DEFAULT_SORT_BY: ReturnSortField = 'requestedAt';
+
+/**
+ * How many digits a search term must carry before the returns queue treats it as
+ * a phone number (TASK-423).
+ *
+ * Same guard, same number and the same reason as
+ * `OrderRepository.SEARCH_PHONE_MIN_DIGITS`: `normalizeUaPhone('ivan')` is `''`
+ * and `{ contains: '' }` matches every row, so normalising unconditionally would
+ * turn a name search into "show me the whole queue".
+ */
+const SEARCH_PHONE_MIN_DIGITS = 3;
 
 /**
  * Translate the DTO's sort choice into a Prisma `orderBy` (TASK-354).
@@ -122,6 +135,7 @@ export class ReturnRepository {
    */
   async findAll(query: {
     status?: ReturnStatus;
+    search?: string;
     page?: number;
     limit?: number;
     sortBy?: ReturnSortField;
@@ -130,6 +144,35 @@ export class ReturnRepository {
     const page = query.page ?? DEFAULT_PAGE;
     const limit = query.limit ?? DEFAULT_LIMIT;
     const where: Prisma.ReturnWhereInput = { ...(query.status ? { status: query.status } : {}) };
+
+    // TASK-423: the queue had no search at all, so an operator holding a phone
+    // call ("я повертаю замовлення ABC12345") could only page through it.
+    //
+    // The arms mirror `OrderRepository.findAllForAdmin` deliberately — a return is
+    // reached THROUGH an order, and the operator has whatever the customer is
+    // reading out. Both ids are matched as a lowercased PREFIX because the
+    // operator reads back the uppercase short form of a uuid, and the column
+    // holds the full lowercase one.
+    if (query.search) {
+      const term = query.search;
+      const or: Prisma.ReturnWhereInput[] = [
+        { id: { startsWith: term.toLowerCase() } },
+        { order: { id: { startsWith: term.toLowerCase() } } },
+        { order: { guestEmail: { contains: term, mode: 'insensitive' } } },
+        { order: { user: { email: { contains: term, mode: 'insensitive' } } } },
+        // What the customer said, in their words — the one column of a return
+        // that is free text and the one an operator searches by topic.
+        { reason: { contains: term, mode: 'insensitive' } },
+      ];
+
+      if (phoneDigits(term).length >= SEARCH_PHONE_MIN_DIGITS) {
+        const phoneTerm = normalizeUaPhone(term);
+        or.push({ order: { guestPhone: { contains: phoneTerm } } });
+        or.push({ order: { user: { phone: { contains: phoneTerm } } } });
+      }
+
+      where.OR = or;
+    }
 
     const [total, returns] = await this.prisma.$transaction([
       this.prisma.return.count({ where }),

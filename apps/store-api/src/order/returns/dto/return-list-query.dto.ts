@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { ReturnStatus } from '@prisma/client';
 
 /**
@@ -32,13 +32,36 @@ export class ReturnListQueryDto {
   @Min(1)
   page?: number;
 
-  @ApiProperty({ description: 'Items per page (max 100)', required: false, default: 10 })
+  @ApiProperty({ description: 'Items per page (max 100)', required: false, default: 20 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(100)
   limit?: number;
+
+  @ApiProperty({
+    description:
+      'Free-text search across the return id, the order number (id prefix), the customer ' +
+      "email/phone and the customer's stated reason (TASK-423). The queue had no search at " +
+      'all, so an operator on the phone with a customer could only page through it.',
+    required: false,
+    maxLength: 120,
+    example: 'ABC12345',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  // Read the ORIGINAL value off `obj` (the API-wide `enableImplicitConversion`
+  // guard), trim, and collapse an all-whitespace term to undefined — an empty
+  // string would reach Prisma as `contains: ''`, which matches every row.
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (typeof raw !== 'string') return undefined;
+    const trimmed = raw.trim();
+    return trimmed === '' ? undefined : trimmed;
+  })
+  search?: string;
 
   @ApiProperty({
     description: `Sort field (${RETURN_SORT_FIELDS.join(', ')})`,

@@ -35,7 +35,10 @@ jest.mock("@/shared/ui/rich-text-editor", () => ({
 
 const PAGE_ID = "page-uuid-1";
 
-function makePage(status: "DRAFT" | "PUBLISHED") {
+function makePage(
+  status: "DRAFT" | "PUBLISHED" | "SCHEDULED",
+  scheduledAt: string | null = null,
+) {
   return {
     id: PAGE_ID,
     slug: "dostavka",
@@ -46,7 +49,7 @@ function makePage(status: "DRAFT" | "PUBLISHED") {
     metaDescription: null,
     status,
     publishedAt: status === "PUBLISHED" ? "2026-06-01T09:00:00.000Z" : null,
-    scheduledAt: null,
+    scheduledAt,
     isActive: status === "PUBLISHED",
     sortOrder: 0,
     createdAt: "2026-06-01T09:00:00.000Z",
@@ -81,6 +84,49 @@ const submit = () =>
   userEvent.click(
     screen.getByRole("button", { name: dict.common.saveChanges }),
   );
+
+/**
+ * The whole chain — widget seeding → form input → zod mapper → PUT body — must
+ * speak KYIV time, because that is what the page LIST speaks (TASK-421, review
+ * finding #10).
+ *
+ * 21:00 UTC on 1 October is 00:00 on 2 OCTOBER in Kyiv. Picked deliberately: the
+ * two zones disagree about the calendar DAY here, so the old browser-zone
+ * seeding is off by a day rather than by an invisible hour, and the operator who
+ * re-typed what the list showed them («02.10») moved the publication a day
+ * earlier without any screen saying so.
+ *
+ * On a Kyiv machine — this one — both implementations agree, so this test cannot
+ * prove the fix on its own; the zone-independent proof lives in
+ * `shared/lib/format/datetime-local.test.ts`. What this one pins is that the
+ * widget and the mapper actually go THROUGH those helpers end to end, which no
+ * unit test of the helpers can show.
+ */
+describe("EditPageView — the schedule is Kyiv time, not the browser's", () => {
+  const SCHEDULED_UTC = "2026-10-01T21:00:00.000Z";
+  const SCHEDULED_KYIV_INPUT = "2026-10-02T00:00";
+
+  it("seeds the input with the Kyiv wall clock the list shows", async () => {
+    await renderAndWaitForForm(makePage("SCHEDULED", SCHEDULED_UTC));
+
+    expect(screen.getByLabelText(dict.pageForm.scheduledAt)).toHaveValue(
+      SCHEDULED_KYIV_INPUT,
+    );
+  });
+
+  it("sends back the same instant when the operator changes nothing", async () => {
+    const putCalls = await renderAndWaitForForm(
+      makePage("SCHEDULED", SCHEDULED_UTC),
+    );
+
+    await submit();
+
+    await waitFor(() => expect(putCalls).toHaveLength(1));
+    expect((putCalls[0] as { scheduledAt?: string }).scheduledAt).toBe(
+      SCHEDULED_UTC,
+    );
+  });
+});
 
 describe("EditPageView — slug-rename guard (TASK-285)", () => {
   let confirmSpy: jest.SpyInstance;

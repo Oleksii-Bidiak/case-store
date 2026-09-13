@@ -68,6 +68,8 @@ export interface CreateBannerInput {
   status: PublishStatus;
   publishedAt: Date | null;
   scheduledAt: Date | null;
+  /** End of the publication window; null = no end (TASK-429). */
+  scheduledUntil: Date | null;
 }
 
 /**
@@ -86,6 +88,8 @@ export interface UpdateBannerInput {
   status?: PublishStatus;
   publishedAt?: Date | null;
   scheduledAt?: Date | null;
+  /** End of the publication window; null = no end (TASK-429). */
+  scheduledUntil?: Date | null;
 }
 
 /**
@@ -238,6 +242,7 @@ export class BannerRepository implements PublishablePort {
           status: data.status,
           publishedAt: data.publishedAt,
           scheduledAt: data.scheduledAt,
+          scheduledUntil: data.scheduledUntil,
         },
       });
     });
@@ -265,20 +270,31 @@ export class BannerRepository implements PublishablePort {
   /**
    * Publish a banner immediately: status = PUBLISHED, publishedAt = now,
    * scheduledAt cleared.
+   *
+   * `scheduledUntil` is written EXPLICITLY rather than left alone (TASK-429), and
+   * the caller decides its value: {@link BannerService.publish} keeps a window end
+   * that is still in the future and passes `null` for one that has already closed.
+   * Leaving the stored value untouched would let the scheduler take the banner
+   * straight back down on its next tick — the operator would click «Опублікувати»
+   * and watch it fall back to draft a minute later with no explanation.
    */
-  publish(id: string, now: Date = new Date()): Promise<Banner> {
+  publish(id: string, now: Date = new Date(), scheduledUntil: Date | null = null): Promise<Banner> {
     return this.prisma.banner.update({
       where: { id },
       data: {
         status: PublishStatus.PUBLISHED,
         publishedAt: now,
         scheduledAt: null,
+        scheduledUntil,
       },
     });
   }
 
   /**
-   * Unpublish a banner — returns it to DRAFT: publishedAt & scheduledAt cleared.
+   * Unpublish a banner — returns it to DRAFT: publishedAt, scheduledAt and the
+   * window end (TASK-429) all cleared. A pending "take it down at" instant on a
+   * draft is meaningless, and keeping it would re-arm the scheduler against a
+   * banner the operator has already taken down by hand.
    */
   unpublish(id: string): Promise<Banner> {
     return this.prisma.banner.update({
@@ -287,6 +303,7 @@ export class BannerRepository implements PublishablePort {
         status: PublishStatus.DRAFT,
         publishedAt: null,
         scheduledAt: null,
+        scheduledUntil: null,
       },
     });
   }
@@ -313,6 +330,40 @@ export class BannerRepository implements PublishablePort {
         status: PublishStatus.PUBLISHED,
         publishedAt: now,
         scheduledAt: null,
+      },
+    });
+    return count;
+  }
+
+  /**
+   * {@link PublishablePort.unpublishExpired} (TASK-429) — take back down every
+   * PUBLISHED banner whose window end has passed: status → DRAFT, `publishedAt`
+   * and `scheduledAt` cleared exactly as the manual {@link unpublish} does.
+   * Returns the count unpublished.
+   *
+   * `scheduledUntil` is cleared TOO, and that is the load-bearing part: the window
+   * has been honoured, so it must not fire again. Left in place, it would make the
+   * row match this very query the instant anyone re-published the banner, and the
+   * scheduler would undo that manual publish within a minute — a promo that
+   * refuses to come back.
+   *
+   * Only PUBLISHED rows are touched: a DRAFT carries no window (both writes above
+   * clear it) and a SCHEDULED row has not gone live yet, so "its window closed"
+   * cannot apply to it before `publishDue` has published it. Publish-then-expire
+   * inside ONE tick is therefore intentional and correct — a window that opened
+   * and closed between two ticks leaves the banner where it belongs: down.
+   */
+  async unpublishExpired(now: Date): Promise<number> {
+    const { count } = await this.prisma.banner.updateMany({
+      where: {
+        status: PublishStatus.PUBLISHED,
+        scheduledUntil: { lte: now },
+      },
+      data: {
+        status: PublishStatus.DRAFT,
+        publishedAt: null,
+        scheduledAt: null,
+        scheduledUntil: null,
       },
     });
     return count;

@@ -57,7 +57,9 @@ const EMPTY_VALUES: PageFormInput = {
   metaDescription: "",
   keywords: "",
   ogImage: "",
-  sortOrder: "0",
+  // No `sortOrder` (TASK-428), and none after this merge either: the field is
+  // gone from the form, the schema keeps it optional, and omitting it from the
+  // payload is what makes the server append a new page to the end of the list.
   status: "DRAFT",
   // LEGAL matches the API's own default, so "create page" without touching the
   // picker produces the same row it did before TASK-435.
@@ -381,22 +383,12 @@ export function PageForm({
         rawDescriptionLength={metaDescriptionValue.trim().length}
       />
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="page-sort">{dict.pageForm.sortOrder}</Label>
-        <Input
-          id="page-sort"
-          type="number"
-          inputMode="numeric"
-          min="0"
-          step="1"
-          {...register("sortOrder")}
-        />
-        {errors.sortOrder && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.sortOrder.message}
-          </p>
-        )}
-      </div>
+      {/*
+        TASK-428 removed the "Порядок сортування" number field here: it defaulted to 0, so
+        every page an operator created landed in the same slot and the `/legal` hub had no
+        order at all. The position is now set where it is seen — by dragging a row in the
+        page list — and a new page is appended to the end by the server.
+      */}
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="page-status">{dict.pageForm.status}</Label>

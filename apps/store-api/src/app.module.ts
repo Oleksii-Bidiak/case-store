@@ -16,7 +16,9 @@ import { PermissionModule } from './auth/permissions';
 import { AuditModule } from './audit';
 import { AuditInterceptor } from './audit/audit.interceptor';
 import { UserModule } from './user';
+import { UserNoteModule } from './user-note';
 import { ProductModule } from './product';
+import { UploadsModule } from './uploads';
 import { CatalogImportModule } from './catalog-import';
 import { ProductGroupModule } from './product-group';
 import { CategoryModule } from './category';
@@ -160,6 +162,14 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // User management
     UserModule,
+
+    // Staff notes on a customer card (TASK-430) — after UserModule, whose
+    // UserRepository it injects.
+    UserNoteModule,
+
+    // The shared image-upload pipeline + the admin content-image routes
+    // (TASK-424). Listed before ProductModule, which depends on it.
+    UploadsModule,
 
     // Product catalog
     ProductModule,

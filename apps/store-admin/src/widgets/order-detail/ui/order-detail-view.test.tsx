@@ -207,3 +207,227 @@ describe("OrderDetailView — stock-hold badges (TASK-254)", () => {
     expect(screen.queryByText(/Залишок повернуто/)).not.toBeInTheDocument();
   });
 });
+
+/**
+ * TASK-425 — what the order actually contains.
+ *
+ * The API had been sending the per-line add-ons, the add-on total, the promo
+ * code and the guest contact block all along; the page rendered none of them.
+ * The visible symptom was arithmetic: the summary column could not reach the
+ * total, because the add-ons are inside `total` and were in none of the rows
+ * above it.
+ */
+describe("OrderDetailView — the summary adds up (TASK-425)", () => {
+  /**
+   * Real numbers, and the same invariant the backend holds:
+   *   total = subtotal + addonsTotal + shipping + tax - discount
+   *   1469  = 1000     + 499         + 70       + 0   - 100
+   */
+  const moneyOrder = {
+    ...makeOrder(null),
+    subtotal: "1000.00",
+    discount: "100.00",
+    discountCode: "SUMMER10",
+    addonsTotal: "499.00",
+    shippingCost: "70.00",
+    tax: "0.00",
+    total: "1469.00",
+    items: [
+      {
+        id: "item-1",
+        productId: "prod-uuid-1",
+        productName: "iPhone 15 Pro Case",
+        price: "1000.00",
+        quantity: 1,
+        // Deliberately EXCLUDES the add-on (order-item.entity.ts): the line is
+        // price × quantity, the add-ons are summed on the order.
+        lineTotal: "1000.00",
+        addons: [
+          {
+            id: "addon-1",
+            addonServiceId: "svc-1",
+            name: "Захисне скло",
+            price: "499.00",
+          },
+        ],
+      },
+    ],
+  };
+
+  /**
+   * Read a rendered money row back as a number. `formatCurrency` is uk-UA, so
+   * the output is "1 000 ₴" / "29,99 ₴" with non-breaking spaces — this undoes
+   * exactly that, and nothing else.
+   */
+  const parseMoney = (text: string): number =>
+    Number(
+      text
+        .replace(/[^\d,.-]/g, "")
+        .replace(/\s/g, "")
+        .replace(",", "."),
+    );
+
+  const rowValue = (label: string): number => {
+    const valueNode = screen.getByText(label).nextElementSibling;
+    return parseMoney(valueNode?.textContent ?? "");
+  };
+
+  beforeEach(() => {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: moneyOrder }),
+      ),
+    );
+  });
+
+  it("renders an add-ons row, and the rows on screen sum to the total", async () => {
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(await screen.findByText(dict.orders.summary)).toBeInTheDocument();
+
+    const subtotal = rowValue(dict.orders.subtotal);
+    const addons = rowValue(dict.orders.addonsTotal);
+    const shipping = rowValue(dict.orders.shipping);
+    const tax = rowValue(dict.orders.tax);
+    const discount = rowValue(
+      dict.orders.discountWithCode(moneyOrder.discountCode),
+    );
+    const total = rowValue(dict.orders.total);
+
+    expect(subtotal).toBe(1000);
+    expect(addons).toBe(499);
+    expect(discount).toBe(100);
+    expect(total).toBe(1469);
+    // The actual complaint: before the add-ons row this column came to 970 and
+    // the total said 1469, with nothing on screen explaining the 499.
+    expect(subtotal + addons + shipping + tax - discount).toBe(total);
+  });
+
+  it("names the promo code beside the discount", async () => {
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    // A discount an operator cannot name is one they cannot explain on the phone.
+    expect(
+      await screen.findByText(dict.orders.discountWithCode("SUMMER10")),
+    ).toBeInTheDocument();
+  });
+
+  it("shows each add-on under its line without touching the line total", async () => {
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(await screen.findByText(/Захисне скло/)).toBeInTheDocument();
+    expect(screen.getByText(dict.orders.addonsHint)).toBeInTheDocument();
+  });
+
+  it("hides the add-ons row for an order that has none", async () => {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: { ...moneyOrder, addonsTotal: "0.00", items: [] },
+        }),
+      ),
+    );
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(await screen.findByText(dict.orders.summary)).toBeInTheDocument();
+    // Zero add-ons, zero row: such an order adds up without it, and a permanent
+    // "0 ₴" line is noise on every order the shop has ever taken.
+    expect(screen.queryByText(dict.orders.addonsTotal)).not.toBeInTheDocument();
+    expect(screen.queryByText(dict.orders.addonsHint)).not.toBeInTheDocument();
+  });
+});
+
+describe("OrderDetailView — guest orders have a customer too (TASK-425)", () => {
+  it("renders a customer card for a guest order, badged as such", async () => {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: {
+            ...makeOrder(null),
+            userId: null,
+            guest: {
+              email: "olena@example.com",
+              phone: "+380501112233",
+              name: "Олена Шевченко",
+            },
+          },
+        }),
+      ),
+    );
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    // Before TASK-425 this page rendered NO customer card at all for a guest
+    // order — the one case where the contact typed at checkout is the only way
+    // to reach the buyer.
+    expect(await screen.findByText(dict.orders.customer)).toBeInTheDocument();
+    expect(screen.getByText("olena@example.com")).toBeInTheDocument();
+    expect(screen.getByText("Олена Шевченко")).toBeInTheDocument();
+    expect(screen.getByText("+380501112233")).toBeInTheDocument();
+    expect(screen.getByText(dict.orders.customerTypeGuest)).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orders.customerTypeAccount),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the phone when the operator's order has no email (TASK-426)", async () => {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: {
+            ...makeOrder(null),
+            userId: null,
+            // Exactly what the API returns for an order taken over the phone:
+            // `ManualOrderContactDto` makes the email optional, so it is null.
+            // The entity used to gate the whole guest block on that email, so
+            // this page rendered no customer card at all and the number the
+            // operator had just typed was nowhere on the screen they work from.
+            guest: {
+              email: null,
+              phone: "+380671112233",
+              name: "Олена Шевченко",
+            },
+          },
+        }),
+      ),
+    );
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(await screen.findByText(dict.orders.customer)).toBeInTheDocument();
+    const phone = screen.getByText("+380671112233");
+    expect(phone).toBeInTheDocument();
+    expect(screen.getByText("Олена Шевченко")).toBeInTheDocument();
+    expect(screen.getByText(dict.orders.customerTypeGuest)).toBeInTheDocument();
+    // Name and phone and NOTHING else: the missing email must not leave an
+    // empty row above them. Counted rather than read, because an empty <div>
+    // contributes nothing to textContent and so hides from every text query —
+    // which is why it survived review in the first place.
+    expect(phone.parentElement?.childElementCount).toBe(2);
+  });
+
+  it("badges an account order as an account", async () => {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: makeOrder({
+            id: "user-uuid-87654321",
+            email: "buyer@example.com",
+            firstName: "Ivan",
+            lastName: "Petrenko",
+          }),
+        }),
+      ),
+    );
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(
+      await screen.findByText(dict.orders.customerTypeAccount),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orders.customerTypeGuest),
+    ).not.toBeInTheDocument();
+  });
+});

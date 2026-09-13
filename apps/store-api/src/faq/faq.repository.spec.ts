@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../prisma';
 import { FaqRepository } from './faq.repository';
+import { ReorderStaleError } from '../common/reorder';
 
 const mockFaq = {
   id: 'faq-uuid-1',
@@ -12,15 +13,31 @@ const mockFaq = {
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
+/**
+ * ONE delegate shared by the singleton client and the transaction client: the repository
+ * reads/writes through `tx.faqItem` inside a transaction (create + reorder) and through
+ * `this.prisma.faqItem` outside one, and the assertions do not care which.
+ */
+const faqDelegate = {
+  findUnique: jest.fn(),
+  findMany: jest.fn(),
+  count: jest.fn(),
+  aggregate: jest.fn(),
+  create: jest.fn(),
+  update: jest.fn(),
+  updateMany: jest.fn(),
+  delete: jest.fn(),
+};
+
+const txMock = {
+  faqItem: faqDelegate,
+  // `pg_advisory_xact_lock` — taken by `create` and by `reorderAll`.
+  $executeRaw: jest.fn(),
+};
+
 const prismaMock = {
-  faqItem: {
-    findUnique: jest.fn(),
-    findMany: jest.fn(),
-    count: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-  },
+  faqItem: faqDelegate,
+  $transaction: jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock)),
 };
 
 describe('FaqRepository', () => {
@@ -121,27 +138,46 @@ describe('FaqRepository', () => {
     });
   });
 
+  // ─── create: appended, never slot 0 (TASK-428) ─────────────────────────────
+
   describe('create', () => {
-    it('creates a FAQ item with defaults for sortOrder/isActive', async () => {
-      prismaMock.faqItem.create.mockResolvedValue(mockFaq);
+    it('appends the item to the END of the list (max + 1) under the list lock', async () => {
+      prismaMock.faqItem.aggregate.mockResolvedValue({ _max: { sortOrder: 4 } });
+      prismaMock.faqItem.create.mockResolvedValue({ ...mockFaq, sortOrder: 5 });
 
       const result = await repository.create({
         question: 'Скільки коштує доставка?',
         answer: 'Безкоштовно від 1 000 ₴.',
       });
 
-      expect(result).toEqual(mockFaq);
+      expect(result.sortOrder).toBe(5);
+      // The max read MUST happen inside the locked transaction, or two concurrent
+      // appends both read the same max and collide on one slot.
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(prismaMock.faqItem.aggregate).toHaveBeenCalledWith({ _max: { sortOrder: true } });
       expect(prismaMock.faqItem.create).toHaveBeenCalledWith({
         data: {
           question: 'Скільки коштує доставка?',
           answer: 'Безкоштовно від 1 000 ₴.',
-          sortOrder: 0,
+          sortOrder: 5,
           isActive: true,
         },
       });
     });
 
-    it('passes explicit sortOrder/isActive through', async () => {
+    it('uses slot 0 for the FIRST item in an empty list', async () => {
+      prismaMock.faqItem.aggregate.mockResolvedValue({ _max: { sortOrder: null } });
+      prismaMock.faqItem.create.mockResolvedValue(mockFaq);
+
+      await repository.create({ question: 'Q', answer: 'A' });
+
+      expect(prismaMock.faqItem.create).toHaveBeenCalledWith({
+        data: { question: 'Q', answer: 'A', sortOrder: 0, isActive: true },
+      });
+    });
+
+    it('passes explicit sortOrder/isActive through without reading max', async () => {
       prismaMock.faqItem.create.mockResolvedValue({ ...mockFaq, sortOrder: 5, isActive: false });
 
       await repository.create({
@@ -151,9 +187,48 @@ describe('FaqRepository', () => {
         isActive: false,
       });
 
+      expect(prismaMock.faqItem.aggregate).not.toHaveBeenCalled();
       expect(prismaMock.faqItem.create).toHaveBeenCalledWith({
         data: { question: 'Q', answer: 'A', sortOrder: 5, isActive: false },
       });
+    });
+  });
+
+  // ─── reorderAll (TASK-428) ─────────────────────────────────────────────────
+
+  describe('reorderAll', () => {
+    const a = 'faq-uuid-1';
+    const b = 'faq-uuid-2';
+
+    it('locks the list, writes the index as sortOrder and returns the refreshed list', async () => {
+      prismaMock.faqItem.findMany
+        // 1) the in-transaction snapshot of the bucket's membership
+        .mockResolvedValueOnce([{ id: a }, { id: b }])
+        // 2) the refreshed admin list, read inside the same transaction
+        .mockResolvedValueOnce([
+          { ...mockFaq, id: b, sortOrder: 0 },
+          { ...mockFaq, sortOrder: 1 },
+        ]);
+
+      const result = await repository.reorderAll([b, a]);
+
+      expect(result.total).toBe(2);
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(prismaMock.faqItem.updateMany).toHaveBeenNthCalledWith(1, {
+        where: { id: b },
+        data: { sortOrder: 0 },
+      });
+      expect(prismaMock.faqItem.updateMany).toHaveBeenNthCalledWith(2, {
+        where: { id: a },
+        data: { sortOrder: 1 },
+      });
+    });
+
+    it('rejects a PARTIAL ordering (a row appeared underneath the client) as stale', async () => {
+      prismaMock.faqItem.findMany.mockResolvedValueOnce([{ id: a }, { id: b }]);
+
+      await expect(repository.reorderAll([a])).rejects.toBeInstanceOf(ReorderStaleError);
+      expect(prismaMock.faqItem.updateMany).not.toHaveBeenCalled();
     });
   });
 

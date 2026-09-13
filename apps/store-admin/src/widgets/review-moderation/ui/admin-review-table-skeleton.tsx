@@ -9,7 +9,9 @@ import {
 import { dict } from "@/shared/config";
 
 const SKELETON_ROWS = 3;
-const COLUMN_COUNT = 6;
+// Seven since TASK-430 added the SKU column. A skeleton that is a column short
+// makes the table jump sideways the moment the rows arrive.
+const COLUMN_COUNT = 7;
 
 /**
  * Loading placeholder matching the AdminReviewTable column structure.
@@ -21,6 +23,7 @@ export function AdminReviewTableSkeleton() {
         <TableHeader>
           <TableRow>
             <TableHead>{dict.reviews.colProduct}</TableHead>
+            <TableHead>{dict.reviews.colSku}</TableHead>
             <TableHead>{dict.reviews.colAuthor}</TableHead>
             <TableHead>{dict.reviews.colRating}</TableHead>
             <TableHead>{dict.reviews.colComment}</TableHead>

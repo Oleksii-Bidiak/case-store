@@ -96,6 +96,29 @@ export class ProductListQueryDto {
 
   @ApiProperty({
     description:
+      'Show the SOFT-DELETED (tombstoned) products instead of the live ones (TASK-427). ' +
+      'Honoured ONLY on the admin listing — `ProductService.adminFindAll` is the single ' +
+      'place that forwards it; every public read stays live-only whatever the caller sends. ' +
+      'Absent or false = live products only (the default), true = tombstones only.',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  // Same `obj[key]` read as `isActive` above, for the same reason: the global
+  // ValidationPipe's `enableImplicitConversion` turns 'false' into `true` before
+  // this transform ever sees it — and `?deleted=false` silently listing ONLY the
+  // tombstones is exactly the class of bug TASK-150 B5 found.
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
+    return undefined;
+  })
+  @IsBoolean({ message: 'deleted must be true or false' })
+  deleted?: boolean;
+
+  @ApiProperty({
+    description:
       'Filter to positions with zero free-to-sell stock (TASK-362). Admin-only in ' +
       'practice: the restock worklist. Composes with every other filter.',
     example: true,

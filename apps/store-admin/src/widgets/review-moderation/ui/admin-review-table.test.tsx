@@ -11,10 +11,11 @@ import { AdminReviewTable } from "./admin-review-table";
 
 // next/navigation is unavailable under jsdom — mock the router + URL state.
 const mockReplace = jest.fn();
+const mockSearchParamsRef = { current: new URLSearchParams("") };
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
   usePathname: () => "/reviews",
-  useSearchParams: () => new URLSearchParams(""),
+  useSearchParams: () => mockSearchParamsRef.current,
 }));
 
 function makeReviewRow(overrides: Record<string, unknown> = {}) {
@@ -29,6 +30,8 @@ function makeReviewRow(overrides: Record<string, unknown> = {}) {
     createdAt: "2026-06-01T10:00:00.000Z",
     userEmail: "olena@example.com",
     productName: "iPhone 15 Pro Case",
+    // TASK-430 — on the wire since the same task added it to AdminReviewEntity.
+    productSku: "CASE-IP15P-BLK",
     ...overrides,
   };
 }
@@ -41,7 +44,10 @@ function listResponse(rows: unknown[]) {
 }
 
 describe("AdminReviewTable", () => {
-  beforeEach(() => mockReplace.mockClear());
+  beforeEach(() => {
+    mockReplace.mockClear();
+    mockSearchParamsRef.current = new URLSearchParams("");
+  });
 
   it("renders product name, author, rating, and truncated comment", async () => {
     server.use(
@@ -68,6 +74,44 @@ describe("AdminReviewTable", () => {
     expect(
       screen.getAllByLabelText(dict.reviews.ratingAria(5)).length,
     ).toBeGreaterThanOrEqual(2);
+  });
+
+  /**
+   * TASK-430 — the queue showed a product NAME and nothing else. This catalogue has
+   * several positions per display name (the same case in four colours), so a
+   * moderator could not tell which one a complaint was about, and the name is not a
+   * key the catalogue can be searched by.
+   */
+  it("shows the SKU and links the product to its read-only card", async () => {
+    server.use(
+      http.get("*/api/admin/reviews", () => listResponse([makeReviewRow()])),
+    );
+
+    renderWithProviders(<AdminReviewTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(screen.getByText("CASE-IP15P-BLK")).toBeInTheDocument();
+
+    const link = screen.getByRole("link", {
+      name: dict.reviews.productLinkAria("iPhone 15 Pro Case"),
+    });
+    expect(link).toHaveAttribute("href", "/products/product-uuid-1");
+    expect(link.getAttribute("href")).not.toContain("/edit");
+  });
+
+  it("says «без артикулу» rather than leaving the cell blank", async () => {
+    // `Product.sku` is nullable: a position can exist before an article number is
+    // assigned, and an empty cell reads as a rendering fault.
+    server.use(
+      http.get("*/api/admin/reviews", () =>
+        listResponse([makeReviewRow({ productSku: null })]),
+      ),
+    );
+
+    renderWithProviders(<AdminReviewTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(screen.getByText(dict.reviews.noSku)).toBeInTheDocument();
   });
 
   it("calls the approve mutation when Approve is clicked", async () => {
@@ -189,5 +233,92 @@ describe("AdminReviewTable", () => {
         ),
       ),
     );
+  });
+});
+
+/**
+ * TASK-423 — the moderation queue had no search, so triaging a backlog meant
+ * paging through it and "what did this customer write about that product?" could
+ * not be answered from this screen at all.
+ */
+describe("AdminReviewTable — search and page size (TASK-423)", () => {
+  beforeEach(() => {
+    mockReplace.mockClear();
+    mockSearchParamsRef.current = new URLSearchParams("");
+  });
+
+  function stubReviews(rows = [makeReviewRow()]) {
+    const params: URLSearchParams[] = [];
+    server.use(
+      http.get("*/api/admin/reviews", ({ request }) => {
+        params.push(new URL(request.url).searchParams);
+        return listResponse(rows);
+      }),
+    );
+    return params;
+  }
+
+  it("debounces the typed term into the URL", async () => {
+    stubReviews();
+    renderWithProviders(<AdminReviewTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    await userEvent.type(
+      screen.getByLabelText(dict.reviews.searchAria),
+      "чохол",
+    );
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("search=%D1%87%D0%BE%D1%85%D0%BE%D0%BB"),
+      ),
+    );
+  });
+
+  it("forwards the term and the shared page size to the API", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("search=case");
+    const params = stubReviews();
+
+    renderWithProviders(<AdminReviewTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(params[0].get("search")).toBe("case");
+    expect(params[0].get("limit")).toBe("20");
+  });
+
+  it("names the term in the empty state instead of «черга порожня»", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("search=ghost");
+    stubReviews([]);
+
+    renderWithProviders(<AdminReviewTable />);
+
+    expect(
+      await screen.findByText(dict.reviews.emptyMatch("ghost")),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * The API treats an absent `status` as `pending`, so there is no "all" state to
+   * offer. The shared filter's no-filter option therefore READS as «На розгляді»
+   * — an «Усі» that silently returned the pending queue would be a lie the
+   * operator could not see through.
+   */
+  it("labels the cleared status as «На розгляді», the queue an absent param really returns", async () => {
+    stubReviews();
+    renderWithProviders(<AdminReviewTable />);
+    await screen.findByText("iPhone 15 Pro Case");
+
+    const trigger = screen.getByRole("combobox", {
+      name: dict.reviews.filterStatusAria,
+    });
+    expect(trigger).toHaveTextContent(dict.reviews.filterPending);
+
+    await userEvent.click(trigger);
+    expect(
+      screen.queryByRole("option", { name: dict.common.table.clearAllFilters }),
+    ).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("option", { name: dict.reviews.filterPending }),
+    ).toBeInTheDocument();
   });
 });

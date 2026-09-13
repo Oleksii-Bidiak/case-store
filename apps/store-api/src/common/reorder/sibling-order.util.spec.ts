@@ -1,6 +1,7 @@
 import {
   applySortOrderWrites,
   lockKey,
+  resolveSiblingOrderWrites,
   treeLockKey,
   writeSiblingOrder,
   type SortableDelegate,
@@ -79,6 +80,95 @@ describe('sibling-order.util', () => {
       await writeSiblingOrder(delegate, []);
 
       expect(delegate.updateMany).not.toHaveBeenCalled();
+    });
+
+    // TASK-429 / review finding #3. Every sortable model stamps `updatedAt` via
+    // `@updatedAt`, and `Page.updatedAt` is published by the storefront as the document's
+    // revision date — so a write to a row that did not move is not a wasted statement, it
+    // is a LIE to the customer ("privacy policy updated today"). Skipping it is the fix.
+    it('does NOT write a row the snapshot already shows at its target index', async () => {
+      await writeSiblingOrder(delegate, ['a', 'c', 'b'], {}, [
+        { id: 'a', sortOrder: 0 },
+        { id: 'b', sortOrder: 1 },
+        { id: 'c', sortOrder: 2 },
+      ]);
+
+      expect(delegate.updateMany).toHaveBeenCalledTimes(2);
+      expect(delegate.updateMany).toHaveBeenNthCalledWith(1, {
+        where: { id: 'c' },
+        data: { sortOrder: 1 },
+      });
+      expect(delegate.updateMany).toHaveBeenNthCalledWith(2, {
+        where: { id: 'b' },
+        data: { sortOrder: 2 },
+      });
+    });
+  });
+
+  // ─── resolveSiblingOrderWrites (TASK-429) ───────────────────────────────────
+
+  describe('resolveSiblingOrderWrites', () => {
+    it('keeps only the rows whose slot actually changes', () => {
+      const writes = resolveSiblingOrderWrites(
+        ['a', 'c', 'b'],
+        [
+          { id: 'a', sortOrder: 0 },
+          { id: 'b', sortOrder: 1 },
+          { id: 'c', sortOrder: 2 },
+        ],
+      );
+
+      expect(writes).toEqual([
+        { id: 'c', sortOrder: 1 },
+        { id: 'b', sortOrder: 2 },
+      ]);
+    });
+
+    it('writes nothing at all when the payload restates the order the bucket is already in', () => {
+      expect(
+        resolveSiblingOrderWrites(
+          ['a', 'b'],
+          [
+            { id: 'a', sortOrder: 0 },
+            { id: 'b', sortOrder: 1 },
+          ],
+        ),
+      ).toEqual([]);
+    });
+
+    /**
+     * The pre-TASK-428 state of every list: every row still at the `@default(0)` slot. Only
+     * the row that genuinely belongs at 0 may be skipped — the rest must be resequenced or
+     * the duplicate `sortOrder` values would survive the reorder and the list would keep
+     * falling back to its `createdAt` tiebreaker.
+     */
+    it('resequences a bucket whose rows all share sortOrder 0, skipping only the first', () => {
+      const writes = resolveSiblingOrderWrites(
+        ['a', 'b', 'c'],
+        [
+          { id: 'a', sortOrder: 0 },
+          { id: 'b', sortOrder: 0 },
+          { id: 'c', sortOrder: 0 },
+        ],
+      );
+
+      expect(writes).toEqual([
+        { id: 'b', sortOrder: 1 },
+        { id: 'c', sortOrder: 2 },
+      ]);
+    });
+
+    // Backward compatibility for the callers whose snapshot still selects `id` alone: an
+    // ABSENT `sortOrder` means "unknown", never "slot 0", so the full rewrite is kept.
+    it('writes every row when the snapshot carries no sortOrder (or is omitted entirely)', () => {
+      expect(resolveSiblingOrderWrites(['a', 'b'], [{ id: 'a' }, { id: 'b' }])).toEqual([
+        { id: 'a', sortOrder: 0 },
+        { id: 'b', sortOrder: 1 },
+      ]);
+      expect(resolveSiblingOrderWrites(['a', 'b'])).toEqual([
+        { id: 'a', sortOrder: 0 },
+        { id: 'b', sortOrder: 1 },
+      ]);
     });
   });
 

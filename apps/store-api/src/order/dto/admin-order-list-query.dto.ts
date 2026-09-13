@@ -12,7 +12,8 @@ import {
   IsUUID,
   MaxLength,
 } from 'class-validator';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
+import { PENDING_STALE_HOURS } from '../../dashboard/dashboard.types';
 import { OrderListQueryDto } from './order-list-query.dto';
 
 /**
@@ -152,4 +153,74 @@ export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status
   })
   @IsBoolean({ message: 'unpaidInTransit must be true or false' })
   unpaidInTransit?: boolean;
+
+  @ApiProperty({
+    description:
+      'Filter by payment status (TASK-425). Single-valued, unlike `status`: the queue is read ' +
+      'as "show me the unpaid ones", never as a union of two payment states.',
+    enum: PaymentStatus,
+    required: false,
+    example: PaymentStatus.PENDING,
+  })
+  @IsOptional()
+  @IsEnum(PaymentStatus, {
+    message: `paymentStatus must be one of: ${Object.values(PaymentStatus).join(', ')}`,
+  })
+  paymentStatus?: PaymentStatus;
+
+  @ApiProperty({
+    description:
+      'Filter by how the customer chose to pay (TASK-425) — the difference between a card ' +
+      'order whose money never arrived and a cash-on-delivery order that is simply unpaid ' +
+      'until the courier hands it over.',
+    enum: PaymentMethod,
+    required: false,
+    example: PaymentMethod.ON_DELIVERY,
+  })
+  @IsOptional()
+  @IsEnum(PaymentMethod, {
+    message: `paymentMethod must be one of: ${Object.values(PaymentMethod).join(', ')}`,
+  })
+  paymentMethod?: PaymentMethod;
+
+  @ApiProperty({
+    description:
+      `Filter to PENDING orders created more than ${PENDING_STALE_HOURS} hours ago — the ` +
+      '"waiting too long" queue (TASK-425). Deliberately a SERVER filter reusing the ' +
+      "dashboard's PENDING_STALE_HOURS, so the list chip and the dashboard tile cannot " +
+      'drift apart.',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  // Same `obj`-reading guard as `unpaidInTransit` above: `enableImplicitConversion`
+  // coerces the raw string first, and `Boolean('false')` is `true`.
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
+    return undefined;
+  })
+  @IsBoolean({ message: 'pendingOverdue must be true or false' })
+  pendingOverdue?: boolean;
 }
+
+/**
+ * Query parameters for the admin order CSV export (TASK-425).
+ *
+ * The SAME filters as the list, minus pagination and sorting — the export is
+ * "what I am currently looking at", not "this page of it", and a spreadsheet
+ * sorts better than we do. Declared by subtraction from
+ * {@link AdminOrderListQueryDto} rather than re-listed, so a filter added to the
+ * list is exported by construction instead of by remembering to.
+ *
+ * The row cap is NOT a query parameter: it is the server's own memory guard, and
+ * a caller raising it is exactly what the guard exists to prevent (see
+ * `ORDER_EXPORT_MAX_ROWS` in the service).
+ */
+export class AdminOrderExportQueryDto extends OmitType(AdminOrderListQueryDto, [
+  'page',
+  'limit',
+  'sortBy',
+  'sortOrder',
+] as const) {}

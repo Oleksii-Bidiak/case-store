@@ -5,6 +5,11 @@ import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { slugify } from "@/shared/lib";
 import { Button, FormActionsBar, Input, Label } from "@/shared/ui";
+import {
+  ContentImageField,
+  useImageUploadField,
+  useUploadsControllerUploadBrandLogo,
+} from "@/features/content-image-upload";
 import { dict } from "@/shared/config";
 import {
   brandSchema,
@@ -47,6 +52,7 @@ export function BrandForm({
     control,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<BrandFormInput, unknown, BrandFormValues>({
     resolver: zodResolver(brandSchema),
@@ -67,6 +73,17 @@ export function BrandForm({
   // `generateSlug`). Pure render-time computation — no state, no side effects.
   const nameValue = useWatch({ control, name: "name" });
   const slugValue = useWatch({ control, name: "slug" });
+
+  // TASK-424: the logo field takes a FILE as well as a pasted link. The uploaded
+  // URL goes in through `setValue`, so the form remains the only source of truth
+  // for the field (docs/conventions/forms.md).
+  const logoValue = useWatch({ control, name: "logo" }) ?? "";
+  const logoUpload = useImageUploadField({
+    upload: useUploadsControllerUploadBrandLogo(),
+    copy: dict.brandForm.logoUpload,
+    onUploaded: (url) =>
+      setValue("logo", url, { shouldDirty: true, shouldValidate: true }),
+  });
 
   return (
     <form
@@ -106,19 +123,19 @@ export function BrandForm({
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="brand-logo">{dict.brandForm.logo}</Label>
-        <Input
-          id="brand-logo"
-          placeholder={dict.brandForm.logoPlaceholder}
-          {...register("logo")}
-        />
-        {errors.logo && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.logo.message}
-          </p>
-        )}
-      </div>
+      <ContentImageField
+        id="brand-logo"
+        label={dict.brandForm.logo}
+        urlPlaceholder={dict.brandForm.logoPlaceholder}
+        copy={dict.brandForm.logoUpload}
+        value={logoValue}
+        urlInput={register("logo")}
+        onRemove={() =>
+          setValue("logo", "", { shouldDirty: true, shouldValidate: true })
+        }
+        fieldError={errors.logo?.message}
+        {...logoUpload}
+      />
 
       <div className="flex items-center gap-2">
         <input

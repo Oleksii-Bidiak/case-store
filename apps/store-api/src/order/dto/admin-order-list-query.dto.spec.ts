@@ -1,7 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { OrderStatus } from '@prisma/client';
-import { AdminOrderListQueryDto } from './admin-order-list-query.dto';
+import { OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
+import { AdminOrderExportQueryDto, AdminOrderListQueryDto } from './admin-order-list-query.dto';
 
 // Mirrors the global ValidationPipe behaviour from `main.ts` (transform +
 // `enableImplicitConversion: true`) — transforms must read the ORIGINAL query
@@ -118,5 +118,85 @@ describe('AdminOrderListQueryDto — inherited fields survive OmitType (TASK-250
   it('rejects a non-allow-listed sortBy', async () => {
     const errors = await validate(toDto({ sortBy: 'bogus' }));
     expect(errors.some((e) => e.property === 'sortBy')).toBe(true);
+  });
+});
+
+describe('AdminOrderListQueryDto — payment + overdue filters (TASK-425)', () => {
+  it('accepts a valid payment status and payment method', async () => {
+    const dto = toDto({
+      paymentStatus: PaymentStatus.FAILED,
+      paymentMethod: PaymentMethod.ONLINE,
+    });
+
+    expect(await validate(dto)).toHaveLength(0);
+    expect(dto.paymentStatus).toBe(PaymentStatus.FAILED);
+    expect(dto.paymentMethod).toBe(PaymentMethod.ONLINE);
+  });
+
+  it('rejects an unknown payment status', async () => {
+    const errors = await validate(toDto({ paymentStatus: 'BOGUS' }));
+    expect(errors.some((e) => e.property === 'paymentStatus')).toBe(true);
+  });
+
+  it('rejects an unknown payment method', async () => {
+    const errors = await validate(toDto({ paymentMethod: 'BITCOIN' }));
+    expect(errors.some((e) => e.property === 'paymentMethod')).toBe(true);
+  });
+
+  it('resolves ?pendingOverdue=true to boolean true', () => {
+    expect(toDto({ pendingOverdue: 'true' }).pendingOverdue).toBe(true);
+  });
+
+  it('resolves ?pendingOverdue=false to boolean false (not true)', () => {
+    // The same `Boolean('false') === true` trap `unpaidInTransit` guards against:
+    // without reading the ORIGINAL value, turning the chip OFF would turn it on.
+    expect(toDto({ pendingOverdue: 'false' }).pendingOverdue).toBe(false);
+  });
+
+  it('leaves pendingOverdue undefined when the param is absent', () => {
+    expect(toDto({}).pendingOverdue).toBeUndefined();
+  });
+});
+
+describe('AdminOrderExportQueryDto (TASK-425)', () => {
+  const toExportDto = (query: Record<string, unknown>): AdminOrderExportQueryDto =>
+    plainToInstance(AdminOrderExportQueryDto, query, { enableImplicitConversion: true });
+
+  it('keeps every list FILTER', async () => {
+    const dto = toExportDto({
+      status: 'CONFIRMED,PROCESSING',
+      search: 'ABC12345',
+      userId: '550e8400-e29b-41d4-a716-446655440000',
+      dateFrom: '2026-01-01',
+      paymentStatus: PaymentStatus.PAID,
+      paymentMethod: PaymentMethod.ON_DELIVERY,
+      pendingOverdue: 'true',
+      unpaidInTransit: 'true',
+    });
+
+    expect(await validate(dto)).toHaveLength(0);
+    expect(dto.status).toEqual(['CONFIRMED', 'PROCESSING']);
+    expect(dto.search).toBe('ABC12345');
+    expect(dto.paymentStatus).toBe(PaymentStatus.PAID);
+    expect(dto.paymentMethod).toBe(PaymentMethod.ON_DELIVERY);
+    expect(dto.pendingOverdue).toBe(true);
+    expect(dto.unpaidInTransit).toBe(true);
+  });
+
+  it('drops pagination and sorting — the export is the whole selection', async () => {
+    const dto = toExportDto({ page: 3, limit: 50, sortBy: 'total', sortOrder: 'asc' });
+
+    // OmitType removes the DECORATED properties, and the app's ValidationPipe runs
+    // `whitelist + forbidNonWhitelisted` (main.ts) — so a caller who pages or sorts
+    // an export is refused outright rather than handed a file that is neither the
+    // page they asked for nor the whole selection.
+    const errors = await validate(dto, { whitelist: true, forbidNonWhitelisted: true });
+    const rejected = errors.map((e) => e.property);
+    expect(rejected).toEqual(expect.arrayContaining(['page', 'limit', 'sortBy', 'sortOrder']));
+  });
+
+  it('still rejects an invalid filter', async () => {
+    const errors = await validate(toExportDto({ status: 'BOGUS' }));
+    expect(errors.some((e) => e.property === 'status')).toBe(true);
   });
 });

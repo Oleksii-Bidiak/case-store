@@ -44,7 +44,8 @@ function makePostRow(
     category: { id: "cat-1", slug: "guides", name: "Гайди" },
     status,
     publishedAt: status === "PUBLISHED" ? "2026-06-01T09:00:00.000Z" : null,
-    scheduledAt: null,
+    // Widened: the TASK-430 scheduled-badge tests override this with a date.
+    scheduledAt: null as string | null,
     createdAt: "2026-06-01T10:00:00.000Z",
     updatedAt: "2026-06-01T10:00:00.000Z",
   };
@@ -120,6 +121,40 @@ describe("BlogPostTable", () => {
 
   // TASK-285: the delete-confirm copy warns about the Google index only for a
   // currently-published row.
+  /**
+   * TASK-430 — «Заплановано» alone left the operator to open the post to find out
+   * WHEN, and wore the same grey as a draft.
+   */
+  describe("scheduled badge (TASK-430)", () => {
+    it("shows the scheduled date", async () => {
+      stubPosts([
+        {
+          ...makePostRow("p3", "Friday Post", "SCHEDULED"),
+          scheduledAt: "2026-09-19T08:00:00.000Z",
+        },
+      ]);
+
+      renderWithProviders(<BlogPostTable />);
+
+      expect(
+        await screen.findByText(dict.blogPosts.statusScheduledOn("19.09.2026")),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(dict.blogPosts.statusDraft),
+      ).not.toBeInTheDocument();
+    });
+
+    it("falls back to «Заплановано» with no instant, never «Invalid Date»", async () => {
+      stubPosts([makePostRow("p4", "No Date", "SCHEDULED")]);
+
+      renderWithProviders(<BlogPostTable />);
+
+      expect(
+        await screen.findByText(dict.blogPosts.statusScheduled),
+      ).toBeInTheDocument();
+    });
+  });
+
   describe("delete confirm copy (TASK-285)", () => {
     let confirmSpy: jest.SpyInstance;
 

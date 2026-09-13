@@ -9,7 +9,11 @@ import {
 import { dict } from "@/shared/config";
 
 const SKELETON_ROWS = 5;
-const COLUMN_COUNT = 6;
+// Title, slug, kind, status, actions. The kind column arrived with TASK-435 and
+// the hand-typed «Порядок» column left with TASK-428, so neither side's number
+// survived the merge; this has to agree with the header in `admin-page-table.tsx`
+// or the skeleton stands in for a table of a different width.
+const COLUMN_COUNT = 5;
 
 /**
  * Loading placeholder matching the AdminPageTable column structure.
@@ -24,7 +28,6 @@ export function AdminPageTableSkeleton() {
             <TableHead>{dict.pages.colKind}</TableHead>
             <TableHead>{dict.pages.colSlug}</TableHead>
             <TableHead>{dict.pages.colStatus}</TableHead>
-            <TableHead>{dict.pages.colSort}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>
         </TableHeader>

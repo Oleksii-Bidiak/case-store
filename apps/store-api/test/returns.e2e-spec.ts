@@ -294,7 +294,9 @@ describe('Admin returns queue (e2e)', () => {
       expect(response.body.data.map((row: { id: string }) => row.id)).toEqual(
         rows.map((row) => row.id),
       );
-      expect(response.body.meta).toEqual({ total: 3, page: 1, limit: 10, totalPages: 1 });
+      // limit 20, not 10: TASK-423 unified the admin page size across every
+      // table, and the returns queue was one of the two that disagreed.
+      expect(response.body.meta).toEqual({ total: 3, page: 1, limit: 20, totalPages: 1 });
     });
   });
 });

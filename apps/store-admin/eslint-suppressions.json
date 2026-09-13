@@ -16,7 +16,7 @@
   },
   "src/shared/ui/banner-placement-preview/banner-placement-preview.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 3
+      "count": 1
     }
   },
   "src/shared/ui/button.tsx": {

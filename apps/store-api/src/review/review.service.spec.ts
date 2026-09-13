@@ -205,7 +205,7 @@ describe('ReviewService', () => {
           {
             ...makeReview(),
             user: { email: 'olena@example.com' },
-            product: { name: 'iPhone 15 Pro Case' },
+            product: { name: 'iPhone 15 Pro Case', sku: 'CASE-IP15P-BLK' },
           },
         ],
         total: 1,
@@ -213,10 +213,41 @@ describe('ReviewService', () => {
 
       const result = await service.getReviewsForModeration({});
 
-      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith('pending', 1, 10);
+      // 20, not 10: the admin queue took the one admin page size in TASK-423.
+      // `undefined` is the search — absent, not an empty string, which would
+      // reach Prisma as `contains: ''` and match every review.
+      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith(
+        'pending',
+        1,
+        20,
+        undefined,
+      );
       expect(result.data[0].userEmail).toBe('olena@example.com');
       expect(result.data[0].productName).toBe('iPhone 15 Pro Case');
+      // TASK-430: the queue shows the SKU next to the name, because the name alone
+      // does not identify a position in a catalogue with colour variants.
+      expect(result.data[0].productSku).toBe('CASE-IP15P-BLK');
       expect(result.meta.total).toBe(1);
+    });
+
+    it('carries a null SKU through rather than inventing a placeholder', async () => {
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview(),
+            user: { email: 'olena@example.com' },
+            // `Product.sku` is nullable — a position can be saved before an
+            // article number is assigned. The wire value must stay null so the
+            // panel can say «без артикулу» instead of rendering "null".
+            product: { name: 'iPhone 15 Pro Case', sku: null },
+          },
+        ],
+        total: 1,
+      });
+
+      const result = await service.getReviewsForModeration({});
+
+      expect(result.data[0].productSku).toBeNull();
     });
 
     it('passes the approved status through to the repository', async () => {
@@ -224,7 +255,28 @@ describe('ReviewService', () => {
 
       await service.getReviewsForModeration({ status: ReviewModerationStatus.APPROVED });
 
-      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith('approved', 1, 10);
+      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith(
+        'approved',
+        1,
+        20,
+        undefined,
+      );
+    });
+
+    // TASK-423: the queue had no search at all. A term that reached the service
+    // but not the repository would render a full, unfiltered queue — which looks
+    // like "nothing matched my typo" rather than "the filter was dropped".
+    it('forwards the search term and the requested page size', async () => {
+      reviewRepositoryMock.findForModeration.mockResolvedValue({ reviews: [], total: 0 });
+
+      await service.getReviewsForModeration({ page: 3, limit: 100, search: 'чохол' });
+
+      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith(
+        'pending',
+        3,
+        100,
+        'чохол',
+      );
     });
   });
 

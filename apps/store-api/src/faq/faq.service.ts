@@ -6,8 +6,14 @@ import {
   FindAllAdminParams,
 } from './faq.repository';
 import { FaqItemEntity } from './entities';
-import { CreateFaqItemDto, UpdateFaqItemDto, AdminFaqListQueryDto } from './dto';
+import {
+  CreateFaqItemDto,
+  UpdateFaqItemDto,
+  AdminFaqListQueryDto,
+  ReorderFaqItemsDto,
+} from './dto';
 import { RevalidationNotifier } from '../publishing';
+import { reorderErrorToHttp } from '../common/reorder';
 
 /**
  * Cache tag purged on the storefront after every FAQ write. The storefront's
@@ -142,6 +148,38 @@ export class FaqService {
     await this.repository.delete(id);
     await this.revalidation.revalidate({ tags: [FAQ_TAG] });
     return { id };
+  }
+
+  /**
+   * Rewrite the complete ordering of the FAQ list (admin, TASK-428) and return the
+   * refreshed COMPLETE admin list, so the panel resyncs in a single round-trip.
+   *
+   * The repository's domain errors are mapped to HTTP here, so the wire body carries the
+   * stable `error` code the admin panel keys its UA announcements off.
+   *
+   * Revalidation is unconditional: `sortOrder` IS the storefront's display order for the
+   * `/info` FAQ accordion, so any reorder that lands changes what a shopper sees — even
+   * one that only moves hidden items changes the ranks around them.
+   */
+  async reorder(dto: ReorderFaqItemsDto): Promise<AdminFaqListResponse> {
+    let items;
+    let total;
+    try {
+      ({ items, total } = await this.repository.reorderAll(dto.orderedIds));
+    } catch (error) {
+      throw reorderErrorToHttp(error);
+    }
+
+    await this.revalidation.revalidate({ tags: [FAQ_TAG] });
+
+    // Shape parity with `findAllAdmin` is load-bearing: the admin panel writes this
+    // response straight into the list query's cache (`useReorderLifecycle` →
+    // `setQueryData`), and an envelope missing `meta` would blank the row counter the
+    // moment someone drags a row.
+    return {
+      data: items.map((item) => FaqItemEntity.fromPrisma(item)),
+      meta: this.buildMeta(total),
+    };
   }
 
   /**

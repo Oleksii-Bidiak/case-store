@@ -158,7 +158,8 @@ describe("CarouselForm — conditional fields per source", () => {
       source: "CATEGORY",
       categoryId: "cat-parent",
       itemLimit: 12,
-      sortOrder: 0,
+      // No `sortOrder` — TASK-428 removed the field; the server appends the new
+      // carousel to the end of its placement bucket.
       status: "DRAFT",
     });
   });

@@ -36,8 +36,23 @@ export class OrderCustomerData {
  * account data because there is no account.
  */
 export class OrderGuestData {
-  @ApiProperty({ description: 'Email given at checkout', example: 'olena@example.com' })
-  email!: string;
+  /**
+   * Null on an operator-created order (TASK-426): `ManualOrderContactDto` makes
+   * the email optional because someone taking an order over the phone often has
+   * a name and a number and nothing else, and demanding an address produced
+   * invented ones. The RESPONSE contract has to admit what the REQUEST contract
+   * already accepts — while it said `string`, an order placed with phone + name
+   * came back identifying no customer at all.
+   */
+  @ApiProperty({
+    description:
+      'Email given at checkout, or null on an operator-created order where the customer had ' +
+      'none (TASK-426)',
+    type: String,
+    nullable: true,
+    example: 'olena@example.com',
+  })
+  email!: string | null;
 
   @ApiProperty({ description: 'Phone given at checkout', example: '+380501234567' })
   phone!: string;
@@ -63,8 +78,9 @@ export class OrderEntity {
 
   @ApiProperty({
     description:
-      'Owning user ID, or null for a guest order (TASK-338). Exactly one of `userId` and ' +
-      '`guest` is populated.',
+      'Owning user ID, or null for a guest order (TASK-338). A null `userId` always comes ' +
+      'with a `guest` block; the reverse does not hold — an order placed as a guest and ' +
+      'later claimed by a registering account carries both, and keeps its contact snapshot.',
     type: String,
     nullable: true,
     example: '550e8400-e29b-41d4-a716-446655440001',
@@ -265,12 +281,30 @@ export class OrderEntity {
       };
     }
     // TASK-338: a guest order has no user row, so the contact block IS the
-    // customer record. Keyed off the email because that is the field the order
-    // cannot be placed without; phone/name fall back to empty strings rather than
-    // making the whole block vanish on a partially-filled legacy row.
-    if (order.guestEmail) {
+    // customer record.
+    //
+    // The condition is "this is a guest order", NOT "this order has a guest
+    // email". It was the latter until TASK-426 made the email optional on an
+    // operator-created order — and an order taken over the phone with a name and
+    // a number then came back with `userId: null`, `customer: undefined` AND
+    // `guest: undefined`, identifying nobody. Both admin screens read exactly
+    // these two fields, so the phone the operator had just typed was invisible on
+    // the list and on the detail page alike; the CSV export, which reads the raw
+    // row instead, was the only place it survived.
+    //
+    // Any ONE of the three contact fields is enough: each of them is more than
+    // the nothing the alternative renders.
+    //
+    // Deliberately NOT also gated on `!order.user`. `user` is joined on admin
+    // reads only, so gating on it would make the same order answer differently
+    // depending on which query loaded it — and an order a registering account
+    // later claimed (`claimGuestOrders` sets `userId` and KEEPS the guest columns
+    // on purpose) would lose the snapshot of what the buyer actually typed, on
+    // exactly the admin screens that exist to look it up. `customer` already wins
+    // the display in both UIs when both are present.
+    if (order.guestEmail || order.guestPhone || order.guestName) {
       entity.guest = {
-        email: order.guestEmail,
+        email: order.guestEmail ?? null,
         phone: order.guestPhone ?? '',
         name: order.guestName ?? '',
       };

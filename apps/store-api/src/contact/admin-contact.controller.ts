@@ -128,6 +128,11 @@ export class AdminContactController {
   @ApiQuery({ name: 'limit', required: false, description: 'Items per page (max 100)' })
   @ApiQuery({ name: 'sortBy', required: false, description: 'Sort: createdAt | status | name' })
   @ApiQuery({ name: 'sortOrder', required: false, description: 'asc | desc' })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Free-text search over sender name, email, phone, topic, order ref and message',
+  })
   @ApiResponse({ status: 200, description: 'Paginated inbox', type: ContactInboxResponse })
   @ApiResponse({ status: 401, description: 'Authentication required' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })

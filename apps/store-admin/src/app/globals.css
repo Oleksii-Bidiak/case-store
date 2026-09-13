@@ -191,6 +191,21 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-sora), var(--font-geist-sans);
+
+  /* Aspect ratios (TASK-429)
+     Named tokens for the storefront shapes the banner preview reproduces, so the
+     preview is a SCALE MODEL of the real slot instead of "whatever the 360px side
+     panel happens to be wide". Declared here rather than written as
+     `aspect-[968/440]` because arbitrary Tailwind values are a lint error
+     (TASK-260) — the sanctioned escape hatch is a real @theme token.
+     Measured from apps/store-client:
+       banner-hero        hero-slider.tsx `h-[420px] sm:h-[440px]` inside the 1fr
+                          cell of hero-banner.tsx's `lg:grid-cols-[260px_1fr]`
+                          within `max-w-7xl px-4` → ≈968×440 on a desktop.
+       banner-hero-mobile below lg the same slider is full width at 420px → the
+                          phone shape is TALLER than it is wide. */
+  --aspect-banner-hero: 968 / 440;
+  --aspect-banner-hero-mobile: 375 / 420;
 }
 
 /* ─────────────────────────────────────────────

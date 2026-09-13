@@ -12,6 +12,7 @@ import { CategoryRepository } from '../src/category';
 import { ProductService } from '../src/product/product.service';
 import { RevalidationNotifier } from '../src/publishing';
 import { HttpExceptionFilter } from '../src/common/filters';
+import { ReorderNotFoundError, ReorderStaleError } from '../src/common/reorder';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
@@ -79,6 +80,7 @@ describe('Carousel placement (e2e)', () => {
     findById: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    updateWithPlacementMove: jest.fn(),
     publish: jest.fn(),
     unpublish: jest.fn(),
     delete: jest.fn(),
@@ -86,6 +88,7 @@ describe('Carousel placement (e2e)', () => {
     findItemIds: jest.fn(),
     findItemsWithProducts: jest.fn(),
     replaceItems: jest.fn(),
+    reorderPlacement: jest.fn(),
     revalidateTarget: { tags: ['carousels'], paths: ['/'] },
   };
 
@@ -258,12 +261,17 @@ describe('Carousel placement (e2e)', () => {
       expect(carouselRepositoryMock.update).not.toHaveBeenCalled();
     });
 
-    it('moves a live carousel to HOME_TABS and purges the homepage cache', async () => {
+    // A placement change is a MOVE between two independent `sortOrder` sequences (TASK-428),
+    // so it must reach the RE-APPENDING repository path — the plain in-place write carried
+    // the row's old slot into the target bucket, putting two carousels at the same position
+    // and letting `createdAt` decide where the operator's move actually landed.
+    it('moves a live carousel to HOME_TABS through the re-appending path and purges the cache', async () => {
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
       carouselRepositoryMock.findById.mockResolvedValue(railCarousel);
-      carouselRepositoryMock.update.mockResolvedValue({
+      carouselRepositoryMock.updateWithPlacementMove.mockResolvedValue({
         ...railCarousel,
         placement: CarouselPlacement.HOME_TABS,
+        sortOrder: 3,
       });
 
       const response = await request(app.getHttpServer())
@@ -272,15 +280,33 @@ describe('Carousel placement (e2e)', () => {
         .send(body)
         .expect(200);
 
-      expect(carouselRepositoryMock.update).toHaveBeenCalledWith(
+      expect(carouselRepositoryMock.updateWithPlacementMove).toHaveBeenCalledWith(
         railId,
         expect.objectContaining({ placement: CarouselPlacement.HOME_TABS }),
+        CarouselPlacement.HOME_TABS,
       );
+      expect(carouselRepositoryMock.update).not.toHaveBeenCalled();
       expect(response.body.data.placement).toBe(CarouselPlacement.HOME_TABS);
+      expect(response.body.data.sortOrder).toBe(3);
       expect(revalidationMock.revalidate).toHaveBeenCalledWith({
         tags: ['carousels'],
         paths: ['/'],
       });
+    });
+
+    it('keeps an edit that re-sends the SAME placement on the plain in-place write', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+      carouselRepositoryMock.findById.mockResolvedValue(railCarousel);
+      carouselRepositoryMock.update.mockResolvedValue({ ...railCarousel, title: 'Новинки 2' });
+
+      await request(app.getHttpServer())
+        .put(`/api/admin/carousels/${railId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Новинки 2', placement: CarouselPlacement.HOME_RAILS })
+        .expect(200);
+
+      expect(carouselRepositoryMock.updateWithPlacementMove).not.toHaveBeenCalled();
+      expect(carouselRepositoryMock.update).toHaveBeenCalledTimes(1);
     });
 
     it('returns 404 for a missing carousel', async () => {
@@ -386,6 +412,128 @@ describe('Carousel placement (e2e)', () => {
       expect(carouselRepositoryMock.findAllPublished).toHaveBeenCalledWith({
         placement: undefined,
       });
+    });
+  });
+
+  // ─── PATCH /api/admin/carousels/reorder (TASK-428) ──────────────────────────
+
+  describe('PATCH /api/admin/carousels/reorder', () => {
+    const body = {
+      placement: CarouselPlacement.HOME_RAILS,
+      orderedIds: [railId, tabsId],
+    };
+
+    it('returns 401 without an auth token', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .send(body)
+        .expect(401);
+    });
+
+    it('returns 403 for a non-admin user', async () => {
+      const token = generateAccessToken('customer-e2e-1', 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(403);
+
+      expect(carouselRepositoryMock.reorderPlacement).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 on an unknown placement', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ placement: 'HOME_SIDEBAR', orderedIds: [railId] })
+        .expect(400);
+
+      expect(carouselRepositoryMock.reorderPlacement).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when an ordered id is not a uuid', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ placement: CarouselPlacement.HOME_RAILS, orderedIds: ['not-a-uuid'] })
+        .expect(400);
+
+      expect(carouselRepositoryMock.reorderPlacement).not.toHaveBeenCalled();
+    });
+
+    // Route-order regression guard: `reorder` is declared BEFORE `:id`, so it must reach
+    // the reorder handler — never `GET/PUT :id` with `id = 'reorder'`.
+    it('is matched by the reorder handler, NOT captured as an :id route', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+      carouselRepositoryMock.reorderPlacement.mockResolvedValue({
+        carousels: publishedRows,
+        total: 2,
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(200);
+
+      expect(carouselRepositoryMock.reorderPlacement).toHaveBeenCalledTimes(1);
+      expect(carouselRepositoryMock.findById).not.toHaveBeenCalled();
+      expect(carouselRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it('returns 200 with the refreshed full admin list (ALL placements)', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+      carouselRepositoryMock.reorderPlacement.mockResolvedValue({
+        carousels: publishedRows,
+        total: 2,
+      });
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(200);
+
+      expect(response.body.data).toHaveLength(2);
+      expect(response.body.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
+      expect(carouselRepositoryMock.reorderPlacement).toHaveBeenCalledWith(
+        CarouselPlacement.HOME_RAILS,
+        [railId, tabsId],
+      );
+    });
+
+    // The stable codes are the contract the admin panel keys its UA announcements off —
+    // and they only reach the wire because `HttpExceptionFilter` rebuilds the envelope
+    // from `error` + `message`.
+    it('surfaces REORDER_STALE as 409 with the stable code', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+      carouselRepositoryMock.reorderPlacement.mockRejectedValue(new ReorderStaleError());
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(409);
+
+      expect(response.body.error).toBe('REORDER_STALE');
+    });
+
+    it('surfaces REORDER_NOT_FOUND as 404 with the stable code', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+      carouselRepositoryMock.reorderPlacement.mockRejectedValue(new ReorderNotFoundError());
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/carousels/reorder')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(404);
+
+      expect(response.body.error).toBe('REORDER_NOT_FOUND');
     });
   });
 });

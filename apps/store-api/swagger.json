@@ -2278,6 +2278,16 @@
             }
           },
           {
+            "name": "deleted",
+            "required": false,
+            "in": "query",
+            "description": "Show the SOFT-DELETED (tombstoned) products instead of the live ones (TASK-427). Honoured ONLY on the admin listing — `ProductService.adminFindAll` is the single place that forwards it; every public read stays live-only whatever the caller sends. Absent or false = live products only (the default), true = tombstones only.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
             "name": "outOfStock",
             "required": false,
             "in": "query",
@@ -2490,6 +2500,16 @@
             "required": false,
             "in": "query",
             "description": "Filter by active status — honoured only on the admin listing; the public list is always active-only (TASK-230)",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "deleted",
+            "required": false,
+            "in": "query",
+            "description": "Show the SOFT-DELETED (tombstoned) products instead of the live ones (TASK-427). Honoured ONLY on the admin listing — `ProductService.adminFindAll` is the single place that forwards it; every public read stays live-only whatever the caller sends. Absent or false = live products only (the default), true = tombstones only.",
             "schema": {
               "example": true,
               "type": "boolean"
@@ -3075,6 +3095,52 @@
         ]
       }
     },
+    "/api/products/group": {
+      "patch": {
+        "operationId": "productControllerSetGroupMany",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkProductGroupDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Number of products moved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkProductGroupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — empty, oversized, duplicated or non-UUID ids"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Unknown product id or unknown target group — nothing was written"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Bulk reassign products to a variant group (admin)",
+        "tags": [
+          "Products"
+        ]
+      }
+    },
     "/api/products/{id}/deactivate": {
       "patch": {
         "operationId": "ProductController_deactivate",
@@ -3379,6 +3445,250 @@
         "summary": "Delete a product image (admin)",
         "tags": [
           "Products"
+        ]
+      }
+    },
+    "/api/admin/uploads/categories": {
+      "post": {
+        "operationId": "uploadsControllerUploadCategoryImage",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file, or a disallowed MIME type"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — categories:write required"
+          },
+          "413": {
+            "description": "File exceeds the 5 MB limit"
+          },
+          "415": {
+            "description": "File contents are not a valid image"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Upload a category image (admin)",
+        "tags": [
+          "Uploads"
+        ]
+      }
+    },
+    "/api/admin/uploads/brands": {
+      "post": {
+        "operationId": "uploadsControllerUploadBrandLogo",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file, or a disallowed MIME type"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — brands:write required"
+          },
+          "413": {
+            "description": "File exceeds the 5 MB limit"
+          },
+          "415": {
+            "description": "File contents are not a valid image"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Upload a brand logo (admin)",
+        "tags": [
+          "Uploads"
+        ]
+      }
+    },
+    "/api/admin/uploads/banners": {
+      "post": {
+        "operationId": "uploadsControllerUploadBannerImage",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file, or a disallowed MIME type"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — banners:write required"
+          },
+          "413": {
+            "description": "File exceeds the 5 MB limit"
+          },
+          "415": {
+            "description": "File contents are not a valid image"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Upload a banner image (admin)",
+        "tags": [
+          "Uploads"
+        ]
+      }
+    },
+    "/api/admin/uploads/blog": {
+      "post": {
+        "operationId": "uploadsControllerUploadBlogCover",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file, or a disallowed MIME type"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — blog:write required"
+          },
+          "413": {
+            "description": "File exceeds the 5 MB limit"
+          },
+          "415": {
+            "description": "File contents are not a valid image"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Upload a blog cover image (admin)",
+        "tags": [
+          "Uploads"
         ]
       }
     },
@@ -5022,6 +5332,20 @@
             }
           },
           {
+            "name": "actorRole",
+            "required": false,
+            "in": "query",
+            "description": "Filter by the actor role recorded on the entry",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "CUSTOMER",
+                "ADMIN",
+                "MANAGER"
+              ]
+            }
+          },
+          {
             "name": "action",
             "required": false,
             "in": "query",
@@ -5663,6 +5987,103 @@
         ]
       }
     },
+    "/api/admin/users/{userId}/notes": {
+      "get": {
+        "operationId": "listUserNotes",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "description": "Customer UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notes, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserNoteListResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — customers:read required"
+          },
+          "404": {
+            "description": "Customer not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List staff notes about a customer (admin)",
+        "tags": [
+          "Users"
+        ]
+      },
+      "post": {
+        "operationId": "createUserNote",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "description": "Customer UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Note appended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserNoteResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty or over-long note"
+          },
+          "403": {
+            "description": "Forbidden — customers:write required"
+          },
+          "404": {
+            "description": "Customer not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Add a staff note about a customer (admin)",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
     "/api/catalog-import": {
       "post": {
         "description": "Parses the workbook and diffs it against the import ledger. Writes NOTHING to the catalogue — the returned run has to be confirmed via /apply.",
@@ -6189,27 +6610,11 @@
         "operationId": "AdminPageController_findAll",
         "parameters": [
           {
-            "name": "kind",
-            "required": false,
-            "in": "query",
-            "description": "Filter by page kind. LEGAL backs the /legal hub, INFO the /info help pages. Without it the list still omits HUB rows — a hub row is not a page (TASK-435).",
-            "schema": {
-              "example": "LEGAL",
-              "type": "string",
-              "enum": [
-                "LEGAL",
-                "INFO",
-                "HUB"
-              ]
-            }
-          },
-          {
             "name": "page",
             "required": false,
             "in": "query",
-            "description": "Page number (1-based)",
+            "description": "Page number (1-based). Omit both page and limit to get the complete list.",
             "schema": {
-              "default": 1,
               "example": 1,
               "type": "number"
             }
@@ -6218,9 +6623,8 @@
             "name": "limit",
             "required": false,
             "in": "query",
-            "description": "Number of items per page",
+            "description": "Items per page. Omit both page and limit to get the complete list.",
             "schema": {
-              "default": 20,
               "example": 20,
               "type": "number"
             }
@@ -6249,11 +6653,26 @@
               "example": "достав",
               "type": "string"
             }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Filter by page kind (LEGAL, INFO, HUB). Omitted, every kind is listed.",
+            "schema": {
+              "example": "LEGAL",
+              "type": "string",
+              "enum": [
+                "LEGAL",
+                "INFO",
+                "HUB"
+              ]
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Paginated list of pages",
+            "description": "List of pages (complete list when page/limit are omitted)",
             "content": {
               "application/json": {
                 "schema": {
@@ -6271,7 +6690,7 @@
             "access-token": []
           }
         ],
-        "summary": "List all pages — published + drafts, paginated, optional search (admin)",
+        "summary": "List all pages — published + drafts, optional search + pagination (admin)",
         "tags": [
           "Pages"
         ]
@@ -6316,6 +6735,55 @@
           }
         ],
         "summary": "Create a page (admin)",
+        "tags": [
+          "Pages"
+        ]
+      }
+    },
+    "/api/admin/pages/reorder": {
+      "patch": {
+        "operationId": "adminPageControllerReorder",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderPagesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The full refreshed admin page list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPageListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, or REORDER_DUPLICATE_ID"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "REORDER_NOT_FOUND — an id is not in this list"
+          },
+          "409": {
+            "description": "REORDER_STALE — another admin changed the list first"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reorder the static-page list (admin)",
         "tags": [
           "Pages"
         ]
@@ -7890,6 +8358,55 @@
         ]
       }
     },
+    "/api/admin/carousels/reorder": {
+      "patch": {
+        "operationId": "adminCarouselControllerReorder",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderCarouselsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The full refreshed admin carousel list (all placements)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCarouselListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, an unknown placement, or REORDER_DUPLICATE_ID"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "REORDER_NOT_FOUND — an id is not in this bucket"
+          },
+          "409": {
+            "description": "REORDER_STALE — another admin changed this placement first"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reorder carousels within one placement (admin)",
+        "tags": [
+          "Carousels"
+        ]
+      }
+    },
     "/api/admin/carousels/{id}": {
       "get": {
         "operationId": "AdminCarouselController_findById",
@@ -8589,6 +9106,55 @@
         ]
       }
     },
+    "/api/admin/faq/reorder": {
+      "patch": {
+        "operationId": "adminFaqControllerReorder",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderFaqItemsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The full refreshed admin FAQ list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminFaqListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, or REORDER_DUPLICATE_ID"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "REORDER_NOT_FOUND — an id is not in this list"
+          },
+          "409": {
+            "description": "REORDER_STALE — another admin changed the list first"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reorder the FAQ list (admin)",
+        "tags": [
+          "FAQ"
+        ]
+      }
+    },
     "/api/admin/faq/{id}": {
       "get": {
         "operationId": "AdminFaqController_findById",
@@ -8805,6 +9371,17 @@
                 "READ",
                 "ARCHIVED"
               ]
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Free-text search over sender name, email, phone, topic, order ref and message",
+            "schema": {
+              "maxLength": 120,
+              "example": "Іван",
+              "type": "string"
             }
           },
           {
@@ -9421,6 +9998,47 @@
               "example": true,
               "type": "boolean"
             }
+          },
+          {
+            "name": "paymentStatus",
+            "required": false,
+            "in": "query",
+            "description": "Filter by payment status (TASK-425). Single-valued, unlike `status`: the queue is read as \"show me the unpaid ones\", never as a union of two payment states.",
+            "schema": {
+              "example": "PENDING",
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "PAID",
+                "FAILED",
+                "REFUNDED"
+              ]
+            }
+          },
+          {
+            "name": "paymentMethod",
+            "required": false,
+            "in": "query",
+            "description": "Filter by how the customer chose to pay (TASK-425) — the difference between a card order whose money never arrived and a cash-on-delivery order that is simply unpaid until the courier hands it over.",
+            "schema": {
+              "example": "ON_DELIVERY",
+              "type": "string",
+              "enum": [
+                "ONLINE",
+                "ON_DELIVERY",
+                "INSTALLMENTS"
+              ]
+            }
+          },
+          {
+            "name": "pendingOverdue",
+            "required": false,
+            "in": "query",
+            "description": "Filter to PENDING orders created more than 48 hours ago — the \"waiting too long\" queue (TASK-425). Deliberately a SERVER filter reusing the dashboard's PENDING_STALE_HOURS, so the list chip and the dashboard tile cannot drift apart.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -9485,6 +10103,139 @@
           }
         ],
         "summary": "Create an order on behalf of a customer (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
+      }
+    },
+    "/api/admin/orders/export": {
+      "get": {
+        "operationId": "adminOrderControllerExport",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Filter by one or more order statuses (comma-separated). A single value (`PENDING`) or CSV (`CONFIRMED,PROCESSING`) are both accepted; absent means all statuses.",
+            "schema": {
+              "example": "CONFIRMED,PROCESSING",
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "description": "Filter by owning user ID",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID.",
+            "schema": {
+              "maxLength": 120,
+              "example": "ABC12345",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateFrom",
+            "required": false,
+            "in": "query",
+            "description": "Include orders created on or after this ISO date",
+            "schema": {
+              "example": "2026-01-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateTo",
+            "required": false,
+            "in": "query",
+            "description": "Include orders created on or before this ISO date",
+            "schema": {
+              "example": "2026-12-31",
+              "type": "string"
+            }
+          },
+          {
+            "name": "unpaidInTransit",
+            "required": false,
+            "in": "query",
+            "description": "Filter to active-but-unpaid (\"in-transit\") orders — paymentStatus != PAID AND status NOT IN (CANCELLED, REFUNDED). Deep-link target for the dashboard needs-action widget (TASK-248).",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "paymentStatus",
+            "required": false,
+            "in": "query",
+            "description": "Filter by payment status (TASK-425). Single-valued, unlike `status`: the queue is read as \"show me the unpaid ones\", never as a union of two payment states.",
+            "schema": {
+              "example": "PENDING",
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "PAID",
+                "FAILED",
+                "REFUNDED"
+              ]
+            }
+          },
+          {
+            "name": "paymentMethod",
+            "required": false,
+            "in": "query",
+            "description": "Filter by how the customer chose to pay (TASK-425) — the difference between a card order whose money never arrived and a cash-on-delivery order that is simply unpaid until the courier hands it over.",
+            "schema": {
+              "example": "ON_DELIVERY",
+              "type": "string",
+              "enum": [
+                "ONLINE",
+                "ON_DELIVERY",
+                "INSTALLMENTS"
+              ]
+            }
+          },
+          {
+            "name": "pendingOverdue",
+            "required": false,
+            "in": "query",
+            "description": "Filter to PENDING orders created more than 48 hours ago — the \"waiting too long\" queue (TASK-425). Deliberately a SERVER filter reusing the dashboard's PENDING_STALE_HOURS, so the list chip and the dashboard tile cannot drift apart.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV of the filtered orders, newest first",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Export the filtered orders as CSV (admin)",
         "tags": [
           "Admin Orders"
         ]
@@ -9909,8 +10660,19 @@
             "in": "query",
             "description": "Items per page (max 100)",
             "schema": {
-              "default": 10,
+              "default": 20,
               "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Free-text search across the return id, the order number (id prefix), the customer email/phone and the customer's stated reason (TASK-423). The queue had no search at all, so an operator on the phone with a customer could only page through it.",
+            "schema": {
+              "maxLength": 120,
+              "example": "ABC12345",
+              "type": "string"
             }
           },
           {
@@ -10861,12 +11623,23 @@
             "name": "limit",
             "required": false,
             "in": "query",
-            "description": "Items per page (max 50)",
+            "description": "Items per page (max 100)",
             "schema": {
               "minimum": 1,
-              "maximum": 50,
-              "default": 10,
+              "maximum": 100,
+              "default": 20,
               "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Free-text search over review text, author email and product name",
+            "schema": {
+              "maxLength": 120,
+              "example": "чохол",
+              "type": "string"
             }
           }
         ],
@@ -14538,6 +15311,53 @@
           "data"
         ]
       },
+      "BulkProductGroupDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "description": "Ids of the products being reassigned.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "groupId": {
+            "type": "string",
+            "description": "Target variant group, or `null` to take the products out of whatever group they are in. The field is REQUIRED: an absent `groupId` would be indistinguishable from \"clear the group\", which is a destructive default for a request that omitted the field by mistake.",
+            "format": "uuid",
+            "nullable": true,
+            "example": "3f1c6d24-9b8e-4f2a-8a1d-6d3b5c2e7a90"
+          }
+        },
+        "required": [
+          "ids",
+          "groupId"
+        ]
+      },
+      "BulkProductGroupResult": {
+        "type": "object",
+        "properties": {
+          "updatedCount": {
+            "type": "number",
+            "description": "Products whose groupId was written",
+            "example": 9
+          }
+        },
+        "required": [
+          "updatedCount"
+        ]
+      },
+      "BulkProductGroupResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkProductGroupResult"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ProductImageListEnvelope": {
         "type": "object",
         "properties": {
@@ -14590,6 +15410,37 @@
         },
         "required": [
           "items"
+        ]
+      },
+      "UploadedImageEntity": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Absolute public URL of the stored image",
+            "example": "http://localhost:3001/uploads/content/8f1c….webp"
+          },
+          "blurDataUrl": {
+            "type": "string",
+            "description": "base64 LQIP for `next/image` blur-up, or null when the file was stored as-is (animated GIF)",
+            "nullable": true,
+            "example": "data:image/webp;base64,UklGR…"
+          }
+        },
+        "required": [
+          "url",
+          "blurDataUrl"
+        ]
+      },
+      "UploadedImageResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/UploadedImageEntity"
+          }
+        },
+        "required": [
+          "data"
         ]
       },
       "BrandEntity": {
@@ -16348,6 +17199,116 @@
           "role"
         ]
       },
+      "UserNoteEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Note id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "userId": {
+            "type": "string",
+            "description": "The customer this note is about",
+            "example": "user-uuid-1"
+          },
+          "authorId": {
+            "type": "string",
+            "description": "Staff account that wrote the note; null for a note written before the field existed. Carries NO foreign key — deleting the author keeps the note.",
+            "nullable": true,
+            "example": "staff-uuid-1"
+          },
+          "authorEmail": {
+            "type": "string",
+            "description": "Author's email as it was when the note was written; null if unknown",
+            "nullable": true,
+            "example": "manager@example.com"
+          },
+          "body": {
+            "type": "string",
+            "description": "The note text (plain text)",
+            "example": "Просив передзвонити після 18:00."
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the note was written",
+            "example": "2026-09-13T10:24:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "authorId",
+          "authorEmail",
+          "body",
+          "createdAt"
+        ]
+      },
+      "UserNoteListMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "Total notes this customer has",
+            "example": 128
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum notes returned by one read",
+            "example": 50
+          }
+        },
+        "required": [
+          "total",
+          "limit"
+        ]
+      },
+      "UserNoteListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Notes, newest first",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserNoteEntity"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/UserNoteListMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "UserNoteResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/UserNoteEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CreateUserNoteDto": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "The note text (plain text, never rendered as HTML)",
+            "example": "Просив передзвонити після 18:00, хоче рахунок на ФОП.",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
       "CatalogImportRunEntity": {
         "type": "object",
         "properties": {
@@ -16938,6 +17899,21 @@
           "meta"
         ]
       },
+      "ReorderPagesDto": {
+        "type": "object",
+        "properties": {
+          "orderedIds": {
+            "description": "The complete, final ordering of the list. The index becomes `sortOrder`.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "orderedIds"
+        ]
+      },
       "CreatePageDto": {
         "type": "object",
         "properties": {
@@ -17018,9 +17994,8 @@
           },
           "sortOrder": {
             "type": "number",
-            "description": "Sort order for display (lower values appear first)",
-            "example": 0,
-            "default": 0
+            "description": "Sort order for display (lower values appear first). OMIT IT (TASK-428): the page is then appended to the end of the list and the order is changed by dragging rows.",
+            "example": 0
           }
         },
         "required": [
@@ -17843,6 +18818,13 @@
             "format": "date-time",
             "nullable": true
           },
+          "scheduledUntil": {
+            "type": "string",
+            "description": "End of the publication window — the instant the scheduler takes this banner back down (null = no end, TASK-429)",
+            "example": "2026-09-01T00:00:00.000Z",
+            "format": "date-time",
+            "nullable": true
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -18031,6 +19013,12 @@
             "type": "string",
             "description": "Optional accent / variant key interpreted by the storefront UI",
             "example": "accent"
+          },
+          "scheduledUntil": {
+            "type": "string",
+            "description": "ISO-8601 instant to auto-UNPUBLISH at — the end of the publication window (TASK-429). Omit for a banner with no end. Meaningful for PUBLISHED as well as SCHEDULED (\"live now, down on the 1st\"); ignored for DRAFT. Must be later than scheduledAt when both are given.",
+            "example": "2026-09-01T00:00:00.000Z",
+            "format": "date-time"
           }
         },
         "required": [
@@ -18101,6 +19089,12 @@
             "type": "string",
             "description": "Optional accent / variant key interpreted by the storefront UI",
             "example": "accent"
+          },
+          "scheduledUntil": {
+            "type": "string",
+            "description": "ISO-8601 instant to auto-UNPUBLISH at — the end of the publication window (TASK-429). Written together with `status`: a PUT that carries no `status` leaves an existing window untouched. Omit (with a `status`) to clear it. Must be later than scheduledAt when both are given.",
+            "example": "2026-09-01T00:00:00.000Z",
+            "format": "date-time"
           }
         }
       },
@@ -18420,6 +19414,31 @@
           "data"
         ]
       },
+      "ReorderCarouselsDto": {
+        "type": "object",
+        "properties": {
+          "orderedIds": {
+            "description": "The complete, final ordering of the list. The index becomes `sortOrder`.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "placement": {
+            "type": "string",
+            "description": "The placement bucket whose complete ordering `orderedIds` describes",
+            "enum": [
+              "HOME_TABS",
+              "HOME_RAILS"
+            ],
+            "example": "HOME_RAILS"
+          }
+        },
+        "required": [
+          "orderedIds",
+          "placement"
+        ]
+      },
       "CreateCarouselDto": {
         "type": "object",
         "properties": {
@@ -18481,9 +19500,8 @@
           },
           "sortOrder": {
             "type": "number",
-            "description": "Homepage display order across all carousels (lower values appear first)",
-            "example": 0,
-            "default": 0
+            "description": "Display order WITHIN the placement (lower values appear first). OMIT IT (TASK-428): the carousel is then appended to the end of its placement bucket and the order is changed by dragging rows.",
+            "example": 0
           }
         },
         "required": [
@@ -19085,6 +20103,21 @@
           "data"
         ]
       },
+      "ReorderFaqItemsDto": {
+        "type": "object",
+        "properties": {
+          "orderedIds": {
+            "description": "The complete, final ordering of the list. The index becomes `sortOrder`.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "orderedIds"
+        ]
+      },
       "CreateFaqItemDto": {
         "type": "object",
         "properties": {
@@ -19100,9 +20133,8 @@
           },
           "sortOrder": {
             "type": "number",
-            "description": "Display order (ascending). Lower numbers appear first.",
-            "example": 0,
-            "default": 0
+            "description": "Display order (ascending). OMIT IT (TASK-428): the item is then appended to the end of the list and the order is changed by dragging rows, not by typing numbers.",
+            "example": 0
           },
           "isActive": {
             "type": "boolean",
@@ -19462,7 +20494,8 @@
         "properties": {
           "email": {
             "type": "string",
-            "description": "Email given at checkout",
+            "description": "Email given at checkout, or null on an operator-created order where the customer had none (TASK-426)",
+            "nullable": true,
             "example": "olena@example.com"
           },
           "phone": {
@@ -19624,7 +20657,7 @@
           },
           "userId": {
             "type": "string",
-            "description": "Owning user ID, or null for a guest order (TASK-338). Exactly one of `userId` and `guest` is populated.",
+            "description": "Owning user ID, or null for a guest order (TASK-338). A null `userId` always comes with a `guest` block; the reverse does not hold — an order placed as a guest and later claimed by a registering account carries both, and keeps its contact snapshot.",
             "nullable": true,
             "example": "550e8400-e29b-41d4-a716-446655440001"
           },
@@ -20257,6 +21290,33 @@
           "data"
         ]
       },
+      "ManualOrderContactDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email, if the customer has one. OPTIONAL on an operator-created order (TASK-426) — unlike guest checkout, where it carries the order-status link. Validated when present.",
+            "example": "olena@example.com",
+            "maxLength": 254
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number the courier can call — any country, 9 to 15 digits (E.164), typed with whatever separators the buyer uses. Stored normalised, as digits only.",
+            "example": "+380501234567",
+            "maxLength": 32
+          },
+          "name": {
+            "type": "string",
+            "description": "Buyer name",
+            "example": "Олена Шевченко",
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "phone",
+          "name"
+        ]
+      },
       "ManualOrderItemDto": {
         "type": "object",
         "properties": {
@@ -20286,10 +21346,10 @@
             "format": "uuid"
           },
           "contact": {
-            "description": "Contact details when there is no account. Required unless `userId` is given — an order nobody can be reached about is not a sale.",
+            "description": "Contact details when there is no account. Required unless `userId` is given — an order nobody can be reached about is not a sale. Phone is required, email optional (TASK-426): see ManualOrderContactDto.",
             "allOf": [
               {
-                "$ref": "#/components/schemas/GuestContactDto"
+                "$ref": "#/components/schemas/ManualOrderContactDto"
               }
             ]
           },
@@ -20366,7 +21426,7 @@
         "properties": {
           "trackingNumber": {
             "type": "object",
-            "description": "Nova Poshta waybill (ТТН), typed in by the operator (TASK-335). Send null to clear it. Setting it on an already-SHIPPED order that had none sends the customer their tracking notice.",
+            "description": "Nova Poshta waybill (ТТН), typed in by the operator (TASK-335): EXACTLY 14 DIGITS (TASK-426 / AD-ORD-18). Separators are allowed on the way in and stripped before storage, so `2045 0000 0000 01` is stored as `20450000000001`. Send null to clear it. Setting it on an already-SHIPPED order that had none sends the customer their tracking notice.",
             "nullable": true,
             "maxLength": 64,
             "example": "20450000000001"
@@ -21655,6 +22715,12 @@
             "type": "string",
             "description": "Reviewed product name",
             "example": "iPhone 15 Pro Case"
+          },
+          "productSku": {
+            "type": "string",
+            "description": "Reviewed product SKU; null when the product has none",
+            "example": "CASE-IP15P-BLK",
+            "nullable": true
           }
         },
         "required": [
@@ -21666,7 +22732,8 @@
           "isActive",
           "createdAt",
           "userEmail",
-          "productName"
+          "productName",
+          "productSku"
         ]
       },
       "AdminReviewPaginationMeta": {

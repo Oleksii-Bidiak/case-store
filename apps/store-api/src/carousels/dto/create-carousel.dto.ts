@@ -82,10 +82,12 @@ export class CreateCarouselDto extends PublishFieldsDto {
   itemLimit?: number;
 
   @ApiProperty({
-    description: 'Homepage display order across all carousels (lower values appear first)',
+    description:
+      'Display order WITHIN the placement (lower values appear first). OMIT IT ' +
+      '(TASK-428): the carousel is then appended to the end of its placement bucket and ' +
+      'the order is changed by dragging rows.',
     example: 0,
     required: false,
-    default: 0,
   })
   @IsOptional()
   @Type(() => Number)

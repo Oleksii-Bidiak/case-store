@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   getAdminBlogControllerFindAllQueryKey,
   useAdminBlogControllerFindAll,
@@ -15,27 +14,63 @@ import {
 import {
   Badge,
   Button,
-  Input,
   LiveAnnouncer,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableToolbar,
+  pageSizeFrom,
 } from "@/shared/ui";
-import { useUrlParams } from "@/shared/lib/use-url-params";
+import { formatDate } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { BlogPostTableSkeleton } from "./blog-post-table-skeleton";
-
-const PAGE_SIZE = 20;
 
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: dict.blogPosts.statusDraft,
   SCHEDULED: dict.blogPosts.statusScheduled,
   PUBLISHED: dict.blogPosts.statusPublished,
 };
+
+/**
+ * The status badge (TASK-430).
+ *
+ * A scheduled post already read «Заплановано» here — but in the same grey as a
+ * draft and without the date, so the row still did not answer the only question it
+ * raises: WHEN does this go live. The date is what separates a post going out on
+ * Friday from one somebody forgot, and «Заплановано» alone made the operator open
+ * the post to find out.
+ *
+ * `formatDate`, so the year is visible — a schedule typed into the wrong year is the
+ * one mistake worth catching from the list.
+ */
+function BlogStatusBadge({
+  status,
+  scheduledAt,
+}: {
+  status: string;
+  scheduledAt?: string | null;
+}) {
+  if (status === "SCHEDULED") {
+    return (
+      <Badge variant="warning">
+        {scheduledAt
+          ? dict.blogPosts.statusScheduledOn(formatDate(scheduledAt))
+          : dict.blogPosts.statusScheduled}
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge variant={status === "PUBLISHED" ? "default" : "secondary"}>
+      {STATUS_LABEL[status] ?? status}
+    </Badge>
+  );
+}
 
 /**
  * Admin blog-post table: title, category, status badge, featured flag, and
@@ -68,15 +103,12 @@ function BlogPostView() {
 
   const searchParam = searchParams.get("search") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
-
-  const [searchInput, setSearchInput] = useState(searchParam);
-
-  const updateParams = useUrlParams();
+  const pageSize = pageSizeFrom(searchParams);
 
   const { data, isLoading, isFetching, isError, refetch } =
     useAdminBlogControllerFindAll({
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       q: searchParam || undefined,
     });
   const publish = useAdminBlogControllerPublish();
@@ -91,11 +123,6 @@ function BlogPostView() {
     queryClient.invalidateQueries({
       queryKey: getAdminBlogControllerFindAllQueryKey(),
     });
-
-  const handleSearchSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    updateParams({ search: searchInput.trim() || undefined, page: undefined });
-  };
 
   const handleToggle = (id: string, isPublished: boolean) => {
     const mutation = isPublished ? unpublish : publish;
@@ -140,23 +167,11 @@ function BlogPostView() {
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
         search={
-          <form
-            onSubmit={handleSearchSubmit}
-            className="flex gap-2"
-            role="search"
-          >
-            <Input
-              type="search"
-              placeholder={dict.blogPosts.searchPlaceholder}
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              className="max-w-xs"
-              aria-label={dict.blogPosts.searchAria}
-            />
-            <Button type="submit" variant="outline">
-              {dict.common.search}
-            </Button>
-          </form>
+          <TableSearch
+            value={searchParam}
+            placeholder={dict.blogPosts.searchPlaceholder}
+            label={dict.blogPosts.searchAria}
+          />
         }
       />
 
@@ -204,9 +219,10 @@ function BlogPostView() {
                       {post.category.name}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={isPublished ? "default" : "secondary"}>
-                        {STATUS_LABEL[post.status] ?? post.status}
-                      </Badge>
+                      <BlogStatusBadge
+                        status={post.status}
+                        scheduledAt={post.scheduledAt}
+                      />
                     </TableCell>
                     <TableCell hideOnMobile>
                       {post.featured ? dict.blogPosts.featuredYes : "—"}
@@ -261,33 +277,11 @@ function BlogPostView() {
       )}
 
       {!isLoading && !isError && posts.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {dict.common.pageOf(page, totalPages)}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() =>
-                updateParams({
-                  page: page - 1 <= 1 ? undefined : String(page - 1),
-                })
-              }
-            >
-              {dict.common.previous}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: String(page + 1) })}
-            >
-              {dict.common.next}
-            </Button>
-          </div>
-        </div>
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+        />
       )}
     </div>
   );

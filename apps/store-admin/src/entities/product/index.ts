@@ -12,6 +12,11 @@ export {
   useProductControllerUpdate,
   useProductControllerDeactivate,
   useProductControllerActivate,
+  // TASK-427: the soft-delete mutation. Generated since TASK-140 and never
+  // re-exported, which is the whole reason nothing in the panel could reach
+  // DELETE /api/products/:id — the endpoint, its permission and its tombstone
+  // logic were all in place, and the button was missing one export line.
+  useDeleteProduct,
   // Bulk activate / deactivate over the on-screen selection (TASK-355)
   useProductControllerSetStatusMany,
   useProductControllerPreviewProductBySlug,

@@ -2,9 +2,11 @@ import { ConflictException } from '@nestjs/common';
 import {
   OrderStatus,
   PaymentStatus,
+  PaymentMethod,
   PaymentAttemptStatus,
   OrderHistoryChangeType,
 } from '@prisma/client';
+import { PENDING_STALE_HOURS } from '../dashboard/dashboard.types';
 import { OrderRepository } from './order.repository';
 import { PrismaService } from '../prisma';
 import {
@@ -1279,6 +1281,105 @@ describe('OrderRepository', () => {
       await repository.findAll({ status: [] });
 
       expect(prismaMock.order.findMany.mock.calls[0][0].where).not.toHaveProperty('status');
+    });
+  });
+
+  // ── TASK-425: the queue filters ──────────────────────────────────────────
+  // Payment status, payment method, and "waiting too long". The first two are
+  // ordinary equality filters; the third shares the DASHBOARD's threshold, which
+  // is the whole point — a chip that disagreed with the tile would be worse than
+  // no chip.
+
+  describe('findAll — payment + overdue filters (TASK-425)', () => {
+    const whereFor = async (query: Parameters<typeof repository.findAll>[0]) => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+      await repository.findAll(query);
+      return prismaMock.order.count.mock.calls[0][0].where;
+    };
+
+    it('filters by payment status', async () => {
+      const where = await whereFor({ paymentStatus: PaymentStatus.FAILED });
+
+      expect(where.AND).toContainEqual({ paymentStatus: PaymentStatus.FAILED });
+    });
+
+    it('filters by payment method', async () => {
+      const where = await whereFor({ paymentMethod: PaymentMethod.ONLINE });
+
+      expect(where.AND).toContainEqual({ paymentMethod: PaymentMethod.ONLINE });
+    });
+
+    it('keeps an explicit payment status alongside the unpaidInTransit preset', async () => {
+      // The preset OWNS `where.paymentStatus`; the explicit filter lives in AND.
+      // Assigning both to the same key would have made one silently vanish.
+      const where = await whereFor({
+        unpaidInTransit: true,
+        paymentStatus: PaymentStatus.PENDING,
+      });
+
+      expect(where.paymentStatus).toEqual({ not: PaymentStatus.PAID });
+      expect(where.AND).toContainEqual({ paymentStatus: PaymentStatus.PENDING });
+    });
+
+    it('filters overdue PENDING orders using the dashboard threshold', async () => {
+      const before = Date.now();
+      const where = await whereFor({ pendingOverdue: true });
+      const after = Date.now();
+
+      const clause = (where.AND as Array<{ status: string; createdAt: { lt: Date } }>)[0];
+      expect(clause.status).toBe(OrderStatus.PENDING);
+      // The cut-off is PENDING_STALE_HOURS ago — asserted as a window rather than
+      // an exact instant, since the repository reads the clock itself.
+      const staleMs = PENDING_STALE_HOURS * 60 * 60 * 1000;
+      expect(clause.createdAt.lt.getTime()).toBeGreaterThanOrEqual(before - staleMs);
+      expect(clause.createdAt.lt.getTime()).toBeLessThanOrEqual(after - staleMs);
+    });
+
+    it('adds no AND clause when none of the three filters is set', async () => {
+      const where = await whereFor({});
+
+      expect(where.AND).toBeUndefined();
+    });
+
+    it('composes every queue filter at once', async () => {
+      const where = await whereFor({
+        paymentStatus: PaymentStatus.PENDING,
+        paymentMethod: PaymentMethod.ON_DELIVERY,
+        pendingOverdue: true,
+      });
+
+      expect(where.AND).toHaveLength(3);
+    });
+  });
+
+  describe('findAllForExport (TASK-425)', () => {
+    it('applies the SAME where clause as the list, capped and newest-first', async () => {
+      prismaMock.order.findMany.mockResolvedValue([]);
+
+      await repository.findAllForExport(
+        { search: 'ABC12345', paymentStatus: PaymentStatus.PAID },
+        5000,
+      );
+
+      const call = prismaMock.order.findMany.mock.calls[0][0];
+      expect(call.where.deletedAt).toBeNull();
+      expect(call.where.OR).toContainEqual({ id: { startsWith: 'abc12345' } });
+      expect(call.where.AND).toContainEqual({ paymentStatus: PaymentStatus.PAID });
+      expect(call.orderBy).toEqual({ createdAt: 'desc' });
+      expect(call.take).toBe(5000);
+    });
+
+    it('reads one row per ORDER — never the admin include', async () => {
+      prismaMock.order.findMany.mockResolvedValue([]);
+
+      await repository.findAllForExport({}, 10);
+
+      const call = prismaMock.order.findMany.mock.calls[0][0];
+      // A `select`, not an `include`: the export reads thousands of orders, and
+      // the admin include would drag every line, add-on, product and image along.
+      expect(call.include).toBeUndefined();
+      expect(call.select.items).toBeUndefined();
+      expect(call.select._count).toEqual({ select: { items: true } });
     });
   });
 

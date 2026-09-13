@@ -72,6 +72,27 @@ export {
   TableSelectHead,
 } from "./table";
 export { TableToolbar, type TableToolbarProps } from "./table-toolbar";
+// One search, one filter idiom, one page size across every admin table (TASK-423).
+export {
+  DEFAULT_PAGE_SIZE,
+  FILTER_ALL_VALUE,
+  PAGE_SIZE_OPTIONS,
+  PAGE_SIZE_PARAM,
+  PageSizeSelect,
+  SEARCH_DEBOUNCE_MS,
+  SELECT_PANEL_CLASS,
+  TableFilters,
+  TablePagination,
+  TableSearch,
+  pageSizeFrom,
+  type PageSizeSelectProps,
+  type TableFilterDef,
+  type TableFilterOption,
+  type TableFiltersProps,
+  type TablePaginationProps,
+  type TableSearchProps,
+} from "./data-table";
+export { Combobox, type ComboboxOption, type ComboboxProps } from "./combobox";
 export {
   BulkActionsBar,
   type BulkAction,

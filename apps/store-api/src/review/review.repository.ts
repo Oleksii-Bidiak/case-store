@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Review } from '@prisma/client';
+import { Prisma, Review } from '@prisma/client';
 import { PrismaService } from '../prisma';
 
 /**
@@ -40,11 +40,13 @@ export interface ReviewAggregateData {
 
 /**
  * A moderation-queue row: the review enriched with the author's email/name and
- * the product name, needed to render the admin table without extra lookups.
+ * the product's name and SKU, needed to render the admin table without extra
+ * lookups. `sku` is nullable because `Product.sku` is — a position may be saved
+ * before an article number is assigned.
  */
 export interface ReviewModerationRow extends Review {
   user: { email: string };
-  product: { name: string };
+  product: { name: string; sku: string | null };
 }
 
 /**
@@ -143,9 +145,26 @@ export class ReviewRepository {
     status: 'pending' | 'approved',
     page: number,
     limit: number,
+    search?: string,
   ): Promise<PaginatedModerationResult> {
     const skip = (page - 1) * limit;
-    const where = { isActive: status === 'approved' };
+    const where: Prisma.ReviewWhereInput = { isActive: status === 'approved' };
+
+    // TASK-423: free-text search over the three things the queue actually
+    // displays — the review text, who wrote it, and what it is about. The arms
+    // mirror the semantics of `OrderRepository.findAllForAdmin` (case-insensitive
+    // `contains`, OR-ed): an operator types a fragment of a name or a product,
+    // not a prefix, and «Чохол» must match `чохол`.
+    //
+    // No phone arm here (unlike orders): a review carries no phone, and the join
+    // to `user` would have to widen for a column the queue never shows.
+    if (search) {
+      where.OR = [
+        { comment: { contains: search, mode: 'insensitive' } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+        { product: { name: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
     const [reviews, total] = await Promise.all([
       this.prisma.review.findMany({
         where,
@@ -154,7 +173,11 @@ export class ReviewRepository {
         orderBy: { createdAt: 'desc' },
         include: {
           user: { select: { email: true } },
-          product: { select: { name: true } },
+          // `sku` joined since TASK-430: two positions in this catalogue can share
+          // a display name (the same case in two colours), so a moderator reading
+          // «Чохол силіконовий» could not tell WHICH one the review is about — and
+          // the SKU is what they then search the catalogue by.
+          product: { select: { name: true, sku: true } },
         },
       }),
       this.prisma.review.count({ where }),

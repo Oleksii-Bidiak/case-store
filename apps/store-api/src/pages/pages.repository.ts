@@ -3,6 +3,32 @@ import { Page, PageKind, Prisma, PublishStatus, SlugRedirectEntity } from '@pris
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
 import type { PublishablePort, RevalidateTarget } from '../publishing';
+import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
+
+/**
+ * Page size used when the admin asks for a page but names no `limit` (TASK-428).
+ *
+ * EXPORTED on purpose (TASK-429, review finding #12): the service has to build the
+ * pagination `meta` for exactly the rows this repository returned, and while it carried its
+ * own fallback the two drifted — the repository sliced 20 rows for `?page=2` while the meta
+ * announced `limit: total, totalPages: 1`, so the panel rendered "сторінка 2 з 1" and the
+ * rows past the first page were unreachable. One constant, one default, both sides.
+ */
+export const DEFAULT_ADMIN_PAGE_SIZE = 20;
+
+/**
+ * Advisory-lock namespace for static pages (TASK-428). MANDATORY prefix: advisory locks
+ * are DATABASE-GLOBAL, so without it a page reorder would serialise against an unrelated
+ * resource's bucket of the same name.
+ */
+const LOCK_RESOURCE = 'pages';
+
+/** Static pages are ONE global list — a single bucket, hence the `null` bucket key. */
+const PAGES_LOCK_KEY = lockKey(LOCK_RESOURCE, null);
+
+/** Any client the reads accept: the injected singleton or an interactive-transaction client. */
+type PageDbClient = PrismaService | ReorderTx;
+
 import { PAGE_ROOT_PATHS } from './hub-routes';
 
 /**
@@ -45,10 +71,15 @@ export interface FindAllParams {
 /**
  * Parameters for the admin page list (all statuses), with an optional status
  * filter.
+ *
+ * `page` / `limit` are OPTIONAL and jointly opt-in (TASK-428): with both absent the read
+ * returns the COMPLETE list, which is the mode the reorder UI depends on — its payload
+ * must name every page in the list or the server rejects it as a lost update. The public
+ * `findAll` keeps its mandatory pagination; only the admin read gained the complete mode.
  */
 export interface FindAllAdminParams {
-  page: number;
-  limit: number;
+  page?: number;
+  limit?: number;
   status?: PublishStatus;
   search?: string;
   /** Backs the panel's kind tabs; omitted, EVERY kind is returned (HUB included). */
@@ -195,12 +226,24 @@ export class PageRepository implements PublishablePort {
    * The search spans BOTH title and slug (TASK-357): an operator hunting for a legal
    * page usually remembers its URL (`/legal/dostavka`) rather than its exact heading.
    *
-   * `kind` backs the panel's tabs. Unlike the public readers, an ABSENT kind here
-   * means "every kind", HUB rows included — the panel is where they are edited.
+   * Pagination is OPT-IN (TASK-428): with neither `page` nor `limit` the read returns the
+   * complete list and `total` comes from the returned rows instead of a second `count`
+   * round-trip. Accepts a transaction client so the reorder endpoint can re-read the
+   * refreshed list inside its own transaction.
+   *
+   * The `createdAt: 'asc'` tiebreaker is LOAD-BEARING (TASK-428): it used to be `'desc'`,
+   * so while every `sortOrder` was still 0 (the pre-TASK-428 state of every row) the admin
+   * list was the exact REVERSE of `findAll`'s — the operator saw one order and the shopper
+   * another. The admin list must be WYSIWYG, so both reads now tiebreak identically.
+   *
+   * `kind` backs the panel's tabs (TASK-435). Unlike the public readers, an ABSENT kind
+   * here means "every kind", HUB rows included — the panel is where they are edited.
    */
-  async findAllAdmin(params: FindAllAdminParams): Promise<PaginatedPagesResult> {
+  async findAllAdmin(
+    params: FindAllAdminParams = {},
+    client: PageDbClient = this.prisma,
+  ): Promise<PaginatedPagesResult> {
     const { page, limit, status, search, kind } = params;
-    const skip = (page - 1) * limit;
     const where: Prisma.PageWhereInput = {
       ...(status !== undefined && { status }),
       ...(kind !== undefined && { kind }),
@@ -211,44 +254,95 @@ export class PageRepository implements PublishablePort {
         ],
       }),
     };
+    const orderBy: Prisma.PageOrderByWithRelationInput[] = [
+      { sortOrder: 'asc' },
+      { createdAt: 'asc' },
+    ];
+
+    if (page === undefined && limit === undefined) {
+      const pages = await client.page.findMany({ where, orderBy });
+      return { pages, total: pages.length };
+    }
+
+    const effectiveLimit = limit ?? DEFAULT_ADMIN_PAGE_SIZE;
+    const skip = ((page ?? 1) - 1) * effectiveLimit;
 
     const [pages, total] = await Promise.all([
-      this.prisma.page.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
-      }),
-      this.prisma.page.count({ where }),
+      client.page.findMany({ where, orderBy, skip, take: effectiveLimit }),
+      client.page.count({ where }),
     ]);
 
     return { pages, total };
   }
 
   /**
-   * Create a new page. The unique-constraint error on `slug` is left to bubble
-   * up so the service can translate it into a ConflictException. `isActive` is
-   * derived from `status` — never accepted from the caller.
+   * Rewrite the complete ordering of the static-page list and return the refreshed admin
+   * list, read inside the same transaction (TASK-428).
+   *
+   * The snapshot selects `sortOrder` as well as `id` (TASK-429): that is what lets
+   * `reorderBucket` skip the rows already sitting at their target slot instead of
+   * rewriting the whole list. `Page.updatedAt` is `@updatedAt`, and the storefront
+   * publishes it as the document's revision date — the sitemap's `lastModified` and the
+   * «Оновлено …» line on `/legal` and every `/legal/<slug>`. Without this select, dragging
+   * ONE row made the privacy policy, the terms and the returns policy all announce they had
+   * been rewritten today, and there is no history column to recover the real dates from.
+   *
+   * Throws the domain errors of `common/reorder/reorder.errors.ts`; the service maps them.
+   */
+  reorderAll(orderedIds: readonly string[]): Promise<PaginatedPagesResult> {
+    return reorderBucket<PaginatedPagesResult>(this.prisma, {
+      resource: LOCK_RESOURCE,
+      bucket: null,
+      orderedIds,
+      snapshot: (tx) => tx.page.findMany({ select: { id: true, sortOrder: true } }),
+      delegate: (tx) => tx.page,
+      result: (tx) => this.findAllAdmin({}, tx),
+    });
+  }
+
+  /**
+   * Create a new page, APPENDED to the END of the list (`sortOrder = max + 1`, `0` for
+   * the first page) — TASK-428. The unique-constraint error on `slug` is left to bubble
+   * up so the service can translate it into a ConflictException. `isActive` is derived
+   * from `status` — never accepted from the caller.
+   *
+   * The old `data.sortOrder ?? 0` default put every new page ON TOP OF the first one the
+   * moment the admin form stopped sending a hand-typed number (which the reorder UI
+   * removes). The `max + 1` read runs INSIDE a transaction holding the list's advisory
+   * lock, so it cannot race a concurrent append (two pages handed the same slot) or a
+   * concurrent `reorderAll`. An EXPLICIT `data.sortOrder` still wins.
    */
   create(data: CreatePageInput): Promise<Page> {
-    return this.prisma.page.create({
-      data: {
-        slug: data.slug,
-        kind: data.kind,
-        title: data.title,
-        content: data.content,
-        excerpt: data.excerpt ?? null,
-        metaTitle: data.metaTitle ?? null,
-        metaDescription: data.metaDescription ?? null,
-        keywords: data.keywords ?? [],
-        ogImage: data.ogImage ?? null,
-        status: data.status,
-        publishedAt: data.publishedAt,
-        scheduledAt: data.scheduledAt,
-        isActive: data.status === PublishStatus.PUBLISHED,
-        sortOrder: data.sortOrder ?? 0,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await acquireAdvisoryLocks(tx, [PAGES_LOCK_KEY]);
+
+      const sortOrder = data.sortOrder ?? (await this.nextSortOrder(tx));
+
+      return tx.page.create({
+        data: {
+          slug: data.slug,
+          kind: data.kind,
+          title: data.title,
+          content: data.content,
+          excerpt: data.excerpt ?? null,
+          metaTitle: data.metaTitle ?? null,
+          metaDescription: data.metaDescription ?? null,
+          keywords: data.keywords ?? [],
+          ogImage: data.ogImage ?? null,
+          status: data.status,
+          publishedAt: data.publishedAt,
+          scheduledAt: data.scheduledAt,
+          isActive: data.status === PublishStatus.PUBLISHED,
+          sortOrder,
+        },
+      });
     });
+  }
+
+  /** The append slot of the page list: `max(sortOrder) + 1`, or 0 when it is empty. */
+  private async nextSortOrder(tx: ReorderTx): Promise<number> {
+    const { _max } = await tx.page.aggregate({ _max: { sortOrder: true } });
+    return _max.sortOrder === null ? 0 : _max.sortOrder + 1;
   }
 
   /**

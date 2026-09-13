@@ -11,6 +11,8 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CartRepository, CartWithItems } from '../src/cart/cart.repository';
 import { OrderRepository } from '../src/order/order.repository';
+// TASK-425: the export's row cap, asserted rather than restated as a literal.
+import { ORDER_EXPORT_MAX_ROWS } from '../src/order/order.service';
 import { DiscountRepository } from '../src/discount';
 import { MailService } from '../src/mail/mail.service';
 import { MailOutboxService } from '../src/mail-outbox';
@@ -51,6 +53,13 @@ describe('OrderController (e2e)', () => {
     // TASK-338: guest order access by emailed token, and claiming on registration.
     findByAccessTokenHash: jest.fn(),
     claimGuestOrders: jest.fn(),
+    // TASK-341 / TASK-426: the operator-created ("phone") order, and the
+    // tracking-number / internal-notes write beside it.
+    findOrderableProducts: jest.fn(),
+    createManual: jest.fn(),
+    updateDetails: jest.fn(),
+    // TASK-425: the CSV export reads a slim, unpaginated row set of its own.
+    findAllForExport: jest.fn(),
   };
 
   // TASK-079: DiscountRepository is mocked so the order-with-discount path can
@@ -529,6 +538,25 @@ describe('OrderController (e2e)', () => {
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
+    // TASK-426 made email OPTIONAL for an order an OPERATOR takes by phone. This
+    // case is the fence around that change: the public guest-checkout path still
+    // demands an address, because the confirmation letter carries the
+    // order-status link and is a guest's only way back to their own order.
+    it('still refuses a guest checkout with no email at all (400)', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue(makeCart(userA.id));
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+        .send({
+          shippingAddress: validAddress,
+          contact: { phone: '+380671112233', name: 'Гість' },
+        })
+        .expect(400);
+
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
     it('ignores a contact block from a SIGNED-IN shopper (no email redirection)', async () => {
       const token = generateAccessToken(userA.id, userA.role);
       cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
@@ -830,6 +858,49 @@ describe('OrderController (e2e)', () => {
       );
     });
 
+    it('should pass the payment + overdue filters to the repository (TASK-425)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAll.mockResolvedValue({ orders: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders?paymentStatus=FAILED&paymentMethod=ONLINE&pendingOverdue=true')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(orderRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          paymentStatus: PaymentStatus.FAILED,
+          paymentMethod: 'ONLINE',
+          pendingOverdue: true,
+        }),
+      );
+    });
+
+    it('should return 400 for an unknown payment status (TASK-425)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders?paymentStatus=BOGUS')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+
+      expect(orderRepositoryMock.findAll).not.toHaveBeenCalled();
+    });
+
+    it('should read ?pendingOverdue=false as false, not as true (TASK-425)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAll.mockResolvedValue({ orders: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders?pendingOverdue=false')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(orderRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ pendingOverdue: false }),
+      );
+    });
+
     it('should return 400 for an invalid userId filter', async () => {
       const token = generateAccessToken(admin.id, admin.role);
 
@@ -857,6 +928,216 @@ describe('OrderController (e2e)', () => {
     });
   });
 
+  // ─── GET /api/admin/orders/export (admin) (TASK-425) ────────────────────────────
+
+  describe('GET /api/admin/orders/export', () => {
+    /** One row of the slim export read (see ORDER_EXPORT_SELECT). */
+    const makeExportRow = (overrides: Record<string, unknown> = {}) => ({
+      id: 'abc12345-0000-0000-0000-000000000001',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      status: OrderStatus.PENDING,
+      paymentStatus: PaymentStatus.PENDING,
+      paymentMethod: 'ON_DELIVERY',
+      paidAt: null,
+      subtotal: { toString: () => '1000.00' },
+      discount: { toString: () => '100.00' },
+      discountCode: 'SUMMER10',
+      addonsTotal: '499.00',
+      shippingCost: { toString: () => '70.00' },
+      tax: { toString: () => '0.00' },
+      total: { toString: () => '1469.00' },
+      trackingNumber: null,
+      guestEmail: null,
+      guestPhone: null,
+      guestName: null,
+      shippingAddress: { city: 'Київ' },
+      user: {
+        email: 'buyer@example.com',
+        firstName: 'Іван',
+        lastName: 'Петренко',
+        phone: '380501234567',
+      },
+      _count: { items: 2 },
+      ...overrides,
+    });
+
+    it('should return a CSV of the current selection for an admin', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAllForExport.mockResolvedValue([makeExportRow()]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/export')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.headers['content-type']).toContain('text/csv');
+      expect(response.headers['content-disposition']).toContain('attachment');
+
+      // A UTF-8 BOM, without which Excel on Windows renders every Ukrainian name
+      // as mojibake and it looks like OUR data is broken.
+      expect(response.text.startsWith('\uFEFF')).toBe(true);
+
+      const [header, row] = response.text.replace('\uFEFF', '').split('\r\n');
+      expect(header.split(',')).toEqual([
+        'orderNumber',
+        'orderId',
+        'createdAt',
+        'status',
+        'paymentStatus',
+        'paymentMethod',
+        'paidAt',
+        'customerType',
+        'customerName',
+        'customerEmail',
+        'customerPhone',
+        'city',
+        'itemLines',
+        'subtotal',
+        'addonsTotal',
+        'discount',
+        'discountCode',
+        'shippingCost',
+        'tax',
+        'total',
+        'trackingNumber',
+      ]);
+      // The order NUMBER is the uppercased id prefix the customer reads off their
+      // email, and the full uuid is beside it for support.
+      expect(row).toContain('ABC12345,abc12345-0000-0000-0000-000000000001');
+      expect(row).toContain('ACCOUNT');
+      expect(row).toContain('buyer@example.com');
+      expect(row).toContain('SUMMER10');
+      expect(row).toContain('499.00');
+    });
+
+    it('should carry the guest contact for a guest order, typed as GUEST', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAllForExport.mockResolvedValue([
+        makeExportRow({
+          user: null,
+          guestEmail: 'olena@example.com',
+          guestPhone: '380671112233',
+          // A comma in the name must not shift every later column by one.
+          guestName: 'Шевченко, Олена',
+        }),
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/export')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const row = response.text.replace('\uFEFF', '').split('\r\n')[1];
+      expect(row).toContain('GUEST');
+      expect(row).toContain('"Шевченко, Олена"');
+      expect(row).toContain('olena@example.com');
+    });
+
+    it('should neutralise a customer name a spreadsheet would EXECUTE (CWE-1236)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAllForExport.mockResolvedValue([
+        makeExportRow({
+          user: null,
+          guestEmail: 'olena@example.com',
+          guestPhone: '380671112233',
+          // Nothing stops a shopper typing this into the checkout name field —
+          // guest-contact.dto.ts imposes a max length and a trim, no character
+          // rules — and the operator who opens the export is who it runs on.
+          guestName: "=cmd|'/c calc.exe'!A0",
+        }),
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/export')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const row = response.text.replace('﻿', '').split('\r\n')[1];
+      // Prefixed with an apostrophe, which every spreadsheet reads as "this cell
+      // is literal text". RFC-4180 quoting is NOT a mitigation on its own: the
+      // quotes are stripped while parsing and the formula is evaluated anyway.
+      expect(row).toContain("'=cmd|'/c calc.exe'!A0");
+      expect(row).not.toContain(",=cmd|'/c calc.exe'!A0");
+    });
+
+    it('should keep one order on ONE physical line even with a newline in a name', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAllForExport.mockResolvedValue([
+        makeExportRow({
+          user: null,
+          guestEmail: 'olena@example.com',
+          guestPhone: '380671112233',
+          guestName: 'Olena\r\nShevchenko',
+          shippingAddress: { city: 'Kyiv\nregion' },
+        }),
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/export')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      // Header + exactly one row. RFC 4180 would happily let a quoted field span
+      // three lines, and the escape quotes it correctly — but the admin table
+      // counts exported rows by splitting this text on `\r\n` to detect a capped
+      // export, so a multi-line field inflates that count until it reaches
+      // `meta.total`, the truncation warning is skipped, and the operator gets a
+      // green "done" toast over a file missing every order past the cap.
+      const lines = response.text.replace('﻿', '').split('\r\n');
+      expect(lines).toHaveLength(2);
+      expect(lines[1]).toContain('Olena Shevchenko');
+      expect(lines[1]).toContain('Kyiv region');
+    });
+
+    it('should apply the list filters and cap the row count', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAllForExport.mockResolvedValue([]);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/export?status=PENDING&paymentStatus=PENDING&search=ABC12345')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(orderRepositoryMock.findAllForExport).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: [OrderStatus.PENDING],
+          paymentStatus: PaymentStatus.PENDING,
+          search: 'ABC12345',
+        }),
+        ORDER_EXPORT_MAX_ROWS,
+      );
+    });
+
+    it('should refuse a paged export rather than return an ambiguous file', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      // The export is the whole selection; `page`/`limit` are not part of its DTO,
+      // and the global pipe whitelists, so asking for one is a 400 rather than a
+      // file that is neither the page nor the selection.
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/export?page=2')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+
+      expect(orderRepositoryMock.findAllForExport).not.toHaveBeenCalled();
+    });
+
+    it('should return 403 for a non-admin user', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/export')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      expect(orderRepositoryMock.findAllForExport).not.toHaveBeenCalled();
+    });
+
+    it('should return 401 without a JWT', async () => {
+      await request(app.getHttpServer()).get('/api/admin/orders/export').expect(401);
+    });
+  });
+
   // ─── GET /api/admin/orders/:orderId (admin) ─────────────────────────────────────
 
   describe('GET /api/admin/orders/:orderId', () => {
@@ -872,6 +1153,37 @@ describe('OrderController (e2e)', () => {
 
       expectOrderShape(response.body);
       expect(response.body.data.userId).toBe(userB.id);
+    });
+
+    it('should still identify a guest order that has no email (TASK-426)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      // The order an operator takes over the phone: a name and a number, no
+      // email — which `ManualOrderContactDto` explicitly allows. While the entity
+      // gated the whole guest block on `guestEmail`, this response carried
+      // `userId: null`, no `customer` and no `guest`: it identified NOBODY, and
+      // both admin screens rendered "—" over the phone number the operator had
+      // just typed in.
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(
+        makeOrder({
+          userId: null,
+          guestEmail: null,
+          guestPhone: '+380671112233',
+          guestName: 'Олена Шевченко',
+        }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data.guest).toEqual({
+        // Explicit null, not a missing key: the response contract now admits
+        // what the request contract already accepted.
+        email: null,
+        phone: '+380671112233',
+        name: 'Олена Шевченко',
+      });
     });
 
     it('should return 404 when the order does not exist', async () => {
@@ -1319,6 +1631,314 @@ describe('OrderController (e2e)', () => {
         .patch('/api/admin/orders/order-e2e-1/payment-status')
         .send({ paymentStatus: PaymentStatus.PAID })
         .expect(401);
+    });
+  });
+
+  // ─── POST /api/admin/orders — the phone order (TASK-341 / TASK-426) ───────────
+
+  describe('POST /api/admin/orders', () => {
+    // `ManualOrderItemDto.productId` is `@IsUUID('loose')`, so this suite's
+    // `prod-e2e-1` fixture id cannot appear in a request body.
+    const manualProductId = '550e8400-e29b-41d4-a716-446655440010';
+
+    const orderableProduct = {
+      id: manualProductId,
+      name: 'iPhone 15 Pro Case',
+      price: { toString: () => '29.99' },
+      stock: 50,
+      isActive: true,
+      category: { isActive: true },
+    };
+
+    /** Arm the catalogue + write so only the payload under test varies. */
+    function armCatalogue(): void {
+      orderRepositoryMock.findOrderableProducts.mockResolvedValue([orderableProduct]);
+      orderRepositoryMock.createManual.mockResolvedValue(makeOrder({ userId: null }));
+    }
+
+    const manualBody = (contact: Record<string, unknown>) => ({
+      contact,
+      shippingAddress: validAddress,
+      items: [{ productId: manualProductId, quantity: 2 }],
+    });
+
+    /** The params the service handed the repository, for the contact assertions. */
+    const guestArg = (): Record<string, unknown> =>
+      (orderRepositoryMock.createManual.mock.calls[0]?.[0] as { guest: Record<string, unknown> })
+        .guest;
+
+    /**
+     * TASK-426. An operator with the customer on the line has a phone number and
+     * frequently no email at all; `GuestContactDto` demanded one, so the choice
+     * was an invented address or no order. `ManualOrderContactDto` makes email
+     * optional and leaves the phone required — it is what the courier dials.
+     */
+    it('creates a phone order from a phone number alone, with no email (201)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена Шевченко', phone: '050 123 4567' }))
+        .expect(201);
+
+      // Normalised on the way in (TASK-466), so the admin order search finds this
+      // number however the next operator spells it.
+      expect(guestArg()).toEqual({ name: 'Олена Шевченко', phone: '380501234567' });
+      expect(guestArg().email).toBeUndefined();
+    });
+
+    it('treats an empty email field as "not given" rather than a bad address (201)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена', phone: '+380501234567', email: '' }))
+        .expect(201);
+
+      expect(guestArg().email).toBeUndefined();
+    });
+
+    it('keeps the email when the operator has one (201)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена', phone: '+380501234567', email: ' Olena@Example.COM ' }))
+        .expect(201);
+
+      // Inherited normalisation still applies: the "claim my guest orders" lookup
+      // is a plain equality match, not a case-folding guess.
+      expect(guestArg().email).toBe('olena@example.com');
+    });
+
+    it('still validates an email that IS supplied (400)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена', phone: '+380501234567', email: 'not-an-email' }))
+        .expect(400);
+
+      expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+    });
+
+    it('refuses a phone order with no phone number (400)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена', email: 'olena@example.com' }))
+        .expect(400);
+
+      expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+    });
+
+    it('refuses punctuation in place of a phone number (400)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена', phone: '(((((((((' }))
+        .expect(400);
+
+      expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The capability the owner carved out, pinned end to end (TASK-338, restated
+     * 2026-09-10; re-checked under TASK-426 after the admin FORM started refusing
+     * what this endpoint accepts).
+     *
+     * `@IsUaPhone` is deliberately NOT on these DTOs: an operator taking an order
+     * by phone is given whatever number the customer dictates, and a border-region
+     * or roaming one belongs to a real buyer. Strict Ukrainian validation lives on
+     * the storefront and contact forms only.
+     */
+    it('accepts a foreign number for BOTH the contact and the delivery address (201)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          contact: { name: 'Anna Kowalska', phone: '+48 123 456 789' },
+          shippingAddress: { ...validAddress, phone: '+48 22 123 4567' },
+          items: [{ productId: manualProductId, quantity: 1 }],
+        })
+        .expect(201);
+
+      // Separators stripped, country code untouched: `normalizeUaPhone` converges
+      // Ukrainian spellings and leaves a foreign number as its bare digits.
+      expect(guestArg()).toEqual({ name: 'Anna Kowalska', phone: '48123456789' });
+
+      const { shippingAddress } = orderRepositoryMock.createManual.mock.calls[0]?.[0] as {
+        shippingAddress: Record<string, unknown>;
+      };
+      expect(shippingAddress.phone).toBe('48221234567');
+    });
+
+    it('accepts an existing account instead of a contact block (201)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      // A real UUID: `userId` is `@IsUUID('loose')`, and the admin panel now fills
+      // it from a customer PICKER (TASK-426) instead of asking a human to paste one.
+      const pickedUserId = '550e8400-e29b-41d4-a716-446655440001';
+      armCatalogue();
+      userRepositoryMock.findById.mockResolvedValue({ id: pickedUserId, isActive: true });
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          userId: pickedUserId,
+          shippingAddress: validAddress,
+          items: [{ productId: manualProductId, quantity: 1 }],
+        })
+        .expect(201);
+
+      expect(orderRepositoryMock.createManual).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: pickedUserId }),
+        admin.id,
+      );
+    });
+
+    it('returns 403 for a customer', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена', phone: '+380501234567' }))
+        .expect(403);
+
+      expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── PATCH /api/admin/orders/:orderId — the ТТН (TASK-335 / TASK-426) ─────────
+
+  describe('PATCH /api/admin/orders/:orderId', () => {
+    /**
+     * AD-ORD-18. A Nova Poshta waybill is exactly 14 digits, and the field
+     * accepted anything up to 64 characters — while saving one on a SHIPPED order
+     * EMAILS THE CUSTOMER their tracking notice, so a typo leaves the building and
+     * points the buyer at a page NP knows nothing about.
+     */
+    it('accepts a 14-digit waybill and stores it without the separators (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ trackingNumber: null }));
+      orderRepositoryMock.updateDetails.mockResolvedValue(
+        makeOrder({ trackingNumber: '20450000000001' }),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ trackingNumber: '2045 0000 0000 01' })
+        .expect(200);
+
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
+        'order-e2e-1',
+        { trackingNumber: '20450000000001' },
+        {},
+      );
+    });
+
+    it('refuses a waybill that is not 14 digits (400)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ trackingNumber: '123' })
+        .expect(400);
+
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+    });
+
+    it('refuses a note where the waybill belongs (400)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ trackingNumber: 'ТТН буде пізніше' })
+        .expect(400);
+
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The rule must not reach fields it was never about (TASK-426, after review).
+     *
+     * Orders created under TASK-335 carry waybills the 14-digit rule refuses — a
+     * short number, or «ТТН уточнюється». The admin details form used to send
+     * `trackingNumber` on every save, so such an order could no longer have its
+     * INTERNAL NOTES saved at all: the PATCH 400'd on a field the operator never
+     * touched. The fix is on the client (it omits an unchanged waybill), and this
+     * pins the contract it relies on — an absent key leaves the field alone.
+     */
+    it('saves the internal notes of an order whose waybill predates the rule (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ trackingNumber: 'ТТН уточнюється' }),
+      );
+      orderRepositoryMock.updateDetails.mockResolvedValue(
+        makeOrder({
+          trackingNumber: 'ТТН уточнюється',
+          internalNotes: 'Передзвонити',
+        }),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ internalNotes: 'Передзвонити' })
+        .expect(200);
+
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
+        'order-e2e-1',
+        { internalNotes: 'Передзвонити' },
+        {},
+      );
+      // Not `{ trackingNumber: 'ТТН уточнюється', … }`: the legacy value is not
+      // re-sent, so it is never judged — and never rewritten either.
+      expect(orderRepositoryMock.updateDetails.mock.calls[0]?.[1]).not.toHaveProperty(
+        'trackingNumber',
+      );
+    });
+
+    it('still lets an operator clear a waybill they saved by mistake (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ trackingNumber: '20450000000001' }),
+      );
+      orderRepositoryMock.updateDetails.mockResolvedValue(makeOrder({ trackingNumber: null }));
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ trackingNumber: '   ' })
+        .expect(200);
+
+      // A blank field means "cleared", not "the empty string".
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
+        'order-e2e-1',
+        { trackingNumber: null },
+        {},
+      );
     });
   });
 });

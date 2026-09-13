@@ -14,12 +14,14 @@ import {
   CarouselListQueryDto,
   AdminCarouselListQueryDto,
   SetCarouselItemsDto,
+  ReorderCarouselsDto,
 } from './dto';
 import { ProductService } from '../product/product.service';
 import { ProductListQueryDto } from '../product/dto';
 import { PublicProductEntity } from '../product/entities';
 import { CategoryRepository } from '../category';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
+import { reorderErrorToHttp } from '../common/reorder';
 
 /** Pagination metadata carried by the admin carousel list response. */
 interface PaginationMeta {
@@ -162,6 +164,11 @@ export class CarouselService {
    * real category. Revalidates the homepage whenever public visibility could
    * have changed — a `placement` move of a live carousel counts (it relocates
    * the carousel between homepage sections) and is covered by the same rule.
+   *
+   * A placement CHANGE is not an ordinary field write: since TASK-428 each placement is its
+   * own contiguous 0..n `sortOrder` sequence, so the row has to be re-appended to the target
+   * list rather than arrive carrying its old slot. That decision is made here; the locked
+   * `max + 1` write belongs to `CarouselRepository.updateWithPlacementMove`.
    */
   async update(id: string, dto: UpdateCarouselDto): Promise<CarouselEntity> {
     const carousel = await this.carouselRepository.findById(id);
@@ -170,6 +177,13 @@ export class CarouselService {
     }
 
     const wasPublished = carousel.status === PublishStatus.PUBLISHED;
+
+    // Only a placement that DIFFERS from the stored one is a move. Re-sending the carousel's
+    // current placement (which the admin form does on every save, because the select is
+    // always populated) must stay an in-place edit — treating it as a move would shove the
+    // row to the bottom of its own list every time anyone renamed it.
+    const targetPlacement =
+      dto.placement !== undefined && dto.placement !== carousel.placement ? dto.placement : null;
 
     const input: UpdateCarouselInput = {
       title: dto.title,
@@ -205,7 +219,9 @@ export class CarouselService {
           : resolved.publishedAt;
     }
 
-    const updated = await this.carouselRepository.update(id, input);
+    const updated = targetPlacement
+      ? await this.carouselRepository.updateWithPlacementMove(id, input, targetPlacement)
+      : await this.carouselRepository.update(id, input);
     const entity = CarouselEntity.fromPrisma(updated);
     // Revalidate whenever public visibility could have changed: the carousel is
     // live now, or it was live before (e.g. just unpublished or edited in place).
@@ -251,6 +267,47 @@ export class CarouselService {
     if (carousel.status === PublishStatus.PUBLISHED) {
       await this.notifyRevalidation();
     }
+  }
+
+  /**
+   * Reorder ONE placement bucket (admin, TASK-428) and return the refreshed FULL admin
+   * carousel list — both placements — so the panel resyncs in a single round-trip, exactly
+   * as the banner reorder does.
+   *
+   * The repository's domain errors are mapped to HTTP here, so the wire body carries the
+   * stable `error` code the admin panel keys its UA announcements off.
+   */
+  async reorderPlacement(dto: ReorderCarouselsDto): Promise<CarouselListResponse> {
+    let carousels;
+    let total;
+    try {
+      ({ carousels, total } = await this.carouselRepository.reorderPlacement(
+        dto.placement,
+        dto.orderedIds,
+      ));
+    } catch (error) {
+      throw reorderErrorToHttp(error);
+    }
+
+    // Revalidate ONLY when the reordered bucket actually contains something the shopper
+    // can see — a pure draft shuffle changes nothing public, and this service already
+    // gates its revalidation on visibility everywhere else (create / update / delete).
+    const bucketHasPublished = carousels.some(
+      (carousel) =>
+        carousel.placement === dto.placement && carousel.status === PublishStatus.PUBLISHED,
+    );
+    if (bucketHasPublished) {
+      await this.notifyRevalidation();
+    }
+
+    // Shape parity with `findAllAdmin` is load-bearing: the admin panel writes this
+    // response straight into the list query's cache (`useReorderLifecycle` →
+    // `setQueryData`), and an envelope missing `meta` would blank the row counter the
+    // moment someone drags a row.
+    return {
+      data: carousels.map((carousel) => CarouselEntity.fromPrisma(carousel)),
+      meta: this.buildMeta(total),
+    };
   }
 
   /**

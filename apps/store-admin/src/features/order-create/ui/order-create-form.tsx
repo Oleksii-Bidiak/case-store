@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   CreateManualOrderDtoPaymentMethod,
   getAdminOrderControllerFindAllQueryKey,
@@ -34,8 +34,11 @@ import {
   createOrderValuesToDto,
   type CreateOrderFormValues,
   type DraftLine,
+  type PickedCustomer,
 } from "../model/create-order-schema";
 import { OrderLinePicker } from "./order-line-picker";
+import { OrderCustomerPicker } from "./order-customer-picker";
+import { NpCityField, NpWarehouseField } from "./np-address-fields";
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   [CreateManualOrderDtoPaymentMethod.ON_DELIVERY]: "Оплата при отриманні",
@@ -61,6 +64,12 @@ export function OrderCreateForm() {
 
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [linesTouched, setLinesTouched] = useState(false);
+  // The chosen account's display data (TASK-426). Local state, not a form field:
+  // only its `id` is ever sent, and a copy of the customer's name in the payload
+  // would be a second source of truth for something the server already holds.
+  // It lives HERE rather than inside the picker because the picker unmounts every
+  // time the operator switches to the «за телефоном» tab.
+  const [customer, setCustomer] = useState<PickedCustomer | null>(null);
 
   const form = useForm<CreateOrderFormValues>({
     resolver: zodResolver(createOrderSchema),
@@ -78,6 +87,38 @@ export function OrderCreateForm() {
     control: form.control,
     name: "paymentMethod",
   });
+
+  /**
+   * Record the picked account, and fill the recipient block from it.
+   *
+   * Only EMPTY fields are filled: the operator is talking to the customer, so
+   * "send it to my sister" is a normal instruction and overwriting what they have
+   * already typed would fight them. Nothing is watched or re-synced afterwards —
+   * this is a one-off effect of an explicit click, not async data seeding
+   * (forms.md Rule 1 is about the latter).
+   */
+  const selectCustomer = (picked: PickedCustomer) => {
+    setCustomer(picked);
+    form.setValue("userId", picked.id, { shouldValidate: true });
+
+    const prefill = (
+      field: "firstName" | "lastName" | "phone",
+      value: string,
+    ) => {
+      if (value !== "" && form.getValues(field) === "") {
+        form.setValue(field, value);
+      }
+    };
+
+    prefill("firstName", picked.firstName);
+    prefill("lastName", picked.lastName);
+    prefill("phone", picked.phone);
+  };
+
+  const clearCustomer = () => {
+    setCustomer(null);
+    form.setValue("userId", "");
+  };
 
   const onSubmit = (values: CreateOrderFormValues) => {
     if (lines.length === 0) {
@@ -153,12 +194,11 @@ export function OrderCreateForm() {
         </Tabs>
 
         {customerMode === CUSTOMER_MODE.ACCOUNT ? (
-          <Field
-            name="userId"
-            label={dict.orderCreate.userId}
-            placeholder={dict.orderCreate.userIdPlaceholder}
-            hint={dict.orderCreate.userIdHint}
-            form={form}
+          <OrderCustomerPicker
+            selected={customer}
+            onSelect={selectCustomer}
+            onClear={clearCustomer}
+            error={form.formState.errors.userId?.message}
           />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -171,12 +211,12 @@ export function OrderCreateForm() {
               name="contactEmail"
               label={dict.orderCreate.contactEmail}
               type="email"
+              hint={dict.orderCreate.contactEmailOptional}
               form={form}
             />
-            <Field
+            <PhoneField
               name="contactPhone"
               label={dict.orderCreate.contactPhone}
-              type="tel"
               form={form}
             />
           </div>
@@ -198,18 +238,13 @@ export function OrderCreateForm() {
             label={dict.orderCreate.addressLastName}
             form={form}
           />
-          <Field
+          <PhoneField
             name="phone"
             label={dict.orderCreate.addressPhone}
-            type="tel"
             form={form}
           />
-          <Field name="city" label={dict.orderCreate.addressCity} form={form} />
-          <Field
-            name="address1"
-            label={dict.orderCreate.addressAddress1}
-            form={form}
-          />
+          <NpCityField form={form} />
+          <NpWarehouseField form={form} />
           <Field
             name="postalCode"
             label={dict.orderCreate.addressPostalCode}
@@ -307,6 +342,46 @@ export function OrderCreateForm() {
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * One labelled phone field: a PLAIN input, the rule, and the rule written out
+ * underneath (TASK-426, revised after review).
+ *
+ * ── Why no `+380` mask ───────────────────────────────────────────────────────
+ * It shipped with one — `PhoneInput` — and that was the bug. `formatUAPhone`
+ * rewrites every value into a Ukrainian shape and truncates at nine local digits,
+ * so `+48 22 123 4567` became `+380 48 221 2345`: a different number, silently,
+ * for a customer the shop can legitimately have. The endpoints behind these two
+ * fields accept any country by the owner's standing decision (TASK-338, restated
+ * 2026-09-10), so the field must too.
+ *
+ * `register` rather than `<Controller>` follows from that: with no mask to
+ * re-render there is nothing to control, and the raw value the operator typed is
+ * exactly what we send. The API normalises it (`normalizePhone`, TASK-466).
+ *
+ * It is therefore an ordinary {@link Field} with `type="tel"` and the rule as its
+ * hint — kept as a named component so the two phone fields cannot drift apart,
+ * and so the next reader finds this note instead of re-adding the mask.
+ */
+function PhoneField({
+  name,
+  label,
+  form,
+}: {
+  name: "phone" | "contactPhone";
+  label: string;
+  form: ReturnType<typeof useForm<CreateOrderFormValues>>;
+}) {
+  return (
+    <Field
+      name={name}
+      label={label}
+      form={form}
+      type="tel"
+      hint={dict.orderCreate.phoneHint}
+    />
   );
 }
 

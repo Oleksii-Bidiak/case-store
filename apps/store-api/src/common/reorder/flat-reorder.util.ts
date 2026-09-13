@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { ReorderDuplicateIdError, ReorderNotFoundError, ReorderStaleError } from './reorder.errors';
 import {
+  SiblingSnapshotRow,
   SortableDelegate,
   acquireAdvisoryLocks,
   lockKey,
@@ -91,8 +92,17 @@ export interface ReorderBucketParams<T> {
   orderedIds: readonly string[];
   /** Extra WHERE guard on every write, so a foreign id can never be stolen into this bucket. */
   scope?: Record<string, unknown>;
-  /** The bucket's current membership, read INSIDE the transaction, under the lock. */
-  snapshot: (tx: ReorderTx) => Promise<Array<{ id: string }>>;
+  /**
+   * The bucket's current membership, read INSIDE the transaction, under the lock.
+   *
+   * SELECT `sortOrder` ALONGSIDE `id` (TASK-429). The ids alone are enough to VALIDATE the
+   * payload, but without the current slots every row of the bucket is rewritten on every
+   * drag and Prisma re-stamps its `@updatedAt` — which the storefront publishes as the
+   * document's revision date. With `sortOrder` selected, the rows nobody moved are left
+   * untouched. A snapshot that omits it still works and keeps the old full rewrite; see
+   * `resolveSiblingOrderWrites`.
+   */
+  snapshot: (tx: ReorderTx) => Promise<SiblingSnapshotRow[]>;
   /** The Prisma model delegate to write through, bound to this transaction. */
   delegate: (tx: ReorderTx) => SortableDelegate;
   /** The refreshed list to return, re-read INSIDE the same transaction as the write. */
@@ -123,7 +133,10 @@ export function reorderBucket<T>(
         params.orderedIds,
       );
 
-      await writeSiblingOrder(params.delegate(tx), params.orderedIds, params.scope);
+      // The snapshot is handed to the writer so it can drop the no-op rows (TASK-429). It
+      // is authoritative here — read under the lock, inside this transaction — so a row it
+      // shows already at its target index cannot have been moved by anyone else meanwhile.
+      await writeSiblingOrder(params.delegate(tx), params.orderedIds, params.scope, snapshot);
 
       return params.result(tx);
     },

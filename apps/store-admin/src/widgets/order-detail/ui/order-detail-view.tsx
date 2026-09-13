@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -26,7 +26,7 @@ import {
   TableRow,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatCurrency } from "@/shared/lib";
+import { formatCurrency, formatDateTime, formatTime } from "@/shared/lib";
 import { OrderDetailSkeleton } from "./order-detail-skeleton";
 import { OrderTimeline } from "./order-timeline";
 
@@ -46,16 +46,6 @@ interface AddressFields {
   country?: string;
   phone?: string;
 }
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-
-/** Time-only variant for the restocked-at badge (TASK-254). */
-const timeFormatter = new Intl.DateTimeFormat("en-US", {
-  timeStyle: "short",
-});
 
 /**
  * Admin order detail page body.
@@ -99,6 +89,13 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
   const billingDiffers =
     billing && JSON.stringify(billing) !== JSON.stringify(shipping);
 
+  // TASK-425: the add-ons are the reason the summary did not add up — they are
+  // inside `total` but were in none of the rows above it. Both flags read the
+  // response defensively (`?? 0`), because an order placed before add-ons existed
+  // still has to render.
+  const hasAddons = order.items.some((item) => (item.addons?.length ?? 0) > 0);
+  const addonsTotal = Number(order.addonsTotal ?? 0);
+
   // Stock-hold badges (TASK-254). An order either currently holds reserved stock
   // (pre-shipment, not yet auto-restocked) or has had it returned — never both.
   const holdsStock =
@@ -138,16 +135,14 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                 </Badge>
               ) : order.restockedAt != null ? (
                 <Badge variant="secondary">
-                  {dict.orders.restockedAt(
-                    timeFormatter.format(new Date(order.restockedAt)),
-                  )}
+                  {dict.orders.restockedAt(formatTime(order.restockedAt))}
                 </Badge>
               ) : null}
             </div>
             <p className="text-sm text-muted-foreground">
               {dict.orders.timeline(
-                dateFormatter.format(new Date(order.createdAt)),
-                dateFormatter.format(new Date(order.updatedAt)),
+                formatDateTime(order.createdAt),
+                formatDateTime(order.updatedAt),
               )}
             </p>
             <Separator />
@@ -221,28 +216,51 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                 </TableHeader>
                 <TableBody>
                   {order.items.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        <Link
-                          href={`/products/${item.productId}/edit`}
-                          aria-label={dict.orders.viewProductAria(
-                            item.productName,
-                          )}
-                          className="font-medium text-primary hover:underline"
-                        >
-                          {item.productName}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(item.price)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {item.quantity}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(item.lineTotal)}
-                      </TableCell>
-                    </TableRow>
+                    <Fragment key={item.id}>
+                      <TableRow>
+                        <TableCell>
+                          <Link
+                            href={`/products/${item.productId}/edit`}
+                            aria-label={dict.orders.viewProductAria(
+                              item.productName,
+                            )}
+                            className="font-medium text-primary hover:underline"
+                          >
+                            {item.productName}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatCurrency(item.price)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {item.quantity}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatCurrency(item.lineTotal)}
+                        </TableCell>
+                      </TableRow>
+                      {/* TASK-425: the add-on services bought with this line —
+                          frozen name/price snapshots the API has always sent and
+                          this page never showed. A SUB-ROW, not a fold into the
+                          line: `lineTotal` is price × quantity by definition
+                          (order-item.entity.ts) and the add-ons are summed on the
+                          order as `addonsTotal`. Optional-chained because the
+                          array is required by the contract but a response that
+                          predates it must not blank the whole page. */}
+                      {item.addons?.map((addon) => (
+                        <TableRow key={addon.id}>
+                          <TableCell
+                            colSpan={3}
+                            className="py-1.5 pl-8 text-xs text-muted-foreground"
+                          >
+                            + {addon.name}
+                          </TableCell>
+                          <TableCell className="py-1.5 text-right text-xs text-muted-foreground">
+                            {formatCurrency(addon.price)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </Fragment>
                   ))}
                 </TableBody>
               </Table>
@@ -253,6 +271,11 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                 add-on invariants — the backend deliberately does not implement
                 it. An absent explanation is better than a button that silently
                 does nothing, and a stated rule is better than an absent one. */}
+            {hasAddons ? (
+              <p className="text-xs text-muted-foreground">
+                {dict.orders.addonsHint}
+              </p>
+            ) : null}
             <p className="text-xs text-muted-foreground">
               {dict.orders.itemsLockedHint}
             </p>
@@ -261,11 +284,21 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
 
         {/* Sidebar column */}
         <div className="flex flex-col gap-6">
+          {/* TASK-425: the customer card used to render only for ACCOUNT orders,
+              so a guest order — the whole point of TASK-338 — showed no customer
+              at all on the one page an operator opens while the phone is ringing.
+              Same three-way branch the order LIST already had, badge included, so
+              "who is this" is answered identically in both places. */}
           {order.customer ? (
             <section className="flex flex-col gap-1 rounded-md border border-border p-4">
-              <h3 className="text-sm font-semibold text-foreground">
-                {dict.orders.customer}
-              </h3>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {dict.orders.customer}
+                </h3>
+                <Badge variant="secondary">
+                  {dict.orders.customerTypeAccount}
+                </Badge>
+              </div>
               <div className="text-sm text-muted-foreground">
                 <div>{order.customer.email}</div>
                 {(order.customer.firstName || order.customer.lastName) && (
@@ -277,7 +310,42 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                 )}
               </div>
             </section>
+          ) : order.guest ? (
+            <section className="flex flex-col gap-1 rounded-md border border-border p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {dict.orders.customer}
+                </h3>
+                <Badge variant="warning">{dict.orders.customerTypeGuest}</Badge>
+              </div>
+              {/* The contact typed at checkout IS the customer record here: there
+                  is no account to look anything up in.
+
+                  Every line is guarded individually, the email included: on an
+                  order the operator took by phone it is legitimately null
+                  (TASK-426 made it optional, and the API answers `email: null`).
+                  An unguarded email line rendered an empty row above the phone —
+                  the card looked broken on exactly the orders the operator
+                  creates themselves. */}
+              <div className="text-sm text-muted-foreground">
+                {order.guest.email ? <div>{order.guest.email}</div> : null}
+                {order.guest.name ? <div>{order.guest.name}</div> : null}
+                {order.guest.phone ? <div>{order.guest.phone}</div> : null}
+              </div>
+            </section>
           ) : null}
+
+          {/* Above the money block since TASK-425: this is what the operator
+              reads out while the courier waits on the line. */}
+          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+            <h3 className="text-sm font-semibold text-foreground">
+              {dict.orders.shippingAddress}
+            </h3>
+            <AddressLines address={shipping} />
+            {/* TASK-341: correctable until the parcel is with the courier; after
+                that the form is replaced by the reason, not disabled. */}
+            <OrderAddressForm order={order} />
+          </section>
 
           <section className="flex flex-col gap-2 rounded-md border border-border p-4">
             <h3 className="text-sm font-semibold text-foreground">
@@ -287,10 +355,26 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
               label={dict.orders.subtotal}
               value={formatCurrency(order.subtotal)}
             />
+            {/* TASK-425: a discount with no code shown cannot be explained to the
+                customer who is asking about it. */}
             <SummaryRow
-              label={dict.orders.discount}
+              label={
+                order.discountCode
+                  ? dict.orders.discountWithCode(order.discountCode)
+                  : dict.orders.discount
+              }
               value={formatCurrency(order.discount)}
             />
+            {/* TASK-425: the missing row. Without it the column reads
+                subtotal + shipping + tax − discount and lands short of the total
+                by exactly the add-ons, which is the complaint. Hidden at zero: an
+                order with no add-ons adds up without it. */}
+            {addonsTotal > 0 ? (
+              <SummaryRow
+                label={dict.orders.addonsTotal}
+                value={formatCurrency(order.addonsTotal)}
+              />
+            ) : null}
             <SummaryRow
               label={dict.orders.shipping}
               value={formatCurrency(order.shippingCost)}
@@ -304,16 +388,6 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
               <span>{dict.orders.total}</span>
               <span>{formatCurrency(order.total)}</span>
             </div>
-          </section>
-
-          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
-            <h3 className="text-sm font-semibold text-foreground">
-              {dict.orders.shippingAddress}
-            </h3>
-            <AddressLines address={shipping} />
-            {/* TASK-341: correctable until the parcel is with the courier; after
-                that the form is replaced by the reason, not disabled. */}
-            <OrderAddressForm order={order} />
           </section>
           {billingDiffers ? (
             <AddressBlock

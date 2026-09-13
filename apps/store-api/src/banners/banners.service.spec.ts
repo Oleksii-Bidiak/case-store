@@ -22,6 +22,7 @@ const mockBanner = {
   status: PublishStatus.PUBLISHED,
   publishedAt: new Date('2026-07-01T00:00:00.000Z'),
   scheduledAt: null,
+  scheduledUntil: null,
   createdAt: new Date('2026-07-01T00:00:00.000Z'),
   updatedAt: new Date('2026-07-01T00:00:00.000Z'),
 };
@@ -210,6 +211,61 @@ describe('BannerService', () => {
       expect(passed.scheduledAt).toBeInstanceOf(Date);
       expect(revalidationMock.revalidate).not.toHaveBeenCalled();
     });
+
+    // ── publication window (TASK-429) ───────────────────────────────────────
+    it('persists a from-to window for a SCHEDULED banner', async () => {
+      bannerRepositoryMock.create.mockResolvedValue(draftBanner);
+      const from = new Date(Date.now() + 86_400_000).toISOString();
+      const until = new Date(Date.now() + 172_800_000).toISOString();
+
+      await service.create({
+        placement: BannerPlacement.PROMO_BANNER,
+        title: 'Weekend promo',
+        status: PublishStatus.SCHEDULED,
+        scheduledAt: from,
+        scheduledUntil: until,
+      });
+
+      const passed = bannerRepositoryMock.create.mock.calls[0][0] as {
+        scheduledUntil: Date | null;
+      };
+      expect(passed.scheduledUntil).toEqual(new Date(until));
+    });
+
+    it('accepts a window end on a PUBLISHED banner — "live now, down on the 1st"', async () => {
+      bannerRepositoryMock.create.mockResolvedValue(mockBanner);
+      const until = new Date('2026-09-01T00:00:00.000Z').toISOString();
+
+      await service.create({
+        placement: BannerPlacement.PROMO_BANNER,
+        title: 'August promo',
+        status: PublishStatus.PUBLISHED,
+        scheduledUntil: until,
+      });
+
+      const passed = bannerRepositoryMock.create.mock.calls[0][0] as {
+        status: PublishStatus;
+        scheduledUntil: Date | null;
+      };
+      expect(passed.status).toBe(PublishStatus.PUBLISHED);
+      expect(passed.scheduledUntil).toEqual(new Date(until));
+    });
+
+    it('drops a window end on a DRAFT — nothing is up, so nothing comes down', async () => {
+      bannerRepositoryMock.create.mockResolvedValue(draftBanner);
+
+      await service.create({
+        placement: BannerPlacement.PROMO_TILE,
+        title: 'Parked',
+        status: PublishStatus.DRAFT,
+        scheduledUntil: new Date('2026-09-01T00:00:00.000Z').toISOString(),
+      });
+
+      const passed = bannerRepositoryMock.create.mock.calls[0][0] as {
+        scheduledUntil: Date | null;
+      };
+      expect(passed.scheduledUntil).toBeNull();
+    });
   });
 
   describe('update', () => {
@@ -264,6 +320,55 @@ describe('BannerService', () => {
       expect(passed.status).toBe(PublishStatus.PUBLISHED);
       expect(passed.publishedAt).toEqual(mockBanner.publishedAt);
     });
+
+    // ── publication window (TASK-429) ───────────────────────────────────────
+    it('writes the window end alongside status', async () => {
+      bannerRepositoryMock.findById.mockResolvedValue(mockBanner);
+      bannerRepositoryMock.update.mockResolvedValue(mockBanner);
+      const until = new Date('2026-09-01T00:00:00.000Z').toISOString();
+
+      await service.update('banner-uuid-1', {
+        status: PublishStatus.PUBLISHED,
+        scheduledUntil: until,
+      });
+
+      const passed = bannerRepositoryMock.update.mock.calls[0][1] as {
+        scheduledUntil?: Date | null;
+      };
+      expect(passed.scheduledUntil).toEqual(new Date(until));
+    });
+
+    it('clears the window end when a status arrives without one', async () => {
+      bannerRepositoryMock.findById.mockResolvedValue({
+        ...mockBanner,
+        scheduledUntil: new Date('2026-09-01T00:00:00.000Z'),
+      });
+      bannerRepositoryMock.update.mockResolvedValue(mockBanner);
+
+      await service.update('banner-uuid-1', { status: PublishStatus.PUBLISHED });
+
+      const passed = bannerRepositoryMock.update.mock.calls[0][1] as {
+        scheduledUntil?: Date | null;
+      };
+      expect(passed.scheduledUntil).toBeNull();
+    });
+
+    // The guard that keeps an unrelated partial PUT (an API client renaming a
+    // title) from wiping a live window.
+    it('leaves an existing window untouched when no status is sent', async () => {
+      bannerRepositoryMock.findById.mockResolvedValue({
+        ...mockBanner,
+        scheduledUntil: new Date('2026-09-01T00:00:00.000Z'),
+      });
+      bannerRepositoryMock.update.mockResolvedValue(mockBanner);
+
+      await service.update('banner-uuid-1', { title: 'Renamed' });
+
+      const passed = bannerRepositoryMock.update.mock.calls[0][1] as {
+        scheduledUntil?: Date | null;
+      };
+      expect(passed.scheduledUntil).toBeUndefined();
+    });
   });
 
   describe('publish / unpublish', () => {
@@ -283,6 +388,42 @@ describe('BannerService', () => {
 
       expect(result.status).toBe(PublishStatus.PUBLISHED);
       expect(revalidationMock.revalidate).toHaveBeenCalledWith({ tags: ['banners'], paths: ['/'] });
+    });
+
+    it('publish KEEPS a window end that is still in the future (TASK-429)', async () => {
+      const until = new Date(Date.now() + 86_400_000);
+      bannerRepositoryMock.findById.mockResolvedValue({ ...draftBanner, scheduledUntil: until });
+      bannerRepositoryMock.publish.mockResolvedValue({
+        ...draftBanner,
+        status: PublishStatus.PUBLISHED,
+        scheduledUntil: until,
+      });
+
+      const result = await service.publish('banner-uuid-2');
+
+      expect(bannerRepositoryMock.publish).toHaveBeenCalledWith(
+        'banner-uuid-2',
+        expect.any(Date),
+        until,
+      );
+      expect(result.scheduledUntil).toEqual(until);
+    });
+
+    it('publish DROPS a window end that has already closed, so the worker cannot undo it', async () => {
+      const closed = new Date(Date.now() - 86_400_000);
+      bannerRepositoryMock.findById.mockResolvedValue({ ...draftBanner, scheduledUntil: closed });
+      bannerRepositoryMock.publish.mockResolvedValue({
+        ...draftBanner,
+        status: PublishStatus.PUBLISHED,
+      });
+
+      await service.publish('banner-uuid-2');
+
+      expect(bannerRepositoryMock.publish).toHaveBeenCalledWith(
+        'banner-uuid-2',
+        expect.any(Date),
+        null,
+      );
     });
 
     it('unpublish sets the banner DRAFT and revalidates the homepage', async () => {

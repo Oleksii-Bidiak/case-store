@@ -209,6 +209,63 @@ describe('Admin audit log — sorting (e2e)', () => {
     );
   });
 
+  // ─── actorRole filter (TASK-430) ────────────────────────────────────────────
+
+  it.each(['ADMIN', 'MANAGER'])(
+    'accepts actorRole=%s and forwards it to the repository',
+    async (actorRole) => {
+      await request(app.getHttpServer())
+        .get(`/api/admin/audit-log?actorRole=${actorRole}`)
+        .set('Authorization', auth(owner.id, owner.role))
+        .expect(200);
+
+      expect(auditRepositoryMock.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ actorRole }),
+      );
+    },
+  );
+
+  it('sends no actorRole when none was asked for — system entries must stay visible', async () => {
+    // A default would quietly drop every row whose `actorRole` is NULL: payment
+    // callbacks and cron, i.e. exactly the entries someone opens this screen to find
+    // when an order changed on its own.
+    await request(app.getHttpServer())
+      .get('/api/admin/audit-log')
+      .set('Authorization', auth(owner.id, owner.role))
+      .expect(200);
+
+    expect(auditRepositoryMock.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ actorRole: undefined }),
+    );
+  });
+
+  it('rejects a role outside the enum with 400 rather than matching nothing', async () => {
+    // `?actorRole=manager` reaching Prisma would answer «Немає записів», which is
+    // also what an empty log says — the mistake would be invisible.
+    const response = await request(app.getHttpServer())
+      .get('/api/admin/audit-log?actorRole=manager')
+      .set('Authorization', auth(owner.id, owner.role))
+      .expect(400);
+
+    expect(JSON.stringify(response.body)).toContain('actorRole must be one of');
+    expect(auditRepositoryMock.findMany).not.toHaveBeenCalled();
+  });
+
+  it('composes the role filter with the actor id — «мої дії» and «менеджери» are one query away', async () => {
+    await request(app.getHttpServer())
+      .get('/api/admin/audit-log?actorId=admin-7&actorRole=ADMIN&entityType=order')
+      .set('Authorization', auth(owner.id, owner.role))
+      .expect(200);
+
+    expect(auditRepositoryMock.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'admin-7',
+        actorRole: 'ADMIN',
+        entityType: 'order',
+      }),
+    );
+  });
+
   it('still refuses a MANAGER, sort parameters or not — @OwnerOnly runs before validation', async () => {
     // Guards run ahead of pipes, so even the invalid value answers 403 rather
     // than a 400 that would confirm the route and hand over its allow-list.

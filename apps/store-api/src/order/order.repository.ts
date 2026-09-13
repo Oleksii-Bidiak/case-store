@@ -1,5 +1,11 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
-import { Prisma, OrderStatus, PaymentStatus, OrderHistoryChangeType } from '@prisma/client';
+import {
+  Prisma,
+  OrderStatus,
+  PaymentStatus,
+  PaymentMethod,
+  OrderHistoryChangeType,
+} from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { normalizeUaPhone, phoneDigits } from '../common/validators';
 import {
@@ -22,6 +28,14 @@ import type {
   ManualOrderParams,
 } from './order.types';
 import type { OrderListQueryDto, AdminOrderListQueryDto, AddressDto } from './dto';
+// The export query is declared beside the list query it narrows, and is not part
+// of the module's public DTO barrel — only this repository and the controller
+// that hands it over ever name the type.
+import type { AdminOrderExportQueryDto } from './dto/admin-order-list-query.dto';
+// TASK-425: the "waiting too long" threshold is the DASHBOARD's, imported rather
+// than re-typed. A 48 copied into this module is a 72 the day someone changes
+// the other one, and the chip would then quietly disagree with the tile.
+import { PENDING_STALE_HOURS } from '../dashboard/dashboard.types';
 import { staleOrderError } from './order.errors';
 
 /**
@@ -78,6 +92,72 @@ const ADMIN_ORDERS_INCLUDE = {
     select: { id: true, email: true, firstName: true, lastName: true },
   },
 } satisfies Prisma.OrderInclude;
+
+/**
+ * Column set for the admin CSV export (TASK-425).
+ *
+ * A `select`, emphatically not {@link ADMIN_ORDERS_INCLUDE}: the export reads
+ * thousands of orders at once, and the admin include drags every line, every
+ * add-on snapshot, every product row and a product image with each order. The
+ * CSV needs none of that — one row per ORDER — so the only thing taken from the
+ * lines is `_count`, which Postgres answers without materialising them.
+ */
+const ORDER_EXPORT_SELECT = {
+  id: true,
+  createdAt: true,
+  status: true,
+  paymentStatus: true,
+  paymentMethod: true,
+  paidAt: true,
+  subtotal: true,
+  discount: true,
+  discountCode: true,
+  addonsTotal: true,
+  shippingCost: true,
+  tax: true,
+  total: true,
+  trackingNumber: true,
+  guestEmail: true,
+  guestPhone: true,
+  guestName: true,
+  shippingAddress: true,
+  user: { select: { email: true, firstName: true, lastName: true, phone: true } },
+  _count: { select: { items: true } },
+} satisfies Prisma.OrderSelect;
+
+/**
+ * One order as the CSV export reads it (TASK-425) — the shape of
+ * {@link ORDER_EXPORT_SELECT}. Declared here rather than in `order.types.ts`
+ * because it describes this query and nothing else, the same way
+ * `CartWithItems` belongs to the cart repository.
+ */
+export interface AdminOrderExportRow {
+  id: string;
+  createdAt: Date;
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  paymentMethod: PaymentMethod | null;
+  paidAt: Date | null;
+  subtotal: { toString(): string };
+  discount: { toString(): string };
+  discountCode: string | null;
+  addonsTotal: { toString(): string } | null;
+  shippingCost: { toString(): string };
+  tax: { toString(): string };
+  total: { toString(): string };
+  trackingNumber: string | null;
+  guestEmail: string | null;
+  guestPhone: string | null;
+  guestName: string | null;
+  shippingAddress: Prisma.JsonValue | null;
+  user: {
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+    phone: string | null;
+  } | null;
+  _count: { items: number };
+}
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
@@ -503,6 +583,44 @@ export class OrderRepository {
     const page = query.page ?? DEFAULT_PAGE;
     const limit = query.limit ?? DEFAULT_LIMIT;
 
+    const where = this.buildAdminWhere(query);
+
+    // Allow-listed sort (TASK-147). The DTO `@IsIn` already rejects unknown
+    // fields at the API boundary; this fallback is a defensive default. NOTE:
+    // `status` sorts by the enum's alphabetical order in Postgres, not by
+    // business lifecycle order — acceptable for the admin table MVP.
+    const ALLOWED_SORT: Record<string, string> = {
+      createdAt: 'createdAt',
+      total: 'total',
+      status: 'status',
+    };
+    const sortField = ALLOWED_SORT[query.sortBy ?? 'createdAt'] ?? 'createdAt';
+    const sortOrder = query.sortOrder ?? 'desc';
+
+    const [total, orders] = await this.prisma.$transaction([
+      this.prisma.order.count({ where }),
+      this.prisma.order.findMany({
+        where,
+        include: ADMIN_ORDERS_INCLUDE,
+        orderBy: { [sortField]: sortOrder },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ]);
+
+    return { orders: orders as OrderWithItems[], total };
+  }
+
+  /**
+   * The WHERE clause shared by the admin order list and its CSV export
+   * (TASK-425).
+   *
+   * Extracted rather than copied, because the export's entire promise is "the
+   * rows you are looking at". A second copy that drifted by one condition would
+   * hand the operator a spreadsheet that silently disagrees with the screen it
+   * came from — and a CSV gives no hint that it is the one lying.
+   */
+  private buildAdminWhere(query: AdminOrderListQueryDto): Prisma.OrderWhereInput {
     const createdAt: Prisma.DateTimeFilter = {};
     if (query.dateFrom) createdAt.gte = new Date(query.dateFrom);
     if (query.dateTo) createdAt.lte = new Date(query.dateTo);
@@ -563,30 +681,50 @@ export class OrderRepository {
       where.status = { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] };
     }
 
-    // Allow-listed sort (TASK-147). The DTO `@IsIn` already rejects unknown
-    // fields at the API boundary; this fallback is a defensive default. NOTE:
-    // `status` sorts by the enum's alphabetical order in Postgres, not by
-    // business lifecycle order — acceptable for the admin table MVP.
-    const ALLOWED_SORT: Record<string, string> = {
-      createdAt: 'createdAt',
-      total: 'total',
-      status: 'status',
-    };
-    const sortField = ALLOWED_SORT[query.sortBy ?? 'createdAt'] ?? 'createdAt';
-    const sortOrder = query.sortOrder ?? 'desc';
+    // TASK-425: the filters an operator actually reaches for — payment status,
+    // payment method, and "has this been sitting too long".
+    //
+    // They go into `AND` rather than onto `where` directly because the
+    // `unpaidInTransit` preset above OWNS `where.paymentStatus` and
+    // `where.status`: assigning here would let one filter silently swallow the
+    // other, and a filter that is visibly on screen but absent from the query is
+    // the worst of the possible outcomes. Prisma ANDs a top-level `AND` with the
+    // top-level fields and with `OR`, so this composes with the search too.
+    const and: Prisma.OrderWhereInput[] = [];
+    if (query.paymentStatus) and.push({ paymentStatus: query.paymentStatus });
+    if (query.paymentMethod) and.push({ paymentMethod: query.paymentMethod });
+    if (query.pendingOverdue) {
+      // Same condition as DashboardRepository.pendingOver48hWhere() — PENDING,
+      // not soft-deleted (already on `where`), created before the cut-off — so
+      // the chip's rows are exactly the tile's count.
+      and.push({
+        status: OrderStatus.PENDING,
+        createdAt: { lt: new Date(Date.now() - PENDING_STALE_HOURS * 60 * 60 * 1000) },
+      });
+    }
+    if (and.length > 0) where.AND = and;
 
-    const [total, orders] = await this.prisma.$transaction([
-      this.prisma.order.count({ where }),
-      this.prisma.order.findMany({
-        where,
-        include: ADMIN_ORDERS_INCLUDE,
-        orderBy: { [sortField]: sortOrder },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-    ]);
+    return where;
+  }
 
-    return { orders: orders as OrderWithItems[], total };
+  /**
+   * Admin — every order matching the CURRENT filters, newest first, for the CSV
+   * export (TASK-425). Capped at `take` rows by the caller.
+   *
+   * Unpaginated but never unbounded: the caller passes the cap. "Export
+   * everything" over a shop's whole order history is one query holding the
+   * entire table in memory while a string is built from it, so the cap is the
+   * feature, not a limitation of it.
+   */
+  findAllForExport(query: AdminOrderExportQueryDto, take: number): Promise<AdminOrderExportRow[]> {
+    return this.prisma.order.findMany({
+      where: this.buildAdminWhere(query),
+      // Always newest-first: an export has no column headers to sort by yet, and
+      // the newest orders are the ones an operator opens a spreadsheet for.
+      orderBy: { createdAt: 'desc' },
+      take,
+      select: ORDER_EXPORT_SELECT,
+    }) as Promise<AdminOrderExportRow[]>;
   }
 
   /**

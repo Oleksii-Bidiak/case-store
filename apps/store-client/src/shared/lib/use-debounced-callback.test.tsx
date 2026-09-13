@@ -79,6 +79,58 @@ describe("useDebouncedCallback", () => {
     expect(result.current).toBe(first);
   });
 
+  /**
+   * `cancel()` is the whole point of the TASK-423 review fix: the admin
+   * `TableSearch` clears its box on Escape while the keystrokes before it are
+   * still in flight, and an uncancellable debounce fired ~300 ms later with the
+   * term the operator had just cancelled.
+   */
+  describe("cancel()", () => {
+    it("drops a pending call so it never fires", () => {
+      const fn = jest.fn();
+      const { result } = renderHook(() => useDebouncedCallback(fn, 300));
+
+      act(() => result.current("abandoned"));
+      act(() => result.current.cancel());
+      act(() => jest.advanceTimersByTime(300));
+
+      expect(fn).not.toHaveBeenCalled();
+    });
+
+    it("is a no-op when nothing is pending, and leaves the handle usable", () => {
+      const fn = jest.fn();
+      const { result } = renderHook(() => useDebouncedCallback(fn, 300));
+
+      // Callers must be able to cancel unconditionally — asking "is something
+      // scheduled?" first would need state this hook does not expose.
+      act(() => result.current.cancel());
+      act(() => result.current.cancel());
+
+      act(() => result.current("after"));
+      act(() => jest.advanceTimersByTime(300));
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(fn).toHaveBeenCalledWith("after");
+    });
+
+    it("cancels only what is pending — a later call still fires in full", () => {
+      const fn = jest.fn();
+      const { result } = renderHook(() => useDebouncedCallback(fn, 300));
+
+      act(() => result.current("first"));
+      act(() => jest.advanceTimersByTime(200));
+      act(() => result.current.cancel());
+      act(() => result.current("second"));
+
+      // The cancel must not have left a half-elapsed window behind: "second"
+      // gets its own full 300 ms.
+      act(() => jest.advanceTimersByTime(299));
+      expect(fn).not.toHaveBeenCalled();
+      act(() => jest.advanceTimersByTime(1));
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(fn).toHaveBeenCalledWith("second");
+    });
+  });
+
   it("does not fire after the component unmounts", () => {
     const fn = jest.fn();
     const { result, unmount } = renderHook(() => useDebouncedCallback(fn, 300));

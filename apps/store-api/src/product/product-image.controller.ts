@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -23,35 +22,18 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { memoryStorage } from 'multer';
 import { ProductImageService } from './product-image.service';
 import { ReorderImagesDto, UploadImagesDto } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import { ProductImageEntity } from './entities';
-
-/** MIME types accepted by the upload endpoint. */
-const ALLOWED_IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+import { imageMulterOptions, MAX_FILES_PER_UPLOAD } from '../uploads';
 
 /**
- * Multer options for image uploads. Files are buffered in memory (no temp files);
- * the storage layer writes them to disk. The hard size cap bounds memory use; the
- * service enforces the stricter 5 MB business limit (→ 413).
+ * Multer options for the gallery upload — the shared image-upload config
+ * (TASK-424), so the accepted MIME set and the memory-storage rule are the same
+ * here as on every other upload route in the API.
  */
-const imageMulterOptions = {
-  storage: memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024, files: 10 },
-  fileFilter: (
-    _req: unknown,
-    file: { mimetype: string },
-    cb: (error: Error | null, acceptFile: boolean) => void,
-  ): void => {
-    if (ALLOWED_IMAGE_MIME.has(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new BadRequestException(`Unsupported file type: ${file.mimetype}`), false);
-    }
-  },
-};
+const galleryMulterOptions = imageMulterOptions(MAX_FILES_PER_UPLOAD);
 
 /** Response envelope for an image list. */
 class ProductImageListEnvelope {
@@ -98,7 +80,7 @@ export class ProductImageController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission('products:write')
-  @UseInterceptors(FilesInterceptor('files', 10, imageMulterOptions))
+  @UseInterceptors(FilesInterceptor('files', MAX_FILES_PER_UPLOAD, galleryMulterOptions))
   @ApiBearerAuth('access-token')
   @ApiConsumes('multipart/form-data')
   @ApiOperation({

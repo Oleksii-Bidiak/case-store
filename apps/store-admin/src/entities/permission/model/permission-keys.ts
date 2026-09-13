@@ -20,6 +20,10 @@ export const PERM = {
 
   productsRead: "products:read",
   productsWrite: "products:write",
+  // TASK-427: the delete action in the product row / edit page / card. Its own
+  // key in the backend catalogue since TASK-140 — a manager who may edit prices
+  // is not automatically a manager who may retire a position.
+  productsDelete: "products:delete",
   categoriesWrite: "categories:write",
   brandsWrite: "brands:write",
   devicesWrite: "devices:write",
@@ -37,6 +41,17 @@ export const PERM = {
   newsletterRead: "newsletter:read",
 
   customersRead: "customers:read",
+  // TASK-430: gates the customer-notes textarea on `/users/[id]`. The same key
+  // also governs account deactivation server-side (`user.controller.ts:356`,
+  // `:387`), which is why the backend catalogue label names both capabilities.
+  //
+  // Named here rather than inlined at the call site for the reason this whole
+  // file exists: `can()` takes a plain `string`, so `customer:write` or
+  // `customers:Write` compiles and runs — and the owner never sees the breakage,
+  // because `can()` answers true for ADMIN whatever it is asked. Only MANAGERs
+  // lose the control, silently, while the API goes on accepting the request they
+  // can no longer send.
+  customersWrite: "customers:write",
 
   messagesRead: "messages:read",
 

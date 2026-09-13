@@ -19,6 +19,17 @@ jest.mock("next/navigation", () => ({
   useSearchParams: () => mockSearchParams,
 }));
 
+// TASK-425: no <Toaster> is mounted in tests, so the export's two outcomes —
+// "done" and "truncated" — are told apart at the wrapper.
+const toastSuccess = jest.fn();
+const toastError = jest.fn();
+jest.mock("@/shared/ui/toast", () => ({
+  toast: {
+    success: (...args: unknown[]) => toastSuccess(...args),
+    error: (...args: unknown[]) => toastError(...args),
+  },
+}));
+
 beforeEach(() => {
   mockReplace.mockClear();
   mockSearchParams = new URLSearchParams("");
@@ -363,5 +374,290 @@ describe("AdminOrderTable — mobile card layout (TASK-258)", () => {
     expect(
       container.querySelector(`[data-label="${dict.common.actions}"]`),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-425 — the list as a queue: filter by what the money did, by how it was
+ * meant to arrive, and by "this has been sitting too long".
+ */
+describe("AdminOrderTable — queue filters (TASK-425)", () => {
+  /** Capture the query string the table actually asks the API for. */
+  const captureListUrl = (): { current: string } => {
+    const seen = { current: "" };
+    server.use(
+      http.get("*/api/admin/orders", ({ request }) => {
+        seen.current = request.url;
+        return HttpResponse.json({
+          data: [],
+          meta: { total: 0, page: 1, limit: 20, totalPages: 1 },
+        });
+      }),
+    );
+    return seen;
+  };
+
+  it("offers a payment-status and a payment-method filter", async () => {
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.orders.empty);
+
+    expect(
+      screen.getByRole("combobox", {
+        name: dict.orders.filterPaymentStatusAria,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", {
+        name: dict.orders.filterPaymentMethodAria,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("sends the payment filters from the URL to the API", async () => {
+    const seen = captureListUrl();
+    mockSearchParams = new URLSearchParams(
+      "paymentStatus=FAILED&paymentMethod=ONLINE",
+    );
+
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.orders.empty);
+
+    await waitFor(() => expect(seen.current).toContain("paymentStatus=FAILED"));
+    expect(seen.current).toContain("paymentMethod=ONLINE");
+  });
+
+  it("selecting a payment status writes it to the URL and resets the page", async () => {
+    mockSearchParams = new URLSearchParams("page=3");
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.orders.empty);
+
+    await userEvent.click(
+      screen.getByRole("combobox", {
+        name: dict.orders.filterPaymentStatusAria,
+      }),
+    );
+    await userEvent.click(screen.getByRole("option", { name: "Оплачено" }));
+
+    expect(mockReplace).toHaveBeenCalledWith("/orders?paymentStatus=PAID");
+  });
+
+  it("toggles the «waiting too long» chip into a SERVER filter", async () => {
+    const seen = captureListUrl();
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.orders.empty);
+
+    const chip = screen.getByRole("button", {
+      name: dict.orders.overdueChipAria,
+    });
+    // Off by default, and it says so to a screen reader rather than only by colour.
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+
+    await userEvent.click(chip);
+
+    expect(mockReplace).toHaveBeenCalledWith("/orders?pendingOverdue=true");
+    // Never filtered client-side: the 48-hour threshold is the dashboard's
+    // constant and lives on the server, so the chip and the tile agree by
+    // construction.
+    expect(seen.current).not.toContain("pendingOverdue");
+  });
+
+  it("renders the chip pressed and asks the API for it when deep-linked", async () => {
+    const seen = captureListUrl();
+    mockSearchParams = new URLSearchParams("pendingOverdue=true");
+
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.orders.empty);
+
+    expect(
+      screen.getByRole("button", { name: dict.orders.overdueChipAria }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(seen.current).toContain("pendingOverdue=true"));
+  });
+
+  it("clicking the pressed chip clears the filter", async () => {
+    mockSearchParams = new URLSearchParams("pendingOverdue=true");
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.orders.empty);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.overdueChipAria }),
+    );
+
+    expect(mockReplace).toHaveBeenCalledWith("/orders");
+  });
+});
+
+describe("AdminOrderTable — account or guest (TASK-425)", () => {
+  const guestRow = {
+    ...makeOrderRow(null),
+    userId: null,
+    guest: {
+      email: "olena@example.com",
+      phone: "+380501112233",
+      name: "Олена Шевченко",
+    },
+  };
+
+  it("labels each row as an account or a guest in its own column", async () => {
+    server.use(
+      http.get("*/api/admin/orders", () =>
+        HttpResponse.json({
+          data: [
+            makeOrderRow({
+              id: "user-uuid-87654321",
+              email: "buyer@example.com",
+              firstName: "Ivan",
+              lastName: "Petrenko",
+            }),
+            { ...guestRow, id: "order-uuid-87654321" },
+          ],
+          meta: { total: 2, page: 1, limit: 20, totalPages: 1 },
+        }),
+      ),
+    );
+
+    renderWithProviders(<AdminOrderTable />);
+
+    expect(
+      await screen.findByText(dict.orders.customerTypeAccount),
+    ).toBeInTheDocument();
+    expect(screen.getByText(dict.orders.customerTypeGuest)).toBeInTheDocument();
+    expect(screen.getByText(dict.orders.colCustomerType)).toBeInTheDocument();
+  });
+
+  it("falls back to the phone when a guest order has no email (TASK-426)", async () => {
+    server.use(
+      http.get("*/api/admin/orders", () =>
+        HttpResponse.json({
+          // The order an operator takes by phone: `ManualOrderContactDto` makes
+          // the email optional, so the API answers `email: null`. Reading the
+          // email alone left this row's customer cell blank — the one contact
+          // the operator had just typed, invisible on the queue they live in.
+          data: [{ ...guestRow, guest: { ...guestRow.guest, email: null } }],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        }),
+      ),
+    );
+
+    renderWithProviders(<AdminOrderTable />);
+
+    expect(await screen.findByText("+380501112233")).toBeInTheDocument();
+    expect(screen.getByText(dict.orders.customerTypeGuest)).toBeInTheDocument();
+  });
+});
+
+describe("AdminOrderTable — CSV export (TASK-425)", () => {
+  const stubExport = (csv: string) => {
+    const seen = { url: "" };
+    server.use(
+      http.get("*/api/admin/orders/export", ({ request }) => {
+        seen.url = request.url;
+        return new HttpResponse(csv, {
+          headers: { "Content-Type": "text/csv" },
+        });
+      }),
+    );
+    return seen;
+  };
+
+  const stubList = (total: number) =>
+    server.use(
+      http.get("*/api/admin/orders", () =>
+        HttpResponse.json({
+          data: [makeOrderRow(null)],
+          meta: { total, page: 1, limit: 20, totalPages: 1 },
+        }),
+      ),
+    );
+
+  let clickSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    toastSuccess.mockClear();
+    toastError.mockClear();
+    URL.createObjectURL = jest.fn(() => "blob:mock-url");
+    URL.revokeObjectURL = jest.fn();
+    clickSpy = jest
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    clickSpy.mockRestore();
+  });
+
+  it("exports the CURRENT SELECTION, not the page on screen", async () => {
+    stubList(1);
+    const seen = stubExport("orderNumber,total\r\nABC12345,1469.00");
+    // Filters as applied — including the ones a Select cannot express.
+    mockSearchParams = new URLSearchParams(
+      "status=PENDING&search=ABC&paymentStatus=PENDING&pendingOverdue=true&page=2",
+    );
+
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText("user-uui…");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.exportCsv }),
+    );
+
+    await waitFor(() => expect(seen.url).toContain("status=PENDING"));
+    expect(seen.url).toContain("search=ABC");
+    expect(seen.url).toContain("paymentStatus=PENDING");
+    expect(seen.url).toContain("pendingOverdue=true");
+    // The page is NOT sent: the export is the selection, and the server refuses
+    // a paged export outright rather than returning an ambiguous file.
+    expect(seen.url).not.toContain("page=");
+
+    await waitFor(() =>
+      expect(URL.createObjectURL as jest.Mock).toHaveBeenCalledTimes(1),
+    );
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(toastSuccess).toHaveBeenCalledWith(dict.orders.exportSuccess(1));
+  });
+
+  it("says so — and keeps saying so — when the server capped the file", async () => {
+    // The list knows 9 000 orders match; the file came back with two.
+    stubList(9000);
+    stubExport("orderNumber,total\r\nABC12345,1469.00\r\nDEF67890,99.00");
+
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText("user-uui…");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.exportCsv }),
+    );
+
+    // Through toast.ERROR, which is sticky: a spreadsheet quietly missing most
+    // of the orders is the one outcome the operator must not scroll past.
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        dict.orders.exportTruncated(2, 9000),
+      ),
+    );
+    expect(toastSuccess).not.toHaveBeenCalled();
+    // The file is still handed over — a partial export beats none.
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a failed export instead of downloading an empty file", async () => {
+    stubList(1);
+    server.use(
+      http.get("*/api/admin/orders/export", () =>
+        HttpResponse.json({ message: "boom" }, { status: 500 }),
+      ),
+    );
+
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText("user-uui…");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.exportCsv }),
+    );
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(dict.orders.exportError),
+    );
+    expect(clickSpy).not.toHaveBeenCalled();
   });
 });

@@ -24,7 +24,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { GripVertical } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   BannerEntityPlacement,
   getAdminBannerControllerFindAllQueryKey,
@@ -43,7 +43,6 @@ import {
 import {
   Badge,
   Button,
-  Input,
   LiveAnnouncer,
   ReorderUndoButton,
   SortableTree,
@@ -53,9 +52,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableSearch,
   TableToolbar,
   type SortableTreeRowRenderProps,
 } from "@/shared/ui";
+import { formatDate } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { AdminBannerTableSkeleton } from "./admin-banner-table-skeleton";
 
@@ -173,13 +174,16 @@ function AdminBannerView() {
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
         search={
-          <Input
-            type="search"
+          // `mode="local"` (TASK-423): the needle hides ROWS and is not a server
+          // narrowing, so it must not pretend to be one by living in the URL. See
+          // the header — this view is unpaginated on purpose and its search LOCKS
+          // reordering rather than PATCHing a partial ordering.
+          <TableSearch
+            mode="local"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(next) => setSearch(next ?? "")}
             placeholder={dict.reorderList.searchPlaceholder}
-            aria-label={dict.reorderList.searchLabel}
-            className="max-w-xs"
+            label={dict.reorderList.searchLabel}
           />
         }
       />
@@ -421,9 +425,22 @@ function BannerRow({
         </div>
       </TableCell>
       <TableCell role="gridcell">
-        <Badge variant={isPublished ? "default" : "secondary"}>
-          {dict.banners.statusLabels[banner.status]}
-        </Badge>
+        {/* TASK-430: a scheduled banner says WHEN — and in its own colour. It read
+            «Заплановано» in the same grey as a draft, so the row did not answer the
+            question it raises, and the operator had to open the banner to find out.
+            `formatDate` keeps the year visible: a schedule typed into the wrong year
+            is the mistake worth catching from the list. */}
+        {banner.status === "SCHEDULED" ? (
+          <Badge variant="warning">
+            {banner.scheduledAt
+              ? dict.banners.statusScheduledOn(formatDate(banner.scheduledAt))
+              : dict.banners.statusLabels.SCHEDULED}
+          </Badge>
+        ) : (
+          <Badge variant={isPublished ? "default" : "secondary"}>
+            {dict.banners.statusLabels[banner.status]}
+          </Badge>
+        )}
       </TableCell>
       <TableCell role="gridcell" className="text-right">
         <div className="flex justify-end gap-2">

@@ -225,6 +225,31 @@ describe("ContentMapView — counts (TASK-264-B)", () => {
     }
   });
 
+  // AD-CNT-26 (TASK-429): the storefront /promo page was missing from the map
+  // entirely, so nothing in the admin panel said that «Промокоди» drives it.
+  it("puts the /promo page on the map, linking to /discounts with no count badge", async () => {
+    stubCounts({ banners: [], faq: [], pages: [], blogTotal: 0 });
+
+    const { container } = renderWithProviders(<ContentMapView />);
+    // Let the page settle so a wrongly rendered marker would be present.
+    await within(zoneCard(container, "blog")).findByText("0");
+
+    const card = zoneCard(container, "promo-codes");
+    expect(
+      within(card).getByRole("link", {
+        name: dict.contentMap.zones.promoCodes.target,
+      }),
+    ).toHaveAttribute("href", "/discounts");
+    // Its count lives behind another permission zone, so no badge is fetched —
+    // and, crucially, no error badge either.
+    expect(
+      within(card).queryByText(dict.contentMap.loadError),
+    ).not.toBeInTheDocument();
+    expect(
+      within(card).queryByLabelText(/Активних елементів/),
+    ).not.toBeInTheDocument();
+  });
+
   it("links each banner zone to its ?placement= deep link", async () => {
     stubCounts({ banners: [], faq: [], pages: [], blogTotal: 0 });
 

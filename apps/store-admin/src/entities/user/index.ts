@@ -23,6 +23,11 @@ export {
   UpdateUserRoleDtoRole,
   // Role value object (used for filters and badge mapping).
   UserEntityRole,
+  // Customer-notes journal (TASK-430) — staff-only, append-only. There is no
+  // update and no delete hook to re-export, because the API offers neither.
+  useListUserNotes,
+  getListUserNotesQueryKey,
+  useCreateUserNote,
 } from "@/shared/api";
 
 export type {
@@ -40,6 +45,10 @@ export type {
   CustomerCardReviewEntity,
   CustomerCardCouponEntity,
   CustomerCardContactMessageEntity,
+  // Customer-notes journal (TASK-430).
+  UserNoteEntity,
+  UserNoteListResponse,
+  CreateUserNoteDto,
 } from "@/shared/api";
 
 export { ROLE_VALUES, roleLabel, isStaffRole } from "./model/roles";

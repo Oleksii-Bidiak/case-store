@@ -29,6 +29,21 @@ export interface SlugRenameInput {
  * here because it is the product module's only one and a whole error hierarchy
  * for it would be ceremony.
  */
+/**
+ * Raised by {@link ProductRepository.setGroupMany} when the destination variant
+ * group does not exist (TASK-423).
+ *
+ * A domain error, not a `NotFoundException` — repositories here do not speak
+ * HTTP; `ProductService` maps it. Its job is to turn what would otherwise be a
+ * Prisma foreign-key violation (a 500) into the 404 it plainly is.
+ */
+export class ProductGroupNotFoundError extends Error {
+  constructor(readonly groupId: string) {
+    super(`Unknown product group id: ${groupId}`);
+    this.name = 'ProductGroupNotFoundError';
+  }
+}
+
 export class ProductsNotFoundError extends Error {
   constructor(readonly missingIds: string[]) {
     super(`Unknown product id(s): ${missingIds.join(', ')}`);
@@ -84,6 +99,21 @@ export interface FindAllParams {
   inStockFirst?: boolean;
   /** Keep only positions with zero free-to-sell stock (TASK-362). */
   outOfStock?: boolean;
+  /**
+   * Invert the tombstone filter: list the SOFT-DELETED products instead of the
+   * live ones (TASK-427).
+   *
+   * OFF by default and set ONLY from `ProductService.adminFindAll`, exactly like
+   * `searchIncludesSku` above and for a stricter version of the same reason:
+   * this `findAll` is shared by the public storefront listing and the admin
+   * table, and a deleted product is one whose slug and sku have already been
+   * mangled and freed for reuse — publishing those rows would resurrect
+   * withdrawn positions on the storefront. A deleted product had to be reachable
+   * from SOMEWHERE, though: before this flag the admin panel had no read at all
+   * that could see one, so `DELETE` was an action with no way back to its own
+   * result.
+   */
+  deleted?: boolean;
   minPrice?: number;
   maxPrice?: number;
   search?: string;
@@ -518,9 +548,16 @@ export class ProductRepository {
     } = params;
     const skip = (page - 1) * limit;
 
-    // Build the where clause from optional filters. Soft-deleted products
-    // (tombstoned) must never appear in any listing, regardless of filters.
-    const where: Prisma.ProductWhereInput = { deletedAt: null };
+    // Build the where clause from optional filters. The tombstone filter is
+    // applied FIRST and is never absent: a listing either shows the live
+    // products (`deletedAt: null` — every public read, and the admin default) or
+    // exactly the soft-deleted ones (`deletedAt: { not: null }` — the admin's
+    // TASK-427 «Лише видалені» filter). There is deliberately no "both" mode:
+    // a mixed page cannot be read without a per-row deleted marker, and the
+    // entity has none.
+    const where: Prisma.ProductWhereInput = {
+      deletedAt: params.deleted ? { not: null } : null,
+    };
 
     // Subtree rollup (TASK-236): the service passes the expanded category id set
     // (self + descendants), matched with `IN (...)` so a parent category returns
@@ -1243,6 +1280,94 @@ export class ProductRepository {
         where: { id: { in: ids } },
         select: { id: true, slug: true, isActive: true },
       });
+    });
+  }
+
+  /**
+   * Bulk reassign the variant group of exactly the named products (TASK-423).
+   *
+   * All-or-nothing, in one transaction, for the same reason {@link setActiveMany}
+   * is: a half-applied grouping is worse than none, because a variant group means
+   * nothing until every position in it points at the same group.
+   *
+   * ── Why it also returns the SIBLINGS ────────────────────────────────────────
+   * A product's cached detail payload carries its `variantSiblings` — derived
+   * from `groupId`. So moving X into group G changes what G's OTHER members
+   * should say, and moving X out of H changes what H's remaining members should
+   * say. Evicting only the rows this call wrote would leave the neighbours
+   * serving a variant switcher that either omits the newcomer or still offers a
+   * position that left: the one thing the operator ran this action to fix, still
+   * wrong on the storefront until the TTL expires.
+   *
+   * Both the source groups and the destination group are therefore collected here
+   * — inside the transaction, where the PRE-write `groupId` is still readable —
+   * and handed back for the service to evict. (The single-product write path has
+   * the same gap; it is out of TASK-423's scope and noted in the service.)
+   *
+   * @throws ProductsNotFoundError  when an id is unknown or soft-deleted.
+   * @throws ProductGroupNotFoundError  when the destination group does not exist.
+   */
+  async setGroupMany(
+    ids: string[],
+    groupId: string | null,
+  ): Promise<{
+    updated: Array<Pick<Product, 'id' | 'slug' | 'isActive' | 'groupId'>>;
+    siblings: Array<Pick<Product, 'id' | 'slug'>>;
+  }> {
+    return this.prisma.$transaction(async (tx) => {
+      const found = await tx.product.findMany({
+        where: { id: { in: ids }, deletedAt: null },
+        select: { id: true, groupId: true },
+      });
+
+      if (found.length !== ids.length) {
+        const known = new Set(found.map((row) => row.id));
+        throw new ProductsNotFoundError(ids.filter((id) => !known.has(id)));
+      }
+
+      // An unknown destination would otherwise surface as a Prisma foreign-key
+      // error, i.e. a 500 for what is plainly a bad request.
+      if (groupId !== null) {
+        const group = await tx.productGroup.findUnique({
+          where: { id: groupId },
+          select: { id: true },
+        });
+        if (!group) throw new ProductGroupNotFoundError(groupId);
+      }
+
+      const affectedGroupIds = [
+        ...new Set(
+          [...found.map((row) => row.groupId), groupId].filter((id): id is string => id !== null),
+        ),
+      ];
+
+      await tx.product.updateMany({
+        where: { id: { in: ids }, deletedAt: null },
+        data: { groupId },
+      });
+
+      const [updated, siblings] = await Promise.all([
+        tx.product.findMany({
+          where: { id: { in: ids } },
+          // `isActive` travels with the row because the service re-syncs the
+          // search index per product, and that sync must not guess a visibility
+          // it did not read (an inactive product being indexed as visible is how
+          // a hidden product reappears in storefront search).
+          select: { id: true, slug: true, isActive: true, groupId: true },
+        }),
+        affectedGroupIds.length === 0
+          ? Promise.resolve([])
+          : tx.product.findMany({
+              where: {
+                groupId: { in: affectedGroupIds },
+                id: { notIn: ids },
+                deletedAt: null,
+              },
+              select: { id: true, slug: true },
+            }),
+      ]);
+
+      return { updated, siblings };
     });
   }
 

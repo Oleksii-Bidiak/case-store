@@ -1,10 +1,38 @@
 "use client";
 
-import { useState } from "react";
+/**
+ * Admin static-page grid (TASK-153; drag/keyboard reordering added in TASK-428).
+ *
+ * The sortable grid REPLACED the flat table and its hand-typed «Порядок» column: the row
+ * order IS the order the `/legal` hub renders. Every page used to be created with
+ * `sortOrder = 0`, so the hub's order was whatever the database returned.
+ *
+ * TWO RULES MAKE THAT SAFE, and they are the same two the banner / blog-category /
+ * device-brand grids follow:
+ *
+ * 1. THE LIST IS NOT PAGINATED. TASK-357 gave this table server paging (`?page=`) to fix
+ *    a silent truncation — it asked for `limit: 100` and rendered no pager. A page is a
+ *    PARTIAL view, though, and a reorder computed on a partial view is a partial
+ *    ordering: the server rejects it as a lost update (409). So the view now reads the
+ *    COMPLETE list, which TASK-428 also had to make reachable — the admin query DTO used
+ *    to inherit `page = 1` / `limit = 20` field initializers from the public one, so
+ *    "everything" was not expressible. The endpoint still accepts `page`/`limit` (the
+ *    content map uses them for a count).
+ * 2. THE SEARCH IS LOCAL AND LOCKS REORDERING. A needle hides ROWS, so the visible order
+ *    is not the real one — dragging inside it would write the wrong `sortOrder`. The
+ *    search therefore moved out of the URL (`mode="local"`) and sets `locked`.
+ *
+ * `LiveAnnouncer` MUST wrap the view, not sit inside it: the reorder lifecycle and the
+ * grid both call `useAnnouncer()`, and a hook called in the same component that renders
+ * the provider would read the default no-op context.
+ */
+
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { GripVertical } from "lucide-react";
+import { toast } from "@/shared/ui/toast";
 import {
   getAdminPageControllerFindAllQueryKey,
   useAdminPageControllerFindAll,
@@ -12,48 +40,64 @@ import {
   useAdminPageControllerUnpublish,
   useAdminPageControllerDelete,
   PageEntityKind,
+  type PageEntity,
 } from "@/entities/page";
+import { pagesToItems, usePageReorder } from "@/features/list-reorder";
+import {
+  useRowFocus,
+  useSortableListGrid,
+  type SortableListRow,
+} from "@/shared/lib/list-reorder";
 import {
   Badge,
   Button,
-  Input,
   LiveAnnouncer,
+  ReorderUndoButton,
+  SortableTree,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  TableSearch,
   TableToolbar,
   Tabs,
   TabsList,
   TabsTrigger,
+  type SortableTreeRowRenderProps,
 } from "@/shared/ui";
+import { formatDate } from "@/shared/lib";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { dict } from "@/shared/config";
 import { AdminPageTableSkeleton } from "./admin-page-table-skeleton";
 
-const PAGE_SIZE = 20;
-const ALL_OPTION = "__all__";
+export const PAGE_INSTRUCTIONS_LONG_ID = "page-grid-instructions-long";
+export const PAGE_INSTRUCTIONS_SHORT_ID = "page-grid-instructions-short";
 
 /**
- * Kind tabs (TASK-435) — one screen now holds three different things: legal
- * documents served at `/legal/<slug>`, help pages at `/info/<slug>`, and hub
- * rows that are not pages at all (meta tags for a listing route). Mixed into one
- * list they are indistinguishable, so the tabs write `?kind=` and the badge
- * column labels each row.
+ * Kind tabs (TASK-435), filtering LOCALLY (TASK-428).
  *
- * "Усі" carries the `ALL_OPTION` sentinel rather than `""`, which is not a legal
- * Radix `Tabs` value (the lesson TASK-405 learned on the order table): the
- * sentinel never reaches the URL — `handleKindChange` maps it back to "no
- * `?kind=`".
+ * One screen holds three different things: legal documents served at
+ * `/legal/<slug>`, help pages at `/info/<slug>`, and hub rows that are not
+ * pages at all (meta tags for a listing route). Mixed into one list they are
+ * indistinguishable, so the tabs write `?kind=` and a badge column labels each
+ * row.
+ *
+ * The filter is applied HERE rather than sent to the API, and that is the one
+ * thing that changed when this wave met the reorder grid: pages carry ONE
+ * global `sortOrder`, and `PATCH /reorder` rewrites the complete list. A
+ * server-side `?kind=` would return a slice, and a drag inside a slice cannot
+ * describe the whole order — so, exactly like the search needle beside it, a
+ * kind tab hides rows and LOCKS dragging. Same idiom as the banner,
+ * blog-category and device-brand lists.
+ *
+ * "Усі" carries the `ALL_OPTION` sentinel rather than an empty string, which is
+ * not a legal Radix `Tabs` value (the lesson TASK-405 learned on the order
+ * table): the sentinel never reaches the URL — `handleKindChange` maps it back
+ * to no `?kind=` at all.
  */
-const KIND_TABS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: ALL_OPTION, label: dict.pages.tabAll },
-  { value: PageEntityKind.LEGAL, label: dict.pages.tabLegal },
-  { value: PageEntityKind.INFO, label: dict.pages.tabInfo },
-  { value: PageEntityKind.HUB, label: dict.pages.tabHub },
-];
+const ALL_OPTION = "__all__";
 
 /**
  * Radix `Tabs.Root` value used when `?kind=` matches no tab (a hand-typed or
@@ -62,6 +106,13 @@ const KIND_TABS: ReadonlyArray<{ value: string; label: string }> = [
  */
 const CUSTOM_TAB = "__custom__";
 
+const KIND_TABS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: ALL_OPTION, label: dict.pages.tabAll },
+  { value: PageEntityKind.LEGAL, label: dict.pages.tabLegal },
+  { value: PageEntityKind.INFO, label: dict.pages.tabInfo },
+  { value: PageEntityKind.HUB, label: dict.pages.tabHub },
+];
+
 /** Plain-UA label for a row's kind. */
 const KIND_LABELS: Record<PageEntityKind, string> = {
   [PageEntityKind.LEGAL]: dict.pages.kindLegal,
@@ -69,55 +120,49 @@ const KIND_LABELS: Record<PageEntityKind, string> = {
   [PageEntityKind.HUB]: dict.pages.kindHub,
 };
 
-/** Narrow an arbitrary `?kind=` string to the enum before it reaches the API. */
+/** Narrow an arbitrary `?kind=` string to the enum. */
 function isPageKind(value: string): value is PageEntityKind {
   return Object.values(PageEntityKind).includes(value as PageEntityKind);
 }
 
-/**
- * Admin static-pages table: title, slug, status badge, sort order, and per-row
- * actions (edit, publish/unpublish toggle, delete with confirm).
- *
- * TASK-357 fixed a SILENT TRUNCATION: this table asked the (already paginated)
- * admin endpoint for `limit: 100` and rendered no page controls, so page 101
- * existed on the server and nowhere in the panel — no warning, no empty slot,
- * nothing to click. The server was never the problem; the missing control was.
- * Page and search now live in the URL (`?page=`, `?search=`).
- *
- * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
- * calls `useAnnouncer()` to confirm a refresh, and a hook called in the same
- * component that renders the provider would read the default no-op context.
- */
 export function AdminPageTable() {
   return (
     <LiveAnnouncer>
-      <AdminPageView />
+      <AdminPageGrid />
     </LiveAnnouncer>
   );
 }
 
-function AdminPageView() {
-  const searchParams = useSearchParams();
+function AdminPageGrid() {
   const queryClient = useQueryClient();
 
-  const searchParam = searchParams.get("search") ?? "";
-  const kindParam = searchParams.get("kind") ?? "";
-  const page = Math.max(1, Number(searchParams.get("page")) || 1);
-
-  const [searchInput, setSearchInput] = useState(searchParam);
-
-  const updateParams = useUrlParams();
-
+  // No arguments: the COMPLETE list. The reorder adapter writes the server's refreshed
+  // list into this exact query key, so the two calls must match.
   const { data, isLoading, isFetching, isError, refetch } =
-    useAdminPageControllerFindAll({
-      page,
-      limit: PAGE_SIZE,
-      search: searchParam || undefined,
-      // An unrecognised `?kind=` would be rejected by the API's enum validation,
-      // so only a real tab value is sent; anything else lists everything (and
-      // no tab renders active, see CUSTOM_TAB).
-      kind: isPageKind(kindParam) ? kindParam : undefined,
-    });
+    useAdminPageControllerFindAll();
+  const publish = useAdminPageControllerPublish();
+  const unpublish = useAdminPageControllerUnpublish();
+  const remove = useAdminPageControllerDelete();
+
+  const pages = useMemo(() => data?.data ?? [], [data]);
+  const treeItems = useMemo(() => pagesToItems(pages), [pages]);
+  const byId = useMemo(
+    () => new Map(pages.map((page) => [page.id, page])),
+    [pages],
+  );
+
+  const [search, setSearch] = useState("");
+  const needle = search.trim().toLowerCase();
+  const searchActive = needle.length > 0;
+
+  const searchParams = useSearchParams();
+  const updateParams = useUrlParams();
+  const kindParam = searchParams.get("kind") ?? "";
+  const kindFilter = isPageKind(kindParam) ? kindParam : undefined;
+  const kindActive = kindFilter !== undefined;
+
+  // Either filter hides rows, and either one therefore locks the drag.
+  const filterActive = searchActive || kindActive;
 
   // The active tab is the one matching `?kind=` exactly, with an absent filter
   // standing for the "Усі" sentinel; otherwise CUSTOM_TAB → nothing highlighted.
@@ -127,28 +172,43 @@ function AdminPageView() {
     : CUSTOM_TAB;
 
   const handleKindChange = (value: string) => {
-    updateParams({
-      kind: value === ALL_OPTION ? undefined : value,
-      page: undefined,
-    });
+    updateParams({ kind: value === ALL_OPTION ? undefined : value });
   };
-  const publish = useAdminPageControllerPublish();
-  const unpublish = useAdminPageControllerUnpublish();
-  const remove = useAdminPageControllerDelete();
 
-  const pages = data?.data ?? [];
-  const totalPages = data?.meta?.totalPages ?? 1;
+  // Title OR slug — an operator hunting for a legal page usually remembers its URL.
+  const visibleIds = useMemo(() => {
+    if (!filterActive) return undefined;
+    return new Set(
+      pages
+        .filter(
+          (page) =>
+            (kindFilter === undefined || page.kind === kindFilter) &&
+            (!searchActive ||
+              page.title.toLowerCase().includes(needle) ||
+              page.slug.toLowerCase().includes(needle)),
+        )
+        .map((page) => page.id),
+    );
+  }, [filterActive, kindFilter, needle, pages, searchActive]);
+
+  const focus = useRowFocus();
+  const reorder = usePageReorder({
+    items: treeItems,
+    onFocusRow: focus.focusRow,
+  });
+  const grid = useSortableListGrid({
+    reorder,
+    focus,
+    rowIdPrefix: "page-row-",
+    locked: filterActive,
+    visibleIds,
+  });
 
   // Prefix match: the key without params covers every paged/searched variant.
   const invalidateList = () =>
     queryClient.invalidateQueries({
       queryKey: getAdminPageControllerFindAllQueryKey(),
     });
-
-  const handleSearchSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    updateParams({ search: searchInput.trim() || undefined, page: undefined });
-  };
 
   const handleToggle = (id: string, isActive: boolean) => {
     const mutation = isActive ? unpublish : publish;
@@ -183,43 +243,80 @@ function AdminPageView() {
   const isMutating =
     publish.isPending || unpublish.isPending || remove.isPending;
 
+  const renderRow = (props: SortableTreeRowRenderProps) => {
+    const row = grid.rows.find((r) => r.item.id === props.item.id);
+    const page = byId.get(props.item.id);
+    if (!row || !page) return null;
+    return (
+      <PageRow
+        key={page.id}
+        page={page}
+        row={row}
+        locked={searchActive}
+        isMutating={isMutating}
+        onToggle={handleToggle}
+        onDelete={handleDelete}
+        registerRef={(node) => {
+          focus.registerRow(page.id)(node);
+          props.setNodeRef(node);
+        }}
+        style={props.style}
+        handleProps={props.handleProps}
+      />
+    );
+  };
+
   return (
     <div className="flex flex-col gap-4">
+      <Tabs value={activeTab} onValueChange={handleKindChange}>
+        <TabsList aria-label={dict.pages.tabsAria}>
+          {KIND_TABS.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value}>
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
       <TableToolbar
         className="mb-0"
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
-        filters={
-          <Tabs value={activeTab} onValueChange={handleKindChange}>
-            <TabsList aria-label={dict.pages.tabsAria}>
-              {KIND_TABS.map((tab) => (
-                <TabsTrigger key={tab.value} value={tab.value}>
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        }
         search={
-          <form
-            onSubmit={handleSearchSubmit}
-            className="flex gap-2"
-            role="search"
-          >
-            <Input
-              type="search"
-              placeholder={dict.pages.searchPlaceholder}
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              className="max-w-xs"
-              aria-label={dict.pages.searchAria}
-            />
-            <Button type="submit" variant="outline">
-              {dict.common.search}
-            </Button>
-          </form>
+          // `mode="local"`: the needle hides ROWS, it does not narrow a query — see the
+          // header for why this grid stays unpaginated and why a search LOCKS reordering
+          // instead of PATCHing a partial ordering.
+          <TableSearch
+            mode="local"
+            value={search}
+            onChange={(next) => setSearch(next ?? "")}
+            placeholder={dict.reorderList.searchPlaceholder}
+            label={dict.reorderList.searchLabel}
+          />
+        }
+        actions={
+          <ReorderUndoButton
+            canUndo={reorder.canUndo}
+            onUndo={reorder.undo}
+            label={dict.reorderList.undo}
+          />
         }
       />
+
+      <p className="text-sm text-muted-foreground">
+        {searchActive
+          ? dict.reorderList.searchLockedHint
+          : kindActive
+            ? dict.pages.kindLockedHint
+            : dict.pages.reorderHint}
+      </p>
+
+      <div id={PAGE_INSTRUCTIONS_LONG_ID} className="sr-only">
+        {dict.reorderList.instructionsLong}
+      </div>
+      <div id={PAGE_INSTRUCTIONS_SHORT_ID} className="sr-only">
+        {dict.reorderList.instructionsShort}
+      </div>
 
       {isLoading ? (
         <AdminPageTableSkeleton />
@@ -229,120 +326,185 @@ function AdminPageView() {
         </p>
       ) : pages.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {searchParam
-            ? dict.pages.emptyMatch(searchParam)
-            : kindParam
-              ? // Say WHICH kind is empty — "Сторінок ще немає" on a tab that
-                // filters would read as "the whole section is empty".
-                dict.pages.emptyKind
-              : dict.pages.empty}
+          {dict.pages.empty}
+        </div>
+      ) : grid.rows.length === 0 ? (
+        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
+          {searchActive
+            ? dict.reorderList.emptyMatch(search.trim())
+            : dict.pages.emptyKind}
         </div>
       ) : (
         <div className="rounded-lg border border-border shadow-card overflow-hidden">
-          <Table>
+          <Table
+            role="grid"
+            aria-label={dict.pages.gridLabel}
+            aria-describedby={PAGE_INSTRUCTIONS_LONG_ID}
+            aria-busy={reorder.isPending}
+          >
             <TableHeader>
-              <TableRow>
+              <TableRow aria-rowindex={1}>
                 <TableHead>{dict.pages.colTitle}</TableHead>
-                <TableHead>{dict.pages.colKind}</TableHead>
                 <TableHead hideOnMobile>{dict.pages.colSlug}</TableHead>
+                <TableHead>{dict.pages.colKind}</TableHead>
                 <TableHead>{dict.pages.colStatus}</TableHead>
-                <TableHead hideOnMobile>{dict.pages.colSort}</TableHead>
                 <TableHead className="text-right">
                   {dict.common.actions}
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {/* `row`, not `page` — the page NUMBER is already in scope. */}
-              {pages.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="font-medium">
-                    <Link
-                      href={`/pages/${row.id}/edit`}
-                      className="hover:underline"
-                    >
-                      {row.title}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{KIND_LABELS[row.kind]}</Badge>
-                  </TableCell>
-                  <TableCell hideOnMobile className="text-muted-foreground">
-                    {row.slug}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={row.isActive ? "default" : "secondary"}>
-                      {row.isActive
-                        ? dict.pages.statusPublished
-                        : dict.pages.statusDraft}
-                    </Badge>
-                  </TableCell>
-                  <TableCell hideOnMobile>{row.sortOrder}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button asChild variant="outline" size="sm">
-                        <Link href={`/pages/${row.id}/edit`}>
-                          {dict.common.edit}
-                        </Link>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={isMutating}
-                        onClick={() => handleToggle(row.id, row.isActive)}
-                      >
-                        {row.isActive
-                          ? dict.pages.unpublish
-                          : dict.pages.publish}
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        disabled={isMutating}
-                        onClick={() =>
-                          handleDelete(row.id, row.title, row.isActive)
-                        }
-                      >
-                        {dict.common.delete}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              <SortableTree
+                items={grid.sortableItems}
+                maxDepth={1}
+                disabled={grid.dragDisabled}
+                renderRow={renderRow}
+                onMove={grid.onPointerMove}
+                announcements={grid.pointerAnnouncements}
+              />
             </TableBody>
           </Table>
         </div>
       )}
-
-      {!isLoading && !isError && pages.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {dict.common.pageOf(page, totalPages)}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() =>
-                updateParams({
-                  page: page - 1 <= 1 ? undefined : String(page - 1),
-                })
-              }
-            >
-              {dict.common.previous}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: String(page + 1) })}
-            >
-              {dict.common.next}
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
+  );
+}
+
+/**
+ * The status badge (TASK-430).
+ *
+ * Reads `status`, NOT `isActive`. `Page.isActive` is documented in the schema as a
+ * derived read-only MIRROR of `status == PUBLISHED`, kept only so the old badges and
+ * toggles keep working — which means it collapses DRAFT and SCHEDULED into one
+ * value, and this badge was reporting a page scheduled for Friday as «Чернетка».
+ * An operator could not tell it apart from one somebody forgot to publish, which is
+ * the difference the schedule exists to make.
+ *
+ * The publish/unpublish BUTTON below still reads `isActive`, correctly: "is it live
+ * right now" is exactly what that mirror answers.
+ *
+ * The date is `formatDate` — «Заплановано на 19.09.2026», the full year included.
+ * A day-and-month shorthand would hide the one mistake worth catching here: a
+ * schedule typed into the wrong year.
+ */
+function PageStatusBadge({ page }: { page: PageEntity }) {
+  if (page.status === "SCHEDULED") {
+    return (
+      <Badge variant="warning">
+        {page.scheduledAt
+          ? dict.pages.statusScheduledOn(formatDate(page.scheduledAt))
+          : // SCHEDULED with no instant should not exist (the API sets them
+            // together) — say «Заплановано» rather than render "Invalid Date".
+            dict.pages.statusScheduled}
+      </Badge>
+    );
+  }
+
+  const isPublished = page.status === "PUBLISHED";
+
+  return (
+    <Badge variant={isPublished ? "default" : "secondary"}>
+      {isPublished ? dict.pages.statusPublished : dict.pages.statusDraft}
+    </Badge>
+  );
+}
+
+interface PageRowProps {
+  page: PageEntity;
+  row: SortableListRow;
+  locked: boolean;
+  isMutating: boolean;
+  onToggle: (id: string, isActive: boolean) => void;
+  onDelete: (id: string, title: string, isPublished: boolean) => void;
+  registerRef: (node: HTMLTableRowElement | null) => void;
+  style: React.CSSProperties;
+  handleProps: SortableTreeRowRenderProps["handleProps"];
+}
+
+function PageRow({
+  page,
+  row,
+  locked,
+  isMutating,
+  onToggle,
+  onDelete,
+  registerRef,
+  style,
+  handleProps,
+}: PageRowProps) {
+  const tabIndex = row.controlTabIndex;
+
+  return (
+    <TableRow
+      ref={registerRef}
+      {...row.rowProps}
+      aria-describedby={PAGE_INSTRUCTIONS_SHORT_ID}
+      style={style}
+      className={
+        row.grabbed
+          ? "outline outline-2 outline-ring"
+          : row.conflict
+            ? "bg-accent"
+            : undefined
+      }
+    >
+      <TableCell role="gridcell" className="font-medium">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            {...handleProps}
+            tabIndex={tabIndex}
+            aria-label={dict.reorderList.handleLabel(page.title)}
+            aria-disabled={locked || undefined}
+            className="inline-flex size-6 min-h-11 min-w-11 cursor-grab items-center justify-center text-muted-foreground md:min-h-0 md:min-w-0"
+          >
+            <GripVertical aria-hidden="true" className="size-4" />
+          </button>
+          <Link
+            href={`/pages/${page.id}/edit`}
+            tabIndex={tabIndex}
+            className="hover:underline"
+          >
+            {page.title}
+          </Link>
+        </div>
+      </TableCell>
+      <TableCell role="gridcell" hideOnMobile className="text-muted-foreground">
+        {page.slug}
+      </TableCell>
+      <TableCell role="gridcell">
+        <Badge variant="outline">{KIND_LABELS[page.kind]}</Badge>
+      </TableCell>
+      <TableCell role="gridcell">
+        <PageStatusBadge page={page} />
+      </TableCell>
+      <TableCell role="gridcell" className="text-right">
+        <div className="flex justify-end gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/pages/${page.id}/edit`} tabIndex={tabIndex}>
+              {dict.common.edit}
+            </Link>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            tabIndex={tabIndex}
+            disabled={isMutating}
+            onClick={() => onToggle(page.id, page.isActive)}
+          >
+            {page.isActive ? dict.pages.unpublish : dict.pages.publish}
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            tabIndex={tabIndex}
+            disabled={isMutating}
+            onClick={() => onDelete(page.id, page.title, page.isActive)}
+          >
+            {dict.common.delete}
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }

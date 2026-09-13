@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  Query,
+  HttpCode,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -9,7 +21,12 @@ import {
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { FaqService } from './faq.service';
-import { CreateFaqItemDto, UpdateFaqItemDto, AdminFaqListQueryDto } from './dto';
+import {
+  CreateFaqItemDto,
+  UpdateFaqItemDto,
+  AdminFaqListQueryDto,
+  ReorderFaqItemsDto,
+} from './dto';
 import { FaqItemEntity } from './entities';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
@@ -72,11 +89,12 @@ export class DeleteFaqResponseEnvelope {
 /**
  * Admin FAQ management (ADMIN role required).
  *
- *   GET    /api/admin/faq      — all items (any status), ordered by sortOrder
- *   GET    /api/admin/faq/:id  — single item (pre-populate the edit form)
- *   POST   /api/admin/faq      — create an item
- *   PUT    /api/admin/faq/:id  — update an item (content / reorder / toggle)
- *   DELETE /api/admin/faq/:id  — delete an item
+ *   GET    /api/admin/faq          — all items (any status), ordered by sortOrder
+ *   PATCH  /api/admin/faq/reorder  — rewrite the complete ordering of the list
+ *   GET    /api/admin/faq/:id      — single item (pre-populate the edit form)
+ *   POST   /api/admin/faq          — create an item
+ *   PUT    /api/admin/faq/:id      — update an item (content / toggle)
+ *   DELETE /api/admin/faq/:id      — delete an item
  *
  * Every write triggers a storefront `faq` revalidation via the service.
  */
@@ -111,6 +129,34 @@ export class AdminFaqController {
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: AdminFaqListQueryDto): Promise<AdminFaqListResponse> {
     return this.faqService.findAllAdmin(query);
+  }
+
+  /**
+   * PATCH /api/admin/faq/reorder (TASK-428)
+   *
+   * Rewrites the COMPLETE ordering of the FAQ list — the array index becomes `sortOrder`
+   * — in one advisory-locked transaction, and returns the full refreshed admin list.
+   *
+   * DECLARED BEFORE the `:id` routes — otherwise `reorder` is captured as an `:id`.
+   */
+  @Patch('reorder')
+  @HttpCode(200)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Reorder the FAQ list (admin)',
+    operationId: 'adminFaqControllerReorder',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The full refreshed admin FAQ list',
+    type: AdminFaqListResponse,
+  })
+  @ApiResponse({ status: 400, description: 'Validation error, or REORDER_DUPLICATE_ID' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({ status: 404, description: 'REORDER_NOT_FOUND — an id is not in this list' })
+  @ApiResponse({ status: 409, description: 'REORDER_STALE — another admin changed the list first' })
+  async reorder(@Body() dto: ReorderFaqItemsDto): Promise<AdminFaqListResponse> {
+    return this.faqService.reorder(dto);
   }
 
   /**

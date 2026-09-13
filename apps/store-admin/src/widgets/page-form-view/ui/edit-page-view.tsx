@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   PageForm,
   pageFormValuesToUpdateDto,
@@ -20,6 +20,7 @@ import {
 } from "@/entities/page";
 import { formatKeywords } from "@/shared/lib/seo";
 import { dict } from "@/shared/config";
+import { toKyivDateTimeLocal } from "@/shared/lib";
 
 interface EditPageViewProps {
   pageId: string;
@@ -133,18 +134,11 @@ function mapPageToFormValues(page: PageEntity): Partial<PageFormInput> {
     ogImage: page.ogImage ?? "",
     sortOrder: String(page.sortOrder),
     status: page.status,
-    // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant.
-    scheduledAt: page.scheduledAt ? toDateTimeLocal(page.scheduledAt) : "",
+    // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant,
+    // in KYIV time. The local `toDateTimeLocal` this replaces read the BROWSER's
+    // zone, so outside Kyiv this field contradicted the page list, which renders
+    // the same instant through the Kyiv-pinned `formatDate`. See
+    // `shared/lib/format/datetime-local.ts`.
+    scheduledAt: page.scheduledAt ? toKyivDateTimeLocal(page.scheduledAt) : "",
   };
-}
-
-/** Convert an ISO instant to the `datetime-local` input value (local time). */
-function toDateTimeLocal(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  );
 }

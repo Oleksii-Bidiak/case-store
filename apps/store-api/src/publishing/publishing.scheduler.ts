@@ -26,9 +26,12 @@ const DEFAULT_CRON = '* * * * *';
  * content module) is picked up automatically, so a NEW content module (blog,
  * banners) plugs in by providing that token alone — no edit to this module. Each
  * tick flips every
- * port's due `SCHEDULED` rows to `PUBLISHED` and, when a port flipped ≥1 row,
- * asks the storefront to revalidate that port's cache target. Per-port errors
- * are caught and logged so one bad port never crashes the tick.
+ * port's due `SCHEDULED` rows to `PUBLISHED`, then — for the ports that implement
+ * the optional {@link PublishablePort.unpublishExpired} (banners, TASK-429) —
+ * takes back down every row whose publication window has closed, and when a port
+ * changed ≥1 row either way asks the storefront to revalidate that port's cache
+ * target. Per-port errors are caught and logged so one bad port never crashes the
+ * tick.
  */
 @Injectable()
 export class PublishingScheduler implements OnModuleInit, OnModuleDestroy {
@@ -73,14 +76,25 @@ export class PublishingScheduler implements OnModuleInit, OnModuleDestroy {
    * Run one publish pass across every registered publisher. Public so it can be
    * unit-tested directly without waiting for the scheduler to fire. A failure in
    * one publisher is caught and logged so the others still run.
+   *
+   * Each publisher gets BOTH halves of the lifecycle in the same tick (TASK-429):
+   * due rows go live, then rows whose publication window has closed come back
+   * down. `unpublishExpired` is optional — only Banner has a window end — and a
+   * port without it keeps exactly its pre-TASK-429 behaviour. The two counts are
+   * summed before deciding on revalidation so a tick that ONLY expires something
+   * still purges the storefront cache: an expired banner that stays in the cache
+   * is precisely the bug the window was added to prevent.
    */
   async tick(): Promise<void> {
     const now = new Date();
 
     for (const publisher of this.collectPublishers()) {
       try {
-        const count = await publisher.publishDue(now);
-        if (count > 0 && publisher.revalidateTarget) {
+        let changed = await publisher.publishDue(now);
+        if (publisher.unpublishExpired) {
+          changed += await publisher.unpublishExpired(now);
+        }
+        if (changed > 0 && publisher.revalidateTarget) {
           await this.revalidation.revalidate(publisher.revalidateTarget);
         }
       } catch (err) {

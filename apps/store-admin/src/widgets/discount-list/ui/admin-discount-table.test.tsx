@@ -289,7 +289,14 @@ describe("AdminDiscountTable", () => {
       );
     });
 
-    it("submits the search box into the URL and resets the page", async () => {
+    /**
+     * TASK-423: this used to be a FORM — a box plus a «Пошук» button the operator
+     * had to find and press. Eight admin tables worked that way and five searched
+     * as you type; now all of them do the latter. The `page=3` in the URL is the
+     * other half of the assertion: a narrowed list renumbers its pages, so staying
+     * on page 3 would show rows belonging to neither result set.
+     */
+    it("writes the typed term to the URL as you type, and drops the page", async () => {
       mockSearchParams = new URLSearchParams("page=3");
       stubDiscounts([makeDiscountRow("d1", "SUMMER10")], {
         total: 140,
@@ -305,11 +312,21 @@ describe("AdminDiscountTable", () => {
         screen.getByLabelText(dict.discounts.searchAria),
         "summer",
       );
-      await userEvent.click(
-        screen.getByRole("button", { name: dict.common.search }),
-      );
 
-      expect(mockReplace).toHaveBeenCalledWith("/discounts?search=summer");
+      await waitFor(() =>
+        expect(mockReplace).toHaveBeenCalledWith("/discounts?search=summer"),
+      );
+    });
+
+    it("offers no submit button — the debounce IS the submit", async () => {
+      stubDiscounts([makeDiscountRow("d1", "SUMMER10")]);
+
+      renderWithProviders(<AdminDiscountTable />);
+      await screen.findByText("SUMMER10");
+
+      expect(
+        screen.queryByRole("button", { name: dict.common.search }),
+      ).not.toBeInTheDocument();
     });
 
     it("forwards the URL search to the server", async () => {

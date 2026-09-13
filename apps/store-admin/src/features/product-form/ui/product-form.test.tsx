@@ -157,9 +157,17 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
 
   /** Stub both option queries with delayed responses. On a cold cache the edit
    *  form always mounts (and gets its `values` seed applied) before the
-   *  category/group lists arrive — this reproduces the TASK-201 QA sequence:
-   *  the seeded id has no matching <option> in Radix's hidden native bubble
-   *  <select>, coerces to "", and bounces "" through `onValueChange`. */
+   *  category/group lists arrive.
+   *
+   *  This reproduced the TASK-201/232 sequence, where the seeded id had no
+   *  matching <option> in Radix's hidden native bubble <select>, coerced to "",
+   *  and bounced "" back through `onValueChange`. TASK-423 replaced those Selects
+   *  with comboboxes, so that particular bounce cannot happen any more — but the
+   *  underlying hazard is UNCHANGED and these cases still guard it: the visible
+   *  text is a LABEL for an id whose label is not known until the options land,
+   *  so the picker must re-seed itself when they do and must not lose the
+   *  selection on the way (forms.md rule 1b, with the async source being the
+   *  option list). */
   function stubOptionQueriesDelayed(ms = 75) {
     server.use(
       http.get("*/api/categories/admin/tree", async () => {
@@ -201,12 +209,12 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
     groupId: GROUP_UUID,
   };
 
-  const categoryTrigger = () =>
-    screen.getByLabelText(dict.productForm.category);
-  const groupTrigger = () => screen.getByLabelText(dict.productForm.group);
+  const categoryBox = () => screen.getByLabelText(dict.productForm.category);
+  const groupBox = () => screen.getByLabelText(dict.productForm.group);
 
-  async function selectOption(trigger: HTMLElement, name: string) {
-    await userEvent.click(trigger);
+  /** Open the combobox and pick a named option (click path, not keyboard). */
+  async function selectOption(box: HTMLElement, name: string) {
+    await userEvent.click(box);
     await userEvent.click(await screen.findByRole("option", { name }));
   }
 
@@ -227,12 +235,10 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
       />,
     );
 
-    // Options arrive AFTER the form is seeded; both triggers must show the
+    // Options arrive AFTER the form is seeded; both pickers must show the
     // current selection once they do, without the user touching the fields.
-    await waitFor(() =>
-      expect(categoryTrigger()).toHaveTextContent("Category A"),
-    );
-    await waitFor(() => expect(groupTrigger()).toHaveTextContent("Group A"));
+    await waitFor(() => expect(categoryBox()).toHaveValue("Category A"));
+    await waitFor(() => expect(groupBox()).toHaveValue("Group A"));
 
     await submitForm();
 
@@ -257,13 +263,11 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
       />,
     );
 
-    await waitFor(() =>
-      expect(categoryTrigger()).toHaveTextContent("Category A"),
-    );
-    await waitFor(() => expect(groupTrigger()).toHaveTextContent("Group A"));
+    await waitFor(() => expect(categoryBox()).toHaveValue("Category A"));
+    await waitFor(() => expect(groupBox()).toHaveValue("Group A"));
 
-    await selectOption(categoryTrigger(), "Category B");
-    await selectOption(groupTrigger(), "Group B");
+    await selectOption(categoryBox(), "Category B");
+    await selectOption(groupBox(), "Group B");
     await submitForm();
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
@@ -276,7 +280,7 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
     );
   });
 
-  it("EDIT: explicitly choosing «Без групи» still clears the group (guard must not block it)", async () => {
+  it("EDIT: explicitly choosing «Без групи» still clears the group", async () => {
     stubOptionQueriesDelayed();
     const onSubmit = jest.fn();
     renderWithProviders(
@@ -287,14 +291,100 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
       />,
     );
 
-    await waitFor(() => expect(groupTrigger()).toHaveTextContent("Group A"));
+    await waitFor(() => expect(groupBox()).toHaveValue("Group A"));
 
-    await selectOption(groupTrigger(), dict.productForm.groupNone);
+    await selectOption(groupBox(), dict.productForm.groupNone);
     await submitForm();
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({ groupId: "" }),
+      expect.anything(),
+    );
+  });
+
+  // ─── the combobox itself (TASK-423) ──────────────────────────────────────────
+
+  it("narrows the option list as the operator types", async () => {
+    stubOptionQueriesDelayed();
+    renderWithProviders(
+      <ProductForm
+        defaultValues={editValues}
+        onSubmit={jest.fn()}
+        isPending={false}
+      />,
+    );
+    await waitFor(() => expect(categoryBox()).toHaveValue("Category A"));
+
+    await userEvent.click(categoryBox());
+    // Opening on the current selection shows the WHOLE list — an operator who
+    // opened the picker to change their mind must not be handed one entry.
+    expect(
+      await screen.findByRole("option", { name: "Category B" }),
+    ).toBeInTheDocument();
+
+    await userEvent.clear(categoryBox());
+    await userEvent.type(categoryBox(), "ry B");
+
+    expect(
+      screen.getByRole("option", { name: "Category B" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "Category A" }),
+    ).not.toBeInTheDocument();
+  });
+
+  /**
+   * A combobox can be left showing text that matches nothing while the form still
+   * holds the previous id — a lie on screen about what will be saved. Leaving the
+   * field has to put the truth back.
+   */
+  it("restores the selected label when the operator leaves half-typed text behind", async () => {
+    stubOptionQueriesDelayed();
+    const onSubmit = jest.fn();
+    renderWithProviders(
+      <ProductForm
+        defaultValues={editValues}
+        onSubmit={onSubmit}
+        isPending={false}
+      />,
+    );
+    await waitFor(() => expect(categoryBox()).toHaveValue("Category A"));
+
+    await userEvent.clear(categoryBox());
+    await userEvent.type(categoryBox(), "zzz no such category");
+    await userEvent.tab();
+
+    expect(categoryBox()).toHaveValue("Category A");
+
+    await submitForm();
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ categoryId: CATEGORY_UUID }),
+      expect.anything(),
+    );
+  });
+
+  it("is a WAI-ARIA combobox, operable from the keyboard alone", async () => {
+    stubOptionQueriesDelayed();
+    const onSubmit = jest.fn();
+    renderWithProviders(
+      <ProductForm
+        defaultValues={editValues}
+        onSubmit={onSubmit}
+        isPending={false}
+      />,
+    );
+    await waitFor(() => expect(categoryBox()).toHaveValue("Category A"));
+
+    categoryBox().focus();
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+
+    expect(categoryBox()).toHaveValue("Category B");
+    await submitForm();
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ categoryId: CATEGORY_UUID_B }),
       expect.anything(),
     );
   });

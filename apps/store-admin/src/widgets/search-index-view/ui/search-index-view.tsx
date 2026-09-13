@@ -1,7 +1,7 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import { useReindexSearch } from "@/entities/search";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";

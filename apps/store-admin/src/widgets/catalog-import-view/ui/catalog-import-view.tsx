@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Loader2, Upload } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   getCatalogImportControllerFindOneQueryKey,
   useCatalogImportControllerApply,
@@ -16,6 +16,7 @@ import {
 import { getProductControllerAdminFindAllQueryKey } from "@/entities/product";
 import { Badge, Button, Separator } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { formatDateTime } from "@/shared/lib";
 import { asPlan } from "../model/plan-types";
 import { useImportDecisions } from "../model/use-import-decisions";
 import { ImportPlanReview } from "./import-plan-review";
@@ -314,7 +315,7 @@ export function CatalogImportView() {
                   {d.status[entry.status] ?? entry.status}
                 </Badge>
                 <span className="text-muted-foreground">
-                  {new Date(entry.createdAt).toLocaleString()}
+                  {formatDateTime(entry.createdAt)}
                 </span>
                 {entry.actorEmail && (
                   <span className="text-muted-foreground">

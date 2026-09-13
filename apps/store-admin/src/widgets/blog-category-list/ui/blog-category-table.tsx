@@ -22,7 +22,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { GripVertical } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/shared/ui/toast";
 import {
   getAdminBlogControllerFindCategoriesQueryKey,
   useAdminBlogControllerFindCategories,
@@ -40,7 +40,6 @@ import {
 } from "@/shared/lib/list-reorder";
 import {
   Button,
-  Input,
   LiveAnnouncer,
   ReorderUndoButton,
   SortableTree,
@@ -50,6 +49,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableSearch,
   TableToolbar,
   type SortableTreeRowRenderProps,
 } from "@/shared/ui";
@@ -156,13 +156,15 @@ function BlogCategoryGrid() {
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
         search={
-          <Input
-            type="search"
+          // `mode="local"` (TASK-423): the needle hides ROWS, it does not narrow
+          // a query — see the header for why this list stays unpaginated and why
+          // a search LOCKS reordering instead of PATCHing a partial ordering.
+          <TableSearch
+            mode="local"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(next) => setSearch(next ?? "")}
             placeholder={dict.reorderList.searchPlaceholder}
-            aria-label={dict.reorderList.searchLabel}
-            className="max-w-xs"
+            label={dict.reorderList.searchLabel}
           />
         }
         actions={

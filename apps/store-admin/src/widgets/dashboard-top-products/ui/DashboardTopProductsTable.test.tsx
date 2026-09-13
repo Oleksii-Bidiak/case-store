@@ -32,6 +32,31 @@ describe("DashboardTopProductsTable (TASK-152)", () => {
     expect(screen.getByText(/3[\s ]?420/)).toBeInTheDocument();
   });
 
+  it("links each product name to the READ-ONLY card, not to the edit form (TASK-430)", () => {
+    renderWithProviders(
+      <DashboardTopProductsTable products={makeProducts()} />,
+    );
+
+    const link = screen.getByRole("link", {
+      name: dict.dashboard.topProductLinkAria("USB-C Cable 2m"),
+    });
+
+    // `/products/<id>` — clicking a dashboard metric is a question about the
+    // position; `/products/<id>/edit` would be a form opened by accident.
+    expect(link).toHaveAttribute("href", "/products/p-1");
+    expect(link.getAttribute("href")).not.toContain("/edit");
+  });
+
+  it("links every row, not just the first", () => {
+    renderWithProviders(
+      <DashboardTopProductsTable products={makeProducts()} />,
+    );
+
+    expect(
+      screen.getAllByRole("link").map((a) => a.getAttribute("href")),
+    ).toEqual(["/products/p-1", "/products/p-2", "/products/p-3"]);
+  });
+
   it("renders the empty-state row when there are no products", () => {
     renderWithProviders(<DashboardTopProductsTable products={[]} />);
 

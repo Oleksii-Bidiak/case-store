@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PageKind, Prisma, PublishStatus } from '@prisma/client';
 import {
+  DEFAULT_ADMIN_PAGE_SIZE,
   PageRepository,
   CreatePageInput,
   UpdatePageInput,
@@ -13,11 +14,18 @@ import {
   FindAllAdminParams,
 } from './pages.repository';
 import { PageEntity } from './entities';
-import { CreatePageDto, UpdatePageDto, PageListQueryDto, AdminPageListQueryDto } from './dto';
+import {
+  CreatePageDto,
+  UpdatePageDto,
+  PageListQueryDto,
+  AdminPageListQueryDto,
+  ReorderPagesDto,
+} from './dto';
 import { generateSlug } from '../common/utils';
 import { sanitizeRichText } from '../common/sanitize';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
-import { HUB_SLUGS, hubRouteForSlug, revalidatePathsForPage } from './hub-routes';
+import { reorderErrorToHttp } from '../common/reorder';
+import { HUB_SLUGS, PAGE_ROOT_PATHS, hubRouteForSlug, revalidatePathsForPage } from './hub-routes';
 
 /** A page identified well enough to purge its storefront routes. */
 interface PageRef {
@@ -86,12 +94,13 @@ export class PageService {
   }
 
   /**
-   * List all pages including drafts (admin).
+   * List all pages including drafts (admin). Omitting `page`/`limit` returns the
+   * COMPLETE list — the mode the reorder UI requires (TASK-428).
    */
-  async findAllAdmin(query: AdminPageListQueryDto): Promise<PaginatedPagesResponse> {
+  async findAllAdmin(query: AdminPageListQueryDto = {}): Promise<PaginatedPagesResponse> {
     const params: FindAllAdminParams = {
-      page: query.page ?? 1,
-      limit: query.limit ?? 20,
+      page: query.page,
+      limit: query.limit,
       status: query.status,
       search: query.search,
       kind: query.kind,
@@ -101,7 +110,7 @@ export class PageService {
 
     return {
       data: pages.map((page) => PageEntity.fromPrisma(page)),
-      meta: this.buildMeta(total, params.page, params.limit),
+      meta: this.buildAdminMeta(total, query.page, query.limit),
     };
   }
 
@@ -285,6 +294,47 @@ export class PageService {
     await this.pageRepository.delete(id);
   }
 
+  /**
+   * Rewrite the complete ordering of the static-page list (admin, TASK-428) and return
+   * the refreshed COMPLETE admin list, so the panel resyncs in a single round-trip.
+   *
+   * The repository's domain errors are mapped to HTTP here, so the wire body carries the
+   * stable `error` code the admin panel keys its UA announcements off.
+   *
+   * Only the HUB is revalidated: a reorder changes the sequence `/legal` renders, never
+   * the content of any single `/legal/<slug>` route.
+   */
+  async reorder(dto: ReorderPagesDto): Promise<PaginatedPagesResponse> {
+    let pages;
+    let total;
+    try {
+      ({ pages, total } = await this.pageRepository.reorderAll(dto.orderedIds));
+    } catch (error) {
+      throw reorderErrorToHttp(error);
+    }
+
+    // Coarse on purpose, and coarser than it was: reordering moves rows inside
+    // whichever hub lists them, and since TASK-435 that is no longer only
+    // `/legal` — an INFO page reordered here surfaces on `/info`. The wave that
+    // wrote this line and the wave that added `kind` landed separately, so
+    // purging `/legal` alone would have left `/info` serving yesterday's order
+    // with every container reporting healthy. Same list the scheduler purges for
+    // the same reason: the new order is a property of the lists, not of one row.
+    await this.revalidation.revalidate({
+      tags: ['pages'],
+      paths: [...PAGE_ROOT_PATHS],
+    });
+
+    // Shape parity with `findAllAdmin` is load-bearing: the admin panel writes this
+    // response straight into the list query's cache (`useReorderLifecycle` →
+    // `setQueryData`), and an envelope missing `meta` would blank the row counter the
+    // moment someone drags a row.
+    return {
+      data: pages.map((page) => PageEntity.fromPrisma(page)),
+      meta: this.buildAdminMeta(total),
+    };
+  }
+
   // ─── helpers ──────────────────────────────────────────────────────────────
 
   private async ensureExists(id: string): Promise<void> {
@@ -300,6 +350,34 @@ export class PageService {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  /**
+   * Admin pagination metadata (TASK-428).
+   *
+   * The `total` fallback applies ONLY to the complete-list mode — BOTH `page` and `limit`
+   * absent — because that is the exact condition `PageRepository.findAllAdmin` treats as
+   * "give me everything"; there the whole list really did come back in one response, so it
+   * is reported as a single page of size `total` rather than inventing a page size the
+   * caller never asked for. An EMPTY unpaginated list would make that size 0, so
+   * `totalPages` is short-circuited instead of dividing by zero.
+   *
+   * In every other mode the meta MUST use the same `DEFAULT_ADMIN_PAGE_SIZE` the repository
+   * sliced with (TASK-429, review finding #12). The two used to disagree: `?page=2` with no
+   * `limit` returned rows 21-40 while the meta claimed `{ page: 2, limit: total,
+   * totalPages: 1 }` — a pager that reads its own response then renders "сторінка 2 з 1"
+   * and quietly hides every row past the first page.
+   */
+  private buildAdminMeta(total: number, page?: number, limit?: number): PaginationMeta {
+    const isCompleteList = page === undefined && limit === undefined;
+    const effectiveLimit = isCompleteList ? total : (limit ?? DEFAULT_ADMIN_PAGE_SIZE);
+
+    return {
+      total,
+      page: page ?? 1,
+      limit: effectiveLimit,
+      totalPages: effectiveLimit === 0 ? 0 : Math.ceil(total / effectiveLimit),
     };
   }
 

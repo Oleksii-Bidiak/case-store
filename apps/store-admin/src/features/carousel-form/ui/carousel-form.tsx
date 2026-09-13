@@ -73,7 +73,8 @@ const EMPTY_VALUES: CarouselFormInput = {
   placement: "HOME_RAILS",
   categoryId: "",
   itemLimit: "12",
-  sortOrder: "0",
+  // No `sortOrder` (TASK-428): the field is gone from the form, and omitting it from
+  // the payload is what makes the server append a new carousel to its placement bucket.
   status: "DRAFT",
   scheduledAt: "",
 };
@@ -83,8 +84,11 @@ const EMPTY_VALUES: CarouselFormInput = {
  * (TASK-288 — tab inside the home "Популярне" section vs. its own rail below),
  * a conditional category select (visible only for `source = CATEGORY`, offering
  * ALL tree nodes — parents roll up their subtree), item limit (kept visible but
- * labelled as ignored for MANUAL), sort order, plus the shared publish
- * controls (status / scheduledAt) — byte-for-byte the `BannerForm` block.
+ * labelled as ignored for MANUAL), plus the shared publish controls (status /
+ * scheduledAt) — byte-for-byte the `BannerForm` block.
+ *
+ * TASK-428 removed the sort-order number field, as it did on `BannerForm`: the order
+ * within a placement is set by dragging rows in the carousel list.
  */
 export function CarouselForm({
   id,
@@ -222,22 +226,13 @@ export function CarouselForm({
           )}
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="carousel-sort">{dict.carouselForm.sortOrder}</Label>
-          <Input
-            id="carousel-sort"
-            type="number"
-            inputMode="numeric"
-            min="0"
-            step="1"
-            {...register("sortOrder")}
-          />
-          {errors.sortOrder && (
-            <p role="alert" className="text-sm text-destructive">
-              {errors.sortOrder.message}
-            </p>
-          )}
-        </div>
+        {/*
+          TASK-428 removed the "Порядок сортування" number field here: it defaulted to 0,
+          so every carousel an operator created landed in the same slot and the homepage
+          order was whatever the database felt like. The position is now set where it is
+          seen — by dragging a row inside its placement in the carousel list — and a new
+          carousel is appended to that placement by the server.
+        */}
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="carousel-status">{dict.carouselForm.status}</Label>

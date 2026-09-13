@@ -115,7 +115,25 @@ export const PERMISSIONS = [
 
   // ── Клієнти ───────────────────────────────────────────────────────────────
   { key: 'customers:read', zone: PERMISSION_ZONES.CUSTOMERS, label: 'Картки клієнтів' },
-  { key: 'customers:write', zone: PERMISSION_ZONES.CUSTOMERS, label: 'Блокувати / розблоковувати' },
+  // One key, two capabilities — and the label has to say so (TASK-430).
+  // `customers:write` gates BOTH account deactivation (`user.controller.ts:356`,
+  // `:387`) AND the customer-notes journal (`POST /admin/users/:userId/notes`).
+  // A label that mentions only blocking makes the matrix dishonest in the
+  // dangerous direction: an owner who just wants an order operator to file call
+  // notes ticks this box and also hands them the power to deactivate accounts,
+  // with nothing on screen saying so.
+  //
+  // Deliberately NOT split into a separate `customers:notes` key. A new key is
+  // denied by default (see the DEFAULT IS DENIED note at the top of this file),
+  // so the split would silently strip the notes textarea from every manager who
+  // can write notes today, and it would stay stripped until the owner noticed
+  // the «Нове» badge and ticked it. Widening the label costs nothing and lies
+  // about nothing.
+  {
+    key: 'customers:write',
+    zone: PERMISSION_ZONES.CUSTOMERS,
+    label: 'Блокувати / розблоковувати, нотатки',
+  },
 
   // ── Звернення ─────────────────────────────────────────────────────────────
   { key: 'messages:read', zone: PERMISSION_ZONES.SUPPORT, label: 'Читати звернення' },

@@ -1,12 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useUrlParams } from "@/shared/lib/use-url-params";
-import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { useTableSort } from "@/shared/lib/use-table-sort";
+import { formatDate } from "@/shared/lib";
 import {
   ROLE_VALUES,
   UserEntityRole,
@@ -18,32 +17,23 @@ import { CreateStaffButton } from "@/features/user-create";
 import {
   Badge,
   Button,
-  Input,
   LiveAnnouncer,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   SortableColumnHeader,
   Table,
   TableBody,
   TableCell,
+  TableFilters,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableToolbar,
+  pageSizeFrom,
+  type TableFilterDef,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { AdminUserTableSkeleton } from "./AdminUserTableSkeleton";
-
-const PAGE_SIZE = 20;
-const ALL_OPTION = "__all__";
-const SEARCH_DEBOUNCE_MS = 300;
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-});
 
 function fullName(user: UserEntity): string {
   const name = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
@@ -87,9 +77,15 @@ function emptyCopy(
 /**
  * Paginated, searchable, filterable user table for the admin panel.
  *
- * Search, role, status, and page state all live in the URL (`?search=`,
- * `?role=`, `?isActive=`, `?page=`) so the view is shareable and refresh-safe.
- * The search input is debounced before it touches the URL.
+ * Search, role, status, page and page size all live in the URL (`?search=`,
+ * `?role=`, `?isActive=`, `?page=`, `?limit=`) so the view is shareable and
+ * refresh-safe.
+ *
+ * TASK-423 replaced this table's own copies of the controls with the shared ones
+ * (`TableSearch`, `TableFilters`, `TablePagination`). The behaviour here barely
+ * changed — this was one of the five tables that already debounced to the URL —
+ * which is the point: the other twelve now behave like this one instead of like
+ * each other.
  *
  * The controls sit in the shared `TableToolbar` (TASK-356) so this table gains
  * the manual refresh every admin list now has. No `staleTime` override here on
@@ -109,8 +105,7 @@ export function AdminUserTable() {
   const roleParam = searchParams.get("role") ?? "";
   const isActiveParam = searchParams.get("isActive") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
-
-  const [searchInput, setSearchInput] = useState(searchParam);
+  const pageSize = pageSizeFrom(searchParams);
 
   const updateParams = useUrlParams();
 
@@ -119,17 +114,10 @@ export function AdminUserTable() {
     updateParams,
   );
 
-  // Debounce the search box → URL `?search=` param via the shared hook.
-  const debouncedSearch = useDebouncedCallback((value: string) => {
-    const trimmed = value.trim();
-    if (trimmed === searchParam) return;
-    updateParams({ search: trimmed || undefined, page: undefined });
-  }, SEARCH_DEBOUNCE_MS);
-
   const { data, isLoading, isFetching, isError, refetch } =
     useUserControllerFindAll({
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       search: searchParam || undefined,
       role: roleParam
         ? (roleParam as (typeof UserEntityRole)[keyof typeof UserEntityRole])
@@ -142,19 +130,34 @@ export function AdminUserTable() {
   const users = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
 
-  const handleRoleChange = (value: string) => {
-    updateParams({
-      role: value === ALL_OPTION ? undefined : value,
-      page: undefined,
-    });
-  };
-
-  const handleStatusChange = (value: string) => {
-    updateParams({
-      isActive: value === ALL_OPTION ? undefined : value,
-      page: undefined,
-    });
-  };
+  // TASK-423: the same filter idiom every admin table uses. Declaring them as
+  // DATA rather than markup is what makes the chips, the clear-all and the page
+  // reset identical here and on eleven other screens — the two hand-rolled
+  // `Select`s this replaces had each of those behaviours only by accident.
+  const filters: TableFilterDef[] = [
+    {
+      param: "role",
+      label: dict.users.filterRoleAria,
+      allLabel: dict.users.allRoles,
+      options: [
+        { value: ROLE_VALUES.CUSTOMER, label: dict.users.roleCustomer },
+        // TASK-334: MANAGER is a real role the API returns and filters on, even
+        // though the generated `UserEntityRole` union still predates it. Without
+        // this option the owner could not list their own managers.
+        { value: ROLE_VALUES.MANAGER, label: dict.users.roleManager },
+        { value: ROLE_VALUES.ADMIN, label: dict.users.roleAdmin },
+      ],
+    },
+    {
+      param: "isActive",
+      label: dict.users.filterStatusAria,
+      allLabel: dict.users.allStatuses,
+      options: [
+        { value: "true", label: dict.common.active },
+        { value: "false", label: dict.common.inactive },
+      ],
+    },
+  ];
 
   return (
     <LiveAnnouncer>
@@ -164,68 +167,17 @@ export function AdminUserTable() {
           onRefresh={() => void refetch()}
           isRefreshing={isFetching}
           search={
-            <Input
-              type="search"
+            <TableSearch
+              value={searchParam}
               placeholder={dict.users.searchPlaceholder}
-              value={searchInput}
-              onChange={(event) => {
-                setSearchInput(event.target.value);
-                debouncedSearch(event.target.value);
-              }}
-              className="max-w-xs"
-              aria-label={dict.users.searchAria}
+              label={dict.users.searchAria}
             />
           }
           filters={
-            <>
-              <Select
-                value={roleParam || ALL_OPTION}
-                onValueChange={handleRoleChange}
-              >
-                <SelectTrigger
-                  className="w-40"
-                  aria-label={dict.users.filterRoleAria}
-                >
-                  <SelectValue placeholder={dict.users.allRoles} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_OPTION}>
-                    {dict.users.allRoles}
-                  </SelectItem>
-                  <SelectItem value={ROLE_VALUES.CUSTOMER}>
-                    {dict.users.roleCustomer}
-                  </SelectItem>
-                  {/* TASK-334: MANAGER is a real role the API returns and
-                      filters on, even though the generated `UserEntityRole`
-                      union still predates it. Without this option the owner
-                      could not list their own managers. */}
-                  <SelectItem value={ROLE_VALUES.MANAGER}>
-                    {dict.users.roleManager}
-                  </SelectItem>
-                  <SelectItem value={ROLE_VALUES.ADMIN}>
-                    {dict.users.roleAdmin}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={isActiveParam || ALL_OPTION}
-                onValueChange={handleStatusChange}
-              >
-                <SelectTrigger
-                  className="w-40"
-                  aria-label={dict.users.filterStatusAria}
-                >
-                  <SelectValue placeholder={dict.users.allStatuses} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_OPTION}>
-                    {dict.users.allStatuses}
-                  </SelectItem>
-                  <SelectItem value="true">{dict.common.active}</SelectItem>
-                  <SelectItem value="false">{dict.common.inactive}</SelectItem>
-                </SelectContent>
-              </Select>
-            </>
+            <TableFilters
+              filters={filters}
+              values={{ role: roleParam, isActive: isActiveParam }}
+            />
           }
         />
 
@@ -314,7 +266,7 @@ export function AdminUserTable() {
                       </Badge>
                     </TableCell>
                     <TableCell hideOnMobile className="text-muted-foreground">
-                      {dateFormatter.format(new Date(user.createdAt))}
+                      {formatDate(user.createdAt)}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button asChild variant="outline" size="sm">
@@ -331,33 +283,11 @@ export function AdminUserTable() {
         )}
 
         {!isLoading && !isError && users.length > 0 && (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              {dict.common.pageOf(page, totalPages)}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() =>
-                  updateParams({
-                    page: page - 1 <= 1 ? undefined : String(page - 1),
-                  })
-                }
-              >
-                {dict.common.previous}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => updateParams({ page: String(page + 1) })}
-              >
-                {dict.common.next}
-              </Button>
-            </div>
-          </div>
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            pageSize={pageSize}
+          />
         )}
       </div>
     </LiveAnnouncer>

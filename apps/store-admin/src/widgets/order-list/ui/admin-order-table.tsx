@@ -1,50 +1,86 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { Clock3, Download, Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useUrlParams } from "@/shared/lib/use-url-params";
-import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
+import { toast } from "@/shared/ui/toast";
 import {
   OrderEntityStatus,
+  OrderEntityPaymentStatus,
   orderStatusBadgeVariant,
   orderStatusLabel,
   paymentStatusBadgeVariant,
   paymentStatusLabel,
   useAdminOrderControllerFindAll,
 } from "@/entities/order";
+// The payment-METHOD enum and the CSV endpoint are not part of what
+// `@/entities/order` re-exports, and that barrel is another wave's file. A widget
+// may read `@/shared` directly (the product list already does), so this is the
+// honest import rather than a duplicated string union.
+import {
+  adminOrderControllerExport,
+  OrderEntityPaymentMethod,
+} from "@/shared/api";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import {
   Badge,
   Button,
   LiveAnnouncer,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Input,
   SortableColumnHeader,
   Table,
   TableBody,
   TableCell,
+  TableFilters,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableToolbar,
   Tabs,
   TabsList,
   TabsTrigger,
+  pageSizeFrom,
+  type TableFilterDef,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatCurrency } from "@/shared/lib";
+import { formatCurrency, formatDateTime } from "@/shared/lib";
+import { downloadCsv } from "../model/download-csv";
 import { AdminOrderTableSkeleton } from "./admin-order-table-skeleton";
 
-const PAGE_SIZE = 20;
 const ALL_OPTION = "__all__";
-const SEARCH_DEBOUNCE_MS = 300;
+
+const EXPORT_FILENAME = "orders.csv";
+
+/**
+ * Payment-status filter options (TASK-425). Every value of the enum: an
+ * operator's question is as often "what failed" as it is "what is unpaid".
+ */
+const PAYMENT_STATUS_FILTER_OPTIONS = [
+  OrderEntityPaymentStatus.PENDING,
+  OrderEntityPaymentStatus.PAID,
+  OrderEntityPaymentStatus.FAILED,
+  OrderEntityPaymentStatus.REFUNDED,
+];
+
+/**
+ * Ukrainian labels for the payment METHOD (TASK-425).
+ *
+ * A near-copy of the map in `features/order-create` — deliberately not imported
+ * from there: a widget reaching into a feature's UI file for a constant is a
+ * worse dependency than three duplicated strings. Their shared home is
+ * `entities/order` beside `paymentStatusLabel`, which is where this belongs the
+ * moment either file is touched again.
+ */
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  [OrderEntityPaymentMethod.ON_DELIVERY]: dict.orders.paymentMethodOnDelivery,
+  [OrderEntityPaymentMethod.ONLINE]: dict.orders.paymentMethodOnline,
+  [OrderEntityPaymentMethod.INSTALLMENTS]:
+    dict.orders.paymentMethodInstallments,
+};
 
 const STATUS_FILTER_OPTIONS = [
   OrderEntityStatus.PENDING,
@@ -85,11 +121,6 @@ const STATUS_TABS: ReadonlyArray<{ value: string; label: string }> = [
  */
 const CUSTOM_TAB = "__custom__";
 
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-
 /**
  * Paginated order table for the admin panel, listing orders across all users.
  *
@@ -113,7 +144,15 @@ export function AdminOrderTable() {
   // orders (the needs-action widget's target). The status <Select> has no option
   // for this compound preset — reconciling it is deferred to TASK-250's tabs.
   const unpaidInTransit = searchParams.get("unpaidInTransit") === "true";
+  // TASK-425: the queue filters. Payment status and method are ordinary
+  // single-value filters; `pendingOverdue` is a SERVER-side predicate — the
+  // threshold lives in the API's PENDING_STALE_HOURS, shared with the dashboard
+  // tile, so the chip and the tile can never answer differently.
+  const paymentStatusParam = searchParams.get("paymentStatus") ?? "";
+  const paymentMethodParam = searchParams.get("paymentMethod") ?? "";
+  const pendingOverdue = searchParams.get("pendingOverdue") === "true";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
+  const pageSize = pageSizeFrom(searchParams);
 
   const updateParams = useUrlParams();
 
@@ -123,32 +162,16 @@ export function AdminOrderTable() {
     updateParams,
   );
 
-  // forms.md Rule 1b: the search box is focus-sensitive and its value round-trips
-  // through the URL, so the local state is re-seeded only on a genuine EXTERNAL
-  // change (a back button, a pasted link) — never on this component's own echo,
-  // which would steal focus mid-word.
-  const [searchInput, setSearchInput] = useState(searchParam);
-  const lastPushedRef = useRef(searchParam);
-
-  useEffect(() => {
-    if (searchParam !== lastPushedRef.current) {
-      setSearchInput(searchParam);
-      lastPushedRef.current = searchParam;
-    }
-  }, [searchParam]);
-
-  const debouncedSearch = useDebouncedCallback((value: string) => {
-    const trimmed = value.trim();
-    if (trimmed === searchParam) return;
-    lastPushedRef.current = trimmed;
-    updateParams({ search: trimmed || undefined, page: undefined });
-  }, SEARCH_DEBOUNCE_MS);
+  // TASK-423: the focus-sensitive `lastPushedRef` guard this table hand-rolled
+  // (forms.md rule 1b) now lives inside the shared `TableSearch` — it was the
+  // reference implementation for it, and keeping a local copy was how the other
+  // twelve tables ended up without one.
 
   const { data, isLoading, isFetching, isError, refetch } =
     useAdminOrderControllerFindAll(
       {
         page,
-        limit: PAGE_SIZE,
+        limit: pageSize,
         // The generated `status` param is a plain string (CSV) since TASK-250, so
         // single (`PENDING`) and multi (`CONFIRMED,PROCESSING`) values pass straight
         // through — no enum cast needed.
@@ -158,6 +181,16 @@ export function AdminOrderTable() {
         search: searchParam || undefined,
         // TASK-248 deep-link: active-but-unpaid ("in-transit") filter.
         unpaidInTransit: unpaidInTransit || undefined,
+        // TASK-425. Cast for the same reason the subscriber table casts its
+        // status: the value comes off the URL as a string, and an illegal one is
+        // rejected by the DTO rather than pretended away here.
+        paymentStatus: paymentStatusParam
+          ? (paymentStatusParam as OrderEntityPaymentStatus)
+          : undefined,
+        paymentMethod: paymentMethodParam
+          ? (paymentMethodParam as OrderEntityPaymentMethod)
+          : undefined,
+        pendingOverdue: pendingOverdue || undefined,
         sortBy,
         sortOrder,
       },
@@ -168,13 +201,101 @@ export function AdminOrderTable() {
 
   const orders = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
+  const total = data?.meta?.total ?? 0;
 
-  const handleStatusChange = (value: string) => {
-    updateParams({
-      status: value === ALL_OPTION ? undefined : value,
-      page: undefined,
-    });
+  const [isExporting, setIsExporting] = useState(false);
+
+  /**
+   * CSV of the CURRENT SELECTION — every active filter, not the visible page
+   * (TASK-425). The server caps the row count; rather than restating that cap
+   * here (two copies of a number is how they drift), the file's own row count is
+   * compared against `meta.total`, which this table already holds. A truncated
+   * export reports itself through `toast.error`, which stays on screen: a
+   * spreadsheet that is quietly missing half the orders is the one outcome the
+   * operator must not scroll past.
+   */
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const csv = await adminOrderControllerExport({
+        status: statusParam || undefined,
+        search: searchParam || undefined,
+        unpaidInTransit: unpaidInTransit || undefined,
+        paymentStatus: paymentStatusParam
+          ? (paymentStatusParam as OrderEntityPaymentStatus)
+          : undefined,
+        paymentMethod: paymentMethodParam
+          ? (paymentMethodParam as OrderEntityPaymentMethod)
+          : undefined,
+        pendingOverdue: pendingOverdue || undefined,
+      });
+      // Rows = lines minus the header, which is only sound because the SERVER
+      // now guarantees one order occupies one physical line: `toCsvRow` runs
+      // every field through `toSingleCsvLine` before escaping it.
+      //
+      // It used to rest on the assumption that no exported field can contain a
+      // newline, which was false — `customerName` and `city` are free text (a
+      // max length and a trim, no character rules), and a correctly QUOTED
+      // multi-line field still spans several physical lines. One such order at
+      // the server's row cap inflated this count up to `total`, skipped the
+      // truncation branch below, and handed the operator a green success toast
+      // for a file silently missing every order past the cap. Do not relax the
+      // server-side flattening without replacing this count.
+      const exported = Math.max(0, csv.split("\r\n").length - 1);
+      downloadCsv(csv, EXPORT_FILENAME);
+      if (total > exported) {
+        toast.error(dict.orders.exportTruncated(exported, total));
+      } else {
+        toast.success(dict.orders.exportSuccess(exported));
+      }
+    } catch {
+      toast.error(dict.orders.exportError);
+    } finally {
+      setIsExporting(false);
+    }
   };
+
+  const filters: TableFilterDef[] = [
+    {
+      param: "status",
+      label: dict.orders.filterStatusAria,
+      allLabel: dict.orders.allStatuses,
+      options: STATUS_FILTER_OPTIONS.map((status) => ({
+        value: status,
+        label: orderStatusLabel(status),
+      })),
+      // A lifecycle tab can set a multi-status preset this Select has no single
+      // option for; the chip still has to be readable and clearable.
+      resolveLabel: (raw) =>
+        raw
+          .split(",")
+          .map((status) => orderStatusLabel(status))
+          .join(", "),
+    },
+    // TASK-425: "has the money arrived" was not answerable from this table at
+    // all — the payment column could be read but never filtered on.
+    {
+      param: "paymentStatus",
+      label: dict.orders.filterPaymentStatusAria,
+      allLabel: dict.orders.allPaymentStatuses,
+      options: PAYMENT_STATUS_FILTER_OPTIONS.map((status) => ({
+        value: status,
+        label: paymentStatusLabel(status),
+      })),
+    },
+    // Separate from the status above because they answer different questions: a
+    // cash-on-delivery order is unpaid until the courier hands it over, a card
+    // order that is unpaid means the money never arrived.
+    {
+      param: "paymentMethod",
+      label: dict.orders.filterPaymentMethodAria,
+      allLabel: dict.orders.allPaymentMethods,
+      options: Object.values(OrderEntityPaymentMethod).map((method) => ({
+        value: method,
+        label: PAYMENT_METHOD_LABELS[method] ?? method,
+      })),
+    },
+  ];
 
   // The active preset tab is the one whose value exactly matches the current
   // `?status=` string, with an absent filter standing for the "Всі" sentinel;
@@ -199,16 +320,10 @@ export function AdminOrderTable() {
           onRefresh={() => void refetch()}
           isRefreshing={isFetching}
           search={
-            <Input
-              type="search"
-              value={searchInput}
-              onChange={(event) => {
-                setSearchInput(event.target.value);
-                debouncedSearch(event.target.value);
-              }}
+            <TableSearch
+              value={searchParam}
               placeholder={dict.orders.searchPlaceholder}
-              aria-label={dict.orders.searchAria}
-              className="w-72 max-w-full"
+              label={dict.orders.searchAria}
             />
           }
           filters={
@@ -222,34 +337,59 @@ export function AdminOrderTable() {
                   ))}
                 </TabsList>
               </Tabs>
-              <Select
-                value={statusParam || ALL_OPTION}
-                onValueChange={handleStatusChange}
+              <TableFilters
+                filters={filters}
+                values={{
+                  status: statusParam,
+                  paymentStatus: paymentStatusParam,
+                  paymentMethod: paymentMethodParam,
+                }}
+              />
+              {/* TASK-425: "waiting too long". A toggle rather than a Select
+                  option, because it is not a value of any one column — it is a
+                  server predicate over status AND age. `aria-pressed` is what
+                  makes it a toggle for a screen reader; the visual state is the
+                  filled variant. */}
+              <Button
+                type="button"
+                variant={pendingOverdue ? "secondary" : "outline"}
+                size="sm"
+                aria-pressed={pendingOverdue}
+                aria-label={dict.orders.overdueChipAria}
+                onClick={() =>
+                  updateParams({
+                    pendingOverdue: pendingOverdue ? undefined : "true",
+                    page: undefined,
+                  })
+                }
               >
-                <SelectTrigger
-                  className="w-48"
-                  aria-label={dict.orders.filterStatusAria}
-                >
-                  <SelectValue placeholder={dict.orders.allStatuses} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_OPTION}>
-                    {dict.orders.allStatuses}
-                  </SelectItem>
-                  {STATUS_FILTER_OPTIONS.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {orderStatusLabel(status)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                <Clock3 aria-hidden="true" className="size-3.5" />
+                {dict.orders.overdueChip}
+              </Button>
             </div>
           }
           actions={
-            /* TASK-341: a phone order starts here. */
-            <Button asChild>
-              <Link href="/orders/new">{dict.orders.createCta}</Link>
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* TASK-425: the CURRENT SELECTION as CSV — the filters as applied,
+                  not the page on screen. */}
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isExporting}
+                onClick={() => void handleExport()}
+              >
+                {isExporting ? (
+                  <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+                ) : (
+                  <Download aria-hidden="true" className="size-4" />
+                )}
+                {dict.orders.exportCsv}
+              </Button>
+              {/* TASK-341: a phone order starts here. */}
+              <Button asChild>
+                <Link href="/orders/new">{dict.orders.createCta}</Link>
+              </Button>
+            </div>
           }
         />
 
@@ -284,6 +424,10 @@ export function AdminOrderTable() {
                 <TableRow>
                   <TableHead>{dict.orders.colOrder}</TableHead>
                   <TableHead>{dict.orders.colCustomer}</TableHead>
+                  {/* TASK-425: account or guest, as its own column. It was
+                      inferable from whether a name sat under the email; an
+                      operator should not have to infer it. */}
+                  <TableHead>{dict.orders.colCustomerType}</TableHead>
                   <SortableColumnHeader
                     field="status"
                     label={dict.orders.colStatus}
@@ -346,16 +490,40 @@ export function AdminOrderTable() {
                         // Guest order (TASK-338): the contact typed at checkout is
                         // the only way to reach this buyer, so show it rather than
                         // an id that does not exist.
+                        //
+                        // The primary line falls back to the phone because the
+                        // email is legitimately null on an order the operator took
+                        // over the phone (TASK-426 made it optional). Reading the
+                        // email alone left this cell blank on exactly the orders
+                        // the operator created themselves — the one contact they
+                        // had just typed in, invisible.
                         <div className="flex flex-col gap-0.5">
-                          <span className="text-sm">{order.guest.email}</span>
+                          <span className="text-sm">
+                            {order.guest.email || order.guest.phone}
+                          </span>
                           <span className="text-xs text-muted-foreground">
-                            {order.guest.name} · {dict.orders.guestBadge}
+                            {order.guest.name
+                              ? `${order.guest.name} · ${dict.orders.guestBadge}`
+                              : dict.orders.guestBadge}
                           </span>
                         </div>
                       ) : (
                         <span className="font-mono text-xs text-muted-foreground">
                           {order.userId ? `${order.userId.slice(0, 8)}…` : "—"}
                         </span>
+                      )}
+                    </TableCell>
+                    <TableCell label={dict.orders.colCustomerType}>
+                      {order.customer ? (
+                        <Badge variant="secondary">
+                          {dict.orders.customerTypeAccount}
+                        </Badge>
+                      ) : order.guest ? (
+                        <Badge variant="warning">
+                          {dict.orders.customerTypeGuest}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
                     <TableCell label={dict.orders.colStatus}>
@@ -380,7 +548,7 @@ export function AdminOrderTable() {
                       label={dict.orders.colCreated}
                       className="text-muted-foreground"
                     >
-                      {dateFormatter.format(new Date(order.createdAt))}
+                      {formatDateTime(order.createdAt)}
                     </TableCell>
                     <TableCell
                       label={dict.common.actions}
@@ -400,33 +568,11 @@ export function AdminOrderTable() {
         )}
 
         {!isLoading && !isError && orders.length > 0 && (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              {dict.common.pageOf(page, totalPages)}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() =>
-                  updateParams({
-                    page: page - 1 <= 1 ? undefined : String(page - 1),
-                  })
-                }
-              >
-                {dict.common.previous}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => updateParams({ page: String(page + 1) })}
-              >
-                {dict.common.next}
-              </Button>
-            </div>
-          </div>
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            pageSize={pageSize}
+          />
         )}
       </div>
     </LiveAnnouncer>

@@ -116,7 +116,12 @@ export class AdminReviewController {
   })
   @ApiQuery({ name: 'status', required: false, description: 'Filter: pending | approved' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (1-based)' })
-  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (max 50)' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (max 100)' })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Free-text search over review text, author email and product name',
+  })
   @ApiResponse({
     status: 200,
     description: 'Paginated moderation queue',

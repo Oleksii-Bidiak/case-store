@@ -17,11 +17,7 @@ import {
 } from "@/widgets";
 import { Button, Separator } from "@/shared/ui";
 import { dict } from "@/shared/config";
-
-const timeFormatter = new Intl.DateTimeFormat("uk-UA", {
-  hour: "2-digit",
-  minute: "2-digit",
-});
+import { formatTime } from "@/shared/lib";
 
 /**
  * Client orchestrator for the admin dashboard. Lives in the app layer (not a
@@ -63,9 +59,7 @@ export function DashboardView() {
         </h2>
         {canSeeAnalytics && data ? (
           <p className="text-xs text-muted-foreground">
-            {dict.dashboard.updatedAt(
-              timeFormatter.format(new Date(dataUpdatedAt)),
-            )}
+            {dict.dashboard.updatedAt(formatTime(dataUpdatedAt))}
           </p>
         ) : null}
       </section>

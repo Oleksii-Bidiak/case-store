@@ -165,3 +165,38 @@ describe('ProductListQueryDto — specs length cap', () => {
     expect(errors.filter((error) => error.property === 'specs')).toHaveLength(1);
   });
 });
+
+/**
+ * Same trap, same fix, one filter later (TASK-427). `deleted` is the filter
+ * whose wrong reading is actively harmful rather than merely confusing:
+ * `Boolean('false')` is `true`, so a naive transform turns `?deleted=false`
+ * into a page of tombstoned products — rows whose slug and sku have already
+ * been mangled and handed to whatever replaced them.
+ */
+describe('ProductListQueryDto — deleted transform (TASK-427)', () => {
+  const toDto = (query: Record<string, unknown>): ProductListQueryDto =>
+    plainToInstance(ProductListQueryDto, query, { enableImplicitConversion: true });
+
+  it('coerces "true" to boolean true', () => {
+    expect(toDto({ deleted: 'true' }).deleted).toBe(true);
+  });
+
+  it('coerces "false" to boolean false (not the truthy-string trap)', () => {
+    expect(toDto({ deleted: 'false' }).deleted).toBe(false);
+  });
+
+  it('leaves deleted undefined when the param is absent — live products only', () => {
+    expect(toDto({}).deleted).toBeUndefined();
+  });
+
+  it('treats an unrecognised value as no filter (undefined)', () => {
+    expect(toDto({ deleted: 'banana' }).deleted).toBeUndefined();
+  });
+
+  it('passes class-validator for each of true / false / absent', async () => {
+    for (const query of [{ deleted: 'true' }, { deleted: 'false' }, {}]) {
+      const errors = await validate(toDto(query));
+      expect(errors.filter((e) => e.property === 'deleted')).toHaveLength(0);
+    }
+  });
+});

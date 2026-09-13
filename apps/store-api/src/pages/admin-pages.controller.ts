@@ -21,7 +21,7 @@ import {
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { PageService } from './pages.service';
-import { CreatePageDto, UpdatePageDto, AdminPageListQueryDto } from './dto';
+import { CreatePageDto, UpdatePageDto, AdminPageListQueryDto, ReorderPagesDto } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import { PageEntity } from './entities';
 
@@ -68,6 +68,7 @@ class PageResponseEnvelope {
  * Controller for admin static-page management (ADMIN role required).
  *
  *   GET    /api/admin/pages              — list all pages (published + drafts)
+ *   PATCH  /api/admin/pages/reorder      — rewrite the complete ordering of the list
  *   GET    /api/admin/pages/:id          — page by ID
  *   POST   /api/admin/pages              — create
  *   PUT    /api/admin/pages/:id          — full update
@@ -86,12 +87,45 @@ export class AdminPageController {
   @Get()
   @ApiBearerAuth('access-token')
   @ApiOperation({
-    summary: 'List all pages — published + drafts, paginated, optional search (admin)',
+    summary: 'List all pages — published + drafts, optional search + pagination (admin)',
   })
-  @ApiResponse({ status: 200, description: 'Paginated list of pages', type: AdminPageListResponse })
+  @ApiResponse({
+    status: 200,
+    description: 'List of pages (complete list when page/limit are omitted)',
+    type: AdminPageListResponse,
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: AdminPageListQueryDto): Promise<AdminPageListResponse> {
     return this.pageService.findAllAdmin(query);
+  }
+
+  /**
+   * PATCH /api/admin/pages/reorder (TASK-428)
+   *
+   * Rewrites the COMPLETE ordering of the static-page list — the array index becomes
+   * `sortOrder` — in one advisory-locked transaction, and returns the full refreshed
+   * admin list.
+   *
+   * DECLARED BEFORE the `:id` routes — otherwise `reorder` is captured as an `:id`.
+   */
+  @Patch('reorder')
+  @HttpCode(200)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Reorder the static-page list (admin)',
+    operationId: 'adminPageControllerReorder',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The full refreshed admin page list',
+    type: AdminPageListResponse,
+  })
+  @ApiResponse({ status: 400, description: 'Validation error, or REORDER_DUPLICATE_ID' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({ status: 404, description: 'REORDER_NOT_FOUND — an id is not in this list' })
+  @ApiResponse({ status: 409, description: 'REORDER_STALE — another admin changed the list first' })
+  async reorder(@Body() dto: ReorderPagesDto): Promise<AdminPageListResponse> {
+    return this.pageService.reorder(dto);
   }
 
   @Get(':id')

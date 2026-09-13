@@ -8,10 +8,10 @@ const e = dict.faqForm.errors;
 /**
  * Validation schema for the admin FAQ form (TASK-242).
  *
- * `sortOrder` is modelled as a string on the INPUT side (bound to a number
- * input) and parsed to a number on the OUTPUT side — blank means 0 — so
- * react-hook-form registration stays string-only while `onSubmit` receives a
- * number. `question`/`answer` are required; `isActive` is the visibility toggle.
+ * TASK-428: no `sortOrder` field — the order is set by dragging (or keyboard-moving)
+ * rows in the FAQ list, and a new item is appended to the end by the server. The old
+ * hand-typed number defaulted to 0 for every row, so nothing was actually ordered.
+ * `question`/`answer` are required; `isActive` is the visibility toggle.
  */
 export const faqSchema = z.object({
   question: z
@@ -22,16 +22,6 @@ export const faqSchema = z.object({
 
   answer: z.string().trim().min(1, e.answerRequired).max(5000, e.answerMax),
 
-  sortOrder: z
-    .string()
-    .trim()
-    .optional()
-    .refine(
-      (v) => v === undefined || v === "" || /^\d+$/.test(v),
-      e.sortOrderInt,
-    )
-    .transform((v) => (v === undefined || v === "" ? 0 : Number(v))),
-
   isActive: z.boolean().optional(),
 });
 
@@ -40,7 +30,11 @@ export type FaqFormValues = z.output<typeof faqSchema>;
 
 /**
  * Map parsed form values to a create/update payload. Create and update share the
- * same additive shape; `sortOrder` and `isActive` are always sent.
+ * same additive shape.
+ *
+ * `sortOrder` is deliberately NOT sent (TASK-428). On create its absence is what makes
+ * the server append the item to the END of the list; on update its absence leaves the
+ * position the operator dragged the row to untouched.
  */
 export function faqFormValuesToDto(
   values: FaqFormValues,
@@ -48,17 +42,15 @@ export function faqFormValuesToDto(
   return {
     question: values.question,
     answer: values.answer,
-    sortOrder: values.sortOrder,
     isActive: values.isActive,
   };
 }
 
-/** Map a fetched FAQ entity onto the form's string-based input shape. */
+/** Map a fetched FAQ entity onto the form's input shape. */
 export function mapFaqToFormValues(item: FaqItemEntity): FaqFormInput {
   return {
     question: item.question,
     answer: item.answer,
-    sortOrder: String(item.sortOrder),
     isActive: item.isActive,
   };
 }

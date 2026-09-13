@@ -17,26 +17,23 @@ import {
   Badge,
   Button,
   LiveAnnouncer,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   SortableColumnHeader,
   Table,
   TableBody,
   TableCell,
+  TableFilters,
   TableHead,
   TableHeader,
+  TablePagination,
   TableRow,
+  TableSearch,
   TableToolbar,
+  pageSizeFrom,
+  type TableFilterDef,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatCurrency } from "@/shared/lib";
+import { formatCurrency, formatDateTime } from "@/shared/lib";
 import { AdminReturnTableSkeleton } from "./admin-return-table-skeleton";
-
-const PAGE_SIZE = 20;
-const ALL_OPTION = "__all__";
 
 const STATUS_FILTER_OPTIONS = [
   ReturnEntityStatus.REQUESTED,
@@ -45,11 +42,6 @@ const STATUS_FILTER_OPTIONS = [
   ReturnEntityStatus.REFUNDED,
   ReturnEntityStatus.REJECTED,
 ];
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 /**
  * The returns queue (TASK-340).
@@ -67,12 +59,20 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
  * The three sortable columns are the ones the backend allows — item count is
  * not among them, because it lives in a child table and nobody triages returns
  * by how many lines are on them.
+ *
+ * TASK-423 added the search this queue never had. It is the one an operator with
+ * a customer on the phone actually needs: the return id, the order number, the
+ * customer's email or phone, and the reason they typed. Without it the only way
+ * to find "the return Olena called about" was to page through the queue while
+ * she waited.
  */
 export function AdminReturnTable() {
   const searchParams = useSearchParams();
 
   const statusParam = searchParams.get("status") ?? "";
+  const searchParam = searchParams.get("search") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
+  const pageSize = pageSizeFrom(searchParams);
 
   const updateParams = useUrlParams();
 
@@ -88,7 +88,8 @@ export function AdminReturnTable() {
     useAdminReturnControllerFindAll(
       {
         page,
-        limit: PAGE_SIZE,
+        limit: pageSize,
+        search: searchParam || undefined,
         status:
           (statusParam as AdminReturnControllerFindAllParams["status"]) ||
           undefined,
@@ -103,6 +104,19 @@ export function AdminReturnTable() {
   const returns = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
 
+  const filters: TableFilterDef[] = [
+    {
+      param: "status",
+      label: dict.returns.filterStatusAria,
+      allLabel: dict.returns.allStatuses,
+      options: STATUS_FILTER_OPTIONS.map((status) => ({
+        value: status,
+        label: returnStatusLabel(status),
+      })),
+      className: "w-56",
+    },
+  ];
+
   return (
     <LiveAnnouncer>
       <div className="flex flex-col gap-4">
@@ -110,33 +124,15 @@ export function AdminReturnTable() {
           className="mb-0"
           onRefresh={() => void refetch()}
           isRefreshing={isFetching}
+          search={
+            <TableSearch
+              value={searchParam}
+              placeholder={dict.returns.searchPlaceholder}
+              label={dict.returns.searchAria}
+            />
+          }
           filters={
-            <Select
-              value={statusParam || ALL_OPTION}
-              onValueChange={(value) =>
-                updateParams({
-                  status: value === ALL_OPTION ? undefined : value,
-                  page: undefined,
-                })
-              }
-            >
-              <SelectTrigger
-                className="w-56"
-                aria-label={dict.returns.filterStatusAria}
-              >
-                <SelectValue placeholder={dict.returns.allStatuses} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_OPTION}>
-                  {dict.returns.allStatuses}
-                </SelectItem>
-                {STATUS_FILTER_OPTIONS.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {returnStatusLabel(status)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <TableFilters filters={filters} values={{ status: statusParam }} />
           }
         />
 
@@ -148,9 +144,14 @@ export function AdminReturnTable() {
           </p>
         ) : returns.length === 0 ? (
           <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-            {statusParam
-              ? dict.returns.emptyStatus(returnStatusLabel(statusParam))
-              : dict.returns.empty}
+            {/* The search wins over the status when both are on: the term is
+                what the operator just typed, so it is the thing they will edit
+                to get rows back. */}
+            {searchParam
+              ? dict.returns.emptyMatch(searchParam)
+              : statusParam
+                ? dict.returns.emptyStatus(returnStatusLabel(statusParam))
+                : dict.returns.empty}
           </div>
         ) : (
           <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
@@ -238,7 +239,7 @@ export function AdminReturnTable() {
                       label={dict.returns.colRequested}
                       className="text-muted-foreground"
                     >
-                      {dateFormatter.format(new Date(item.requestedAt))}
+                      {formatDateTime(item.requestedAt)}
                     </TableCell>
                     <TableCell
                       label={dict.common.actions}
@@ -258,33 +259,11 @@ export function AdminReturnTable() {
         )}
 
         {!isLoading && !isError && returns.length > 0 && (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              {dict.common.pageOf(page, totalPages)}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() =>
-                  updateParams({
-                    page: page - 1 <= 1 ? undefined : String(page - 1),
-                  })
-                }
-              >
-                {dict.common.previous}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => updateParams({ page: String(page + 1) })}
-              >
-                {dict.common.next}
-              </Button>
-            </div>
-          </div>
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            pageSize={pageSize}
+          />
         )}
       </div>
     </LiveAnnouncer>

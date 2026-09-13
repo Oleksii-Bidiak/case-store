@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { NewsletterRepository } from './newsletter.repository';
 import { NewsletterSubscriptionEntity } from './entities';
 import { NewsletterExportQueryDto, NewsletterListQueryDto, SubscribeDto } from './dto';
+// Shared with the order export. This file used to carry its own byte-identical
+// `escapeCsv`, and the formula-injection hole was found in both copies at once —
+// which is the argument for there being only one.
+import { escapeCsvField } from '../common/utils/csv.util';
 
 /**
  * Pagination metadata returned alongside paginated results.
@@ -74,7 +78,9 @@ export class NewsletterService {
 
   /**
    * Build the subscriber CSV (admin export). Columns: email,status,source,createdAt.
-   * Fields are quote-escaped so commas/quotes in values never break the layout.
+   * Fields go through the shared {@link escapeCsvField}, which quote-escapes so
+   * commas/quotes in values never break the layout AND neutralises a value the
+   * operator's spreadsheet would otherwise execute as a formula.
    */
   async exportCsv(query: NewsletterExportQueryDto): Promise<string> {
     const rows = await this.newsletterRepository.findAllForExport({
@@ -86,10 +92,10 @@ export class NewsletterService {
       CSV_HEADER.join(','),
       ...rows.map((row) =>
         [
-          this.escapeCsv(row.email),
-          this.escapeCsv(row.status),
-          this.escapeCsv(row.source ?? ''),
-          this.escapeCsv(row.createdAt.toISOString()),
+          escapeCsvField(row.email),
+          escapeCsvField(row.status),
+          escapeCsvField(row.source ?? ''),
+          escapeCsvField(row.createdAt.toISOString()),
         ].join(','),
       ),
     ];
@@ -105,16 +111,5 @@ export class NewsletterService {
 
   private buildMeta(total: number, page: number, limit: number): PaginationMeta {
     return { total, page, limit, totalPages: Math.ceil(total / limit) };
-  }
-
-  /**
-   * Escape a single CSV field per RFC 4180: wrap in double quotes and double any
-   * embedded quotes when the value contains a comma, quote, or newline.
-   */
-  private escapeCsv(value: string): string {
-    if (/[",\r\n]/.test(value)) {
-      return `"${value.replace(/"/g, '""')}"`;
-    }
-    return value;
   }
 }

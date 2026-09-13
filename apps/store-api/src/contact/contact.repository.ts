@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ContactMessage, ContactMessageStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { normalizeUaPhone, phoneDigits } from '../common/validators';
 import { CONTACT_MESSAGE_SORT_FIELDS } from './dto';
 import type { ContactMessageSortField } from './dto';
 
@@ -20,6 +21,13 @@ export class ContactMessagesNotFoundError extends Error {
 }
 
 const DEFAULT_SORT_BY: ContactMessageSortField = 'createdAt';
+
+/**
+ * How many digits a search term must carry before the inbox treats it as a phone
+ * number (TASK-423). Same guard, same number and the same reason as
+ * `OrderRepository.SEARCH_PHONE_MIN_DIGITS` — see the call site.
+ */
+const SEARCH_PHONE_MIN_DIGITS = 3;
 
 /**
  * Translate the DTO's sort choice into a Prisma `orderBy` (TASK-354).
@@ -72,6 +80,8 @@ export interface FindAllParams {
   page: number;
   limit: number;
   status?: ContactMessageStatus;
+  /** Free-text needle — see {@link ContactRepository.findAll} (TASK-423). */
+  search?: string;
   sortBy?: ContactMessageSortField;
   sortOrder?: 'asc' | 'desc';
 }
@@ -114,11 +124,45 @@ export class ContactRepository {
    * of rows plus the total for pagination.
    */
   async findAll(params: FindAllParams): Promise<PaginatedContactMessagesResult> {
-    const { page, limit, status } = params;
+    const { page, limit, status, search } = params;
     const skip = (page - 1) * limit;
     const where: Prisma.ContactMessageWhereInput = {
       ...(status !== undefined && { status }),
     };
+
+    // TASK-423: the inbox had no search. Every column an operator would look
+    // something up by is a plain string on this one table — no joins needed — so
+    // the arms are simply all of them, OR-ed and case-insensitive, mirroring
+    // `OrderRepository.findAllForAdmin`.
+    //
+    // `message` is in the list on purpose, unlike the SORT allow-list which
+    // deliberately excludes it: ordering a queue by the text of the message is
+    // not a triage anyone performs, but "the message that mentioned a broken
+    // charger" is exactly how an operator remembers it.
+    if (search) {
+      const or: Prisma.ContactMessageWhereInput[] = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { topic: { contains: search, mode: 'insensitive' } },
+        { orderRef: { contains: search, mode: 'insensitive' } },
+        { message: { contains: search, mode: 'insensitive' } },
+      ];
+
+      // `ContactMessage.phone` is stored NORMALISED (`380XXXXXXXXX`, see
+      // `CreateContactMessageDto`), so the term has to be normalised the same way
+      // or the operator typing the number the way the customer dictates it —
+      // `067 123 45 67` — finds nothing at all. This is the TASK-466 fix applied
+      // to the second table that has the same shape.
+      //
+      // Guarded on the digit count: `normalizeUaPhone('Іван')` is `''`, and
+      // `{ contains: '' }` matches EVERY row — a name search would silently
+      // become "show me the whole inbox".
+      if (phoneDigits(search).length >= SEARCH_PHONE_MIN_DIGITS) {
+        or.push({ phone: { contains: normalizeUaPhone(search) } });
+      }
+
+      where.OR = or;
+    }
 
     const [messages, total] = await Promise.all([
       this.prisma.contactMessage.findMany({

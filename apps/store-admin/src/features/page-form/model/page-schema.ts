@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CreatePageDto, UpdatePageDto } from "@/entities/page";
 import { dict, hubRouteForSlug } from "@/shared/config";
+import { fromKyivDateTimeLocal } from "@/shared/lib";
 import {
   KEYWORDS_MAX_COUNT,
   KEYWORD_MAX_LENGTH,
@@ -97,6 +98,16 @@ export const pageSchema = z
       .optional()
       .or(z.literal("")),
 
+    /**
+     * TASK-428: NO LONGER RENDERED and NO LONGER SUBMITTED — the order is set by
+     * dragging rows in the page list, and a new page is appended by the server.
+     *
+     * The key survives in the INPUT shape only because `widgets/page-form-view` still
+     * seeds it (`sortOrder: String(page.sortOrder)`) and that widget is owned elsewhere;
+     * dropping it here would break that object literal's excess-property check. Nothing
+     * registers this field and `pageFormValuesToDto` no longer sends it, so the value is
+     * inert. Delete it together with the mapper line in `widgets/page-form-view`.
+     */
     sortOrder: z
       .string()
       .trim()
@@ -153,9 +164,13 @@ export function pageFormValuesToCreateDto(
   const metaDescription = values.metaDescription?.trim();
   const ogImage = values.ogImage?.trim();
 
+  // Read as KYIV wall-clock time. `new Date("YYYY-MM-DDTHH:mm")` — what stood
+  // here — parses a zone-less datetime in the RUNTIME's zone, which contradicts
+  // the Kyiv-pinned page list the operator read the date off in the first place.
+  // See `shared/lib/format/datetime-local.ts`.
   const scheduledAt =
     values.status === "SCHEDULED" && values.scheduledAt
-      ? new Date(values.scheduledAt).toISOString()
+      ? fromKyivDateTimeLocal(values.scheduledAt)?.toISOString()
       : undefined;
 
   return {
@@ -171,7 +186,12 @@ export function pageFormValuesToCreateDto(
     // verbs, so one mapper still serves create and update.
     keywords: parseKeywords(values.keywords),
     ogImage: ogImage ? ogImage : null,
-    sortOrder: values.sortOrder,
+    // `sortOrder` is deliberately NOT sent (TASK-428), and stays unsent through
+    // this merge: develop's mapper still carried it, but the order is now set by
+    // dragging rows in the page list. On create its absence is what makes the
+    // server append the page to the END of the list; on update its absence
+    // leaves the position the operator dragged the row to untouched — sending
+    // the form's stale copy back would silently undo the drag on the next save.
     status: values.status,
     scheduledAt,
   };

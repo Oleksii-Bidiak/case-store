@@ -15,10 +15,7 @@ const d = dict.bannerPreview;
  * this union, so callers pass it with no cast.
  */
 export type BannerPreviewPlacement =
-  | "HERO_SLIDE"
-  | "PROMO_TILE"
-  | "PROMO_BANNER"
-  | "ANNOUNCEMENT_BAR";
+  "HERO_SLIDE" | "PROMO_TILE" | "PROMO_BANNER" | "ANNOUNCEMENT_BAR";
 
 export interface BannerPlacementPreviewProps {
   placement: BannerPreviewPlacement;
@@ -56,11 +53,34 @@ export interface BannerPlacementPreviewProps {
  *   ONLY `title` and `ctaHref`; subtitle/ctaLabel/imageUrl/theme are ignored,
  *   and the preview reflects that (plus a hint so the admin isn't misled).
  * - `imageUrl` is currently ignored by ALL four storefront placements, so no
- *   variant renders it here either.
+ *   variant renders it here either. TASK-429 revisited this and kept it that way:
+ *   honouring it here would make the preview promise artwork the storefront never
+ *   draws — a lie in the OTHER direction, and a worse one, because the operator
+ *   would upload an image and wonder why the site ignores it.
+ *
+ * SHAPE (TASK-429). Before this, the preview constrained WIDTH only, so every
+ * placement rendered at "whatever the 360px side panel is wide" with a height that
+ * came from its own padding — 1:1 with nothing on the storefront. Each variant now
+ * carries the proportions of its real slot, measured from store-client:
+ *
+ * - HERO_SLIDE       fixed shape: ≈968×440 desktop (`aspect-banner-hero`), and
+ *                    375×420 on a phone (`aspect-banner-hero-mobile`) — below `lg`
+ *                    the slider is full width, so the shape is TALLER than wide.
+ * - PROMO_TILE       NO fixed ratio (content height). Rendered one-third wide in a
+ *                    three-column row — the storefront's `sm:grid-cols-3` — with
+ *                    two dimmed placeholders standing in for its neighbours.
+ * - PROMO_BANNER     NO fixed ratio (content height), full content width.
+ * - ANNOUNCEMENT_BAR fixed 40px strip (`h-10`), full page width.
+ *
+ * The two content-height placements are NOT given an invented ratio; the panel says
+ * so in words instead. Ratios are expressed with `aspect-*` design tokens (declared
+ * in `app/globals.css`) — never a padding-bottom hack, absolute positioning, or an
+ * arbitrary Tailwind value.
  *
  * The mobile/desktop segmented toggle simulates the storefront viewport by
- * constraining the preview's width — pure local display state (not form data,
- * so docs/conventions/forms.md seeding rules don't apply).
+ * constraining the preview's width AND by switching the shapes that differ between
+ * breakpoints — pure local display state (not form data, so
+ * docs/conventions/forms.md seeding rules don't apply).
  */
 export function BannerPlacementPreview({
   placement,
@@ -70,7 +90,7 @@ export function BannerPlacementPreview({
   ctaHref,
   theme,
 }: BannerPlacementPreviewProps) {
-  const [viewport, setViewport] = useState<"desktop" | "mobile">("desktop");
+  const [viewport, setViewport] = useState<Viewport>("desktop");
 
   const variant: VariantProps = {
     title,
@@ -78,6 +98,7 @@ export function BannerPlacementPreview({
     ctaLabel: ctaLabel?.trim() || undefined,
     ctaHref: ctaHref?.trim() || undefined,
     theme: theme?.trim() || undefined,
+    viewport,
   };
 
   return (
@@ -104,9 +125,11 @@ export function BannerPlacementPreview({
         </div>
       </div>
 
+      {/* `max-w-sm` (384px) stands in for a phone — the token nearest the 375px
+          reference width, and a real token rather than an arbitrary value. */}
       <div
         data-testid="banner-preview-frame"
-        className={cn("w-full", viewport === "mobile" && "max-w-[375px]")}
+        className={cn("w-full", viewport === "mobile" && "max-w-sm")}
       >
         {placement === "HERO_SLIDE" && <HeroSlidePreview {...variant} />}
         {placement === "PROMO_TILE" && <PromoTilePreview {...variant} />}
@@ -115,6 +138,16 @@ export function BannerPlacementPreview({
           <AnnouncementBarPreview {...variant} />
         )}
       </div>
+
+      {/* What shape the operator is looking at — including the honest "no fixed
+          height" for the two content-height placements (TASK-429). */}
+      <p
+        data-testid="banner-preview-shape-note"
+        className="text-xs text-muted-foreground"
+      >
+        {d.shape[placement]}
+      </p>
+      <p className="text-xs text-muted-foreground">{d.scaleNote}</p>
 
       {placement === "ANNOUNCEMENT_BAR" && (
         <p className="text-xs text-muted-foreground">{d.announcementBarNote}</p>
@@ -152,12 +185,18 @@ function ViewportButton({
   );
 }
 
+/** Which storefront breakpoint the preview is modelling. */
+type Viewport = "desktop" | "mobile";
+
 interface VariantProps {
   title: string;
   subtitle?: string;
   ctaLabel?: string;
   ctaHref?: string;
   theme?: string;
+  /** Drives the shapes that genuinely differ between breakpoints (hero ratio,
+   *  promo-tile column count) — see the component header. */
+  viewport: Viewport;
 }
 
 /** `title || dict.bannerPreview.emptyTitle` with italic-muted styling when
@@ -179,23 +218,46 @@ function TitleText({ title, className }: { title: string; className: string }) {
 const HERO_GRADIENT =
   "linear-gradient(120deg, color-mix(in oklab, var(--color-primary) 90%, black) 0%, var(--color-primary) 52%, color-mix(in oklab, var(--color-primary) 55%, oklch(0.55 0.2 300)) 100%)";
 
-function HeroSlidePreview({ title, subtitle, ctaLabel }: VariantProps) {
+/**
+ * The hero's REAL proportions, per breakpoint (TASK-429). Tokens, not arbitrary
+ * values: see `--aspect-banner-hero*` in `app/globals.css` for the measurements.
+ * The old `min-h-[260px]` was a made-up number — the storefront slide is 440px tall
+ * in a ≈968px column, more than twice as wide as it is tall, which is nothing like
+ * the near-square box the panel used to show.
+ */
+const HERO_ASPECT: Record<Viewport, string> = {
+  desktop: "aspect-banner-hero",
+  mobile: "aspect-banner-hero-mobile",
+};
+
+function HeroSlidePreview({
+  title,
+  subtitle,
+  ctaLabel,
+  viewport,
+}: VariantProps) {
   return (
     <div
       data-testid="banner-preview-hero-slide"
-      className="flex min-h-[260px] items-center overflow-hidden rounded-2xl px-8 py-10 text-white"
+      className={cn(
+        "flex items-center overflow-hidden rounded-2xl p-4 text-white",
+        HERO_ASPECT[viewport],
+      )}
       style={{ backgroundImage: HERO_GRADIENT }}
     >
-      <div className="max-w-md">
+      {/* The copy block sits on the left half exactly as it does on the site; the
+          scale model is small, so the padding and type scale come down with it —
+          the shape is what has to be faithful, not the font size. */}
+      <div className="min-w-0 max-w-md">
         <TitleText
           title={title}
-          className="font-display text-2xl leading-tight font-bold tracking-tight text-balance"
+          className="font-display text-lg leading-tight font-bold tracking-tight text-balance"
         />
-        {subtitle && <p className="mt-3 text-sm opacity-90">{subtitle}</p>}
+        {subtitle && <p className="mt-2 text-xs opacity-90">{subtitle}</p>}
         {ctaLabel && (
-          <span className="mt-5 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-primary">
+          <span className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 text-xs font-bold text-primary">
             {ctaLabel}
-            <ArrowRight className="size-4" />
+            <ArrowRight className="size-3.5" />
           </span>
         )}
       </div>
@@ -215,36 +277,72 @@ type TileAccent = keyof typeof TILE_ACCENTS;
 
 const TILE_ACCENT_NAMES = Object.keys(TILE_ACCENTS) as TileAccent[];
 
-function PromoTilePreview({ title, subtitle, ctaLabel, theme }: VariantProps) {
+function PromoTilePreview({
+  title,
+  subtitle,
+  ctaLabel,
+  theme,
+  viewport,
+}: VariantProps) {
   // `theme` wins only when it literally names an accent; otherwise the
   // storefront rotates by position — a single preview defaults to "primary"
   // (documented simplification, see header comment).
   const accent =
     TILE_ACCENTS[TILE_ACCENT_NAMES.find((a) => a === theme) ?? "primary"];
-  return (
+
+  const tile = (
     <div
       data-testid="banner-preview-promo-tile"
-      className={cn("flex flex-col rounded-2xl border p-6", accent.surface)}
+      className={cn("flex flex-col rounded-2xl border p-3", accent.surface)}
     >
       <TitleText
         title={title}
-        className="font-display text-lg font-bold text-foreground"
+        className="font-display text-sm font-bold text-foreground"
       />
       {subtitle && (
-        <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
       )}
       {ctaLabel && (
         <span
           className={cn(
-            "mt-4 inline-flex items-center gap-1.5 text-sm font-semibold",
+            "mt-3 inline-flex items-center gap-1 text-xs font-semibold",
             accent.cta,
           )}
         >
           {ctaLabel}
-          <ArrowRight className="size-4" />
+          <ArrowRight className="size-3.5" />
         </span>
       )}
     </div>
+  );
+
+  // Below `sm` the storefront grid is a single column, so the phone view shows the
+  // tile full width. On a desktop it is one of THREE in a row — deliberately shown
+  // at its real third-of-the-row width, with the neighbours it will actually stand
+  // beside. NO aspect ratio: these cards are content-height on the site, and the
+  // panel says so rather than inventing one.
+  if (viewport === "mobile") return tile;
+
+  return (
+    <div
+      data-testid="banner-preview-promo-tile-row"
+      className="grid grid-cols-3 gap-2 items-start"
+    >
+      {tile}
+      <GhostTile />
+      <GhostTile />
+    </div>
+  );
+}
+
+/** A neighbouring promo tile, drawn as an empty frame: it conveys the column width
+ *  without pretending to be content. `aria-hidden` — there is nothing to read. */
+function GhostTile() {
+  return (
+    <div
+      aria-hidden="true"
+      className="h-full min-h-16 rounded-2xl border border-dashed border-border bg-muted/30"
+    />
   );
 }
 
@@ -257,19 +355,22 @@ function PromoBannerPreview({
   return (
     <div
       data-testid="banner-preview-promo-banner"
-      className="flex flex-wrap items-center justify-between gap-6 rounded-2xl bg-gradient-to-r from-slate-900 to-primary p-8"
+      // Full content width, CONTENT height — the storefront banner is
+      // `max-w-7xl px-4` with `p-10 sm:p-12` and no ratio at all, so none is
+      // invented here (TASK-429); the padding is scaled down with the model.
+      className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-slate-900 to-primary p-5"
     >
-      <div className="max-w-md text-white">
+      <div className="min-w-0 max-w-md text-white">
         <TitleText
           title={title}
-          className="font-display text-xl leading-tight font-bold tracking-tight text-balance"
+          className="font-display text-base leading-tight font-bold tracking-tight text-balance"
         />
-        {subtitle && <p className="mt-2 text-sm text-white/80">{subtitle}</p>}
+        {subtitle && <p className="mt-1.5 text-xs text-white/80">{subtitle}</p>}
       </div>
       {ctaLabel && ctaHref && (
-        <span className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+        <span className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">
           {ctaLabel}
-          <ArrowRight className="size-4" />
+          <ArrowRight className="size-3.5" />
         </span>
       )}
     </div>
@@ -282,6 +383,9 @@ function AnnouncementBarPreview({ title, ctaHref }: VariantProps) {
       data-testid="banner-preview-announcement-bar"
       className="overflow-hidden rounded-md bg-foreground text-background"
     >
+      {/* 1:1 with the storefront strip, not a scale model: `h-10` IS the real 40px
+          and the 13px type is the real type — the only placement whose height is a
+          constant, so there is nothing to scale. */}
       <div className="flex h-10 items-center gap-2 px-4 text-[13px]">
         <span
           aria-hidden="true"

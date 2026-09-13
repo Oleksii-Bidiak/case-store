@@ -4,6 +4,33 @@ import nextTs from 'eslint-config-next/typescript';
 import tailwindcss from 'eslint-plugin-tailwindcss';
 
 /**
+ * Toast policy guard (TASK-422).
+ *
+ * Errors must stay on screen until the operator dismisses them; successes fade
+ * after 6 s. sonner cannot express that at the `<Toaster>` — its `ToastOptions`
+ * is flat and type-agnostic, so the rule can only live at the call site. It
+ * lives in exactly one: `@/shared/ui/toast`. Importing `sonner` anywhere else
+ * re-opens the hole silently, because a `toast.error` from the raw package
+ * simply inherits the 6 s default and looks completely normal in review.
+ *
+ * Added to each FSD block's existing options object rather than declared in a
+ * config object of its own: ESLint flat config REPLACES a rule's options instead
+ * of merging them, so a second object carrying `no-restricted-imports` would
+ * silently delete the layer-boundary rules for every file it matched. (The same
+ * trap as `no-restricted-syntax` in `rawFetchGuard` below.)
+ *
+ * `paths`, not `patterns`, and that distinction is load-bearing: as a pattern,
+ * `sonner` also matches the RELATIVE `./sonner` — so `shared/ui/index.ts`, which
+ * legitimately re-exports the local `sonner.tsx` wrapper, was reported as a
+ * violation. `paths` matches the exact specifier only.
+ */
+const noSonnerOutsideWrapper = {
+  name: 'sonner',
+  message:
+    'Імпортуй toast із «@/shared/ui/toast», а не напряму з sonner: лише там помилки отримують duration: Infinity (успіх зникає за 6 с, помилка чекає, поки її прочитають). Прямий toast.error із sonner мовчки зникне за 6 с. Виняток — shared/ui/toast.ts і shared/ui/sonner.tsx.',
+};
+
+/**
  * FSD (Feature-Sliced Design) layer boundary rules.
  *
  * Import direction is strictly downward:
@@ -30,6 +57,7 @@ const fsdBoundaryRules = [
                 'FSD boundary violation: "shared" layer must not import from "app", "widgets", "features", or "entities" layers. Use @/shared/ instead.',
             },
           ],
+          paths: [noSonnerOutsideWrapper],
         },
       ],
     },
@@ -49,6 +77,7 @@ const fsdBoundaryRules = [
                 'FSD boundary violation: "entities" layer must not import from "app", "widgets", or "features" layers. Only @/shared/ and @/entities/ imports are allowed.',
             },
           ],
+          paths: [noSonnerOutsideWrapper],
         },
       ],
     },
@@ -68,6 +97,7 @@ const fsdBoundaryRules = [
                 'FSD boundary violation: "features" layer must not import from "app" or "widgets" layers. Only @/shared/, @/entities/, and @/features/ imports are allowed.',
             },
           ],
+          paths: [noSonnerOutsideWrapper],
         },
       ],
     },
@@ -85,6 +115,37 @@ const fsdBoundaryRules = [
               group: ['@/app/**'],
               message:
                 'FSD boundary violation: "widgets" layer must not import from "app" layer. Only @/shared/, @/entities/, and @/features/ imports are allowed.',
+            },
+          ],
+          paths: [noSonnerOutsideWrapper],
+        },
+      ],
+    },
+  },
+];
+
+/**
+ * The two files that are ALLOWED to import sonner: the `<Toaster>` wrapper and
+ * the `toast` wrapper that owns the per-type duration policy.
+ *
+ * This re-declares `no-restricted-imports` for them rather than switching it
+ * `off`, so they keep the shared-layer boundary check and lose only the sonner
+ * clause. Switching the rule off wholesale would let exactly these two files
+ * reach upward into `features`/`widgets` unnoticed.
+ */
+const sonnerWrapperExemption = [
+  {
+    name: 'sonner-wrapper-exemption',
+    files: ['src/shared/ui/sonner.tsx', 'src/shared/ui/toast.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/app/**', '@/widgets/**', '@/features/**', '@/entities/**'],
+              message:
+                'FSD boundary violation: "shared" layer must not import from "app", "widgets", "features", or "entities" layers. Use @/shared/ instead.',
             },
           ],
         },
@@ -166,12 +227,32 @@ const tailwindTokenGuard = [
  * hatch that reads as deliberate evasion in review but passes lint.
  *
  * Exception: `shared/api/generated/**` (Orval output, never hand-edited).
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ * THIS OBJECT ALSO CARRIES THE DATE-FORMATTING GUARD (TASK-421), AND THAT IS
+ * DELIBERATE — DO NOT SPLIT IT OUT.
+ *
+ * ESLint flat config REPLACES a rule's options rather than merging them. A
+ * second config object that also sets `no-restricted-syntax` would win for every
+ * matched file and silently switch the raw-`fetch` selectors above OFF — lint
+ * would stay green while the guard no longer existed. Anything new that this
+ * rule should forbid is appended to the SAME array below.
+ *
+ * The date selectors close the drift documented in `shared/lib/format/
+ * formatDate.ts`: 18 hand-rolled `Intl.DateTimeFormat` singletons that disagreed
+ * with each other, plus bare `toLocale*String()` calls with no locale at all.
+ * `shared/lib/format/**` is exempted via `ignores` — that folder is where the
+ * canonical formatters are allowed to construct Intl objects.
+ *
+ * Only ZERO-ARGUMENT `toLocale*String()` is banned. `toLocaleString("uk-UA")` on
+ * a NUMBER is legitimate (see `DashboardTrafficCard`), and flagging it would
+ * push people back to hand-rolled formatting.
  */
 const rawFetchGuard = [
   {
     name: "no-raw-fetch",
     files: ["src/**/*.{ts,tsx,js,jsx,mjs,mts,cts}"],
-    ignores: ["src/shared/api/generated/**"],
+    ignores: ["src/shared/api/generated/**", "src/shared/lib/format/**"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -186,6 +267,18 @@ const rawFetchGuard = [
           message:
             "Заборонений «голий» fetch (через globalThis/window/global/self) — обхід того самого правила. Використовуй згенеровані Orval-хуки поверх @/shared/api/instance.",
         },
+        {
+          selector:
+            "CallExpression[arguments.length=0][callee.property.name=/^toLocale(Date|Time)?String$/]",
+          message:
+            "Дата без локалі: toLocaleDateString()/toLocaleTimeString()/toLocaleString() без аргументів беруть локаль і часовий пояс браузера, тож кожен оператор бачить свій формат — а сервер віддає UTC, тому час ще й з'їжджає на 2–3 години без жодної позначки. Використовуй спільні форматери з @/shared/lib: formatDate (09.09.2026), formatDateTime (09.09.2026, 18:40), formatTime (18:40), formatRelative («5 хвилин тому»). Вони фіксують uk-UA, 24-годинний час і timeZone Europe/Kyiv. Для ЧИСЕЛ toLocaleString(\"uk-UA\") з явною локаллю дозволений.",
+        },
+        {
+          selector:
+            "NewExpression[callee.object.name='Intl'][callee.property.name=/^(DateTimeFormat|RelativeTimeFormat)$/]",
+          message:
+            "Власний Intl.DateTimeFormat/RelativeTimeFormat поза shared/lib/format: саме так в адмінці з'явилося 18 різних форматерів — вісім з них в американському форматі («Sep 9, 2026, 6:40 PM») — і жоден не задавав timeZone, тому на сервері (UTC) час показувався зміщеним. Імпортуй formatDate / formatDateTime / formatTime / formatRelative з @/shared/lib. Якщо потрібен НОВИЙ формат дати — додай його у shared/lib/format/formatDate.ts, а не тут.",
+        },
       ],
     },
   },
@@ -195,6 +288,7 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   ...fsdBoundaryRules,
+  ...sonnerWrapperExemption,
   ...testOverrides,
   ...tailwindTokenGuard,
   ...rawFetchGuard,
