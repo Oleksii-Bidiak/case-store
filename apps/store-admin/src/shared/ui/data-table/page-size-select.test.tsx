@@ -136,6 +136,40 @@ describe("TablePagination", () => {
     ).toBeDisabled();
   });
 
+  it("counts a second click before the URL catches up", async () => {
+    // The URL and the `page` prop deliberately stay put across both clicks:
+    // that is exactly the window `useSearchParams()` leaves open, and the bug
+    // was that both clicks did their arithmetic on the stale 1 — the second
+    // `replace` rewrote the first with the same ?page=2.
+    mockSearchParams = new URLSearchParams("");
+    const user = userEvent.setup();
+    renderWithProviders(
+      <TablePagination page={1} totalPages={5} pageSize={20} />,
+    );
+
+    const next = screen.getByRole("button", { name: dict.common.next });
+    await user.click(next);
+    await user.click(next);
+
+    expect(mockReplace).toHaveBeenNthCalledWith(1, "/products?page=2");
+    expect(mockReplace).toHaveBeenNthCalledWith(2, "/products?page=3");
+  });
+
+  it("will not step past the last page, however fast it is clicked", async () => {
+    mockSearchParams = new URLSearchParams("page=2");
+    const user = userEvent.setup();
+    renderWithProviders(
+      <TablePagination page={2} totalPages={3} pageSize={20} />,
+    );
+
+    const next = screen.getByRole("button", { name: dict.common.next });
+    await user.click(next);
+    await user.click(next);
+
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("/products?page=3");
+  });
+
   it("carries the rows-per-page control, unless the caller's DTO caps it lower", () => {
     const { rerender } = renderWithProviders(
       <TablePagination page={1} totalPages={3} pageSize={20} />,

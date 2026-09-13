@@ -46,6 +46,44 @@ export function TablePagination({
 }: TablePaginationProps) {
   const updateParams = useUrlParams();
 
+  /**
+   * The page this footer last asked the URL for, or null when the URL is the
+   * authority again.
+   *
+   * `page` arrives from `useSearchParams()`, so it only catches up a render
+   * after `updateParams` lands. Two clicks inside that gap both stepped from
+   * the same stale number, and the second `router.replace()` overwrote the
+   * first with its own value: two clicks on «Далі», one page moved, and nothing
+   * on screen to say the second was swallowed.
+   *
+   * The step is therefore read out of the ref at CLICK time, not out of a
+   * render-time `const`. Writing a ref does not re-render, so a render-time
+   * value would be exactly as stale as the prop it was meant to replace — the
+   * first version of this fix was, and the test below caught it.
+   *
+   * Cleared by an effect on every change of `page`, not just when it reaches
+   * the requested number: anything else that rewrites `?page=` (a search or a
+   * filter resetting it to 1) is the URL overruling this footer, and the ref
+   * must not outlive that. An effect rather than a render-time guard because
+   * `react-hooks/refs` forbids touching a ref during render — and nothing is
+   * lost, since the ref is read in a click handler, which cannot run before
+   * that effect has flushed.
+   */
+  const requestedRef = React.useRef<number | null>(null);
+
+  React.useEffect(() => {
+    requestedRef.current = null;
+  }, [page]);
+
+  /** Step `delta` pages from wherever the last click left us. */
+  const step = (delta: number) => {
+    const from = requestedRef.current ?? page;
+    const target = Math.min(Math.max(from + delta, 1), Math.max(totalPages, 1));
+    if (target === from) return;
+    requestedRef.current = target;
+    updateParams({ page: target <= 1 ? undefined : String(target) });
+  };
+
   return (
     <div
       data-slot="table-pagination"
@@ -67,9 +105,7 @@ export function TablePagination({
           variant="outline"
           size="sm"
           disabled={disabled || page <= 1}
-          onClick={() =>
-            updateParams({ page: page - 1 <= 1 ? undefined : String(page - 1) })
-          }
+          onClick={() => step(-1)}
         >
           {dict.common.previous}
         </Button>
@@ -77,7 +113,7 @@ export function TablePagination({
           variant="outline"
           size="sm"
           disabled={disabled || page >= totalPages}
-          onClick={() => updateParams({ page: String(page + 1) })}
+          onClick={() => step(1)}
         >
           {dict.common.next}
         </Button>
