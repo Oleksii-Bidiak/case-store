@@ -8,6 +8,8 @@ import type {
 // /legal/[slug] test so both surfaces are pinned the same way.
 jest.mock("@/shared/api/pages-server", () => ({
   fetchPublishedPage: jest.fn(),
+  // The kind-less read behind `resolvePageRedirect` — how a moved page is found.
+  fetchPublishedPageAnyKind: jest.fn().mockResolvedValue(null),
   fetchPublishedPages: jest.fn().mockResolvedValue([]),
   pageDetailTag: (slug: string) => `page:${slug}`,
   PAGES_COLLECTION_TAG: "pages",
@@ -38,13 +40,19 @@ jest.mock("@/shared/lib/slug-redirect", () => ({
 
 import InfoDocPage, { generateMetadata } from "./page";
 import { notFound, permanentRedirect } from "next/navigation";
-import { fetchPublishedPage } from "@/shared/api/pages-server";
+import {
+  fetchPublishedPage,
+  fetchPublishedPageAnyKind,
+} from "@/shared/api/pages-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { INFO_SLUG_INLINED_ON_HUB } from "@/shared/config";
 
 const fetchPage = fetchPublishedPage as jest.MockedFunction<
   typeof fetchPublishedPage
+>;
+const fetchAnyKind = fetchPublishedPageAnyKind as jest.MockedFunction<
+  typeof fetchPublishedPageAnyKind
 >;
 const fetchSeo = fetchSeoSettings as jest.MockedFunction<
   typeof fetchSeoSettings
@@ -88,6 +96,9 @@ const settings: SeoSettingsEntity = {
 };
 
 afterEach(() => jest.clearAllMocks());
+// The kind-less lookup only matters on the 404 path; default it to "no such row"
+// so every other test keeps describing what it is actually about.
+beforeEach(() => fetchAnyKind.mockResolvedValue(null));
 
 describe("info/[slug] generateMetadata (TASK-435)", () => {
   const runMeta = (slug = "about") =>
@@ -159,22 +170,40 @@ describe("info/[slug] rendering + slug redirect", () => {
     expect(notFound).not.toHaveBeenCalled();
   });
 
-  it("404s when the slug belongs to a legal document (kind mismatch ⇒ null)", async () => {
-    // The API 404s the mismatch, so the fetcher returns null and this route
-    // behaves exactly as it would for a missing page — never rendering a legal
-    // document under an /info address.
+  // The API 404s the mismatch, so the body is never rendered here — but the
+  // address is not simply dead either: the row exists, at /legal/<slug>, and
+  // that is where the request belongs (a kind switch moves a page without
+  // touching its slug, and records nothing in the rename ledger).
+  it("308s to /legal when the slug belongs to a legal document", async () => {
     fetchPage.mockResolvedValue(null);
-    resolveRedirect.mockResolvedValue(null);
+    fetchAnyKind.mockResolvedValue(
+      makePage({ slug: "privacy-policy", kind: "LEGAL" }),
+    );
 
-    await expect(runPage("privacy-policy")).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(runPage("privacy-policy")).rejects.toThrow(
+      "NEXT_REDIRECT:/legal/privacy-policy",
+    );
 
     expect(fetchPage).toHaveBeenCalledWith("privacy-policy", "INFO");
+    expect(permanentRedirect).toHaveBeenCalledWith("/legal/privacy-policy");
+  });
+
+  it("404s a slug no published page of any kind carries", async () => {
+    fetchPage.mockResolvedValue(null);
+    fetchAnyKind.mockResolvedValue(null);
+    resolveRedirect.mockResolvedValue(null);
+
+    await expect(runPage("never-existed")).rejects.toThrow("NEXT_NOT_FOUND");
+
     expect(permanentRedirect).not.toHaveBeenCalled();
   });
 
   it("permanently redirects a renamed slug within /info", async () => {
     fetchPage.mockResolvedValue(null);
     resolveRedirect.mockResolvedValue("pro-nas");
+    fetchAnyKind.mockImplementation(async (slug: string) =>
+      slug === "pro-nas" ? makePage({ slug: "pro-nas", kind: "INFO" }) : null,
+    );
 
     await expect(runPage("about-us")).rejects.toThrow(
       "NEXT_REDIRECT:/info/pro-nas",
@@ -182,5 +211,24 @@ describe("info/[slug] rendering + slug redirect", () => {
 
     expect(resolveRedirect).toHaveBeenCalledWith("PAGE", "about-us");
     expect(permanentRedirect).toHaveBeenCalledWith("/info/pro-nas");
+  });
+
+  // The ledger is keyed by entity, not by route: a renamed LEGAL slug asked for
+  // under /info used to 308 into another /info address that then 404s. Resolving
+  // the rename through the row's own kind turns that chain into one honest hop.
+  it("sends a renamed LEGAL slug asked for under /info to its real address", async () => {
+    fetchPage.mockResolvedValue(null);
+    resolveRedirect.mockResolvedValue("delivery");
+    fetchAnyKind.mockImplementation(async (slug: string) =>
+      slug === "delivery"
+        ? makePage({ slug: "delivery", kind: "LEGAL" })
+        : null,
+    );
+
+    await expect(runPage("dostavka")).rejects.toThrow(
+      "NEXT_REDIRECT:/legal/delivery",
+    );
+
+    expect(permanentRedirect).toHaveBeenCalledWith("/legal/delivery");
   });
 });

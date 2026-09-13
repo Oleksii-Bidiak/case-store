@@ -6,6 +6,8 @@ import type { SeoSettingsEntity } from "@/shared/api/generated/models";
 // tiering behavior, matching the product route's generateMetadata (TASK-268 review).
 jest.mock("@/shared/api/pages-server", () => ({
   fetchPublishedPage: jest.fn(),
+  // The kind-less read behind `resolvePageRedirect` — how a moved page is found.
+  fetchPublishedPageAnyKind: jest.fn().mockResolvedValue(null),
   fetchPublishedPages: jest.fn().mockResolvedValue([]),
   pageDetailTag: (slug: string) => `page:${slug}`,
   PAGES_COLLECTION_TAG: "pages",
@@ -35,7 +37,10 @@ jest.mock("@/shared/lib/slug-redirect", () => ({
 
 import LegalDocPage, { generateMetadata } from "./page";
 import { notFound, permanentRedirect } from "next/navigation";
-import { fetchPublishedPage } from "@/shared/api/pages-server";
+import {
+  fetchPublishedPage,
+  fetchPublishedPageAnyKind,
+} from "@/shared/api/pages-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 
@@ -45,6 +50,9 @@ const resolveRedirect = resolveSlugRedirect as jest.MockedFunction<
 
 const fetchPage = fetchPublishedPage as jest.MockedFunction<
   typeof fetchPublishedPage
+>;
+const fetchAnyKind = fetchPublishedPageAnyKind as jest.MockedFunction<
+  typeof fetchPublishedPageAnyKind
 >;
 const fetchSeo = fetchSeoSettings as jest.MockedFunction<
   typeof fetchSeoSettings
@@ -88,6 +96,9 @@ const runMeta = (slug = "dostavka-ta-oplata") =>
   generateMetadata({ params: Promise.resolve({ slug }) });
 
 afterEach(() => jest.clearAllMocks());
+// The kind-less lookup only matters on the 404 path; default it to "no such row"
+// so every other test keeps describing what it is actually about.
+beforeEach(() => fetchAnyKind.mockResolvedValue(null));
 
 describe("legal/[slug] generateMetadata (TASK-268 review)", () => {
   it("brands a blank-meta page title with the %s template and derives the description", async () => {
@@ -159,6 +170,11 @@ describe("legal/[slug] slug-redirect (TASK-285)", () => {
   it("permanently redirects a renamed slug to its current address", async () => {
     fetchPage.mockResolvedValue(null); // dead slug — content fetch 404s
     resolveRedirect.mockResolvedValue("nova-adresa");
+    fetchAnyKind.mockImplementation(async (slug: string) =>
+      slug === "nova-adresa"
+        ? makePage({ slug: "nova-adresa", kind: "LEGAL" })
+        : null,
+    );
 
     await expect(runPage("stara-adresa")).rejects.toThrow(
       "NEXT_REDIRECT:/legal/nova-adresa",
@@ -191,8 +207,35 @@ describe("legal/[slug] slug-redirect (TASK-285)", () => {
     expect(fetchPage).toHaveBeenCalledWith("dostavka-ta-oplata", "LEGAL");
   });
 
-  it("404s a slug that belongs to a help page (kind mismatch ⇒ null)", async () => {
+  // Changing a page's kind moves its URL without touching its slug, and the
+  // rename ledger records nothing for that — before this, an indexed
+  // /legal/<slug> simply died the moment an operator switched «Вид сторінки».
+  it("308s to /info when the page was switched to the help surface", async () => {
+    fetchPage.mockResolvedValue(null); // no LEGAL page under this slug any more
+    fetchAnyKind.mockResolvedValue(makePage({ slug: "oplata", kind: "INFO" }));
+
+    await expect(runPage("oplata")).rejects.toThrow(
+      "NEXT_REDIRECT:/info/oplata",
+    );
+
+    expect(permanentRedirect).toHaveBeenCalledWith("/info/oplata");
+    expect(notFound).not.toHaveBeenCalled();
+    // The ledger has nothing to say about a kind change; don't waste the call.
+    expect(resolveRedirect).not.toHaveBeenCalled();
+  });
+
+  it("sends the inlined help page to the hub it is canonical on", async () => {
     fetchPage.mockResolvedValue(null);
+    fetchAnyKind.mockResolvedValue(makePage({ slug: "about", kind: "INFO" }));
+
+    await expect(runPage("about")).rejects.toThrow("NEXT_REDIRECT:/info");
+
+    expect(permanentRedirect).toHaveBeenCalledWith("/info");
+  });
+
+  it("404s a slug no published page of any kind carries", async () => {
+    fetchPage.mockResolvedValue(null);
+    fetchAnyKind.mockResolvedValue(null);
     resolveRedirect.mockResolvedValue(null);
 
     await expect(runPage("about")).rejects.toThrow("NEXT_NOT_FOUND");

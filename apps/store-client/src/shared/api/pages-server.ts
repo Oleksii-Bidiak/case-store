@@ -60,6 +60,35 @@ export async function fetchPublishedPage(
 }
 
 /**
+ * Fetch a single PUBLISHED page by slug WITHOUT narrowing to a kind — the
+ * deliberate exception to the rule above.
+ *
+ * Used by the two document routes only, and only after their own kind-narrowed
+ * read has already missed: at that point the question is no longer "may this
+ * route render this page" (the answer is no) but "did this page move to the
+ * other surface, and where should the stale URL point". The result is never
+ * rendered — it is turned into a 308 by `pageCanonicalPath()` — so this cannot
+ * re-open the wrong-kind hole `fetchPublishedPage`'s mandatory argument closes.
+ *
+ * HUB rows stay excluded by the API itself, whatever we ask for.
+ */
+export async function fetchPublishedPageAnyKind(
+  slug: string,
+): Promise<PageEntity | null> {
+  try {
+    const res = await serverFetch(
+      `${API_BASE_URL}/api/pages/${encodeURIComponent(slug)}`,
+      { next: { tags: [PAGES_COLLECTION_TAG, pageDetailTag(slug)] } },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as PageResponseEnvelope;
+    return body.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fetch all PUBLISHED pages of one kind (first page of up to {@link PAGE_SIZE}),
  * tagged for on-demand revalidation. Never throws — returns an empty list on
  * error. The kind keeps the `/legal` hub listing legal documents only and the

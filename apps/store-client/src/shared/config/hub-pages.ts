@@ -77,3 +77,33 @@ export function pageRouteFor(
       return null;
   }
 }
+
+/**
+ * The address a published row of this kind and slug actually ANSWERS at — the
+ * one to send a stale URL to.
+ *
+ * Distinct from {@link pageRouteFor}, which answers the sitemap's question
+ * ("does this row contribute a URL of its own?") and therefore returns null for
+ * the two rows whose text lives at an address they do not own. Here the question
+ * is the opposite one — "where did this row go?" — so the inlined page reports
+ * its canonical hub (`/info`) and a HUB row reports the listing route it
+ * describes, rather than nothing.
+ *
+ * Needed because a page's `kind` is editable, and changing it MOVES the page
+ * between `/legal/<slug>` and `/info/<slug>` without touching the slug. The
+ * `SlugRedirect` ledger is keyed on slug renames only, so it records nothing for
+ * such a move — the two document routes resolve it with this function instead.
+ */
+export function pageCanonicalPath(
+  kind: PageEntityKind,
+  slug: string,
+): string | null {
+  switch (kind) {
+    case "LEGAL":
+      return `/legal/${slug}`;
+    case "INFO":
+      return slug === INFO_SLUG_INLINED_ON_HUB ? "/info" : `/info/${slug}`;
+    case "HUB":
+      return hubRouteForSlug(slug);
+  }
+}

@@ -4,7 +4,7 @@ import {
   fetchPublishedPage,
   fetchPublishedPages,
 } from "@/shared/api/pages-server";
-import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
+import { resolvePageRedirect } from "@/shared/lib/page-redirect";
 import {
   INFO_DOC_HUB,
   LegalDocView,
@@ -107,20 +107,24 @@ export default async function InfoDocPage({ params }: InfoDocPageProps) {
 
   const page = await getPage(slug);
   if (!page) {
-    // TASK-285: an admin may have renamed the slug — serve a permanent (308)
-    // redirect to the current address instead of a dead 404. For those status
-    // codes to actually reach the wire, this route deliberately has NO
-    // route-level loading.tsx: a loading boundary streams a 200 shell before
-    // permanentRedirect()/notFound() can set the status (same rationale as
-    // /legal/[slug] and /categories/[slug]). The page is light — content is
-    // server-fetched before render — so no inner <Suspense> skeleton either.
+    // TASK-285: an admin may have renamed the slug — and since TASK-435 they may
+    // also have changed its KIND, which moves it to /legal/<slug> under the same
+    // slug and records nothing in the rename ledger. `resolvePageRedirect`
+    // answers both, and returns null for a real 404.
     //
-    // The redirect ledger is keyed by entity, not by route, so a page that moved
-    // between the two surfaces resolves here as well; the kind filter above has
-    // already ruled out serving it under the wrong one.
-    const newSlug = await resolveSlugRedirect("PAGE", slug);
-    if (newSlug) {
-      permanentRedirect(`/info/${newSlug}`);
+    // It also resolves the rename case THROUGH the page's kind, which matters
+    // here: the ledger is keyed by entity rather than by route, so a renamed
+    // LEGAL slug requested under /info/ used to 308 into another /info/ address
+    // that then 404s. It now 404s once, honestly.
+    //
+    // For those status codes to actually reach the wire, this route deliberately
+    // has NO route-level loading.tsx: a loading boundary streams a 200 shell
+    // before permanentRedirect()/notFound() can set the status (same rationale
+    // as /legal/[slug] and /categories/[slug]). The page is light — content is
+    // server-fetched before render — so no inner <Suspense> skeleton either.
+    const target = await resolvePageRedirect(slug, `/info/${slug}`);
+    if (target) {
+      permanentRedirect(target);
     }
     notFound();
   }
