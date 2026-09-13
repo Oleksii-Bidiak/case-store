@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "./fixtures/test";
 import { E2E_PRODUCT_SLUG } from "./fixtures/seed-e2e";
+import { addSeededProductToCart } from "./fixtures/cart";
 
 /**
  * Narrow-viewport regression (TASK-410): the storefront must never scroll
@@ -46,7 +47,15 @@ const VIEWPORT_HEIGHT = 844;
 // does not cost us the width assertion.
 const CATALOG_RENDER_TIMEOUT_MS = 15_000;
 
-/** Routes with a stable URL. The PDP is resolved from the catalog at runtime. */
+/** Same budget for the per-route content gate below — same cold-compile cause. */
+const CONTENT_RENDER_TIMEOUT_MS = 15_000;
+
+/**
+ * Routes with a stable URL and nothing to set up. The PDP is resolved from the
+ * catalog at runtime; `/checkout` needs a cart and gets its own test — an empty
+ * cart redirects it straight back to `/cart`, so listing it here would have
+ * measured `/cart` twice under a name that promised checkout.
+ */
 const STATIC_ROUTES = ["/", "/products", "/cart"] as const;
 
 interface OverflowReport {
@@ -100,6 +109,31 @@ async function measureOverflow(page: Page): Promise<OverflowReport> {
   });
 }
 
+/**
+ * What has to be on screen before a route may be measured.
+ *
+ * `#main-content` is NOT a usable gate: it is the root layout's `<main>`, server
+ * -rendered on every route, so waiting for it proves only that Next answered.
+ * `/products` and the PDP are client-fetched widgets behind `Suspense`, so the
+ * measurement then ran against a skeleton — a placeholder grid of fixed-width
+ * boxes that cannot overflow by construction. The spec was green for the two
+ * routes carrying the real risk.
+ *
+ * Each entry is therefore a marker of the route's OWN content. `/products`
+ * cannot use the heading, which the server renders above the grid; it waits for
+ * a card.
+ */
+const READY_SELECTOR: Record<string, string> = {
+  "/products": '#main-content a[href^="/products/"]',
+};
+
+/** Default marker: the route's own H1, which every storefront page renders. */
+const DEFAULT_READY_SELECTOR = "#main-content h1";
+
+function readySelector(route: string): string {
+  return READY_SELECTOR[route] ?? DEFAULT_READY_SELECTOR;
+}
+
 /** Open `route` at `width` and assert the document does not scroll sideways. */
 async function expectNoHorizontalScroll(
   page: Page,
@@ -109,9 +143,9 @@ async function expectNoHorizontalScroll(
   await page.setViewportSize({ width, height: VIEWPORT_HEIGHT });
   await page.goto(route);
 
-  // Measure a rendered page, not a skeleton: the root layout's <main> is
-  // present on every route.
-  await expect(page.locator("#main-content")).toBeVisible();
+  await expect(page.locator(readySelector(route)).first()).toBeVisible({
+    timeout: CONTENT_RENDER_TIMEOUT_MS,
+  });
 
   const { scrollWidth, clientWidth, offenders } = await measureOverflow(page);
 
@@ -162,6 +196,18 @@ test.describe("narrow viewports have no horizontal scroll", () => {
           : `/products/${E2E_PRODUCT_SLUG}`;
 
       await expectNoHorizontalScroll(page, target, width);
+    });
+
+    // The densest narrow layout in the storefront — address form, delivery
+    // picker and order summary on one screen — and the one plan 174 named that
+    // the first version of this spec quietly dropped. It needs a cart: an empty
+    // one redirects to `/cart` (checkout-view.tsx), so a bare `goto` would have
+    // measured the wrong page and passed.
+    test(`the checkout fits ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: VIEWPORT_HEIGHT });
+      await addSeededProductToCart(page);
+
+      await expectNoHorizontalScroll(page, "/checkout", width);
     });
   }
 });

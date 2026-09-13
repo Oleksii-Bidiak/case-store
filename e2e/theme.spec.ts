@@ -67,11 +67,17 @@ test.describe("manual theme switch", () => {
   test("a chosen dark theme is on <html> before the page renders", async ({
     page,
   }) => {
+    // Pin the OS side explicitly rather than leaning on Playwright's default:
+    // the computed-style assertion at the end is only meaningful if the system
+    // preference is LIGHT, so that nothing but the explicit choice can produce
+    // a dark background.
+    await page.emulateMedia({ colorScheme: "light" });
     await recordThemeAtFirstContent(page);
     await page.goto("/");
 
-    // The header switch lives at >=1100px; the default project viewport is
-    // 1280 wide, so it is on screen here.
+    // The header switch starts at `lg` (TASK-504 replaced the earlier
+    // `min-[1100px]`); the default project viewport is 1280 wide, so it is on
+    // screen here.
     const dark = themeOption(page, "Темна");
     await expect(dark).toBeVisible();
     await dark.click();
@@ -90,6 +96,20 @@ test.describe("manual theme switch", () => {
       "data-theme was missing when <main> appeared — the theme is applied after " +
         "first paint, which is a flash of the wrong theme on every load",
     ).toBe("dark");
+
+    // The mirror of the light test's check. The attribute on its own proves
+    // only that next-themes ran; it says nothing about whether the CSS under it
+    // reacts. This is the direction where that gap hid: the OS here is LIGHT, so
+    // every media-query-only rule stays light and only an attribute-driven one
+    // can flip. It covers the tokens and, through them, the `dark:` variant that
+    // shares their selector.
+    const background = await page.evaluate(
+      () => getComputedStyle(document.body).backgroundColor,
+    );
+    expect(
+      background,
+      "the dark tokens did not apply on a light OS — data-theme is cosmetic",
+    ).toBe("rgb(10, 10, 10)");
   });
 
   test("an explicit light choice beats a dark OS preference", async ({
@@ -113,5 +133,45 @@ test.describe("manual theme switch", () => {
       background,
       "the light tokens did not win over the dark media query",
     ).toBe("rgb(255, 255, 255)");
+  });
+
+  /**
+   * The tokens and the `dark:` utilities are two separate mechanisms, and for a
+   * while only the tokens honoured the choice: Tailwind's default `dark` variant
+   * is `@media (prefers-color-scheme: dark)`, so on a dark OS with «Світла»
+   * chosen the page went light while `shared/ui`'s inputs, outline buttons and
+   * badges stayed dark on top of it.
+   *
+   * `Input`'s base is `bg-transparent` with `dark:bg-input/30` over it, so the
+   * two states are cleanly distinguishable: transparent means the variant did
+   * not fire, opaque means it did.
+   */
+  test("the dark: utilities follow the explicit choice, not the OS", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.goto("/products");
+
+    const filterSearch = page.getByLabel("Пошук", { exact: true }).first();
+    await expect(filterSearch).toBeVisible();
+
+    const backgroundOf = () =>
+      filterSearch.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    // Untouched on a dark OS: the variant fires, so the field is not transparent.
+    expect(
+      await backgroundOf(),
+      "dark: did not apply on a dark OS with no explicit choice",
+    ).not.toBe("rgba(0, 0, 0, 0)");
+
+    await themeOption(page, "Світла").click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
+    expect(
+      await backgroundOf(),
+      "a dark: utility kept following the OS after an explicit light choice — " +
+        "the tokens and the utilities disagree, so form fields stay dark on a " +
+        "light page",
+    ).toBe("rgba(0, 0, 0, 0)");
   });
 });
