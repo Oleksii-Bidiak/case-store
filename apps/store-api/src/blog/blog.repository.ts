@@ -15,6 +15,21 @@ const LOCK_RESOURCE = 'blog-categories';
 /** Blog categories are ONE global list — a single, null-keyed bucket. */
 const BUCKET_LOCK_KEY = lockKey(LOCK_RESOURCE, null);
 
+/**
+ * Listing clause for the PUBLIC post list (TASK-436) — the mirror of
+ * `publicKindWhere()` in `pages.repository.ts`.
+ *
+ * `includeUnlisted = false` (what every LIST surface asks for) hides
+ * `listed = false` rows. `includeUnlisted = true` (what `sitemap.xml` asks for)
+ * returns every published post. There is no third mode and no default: the
+ * argument is non-optional so both sides of the invariant stay written down at
+ * each call site. Detail reads (`findPublishedBySlug`) never consult it at all —
+ * an unlisted post's own URL must keep working.
+ */
+function listedWhere(includeUnlisted: boolean): Prisma.BlogPostWhereInput {
+  return includeUnlisted ? {} : { listed: true };
+}
+
 /** Page size used when the admin asks for a page but names no `limit` (TASK-357). */
 const DEFAULT_ADMIN_PAGE_SIZE = 20;
 
@@ -40,16 +55,43 @@ const CATEGORY_INCLUDE = {
   category: { select: { id: true, slug: true, name: true } },
 } satisfies Prisma.BlogPostInclude;
 
-/** Parameters for the public (published-only) post list. */
-export interface FindAllPostsParams {
+/**
+ * Category + free-text + pagination filters shared by the public and the admin
+ * post list. Deliberately carries NO visibility flag — see
+ * {@link FindAllPostsParams}.
+ */
+export interface BlogPostSearchParams {
   page: number;
   limit: number;
   category?: string;
   q?: string;
 }
 
+/**
+ * Parameters for the public (published-only) post list.
+ *
+ * `includeUnlisted` is REQUIRED, and that is the whole design (TASK-436). Two
+ * consumers share this one read and need OPPOSITE answers:
+ *
+ *  - the `/blog` grid, the header search suggestions and "Читайте також" must
+ *    NOT show `listed = false` posts;
+ *  - `sitemap.xml` MUST list them — an unlisted post is still a public,
+ *    indexable document, and dropping it from the sitemap is what would turn
+ *    `listed` into the cloaking design the owner rejected (see the field's doc
+ *    comment in schema.prisma).
+ *
+ * So neither default is safe: "filter by default" breaks the sitemap, "don't
+ * filter by default" breaks the lists. Making the flag a required property means
+ * a caller cannot silently inherit the wrong one — the code does not compile
+ * until it states which side it is on. The admin list has its own params type
+ * for the same reason: it is never subject to this flag.
+ */
+export interface FindAllPostsParams extends BlogPostSearchParams {
+  includeUnlisted: boolean;
+}
+
 /** Parameters for the admin post list (all statuses). */
-export interface FindAllAdminPostsParams extends FindAllPostsParams {
+export interface FindAllAdminPostsParams extends BlogPostSearchParams {
   status?: PublishStatus;
 }
 
@@ -82,6 +124,12 @@ export interface CreateBlogPostInput {
   coverBlurDataUrl?: string | null;
   readingMinutes?: number | null;
   featured?: boolean;
+  /** Listing visibility; omitted, the column default (`true`) applies. */
+  listed?: boolean;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  keywords?: string[];
+  ogImage?: string | null;
   status: PublishStatus;
   publishedAt: Date | null;
   scheduledAt: Date | null;
@@ -99,6 +147,12 @@ export interface UpdateBlogPostInput {
   coverBlurDataUrl?: string | null;
   readingMinutes?: number | null;
   featured?: boolean;
+  listed?: boolean;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  /** Absent leaves the stored tags alone; `[]` clears them (TASK-437). */
+  keywords?: string[];
+  ogImage?: string | null;
   status?: PublishStatus;
   publishedAt?: Date | null;
   scheduledAt?: Date | null;
@@ -152,7 +206,7 @@ export class BlogRepository implements PublishablePort {
    * lists (category filters by slug, `q` searches title + excerpt). The publish
    * gate is applied separately by each caller.
    */
-  private buildSearchWhere(params: FindAllPostsParams): Prisma.BlogPostWhereInput {
+  private buildSearchWhere(params: BlogPostSearchParams): Prisma.BlogPostWhereInput {
     const { category, q } = params;
     return {
       ...(category ? { category: { slug: category } } : {}),
@@ -170,13 +224,14 @@ export class BlogRepository implements PublishablePort {
   /**
    * Find PUBLISHED posts with pagination, ordered newest-first (featured posts
    * float to the top). Public storefront use — `status = PUBLISHED` is the
-   * single visibility gate.
+   * publish gate, `listed` the listing gate (see {@link listedWhere}).
    */
   async findAll(params: FindAllPostsParams): Promise<PaginatedPostsResult> {
     const { page, limit } = params;
     const skip = (page - 1) * limit;
     const where: Prisma.BlogPostWhereInput = {
       status: PublishStatus.PUBLISHED,
+      ...listedWhere(params.includeUnlisted),
       ...this.buildSearchWhere(params),
     };
 
@@ -197,6 +252,10 @@ export class BlogRepository implements PublishablePort {
   /**
    * Find a single PUBLISHED post by slug. Drafts / scheduled posts resolve to
    * null (the service maps that to a 404).
+   *
+   * Deliberately ignores `listed`: an unlisted post is published and its own URL
+   * must keep answering 200. Hiding it here is exactly the cloaking-adjacent
+   * behaviour `listed` was chosen to avoid.
    */
   findPublishedBySlug(slug: string): Promise<BlogPostWithCategory | null> {
     return this.prisma.blogPost.findFirst({
@@ -243,11 +302,24 @@ export class BlogRepository implements PublishablePort {
    * not be able to put a draft back on the hub. Order is NOT meaningful here
    * (Prisma returns rows in its own order); the caller re-applies the engine's
    * ranking.
+   *
+   * `includeUnlisted` is required for the same reason it is on
+   * {@link FindAllPostsParams}, and for a sharper one: this read is the SECOND
+   * path into the public list. The index knows nothing about `listed`, so
+   * without this clause a `listed = false` post reappears the moment a visitor
+   * types a word from it — on the very surfaces (`/blog`, the header
+   * suggestions) the flag exists to keep it off. The two waves that created the
+   * index and the flag landed on separate branches, so this is the one place
+   * where they have to be told about each other.
    */
-  findPublishedByIds(ids: string[]): Promise<BlogPostWithCategory[]> {
+  findPublishedByIds(ids: string[], includeUnlisted: boolean): Promise<BlogPostWithCategory[]> {
     if (ids.length === 0) return Promise.resolve([]);
     return this.prisma.blogPost.findMany({
-      where: { id: { in: ids }, status: PublishStatus.PUBLISHED },
+      where: {
+        id: { in: ids },
+        status: PublishStatus.PUBLISHED,
+        ...listedWhere(includeUnlisted),
+      },
       include: CATEGORY_INCLUDE,
     });
   }
@@ -273,6 +345,11 @@ export class BlogRepository implements PublishablePort {
         coverBlurDataUrl: data.coverBlurDataUrl ?? null,
         readingMinutes: data.readingMinutes ?? null,
         featured: data.featured ?? false,
+        listed: data.listed ?? true,
+        metaTitle: data.metaTitle ?? null,
+        metaDescription: data.metaDescription ?? null,
+        keywords: data.keywords ?? [],
+        ogImage: data.ogImage ?? null,
         status: data.status,
         publishedAt: data.publishedAt,
         scheduledAt: data.scheduledAt,

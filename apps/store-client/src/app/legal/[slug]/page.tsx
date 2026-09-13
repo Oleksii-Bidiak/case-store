@@ -4,23 +4,30 @@ import {
   fetchPublishedPage,
   fetchPublishedPages,
 } from "@/shared/api/pages-server";
-import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
+import { resolvePageRedirect } from "@/shared/lib/page-redirect";
 import { LegalDocView, type LegalOtherDoc } from "@/widgets/legal-doc";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
-import { resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
+import {
+  buildOgImages,
+  resolveSeo,
+  resolveSiteName,
+  toMetadataTitle,
+} from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
+import { SITE_URL, dict } from "@/shared/config";
 
 /**
- * Fetch a published page by slug through the ISR-tagged server fetcher; returns
- * null on 404 (draft / scheduled / missing) or any API error.
+ * Fetch a published LEGAL page by slug through the ISR-tagged server fetcher;
+ * returns null on 404 (draft / scheduled / missing / wrong kind) or any API
+ * error. The explicit kind is what keeps a help page from ever being served
+ * under a legal address (TASK-435) — the API 404s the mismatch.
  */
-const getPage = fetchPublishedPage;
+const getPage = (slug: string) => fetchPublishedPage(slug, "LEGAL");
 
 /** Other published pages (for the "інші правові документи" grid). Never throws. */
 async function getOtherDocs(currentSlug: string): Promise<LegalOtherDoc[]> {
-  const pages = await fetchPublishedPages();
+  const pages = await fetchPublishedPages("LEGAL");
   return pages
     .filter((page) => page.slug !== currentSlug)
     .map((page) => ({ slug: page.slug, title: page.title }));
@@ -43,20 +50,22 @@ export async function generateMetadata({
   }
 
   // Precedence via the shared helper — identical tiering to the product route
-  // (TASK-268 review): the page's own metaTitle/metaDescription (tier 1) →
-  // SeoSettings defaults (tier 2) → the page title/excerpt-or-body (tier 3),
-  // with the `%s` brand template + 60/155 truncation applied. This makes the
-  // live `/legal/<slug>` metadata match the admin SERP preview exactly, and
-  // properly brands/optimizes the TASK-184 canonical legal pages.
+  // (TASK-268 review): the page's own metaTitle/metaDescription (tier 1) → the
+  // page title/excerpt-or-body (tier 2) → SeoSettings defaults (tier 3), with
+  // the `%s` brand template + 60/155 truncation applied (order inverted by
+  // TASK-432). This makes the live `/legal/<slug>` metadata match the admin SERP
+  // preview exactly, and properly brands the TASK-184 canonical legal pages.
   const resolved = resolveSeo({
     entityTitle: page.metaTitle,
     entityDescription: page.metaDescription,
     settings: seo,
     content: { name: page.title, description: page.excerpt || page.content },
   });
+  // TASK-433 — admin-managed store name (title template + og:site_name).
+  const siteName = resolveSiteName(seo);
   const title = toMetadataTitle(resolved, {
     settings: seo,
-    siteName: SITE_NAME,
+    siteName,
     fallback: page.title,
   });
   const description = resolved.description;
@@ -66,12 +75,22 @@ export async function generateMetadata({
     title,
     description,
     alternates: { canonical },
+    // Replaces the root layout's `openGraph` wholesale (Next merges metadata
+    // shallowly), so siteName/locale/images are re-stated here — a legal page
+    // has no image of its own, so `buildOgImages` resolves to the page's own
+    // `ogImage` (TASK-437), then the admin default, then the brand card, rather
+    // than leaving the preview image-less.
     openGraph: {
       title: title.absolute,
       description,
       url: canonical,
+      siteName,
+      locale: "uk_UA",
       type: "article",
-      images: resolved.ogImage ? [{ url: resolved.ogImage }] : undefined,
+      images: buildOgImages({
+        entityOgImage: page.ogImage,
+        defaultOgImage: resolved.ogImage,
+      }),
     },
   };
 }
@@ -82,16 +101,19 @@ export default async function LegalDocPage({ params }: LegalDocPageProps) {
   // A draft / missing page resolves to 404 on the API; any error → Next 404.
   const page = await getPage(slug);
   if (!page) {
-    // TASK-285: an admin may have renamed the slug — serve a permanent (308)
-    // redirect to the current address instead of a dead 404. For the status
-    // codes to actually reach the wire, this route deliberately has NO
-    // route-level loading.tsx: a loading boundary streams a 200 shell before
-    // permanentRedirect()/notFound() can set the status (same rationale as
-    // /categories/[slug]). The page is light — content is server-fetched
+    // TASK-285: an admin may have renamed the slug — and since TASK-435 they may
+    // also have changed its KIND, which moves it to /info/<slug> under the same
+    // slug and records nothing in the rename ledger. `resolvePageRedirect`
+    // answers both, and returns null for a real 404.
+    //
+    // For the status codes to actually reach the wire, this route deliberately
+    // has NO route-level loading.tsx: a loading boundary streams a 200 shell
+    // before permanentRedirect()/notFound() can set the status (same rationale
+    // as /categories/[slug]). The page is light — content is server-fetched
     // before render — so no inner <Suspense> skeleton is needed either.
-    const newSlug = await resolveSlugRedirect("PAGE", slug);
-    if (newSlug) {
-      permanentRedirect(`/legal/${newSlug}`);
+    const target = await resolvePageRedirect(slug, `/legal/${slug}`);
+    if (target) {
+      permanentRedirect(target);
     }
     notFound();
   }

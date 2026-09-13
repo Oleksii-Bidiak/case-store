@@ -84,6 +84,59 @@ export class BlogPostEntity {
   @ApiProperty({ description: 'Whether the post is the featured hero post', example: false })
   featured!: boolean;
 
+  @ApiProperty({
+    description:
+      'Whether the post appears in listings. `false` keeps it published and reachable at ' +
+      'its own URL (and in sitemap.xml) while omitting it from the /blog grid, the search ' +
+      'suggestions and the related-posts block (TASK-436).',
+    example: true,
+  })
+  listed!: boolean;
+
+  @ApiProperty({
+    description:
+      'SEO meta title override (TASK-437). Null = the storefront derives the title from ' +
+      '`title` through the shared resolveSeo chain.',
+    example: 'iPhone 16 чи iPhone 15: що брати у 2026 році',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  metaTitle!: string | null;
+
+  @ApiProperty({
+    description:
+      'SEO meta description override (TASK-437). Null = the storefront derives it from ' +
+      '`excerpt`.',
+    example: 'Порівняли камери, автономність і ціну — кому апгрейд вартий грошей.',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  metaDescription!: string | null;
+
+  @ApiProperty({
+    description:
+      'Internal content tags (TASK-437). Never rendered as a `<meta name="keywords">` tag.',
+    example: ['iphone', 'порівняння'],
+    type: [String],
+    // Optional in the CONTRACT, never absent from a response — see
+    // ProductEntity.keywords for why (TASK-437).
+    required: false,
+  })
+  keywords!: string[];
+
+  @ApiProperty({
+    description:
+      'Open Graph image for this article — wins over `coverImageUrl` in the storefront’s ' +
+      '`buildOgImages` chain (TASK-437).',
+    example: 'https://cdn.example.com/og/iphone16-vs-15.jpg',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  ogImage!: string | null;
+
   @ApiProperty({ description: 'Category summary', type: BlogPostCategorySummary })
   category!: BlogPostCategorySummary;
 
@@ -135,6 +188,11 @@ export class BlogPostEntity {
     authorName: string;
     readingMinutes: number | null;
     featured: boolean;
+    listed: boolean;
+    metaTitle?: string | null;
+    metaDescription?: string | null;
+    keywords?: string[];
+    ogImage?: string | null;
     status: PublishStatus;
     publishedAt: Date | null;
     scheduledAt: Date | null;
@@ -153,6 +211,11 @@ export class BlogPostEntity {
     entity.authorName = post.authorName;
     entity.readingMinutes = post.readingMinutes;
     entity.featured = post.featured;
+    entity.listed = post.listed;
+    entity.metaTitle = post.metaTitle ?? null;
+    entity.metaDescription = post.metaDescription ?? null;
+    entity.keywords = post.keywords ?? [];
+    entity.ogImage = post.ogImage ?? null;
     entity.category = {
       id: post.category.id,
       slug: post.category.slug,

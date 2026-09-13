@@ -51,6 +51,7 @@ function makeBlogPost(overrides: Partial<BlogPostEntity> = {}): BlogPostEntity {
     authorName: "Олег Пилипенко",
     readingMinutes: 6,
     featured: false,
+    listed: true,
     category: { id: "cat-1", slug: "guides", name: "Гайди" },
     status: "PUBLISHED",
     publishedAt: "2026-06-28T09:00:00.000Z",

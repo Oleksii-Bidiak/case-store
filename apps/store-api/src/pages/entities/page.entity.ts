@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { PublishStatus } from '@prisma/client';
+import { PageKind, PublishStatus } from '@prisma/client';
 
 /**
  * Domain entity representing a static / service page.
@@ -16,6 +16,15 @@ export class PageEntity {
 
   @ApiProperty({ description: 'URL-friendly slug', example: 'privacy-policy' })
   slug!: string;
+
+  @ApiProperty({
+    description:
+      'What this row is and where it is served — LEGAL: /legal/<slug>; INFO: /info/<slug>; ' +
+      'HUB: meta tags for the existing hub route named by the slug, no address of its own',
+    enum: PageKind,
+    example: PageKind.LEGAL,
+  })
+  kind!: PageKind;
 
   @ApiProperty({ description: 'Page title', example: 'Privacy Policy' })
   title!: string;
@@ -52,6 +61,28 @@ export class PageEntity {
     required: false,
   })
   metaDescription!: string | null;
+
+  @ApiProperty({
+    description:
+      'Internal content tags (TASK-437). Never rendered as a `<meta name="keywords">` tag.',
+    example: ['доставка', 'нова пошта'],
+    type: [String],
+    // Optional in the CONTRACT, never absent from a response — see
+    // ProductEntity.keywords for why (TASK-437).
+    required: false,
+  })
+  keywords!: string[];
+
+  @ApiProperty({
+    description:
+      'Open Graph image for this page — first tier of the storefront’s `buildOgImages` ' +
+      'chain (TASK-437).',
+    example: 'https://cdn.example.com/og/delivery.jpg',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  ogImage!: string | null;
 
   @ApiProperty({
     description: 'Publish lifecycle state — PUBLISHED is the public-visibility gate',
@@ -101,11 +132,14 @@ export class PageEntity {
   static fromPrisma(page: {
     id: string;
     slug: string;
+    kind: PageKind;
     title: string;
     content: string;
     excerpt: string | null;
     metaTitle: string | null;
     metaDescription: string | null;
+    keywords?: string[];
+    ogImage?: string | null;
     status: PublishStatus;
     publishedAt: Date | null;
     scheduledAt: Date | null;
@@ -117,11 +151,14 @@ export class PageEntity {
     const entity = new PageEntity();
     entity.id = page.id;
     entity.slug = page.slug;
+    entity.kind = page.kind;
     entity.title = page.title;
     entity.content = page.content;
     entity.excerpt = page.excerpt;
     entity.metaTitle = page.metaTitle;
     entity.metaDescription = page.metaDescription;
+    entity.keywords = page.keywords ?? [];
+    entity.ogImage = page.ogImage ?? null;
     entity.status = page.status;
     entity.publishedAt = page.publishedAt;
     entity.scheduledAt = page.scheduledAt;

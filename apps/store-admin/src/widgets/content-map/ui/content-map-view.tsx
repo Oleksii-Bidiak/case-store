@@ -8,7 +8,10 @@ import {
   useAdminFaqControllerFindAll,
   type FaqItemEntity,
 } from "@/entities/faq";
-import { useAdminPageControllerFindAll } from "@/entities/page";
+import {
+  useAdminPageControllerFindAll,
+  type PageEntity,
+} from "@/entities/page";
 import { useAdminBlogControllerFindAll } from "@/entities/blog";
 import { dict } from "@/shared/config";
 import {
@@ -20,7 +23,7 @@ import {
 import { ContentMapPageGroup } from "./content-map-page-group";
 import { type ZoneCountState } from "./content-map-zone-card";
 
-/** The four independent count sources feeding the nine zones. */
+/** The four independent count sources feeding the eleven zones. */
 interface CountSources {
   banners: {
     data: BannerEntity[] | undefined;
@@ -32,7 +35,14 @@ interface CountSources {
     isLoading: boolean;
     isError: boolean;
   };
-  pages: { total: number | undefined; isLoading: boolean; isError: boolean };
+  // Rows, not a total: since TASK-435 the Pages screen holds three kinds, and
+  // one fetch counted per kind in memory beats three near-identical requests
+  // (same trade-off the banner placements already make).
+  pages: {
+    data: PageEntity[] | undefined;
+    isLoading: boolean;
+    isError: boolean;
+  };
   blog: { total: number | undefined; isLoading: boolean; isError: boolean };
 }
 
@@ -70,10 +80,13 @@ function resolveZoneCountState(
       };
     }
     case "pages": {
-      const { total, isLoading, isError } = sources.pages;
+      const { data, isLoading, isError } = sources.pages;
       if (isLoading) return { status: "loading" };
-      if (isError || total === undefined) return { status: "error" };
-      return { status: "ready", value: total };
+      if (isError || !data) return { status: "error" };
+      return {
+        status: "ready",
+        value: data.filter((page) => page.kind === count.pageKind).length,
+      };
     }
     case "blog": {
       const { total, isLoading, isError } = sources.blog;
@@ -86,11 +99,12 @@ function resolveZoneCountState(
 
 /**
  * «Карта контенту» — the content-map widget (TASK-264-B). Issues exactly four
- * list queries (banners collapse to one shared fetch, counted per placement
- * client-side; faq/pages/blog one each), resolves every zone's active count
- * from them, and renders the five storefront page frames plus a static
- * catalog/PDP note. Each query is handled independently, so a single failed
- * count degrades only that zone's marker — the navigation links always render.
+ * list queries (banners collapse to one shared fetch counted per placement
+ * client-side, and pages likewise per kind since TASK-435; faq/blog one each),
+ * resolves every zone's active count from them, and renders the five storefront
+ * page frames plus a static catalog/PDP note. Each query is handled
+ * independently, so a single failed count degrades only that zone's marker — the
+ * navigation links always render.
  */
 export function ContentMapView() {
   // Banners: one fetch for all four placement counts (mirrors AdminBannerTable's
@@ -98,11 +112,13 @@ export function ContentMapView() {
   const bannersQuery = useAdminBannerControllerFindAll({ status: "PUBLISHED" });
   // FAQ: the admin list returns every item (any status); active = isActive.
   const faqQuery = useAdminFaqControllerFindAll();
-  // Pages/blog: only meta.total is read, so limit:1 keeps the body tiny. This is
-  // a distinct query key from the admin tables' calls — it does not share cache.
+  // Pages: one fetch for all three kind counts, grouped client-side. `limit: 100`
+  // is the API's maximum and comfortably above any real page count; blog reads
+  // only meta.total, so limit:1 keeps that body tiny. Both are distinct query
+  // keys from the admin tables' calls — they do not share cache.
   const pagesQuery = useAdminPageControllerFindAll({
     status: "PUBLISHED",
-    limit: 1,
+    limit: 100,
   });
   const blogQuery = useAdminBlogControllerFindAll({
     status: "PUBLISHED",
@@ -121,7 +137,7 @@ export function ContentMapView() {
       isError: faqQuery.isError,
     },
     pages: {
-      total: pagesQuery.data?.meta?.total,
+      data: pagesQuery.data?.data,
       isLoading: pagesQuery.isLoading,
       isError: pagesQuery.isError,
     },

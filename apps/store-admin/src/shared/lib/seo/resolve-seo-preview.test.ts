@@ -34,17 +34,32 @@ describe("resolveSeoPreviewTitle — precedence", () => {
     expect(r).toEqual({ text: "Кастомний заголовок", tier: "own" });
   });
 
-  it("tier 2: defaultTitle wins over content when own is blank (verbatim)", () => {
+  // TASK-432 — inverted together with the storefront: the entity's own content
+  // outranks the single store-wide default. Keep both sides in step.
+  it("tier 2: content wins over defaultTitle when own is blank (derived, branded)", () => {
     const r = resolveSeoPreviewTitle({
       entityTitle: "   ",
       defaultTitle: "Найкращі аксесуари",
       contentName: "iPhone 15 Case",
       titleTemplate: template,
     });
+    expect(r).toEqual({
+      text: "iPhone 15 Case | MobileStore",
+      tier: "derived",
+    });
+  });
+
+  it("tier 3: defaultTitle fires only when own AND content are blank (verbatim)", () => {
+    const r = resolveSeoPreviewTitle({
+      entityTitle: "   ",
+      defaultTitle: "Найкращі аксесуари",
+      contentName: "  ",
+      titleTemplate: template,
+    });
     expect(r).toEqual({ text: "Найкращі аксесуари", tier: "default" });
   });
 
-  it("tier 3: derived from content name, branded via the template", () => {
+  it("tier 2: derived from content name, branded via the template", () => {
     const r = resolveSeoPreviewTitle({
       contentName: "iPhone 15 Case",
       titleTemplate: template,
@@ -55,7 +70,7 @@ describe("resolveSeoPreviewTitle — precedence", () => {
     });
   });
 
-  it("tier 3: applies a custom template to the derived name", () => {
+  it("tier 2: applies a custom template to the derived name", () => {
     const r = resolveSeoPreviewTitle({
       contentName: "Чохли",
       titleTemplate: resolveEffectiveTitleTemplate(
@@ -95,10 +110,20 @@ describe("resolveSeoPreviewDescription — precedence", () => {
     expect(r).toEqual({ text: "Опис від адміна", tier: "own" });
   });
 
-  it("tier 2: defaultDescription wins over content", () => {
+  // TASK-432 — inverted; see the title block above.
+  it("tier 2: content wins over defaultDescription", () => {
     const r = resolveSeoPreviewDescription({
       defaultDescription: "Магазин преміальних аксесуарів",
       contentDescription: "Похідний опис",
+    });
+    expect(r).toEqual({ text: "Похідний опис", tier: "derived" });
+  });
+
+  it("tier 3: defaultDescription fires only when own AND content are blank", () => {
+    const r = resolveSeoPreviewDescription({
+      entityDescription: "  ",
+      defaultDescription: "Магазин преміальних аксесуарів",
+      contentDescription: "   ",
     });
     expect(r).toEqual({
       text: "Магазин преміальних аксесуарів",
@@ -106,7 +131,7 @@ describe("resolveSeoPreviewDescription — precedence", () => {
     });
   });
 
-  it("tier 3: derives from content, no template applied", () => {
+  it("tier 2: derives from content, no template applied", () => {
     const r = resolveSeoPreviewDescription({
       contentDescription: "  Похідний опис товару  ",
     });
@@ -124,6 +149,23 @@ describe("resolveSeoPreviewDescription — precedence", () => {
     expect(r.text).not.toContain("<");
     expect(r.text).not.toContain("*");
     expect(r.text.endsWith("…")).toBe(true);
+  });
+
+  /**
+   * The storefront twin of this assertion lives in
+   * `apps/store-client/src/shared/lib/seo/resolveSeo.test.ts` — the admin SERP
+   * preview must show what the live `<head>` will actually render (TASK-432).
+   */
+  it("a product's own content beats the global default, same as the storefront", () => {
+    const r = resolveSeoPreviewDescription({
+      defaultDescription: "Магазин преміальних аксесуарів",
+      contentDescription:
+        "Прозорий чохол із протиударними кутами та підтримкою MagSafe.",
+    });
+    expect(r.text).toBe(
+      "Прозорий чохол із протиударними кутами та підтримкою MagSafe.",
+    );
+    expect(r.tier).toBe("derived");
   });
 
   it("empty: no tier yields usable text", () => {

@@ -9,6 +9,10 @@ const PAGE_SIZE = 100;
  * Fetch every PUBLISHED static page across all pages using the Orval plain
  * fetcher (server-only — NOT a React hook). Used by app/sitemap.ts.
  *
+ * Deliberately unfiltered by kind: the sitemap wants BOTH page surfaces, and the
+ * public list already omits HUB rows (they are meta tags for a route, not pages
+ * — TASK-435). The caller branches on `page.kind` to build each URL.
+ *
  * Throws on HTTP error; the caller (sitemap) wraps this in try/catch and falls
  * back to its other routes so a fetch failure never breaks the route.
  */

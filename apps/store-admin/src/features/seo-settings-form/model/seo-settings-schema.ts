@@ -52,6 +52,16 @@ function isHttpUrl(value: string): boolean {
  * URL, then split into an array by the mapper.
  */
 export const seoSettingsSchema = z.object({
+  // Store display name (TASK-433). 120 mirrors the API DTO's @MaxLength(120) —
+  // the two limits must stay in step or the form lets through what the backend
+  // then rejects with a generic 400.
+  siteName: z
+    .string()
+    .trim()
+    .max(120, e.siteNameTooLong)
+    .optional()
+    .or(z.literal("")),
+
   defaultMetaTitle: z
     .string()
     .trim()
@@ -133,6 +143,7 @@ export function seoSettingsFormValuesToDto(
     clean(normalizeSiteVerificationValue(v ?? ""));
 
   return {
+    siteName: clean(values.siteName),
     defaultMetaTitle: clean(values.defaultMetaTitle),
     defaultMetaDescription: clean(values.defaultMetaDescription),
     titleTemplate: clean(values.titleTemplate),
@@ -154,6 +165,7 @@ export function mapSettingsToFormValues(
   settings: SeoSettingsEntity,
 ): SeoSettingsFormInput {
   return {
+    siteName: settings.siteName ?? "",
     defaultMetaTitle: settings.defaultMetaTitle ?? "",
     defaultMetaDescription: settings.defaultMetaDescription ?? "",
     titleTemplate: settings.titleTemplate ?? "",

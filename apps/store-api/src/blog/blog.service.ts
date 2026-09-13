@@ -78,6 +78,11 @@ export class BlogService {
    * `null` answer (no engine, a failed request, or zero hits over a possibly
    * stale index) falls through to the Prisma `contains` scan, exactly as the
    * product path does.
+   *
+   * `includeUnlisted` defaults to FALSE here — the safe side for the callers that
+   * are lists (the `/blog` grid, the header search suggestions, related posts).
+   * `sitemap.xml` is the only caller that flips it, and it has to say so out loud
+   * (see `FindAllPostsParams`).
    */
   async findAll(query: BlogPostListQueryDto): Promise<PaginatedPostsResponse> {
     const params: FindAllPostsParams = {
@@ -85,6 +90,7 @@ export class BlogService {
       limit: query.limit ?? 9,
       category: query.category,
       q: query.q,
+      includeUnlisted: query.includeUnlisted ?? false,
     };
 
     const indexed = await this.findAllFromIndex(params);
@@ -125,7 +131,10 @@ export class BlogService {
       });
     if (!hits || hits.ids.length === 0) return null;
 
-    const posts = await this.blogRepository.findPublishedByIds(hits.ids);
+    // The index has no `listed` field, so the flag is enforced on the re-read —
+    // otherwise searching for a word from an unlisted post puts it straight back
+    // on the hub and in the header suggestions.
+    const posts = await this.blogRepository.findPublishedByIds(hits.ids, params.includeUnlisted);
     const byId = new Map(posts.map((post) => [post.id, post]));
     const data = hits.ids
       .map((id) => byId.get(id))
@@ -211,6 +220,11 @@ export class BlogService {
       coverBlurDataUrl: dto.coverBlurDataUrl,
       readingMinutes: dto.readingMinutes,
       featured: dto.featured,
+      listed: dto.listed,
+      metaTitle: dto.metaTitle,
+      metaDescription: dto.metaDescription,
+      keywords: dto.keywords,
+      ogImage: dto.ogImage,
       status: publishState.status,
       publishedAt: publishState.publishedAt,
       scheduledAt: publishState.scheduledAt,
@@ -277,6 +291,11 @@ export class BlogService {
       coverBlurDataUrl: dto.coverBlurDataUrl,
       readingMinutes: dto.readingMinutes,
       featured: dto.featured,
+      listed: dto.listed,
+      metaTitle: dto.metaTitle,
+      metaDescription: dto.metaDescription,
+      keywords: dto.keywords,
+      ogImage: dto.ogImage,
     };
 
     if (dto.status !== undefined) {

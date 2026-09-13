@@ -3,17 +3,23 @@ import { LegalHubView, type LegalHubDoc } from "@/widgets/legal-doc";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import { fetchPublishedPages } from "@/shared/api/pages-server";
+import { buildHubMetadata } from "@/shared/lib/seo";
 import { SITE_URL, dict } from "@/shared/config";
 
-export const metadata: Metadata = {
-  title: dict.legal.hub.heading,
-  description: dict.legal.hub.subtitle,
-  alternates: { canonical: `${SITE_URL}/legal` },
-};
+// TASK-435 — admin-managed via the `legal` HUB page row; the hub's own headings
+// stay as the fallback.
+export function generateMetadata(): Promise<Metadata> {
+  return buildHubMetadata({
+    slug: "legal",
+    canonical: `${SITE_URL}/legal`,
+    fallbackTitle: dict.legal.hub.heading,
+    fallbackDescription: dict.legal.hub.subtitle,
+  });
+}
 
-/** All published static pages for the hub (ISR-tagged). Empty list on error. */
+/** All published LEGAL pages for the hub (ISR-tagged). Empty list on error. */
 async function getDocs(): Promise<LegalHubDoc[]> {
-  const pages = await fetchPublishedPages();
+  const pages = await fetchPublishedPages("LEGAL");
   return pages.map((page) => ({
     slug: page.slug,
     title: page.title,

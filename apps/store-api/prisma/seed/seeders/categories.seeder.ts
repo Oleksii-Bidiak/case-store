@@ -11,6 +11,9 @@ interface CategoryInput {
   description: string;
   metaTitle: string | null;
   metaDescription: string | null;
+  keywords: string[];
+  /** TASK-437 demo: reuse the rendered tile as this category's OG image. */
+  demoOgImage: boolean;
   sortOrder: number;
   parentId?: string;
 }
@@ -46,6 +49,10 @@ export async function seedCategories(prisma: PrismaClient) {
       description: cat.description,
       metaTitle: cat.metaTitle,
       metaDescription: cat.metaDescription,
+      keywords: cat.keywords,
+      // Written on every run, null included, so dropping the demo flag actually
+      // clears the column instead of leaving the previous run's value behind.
+      ogImage: cat.demoOgImage ? image : null,
       sortOrder: cat.sortOrder,
       parentId: cat.parentId ?? null,
       isActive: true,

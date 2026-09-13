@@ -15,7 +15,7 @@ import {
   fetchAllPublishedPages,
 } from "@/shared/lib/schema";
 import { fetchPublishedPosts } from "@/shared/api/blog-server";
-import { SITE_URL } from "@/shared/config";
+import { INFO_SLUG_INLINED_ON_HUB, SITE_URL } from "@/shared/config";
 import sitemap from "./sitemap";
 
 const captureException = Sentry.captureException as jest.Mock;
@@ -83,6 +83,72 @@ describe("sitemap", () => {
         tags: { route: "sitemap", source: "products" },
       }),
     );
+  });
+
+  // TASK-435 — a page row's kind decides its address, and a HUB row has none.
+  describe("page routes by kind", () => {
+    it("puts LEGAL pages under /legal and INFO pages under /info", async () => {
+      pages.mockResolvedValue([
+        {
+          slug: "privacy-policy",
+          kind: "LEGAL",
+          updatedAt: "2026-06-01T00:00:00.000Z",
+        },
+        {
+          slug: "dostavka",
+          kind: "INFO",
+          updatedAt: "2026-06-02T00:00:00.000Z",
+        },
+      ]);
+
+      const urls = (await sitemap()).map((route) => route.url);
+
+      expect(urls).toContain(`${SITE_URL}/legal/privacy-policy`);
+      expect(urls).toContain(`${SITE_URL}/info/dostavka`);
+      // The help page must not ALSO appear under the legal prefix.
+      expect(urls).not.toContain(`${SITE_URL}/legal/dostavka`);
+    });
+
+    it("emits nothing for the INFO page the hub renders inline", async () => {
+      pages.mockResolvedValue([
+        {
+          slug: INFO_SLUG_INLINED_ON_HUB,
+          kind: "INFO",
+          updatedAt: "2026-06-02T00:00:00.000Z",
+        },
+      ]);
+
+      const routes = await sitemap();
+      const urls = routes.map((route) => route.url);
+
+      // Its text is published on /info, which the static list already carries —
+      // listing /info/<slug> too would put one body at two indexed URLs. The
+      // route still exists and still canonicalizes to /info; it just does not
+      // ask to be indexed separately.
+      expect(urls).not.toContain(
+        `${SITE_URL}/info/${INFO_SLUG_INLINED_ON_HUB}`,
+      );
+      expect(urls.filter((url) => url === `${SITE_URL}/info`)).toHaveLength(1);
+      expect(routes).toHaveLength(STATIC_ROUTE_COUNT);
+    });
+
+    it("emits nothing for a HUB row — its route is already a static entry", async () => {
+      pages.mockResolvedValue([
+        { slug: "blog", kind: "HUB", updatedAt: "2026-06-01T00:00:00.000Z" },
+      ]);
+
+      const routes = await sitemap();
+      const blogEntries = routes.filter(
+        (route) => route.url === `${SITE_URL}/blog`,
+      );
+
+      // Exactly one /blog URL: the static one. A second would be a duplicate.
+      expect(routes).toHaveLength(STATIC_ROUTE_COUNT);
+      expect(blogEntries).toHaveLength(1);
+      expect(routes.map((route) => route.url)).not.toContain(
+        `${SITE_URL}/legal/blog`,
+      );
+    });
   });
 
   it("reports every failing source (and still returns the static routes)", async () => {

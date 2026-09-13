@@ -1,28 +1,48 @@
 import type { SeoSettingsEntity } from "@/shared/api/generated/models";
 
 /**
- * Shared SEO precedence helper (plan 116, Decision 2). Every storefront
- * `generateMetadata()` call site composes the same three tiers through this one
- * pure function instead of ad-hoc `??` chains duplicated per route:
+ * Shared SEO precedence helper (plan 116, Decision 2; re-ordered by plan 176,
+ * TASK-432). Every storefront `generateMetadata()` call site composes the same
+ * three tiers through this one pure function instead of ad-hoc `??` chains
+ * duplicated per route:
  *
  * ```
  * 1. entity meta   — Product/Category/Page.metaTitle | metaDescription (admin override)
- * 2. SeoSettings   — defaultMetaTitle / defaultMetaDescription / defaultOgImage
- * 3. content       — name + description, HTML/markdown-stripped and truncated
+ * 2. content       — name + description, HTML/markdown-stripped and truncated
+ * 3. SeoSettings   — defaultMetaTitle / defaultMetaDescription / defaultOgImage
  * ```
+ *
+ * TASK-432 swapped tiers 2 and 3. The old order put the ONE global default above
+ * every page's own content, so a store that filled in `defaultMetaDescription`
+ * shipped that same store-wide sentence as the `<meta name="description">` of
+ * every product, category and page that had no hand-written override — which is
+ * exactly the "description describes the shop, not the product" defect the owner
+ * reported. Page content is always more specific than a site-wide default, so it
+ * wins; the global default is now the last resort, for pages with no usable
+ * content of their own (a bare listing hub, an empty category).
+ *
+ * IMPORTANT — `content` means the ENTITY's own content (product name/description,
+ * category name, page title/body). It is NOT a place for a call site's hardcoded
+ * localized string: a dictionary constant passed as `content` would now outrank
+ * the global default the owner typed in /settings/seo. Call sites keep their
+ * dictionary strings as the OUTER fallback (`resolved.title || dict…`,
+ * `resolved.description ?? dict…`) instead.
  *
  * The title template (`%s | Brand`) is applied separately by the root layout via
  * Next's `title.template`; this helper only reports whether the resolved title is
  * an explicit admin override (`titleAbsolute` → caller uses `title: { absolute }`
  * to bypass the template) or a derived fallback (plain string → the template
- * appends the brand). See `resolveTitleTemplate` / `applyTitleTemplate`.
+ * appends the brand). See `resolveTitleTemplate` / `applyTitleTemplate`. That
+ * mapping is bound to the TIER, not to the winner's rank: an entity title and a
+ * global default are both verbatim (`titleAbsolute: true`), a content-derived
+ * title is branded (`false`) — unchanged by the re-ordering.
  */
 
 /** Google renders ~60 chars of a `<title>` and ~155 of a meta description. */
 export const SEO_TITLE_MAX = 60;
 export const SEO_DESCRIPTION_MAX = 155;
 
-/** The subset of the SeoSettings singleton this helper reads (tier 2). */
+/** The subset of the SeoSettings singleton this helper reads (tier 3). */
 export type ResolveSeoSettings = Pick<
   SeoSettingsEntity,
   "defaultMetaTitle" | "defaultMetaDescription" | "defaultOgImage"
@@ -33,9 +53,12 @@ export interface ResolveSeoInput {
   entityTitle?: string | null;
   /** Tier 1 — the entity's own admin description override (…metaDescription). */
   entityDescription?: string | null;
-  /** Tier 2 — the global SeoSettings singleton; null when unseeded or the API is down. */
+  /** Tier 3 — the global SeoSettings singleton; null when unseeded or the API is down. */
   settings?: ResolveSeoSettings | null;
-  /** Tier 3 — content already on the entity, used to derive a readable fallback. */
+  /**
+   * Tier 2 — content already ON THE ENTITY, used to derive a readable, page-
+   * specific fallback. Never a hardcoded dictionary string (see the file header).
+   */
   content?: {
     /** Display name / title of the entity (product/category name, page title). */
     name?: string | null;
@@ -51,10 +74,11 @@ export interface ResolvedSeo {
    */
   title: string;
   /**
-   * True when `title` is an explicit admin override (tiers 1–2) and must be used
-   * verbatim (`title: { absolute }`). False for a derived fallback (tier 3),
-   * where the caller returns a plain string so the root `title.template` appends
-   * the brand.
+   * True when `title` is an explicit admin-typed title — the entity's own
+   * `metaTitle` (tier 1) or the global `defaultMetaTitle` (tier 3) — and must be
+   * used verbatim (`title: { absolute }`). False for a content-derived title
+   * (tier 2), where the caller returns a plain string so the root
+   * `title.template` appends the brand.
    */
   titleAbsolute: boolean;
   /** The resolved meta description, or undefined when no usable text exists. */
@@ -134,6 +158,7 @@ function deriveDescription(
  */
 export function resolveSeo(input: ResolveSeoInput): ResolvedSeo {
   const entityTitle = clean(input.entityTitle);
+  const derivedTitle = deriveTitle(input.content?.name);
   const defaultTitle = clean(input.settings?.defaultMetaTitle);
 
   let title: string;
@@ -142,20 +167,25 @@ export function resolveSeo(input: ResolveSeoInput): ResolvedSeo {
     // Tier 1 — the admin typed an exact title; use it verbatim, no brand suffix.
     title = entityTitle;
     titleAbsolute = true;
+  } else if (derivedTitle) {
+    // Tier 2 — derived from the entity's own content; a plain string so the root
+    // template brands it (`Чохли для iPhone | MobileStore`).
+    title = derivedTitle;
+    titleAbsolute = false;
   } else if (defaultTitle) {
-    // Tier 2 — the global default title; likewise used verbatim.
+    // Tier 3 — the global default title, for a page with no content of its own;
+    // likewise an admin-typed string, so used verbatim.
     title = defaultTitle;
     titleAbsolute = true;
   } else {
-    // Tier 3 — derived from content; a plain string so the root template brands it.
-    title = deriveTitle(input.content?.name) ?? "";
+    title = "";
     titleAbsolute = false;
   }
 
   const description =
     clean(input.entityDescription) ??
-    clean(input.settings?.defaultMetaDescription) ??
-    deriveDescription(input.content?.description);
+    deriveDescription(input.content?.description) ??
+    clean(input.settings?.defaultMetaDescription);
 
   const ogImage = clean(input.settings?.defaultOgImage);
 
@@ -189,9 +219,10 @@ export function applyTitleTemplate(template: string, title: string): string {
  *
  * Next 16 applies the root `title.template` to a child's *static* `metadata`
  * string title but NOT to one returned from a page's `generateMetadata`, so the
- * template is applied here explicitly: a derived (tier-3) title is branded with
- * the effective template; an explicit admin override (tiers 1–2) is used
- * verbatim. Either way the rendered `<title>` includes the brand (plan 116 gap 3).
+ * template is applied here explicitly: a content-derived title is branded with
+ * the effective template; an admin-typed title (the entity's `metaTitle` or the
+ * global `defaultMetaTitle`) is used verbatim. Either way the rendered `<title>`
+ * includes the brand (plan 116 gap 3).
  */
 export function toMetadataTitle(
   resolved: ResolvedSeo,

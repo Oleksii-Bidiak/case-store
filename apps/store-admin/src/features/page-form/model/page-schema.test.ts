@@ -17,6 +17,7 @@ const baseValues: PageFormValues = {
   metaDescription: "",
   sortOrder: 0,
   status: "DRAFT",
+  kind: "LEGAL",
   scheduledAt: "",
 };
 
@@ -31,6 +32,7 @@ const baseInput: PageFormInput = {
   metaDescription: "",
   sortOrder: "0",
   status: "DRAFT",
+  kind: "LEGAL",
   scheduledAt: "",
 };
 
@@ -130,5 +132,47 @@ describe("pageSchema content validation", () => {
       scheduledAt: "2026-08-01T09:00",
     });
     expect(result.success).toBe(true);
+  });
+
+  // TASK-437 — tags and the OG override.
+  it("rejects more than 20 tags but counts only the PARSED ones", () => {
+    expect(
+      pageSchema.safeParse({
+        ...baseInput,
+        keywords: Array.from({ length: 21 }, (_, i) => `tag-${i}`).join(","),
+      }).success,
+    ).toBe(false);
+    expect(
+      pageSchema.safeParse({
+        ...baseInput,
+        keywords: "доставка,,доставка, , ДОСТАВКА",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects an ogImage that is not a URL", () => {
+    const result = pageSchema.safeParse({ ...baseInput, ogImage: "og.jpg" });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("page mappers — tags and ogImage (TASK-437)", () => {
+  it("splits the tag field and clears a blank ogImage with an explicit null", () => {
+    const dto = pageFormValuesToCreateDto({
+      ...baseValues,
+      keywords: "доставка, нова пошта ,  Доставка",
+    });
+    expect(dto.keywords).toEqual(["доставка", "нова пошта"]);
+    // Null, not undefined: the page form uses ONE mapper for create and update,
+    // so a blank field has to be able to clear a stored value.
+    expect(dto.ogImage).toBeNull();
+  });
+
+  it("passes a provided ogImage through, trimmed", () => {
+    const dto = pageFormValuesToCreateDto({
+      ...baseValues,
+      ogImage: "  https://cdn.example.com/og/delivery.jpg  ",
+    });
+    expect(dto.ogImage).toBe("https://cdn.example.com/og/delivery.jpg");
   });
 });

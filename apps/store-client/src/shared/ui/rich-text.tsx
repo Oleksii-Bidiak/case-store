@@ -19,6 +19,25 @@ export const RICH_TEXT_PROSE = [
   "[&_li]:mb-2",
   "[&_a]:text-primary [&_a]:underline",
   "[&_blockquote]:mb-[22px] [&_blockquote]:rounded-r-xl [&_blockquote]:border-l-4 [&_blockquote]:border-primary [&_blockquote]:py-4 [&_blockquote]:pr-[22px] [&_blockquote]:pl-[22px] [&_blockquote]:text-[17px] [&_blockquote]:leading-[1.65] [&_blockquote]:text-foreground [&_blockquote]:italic",
+  // Tables (TASK-434). Until the admin editor could build one, a table in a
+  // description rendered as unstyled browser default — borderless rows of
+  // run-together text. These rules are mirrored in the admin panel twice
+  // (`TABLE_PROSE` in its rich-text-editor, and `PROSE` in its
+  // rich-text-preview); change one, change all three.
+  //
+  // `table-fixed` + `w-full` is load-bearing, not cosmetic: it is what stops a
+  // wide spec table from making the whole page scroll sideways on a phone —
+  // column widths stop following content, so cells wrap. Giving the table its
+  // own horizontal scroll container would need a wrapper element around it,
+  // and the API's `sanitizeRichText()` allow-list has no tag to put one in.
+  "[&_table]:mb-[22px] [&_table]:w-full [&_table]:table-fixed [&_table]:border-collapse [&_table]:text-[15px]",
+  "[&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2",
+  "[&_th]:text-left [&_th]:font-semibold [&_th]:text-foreground [&_th]:break-words",
+  "[&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-2",
+  "[&_td]:align-top [&_td]:text-foreground [&_td]:break-words",
+  // Tiptap wraps every cell's content in a paragraph; the 18px paragraph
+  // spacing above would make each cell twice as tall as its text.
+  "[&_th_p]:my-0 [&_td_p]:my-0",
 ].join(" ");
 
 /**

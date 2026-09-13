@@ -996,6 +996,17 @@ export const dict = {
     toastStatusFailed: "Не вдалося змінити статус сторінки",
     toastDeleted: "Сторінку видалено",
     toastDeleteFailed: "Не вдалося видалити сторінку",
+    // TASK-435 — one screen, three kinds of row. The tabs write `?kind=`.
+    colKind: "Вид",
+    kindLegal: "Юридична",
+    kindInfo: "Довідкова",
+    kindHub: "Хаб",
+    tabsAria: "Фільтр за видом сторінки",
+    tabAll: "Усі",
+    tabLegal: "Юридичні",
+    tabInfo: "Довідкові",
+    tabHub: "Хаби",
+    emptyKind: "Сторінок цього виду ще немає.",
   },
 
   pageForm: {
@@ -1029,7 +1040,24 @@ export const dict = {
       metaDescriptionMax: "SEO опис має містити не більше 500 символів",
       sortInt: "Порядок сортування має бути невід'ємним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої сторінки",
+      // TASK-435 — a hub row whose slug names no hub renders nowhere.
+      hubSlugRequired: "Оберіть розділ, для якого задаються мета-теги",
     },
+    // TASK-435 — page kind: what this row is and where it will live.
+    kind: "Вид сторінки",
+    kindLegal: "Юридична — адреса /legal/…",
+    kindInfo: "Довідкова — адреса /info/…",
+    kindHub: "Хаб — мета-теги наявного розділу",
+    kindHint:
+      "Юридична — документ у розділі «Правова інформація». Довідкова — сторінка в розділі «Інформація та підтримка». " +
+      "Хаб — не окрема сторінка, а заголовок і опис для розділу, який на сайті вже є.",
+    hubSlug: "Розділ сайту",
+    hubSlugPlaceholder: "Оберіть розділ…",
+    hubSlugHint:
+      "Для хаба адресу не вигадують: оберіть один із наявних розділів сайту. " +
+      "Сторінка з іншою адресою просто ніде не показалася б.",
+    hubContentHint:
+      "На сайті цей текст не показується — у хаба немає власної сторінки. Опишіть тут, за що відповідає розділ, щоб наступному редактору було зрозуміло.",
   },
 
   // --- Blog CMS (TASK-172) ----------------------------------------------------
@@ -1052,6 +1080,11 @@ export const dict = {
     colStatus: "Статус",
     colFeatured: "Головна",
     featuredYes: "Так",
+    // TASK-436 — порожня клітинка означає звичайну статтю; бейдж зʼявляється
+    // лише коли стаття прибрана зі списків, бо саме це стан, якого не видно
+    // ніде інде (статус у неї лишається «Опубліковано»).
+    colListed: "У списках",
+    unlistedBadge: "Не в списках",
     statusPublished: "Опубліковано",
     statusScheduled: "Заплановано",
     statusDraft: "Чернетка",
@@ -1109,6 +1142,13 @@ export const dict = {
     scheduledAtHint:
       "Стаття автоматично опублікується у вказаний час (для статусу «Заплановано»).",
     submit: "Зберегти статтю",
+    // TASK-436 — обидва перемикачі керують тим, ДЕ стаття зʼявляється, тож
+    // підказка мусить називати наслідок, а не повторювати назву поля.
+    featuredHint:
+      "Стаття показується великим блоком угорі сторінки «Блог». Такою може бути лише одна — увімкнувши тут, зніміть у попередньої.",
+    listed: "Показувати у списках",
+    listedHint:
+      "Вимкніть, щоб прибрати статтю зі списку блогу, з підказок пошуку і з блоку «Читайте також». Вона лишається опублікованою: доступна за прямим посиланням і присутня в карті сайту для пошукових систем.",
     errors: {
       titleRequired: "Вкажіть заголовок",
       titleMax: "Заголовок має містити не більше 255 символів",
@@ -1123,7 +1163,20 @@ export const dict = {
       coverUrl: "Вкажіть коректний URL обкладинки",
       readingInt: "Час читання має бути додатним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої статті",
+      metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
+      metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
     },
+    // TASK-437 — у статті досі не було жодного керованого мета-тега: у видачу
+    // йшли заголовок і короткий опис із картки. Підказки кажуть саме це, бо
+    // інакше оператор не зрозуміє, навіщо заповнювати поле, яке «і так є».
+    metaTitle: "SEO-заголовок (meta title)",
+    metaTitlePlaceholder: "Залиште порожнім, щоб використати заголовок статті",
+    metaTitleHint:
+      "Заголовок статті у результатах пошуку. Порожнє поле — береться заголовок статті (обрізаний до ~60 символів і з назвою магазину).",
+    metaDescription: "SEO-опис (meta description)",
+    metaDescriptionPlaceholder: "Опис статті для результатів пошуку",
+    metaDescriptionHint:
+      "Текст під заголовком у Google. Порожнє поле — береться короткий опис, але він написаний для картки на сторінці блогу; окремий текст на ~155 символів зазвичай читається краще.",
   },
 
   // --- Rich-text "edit / preview" tab pair (page + blog forms, TASK-266) ------
@@ -1131,16 +1184,17 @@ export const dict = {
     tabEdit: "Редагування",
     tabPreview: "Перегляд",
     emptyContent: "Почніть писати, щоб побачити попередній перегляд…",
-    // TASK-467 — редактор вужчий за серверний allow-list (таблиці, зображення,
-    // H1/H4 він показати не вміє і мовчки викидає). Поки оператор не підтвердив
-    // явно, редагування заблоковане, бо перше ж натискання клавіші зберегло б
-    // уже обрізаний HTML.
+    // TASK-467 — редактор вужчий за серверний allow-list і мовчки викидає те,
+    // чого не вміє показати. Поки оператор не підтвердив явно, редагування
+    // заблоковане, бо перше ж натискання клавіші зберегло б уже обрізаний HTML.
+    // TASK-434 звузив цю дельту до єдиного випадку — зображень: таблиці й
+    // заголовки H1/H4 редактор тепер уміє, тож їхні ключі прибрані разом із
+    // пробами в LOSSY_CONSTRUCTS. Коли приземлиться TASK-424 (вставка
+    // зображень), уся ця група зникає цілком.
     unsupportedTitle: "Редактор показує не всю розмітку цього тексту.",
     unsupportedBody: (constructs: string) =>
       `Не відображаються: ${constructs}. Якщо редагувати й зберегти, ці елементи буде видалено назавжди.`,
-    unsupportedTables: "таблиці",
     unsupportedImages: "зображення",
-    unsupportedHeadings: "заголовки H1 і H4",
     unsupportedEditAnyway: "Все одно редагувати",
   },
 
@@ -1477,7 +1531,13 @@ export const dict = {
 
   seoSettingsForm: {
     defaultMetaTitle: "Заголовок сайту за замовчуванням",
-    defaultMetaTitlePlaceholder: "MobileStore — аксесуари для смартфонів",
+    // Placeholders are neutral examples on purpose (TASK-433): they used to
+    // spell out one particular shop's name and domain, which read like a
+    // pre-filled value rather than a hint — and the shop in question was not
+    // this one. Where a real value is genuinely more useful than a shape hint
+    // (the OG-image path), the placeholder is a function of the storefront host
+    // instead, so the parsing stays out of this constants module.
+    defaultMetaTitlePlaceholder: "Ваш магазин — аксесуари для смартфонів",
     defaultMetaTitleHint:
       "Заголовок, який показується у вкладці браузера та в результатах пошуку, коли у сторінки немає власного заголовка. Залиште порожнім — і заголовок згенерується автоматично з назви сторінки.",
     defaultMetaDescription: "Опис сайту за замовчуванням",
@@ -1486,11 +1546,12 @@ export const dict = {
     defaultMetaDescriptionHint:
       "Короткий опис магазину (1–2 речення), який Google показує під заголовком у результатах пошуку — коли у сторінки немає власного опису.",
     titleTemplate: "Шаблон заголовка сторінки",
-    titleTemplatePlaceholder: "%s | MobileStore",
+    titleTemplatePlaceholder: "%s | Ваш магазин",
     titleTemplateHint:
       "Шаблон заголовка сторінки. %s буде замінено на назву конкретної сторінки. Залиште порожнім — і ми додамо назву магазину після заголовка автоматично.",
     defaultOgImage: "Зображення для соцмереж (OG-картинка)",
-    defaultOgImagePlaceholder: "https://mobilestore.ua/og-image.jpg",
+    /** Takes the storefront host (`STOREFRONT_HOST`) so the example path sits on the store's own domain. */
+    defaultOgImagePlaceholder: (host: string) => `https://${host}/og-image.jpg`,
     defaultOgImageHint:
       "Картинка для попереднього перегляду, коли посилання на магазин поширюють у соцмережах чи месенджерах (Facebook, Telegram, Viber). Вкажіть повне посилання на зображення (https://…).",
     siteVerificationGroup: "Верифікація власності сайта",
@@ -1509,7 +1570,7 @@ export const dict = {
       "Короткий опис вашого бізнесу для AI-асистентів на кшталт ChatGPT. Замінює вступний абзац у файлі /llms.txt. Залиште порожнім — використаємо стандартний опис.",
     additionalSameAsLinks: "Додаткові посилання на профілі бренду",
     additionalSameAsLinksPlaceholder:
-      "https://facebook.com/mobilestore\nhttps://youtube.com/@mobilestore",
+      "https://facebook.com/ваша-сторінка\nhttps://youtube.com/@ваш-канал",
     additionalSameAsLinksHint:
       "Посилання на офіційні сторінки магазину в інших мережах (Facebook, YouTube, LinkedIn тощо) — по одному в рядку. Це показує пошуковим системам, що це офіційні профілі вашого бренду.",
     noindexSite: "Приховати сайт від пошукових систем",
@@ -1528,7 +1589,23 @@ export const dict = {
         "Код підтвердження задовгий (максимум 255 символів)",
       sameAsInvalid:
         "Кожне посилання має бути коректним URL (https://…), по одному в рядку.",
+      siteNameTooLong: "Назва задовга (максимум 120 символів)",
     },
+    // Store name (TASK-433) — rendered first in the form; the keys sit at the
+    // end of the block only to keep concurrent waves from colliding here.
+    siteName: "Назва магазину",
+    /**
+     * Takes the fallback brand (`dict.brand`) rather than spelling a name out:
+     * that IS what the storefront shows while the field is empty, so the hint
+     * stays true after a rename instead of becoming a second hardcoded name.
+     */
+    siteNamePlaceholder: (fallback: string) => `Наприклад: ${fallback}`,
+    siteNameHint:
+      "Як магазин називається для відвідувача й для Google: підставляється у заголовок вкладки браузера, у прев'ю посилання в месенджерах і соцмережах, у підпис листів і в машинну розмітку для пошукових систем. Залиште порожнім — використаємо стандартну назву.",
+    // Deliberately a separate, blunt line rather than a footnote inside the
+    // hint: the owner WILL change this field expecting the logo to follow.
+    siteNameLogoNote:
+      "Напис у самому логотипі поки змінюється в коді — якщо ви завантажили логотип-картинку, він теж лишиться без змін. Напишіть розробнику, якщо треба оновити і його.",
   },
 
   // --- Store logo upload (TASK-299) -------------------------------------------
@@ -2417,9 +2494,23 @@ export const dict = {
         appliesTo: "Сторінка «Інформація» та кожна картка товару",
       },
       legalPages: {
-        source: "Правові та інші статичні сторінки",
-        target: "Сторінки",
+        source: "Правові документи",
+        target: "Сторінки → Юридичні",
         appliesTo: "Розділ «Правова інформація» та кожен документ",
+      },
+      // TASK-435 — the Pages screen now edits three different things, so the map
+      // shows three entries rather than one that quietly covered all of them.
+      infoPages: {
+        source: "Довідкові сторінки (зокрема «Про нас»)",
+        target: "Сторінки → Довідкові",
+        appliesTo:
+          "Розділ «Інформація та підтримка»: блок «Про нас» і кожна довідкова сторінка",
+      },
+      hubPages: {
+        source: "Заголовок і опис розділу для Google",
+        target: "Сторінки → Хаби",
+        appliesTo:
+          "Розділи «Категорії», «Блог», «Правова інформація», «Контакти», «Інформація», «Акції» — невидимо на сторінці (title, meta, прев'ю посилання)",
       },
       blog: {
         source: "Стрічка блогу",
@@ -2432,9 +2523,12 @@ export const dict = {
         appliesTo: "Футер кожної сторінки та сторінка «Контакти»",
       },
       seoSettings: {
-        source: "Meta-заголовки та SEO за замовчуванням",
+        // TASK-433 put the store name behind this same screen, and "where do I
+        // change the name?" is exactly the question this map exists to answer.
+        source: "Назва магазину, meta-заголовки та SEO за замовчуванням",
         target: "Налаштування → SEO",
-        appliesTo: "Кожна сторінка (невидимо: title, meta, robots)",
+        appliesTo:
+          "Кожна сторінка: назва у вкладці браузера й у прев'ю посилань, решта — невидимо (title, meta, robots)",
       },
     },
   },
@@ -2443,11 +2537,13 @@ export const dict = {
   // Google-result mock (title / green URL / description) + char counters + a
   // "blank field = auto-generated" hint, shown under the metaTitle/
   // metaDescription fields on product/category/page forms and the /settings/seo
-  // defaults form. `urlHost` is an illustrative storefront host for the
-  // breadcrumb line only — advisory UX, not the real canonical origin.
+  // defaults form. The host of the breadcrumb line is NOT a dictionary string:
+  // it comes from the environment (`STOREFRONT_HOST`, derived from
+  // NEXT_PUBLIC_SITE_URL) so the preview shows the store's own domain instead
+  // of an illustrative one. TASK-433 removed the former `urlHost` key — see
+  // `shared/config/site.ts` for why the URL parsing lives there and not here.
   seoSnippetPreview: {
     heading: "Перегляд у результатах пошуку Google",
-    urlHost: "mobilestore.ua",
     emptyTitle: "(без заголовка)",
     // `{typed}/{max}` counter shown next to each field's live length.
     counter: (n: number, max: number) => `${n}/${max}`,
@@ -2818,6 +2914,28 @@ export const dict = {
       `Не вдалося перемістити „${name}“. Список оновлено.`,
     saveFailed: (name: string) =>
       `Не вдалося зберегти переміщення „${name}“. Попередній порядок відновлено. Спробуйте ще раз.`,
+  },
+
+  // --- Спільні SEO-поля сутностей: теги + OG-картинка (TASK-437) ---------------
+  // Один блок на чотири форми (товар, категорія, сторінка, стаття): формулювання
+  // про «це не meta keywords» мусить бути однаковим скрізь — інакше в одній формі
+  // воно з часом перетвориться на обіцянку ранжування, якої поле не дає.
+  seoFields: {
+    keywords: "Теги (для пошуку всередині магазину)",
+    keywordsPlaceholder: "чохол, magsafe, ударостійкий",
+    keywordsHint:
+      "Через кому. Це НЕ мета-тег keywords для Google — його пошукові системи ігнорують ще з 2009 року, і ми його не виводимо. Це внутрішні теги: слова, якими товар шукають у магазині та за якими його впізнають AI-асистенти, якщо їх немає в назві й описі.",
+    keywordsCount: (n: number) => `Тегів: ${n}`,
+    ogImage: "Картинка для соцмереж (OG)",
+    ogImagePlaceholder: (host: string) => `https://${host}/og/сторінка.jpg`,
+    ogImageHint:
+      "Показується, коли посиланням діляться у Facebook, Telegram чи Viber. Розмір 1200×630. Якщо порожньо — береться власне зображення сторінки, потім загальна картинка з «Налаштування → SEO».",
+    errors: {
+      keywordsCount: (max: number) => `Не більше ${max} тегів`,
+      keywordLength: (max: number) =>
+        `Один тег має містити не більше ${max} символів`,
+      ogImageUrl: "Вкажіть коректний URL картинки (http:// або https://)",
+    },
   },
 } as const;
 

@@ -29,10 +29,12 @@ function makePageRow(
   title: string,
   isActive: boolean,
   slug = title.toLowerCase().replace(/\s+/g, "-"),
+  kind: "LEGAL" | "INFO" | "HUB" = "LEGAL",
 ) {
   return {
     id,
     slug,
+    kind,
     title,
     content: "<p>Body</p>",
     excerpt: null,
@@ -215,5 +217,100 @@ describe("AdminPageTable", () => {
 
       expect(requests[0].searchParams.get("search")).toBe("privacy");
     });
+  });
+});
+
+// TASK-435 — one screen, three kinds of row. Without the tabs and the badge, a
+// hub meta card and a legal document look identical in the list.
+describe("AdminPageTable — kind tabs", () => {
+  it("labels each row with its kind", async () => {
+    stubPages([
+      makePageRow("page-1", "Публічна оферта", true, "offer", "LEGAL"),
+      makePageRow("page-2", "Про нас", true, "about", "INFO"),
+      makePageRow("page-3", "Розділ «Блог»", true, "blog", "HUB"),
+    ]);
+
+    renderWithProviders(<AdminPageTable />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Публічна оферта")).toBeInTheDocument(),
+    );
+    expect(screen.getByText(dict.pages.kindLegal)).toBeInTheDocument();
+    expect(screen.getByText(dict.pages.kindInfo)).toBeInTheDocument();
+    expect(screen.getByText(dict.pages.kindHub)).toBeInTheDocument();
+  });
+
+  it("asks for no kind at all on the «Усі» tab", async () => {
+    const requests = stubPages([makePageRow("page-1", "Оферта", true)]);
+
+    renderWithProviders(<AdminPageTable />);
+
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].searchParams.get("kind")).toBeNull();
+  });
+
+  it("writes ?kind= to the URL when a tab is clicked, and resets the page", async () => {
+    stubPages([makePageRow("page-1", "Оферта", true)]);
+    mockSearchParams = new URLSearchParams("page=3");
+
+    renderWithProviders(<AdminPageTable />);
+    await waitFor(() => expect(screen.getByText("Оферта")).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("tab", { name: dict.pages.tabHub }));
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+    const written = mockReplace.mock.calls.at(-1)?.[0] as string;
+    expect(written).toContain("kind=HUB");
+    // Paging back to a page that may not exist under the new filter is the
+    // classic way a filtered list lands on "порожньо" that is not true.
+    expect(written).not.toContain("page=3");
+  });
+
+  it("sends the kind from the URL to the API and marks that tab active", async () => {
+    mockSearchParams = new URLSearchParams("kind=INFO");
+    const requests = stubPages([
+      makePageRow("page-2", "Про нас", true, "about", "INFO"),
+    ]);
+
+    renderWithProviders(<AdminPageTable />);
+
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].searchParams.get("kind")).toBe("INFO");
+    expect(
+      screen.getByRole("tab", { name: dict.pages.tabInfo }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("drops a bogus ?kind= rather than sending it, and highlights no tab", async () => {
+    // The API validates the enum, so passing "БУДЬ-ЩО" through would turn a
+    // stale bookmark into a 400 and an error screen instead of a list.
+    mockSearchParams = new URLSearchParams("kind=NOT_A_KIND");
+    const requests = stubPages([makePageRow("page-1", "Оферта", true)]);
+
+    renderWithProviders(<AdminPageTable />);
+
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].searchParams.get("kind")).toBeNull();
+    for (const label of [
+      dict.pages.tabAll,
+      dict.pages.tabLegal,
+      dict.pages.tabInfo,
+      dict.pages.tabHub,
+    ]) {
+      expect(screen.getByRole("tab", { name: label })).toHaveAttribute(
+        "aria-selected",
+        "false",
+      );
+    }
+  });
+
+  it("says WHICH kind is empty when a filtered tab has no rows", async () => {
+    mockSearchParams = new URLSearchParams("kind=HUB");
+    stubPages([], { total: 0, page: 1, limit: 20, totalPages: 0 });
+
+    renderWithProviders(<AdminPageTable />);
+
+    expect(await screen.findByText(dict.pages.emptyKind)).toBeInTheDocument();
+    expect(screen.queryByText(dict.pages.empty)).not.toBeInTheDocument();
   });
 });

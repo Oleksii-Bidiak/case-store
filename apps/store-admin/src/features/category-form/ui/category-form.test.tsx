@@ -471,6 +471,25 @@ describe("categoryFormValuesToDto — SEO meta mapping (TASK-236)", () => {
       categoryFormValuesToDto(values, { isUpdate: true }).metaDescription,
     ).toBe("SEO description");
   });
+
+  // TASK-437 — the tag list and the OG override, mapped exactly as in the
+  // product form: an empty array on both verbs for a blank tag field, and the
+  // undefined-on-create / null-on-update rule for the image.
+  it("splits the comma-separated tag field and de-duplicates it", () => {
+    const dto = categoryFormValuesToDto({
+      ...baseValues,
+      keywords: "чохли, cases ,  Чохли",
+    });
+    expect(dto.keywords).toEqual(["чохли", "cases"]);
+  });
+
+  it("sends an empty tag list for a blank field, and clears ogImage on UPDATE", () => {
+    expect(categoryFormValuesToDto(baseValues).keywords).toEqual([]);
+    expect(categoryFormValuesToDto(baseValues).ogImage).toBeUndefined();
+    expect(
+      categoryFormValuesToDto(baseValues, { isUpdate: true }).ogImage,
+    ).toBeNull();
+  });
 });
 
 describe("CategoryForm — SEO meta fields (TASK-236)", () => {
@@ -526,5 +545,18 @@ describe("CategoryForm — SEO meta fields (TASK-236)", () => {
     expect(
       screen.getByLabelText(dict.categoryForm.metaDescription),
     ).toHaveValue("Seeded description");
+  });
+
+  // TASK-437 — the honest hint is the point of the field, so it is pinned here
+  // too: a category page's card and its internal tags.
+  it("renders the tag and OG fields, with the «not a Google meta tag» hint", () => {
+    stubCategories();
+    renderWithProviders(
+      <CategoryForm onSubmit={jest.fn()} isPending={false} />,
+    );
+
+    expect(screen.getByLabelText(dict.seoFields.keywords)).toBeInTheDocument();
+    expect(screen.getByLabelText(dict.seoFields.ogImage)).toBeInTheDocument();
+    expect(screen.getByText(dict.seoFields.keywordsHint)).toBeInTheDocument();
   });
 });

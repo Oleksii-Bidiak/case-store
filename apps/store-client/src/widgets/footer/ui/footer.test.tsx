@@ -16,6 +16,7 @@ function makePage(overrides: Partial<PageEntity> = {}): PageEntity {
   return {
     id: "page-1",
     slug: "delivery",
+    kind: "LEGAL",
     title: "Доставка й оплата",
     content: "<p>…</p>",
     status: "PUBLISHED",

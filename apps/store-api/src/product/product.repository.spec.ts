@@ -830,6 +830,44 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       expect(createArgs.data.metaDescription).toBeNull();
     });
 
+    // TASK-437 — the same pass-through for the two fields added alongside them.
+    it('create persists keywords/ogImage, defaulting to [] and null', async () => {
+      prismaMock.product.create.mockResolvedValue({ id: 'product-5' });
+
+      await repository.create({
+        name: 'Tagged Case',
+        slug: 'tagged-case',
+        price: 19.99,
+        categoryId: 'cat-1',
+        keywords: ['magsafe'],
+        ogImage: 'https://cdn.example.com/og/tagged-case.jpg',
+      });
+      await repository.create({
+        name: 'Untagged Case',
+        slug: 'untagged-case',
+        price: 19.99,
+        categoryId: 'cat-1',
+      });
+
+      const tagged = prismaMock.product.create.mock.calls[0][0];
+      expect(tagged.data.keywords).toEqual(['magsafe']);
+      expect(tagged.data.ogImage).toBe('https://cdn.example.com/og/tagged-case.jpg');
+
+      const untagged = prismaMock.product.create.mock.calls[1][0];
+      expect(untagged.data.keywords).toEqual([]);
+      expect(untagged.data.ogImage).toBeNull();
+    });
+
+    it('update forwards keywords/ogImage, an empty list clearing the tags', async () => {
+      prismaMock.product.update.mockResolvedValue({ id: 'product-6' });
+
+      await repository.update('product-6', { keywords: [], ogImage: null });
+
+      const updateArgs = prismaMock.product.update.mock.calls[0][0];
+      expect(updateArgs.data.keywords).toEqual([]);
+      expect(updateArgs.data.ogImage).toBeNull();
+    });
+
     it('update forwards metaTitle/metaDescription through the spread', async () => {
       prismaMock.product.update.mockResolvedValue({ id: 'product-3' });
 

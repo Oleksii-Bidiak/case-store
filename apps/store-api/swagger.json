@@ -6079,6 +6079,21 @@
         "operationId": "PageController_findAll",
         "parameters": [
           {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Filter by page kind. LEGAL backs the /legal hub, INFO the /info help pages. Without it the list still omits HUB rows — a hub row is not a page (TASK-435).",
+            "schema": {
+              "example": "LEGAL",
+              "type": "string",
+              "enum": [
+                "LEGAL",
+                "INFO",
+                "HUB"
+              ]
+            }
+          },
+          {
             "name": "page",
             "required": false,
             "in": "query",
@@ -6131,6 +6146,21 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Require the page to be of this kind; a mismatch is a 404. Omitted, any kind but HUB matches.",
+            "schema": {
+              "example": "LEGAL",
+              "type": "string",
+              "enum": [
+                "LEGAL",
+                "INFO",
+                "HUB"
+              ]
+            }
           }
         ],
         "responses": {
@@ -6145,10 +6175,10 @@
             }
           },
           "404": {
-            "description": "Page not found or not published"
+            "description": "Page not found, not published, or not of the requested kind"
           }
         },
-        "summary": "Get a published page by slug",
+        "summary": "Get a published page by slug, optionally required to be of a given kind",
         "tags": [
           "Pages"
         ]
@@ -6158,6 +6188,21 @@
       "get": {
         "operationId": "AdminPageController_findAll",
         "parameters": [
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Filter by page kind. LEGAL backs the /legal hub, INFO the /info help pages. Without it the list still omits HUB rows — a hub row is not a page (TASK-435).",
+            "schema": {
+              "example": "LEGAL",
+              "type": "string",
+              "enum": [
+                "LEGAL",
+                "INFO",
+                "HUB"
+              ]
+            }
+          },
           {
             "name": "page",
             "required": false,
@@ -6540,6 +6585,17 @@
               "default": 9,
               "example": 9,
               "type": "number"
+            }
+          },
+          {
+            "name": "includeUnlisted",
+            "required": false,
+            "in": "query",
+            "description": "Include posts flagged `listed = false` (TASK-436). Omitted / false — the default — returns only listed posts, which is what every LIST surface wants (the /blog grid, the header search suggestions, related posts). `sitemap.xml` is the one caller that passes true: an unlisted post is still a public, indexable document, so leaving it out of the sitemap while it stays reachable is the cloaking-shaped design this flag replaced. Deliberately a PUBLIC parameter — nothing here is a secret; an unlisted post is simply not advertised in feeds.",
+            "schema": {
+              "default": false,
+              "example": false,
+              "type": "boolean"
             }
           }
         ],
@@ -12353,6 +12409,23 @@
             "example": "Shop premium protective phone cases for every model.",
             "nullable": true
           },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). NOT rendered as `<meta name=\"keywords\">` — see IsKeywordsField.",
+            "example": [
+              "чохли",
+              "cases"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image for this category; wins over the global default (TASK-437).",
+            "example": "https://cdn.example.com/og/cases.jpg",
+            "nullable": true
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -12426,6 +12499,23 @@
             "type": "string",
             "description": "SEO meta description override",
             "example": "Shop premium protective phone cases for every model.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). Never rendered as a `<meta name=\"keywords\">` tag.",
+            "example": [
+              "чохли",
+              "cases"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image for this category — first tier of the storefront’s `buildOgImages` chain (TASK-437).",
+            "example": "https://cdn.example.com/og/cases.jpg",
             "nullable": true
           },
           "updatedAt": {
@@ -12667,6 +12757,23 @@
             "example": "Shop premium protective phone cases for every model.",
             "nullable": true
           },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). Never rendered as a `<meta name=\"keywords\">` tag.",
+            "example": [
+              "чохли",
+              "cases"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image for this category — first tier of the storefront’s `buildOgImages` chain (TASK-437).",
+            "example": "https://cdn.example.com/og/cases.jpg",
+            "nullable": true
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string",
@@ -12895,6 +13002,24 @@
             "type": "string",
             "description": "SEO meta description override",
             "example": "Shop premium protective phone cases for every model."
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
           }
         },
         "required": [
@@ -12945,6 +13070,24 @@
             "type": "string",
             "description": "SEO meta description override",
             "example": "Shop premium protective phone cases for every model.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
             "nullable": true
           }
         }
@@ -13324,6 +13467,23 @@
             "example": "Shop the clear MagSafe-compatible case for iPhone 15 Pro.",
             "nullable": true
           },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). The storefront does NOT render these as a `<meta name=\"keywords\">` tag — they exist for internal search and AI-summary use.",
+            "example": [
+              "magsafe",
+              "ударостійкий"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image chosen for this product. First tier of the storefront’s `buildOgImages` chain — ahead of the product’s own first photo (TASK-437).",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -13646,6 +13806,23 @@
             "type": "string",
             "description": "SEO meta description override (falls back to the product description when empty)",
             "example": "Shop the clear MagSafe-compatible case for iPhone 15 Pro.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). NOT rendered as `<meta name=\"keywords\">` — see IsKeywordsField. Empty array when the admin set none.",
+            "example": [
+              "magsafe",
+              "ударостійкий"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image chosen for this product; wins over its first photo and over the global default (TASK-437). Null = use the automatic chain.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
             "nullable": true
           },
           "createdAt": {
@@ -14124,6 +14301,24 @@
             "type": "string",
             "description": "SEO meta description override (falls back to the product description when empty)",
             "example": "Shop the clear MagSafe-compatible case for iPhone 15 Pro."
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
           }
         },
         "required": [
@@ -14219,6 +14414,24 @@
             "type": "string",
             "description": "SEO meta description override (falls back to the product description when empty)",
             "example": "Shop the clear MagSafe-compatible case for iPhone 15 Pro.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
             "nullable": true
           }
         }
@@ -16499,6 +16712,16 @@
             "description": "URL-friendly slug",
             "example": "privacy-policy"
           },
+          "kind": {
+            "type": "string",
+            "description": "What this row is and where it is served — LEGAL: /legal/<slug>; INFO: /info/<slug>; HUB: meta tags for the existing hub route named by the slug, no address of its own",
+            "enum": [
+              "LEGAL",
+              "INFO",
+              "HUB"
+            ],
+            "example": "LEGAL"
+          },
           "title": {
             "type": "string",
             "description": "Page title",
@@ -16525,6 +16748,23 @@
             "type": "string",
             "description": "SEO meta description",
             "example": "Read how Mobile Store collects and protects your data.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). Never rendered as a `<meta name=\"keywords\">` tag.",
+            "example": [
+              "доставка",
+              "нова пошта"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image for this page — first tier of the storefront’s `buildOgImages` chain (TASK-437).",
+            "example": "https://cdn.example.com/og/delivery.jpg",
             "nullable": true
           },
           "status": {
@@ -16577,6 +16817,7 @@
         "required": [
           "id",
           "slug",
+          "kind",
           "title",
           "content",
           "status",
@@ -16731,6 +16972,17 @@
             "description": "URL-friendly slug (auto-generated from title if not provided)",
             "example": "privacy-policy"
           },
+          "kind": {
+            "type": "string",
+            "description": "What this row is — LEGAL: a document at /legal/<slug>; INFO: a help page at /info/<slug>; HUB: meta tags for an existing hub route (slug must be one of: categories, blog, legal, contact, info, promo). Defaults to LEGAL.",
+            "enum": [
+              "LEGAL",
+              "INFO",
+              "HUB"
+            ],
+            "example": "LEGAL",
+            "default": "LEGAL"
+          },
           "excerpt": {
             "type": "string",
             "description": "Short summary",
@@ -16745,6 +16997,24 @@
             "type": "string",
             "description": "SEO meta description",
             "example": "Read our privacy policy."
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
           },
           "sortOrder": {
             "type": "number",
@@ -16792,6 +17062,16 @@
             "description": "URL-friendly slug",
             "example": "privacy-policy"
           },
+          "kind": {
+            "type": "string",
+            "description": "What this row is — LEGAL: a document at /legal/<slug>; INFO: a help page at /info/<slug>; HUB: meta tags for an existing hub route (slug must be one of: categories, blog, legal, contact, info, promo)",
+            "enum": [
+              "LEGAL",
+              "INFO",
+              "HUB"
+            ],
+            "example": "INFO"
+          },
           "excerpt": {
             "type": "string",
             "description": "Short summary",
@@ -16806,6 +17086,24 @@
             "type": "string",
             "description": "SEO meta description",
             "example": "Read our privacy policy."
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
           },
           "sortOrder": {
             "type": "number",
@@ -16895,6 +17193,40 @@
             "description": "Whether the post is the featured hero post",
             "example": false
           },
+          "listed": {
+            "type": "boolean",
+            "description": "Whether the post appears in listings. `false` keeps it published and reachable at its own URL (and in sitemap.xml) while omitting it from the /blog grid, the search suggestions and the related-posts block (TASK-436).",
+            "example": true
+          },
+          "metaTitle": {
+            "type": "string",
+            "description": "SEO meta title override (TASK-437). Null = the storefront derives the title from `title` through the shared resolveSeo chain.",
+            "example": "iPhone 16 чи iPhone 15: що брати у 2026 році",
+            "nullable": true
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "SEO meta description override (TASK-437). Null = the storefront derives it from `excerpt`.",
+            "example": "Порівняли камери, автономність і ціну — кому апгрейд вартий грошей.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). Never rendered as a `<meta name=\"keywords\">` tag.",
+            "example": [
+              "iphone",
+              "порівняння"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image for this article — wins over `coverImageUrl` in the storefront’s `buildOgImages` chain (TASK-437).",
+            "example": "https://cdn.example.com/og/iphone16-vs-15.jpg",
+            "nullable": true
+          },
           "category": {
             "description": "Category summary",
             "allOf": [
@@ -16948,6 +17280,7 @@
           "content",
           "authorName",
           "featured",
+          "listed",
           "category",
           "status",
           "createdAt",
@@ -17270,6 +17603,42 @@
             "description": "Whether the post is the featured hero post",
             "example": false,
             "default": false
+          },
+          "listed": {
+            "type": "boolean",
+            "description": "Whether the post appears in listings (TASK-436). `false` = published and reachable at its own URL and listed in sitemap.xml, but absent from the /blog grid, the search suggestions and the related-posts block. Defaults to true.",
+            "example": true,
+            "default": true
+          },
+          "metaTitle": {
+            "type": "string",
+            "description": "SEO meta title override (falls back to the post title when empty)",
+            "example": "iPhone 16 чи iPhone 15: що брати у 2026 році",
+            "nullable": true
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "SEO meta description override (falls back to the excerpt when empty)",
+            "example": "Порівняли камери, автономність і ціну — кому апгрейд вартий грошей.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
           }
         },
         "required": [
@@ -17348,6 +17717,41 @@
             "type": "boolean",
             "description": "Whether the post is the featured hero post",
             "example": false
+          },
+          "listed": {
+            "type": "boolean",
+            "description": "Whether the post appears in listings (TASK-436). `false` keeps it published and reachable at its own URL and in sitemap.xml, but out of the /blog grid, the search suggestions and the related-posts block.",
+            "example": true
+          },
+          "metaTitle": {
+            "type": "string",
+            "description": "SEO meta title override (falls back to the post title when empty)",
+            "example": "iPhone 16 чи iPhone 15: що брати у 2026 році",
+            "nullable": true
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "SEO meta description override (falls back to the excerpt when empty)",
+            "example": "Порівняли камери, автономність і ціну — кому апгрейд вартий грошей.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags — NOT rendered as `<meta name=\"keywords\">` (ignored by Google since 2009 and never emitted by the storefront). Admin-curated synonyms for internal search and AI-summary surfaces. Send [] to clear.",
+            "example": [
+              "magsafe",
+              "ударостійкий",
+              "подарунок"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
           }
         }
       },
@@ -18302,6 +18706,12 @@
             "description": "Singleton row identifier (always the well-known constant)",
             "example": "00000000-0000-0000-0000-000000000002"
           },
+          "siteName": {
+            "type": "string",
+            "description": "Human-readable store name (TASK-433). Null → the storefront falls back to its built-in SITE_NAME constant. Read by every server-rendered surface: title template, og:site_name, Organization/WebSite/BlogPosting JSON-LD, llms.txt, the web manifest, the Merchant feed.",
+            "example": "MobileStore",
+            "nullable": true
+          },
           "defaultMetaTitle": {
             "type": "string",
             "description": "Default meta title used when a page has no own title",
@@ -18467,6 +18877,12 @@
       "UpdateSeoSettingsDto": {
         "type": "object",
         "properties": {
+          "siteName": {
+            "type": "string",
+            "description": "Human-readable store name — the single source for the storefront's title template, `openGraph.siteName`, Organization/WebSite JSON-LD, llms.txt, the web manifest and the Merchant feed. Blank/absent → the storefront's built-in SITE_NAME constant (TASK-433).",
+            "example": "MobileStore",
+            "maxLength": 120
+          },
           "defaultMetaTitle": {
             "type": "string",
             "description": "Default meta title used when a page has no own title",

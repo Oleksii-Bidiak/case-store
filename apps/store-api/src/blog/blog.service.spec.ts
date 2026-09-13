@@ -118,7 +118,31 @@ describe('BlogService', () => {
         limit: 9,
         category: 'compare',
         q: 'iphone',
+        includeUnlisted: false,
       });
+    });
+
+    // TASK-436 — the two halves of the `listed` invariant, asserted at the seam
+    // where they are decided. A list surface sends no flag and must get the
+    // filtered read; sitemap.xml asks for everything and must get it.
+    it('hides unlisted posts unless the caller asks for them', async () => {
+      repositoryMock.findAll.mockResolvedValue({ posts: [mockPost], total: 1 });
+
+      await service.findAll({ page: 1, limit: 9 });
+
+      expect(repositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ includeUnlisted: false }),
+      );
+    });
+
+    it('passes the sitemap opt-in through, so unlisted posts stay indexable', async () => {
+      repositoryMock.findAll.mockResolvedValue({ posts: [mockPost], total: 1 });
+
+      await service.findAll({ page: 1, limit: 9, includeUnlisted: true });
+
+      expect(repositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ includeUnlisted: true }),
+      );
     });
   });
 
@@ -197,6 +221,28 @@ describe('BlogService', () => {
 
       expect(repositoryMock.findAll).toHaveBeenCalled();
       expect(result.data.map((p) => p.id)).toEqual(['post-1']);
+    });
+
+    // TASK-436 × TASK-417 — the two landed on separate branches, and the index
+    // knows nothing about `listed`. Without the flag on the re-read, typing a
+    // word from an unlisted post puts it straight back on /blog and in the
+    // header suggestions — the surfaces the flag exists to keep it off.
+    it('carries the listing gate into the re-read, so search cannot resurrect an unlisted post', async () => {
+      indexerMock.search.mockResolvedValue({ ids: ['post-1'], total: 1 });
+      repositoryMock.findPublishedByIds.mockResolvedValue([mockPost]);
+
+      await service.findAll({ page: 1, limit: 9, q: 'trade-in' });
+
+      expect(repositoryMock.findPublishedByIds).toHaveBeenCalledWith(['post-1'], false);
+    });
+
+    it('lets the sitemap keep its unlisted posts when it searches too', async () => {
+      indexerMock.search.mockResolvedValue({ ids: ['post-1'], total: 1 });
+      repositoryMock.findPublishedByIds.mockResolvedValue([mockPost]);
+
+      await service.findAll({ page: 1, limit: 9, q: 'trade-in', includeUnlisted: true });
+
+      expect(repositoryMock.findPublishedByIds).toHaveBeenCalledWith(['post-1'], true);
     });
   });
 
@@ -301,6 +347,36 @@ describe('BlogService', () => {
       const passed = repositoryMock.create.mock.calls[0][0] as { content: string };
       expect(passed.content).toContain('<p>ok</p>');
       expect(passed.content).not.toContain('script');
+    });
+
+    // TASK-437 — the article was the one content entity with no admin-editable
+    // meta tags. The service maps the DTO field by field, so a new field that is
+    // not listed there is silently dropped with no type error anywhere.
+    it('passes the SEO overrides, tags and ogImage through to the repository', async () => {
+      repositoryMock.findBySlugAny.mockResolvedValue(null);
+      repositoryMock.findCategoryById.mockResolvedValue(category);
+      repositoryMock.create.mockResolvedValue(draftPost);
+
+      await service.create({
+        title: 'iPhone 16 vs 15',
+        excerpt: 'Картковий текст',
+        content: '<p>ok</p>',
+        categoryId: 'cat-1',
+        authorName: 'Олег',
+        metaTitle: 'iPhone 16 чи iPhone 15 у 2026',
+        metaDescription: 'Інший текст — для видачі, не для картки.',
+        keywords: ['iphone 16', 'порівняння'],
+        ogImage: 'https://cdn.example.com/og/iphone16.jpg',
+      });
+
+      expect(repositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metaTitle: 'iPhone 16 чи iPhone 15 у 2026',
+          metaDescription: 'Інший текст — для видачі, не для картки.',
+          keywords: ['iphone 16', 'порівняння'],
+          ogImage: 'https://cdn.example.com/og/iphone16.jpg',
+        }),
+      );
     });
 
     it('rejects an unknown category with BadRequestException', async () => {
@@ -434,6 +510,25 @@ describe('BlogService', () => {
 
       const passed = repositoryMock.update.mock.calls[0][1] as { content?: string };
       expect(passed.content).toBeUndefined();
+    });
+
+    // TASK-437 — clearing an override is a null, not an omission: `undefined`
+    // means "leave it alone", so a form that dropped its blank field could never
+    // take a wrong meta title back off a live article.
+    it('forwards an explicit null so an override can be cleared', async () => {
+      repositoryMock.findById.mockResolvedValue(mockPost);
+      repositoryMock.update.mockResolvedValue(mockPost);
+
+      await service.update('post-1', { metaTitle: null, ogImage: null, keywords: [] });
+
+      const passed = repositoryMock.update.mock.calls[0][1] as {
+        metaTitle: string | null;
+        ogImage: string | null;
+        keywords: string[];
+      };
+      expect(passed.metaTitle).toBeNull();
+      expect(passed.ogImage).toBeNull();
+      expect(passed.keywords).toEqual([]);
     });
 
     it('validates a moved category', async () => {

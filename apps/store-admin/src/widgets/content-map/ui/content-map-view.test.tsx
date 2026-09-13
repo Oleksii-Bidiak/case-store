@@ -5,10 +5,7 @@ import { dict } from "@/shared/config";
 import { ContentMapView } from "./content-map-view";
 
 type Placement =
-  | "HERO_SLIDE"
-  | "PROMO_TILE"
-  | "PROMO_BANNER"
-  | "ANNOUNCEMENT_BAR";
+  "HERO_SLIDE" | "PROMO_TILE" | "PROMO_BANNER" | "ANNOUNCEMENT_BAR";
 
 /** Minimal banner row — only `placement` is read by the count filter. */
 function bannerRow(id: string, placement: Placement) {
@@ -20,11 +17,20 @@ function faqRow(id: string, isActive: boolean) {
   return { id, question: id, answer: id, sortOrder: 0, isActive };
 }
 
+/**
+ * Minimal page row — only `kind` is read by the count filter. Since TASK-435 the
+ * page counts are grouped per kind from ONE response (as the banner placements
+ * already were), so the stub returns rows rather than a bare total.
+ */
+function pageRow(id: string, kind: "LEGAL" | "INFO" | "HUB") {
+  return { id, slug: id, kind, title: id, status: "PUBLISHED", sortOrder: 0 };
+}
+
 /** Stub all four content-map count endpoints for a test. */
 function stubCounts(opts: {
   banners: ReturnType<typeof bannerRow>[];
   faq: ReturnType<typeof faqRow>[];
-  pagesTotal: number;
+  pages: ReturnType<typeof pageRow>[];
   blogTotal: number;
 }) {
   server.use(
@@ -34,8 +40,13 @@ function stubCounts(opts: {
     http.get("*/api/admin/faq", () => HttpResponse.json({ data: opts.faq })),
     http.get("*/api/admin/pages", () =>
       HttpResponse.json({
-        data: [],
-        meta: { total: opts.pagesTotal, page: 1, limit: 1, totalPages: 1 },
+        data: opts.pages,
+        meta: {
+          total: opts.pages.length,
+          page: 1,
+          limit: 100,
+          totalPages: 1,
+        },
       }),
     ),
     http.get("*/api/admin/blog/posts", () =>
@@ -66,7 +77,7 @@ describe("ContentMapView — counts (TASK-264-B)", () => {
         bannerRow("p3", "PROMO_BANNER"),
       ],
       faq: [],
-      pagesTotal: 0,
+      pages: [],
       blogTotal: 0,
     });
 
@@ -92,11 +103,11 @@ describe("ContentMapView — counts (TASK-264-B)", () => {
     ).toBeInTheDocument();
   });
 
-  it("counts only active FAQ rows and reads pages/blog meta.total", async () => {
+  it("counts only active FAQ rows and reads the blog meta.total", async () => {
     stubCounts({
       banners: [],
       faq: [faqRow("f1", true), faqRow("f2", true), faqRow("f3", false)],
-      pagesTotal: 4,
+      pages: [],
       blogTotal: 7,
     });
 
@@ -110,18 +121,64 @@ describe("ContentMapView — counts (TASK-264-B)", () => {
     ).toBeInTheDocument();
 
     expect(
-      within(zoneCard(container, "legal-pages")).getByText("4"),
-    ).toBeInTheDocument();
-    expect(
       within(zoneCard(container, "blog")).getByText("7"),
     ).toBeInTheDocument();
+  });
+
+  // TASK-435 — three page zones off ONE request. Counting them together would
+  // show the same number three times and tell the owner nothing about which
+  // section actually has content.
+  it("splits the page count per kind: legal, help and hub rows each get their own", async () => {
+    stubCounts({
+      banners: [],
+      faq: [],
+      pages: [
+        pageRow("privacy-policy", "LEGAL"),
+        pageRow("offer", "LEGAL"),
+        pageRow("terms", "LEGAL"),
+        pageRow("about", "INFO"),
+        pageRow("blog", "HUB"),
+        pageRow("promo", "HUB"),
+      ],
+      blogTotal: 0,
+    });
+
+    const { container } = renderWithProviders(<ContentMapView />);
+
+    expect(
+      await within(zoneCard(container, "legal-pages")).findByText("3"),
+    ).toBeInTheDocument();
+    expect(
+      within(zoneCard(container, "info-pages")).getByText("1"),
+    ).toBeInTheDocument();
+    expect(
+      within(zoneCard(container, "hub-pages")).getByText("2"),
+    ).toBeInTheDocument();
+  });
+
+  it("deep-links each page zone to its own tab on the Pages screen", async () => {
+    stubCounts({ banners: [], faq: [], pages: [], blogTotal: 0 });
+
+    const { container } = renderWithProviders(<ContentMapView />);
+    await within(zoneCard(container, "blog")).findByText("0");
+
+    for (const [id, kind] of [
+      ["legal-pages", "LEGAL"],
+      ["info-pages", "INFO"],
+      ["hub-pages", "HUB"],
+    ] as const) {
+      expect(within(zoneCard(container, id)).getByRole("link")).toHaveAttribute(
+        "href",
+        `/pages?kind=${kind}`,
+      );
+    }
   });
 
   it("shows Приховано for a zero count and Показується for a positive one", async () => {
     stubCounts({
       banners: [bannerRow("h1", "HERO_SLIDE")],
       faq: [],
-      pagesTotal: 0,
+      pages: [],
       blogTotal: 0,
     });
 
@@ -141,7 +198,7 @@ describe("ContentMapView — counts (TASK-264-B)", () => {
   });
 
   it("renders settings-singleton zones as a link with no count or marker", async () => {
-    stubCounts({ banners: [], faq: [], pagesTotal: 0, blogTotal: 0 });
+    stubCounts({ banners: [], faq: [], pages: [], blogTotal: 0 });
 
     const { container } = renderWithProviders(<ContentMapView />);
 
@@ -169,7 +226,7 @@ describe("ContentMapView — counts (TASK-264-B)", () => {
   });
 
   it("links each banner zone to its ?placement= deep link", async () => {
-    stubCounts({ banners: [], faq: [], pagesTotal: 0, blogTotal: 0 });
+    stubCounts({ banners: [], faq: [], pages: [], blogTotal: 0 });
 
     const { container } = renderWithProviders(<ContentMapView />);
     await within(zoneCard(container, "blog")).findByText("0");
@@ -188,8 +245,8 @@ describe("ContentMapView — counts (TASK-264-B)", () => {
       ),
       http.get("*/api/admin/pages", () =>
         HttpResponse.json({
-          data: [],
-          meta: { total: 2, page: 1, limit: 1, totalPages: 1 },
+          data: [pageRow("offer", "LEGAL"), pageRow("terms", "LEGAL")],
+          meta: { total: 2, page: 1, limit: 100, totalPages: 1 },
         }),
       ),
       // Blog count endpoint is down.
@@ -222,7 +279,7 @@ describe("ContentMapView — counts (TASK-264-B)", () => {
   });
 
   it("renders the static catalog/PDP note", async () => {
-    stubCounts({ banners: [], faq: [], pagesTotal: 0, blogTotal: 0 });
+    stubCounts({ banners: [], faq: [], pages: [], blogTotal: 0 });
 
     renderWithProviders(<ContentMapView />);
 

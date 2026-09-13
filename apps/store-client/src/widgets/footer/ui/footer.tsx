@@ -47,7 +47,9 @@ export async function Footer() {
   // the layout/homepage already read, so Next dedupes it within the request.
   const [contact, legalPages, seo] = await Promise.all([
     fetchSiteContactSettings(),
-    fetchPublishedPages(),
+    // TASK-435: the column is "Правова інформація", so it lists LEGAL pages —
+    // help pages now live on /info and hub rows are not pages at all.
+    fetchPublishedPages("LEGAL"),
     fetchSeoSettings(),
   ]);
 

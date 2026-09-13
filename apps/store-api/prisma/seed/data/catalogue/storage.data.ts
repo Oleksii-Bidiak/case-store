@@ -1,3 +1,4 @@
+import { STORE_NAME } from '../../lib/store';
 import type { CatalogueEntry } from '../../types';
 
 /** Карти пам'яті та флешки — 6 catalogue entries / 13 positions. */
@@ -12,6 +13,9 @@ export const storage: CatalogueEntry[] = [
     sku: 'MEM-SDK-EXT',
     categorySlug: 'microsd-cards',
     brandSlug: 'sandisk',
+    metaTitle: `Карта пам'яті SanDisk Extreme microSDXC | ${STORE_NAME}`,
+    metaDescription:
+      "Карта пам'яті SanDisk Extreme microSDXC класу V30: запис 4K без пропущених кадрів. Адаптер на повнорозмірний SD у комплекті, 64–512 ГБ.",
     specs: {
       'speed-class': 'V30',
       'read-speed': 190,
@@ -61,6 +65,9 @@ export const storage: CatalogueEntry[] = [
     sku: 'MEM-SAM-EVO',
     categorySlug: 'microsd-cards',
     brandSlug: 'samsung',
+    metaTitle: `Карта пам'яті Samsung EVO Plus microSDXC | ${STORE_NAME}`,
+    metaDescription:
+      "Карта пам'яті Samsung EVO Plus microSDXC для фото, музики та ігор: читання до 160 МБ/с, стійкість до води, магнітів і рентгену.",
     specs: {
       'speed-class': 'U3',
       'read-speed': 160,

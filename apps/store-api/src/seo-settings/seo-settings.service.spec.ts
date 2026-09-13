@@ -6,6 +6,7 @@ import { RevalidationNotifier } from '../publishing';
 
 const mockRow = {
   id: SINGLETON_ID,
+  siteName: 'MobileStore',
   defaultMetaTitle: null,
   defaultMetaDescription: 'Магазин аксесуарів',
   titleTemplate: null,
@@ -52,6 +53,10 @@ describe('SeoSettingsService', () => {
       const result = await service.getSettings();
 
       expect(result).toBeInstanceOf(SeoSettingsEntity);
+      // TASK-433: an unseeded row must report a NULL store name, not an empty
+      // string — null is what tells the storefront to use its SITE_NAME
+      // constant, while '' would render a nameless title template.
+      expect(result.siteName).toBeNull();
       expect(result.defaultMetaTitle).toBeNull();
       expect(result.defaultMetaDescription).toBeNull();
       expect(result.titleTemplate).toBeNull();
@@ -80,6 +85,7 @@ describe('SeoSettingsService', () => {
       const result = await service.getSettings();
 
       expect(result).toBeInstanceOf(SeoSettingsEntity);
+      expect(result.siteName).toBe('MobileStore');
       expect(result.defaultMetaDescription).toBe('Магазин аксесуарів');
       expect(result.noindexSite).toBe(false);
     });
@@ -98,6 +104,21 @@ describe('SeoSettingsService', () => {
       expect(result).toBeInstanceOf(SeoSettingsEntity);
       expect(result.defaultMetaTitle).toBe('Новий заголовок');
       expect(result.noindexSite).toBe(true);
+    });
+
+    it('passes the store name through to the repository and back (TASK-433)', async () => {
+      const dto = { siteName: 'Аксесуарня' };
+      repositoryMock.upsertSettings.mockResolvedValue({ ...mockRow, ...dto });
+      revalidationMock.revalidate.mockResolvedValue(undefined);
+
+      const result = await service.updateSettings(dto);
+
+      expect(repositoryMock.upsertSettings).toHaveBeenCalledWith(dto);
+      expect(result.siteName).toBe('Аксесуарня');
+      // Renaming the shop changes every server-rendered title / og:site_name /
+      // JSON-LD, all of which are ISR-cached behind this one tag — without the
+      // purge the old name stays on the live site until a rebuild.
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith({ tags: ['seo-settings'] });
     });
 
     it('passes the search-console verification fields through unchanged (TASK-280)', async () => {

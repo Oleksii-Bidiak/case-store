@@ -12,6 +12,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { IsKeywordsField, IsOgImageField } from '../../common/validators';
 import { MAX_DESCRIPTION_LENGTH } from '../product.constants';
 
 /**
@@ -182,4 +183,10 @@ export class CreateProductDto {
   @IsString()
   @MaxLength(500, { message: 'Meta description must be at most 500 characters' })
   metaDescription?: string;
+
+  @IsKeywordsField()
+  keywords?: string[];
+
+  @IsOgImageField()
+  ogImage?: string | null;
 }

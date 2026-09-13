@@ -10,10 +10,15 @@ import {
   buildBreadcrumbSchema,
   buildFaqPageSchema,
 } from "@/shared/lib/schema";
-import { resolveSeo, toMetadataTitle } from "@/shared/lib/seo";
+import {
+  buildOgImages,
+  resolveSeo,
+  resolveSiteName,
+  toMetadataTitle,
+} from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { fetchFaqItems } from "@/shared/api/faq-server";
-import { SITE_URL, SITE_NAME, CURRENCY, dict } from "@/shared/config";
+import { SITE_URL, CURRENCY, dict } from "@/shared/config";
 
 interface ProductDetailPageProps {
   params: Promise<{ slug: string }>;
@@ -31,35 +36,49 @@ export async function generateMetadata({
     ]);
 
     // Precedence via the shared helper: the product's own metaTitle/
-    // metaDescription (tier 1, admin override) → SeoSettings defaults (tier 2) →
-    // the product name/description (tier 3), with the localized fallback kept as
-    // the innermost description (TASK-241).
+    // metaDescription (tier 1, admin override) → the product name/description
+    // (tier 2) → SeoSettings defaults (tier 3), with the localized fallback kept
+    // as the innermost description (TASK-241; order inverted by TASK-432 so one
+    // global default can no longer describe every product in the catalogue).
     const resolved = resolveSeo({
       entityTitle: product.metaTitle,
       entityDescription: product.metaDescription,
       settings: seo,
       content: { name: product.name, description: product.description },
     });
+    // TASK-433 — admin-managed store name (title template + og:site_name).
+    const siteName = resolveSiteName(seo);
     const title = toMetadataTitle(resolved, {
       settings: seo,
-      siteName: SITE_NAME,
+      siteName,
       fallback: product.name,
     });
     const description =
       resolved.description ?? dict.meta.productFallbackDescription;
     const canonical = `${SITE_URL}/products/${product.slug}`;
-    const firstImage = images[0]?.url ?? resolved.ogImage;
 
     return {
       title,
       description,
       alternates: { canonical },
+      // Replaces the root layout's `openGraph` wholesale (Next merges metadata
+      // shallowly), so siteName/locale/images are re-stated here — see
+      // `buildOgImages` for the image chain.
       openGraph: {
         title: title.absolute,
         description,
         url: canonical,
+        siteName,
+        locale: "uk_UA",
         type: "website",
-        images: firstImage ? [{ url: firstImage }] : undefined,
+        // TASK-437 — the product's own `ogImage` (an admin's deliberate 1200×630
+        // card) outranks `images[0]`, which is just whatever photo sorts first
+        // in the gallery. Unset, the chain is exactly what it was before.
+        images: buildOgImages({
+          entityOgImage: product.ogImage,
+          pageImage: images[0]?.url,
+          defaultOgImage: resolved.ogImage,
+        }),
       },
     };
   } catch {
@@ -134,10 +153,20 @@ async function buildProductPageSchemas(slug: string): Promise<{
     // accordion lives on the /info hub; the PDP only emits the FAQPage JSON-LD
     // (structured data) from the same source so it stays a single source of
     // truth. Null on failure → the block is simply omitted.
-    const [{ data: product, images, category }, faqItems] = await Promise.all([
-      productControllerFindBySlug(slug),
-      fetchFaqItems(),
-    ]);
+    // The SEO singleton joins the fetch for one reason: `fallbackBrandName`
+    // below is the brand of a product that has none of its own, and that
+    // fallback is the store's name — admin-managed since TASK-433, so it can no
+    // longer be read from a constant. Same tagged URL `generateMetadata` already
+    // fetched, so Next dedupes it within the request and this costs nothing.
+    // (This comment claimed "FALLBACK" before TASK-437 while the schema builder
+    // emitted the store name unconditionally — the rename is what makes the two
+    // agree.)
+    const [{ data: product, images, category }, faqItems, seo] =
+      await Promise.all([
+        productControllerFindBySlug(slug),
+        fetchFaqItems(),
+        fetchSeoSettings(),
+      ]);
     const canonical = `${SITE_URL}/products/${product.slug}`;
 
     const faq =
@@ -156,7 +185,7 @@ async function buildProductPageSchemas(slug: string): Promise<{
         images,
         siteUrl: SITE_URL,
         currency: CURRENCY,
-        brandName: SITE_NAME,
+        fallbackBrandName: resolveSiteName(seo),
       }),
       breadcrumb: buildBreadcrumbSchema([
         { name: dict.product.breadcrumbHome, item: SITE_URL },

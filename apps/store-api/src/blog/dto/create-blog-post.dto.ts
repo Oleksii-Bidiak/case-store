@@ -8,9 +8,11 @@ import {
   MaxLength,
   Min,
   Matches,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { IsKeywordsField, IsOgImageField } from '../../common/validators';
 import { PublishFieldsDto } from '../../publishing';
 
 /**
@@ -102,4 +104,52 @@ export class CreateBlogPostDto extends PublishFieldsDto {
   @IsOptional()
   @IsBoolean({ message: 'featured must be a boolean' })
   featured?: boolean;
+
+  @ApiProperty({
+    description:
+      'Whether the post appears in listings (TASK-436). `false` = published and reachable at ' +
+      'its own URL and listed in sitemap.xml, but absent from the /blog grid, the search ' +
+      'suggestions and the related-posts block. Defaults to true.',
+    example: true,
+    required: false,
+    default: true,
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'listed must be a boolean' })
+  listed?: boolean;
+
+  @ApiProperty({
+    description: 'SEO meta title override (falls back to the post title when empty)',
+    example: 'iPhone 16 чи iPhone 15: що брати у 2026 році',
+    required: false,
+    nullable: true,
+    type: String,
+  })
+  @IsOptional()
+  // Explicit `null` clears the override. Accepted on CREATE as well as UPDATE
+  // because one admin mapper serves both verbs for this form (TASK-437) — a
+  // blank field always maps to null, and `null` on create simply stores null.
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(255, { message: 'Meta title must be at most 255 characters' })
+  metaTitle?: string | null;
+
+  @ApiProperty({
+    description: 'SEO meta description override (falls back to the excerpt when empty)',
+    example: 'Порівняли камери, автономність і ціну — кому апгрейд вартий грошей.',
+    required: false,
+    nullable: true,
+    type: String,
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(500, { message: 'Meta description must be at most 500 characters' })
+  metaDescription?: string | null;
+
+  @IsKeywordsField()
+  keywords?: string[];
+
+  @IsOgImageField()
+  ogImage?: string | null;
 }

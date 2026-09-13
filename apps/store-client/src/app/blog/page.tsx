@@ -7,12 +7,25 @@ import {
 } from "@/shared/api/blog-server";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
+import { buildHubMetadata } from "@/shared/lib/seo";
 import { SITE_URL, dict } from "@/shared/config";
 
-export const metadata: Metadata = {
-  title: dict.meta.blogTitle,
-  description: dict.meta.blogDescription,
-};
+// TASK-432 — /blog was the only storefront route with no `alternates.canonical`,
+// so every `?category=`/`?q=`/`?page=` variant of the hub self-canonicalized and
+// competed with the clean URL. The hub canonicalizes onto itself; the paged and
+// filtered views are navigation, not separate documents.
+//
+// TASK-435 — title/description come from the `blog` HUB page row so the owner
+// can edit them in the panel; the dictionary strings remain the fallback. The
+// canonical is unchanged.
+export function generateMetadata(): Promise<Metadata> {
+  return buildHubMetadata({
+    slug: "blog",
+    canonical: `${SITE_URL}/blog`,
+    fallbackTitle: dict.meta.blogTitle,
+    fallbackDescription: dict.meta.blogDescription,
+  });
+}
 
 /**
  * Posts per page. One size for EVERY page (TASK-417): the hub used to grow a
@@ -50,11 +63,14 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
   const isUnfiltered = !category && !query;
 
   const [{ posts, meta }, categories] = await Promise.all([
+    // develop paginates the hub (TASK-417); this branch keeps unlisted posts out
+    // of it (TASK-436). A list surface wants both.
     fetchPublishedPosts({
       category,
       q: query,
       page: pageNum,
       limit: PAGE_SIZE,
+      includeUnlisted: false,
     }),
     fetchBlogCategories(),
   ]);

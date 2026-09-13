@@ -23,6 +23,7 @@ function makeProduct(
     inStock: true,
     brand: { name: "Spigen" },
     primaryImage: { url: "https://cdn.example.com/images/product-1.jpg" },
+    categoryPath: ["Аксесуари", "Чохли"],
     ...overrides,
   };
 }
@@ -80,7 +81,54 @@ describe("buildMerchantFeedXml", () => {
     expect(xml).toContain("<g:availability>in_stock</g:availability>");
     expect(xml).toContain("<g:condition>new</g:condition>");
     expect(xml).toContain("<g:brand>Spigen</g:brand>");
+    expect(xml).toContain(
+      "<g:product_type>Аксесуари &gt; Чохли</g:product_type>",
+    );
     expect(xml).toContain("<g:identifier_exists>false</g:identifier_exists>");
+  });
+
+  // --- g:product_type (TASK-432) -------------------------------------------
+
+  describe("g:product_type", () => {
+    it("joins the category breadcrumb with ' > ' (XML-escaped)", () => {
+      const xml = build([
+        makeProduct({
+          categoryPath: ["Аксесуари", "Кабелі та адаптери", "USB-C"],
+        }),
+      ]);
+      expect(xml).toContain(
+        "<g:product_type>Аксесуари &gt; Кабелі та адаптери &gt; USB-C</g:product_type>",
+      );
+    });
+
+    it("emits a single-segment path for a root category", () => {
+      const xml = build([makeProduct({ categoryPath: ["Смартфони"] })]);
+      expect(xml).toContain("<g:product_type>Смартфони</g:product_type>");
+    });
+
+    it.each([
+      ["undefined", undefined],
+      ["null", null],
+      ["an empty array", [] as string[]],
+      ["a blank-only path", ["  ", ""]],
+    ])(
+      "omits the element entirely (never an empty tag) when the path is %s",
+      (_label, categoryPath) => {
+        const xml = build([makeProduct({ categoryPath })]);
+
+        expect(countItems(xml)).toBe(1); // the item itself still ships
+        expect(xml).not.toContain("<g:product_type>");
+      },
+    );
+
+    it("escapes XML-special characters inside a category name", () => {
+      const xml = build([
+        makeProduct({ categoryPath: ["Кабелі & адаптери", "USB-C <2m>"] }),
+      ]);
+      expect(xml).toContain(
+        "<g:product_type>Кабелі &amp; адаптери &gt; USB-C &lt;2m&gt;</g:product_type>",
+      );
+    });
   });
 
   it("pads Decimal-truncated prices back to N.NN (review follow-up)", () => {

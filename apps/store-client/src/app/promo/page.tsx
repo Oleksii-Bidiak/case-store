@@ -2,13 +2,18 @@ import type { Metadata } from "next";
 import { PromoView } from "@/widgets/promo";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
+import { buildHubMetadata } from "@/shared/lib/seo";
 import { SITE_URL, dict } from "@/shared/config";
 
-export const metadata: Metadata = {
-  title: dict.meta.promoTitle,
-  description: dict.meta.promoDescription,
-  alternates: { canonical: `${SITE_URL}/promo` },
-};
+// TASK-435 — admin-managed via the `promo` HUB page row; dictionary fallback.
+export function generateMetadata(): Promise<Metadata> {
+  return buildHubMetadata({
+    slug: "promo",
+    canonical: `${SITE_URL}/promo`,
+    fallbackTitle: dict.meta.promoTitle,
+    fallbackDescription: dict.meta.promoDescription,
+  });
+}
 
 /**
  * `/promo` — the Акції (promotions) landing page. Static shell + client widgets;

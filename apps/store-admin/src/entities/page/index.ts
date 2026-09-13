@@ -15,6 +15,10 @@ export {
   getAdminPageControllerFindByIdQueryKey,
 } from "@/shared/api";
 
+// TASK-435 — `kind` (LEGAL / INFO / HUB) is a value, not just a type: the tabs,
+// the row badge and the form's picker all enumerate it.
+export { PageEntityKind } from "@/shared/api";
+
 export type {
   PageEntity,
   CreatePageDto,

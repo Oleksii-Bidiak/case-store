@@ -542,6 +542,12 @@ export const dict = {
     formSent: "Дякуємо! Ми звʼяжемося з вами найближчим часом.",
     formError:
       "Не вдалося надіслати повідомлення. Спробуйте ще раз за хвилину.",
+    // TASK-435 — /info/[slug]: admin-authored help pages, rendered in the same
+    // document template as /legal/[slug] but under the Info hub.
+    docBreadcrumbHub: "Інформація та підтримка",
+    docBadge: "ДОВІДКА",
+    docOtherHeading: "Інші довідкові сторінки",
+    aboutOpenPage: "Відкрити як окрему сторінку",
   },
 
   // TASK-167-Q — dedicated contact page (/contact, Contact.dc.html). Contact

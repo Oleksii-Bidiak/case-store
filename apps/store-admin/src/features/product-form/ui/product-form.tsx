@@ -15,6 +15,7 @@ import {
   resolveSeoPreviewTitle,
   resolveSeoPreviewDescription,
   resolveEffectiveTitleTemplate,
+  resolvePreviewSiteName,
 } from "@/shared/lib/seo";
 import {
   Button,
@@ -35,7 +36,7 @@ import {
   TabsTrigger,
   Textarea,
 } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, STOREFRONT_HOST } from "@/shared/config";
 import {
   productSchema,
   type ProductFormInput,
@@ -123,6 +124,8 @@ const EMPTY_VALUES: ProductFormInput = {
   attributes: [],
   metaTitle: "",
   metaDescription: "",
+  keywords: "",
+  ogImage: "",
 };
 
 /**
@@ -190,7 +193,7 @@ export function ProductForm({
     contentName: nameValue,
     titleTemplate: resolveEffectiveTitleTemplate(
       seoSettings?.titleTemplate,
-      dict.brand,
+      resolvePreviewSiteName(seoSettings),
     ),
   });
   const previewDescription = resolveSeoPreviewDescription({
@@ -628,12 +631,50 @@ export function ProductForm({
         )}
       </div>
 
+      {/* TASK-437 — tags and the social card sit inside the SEO block, above the
+          SERP preview, because neither of them shows up in that preview: the
+          preview is the Google snippet, these two are for internal search and
+          for Facebook/Telegram. */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="product-keywords">{dict.seoFields.keywords}</Label>
+        <Input
+          id="product-keywords"
+          placeholder={dict.seoFields.keywordsPlaceholder}
+          {...register("keywords")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.seoFields.keywordsHint}
+        </p>
+        {errors.keywords && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.keywords.message}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="product-og-image">{dict.seoFields.ogImage}</Label>
+        <Input
+          id="product-og-image"
+          placeholder={dict.seoFields.ogImagePlaceholder(STOREFRONT_HOST)}
+          {...register("ogImage")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.seoFields.ogImageHint}
+        </p>
+        {errors.ogImage && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.ogImage.message}
+          </p>
+        )}
+      </div>
+
       <SeoSnippetPreview
         title={previewTitle.text}
         titleTier={previewTitle.tier}
         description={previewDescription.text || undefined}
         descriptionTier={previewDescription.tier}
-        url={`${dict.seoSnippetPreview.urlHost} › products › ${previewSlug}`}
+        url={`${STOREFRONT_HOST} › products › ${previewSlug}`}
         rawTitleLength={metaTitleValue.trim().length}
         rawDescriptionLength={metaDescriptionValue.trim().length}
       />

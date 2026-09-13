@@ -21,9 +21,15 @@ import {
   resolveSeoPreviewTitle,
   resolveSeoPreviewDescription,
   resolveEffectiveTitleTemplate,
+  resolvePreviewSiteName,
 } from "@/shared/lib/seo";
 import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
-import { dict } from "@/shared/config";
+import {
+  dict,
+  HUB_PAGES,
+  pagePreviewPath,
+  STOREFRONT_HOST,
+} from "@/shared/config";
 import {
   pageSchema,
   type PageFormInput,
@@ -49,8 +55,13 @@ const EMPTY_VALUES: PageFormInput = {
   excerpt: "",
   metaTitle: "",
   metaDescription: "",
+  keywords: "",
+  ogImage: "",
   sortOrder: "0",
   status: "DRAFT",
+  // LEGAL matches the API's own default, so "create page" without touching the
+  // picker produces the same row it did before TASK-435.
+  kind: "LEGAL",
   scheduledAt: "",
 };
 
@@ -95,6 +106,8 @@ export function PageForm({
   const titleValue = useWatch({ control, name: "title" }) ?? "";
   const slugValue = useWatch({ control, name: "slug" });
   const statusValue = useWatch({ control, name: "status" });
+  const kindValue = useWatch({ control, name: "kind" }) ?? "LEGAL";
+  const isHub = kindValue === "HUB";
 
   // Live SERP preview (TASK-268): resolve the exact title/description the
   // storefront would render for this /legal/[slug] page through the same
@@ -107,22 +120,40 @@ export function PageForm({
   const metaDescriptionValue =
     useWatch({ control, name: "metaDescription" }) ?? "";
   const seoSettings = useSeoSettingsControllerGetSettings().data?.data;
+  // A HUB row resolves differently on the storefront, and the preview has to say
+  // so or it promises text `<head>` will never carry (`buildHubMetadata` in
+  // apps/store-client/src/shared/lib/seo/hub-metadata.ts):
+  //   - the body is never rendered anywhere, so only the excerpt can derive a
+  //     description — the form already warns the operator about this below;
+  //   - the store-wide SeoSettings defaults are blanked on purpose, because a
+  //     hub that fell back to them would re-introduce the one store-level
+  //     sentence TASK-432 removed. The route's own dictionary copy takes over
+  //     instead, which is why a blank hub previews as empty rather than as the
+  //     global default.
   const previewTitle = resolveSeoPreviewTitle({
     entityTitle: metaTitleValue,
-    defaultTitle: seoSettings?.defaultMetaTitle,
+    defaultTitle: isHub ? undefined : seoSettings?.defaultMetaTitle,
     contentName: titleValue,
     titleTemplate: resolveEffectiveTitleTemplate(
       seoSettings?.titleTemplate,
-      dict.brand,
+      resolvePreviewSiteName(seoSettings),
     ),
   });
   const previewDescription = resolveSeoPreviewDescription({
     entityDescription: metaDescriptionValue,
-    defaultDescription: seoSettings?.defaultMetaDescription,
-    contentDescription: excerptValue || contentValue,
+    defaultDescription: isHub ? undefined : seoSettings?.defaultMetaDescription,
+    contentDescription: isHub ? excerptValue : excerptValue || contentValue,
   });
   const previewSlug =
     slugValue || (titleValue.trim() ? slugify(titleValue) : "");
+  // TASK-435 — the green breadcrumb follows the KIND: `/legal/<slug>`,
+  // `/info/<slug>`, or, for a hub, the section's own route with no slug segment
+  // after it. A hub with no section picked yet has no address at all, so the
+  // preview shows the bare host rather than inventing one.
+  const previewPath = pagePreviewPath(kindValue, previewSlug);
+  const previewUrl = previewPath
+    ? `${STOREFRONT_HOST}${previewPath.split("/").join(" › ")}`
+    : STOREFRONT_HOST;
 
   return (
     <form
@@ -140,27 +171,74 @@ export function PageForm({
         )}
       </div>
 
+      {/* TASK-435 — what this row IS decides where it lives, so it sits right
+          under the title, above the slug it governs. */}
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="page-slug">{dict.pageForm.slug}</Label>
-        <Input
-          id="page-slug"
-          placeholder={dict.pageForm.slugPlaceholder}
-          {...register("slug")}
-        />
-        {!slugValue && titleValue.trim().length > 0 && (
-          <p
-            className="text-sm text-muted-foreground"
-            data-testid="slug-preview"
-          >
-            {dict.pageForm.slugPreview(slugify(titleValue))}
-          </p>
-        )}
-        {errors.slug && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.slug.message}
-          </p>
-        )}
+        <Label htmlFor="page-kind">{dict.pageForm.kind}</Label>
+        <select
+          id="page-kind"
+          className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+          {...register("kind")}
+        >
+          <option value="LEGAL">{dict.pageForm.kindLegal}</option>
+          <option value="INFO">{dict.pageForm.kindInfo}</option>
+          <option value="HUB">{dict.pageForm.kindHub}</option>
+        </select>
+        <p className="text-sm text-muted-foreground">
+          {dict.pageForm.kindHint}
+        </p>
       </div>
+
+      {/* A hub's address is not invented — it names a section the storefront
+          already has, so the free-text slug becomes a picker. A typo here would
+          save a row attached to nothing (the API rejects it with a 400). */}
+      {isHub ? (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="page-hub-slug">{dict.pageForm.hubSlug}</Label>
+          <select
+            id="page-hub-slug"
+            className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+            {...register("slug")}
+          >
+            <option value="">{dict.pageForm.hubSlugPlaceholder}</option>
+            {HUB_PAGES.map((hub) => (
+              <option key={hub.slug} value={hub.slug}>
+                {hub.route}
+              </option>
+            ))}
+          </select>
+          <p className="text-sm text-muted-foreground">
+            {dict.pageForm.hubSlugHint}
+          </p>
+          {errors.slug && (
+            <p role="alert" className="text-sm text-destructive">
+              {errors.slug.message}
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="page-slug">{dict.pageForm.slug}</Label>
+          <Input
+            id="page-slug"
+            placeholder={dict.pageForm.slugPlaceholder}
+            {...register("slug")}
+          />
+          {!slugValue && titleValue.trim().length > 0 && (
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="slug-preview"
+            >
+              {dict.pageForm.slugPreview(slugify(titleValue))}
+            </p>
+          )}
+          {errors.slug && (
+            <p role="alert" className="text-sm text-destructive">
+              {errors.slug.message}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="page-content">{dict.pageForm.content}</Label>
@@ -201,6 +279,13 @@ export function PageForm({
             />
           </TabsContent>
         </Tabs>
+        {/* A hub row's body is never rendered on the storefront — say so, or the
+            operator spends time polishing text nobody will read. */}
+        {isHub && (
+          <p className="text-sm text-muted-foreground">
+            {dict.pageForm.hubContentHint}
+          </p>
+        )}
         {errors.content && (
           <p role="alert" className="text-sm text-destructive">
             {errors.content.message}
@@ -249,12 +334,49 @@ export function PageForm({
         )}
       </div>
 
+      {/* TASK-437 — tags and the social card, above the SERP preview for the
+          same reason as in the product and category forms: neither appears in
+          that preview. */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="page-keywords">{dict.seoFields.keywords}</Label>
+        <Input
+          id="page-keywords"
+          placeholder={dict.seoFields.keywordsPlaceholder}
+          {...register("keywords")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.seoFields.keywordsHint}
+        </p>
+        {errors.keywords && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.keywords.message}
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="page-og-image">{dict.seoFields.ogImage}</Label>
+        <Input
+          id="page-og-image"
+          placeholder={dict.seoFields.ogImagePlaceholder(STOREFRONT_HOST)}
+          {...register("ogImage")}
+        />
+        <p className="text-sm text-muted-foreground">
+          {dict.seoFields.ogImageHint}
+        </p>
+        {errors.ogImage && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.ogImage.message}
+          </p>
+        )}
+      </div>
+
       <SeoSnippetPreview
         title={previewTitle.text}
         titleTier={previewTitle.tier}
         description={previewDescription.text || undefined}
         descriptionTier={previewDescription.tier}
-        url={`${dict.seoSnippetPreview.urlHost} › legal › ${previewSlug}`}
+        url={previewUrl}
         rawTitleLength={metaTitleValue.trim().length}
         rawDescriptionLength={metaDescriptionValue.trim().length}
       />

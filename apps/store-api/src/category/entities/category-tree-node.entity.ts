@@ -67,6 +67,28 @@ export class CategoryTreeNodeEntity {
   })
   metaDescription!: string | null;
 
+  @ApiProperty({
+    description:
+      'Internal content tags (TASK-437). Never rendered as a `<meta name="keywords">` tag.',
+    example: ['чохли', 'cases'],
+    type: [String],
+    // Optional in the CONTRACT, never absent from a response — see
+    // ProductEntity.keywords for why (TASK-437).
+    required: false,
+  })
+  keywords!: string[];
+
+  @ApiProperty({
+    description:
+      'Open Graph image for this category — first tier of the storefront’s ' +
+      '`buildOgImages` chain (TASK-437).',
+    example: 'https://cdn.example.com/og/cases.jpg',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  ogImage!: string | null;
+
   @ApiProperty({ description: 'Last update timestamp', example: '2024-01-01T00:00:00.000Z' })
   updatedAt!: Date;
 
@@ -90,6 +112,8 @@ export class CategoryTreeNodeEntity {
     sortOrder: number;
     metaTitle?: string | null;
     metaDescription?: string | null;
+    keywords?: string[];
+    ogImage?: string | null;
     updatedAt: Date;
     children: Array<{
       id: string;
@@ -101,6 +125,8 @@ export class CategoryTreeNodeEntity {
       sortOrder: number;
       metaTitle?: string | null;
       metaDescription?: string | null;
+      keywords?: string[];
+      ogImage?: string | null;
       updatedAt: Date;
       children: unknown[];
     }>;
@@ -115,6 +141,8 @@ export class CategoryTreeNodeEntity {
     entity.sortOrder = category.sortOrder;
     entity.metaTitle = category.metaTitle ?? null;
     entity.metaDescription = category.metaDescription ?? null;
+    entity.keywords = category.keywords ?? [];
+    entity.ogImage = category.ogImage ?? null;
     entity.updatedAt = category.updatedAt;
     entity.children = (category.children ?? []).map((child) =>
       CategoryTreeNodeEntity.fromPrisma(

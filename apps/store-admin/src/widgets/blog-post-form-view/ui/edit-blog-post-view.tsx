@@ -18,6 +18,7 @@ import {
   useAdminBlogControllerUpdate,
   type BlogPostEntity,
 } from "@/entities/blog";
+import { formatKeywords } from "@/shared/lib/seo";
 import { dict } from "@/shared/config";
 
 interface EditBlogPostViewProps {
@@ -132,6 +133,11 @@ function mapPostToFormValues(post: BlogPostEntity): Partial<BlogPostFormInput> {
     readingMinutes:
       post.readingMinutes != null ? String(post.readingMinutes) : "",
     featured: post.featured,
+    listed: post.listed,
+    metaTitle: post.metaTitle ?? "",
+    metaDescription: post.metaDescription ?? "",
+    keywords: formatKeywords(post.keywords),
+    ogImage: post.ogImage ?? "",
     status: post.status,
     scheduledAt: post.scheduledAt ? toDateTimeLocal(post.scheduledAt) : "",
   };

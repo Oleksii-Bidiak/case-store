@@ -162,6 +162,8 @@ export interface CreateProductInput {
   isActive?: boolean;
   metaTitle?: string | null;
   metaDescription?: string | null;
+  keywords?: string[];
+  ogImage?: string | null;
 }
 
 /**
@@ -184,6 +186,9 @@ export interface UpdateProductInput {
   isActive?: boolean;
   metaTitle?: string | null;
   metaDescription?: string | null;
+  /** Absent leaves the stored tags alone; `[]` clears them (TASK-437). */
+  keywords?: string[];
+  ogImage?: string | null;
 }
 
 /**
@@ -1136,6 +1141,8 @@ export class ProductRepository {
         isActive: data.isActive ?? true,
         metaTitle: data.metaTitle ?? null,
         metaDescription: data.metaDescription ?? null,
+        keywords: data.keywords ?? [],
+        ogImage: data.ogImage ?? null,
       },
     });
   }

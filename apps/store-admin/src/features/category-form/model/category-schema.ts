@@ -1,8 +1,14 @@
 import { z } from "zod";
 import type { CreateCategoryDto, UpdateCategoryDto } from "@/entities/category";
 import { dict } from "@/shared/config";
+import {
+  KEYWORDS_MAX_COUNT,
+  KEYWORD_MAX_LENGTH,
+  parseKeywords,
+} from "@/shared/lib/seo";
 
 const e = dict.categoryForm.errors;
+const seoErrors = dict.seoFields.errors;
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -59,6 +65,27 @@ export const categorySchema = z.object({
     .max(500, e.metaDescriptionMax)
     .optional()
     .or(z.literal("")),
+
+  // TASK-437 — internal tags as one comma-separated field, validated on the
+  // PARSED list (see the product form's twin).
+  keywords: z
+    .string()
+    .optional()
+    .refine(
+      (raw) => parseKeywords(raw).length <= KEYWORDS_MAX_COUNT,
+      seoErrors.keywordsCount(KEYWORDS_MAX_COUNT),
+    )
+    .refine(
+      (raw) => parseKeywords(raw).every((k) => k.length <= KEYWORD_MAX_LENGTH),
+      seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
+    ),
+
+  ogImage: z
+    .string()
+    .trim()
+    .url(seoErrors.ogImageUrl)
+    .optional()
+    .or(z.literal("")),
 });
 
 export type CategoryFormInput = z.input<typeof categorySchema>;
@@ -92,6 +119,7 @@ export function categoryFormValuesToDto(
   const parentId = values.parentId?.trim();
   const metaTitle = values.metaTitle?.trim();
   const metaDescription = values.metaDescription?.trim();
+  const ogImage = values.ogImage?.trim();
 
   return {
     name: values.name,
@@ -108,5 +136,8 @@ export function categoryFormValuesToDto(
       : options.isUpdate
         ? null
         : undefined,
+    // A tag list clears by being EMPTY, so one array serves both verbs (TASK-437).
+    keywords: parseKeywords(values.keywords),
+    ogImage: ogImage ? ogImage : options.isUpdate ? null : undefined,
   };
 }

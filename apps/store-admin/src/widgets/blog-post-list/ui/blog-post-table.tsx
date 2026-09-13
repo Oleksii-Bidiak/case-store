@@ -181,6 +181,7 @@ function BlogPostView() {
                 <TableHead hideOnMobile>{dict.blogPosts.colCategory}</TableHead>
                 <TableHead>{dict.blogPosts.colStatus}</TableHead>
                 <TableHead hideOnMobile>{dict.blogPosts.colFeatured}</TableHead>
+                <TableHead hideOnMobile>{dict.blogPosts.colListed}</TableHead>
                 <TableHead className="text-right">
                   {dict.common.actions}
                 </TableHead>
@@ -209,6 +210,18 @@ function BlogPostView() {
                     </TableCell>
                     <TableCell hideOnMobile>
                       {post.featured ? dict.blogPosts.featuredYes : "—"}
+                    </TableCell>
+                    {/* TASK-436 — an unlisted post is published and reachable,
+                        so no status badge reveals it. Without a column of its
+                        own the owner cannot tell it apart from a normal post. */}
+                    <TableCell hideOnMobile>
+                      {post.listed ? (
+                        "—"
+                      ) : (
+                        <Badge variant="secondary">
+                          {dict.blogPosts.unlistedBadge}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">

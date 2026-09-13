@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { STORE_NAME } from '../lib/store';
 
 /**
  * Seed the singleton site-contact settings row (TASK-154).
@@ -38,6 +39,12 @@ export async function seedSiteContactSettings(prisma: PrismaClient) {
  * well-known fixed ID as `SeoSettingsRepository.SINGLETON_ID`.
  *
  * Defaults per plan 116 §TASK-239:
+ *   - siteName: STORE_NAME — the one field that is seeded with a real value
+ *     (TASK-433). The column is nullable so a fresh install still renders a name
+ *     via the storefront's SITE_NAME constant, but leaving it empty here would
+ *     show the owner a blank «Назва магазину» box in the admin while the live
+ *     site plainly displays a name — the exact "where do I change this?"
+ *     confusion the field exists to end.
  *   - defaultMetaTitle: null — let the content-derived fallback build titles
  *   - defaultMetaDescription: a generic store one-liner
  *   - titleTemplate: null — use the code default (`%s | ${SITE_NAME}`)
@@ -56,6 +63,7 @@ export async function seedSeoSettings(prisma: PrismaClient) {
     update: {},
     create: {
       id: SINGLETON_ID,
+      siteName: STORE_NAME,
       defaultMetaTitle: null,
       defaultMetaDescription:
         'Мультибрендовий інтернет-магазин аксесуарів для смартфонів та Apple-техніки в Україні. Доставка Новою Поштою, оплата у гривні.',

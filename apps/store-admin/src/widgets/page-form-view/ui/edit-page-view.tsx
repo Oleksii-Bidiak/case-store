@@ -18,6 +18,7 @@ import {
   useAdminPageControllerUpdate,
   type PageEntity,
 } from "@/entities/page";
+import { formatKeywords } from "@/shared/lib/seo";
 import { dict } from "@/shared/config";
 
 interface EditPageViewProps {
@@ -123,10 +124,13 @@ function mapPageToFormValues(page: PageEntity): Partial<PageFormInput> {
   return {
     title: page.title,
     slug: page.slug,
+    kind: page.kind,
     content: page.content,
     excerpt: page.excerpt ?? "",
     metaTitle: page.metaTitle ?? "",
     metaDescription: page.metaDescription ?? "",
+    keywords: formatKeywords(page.keywords),
+    ogImage: page.ogImage ?? "",
     sortOrder: String(page.sortOrder),
     status: page.status,
     // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant.

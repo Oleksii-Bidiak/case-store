@@ -16,6 +16,8 @@ export interface AdminCategoryTreeRow {
   sortOrder: number;
   metaTitle: string | null;
   metaDescription: string | null;
+  keywords: string[];
+  ogImage: string | null;
   updatedAt: Date;
   _count: { products: number };
 }
@@ -87,6 +89,8 @@ export class AdminCategoryTreeNodeEntity extends CategoryTreeNodeEntity {
     entity.sortOrder = row.sortOrder;
     entity.metaTitle = row.metaTitle;
     entity.metaDescription = row.metaDescription;
+    entity.keywords = row.keywords;
+    entity.ogImage = row.ogImage;
     entity.updatedAt = row.updatedAt;
     entity.parentId = row.parentId;
     entity.productCount = row._count.products;

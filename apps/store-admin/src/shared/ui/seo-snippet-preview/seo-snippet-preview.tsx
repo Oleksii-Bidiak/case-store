@@ -23,7 +23,8 @@ export interface SeoSnippetPreviewProps {
   /** Fully resolved description, or undefined when no tier yields usable text. */
   description?: string;
   descriptionTier: SeoPreviewTier;
-  /** Green breadcrumb line, e.g. "mobilestore.ua › products › chohol-iphone". */
+  /** Green breadcrumb line, e.g. "example.ua › products › chohol-iphone" — the
+   * host comes from `STOREFRONT_HOST` at the call site (TASK-433). */
   url: string;
   /** Raw length of the entity's own metaTitle field (0 if blank) — counter only. */
   rawTitleLength: number;

@@ -1,11 +1,12 @@
 import { stripFormatting, truncateAtWord } from "@/shared/lib/seo";
+import { formatCategoryPath } from "@/shared/lib/category-path";
 import { escapeXml } from "./escapeXml";
 
 /**
  * Narrow product shape for the Merchant Center feed (plan 148, Decision 1).
  *
  * Deliberately NOT the generated `PublicProductEntity` — the builder only
- * needs these 8 fields, and a small local type keeps it pure and its unit
+ * needs these 9 fields, and a small local type keeps it pure and its unit
  * tests trivial to set up. The route handler does the narrowing map.
  */
 export interface MerchantFeedProduct {
@@ -17,6 +18,13 @@ export interface MerchantFeedProduct {
   inStock: boolean;
   brand: { name: string } | null;
   primaryImage: { url: string } | null;
+  /**
+   * Root-to-leaf category names (TASK-432), e.g. `["Аксесуари", "Чохли"]` —
+   * rendered as `g:product_type`. Optional: the route resolves it from the
+   * public category tree, and a product whose category is missing from the tree
+   * (inactive, or the tree fetch failed) simply ships no `g:product_type`.
+   */
+  categoryPath?: string[] | null;
 }
 
 export interface BuildMerchantFeedXmlInput {
@@ -42,6 +50,13 @@ export const DESCRIPTION_MAX = 5000;
  * - description: `stripFormatting` + `truncateAtWord(…, 5000)`, falling back
  *   to `fallbackDescription` so no item ships a blank `<description>`.
  * - `g:brand`: real Brand relation, `siteName` fallback for unbranded goods.
+ * - `g:product_type` (TASK-432): the store's OWN category breadcrumb, joined
+ *   with `" > "`. Google's optional-but-recommended seller taxonomy attribute —
+ *   it groups the feed by our own categories in Merchant Center reports and
+ *   bidding. Omitted entirely when the product has no resolvable category path,
+ *   never emitted empty. (Distinct from `g:google_product_category`, which takes
+ *   Google's own numeric taxonomy — we have no mapping for it and guessing one
+ *   causes disapprovals, so it stays out.)
  * - `g:condition` is always `"new"`; `g:identifier_exists` is always
  *   `"false"` (no gtin/mpn anywhere in the schema).
  * - Products missing an image or a finite positive price are skipped entirely
@@ -100,6 +115,10 @@ function buildItem(
       ? truncateAtWord(stripped, DESCRIPTION_MAX)
       : ctx.fallbackDescription;
 
+  // TASK-432 — seller-taxonomy breadcrumb; the element is dropped, not emptied,
+  // when the product has no resolvable category path.
+  const productType = formatCategoryPath(product.categoryPath);
+
   return [
     `    <item>`,
     `      <g:id>${escapeXml(product.id)}</g:id>`,
@@ -114,6 +133,9 @@ function buildItem(
     `      <g:availability>${product.inStock ? "in_stock" : "out_of_stock"}</g:availability>`,
     `      <g:condition>new</g:condition>`,
     `      <g:brand>${escapeXml(product.brand?.name ?? ctx.siteName)}</g:brand>`,
+    ...(productType
+      ? [`      <g:product_type>${escapeXml(productType)}</g:product_type>`]
+      : []),
     `      <g:identifier_exists>false</g:identifier_exists>`,
     `    </item>`,
   ].join("\n");

@@ -1,8 +1,14 @@
 import { z } from "zod";
 import type { CreateBlogPostDto, UpdateBlogPostDto } from "@/entities/blog";
 import { dict } from "@/shared/config";
+import {
+  KEYWORDS_MAX_COUNT,
+  KEYWORD_MAX_LENGTH,
+  parseKeywords,
+} from "@/shared/lib/seo";
 
 const e = dict.blogPostForm.errors;
+const seoErrors = dict.seoFields.errors;
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -66,6 +72,45 @@ export const blogPostSchema = z
       .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
 
     featured: z.boolean(),
+    listed: z.boolean(),
+
+    // SEO overrides (TASK-437). Until now the article had none: the storefront
+    // derived its <title> from the heading and its description from the excerpt,
+    // with no way to write either.
+    metaTitle: z
+      .string()
+      .trim()
+      .max(255, e.metaTitleMax)
+      .optional()
+      .or(z.literal("")),
+
+    metaDescription: z
+      .string()
+      .trim()
+      .max(500, e.metaDescriptionMax)
+      .optional()
+      .or(z.literal("")),
+
+    // Internal tags as one comma-separated field, validated on the PARSED list.
+    keywords: z
+      .string()
+      .optional()
+      .refine(
+        (raw) => parseKeywords(raw).length <= KEYWORDS_MAX_COUNT,
+        seoErrors.keywordsCount(KEYWORDS_MAX_COUNT),
+      )
+      .refine(
+        (raw) =>
+          parseKeywords(raw).every((k) => k.length <= KEYWORD_MAX_LENGTH),
+        seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
+      ),
+
+    ogImage: z
+      .string()
+      .trim()
+      .url(seoErrors.ogImageUrl)
+      .optional()
+      .or(z.literal("")),
 
     status: z.enum(BLOG_POST_STATUS),
 
@@ -95,6 +140,9 @@ export function blogPostFormValuesToCreateDto(
 ): CreateBlogPostDto {
   const slug = values.slug?.trim();
   const coverImageUrl = values.coverImageUrl?.trim();
+  const metaTitle = values.metaTitle?.trim();
+  const metaDescription = values.metaDescription?.trim();
+  const ogImage = values.ogImage?.trim();
 
   const scheduledAt =
     values.status === "SCHEDULED" && values.scheduledAt
@@ -111,6 +159,14 @@ export function blogPostFormValuesToCreateDto(
     coverImageUrl: coverImageUrl ? coverImageUrl : undefined,
     readingMinutes: values.readingMinutes,
     featured: values.featured,
+    listed: values.listed,
+    // TASK-437 — blank means CLEAR, not "leave as is", and the DTO accepts null
+    // on create as well as update, so this one mapper still serves both verbs.
+    // Sending `undefined` instead would make a wrong meta title unremovable.
+    metaTitle: metaTitle ? metaTitle : null,
+    metaDescription: metaDescription ? metaDescription : null,
+    keywords: parseKeywords(values.keywords),
+    ogImage: ogImage ? ogImage : null,
     status: values.status,
     scheduledAt,
   };
