@@ -45,17 +45,34 @@ interface NpFieldProps {
  * waits on the phone. The notice is persistent and `role="status"` — nothing is
  * invalid, the field simply lost its autocomplete.
  *
- * ── Why these are registered inputs and not a Combobox ───────────────────────
- * store-admin has no Combobox primitive, and `shared/ui` is not this change's to
- * extend. The result list is the `OrderLinePicker` pattern instead: `type="button"`
- * rows under a plain input. RHF `setValue` on a registered field updates the input
- * itself, so picking from the list and typing by hand write to one source of truth.
+ * ── Why these are registered inputs and not the shared Combobox ──────────────
+ * This note used to say "store-admin has no Combobox primitive, and `shared/ui`
+ * is not this change's to extend". Both halves are now false: TASK-423 added
+ * `shared/ui/combobox.tsx` (a full WAI-ARIA combobox, used by three product-form
+ * pickers), and this same wave extended `shared/ui` several more times. Nor is
+ * free text the obstacle — that Combobox keeps whatever is typed, and the
+ * storefront's own NP fields even report "directory unavailable" through its
+ * `emptyText`. The reason these two fields are still hand-rolled `type="button"`
+ * rows under a plain input (the `OrderLinePicker` pattern) is narrower and
+ * mechanical: `Combobox` is CONTROLLED (`value` + `onInputChange`), while every
+ * field on this form is RHF-REGISTERED. `setValue` on a registered field updates
+ * the input itself, which is what lets picking from the list and typing by hand
+ * write to one source of truth; going to `Combobox` means wrapping both fields in
+ * `useController` and re-proving the free-text path. That migration is DEFERRED,
+ * not impossible — weigh it honestly if you come here to add a third picker, and
+ * do not re-derive the dead premise that the primitive is missing.
  *
  * ── One deliberate divergence from the storefront ────────────────────────────
- * Editing the city clears the NP REFS but keeps whatever branch text the operator
- * has typed. A ref is a claim that this text came from the directory for that
- * city, and it stops being true; the text is the operator's own words, and deleting
- * it while they fix a typo in the city name costs them the call.
+ * Changing the city clears the NP refs, and clears the branch text ONLY when that
+ * text came from the directory (i.e. `npWarehouseRef` was set). So what survives a
+ * city change is exactly what the operator typed themselves: deleting their own
+ * words while they fix a typo in the city name costs them the call. A DIRECTORY
+ * branch must not survive, and that is the half this originally got wrong — «Київ»
+ * + «Відділення №5» then «ні, у Бровари» left the Kyiv branch sitting in
+ * `address1` while `city` became Бровари, and the only visible change was the grey
+ * «обрано з довідника» line disappearing. `createOrderValuesToDto` then omits the
+ * now-empty `npWarehouseRef` and ships a parcel addressed to a branch that does
+ * not exist in that settlement.
  */
 export function NpCityField({ form }: NpFieldProps) {
   const [query, setQuery] = useState("");
@@ -95,8 +112,15 @@ export function NpCityField({ form }: NpFieldProps) {
         }
         {...form.register("city", {
           onChange: (event: ChangeEvent<HTMLInputElement>) => {
-            // Typed by hand → this is no longer a directory address. The refs go;
-            // the branch TEXT stays (see the divergence note above).
+            // Typed by hand → this is no longer a directory address, so the refs
+            // go. Whether the branch TEXT goes with them depends on where that
+            // text came from, and `npWarehouseRef` is the only record of it — so
+            // read it BEFORE clearing it. Set means the text is a branch name the
+            // directory wrote for the OLD settlement and is now a lie; empty means
+            // the operator typed it and it is theirs to keep.
+            if (form.getValues("npWarehouseRef") !== "") {
+              form.setValue("address1", "", { shouldValidate: true });
+            }
             form.setValue("npCityRef", "");
             form.setValue("npWarehouseRef", "");
             setOpen(true);
@@ -138,6 +162,16 @@ export function NpCityField({ form }: NpFieldProps) {
                   onClick={() => {
                     form.setValue("city", city.name, { shouldValidate: true });
                     form.setValue("npCityRef", city.ref);
+                    // Same rule as the keystroke path above, repeated rather than
+                    // relied upon: today a pick is always preceded by typing, so
+                    // the guard there has usually already fired — but the two are
+                    // independent ways to change the settlement, and a later
+                    // prefill (or a `Combobox` migration, which replaces the
+                    // keystroke handler) must not be able to reintroduce a Kyiv
+                    // branch under a Brovary address.
+                    if (form.getValues("npWarehouseRef") !== "") {
+                      form.setValue("address1", "", { shouldValidate: true });
+                    }
                     form.setValue("npWarehouseRef", "");
                     setOpen(false);
                     setQuery("");
