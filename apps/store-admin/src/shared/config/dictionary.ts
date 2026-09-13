@@ -2589,7 +2589,15 @@ export const dict = {
     notesToastAdded: "Нотатку додано",
     notesToastFailed: "Не вдалося додати нотатку",
     notesAuthorUnknown: "Автор невідомий",
-    notesCharsLeft: (left: number) => `Залишилось ${left} символів`,
+    // Count-free grammar on purpose. `Залишилось ${left} символів` renders
+    // «Залишилось 1 символів» and «Залишилось 3 символів» — wrong for two of the
+    // three Ukrainian plural classes, on a counter that appears on every long
+    // note. The colon form is grammatical for every value without a
+    // `Intl.PluralRules` table to maintain, and it is how the neighbouring
+    // counters in this file already read («Вибрано: 3», «Активних елементів: 1»,
+    // «Показано останні…»). Hand-rolled plural tables are what
+    // `shared/lib/format/formatDate.ts` refuses to have; this avoids needing one.
+    notesCharsLeft: (left: number) => `Залишилось символів: ${left}`,
     notesTooLong: (max: number) =>
       `Нотатка не може бути довшою за ${max} символів`,
     notesTruncated: (shown: number, total: number) =>

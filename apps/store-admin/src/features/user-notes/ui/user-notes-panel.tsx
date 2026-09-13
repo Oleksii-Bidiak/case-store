@@ -10,6 +10,7 @@ import {
   type UserNoteEntity,
 } from "@/entities/user";
 import { useAuth } from "@/entities/session";
+import { PERM } from "@/entities/permission";
 import { toast } from "@/shared/ui/toast";
 import { Button, Label, Skeleton, Textarea } from "@/shared/ui";
 import { formatDateTime } from "@/shared/lib";
@@ -70,7 +71,12 @@ export function UserNotesPanel({ userId }: UserNotesPanelProps) {
 
   const notes = data?.data ?? [];
   const total = data?.meta?.total ?? notes.length;
-  const canWrite = can("customers:write");
+  // `PERM.customersWrite`, never the bare string: `can()` is typed
+  // `(permission: string) => boolean`, so a typo here compiles, passes review and
+  // then hides this form from every MANAGER who actually holds the right — and
+  // nobody notices, because the owner is ADMIN and `can()` says true for them
+  // whatever they ask.
+  const canWrite = can(PERM.customersWrite);
   const trimmed = body.trim();
   const remaining = USER_NOTE_MAX_LENGTH - body.length;
   const tooLong = body.length > USER_NOTE_MAX_LENGTH;

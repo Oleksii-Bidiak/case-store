@@ -7,11 +7,24 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { PERM } from "@/entities/permission";
 import { UserNotesPanel } from "./user-notes-panel";
 
 // The panel gates its form on `customers:write`. A mutable holder so one suite can
 // render both a writer and a read-only manager.
-const permissions = { current: ["customers:read", "customers:write"] };
+//
+// Sourced from `PERM` rather than typed out again: the panel asks `can()` for
+// `PERM.customersWrite`, and `can()` takes a plain `string`, so nothing but this
+// test couples the two. If the panel ever goes back to a hand-written literal and
+// that literal drifts from the constant, the grants below stop matching what the
+// panel asks for and the form-rendering cases below fail.
+//
+// Typed `string[]` on purpose: the mock's `can(permission: string)` mirrors the
+// real `useAuth` signature, and letting the holder infer the literal union from
+// `PERM` would make this fake stricter than the thing it stands in for.
+const permissions: { current: string[] } = {
+  current: [PERM.customersRead, PERM.customersWrite],
+};
 jest.mock("@/entities/session", () => ({
   useAuth: () => ({
     userId: "manager-1",
@@ -58,7 +71,7 @@ function stubNotes(notes: unknown[] = [], total = notes.length) {
 }
 
 beforeEach(() => {
-  permissions.current = ["customers:read", "customers:write"];
+  permissions.current = [PERM.customersRead, PERM.customersWrite];
 });
 
 describe("UserNotesPanel (TASK-430)", () => {
@@ -90,7 +103,7 @@ describe("UserNotesPanel (TASK-430)", () => {
   it("offers no form at all without customers:write", async () => {
     // The POST would answer 403, and a textarea that always fails is worse than no
     // textarea. Reading stays available — that is what customers:read buys.
-    permissions.current = ["customers:read"];
+    permissions.current = [PERM.customersRead];
     stubNotes([makeNote()]);
 
     renderWithProviders(<UserNotesPanel userId={USER_ID} />);
@@ -104,6 +117,21 @@ describe("UserNotesPanel (TASK-430)", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("asks for exactly PERM.customersWrite, not a hand-typed key", async () => {
+    // A guard on a coupling rather than on a behaviour. `can()` is typed
+    // `(permission: string) => boolean`, so `customer:write` or `customers:Write`
+    // at the call site compiles cleanly and is invisible to the owner — ADMIN
+    // gets `true` from `can()` whatever it is asked — while every MANAGER loses
+    // the textarea and the API goes on accepting the POST they can no longer
+    // send. Granting this ONE key and nothing else proves which key is asked for.
+    permissions.current = [PERM.customersWrite];
+    stubNotes();
+
+    renderWithProviders(<UserNotesPanel userId={USER_ID} />);
+
+    expect(await screen.findByLabelText(d.notesAddLabel)).toBeInTheDocument();
+  });
+
   it("counts down the remaining characters", async () => {
     stubNotes();
 
@@ -113,6 +141,27 @@ describe("UserNotesPanel (TASK-430)", () => {
     await userEvent.type(box, "12345");
 
     expect(screen.getByText(d.notesCharsLeft(1995))).toBeInTheDocument();
+  });
+
+  it("writes the counter in a form that is grammatical for every count", async () => {
+    // Regression for a hand-rolled genitive plural: the counter used to render
+    // «Залишилось 1 символів», wrong for two of Ukrainian's three plural classes,
+    // on a line the operator sees on every long note.
+    //
+    // Asserted against the LITERAL expected string, deliberately — going through
+    // `d.notesCharsLeft(1)` would agree with whatever the dictionary says,
+    // including the broken form, and prove nothing.
+    stubNotes();
+
+    renderWithProviders(<UserNotesPanel userId={USER_ID} />);
+
+    const box = await screen.findByLabelText(d.notesAddLabel);
+    // `paste` rather than `type`: 1999 keystrokes is a minute of test time.
+    await userEvent.click(box);
+    await userEvent.paste("я".repeat(1999));
+
+    expect(screen.getByText("Залишилось символів: 1")).toBeInTheDocument();
+    expect(screen.queryByText(/Залишилось 1 символів/)).not.toBeInTheDocument();
   });
 
   it("blocks an over-long note before the server has to refuse it", async () => {
