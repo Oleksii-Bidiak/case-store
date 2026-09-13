@@ -300,7 +300,13 @@ export class SearchService implements OnModuleInit {
           .map((id) => byId.get(id))
           .filter((p): p is NonNullable<typeof p> => p != null)
           .map((p) => PublicProductEntity.fromPrisma(p));
-        return { data, meta: this.buildMeta(result.estimatedTotalHits, pageNum, pageSize) };
+        // Nothing survived the visibility-gated re-read (TASK-297 drops products
+        // whose category was withdrawn). Answering "nothing found" over a live
+        // catalogue would be a lie told by a stale index, so let Postgres have
+        // the query — the same rule the blog path applies.
+        if (data.length > 0) {
+          return { data, meta: this.buildMeta(result.estimatedTotalHits, pageNum, pageSize) };
+        }
       }
     }
 

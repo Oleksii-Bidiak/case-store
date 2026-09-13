@@ -1,4 +1,4 @@
-import { IsOptional, IsInt, IsString, IsEnum, MaxLength, Min, Max } from 'class-validator';
+import { IsOptional, IsInt, IsString, IsEnum, Matches, MaxLength, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { PublishStatus } from '@prisma/client';
@@ -13,9 +13,16 @@ export class BlogPostListQueryDto {
     example: 'guides',
     required: false,
   })
+  // Constrained to the charset `generateSlug` actually produces. Not cosmetic:
+  // since TASK-417 this value is interpolated into a Meilisearch filter
+  // expression, and a quote inside it rewrote the expression — silently
+  // dropping the category the URL says is selected.
   @IsOptional()
   @IsString()
   @MaxLength(255)
+  @Matches(/^[a-z0-9-]+$/, {
+    message: 'Category must be a slug (lowercase letters, digits and hyphens)',
+  })
   category?: string;
 
   @ApiProperty({

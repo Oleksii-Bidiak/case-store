@@ -428,6 +428,27 @@ describe('SearchService', () => {
       expect(repo.findAll).toHaveBeenCalled();
       expect(result.meta.limit).toBe(DEFAULT_SEARCH_LIMIT);
     });
+
+    it('falls back to Postgres when every hit is dropped by the visibility re-read', async () => {
+      // Drift the TASK-297 backstop exists for: the index still holds documents
+      // for a withdrawn category's products, so `findByIdsForCards` returns
+      // none of them. Reporting that as "nothing found" — over a live catalogue
+      // and with a non-zero `total` — is the stale index talking, not the data.
+      meili.search.mockResolvedValue({
+        hits: [{ id: 'gone-1' }, { id: 'gone-2' }] as never,
+        estimatedTotalHits: 2,
+      });
+      repo.findByIdsForCards.mockResolvedValue([] as never);
+      repo.findAll.mockResolvedValue({ products: [makeProduct()], total: 1 } as never);
+
+      const result = await service.search('case', 1, 20);
+
+      expect(repo.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ search: 'case', isActive: true, categoryActiveOnly: true }),
+      );
+      expect(result.data).toHaveLength(1);
+      expect(result.meta.total).toBe(1);
+    });
   });
 
   // ─── search: facets + ordering (TASK-417) ───────────────────────────────────

@@ -183,6 +183,27 @@ describe('BlogSearchService', () => {
       expect(result).toEqual({ ids: ['post-3', 'post-1'], total: 2 });
     });
 
+    // The value sits inside a QUOTED filter expression, so a quote in it
+    // rewrites the expression. The DTO rejects a non-slug; this is the second
+    // lock, because `BlogSearchQuery` is a plain interface a future caller can
+    // satisfy without going through that DTO.
+    it('drops a category slug that could rewrite the filter expression', async () => {
+      meili.search.mockResolvedValue({ hits: [{ id: 'post-1' }] as never, estimatedTotalHits: 1 });
+
+      await service.search({
+        q: 'огляд',
+        categorySlug: 'x" OR categorySlug != "zzz',
+        offset: 0,
+        limit: 9,
+      });
+
+      expect(meili.search).toHaveBeenCalledWith(
+        'огляд',
+        { limit: 9, offset: 0, filter: undefined },
+        BLOG_POSTS_INDEX,
+      );
+    });
+
     it('answers null for a blank query, an unconfigured engine, or zero hits', async () => {
       expect(await service.search({ q: '   ', offset: 0, limit: 9 })).toBeNull();
       expect(meili.search).not.toHaveBeenCalled();

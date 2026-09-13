@@ -7,6 +7,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -61,21 +62,23 @@ export class SearchQueryDto {
       'filed in its subcategories), exactly like the catalogue listing.',
     example: 'c1a2b3c4-0000-4000-8000-000000000000',
   })
+  // Validated as a UUID, exactly like the catalogue DTO's twin field — not as a
+  // free 64-char string. These three ids are interpolated into a Meilisearch
+  // filter EXPRESSION, so an unvalidated value is a value that can rewrite the
+  // expression (or make it unparsable, which pushes every search onto the
+  // Postgres scan).
   @IsOptional()
-  @IsString()
-  @MaxLength(64)
+  @IsUUID('loose', { message: 'Category ID must be a valid UUID' })
   categoryId?: string;
 
   @ApiPropertyOptional({ description: 'Narrow to one manufacturer (brand id).' })
   @IsOptional()
-  @IsString()
-  @MaxLength(64)
+  @IsUUID('loose', { message: 'Brand ID must be a valid UUID' })
   brandId?: string;
 
   @ApiPropertyOptional({ description: 'Narrow to products compatible with one device model.' })
   @IsOptional()
-  @IsString()
-  @MaxLength(64)
+  @IsUUID('loose', { message: 'Device model ID must be a valid UUID' })
   deviceModelId?: string;
 
   @ApiPropertyOptional({

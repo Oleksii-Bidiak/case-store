@@ -31,6 +31,20 @@ const TASK_WAIT_TIMEOUT_MS = 30_000;
 /** Page size for reading document ids back out of the index. */
 const DOCUMENT_ID_PAGE = 1000;
 
+/**
+ * Per-request ceiling, in milliseconds.
+ *
+ * Without it the SDK skips its timeout race entirely, so the graceful
+ * Postgres fallback covered a refused, erroring or 404-ing engine but NOT a
+ * hung one: a wedged container that accepts the connection and never answers
+ * parked every `/api/search`, every suggest keystroke, and — since TASK-417 —
+ * the editor's Save, which waits on the blog index write.
+ *
+ * Five seconds is well past a healthy p99 (single-digit ms on this catalogue)
+ * and well under any client-side patience.
+ */
+const REQUEST_TIMEOUT_MS = 5_000;
+
 /** Anything this wrapper can store: a document keyed by its primary `id`. */
 export interface IndexedDocument {
   id: string;
@@ -208,7 +222,10 @@ export class MeiliClient {
     // use and is not needed here.
     const apiKey = config.get<string>('MEILI_MASTER_KEY');
 
-    this.client = host && apiKey ? (new MeiliSearch({ host, apiKey }) as MeiliClientApi) : null;
+    this.client =
+      host && apiKey
+        ? (new MeiliSearch({ host, apiKey, timeout: REQUEST_TIMEOUT_MS }) as MeiliClientApi)
+        : null;
   }
 
   /** True when the engine is configured (host + key present, or a client was injected). */

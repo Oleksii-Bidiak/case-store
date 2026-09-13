@@ -58,6 +58,27 @@ export interface BlogSearchQuery {
  * Every engine call is best-effort. With no engine configured the service is
  * inert and `search` answers `null`, which the caller reads as "use Postgres".
  */
+
+/** The charset `generateSlug` produces — and the only one safe to interpolate. */
+const SLUG = /^[a-z0-9-]+$/;
+
+/**
+ * Build the category clause, or nothing at all.
+ *
+ * The value lands inside a QUOTED Meilisearch filter expression, so a quote in
+ * it rewrites the expression. `BlogPostListQueryDto` already rejects anything
+ * that is not a slug; this is the second lock, because `BlogSearchQuery` is a
+ * plain interface any future caller can satisfy without passing that DTO.
+ *
+ * A non-slug drops the clause rather than throwing: `search` is best-effort by
+ * contract, and a widened engine answer is still re-gated to PUBLISHED posts on
+ * hydration. It can never widen past that.
+ */
+function buildCategoryFilter(categorySlug?: string): string[] | undefined {
+  if (!categorySlug || !SLUG.test(categorySlug)) return undefined;
+  return [`categorySlug = "${categorySlug}"`];
+}
+
 @Injectable()
 export class BlogSearchService implements OnModuleInit {
   constructor(
@@ -156,7 +177,7 @@ export class BlogSearchService implements OnModuleInit {
       {
         limit: query.limit,
         offset: query.offset,
-        filter: query.categorySlug ? [`categorySlug = "${query.categorySlug}"`] : undefined,
+        filter: buildCategoryFilter(query.categorySlug),
       },
       BLOG_POSTS_INDEX,
     );
