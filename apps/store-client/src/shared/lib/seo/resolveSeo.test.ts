@@ -107,6 +107,33 @@ describe("resolveSeo — description precedence", () => {
   });
 
   /**
+   * The hole the inversion opens if `clean()` is ever dropped from tier 1: a
+   * saved-but-blank `metaDescription` is a string, and a plain `??` chain would
+   * let it win — shipping `<meta name="description" content="">` on every row
+   * whose field was cleared. Pinned here because nothing else combines a blank
+   * override with a filled global default.
+   */
+  it.each([
+    ["an empty string", ""],
+    ["whitespace only", "   "],
+  ])(
+    "a blank entityDescription (%s) falls through to the global default rather than winning",
+    (_label, entityDescription) => {
+      const r = resolveSeo({ entityDescription, settings });
+      expect(r.description).toBe("Магазин преміальних аксесуарів");
+    },
+  );
+
+  it("a blank entityDescription still lets the entity's own content win first", () => {
+    const r = resolveSeo({
+      entityDescription: "",
+      settings,
+      content: { description: "Опис товару зі сторінки." },
+    });
+    expect(r.description).toBe("Опис товару зі сторінки.");
+  });
+
+  /**
    * The requirement the owner actually reported (plan 176 «Навіщо»): with a
    * global default filled in, every product's <meta name="description"> read as
    * a description of the SHOP. The product's own text must win.

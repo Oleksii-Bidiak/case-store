@@ -72,7 +72,7 @@ export function buildProductSchema(
   // Schema.org `description` is plain text, and product descriptions are rich
   // text since TASK-361 — emit the stripped form, or the JSON-LD Google reads
   // would be a soup of <p>/<br> tags. Reuses the same `stripFormatting` the
-  // meta-description tier-3 fallback and the merchant feed already use, so all
+  // meta-description tier-2 fallback and the merchant feed already use, so all
   // three derive identical prose from one description.
   const descriptionText =
     typeof product.description === "string"

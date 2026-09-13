@@ -21,6 +21,7 @@ import {
   resolveSeoPreviewTitle,
   resolveSeoPreviewDescription,
   resolveEffectiveTitleTemplate,
+  resolvePreviewSiteName,
 } from "@/shared/lib/seo";
 import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
 import {
@@ -119,19 +120,29 @@ export function PageForm({
   const metaDescriptionValue =
     useWatch({ control, name: "metaDescription" }) ?? "";
   const seoSettings = useSeoSettingsControllerGetSettings().data?.data;
+  // A HUB row resolves differently on the storefront, and the preview has to say
+  // so or it promises text `<head>` will never carry (`buildHubMetadata` in
+  // apps/store-client/src/shared/lib/seo/hub-metadata.ts):
+  //   - the body is never rendered anywhere, so only the excerpt can derive a
+  //     description — the form already warns the operator about this below;
+  //   - the store-wide SeoSettings defaults are blanked on purpose, because a
+  //     hub that fell back to them would re-introduce the one store-level
+  //     sentence TASK-432 removed. The route's own dictionary copy takes over
+  //     instead, which is why a blank hub previews as empty rather than as the
+  //     global default.
   const previewTitle = resolveSeoPreviewTitle({
     entityTitle: metaTitleValue,
-    defaultTitle: seoSettings?.defaultMetaTitle,
+    defaultTitle: isHub ? undefined : seoSettings?.defaultMetaTitle,
     contentName: titleValue,
     titleTemplate: resolveEffectiveTitleTemplate(
       seoSettings?.titleTemplate,
-      dict.brand,
+      resolvePreviewSiteName(seoSettings),
     ),
   });
   const previewDescription = resolveSeoPreviewDescription({
     entityDescription: metaDescriptionValue,
-    defaultDescription: seoSettings?.defaultMetaDescription,
-    contentDescription: excerptValue || contentValue,
+    defaultDescription: isHub ? undefined : seoSettings?.defaultMetaDescription,
+    contentDescription: isHub ? excerptValue : excerptValue || contentValue,
   });
   const previewSlug =
     slugValue || (titleValue.trim() ? slugify(titleValue) : "");

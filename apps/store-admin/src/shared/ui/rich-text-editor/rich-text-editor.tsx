@@ -83,8 +83,13 @@ function isServerSafeHref(url: string): boolean {
   if (!normalized) return false;
   const scheme = URI_SCHEME.exec(normalized)?.[1]?.toLowerCase();
   if (!scheme) {
-    // Relative — but not protocol-relative, which the server refuses.
-    return !normalized.startsWith("//");
+    // Relative — but not protocol-relative, which the server refuses. Matching
+    // its regex exactly (`/^[/\\]{2}/`, sanitize-html's own `naughtyHref`)
+    // rather than testing for `//`: browsers resolve `/\evil.tld`, `\/evil.tld`
+    // and `\\evil.tld` off-site too, and a check that is merely close to the
+    // server's means the editor accepts a link the server then silently strips
+    // the href off — content lost with nothing said to the operator.
+    return !/^[/\\]{2}/.test(normalized);
   }
   return (SERVER_ALLOWED_SCHEMES as readonly string[]).includes(scheme);
 }

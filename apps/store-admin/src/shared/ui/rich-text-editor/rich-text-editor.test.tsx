@@ -393,6 +393,29 @@ describe("RichTextEditor", () => {
       expect(onChange).not.toHaveBeenCalled();
     });
 
+    // The server's `naughtyHref` rejects all four of these; a check that only
+    // tested `//` let the other three through, and the href was then dropped on
+    // save with nothing said to the operator.
+    it.each([
+      "//evil.tld/x",
+      "/\\evil.tld/x",
+      "\\/evil.tld/x",
+      "\\\\evil.tld/x",
+    ])(
+      "refuses the protocol-relative form %s, exactly as the server does",
+      async (href) => {
+        const onChange = jest.fn();
+        render(<RichTextEditor value="<p>Текст</p>" onChange={onChange} />);
+        await screen.findByLabelText(EDITOR_LABEL);
+
+        const input = await openLinkField(href);
+        fireEvent.keyDown(input, { key: "Enter" });
+
+        expect(screen.getByRole("alert")).toHaveTextContent(/Дозволені лише/);
+        expect(onChange).not.toHaveBeenCalled();
+      },
+    );
+
     it("accepts a same-site relative address", async () => {
       const onChange = jest.fn();
       render(<RichTextEditor value="<p>Текст</p>" onChange={onChange} />);

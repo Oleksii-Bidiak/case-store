@@ -135,7 +135,14 @@ export async function generateMetadata({
         siteName,
         locale: "uk_UA",
         type: "website",
-        images: buildOgImages({ defaultOgImage: seoMeta.ogImage }),
+        // The category's OWN card first (TASK-437) — same chain as
+        // /categories/[slug]. Without it the two surfaces that render a category
+        // disagree about its preview image, and the admin-chosen card is dead on
+        // every filtered `/products?categoryId=…` link.
+        images: buildOgImages({
+          entityOgImage: node.ogImage,
+          defaultOgImage: seoMeta.ogImage,
+        }),
       },
     };
   }

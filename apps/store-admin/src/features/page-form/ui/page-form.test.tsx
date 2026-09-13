@@ -4,6 +4,8 @@ import {
   userEvent,
   waitFor,
 } from "@/shared/test/render";
+import { http, HttpResponse } from "msw";
+import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { PageForm } from "./page-form";
 
@@ -257,5 +259,123 @@ describe("PageForm — page kind (TASK-435)", () => {
     expect(screen.getByLabelText(dict.seoFields.keywords)).toBeInTheDocument();
     expect(screen.getByLabelText(dict.seoFields.ogImage)).toBeInTheDocument();
     expect(screen.getByText(dict.seoFields.keywordsHint)).toBeInTheDocument();
+  });
+});
+
+// The preview is the owner's only feedback loop for what <head> will say, so
+// where it disagrees with the storefront it is worse than no preview at all.
+describe("PageForm — preview parity with the storefront", () => {
+  const kindField = () => screen.getByLabelText(dict.pageForm.kind);
+  // The description <p> is not rendered at all when the resolved value is empty,
+  // so "no description" is queried, not asserted on a present node.
+  const previewDescription = () =>
+    screen.queryByTestId("seo-snippet-description");
+
+  // TASK-433 — the store name became an admin-managed field; the preview kept
+  // branding with the compile-time constant.
+  it("brands the title with the store name from /settings/seo, not the constant", async () => {
+    server.use(
+      http.get("*/api/seo-settings", () =>
+        HttpResponse.json({
+          data: {
+            id: "00000000-0000-0000-0000-000000000002",
+            siteName: "Аксесуарня",
+            defaultMetaTitle: null,
+            defaultMetaDescription: null,
+            titleTemplate: null,
+            defaultOgImage: null,
+            logoUrl: null,
+            noindexSite: false,
+            llmsTxtSummary: null,
+            additionalSameAsLinks: [],
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        }),
+      ),
+    );
+
+    renderWithProviders(
+      <PageForm
+        id="page-1"
+        defaultValues={{ title: "Доставка та оплата", content: "<p>x</p>" }}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(previewTitle()).toHaveTextContent(
+        "Доставка та оплата | Аксесуарня",
+      ),
+    );
+  });
+
+  // TASK-435 — `buildHubMetadata` derives a hub's description from the EXCERPT
+  // only (the body is never rendered) and deliberately blanks the store-wide
+  // defaults. A preview that showed the body would promise text <head> cannot
+  // carry.
+  it("stops deriving a hub description from the body", async () => {
+    renderWithProviders(
+      <PageForm
+        id="page-hub"
+        defaultValues={{
+          title: "Розділ «Блог»",
+          content: "<p>SEO-картка розділу.</p>",
+        }}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(previewDescription()).toHaveTextContent("SEO-картка розділу."),
+    );
+
+    await userEvent.selectOptions(kindField(), "HUB");
+
+    await waitFor(() => expect(previewDescription()).toBeNull());
+  });
+
+  it("stops showing the global default as a hub's description", async () => {
+    server.use(
+      http.get("*/api/seo-settings", () =>
+        HttpResponse.json({
+          data: {
+            id: "00000000-0000-0000-0000-000000000002",
+            siteName: null,
+            defaultMetaTitle: null,
+            defaultMetaDescription: "Магазин преміальних аксесуарів",
+            titleTemplate: null,
+            defaultOgImage: null,
+            logoUrl: null,
+            noindexSite: false,
+            llmsTxtSummary: null,
+            additionalSameAsLinks: [],
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        }),
+      ),
+    );
+
+    renderWithProviders(
+      <PageForm
+        id="page-hub-2"
+        defaultValues={{ title: "Розділ «Блог»" }}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(previewDescription()).toHaveTextContent(
+        "Магазин преміальних аксесуарів",
+      ),
+    );
+
+    await userEvent.selectOptions(kindField(), "HUB");
+
+    await waitFor(() => expect(previewDescription()).toBeNull());
   });
 });

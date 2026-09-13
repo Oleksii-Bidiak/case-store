@@ -15,6 +15,7 @@ import {
   resolveSeoPreviewTitle,
   resolveSeoPreviewDescription,
   resolveEffectiveTitleTemplate,
+  resolvePreviewSiteName,
 } from "@/shared/lib/seo";
 import {
   Button,
@@ -192,7 +193,7 @@ export function ProductForm({
     contentName: nameValue,
     titleTemplate: resolveEffectiveTitleTemplate(
       seoSettings?.titleTemplate,
-      dict.brand,
+      resolvePreviewSiteName(seoSettings),
     ),
   });
   const previewDescription = resolveSeoPreviewDescription({

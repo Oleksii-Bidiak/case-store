@@ -22,6 +22,7 @@ import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
 import { slugify } from "@/shared/lib/slug";
 import {
   resolveEffectiveTitleTemplate,
+  resolvePreviewSiteName,
   resolveSeoPreviewDescription,
   resolveSeoPreviewTitle,
 } from "@/shared/lib/seo";
@@ -117,7 +118,7 @@ export function BlogPostForm({
     contentName: titleValue,
     titleTemplate: resolveEffectiveTitleTemplate(
       seoSettings?.titleTemplate,
-      dict.brand,
+      resolvePreviewSiteName(seoSettings),
     ),
   });
   const previewDescription = resolveSeoPreviewDescription({

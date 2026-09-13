@@ -68,25 +68,33 @@ export interface RichTextPreviewProps {
  *    - Table cells hold `colspan`/`rowspan`/`colwidth` (numbers) and `align`
  *      (one of three literals, rendered into a fixed `text-align: …` template).
  *      None of them is free-form, and none of them is a URL or a handler.
- * 2. Everything else is still schema-constrained by construction. `getHTML()`
- *    is ProseMirror's schema-driven serializer: it emits registered node/mark
+ * 2. Editor output is schema-constrained by construction. `getHTML()` is
+ *    ProseMirror's schema-driven serializer: it emits registered node/mark
  *    types and their declared attributes, nothing else. Pasted HTML is
  *    re-parsed through the same schema, so `<script>`, `<iframe>`, `style=`
  *    and every `on*` handler are dropped before they could reach this string.
- * 3. The blast radius is one person. This preview renders the CURRENT admin's
- *    own in-memory, unsaved draft in their own tab — never a stored string,
- *    never another user's, never a visitor's. To attack themselves, an admin
- *    would have to author the payload in their own editor, in a tab that
- *    already holds their session.
- * 4. The real barrier is unchanged and is on the server: `sanitizeRichText()`
- *    runs on every write path, and the storefront renders only what came back
- *    through it. This preview is a rendering of a draft, not a trust boundary.
+ * 3. What this component actually receives is the FORM FIELD, not the editor's
+ *    output — and on an edit form that field is seeded from the stored entity
+ *    and can be previewed before the admin types anything. It can also hold
+ *    markup the schema cannot represent: that is precisely why TASK-467 added
+ *    the truncation latch to `RichTextEditor`, and the value this preview
+ *    renders is the ORIGINAL string, not the latched one. So the invariant is
+ *    NOT "this came from the current editor session" — it is the narrower but
+ *    true one: every string that reaches this component either came from the
+ *    editor above it or passed `sanitizeRichText()` on the way into the
+ *    database. Both write paths of pages, blog posts and products go through
+ *    it, and so does the catalogue import.
+ * 4. The real barrier is therefore on the server: `sanitizeRichText()` runs on
+ *    every write path, and the storefront renders only what came back through
+ *    it. This preview is a rendering of already-gated content, not a trust
+ *    boundary of its own.
  *
  * REVISIT if any of the four stops being true — in particular if a raw-HTML,
  * markdown-paste or `Image`-with-src extension is added (none of those is
- * constrained the same way), if `isAllowedUri` is loosened, or if this
- * component is ever pointed at a string that did not come from the current
- * admin's own editor session.
+ * constrained the same way), if `isAllowedUri` is loosened, or if a NEW write
+ * path stores rich text without `sanitizeRichText()`. The cheap insurance, if
+ * that day comes, is a DOMPurify pass here — `isomorphic-dompurify` is already
+ * a dependency of the storefront, which does exactly that on /legal and /info.
  */
 export function RichTextPreview({ html, emptyLabel }: RichTextPreviewProps) {
   // Text-based emptiness: Tiptap emits "<p></p>" for a cleared document, which
