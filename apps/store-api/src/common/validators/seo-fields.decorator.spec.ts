@@ -65,6 +65,16 @@ describe('keywords field', () => {
   it('rejects a bare string — a comma-joined value is the client’s job to split', async () => {
     expect(await errorsFor({ keywords: 'magsafe,чохол' }, 'keywords')).toHaveLength(1);
   });
+
+  it('rejects an explicit null instead of letting it reach Prisma', async () => {
+    // `@IsOptional()` would skip every validator here and the `String[]` column
+    // would answer with a 500. A list clears by being empty, never by being null.
+    expect(await errorsFor({ keywords: null }, 'keywords')).toHaveLength(1);
+  });
+
+  it('still treats an absent field as "leave the stored tags alone"', async () => {
+    expect(await errorsFor({}, 'keywords')).toHaveLength(0);
+  });
 });
 
 describe('ogImage field', () => {
@@ -87,6 +97,11 @@ describe('ogImage field', () => {
   it.each([
     ['javascript:alert(1)', 'a script URL'],
     ['/uploads/products/case-1.webp', 'a bare relative path'],
+    [
+      'cdn.example.com/og/case.jpg',
+      'a host with no scheme — Next would resolve it against our own origin',
+    ],
+    ['//cdn.example.com/og/case.jpg', 'a protocol-relative URL'],
     ['', 'an empty string — blank must be sent as null, not as ""'],
   ])('rejects %s (%s)', async (ogImage) => {
     expect(await errorsFor({ ogImage }, 'ogImage')).toHaveLength(1);

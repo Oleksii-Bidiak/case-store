@@ -81,7 +81,12 @@ export function IsKeywordsField(): PropertyDecorator {
       type: [String],
       required: false,
     }),
-    IsOptional(),
+    // NOT `IsOptional()`: that skips every validator below for `null` as well as
+    // `undefined`, and `null` then reaches Prisma as `{ keywords: null }` on a
+    // `String[]` scalar list — a PrismaClientValidationError, which no filter
+    // converts, so a one-word body answers 500 instead of 400. Absent still means
+    // "leave the stored tags alone"; an explicit `null` is refused by `@IsArray()`.
+    ValidateIf((_, value) => value !== undefined),
     Transform(normalizeKeywords),
     IsArray({ message: 'keywords must be an array of strings' }),
     ArrayMaxSize(KEYWORDS_MAX_COUNT, {
@@ -124,8 +129,13 @@ export function IsOgImageField(): PropertyDecorator {
     // Allow an explicit `null` (clear → fall back to the automatic chain); only
     // URL-validate a real value.
     ValidateIf((_, value) => value !== null),
+    // `require_protocol` is load-bearing: without it validator.js accepts a bare
+    // host (`cdn.example.com/og.jpg`), and `protocols` only constrains a scheme
+    // that is actually present. Next then resolves that value against
+    // `metadataBase`, so the tag ships as `https://<our-host>/cdn.example.com/og.jpg`
+    // — an og:image that 404s, from a field that validated.
     IsUrl(
-      { require_tld: false, protocols: ['http', 'https'] },
+      { require_tld: false, require_protocol: true, protocols: ['http', 'https'] },
       { message: 'ogImage must be a valid URL' },
     ),
     MaxLength(OG_IMAGE_MAX_LENGTH, {
