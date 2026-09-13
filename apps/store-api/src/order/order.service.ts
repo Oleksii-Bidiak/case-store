@@ -20,6 +20,9 @@ import { PRE_SHIPMENT_STATUSES } from './order.constants';
 import { allowedTransitions, canTransition } from './order-state-machine';
 import { invalidTransitionError, staleOrderError } from './order.errors';
 import { AddonApplicabilityResolver, toTwoDecimals } from '../addon-service';
+// Shared with the newsletter export: one formula-injection guard, so a fix
+// cannot land in one export and miss the other (see the helper's docblock).
+import { escapeCsvField, toSingleCsvLine } from '../common/utils/csv.util';
 import type {
   CreateOrderDto,
   CreateManualOrderDto,
@@ -590,45 +593,48 @@ export class OrderService {
       : '';
     const address = (row.shippingAddress as ShippingAddressData | null) ?? null;
 
-    return [
-      // The number the customer reads off their email — uppercased id prefix,
-      // exactly what the storefront and the admin search show.
-      row.id.slice(0, 8).toUpperCase(),
-      row.id,
-      row.createdAt.toISOString(),
-      row.status,
-      row.paymentStatus,
-      row.paymentMethod ?? '',
-      row.paidAt ? row.paidAt.toISOString() : '',
-      isGuest ? 'GUEST' : 'ACCOUNT',
-      isGuest ? (row.guestName ?? '') : accountName,
-      isGuest ? (row.guestEmail ?? '') : (row.user?.email ?? ''),
-      isGuest ? (row.guestPhone ?? '') : (row.user?.phone ?? ''),
-      address?.city ?? '',
-      String(row._count.items),
-      row.subtotal.toString(),
-      toTwoDecimals(row.addonsTotal ?? '0'),
-      row.discount.toString(),
-      row.discountCode ?? '',
-      row.shippingCost.toString(),
-      row.tax.toString(),
-      row.total.toString(),
-      row.trackingNumber ?? '',
-    ]
-      .map((value) => this.escapeCsv(value))
-      .join(',');
-  }
-
-  /**
-   * RFC-4180 field escape: quote when the value contains a comma, quote or
-   * newline, doubling any embedded quote. Same rule as the newsletter export —
-   * a customer named «Петренко, Олена» must not shift every later column by one.
-   */
-  private escapeCsv(value: string): string {
-    if (/[",\r\n]/.test(value)) {
-      return `"${value.replace(/"/g, '""')}"`;
-    }
-    return value;
+    return (
+      [
+        // The number the customer reads off their email — uppercased id prefix,
+        // exactly what the storefront and the admin search show.
+        row.id.slice(0, 8).toUpperCase(),
+        row.id,
+        row.createdAt.toISOString(),
+        row.status,
+        row.paymentStatus,
+        row.paymentMethod ?? '',
+        row.paidAt ? row.paidAt.toISOString() : '',
+        isGuest ? 'GUEST' : 'ACCOUNT',
+        isGuest ? (row.guestName ?? '') : accountName,
+        isGuest ? (row.guestEmail ?? '') : (row.user?.email ?? ''),
+        isGuest ? (row.guestPhone ?? '') : (row.user?.phone ?? ''),
+        address?.city ?? '',
+        String(row._count.items),
+        row.subtotal.toString(),
+        toTwoDecimals(row.addonsTotal ?? '0'),
+        row.discount.toString(),
+        row.discountCode ?? '',
+        row.shippingCost.toString(),
+        row.tax.toString(),
+        row.total.toString(),
+        row.trackingNumber ?? '',
+      ]
+        // `toSingleCsvLine` FIRST, then the escape. The flattening is what makes
+        // "one order = one physical line" true rather than merely assumed: the
+        // admin table counts the exported rows by splitting the file on `\r\n` to
+        // detect a capped export, and `customerName`/`city` are free text that a
+        // shopper can put a newline in (both DTOs impose a max length and a trim,
+        // nothing more). `escapeCsvField` would quote such a value perfectly
+        // correctly and the record would still span three lines, inflating the
+        // count past the cap until the truncation warning is skipped — a green
+        // "done" toast over a file missing every order past row 5000.
+        //
+        // `escapeCsvField` then neutralises a value a spreadsheet would EXECUTE
+        // (`=cmd|'/c calc.exe'!A0` typed into a checkout name field) before
+        // quoting it. See the helper: quoting alone is not a mitigation.
+        .map((value) => escapeCsvField(toSingleCsvLine(value)))
+        .join(',')
+    );
   }
 
   /**

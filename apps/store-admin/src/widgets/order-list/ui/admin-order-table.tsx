@@ -229,8 +229,18 @@ export function AdminOrderTable() {
           : undefined,
         pendingOverdue: pendingOverdue || undefined,
       });
-      // Rows = lines minus the header. No exported field can contain a newline:
-      // the export omits `notes` precisely so the file stays one line per order.
+      // Rows = lines minus the header, which is only sound because the SERVER
+      // now guarantees one order occupies one physical line: `toCsvRow` runs
+      // every field through `toSingleCsvLine` before escaping it.
+      //
+      // It used to rest on the assumption that no exported field can contain a
+      // newline, which was false — `customerName` and `city` are free text (a
+      // max length and a trim, no character rules), and a correctly QUOTED
+      // multi-line field still spans several physical lines. One such order at
+      // the server's row cap inflated this count up to `total`, skipped the
+      // truncation branch below, and handed the operator a green success toast
+      // for a file silently missing every order past the cap. Do not relax the
+      // server-side flattening without replacing this count.
       const exported = Math.max(0, csv.split("\r\n").length - 1);
       downloadCsv(csv, EXPORT_FILENAME);
       if (total > exported) {
@@ -480,10 +490,21 @@ export function AdminOrderTable() {
                         // Guest order (TASK-338): the contact typed at checkout is
                         // the only way to reach this buyer, so show it rather than
                         // an id that does not exist.
+                        //
+                        // The primary line falls back to the phone because the
+                        // email is legitimately null on an order the operator took
+                        // over the phone (TASK-426 made it optional). Reading the
+                        // email alone left this cell blank on exactly the orders
+                        // the operator created themselves — the one contact they
+                        // had just typed in, invisible.
                         <div className="flex flex-col gap-0.5">
-                          <span className="text-sm">{order.guest.email}</span>
+                          <span className="text-sm">
+                            {order.guest.email || order.guest.phone}
+                          </span>
                           <span className="text-xs text-muted-foreground">
-                            {order.guest.name} · {dict.orders.guestBadge}
+                            {order.guest.name
+                              ? `${order.guest.name} · ${dict.orders.guestBadge}`
+                              : dict.orders.guestBadge}
                           </span>
                         </div>
                       ) : (

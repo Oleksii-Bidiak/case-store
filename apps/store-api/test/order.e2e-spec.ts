@@ -1033,6 +1033,62 @@ describe('OrderController (e2e)', () => {
       expect(row).toContain('olena@example.com');
     });
 
+    it('should neutralise a customer name a spreadsheet would EXECUTE (CWE-1236)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAllForExport.mockResolvedValue([
+        makeExportRow({
+          user: null,
+          guestEmail: 'olena@example.com',
+          guestPhone: '380671112233',
+          // Nothing stops a shopper typing this into the checkout name field —
+          // guest-contact.dto.ts imposes a max length and a trim, no character
+          // rules — and the operator who opens the export is who it runs on.
+          guestName: "=cmd|'/c calc.exe'!A0",
+        }),
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/export')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const row = response.text.replace('﻿', '').split('\r\n')[1];
+      // Prefixed with an apostrophe, which every spreadsheet reads as "this cell
+      // is literal text". RFC-4180 quoting is NOT a mitigation on its own: the
+      // quotes are stripped while parsing and the formula is evaluated anyway.
+      expect(row).toContain("'=cmd|'/c calc.exe'!A0");
+      expect(row).not.toContain(",=cmd|'/c calc.exe'!A0");
+    });
+
+    it('should keep one order on ONE physical line even with a newline in a name', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAllForExport.mockResolvedValue([
+        makeExportRow({
+          user: null,
+          guestEmail: 'olena@example.com',
+          guestPhone: '380671112233',
+          guestName: 'Olena\r\nShevchenko',
+          shippingAddress: { city: 'Kyiv\nregion' },
+        }),
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/export')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      // Header + exactly one row. RFC 4180 would happily let a quoted field span
+      // three lines, and the escape quotes it correctly — but the admin table
+      // counts exported rows by splitting this text on `\r\n` to detect a capped
+      // export, so a multi-line field inflates that count until it reaches
+      // `meta.total`, the truncation warning is skipped, and the operator gets a
+      // green "done" toast over a file missing every order past the cap.
+      const lines = response.text.replace('﻿', '').split('\r\n');
+      expect(lines).toHaveLength(2);
+      expect(lines[1]).toContain('Olena Shevchenko');
+      expect(lines[1]).toContain('Kyiv region');
+    });
+
     it('should apply the list filters and cap the row count', async () => {
       const token = generateAccessToken(admin.id, admin.role);
       orderRepositoryMock.findAllForExport.mockResolvedValue([]);
@@ -1097,6 +1153,37 @@ describe('OrderController (e2e)', () => {
 
       expectOrderShape(response.body);
       expect(response.body.data.userId).toBe(userB.id);
+    });
+
+    it('should still identify a guest order that has no email (TASK-426)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      // The order an operator takes over the phone: a name and a number, no
+      // email — which `ManualOrderContactDto` explicitly allows. While the entity
+      // gated the whole guest block on `guestEmail`, this response carried
+      // `userId: null`, no `customer` and no `guest`: it identified NOBODY, and
+      // both admin screens rendered "—" over the phone number the operator had
+      // just typed in.
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(
+        makeOrder({
+          userId: null,
+          guestEmail: null,
+          guestPhone: '+380671112233',
+          guestName: 'Олена Шевченко',
+        }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data.guest).toEqual({
+        // Explicit null, not a missing key: the response contract now admits
+        // what the request contract already accepted.
+        email: null,
+        phone: '+380671112233',
+        name: 'Олена Шевченко',
+      });
     });
 
     it('should return 404 when the order does not exist', async () => {

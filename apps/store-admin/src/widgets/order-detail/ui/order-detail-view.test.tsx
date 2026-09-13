@@ -371,6 +371,42 @@ describe("OrderDetailView — guest orders have a customer too (TASK-425)", () =
     ).not.toBeInTheDocument();
   });
 
+  it("shows the phone when the operator's order has no email (TASK-426)", async () => {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: {
+            ...makeOrder(null),
+            userId: null,
+            // Exactly what the API returns for an order taken over the phone:
+            // `ManualOrderContactDto` makes the email optional, so it is null.
+            // The entity used to gate the whole guest block on that email, so
+            // this page rendered no customer card at all and the number the
+            // operator had just typed was nowhere on the screen they work from.
+            guest: {
+              email: null,
+              phone: "+380671112233",
+              name: "Олена Шевченко",
+            },
+          },
+        }),
+      ),
+    );
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(await screen.findByText(dict.orders.customer)).toBeInTheDocument();
+    const phone = screen.getByText("+380671112233");
+    expect(phone).toBeInTheDocument();
+    expect(screen.getByText("Олена Шевченко")).toBeInTheDocument();
+    expect(screen.getByText(dict.orders.customerTypeGuest)).toBeInTheDocument();
+    // Name and phone and NOTHING else: the missing email must not leave an
+    // empty row above them. Counted rather than read, because an empty <div>
+    // contributes nothing to textContent and so hides from every text query —
+    // which is why it survived review in the first place.
+    expect(phone.parentElement?.childElementCount).toBe(2);
+  });
+
   it("badges an account order as an account", async () => {
     server.use(
       http.get("*/api/admin/orders/:orderId", () =>

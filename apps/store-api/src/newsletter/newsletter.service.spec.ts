@@ -119,5 +119,22 @@ describe('NewsletterService', () => {
 
       expect(csv.split('\r\n')[1]).toContain('"promo,""banner"""');
     });
+
+    it('neutralises a field a spreadsheet would execute as a formula (CWE-1236)', async () => {
+      // `source` is the campaign tag written into the subscribe call by whatever
+      // widget triggered it — free text that reaches this file unchecked. The
+      // operator who opens the export is the victim: Excel runs the formula.
+      repositoryMock.findAllForExport.mockResolvedValue([
+        { ...mockRow, source: "=cmd|'/c calc.exe'!A0" },
+      ]);
+
+      const csv = await service.exportCsv({});
+      const field = csv.split('\r\n')[1].split(',')[2];
+
+      // Leading apostrophe — the one thing every spreadsheet reads as "literal
+      // text". Quoting alone is NOT a fix: the quotes are stripped on parse and
+      // what is inside is evaluated.
+      expect(field).toBe("'=cmd|'/c calc.exe'!A0");
+    });
   });
 });

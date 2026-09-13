@@ -319,9 +319,16 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                 <Badge variant="warning">{dict.orders.customerTypeGuest}</Badge>
               </div>
               {/* The contact typed at checkout IS the customer record here: there
-                  is no account to look anything up in. */}
+                  is no account to look anything up in.
+
+                  Every line is guarded individually, the email included: on an
+                  order the operator took by phone it is legitimately null
+                  (TASK-426 made it optional, and the API answers `email: null`).
+                  An unguarded email line rendered an empty row above the phone —
+                  the card looked broken on exactly the orders the operator
+                  creates themselves. */}
               <div className="text-sm text-muted-foreground">
-                <div>{order.guest.email}</div>
+                {order.guest.email ? <div>{order.guest.email}</div> : null}
                 {order.guest.name ? <div>{order.guest.name}</div> : null}
                 {order.guest.phone ? <div>{order.guest.phone}</div> : null}
               </div>

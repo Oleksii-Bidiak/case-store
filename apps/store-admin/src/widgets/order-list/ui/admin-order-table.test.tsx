@@ -524,6 +524,26 @@ describe("AdminOrderTable — account or guest (TASK-425)", () => {
     expect(screen.getByText(dict.orders.customerTypeGuest)).toBeInTheDocument();
     expect(screen.getByText(dict.orders.colCustomerType)).toBeInTheDocument();
   });
+
+  it("falls back to the phone when a guest order has no email (TASK-426)", async () => {
+    server.use(
+      http.get("*/api/admin/orders", () =>
+        HttpResponse.json({
+          // The order an operator takes by phone: `ManualOrderContactDto` makes
+          // the email optional, so the API answers `email: null`. Reading the
+          // email alone left this row's customer cell blank — the one contact
+          // the operator had just typed, invisible on the queue they live in.
+          data: [{ ...guestRow, guest: { ...guestRow.guest, email: null } }],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        }),
+      ),
+    );
+
+    renderWithProviders(<AdminOrderTable />);
+
+    expect(await screen.findByText("+380501112233")).toBeInTheDocument();
+    expect(screen.getByText(dict.orders.customerTypeGuest)).toBeInTheDocument();
+  });
 });
 
 describe("AdminOrderTable — CSV export (TASK-425)", () => {
