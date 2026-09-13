@@ -15103,7 +15103,7 @@
             "example": "http://localhost:3001/uploads/content/8f1c….webp"
           },
           "blurDataUrl": {
-            "type": "object",
+            "type": "string",
             "description": "base64 LQIP for `next/image` blur-up, or null when the file was stored as-is (animated GIF)",
             "nullable": true,
             "example": "data:image/webp;base64,UklGR…"
@@ -19973,7 +19973,8 @@
         "properties": {
           "email": {
             "type": "string",
-            "description": "Email given at checkout",
+            "description": "Email given at checkout, or null on an operator-created order where the customer had none (TASK-426)",
+            "nullable": true,
             "example": "olena@example.com"
           },
           "phone": {
@@ -20135,7 +20136,7 @@
           },
           "userId": {
             "type": "string",
-            "description": "Owning user ID, or null for a guest order (TASK-338). Exactly one of `userId` and `guest` is populated.",
+            "description": "Owning user ID, or null for a guest order (TASK-338). A null `userId` always comes with a `guest` block; the reverse does not hold — an order placed as a guest and later claimed by a registering account carries both, and keeps its contact snapshot.",
             "nullable": true,
             "example": "550e8400-e29b-41d4-a716-446655440001"
           },
