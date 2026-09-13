@@ -269,6 +269,30 @@ describe('Pages (e2e)', () => {
       expect(response.body.meta).toEqual({ total: 42, page: 3, limit: 20, totalPages: 3 });
     });
 
+    /**
+     * TASK-429 / review finding #12 — `?page=` WITHOUT `?limit=`.
+     *
+     * Since TASK-428 the two are independently optional, and the repository and the service
+     * then disagreed about the default: the repository sliced 20 rows while the meta said
+     * `limit: total, totalPages: 1`. The pager in the panel is driven by this very meta, so
+     * a 45-row list rendered "сторінка 2 з 1" and hid everything past the first page. The
+     * response must describe the slice that was actually taken.
+     */
+    it('reports the repository page size for ?page= given without ?limit=', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [publishedPage], total: 45 });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/pages?page=2')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(pageRepositoryMock.findAllAdmin).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 2, limit: undefined }),
+      );
+      expect(response.body.meta).toEqual({ total: 45, page: 2, limit: 20, totalPages: 3 });
+    });
+
     it('forwards the search term', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
       pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [publishedPage], total: 1 });

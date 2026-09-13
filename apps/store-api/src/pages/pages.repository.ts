@@ -5,8 +5,16 @@ import { SlugRedirectRepository } from '../slug-redirect';
 import type { PublishablePort, RevalidateTarget } from '../publishing';
 import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
 
-/** Page size used when the admin asks for a page but names no `limit` (TASK-428). */
-const DEFAULT_ADMIN_PAGE_SIZE = 20;
+/**
+ * Page size used when the admin asks for a page but names no `limit` (TASK-428).
+ *
+ * EXPORTED on purpose (TASK-429, review finding #12): the service has to build the
+ * pagination `meta` for exactly the rows this repository returned, and while it carried its
+ * own fallback the two drifted — the repository sliced 20 rows for `?page=2` while the meta
+ * announced `limit: total, totalPages: 1`, so the panel rendered "сторінка 2 з 1" and the
+ * rows past the first page were unreachable. One constant, one default, both sides.
+ */
+export const DEFAULT_ADMIN_PAGE_SIZE = 20;
 
 /**
  * Advisory-lock namespace for static pages (TASK-428). MANDATORY prefix: advisory locks
@@ -226,6 +234,14 @@ export class PageRepository implements PublishablePort {
    * Rewrite the complete ordering of the static-page list and return the refreshed admin
    * list, read inside the same transaction (TASK-428).
    *
+   * The snapshot selects `sortOrder` as well as `id` (TASK-429): that is what lets
+   * `reorderBucket` skip the rows already sitting at their target slot instead of
+   * rewriting the whole list. `Page.updatedAt` is `@updatedAt`, and the storefront
+   * publishes it as the document's revision date — the sitemap's `lastModified` and the
+   * «Оновлено …» line on `/legal` and every `/legal/<slug>`. Without this select, dragging
+   * ONE row made the privacy policy, the terms and the returns policy all announce they had
+   * been rewritten today, and there is no history column to recover the real dates from.
+   *
    * Throws the domain errors of `common/reorder/reorder.errors.ts`; the service maps them.
    */
   reorderAll(orderedIds: readonly string[]): Promise<PaginatedPagesResult> {
@@ -233,7 +249,7 @@ export class PageRepository implements PublishablePort {
       resource: LOCK_RESOURCE,
       bucket: null,
       orderedIds,
-      snapshot: (tx) => tx.page.findMany({ select: { id: true } }),
+      snapshot: (tx) => tx.page.findMany({ select: { id: true, sortOrder: true } }),
       delegate: (tx) => tx.page,
       result: (tx) => this.findAllAdmin({}, tx),
     });

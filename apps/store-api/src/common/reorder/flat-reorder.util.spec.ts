@@ -143,6 +143,51 @@ describe('reorderBucket', () => {
     });
   });
 
+  /**
+   * TASK-429 / review finding #3 — the whole reason the snapshot now selects `sortOrder`.
+   *
+   * Before this, ONE drag rewrote the entire bucket and Prisma re-stamped `@updatedAt` on
+   * every row. On `Page` the storefront publishes that column as the document's revision
+   * date (sitemap `lastModified`, the «Оновлено …» line on `/legal` and `/legal/<slug>`),
+   * so moving one page told customers the privacy policy, the terms AND the returns policy
+   * had all been rewritten that day — irreversibly, there being no history column.
+   */
+  it('leaves the rows already at their target slot UNWRITTEN so @updatedAt survives', async () => {
+    const p = params([A, C, B], [A, B, C]);
+    p.snapshot.mockResolvedValue([
+      { id: A, sortOrder: 0 },
+      { id: B, sortOrder: 1 },
+      { id: C, sortOrder: 2 },
+    ]);
+
+    await reorderBucket(prisma as any, p);
+
+    // A never moved off slot 0 — no statement touches it at all.
+    expect(delegate.updateMany).toHaveBeenCalledTimes(2);
+    expect(delegate.updateMany).toHaveBeenNthCalledWith(1, {
+      where: { id: C, placement: 'HERO_SLIDE' },
+      data: { sortOrder: 1 },
+    });
+    expect(delegate.updateMany).toHaveBeenNthCalledWith(2, {
+      where: { id: B, placement: 'HERO_SLIDE' },
+      data: { sortOrder: 2 },
+    });
+  });
+
+  // Trimming the WRITES must never trim the VALIDATION: the snapshot is still compared
+  // whole, so a payload that omits a row is a lost update (409) rather than a cheap no-op.
+  it('still rejects a PARTIAL payload as stale when the named rows are all in place', async () => {
+    const p = params([A, B], [A, B, C]);
+    p.snapshot.mockResolvedValue([
+      { id: A, sortOrder: 0 },
+      { id: B, sortOrder: 1 },
+      { id: C, sortOrder: 2 },
+    ]);
+
+    await expect(reorderBucket(prisma as any, p)).rejects.toBeInstanceOf(ReorderStaleError);
+    expect(delegate.updateMany).not.toHaveBeenCalled();
+  });
+
   it('accepts an empty payload for an empty bucket and writes nothing', async () => {
     await reorderBucket(prisma as any, params([], []));
 

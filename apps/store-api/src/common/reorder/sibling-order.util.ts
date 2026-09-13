@@ -92,12 +92,69 @@ export interface SortOrderWrite {
 }
 
 /**
+ * One row of a bucket snapshot, as read inside the reorder transaction.
+ *
+ * `sortOrder` is OPTIONAL because the snapshot callbacks predate TASK-429 and most of them
+ * still `select: { id: true }` — the validation in `assertFlatReorder` only ever needed the
+ * ids. A caller that ALSO selects `sortOrder` opts its resource into no-op filtering (see
+ * {@link resolveSiblingOrderWrites}); one that does not keeps the old full-bucket rewrite.
+ * Absent is therefore "I don't know where this row currently sits", never "slot 0".
+ */
+export interface SiblingSnapshotRow {
+  id: string;
+  sortOrder?: number;
+}
+
+/**
+ * Resolve which rows a full-bucket rewrite actually has to touch: `orderedIds` MINUS every
+ * row the snapshot already shows sitting at its target index.
+ *
+ * WHY this exists (TASK-429, review finding #3). `sortOrder` writes go through Prisma
+ * `update`/`updateMany`, and every sortable model stamps `updatedAt` via `@updatedAt`. So a
+ * blind `orderedIds.map((id, index) => …)` rewrites — and re-stamps — the WHOLE bucket on
+ * every drag, including the rows nobody moved. On `Page` that is user-visible, not
+ * cosmetic: the storefront reads `updatedAt` as the document's revision date
+ * (`sitemap.ts` → `lastModified`, and the «Оновлено …» line on `/legal` and every
+ * `/legal/<slug>`). One drag in the admin list made the privacy policy, the terms and the
+ * returns policy all claim they had been rewritten that day, and with no history column the
+ * true dates were gone for good. The tree path never had the bug — `category-reorder.rules`
+ * returns early on `row.sortOrder === index` — and this is the flat path's equivalent.
+ *
+ * Filtering is safe against the transient duplicate `(scope, sortOrder)` pairs the
+ * one-row-at-a-time write produces (see the NOTE at the top of this file): the FINAL state
+ * is still exactly `index → sortOrder` for the whole bucket, because a row is skipped only
+ * when it is ALREADY at the value the write would have given it.
+ *
+ * Only the WRITE list is trimmed. `assertFlatReorder` still validates the payload against
+ * the COMPLETE snapshot — dropping a no-op row from the validation would turn a partial,
+ * lost-update payload into an accepted one.
+ */
+export function resolveSiblingOrderWrites(
+  orderedIds: readonly string[],
+  snapshot: readonly SiblingSnapshotRow[] = [],
+): SortOrderWrite[] {
+  const currentSlot = new Map<string, number>();
+  for (const row of snapshot) {
+    if (typeof row.sortOrder === 'number') currentSlot.set(row.id, row.sortOrder);
+  }
+
+  const writes: SortOrderWrite[] = [];
+  orderedIds.forEach((id, index) => {
+    if (currentSlot.get(id) === index) return;
+    writes.push({ id, sortOrder: index });
+  });
+
+  return writes;
+}
+
+/**
  * Apply already-resolved `sortOrder` (and, for a tree, `parentId`) writes.
  *
  * `updateMany` — NOT `update` — so a row that vanished concurrently is a silent no-op
  * rather than a `P2025` aborting an otherwise legal batch. Callers are expected to have
  * OMITTED rows that are already at their target, which avoids gratuitous `@updatedAt`
- * churn (the storefront sitemap's `lastModified` reads it).
+ * churn (the storefront sitemap's `lastModified` reads it) — the tree path does that in
+ * `category-reorder.rules.ts`, the flat path in {@link resolveSiblingOrderWrites}.
  */
 export async function applySortOrderWrites(
   delegate: SortableDelegate,
@@ -122,15 +179,17 @@ export async function applySortOrderWrites(
  *
  * `scope` is an extra WHERE guard (e.g. `{ productId }`), so an id forged from another
  * scope silently updates nothing instead of being stolen into this one.
+ *
+ * `snapshot` is the bucket as it stands right now, read under the same advisory lock. When
+ * its rows carry `sortOrder`, the rows already at their target index are NOT written
+ * (TASK-429) — see {@link resolveSiblingOrderWrites} for why that matters. Omitting it (or
+ * selecting only `id`) keeps the pre-TASK-429 full rewrite.
  */
 export function writeSiblingOrder(
   delegate: SortableDelegate,
   orderedIds: readonly string[],
   scope: Record<string, unknown> = {},
+  snapshot: readonly SiblingSnapshotRow[] = [],
 ): Promise<void> {
-  return applySortOrderWrites(
-    delegate,
-    orderedIds.map((id, index) => ({ id, sortOrder: index })),
-    scope,
-  );
+  return applySortOrderWrites(delegate, resolveSiblingOrderWrites(orderedIds, snapshot), scope);
 }

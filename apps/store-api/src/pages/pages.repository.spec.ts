@@ -269,8 +269,11 @@ describe('PageRepository', () => {
 
     it('locks the list, writes the index as sortOrder and returns the refreshed list', async () => {
       prismaMock.page.findMany
-        // 1) the in-transaction snapshot of the list's membership
-        .mockResolvedValueOnce([{ id: a }, { id: b }])
+        // 1) the in-transaction snapshot of the list's membership AND its current slots
+        .mockResolvedValueOnce([
+          { id: a, sortOrder: 0 },
+          { id: b, sortOrder: 1 },
+        ])
         // 2) the refreshed admin list, read inside the same transaction
         .mockResolvedValueOnce([
           { ...mockPage, id: b, sortOrder: 0 },
@@ -296,6 +299,48 @@ describe('PageRepository', () => {
 
       await expect(repository.reorderAll([a])).rejects.toBeInstanceOf(ReorderStaleError);
       expect(prismaMock.page.updateMany).not.toHaveBeenCalled();
+    });
+
+    /**
+     * TASK-429 / review finding #3 — the regression that makes this repository's snapshot
+     * select `sortOrder` at all.
+     *
+     * `Page.updatedAt` is `@updatedAt`, and the storefront publishes it as the document's
+     * revision date: `sitemap.ts` → `lastModified`, plus the «Оновлено …» line on `/legal`
+     * and on every `/legal/<slug>`. A full-bucket rewrite therefore made ONE drag announce
+     * to customers that the privacy policy, the terms and the returns policy had all been
+     * rewritten that day — permanently, since no history column holds the real dates.
+     * A row that is not handed to `updateMany` is a row Prisma never re-stamps.
+     */
+    it('never writes a page that did not move, so its updatedAt is not re-stamped', async () => {
+      const c = 'page-uuid-3';
+      prismaMock.page.findMany
+        .mockResolvedValueOnce([
+          { id: a, sortOrder: 0 },
+          { id: b, sortOrder: 1 },
+          { id: c, sortOrder: 2 },
+        ])
+        .mockResolvedValueOnce([mockPage, mockPage, mockPage]);
+
+      // Only the last two swap; `a` stays first.
+      await repository.reorderAll([a, c, b]);
+
+      // The snapshot MUST carry the current slots — without them nothing can be skipped.
+      expect(prismaMock.page.findMany).toHaveBeenNthCalledWith(1, {
+        select: { id: true, sortOrder: true },
+      });
+      expect(prismaMock.page.updateMany).toHaveBeenCalledTimes(2);
+      expect(prismaMock.page.updateMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: a } }),
+      );
+      expect(prismaMock.page.updateMany).toHaveBeenNthCalledWith(1, {
+        where: { id: c },
+        data: { sortOrder: 1 },
+      });
+      expect(prismaMock.page.updateMany).toHaveBeenNthCalledWith(2, {
+        where: { id: b },
+        data: { sortOrder: 2 },
+      });
     });
   });
 

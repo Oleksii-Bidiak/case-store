@@ -121,6 +121,42 @@ describe('PageService', () => {
         expect.objectContaining({ search: 'достав' }),
       );
     });
+
+    /**
+     * TASK-429 / review finding #12. `page` and `limit` became independently optional in
+     * TASK-428, and the two sides then disagreed about what a bare `?page=2` means: the
+     * repository sliced with its DEFAULT_ADMIN_PAGE_SIZE while the meta fell back to
+     * `limit = total`. With 45 rows the response carried rows 21-40 under
+     * `{ page: 2, limit: 45, totalPages: 1 }` — the panel renders "сторінка 2 з 1" and
+     * every row past the first page is unreachable. The meta must describe the slice the
+     * repository actually took.
+     */
+    it('reports the repository default page size for ?page=2 with no limit', async () => {
+      pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [mockPage], total: 45 });
+
+      const result = await service.findAllAdmin({ page: 2 });
+
+      expect(result.meta).toEqual({ total: 45, page: 2, limit: 20, totalPages: 3 });
+    });
+
+    it('keeps the complete-list meta when NEITHER page nor limit is given', async () => {
+      pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [mockPage, draftPage], total: 2 });
+
+      const result = await service.findAllAdmin({});
+
+      // One page holding everything — the mode the reorder UI depends on.
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
+    });
+
+    // `limit` alone is already a paginated read in the repository (`page ?? 1`), so the
+    // meta must not fall back to `total` there either.
+    it('honours a bare ?limit= as page 1 of that size', async () => {
+      pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [mockPage], total: 45 });
+
+      const result = await service.findAllAdmin({ limit: 10 });
+
+      expect(result.meta).toEqual({ total: 45, page: 1, limit: 10, totalPages: 5 });
+    });
   });
 
   describe('findByIdAdmin', () => {

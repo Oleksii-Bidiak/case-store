@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { Prisma, PublishStatus } from '@prisma/client';
 import {
+  DEFAULT_ADMIN_PAGE_SIZE,
   PageRepository,
   CreatePageInput,
   UpdatePageInput,
@@ -307,13 +308,24 @@ export class PageService {
   }
 
   /**
-   * Admin pagination metadata (TASK-428). With no `limit` the whole list came back in one
-   * response, so it is reported as a single page of size `total` rather than inventing a
-   * page size the caller never asked for. An EMPTY unpaginated list would make that size
-   * 0, so `totalPages` is short-circuited instead of dividing by zero.
+   * Admin pagination metadata (TASK-428).
+   *
+   * The `total` fallback applies ONLY to the complete-list mode — BOTH `page` and `limit`
+   * absent — because that is the exact condition `PageRepository.findAllAdmin` treats as
+   * "give me everything"; there the whole list really did come back in one response, so it
+   * is reported as a single page of size `total` rather than inventing a page size the
+   * caller never asked for. An EMPTY unpaginated list would make that size 0, so
+   * `totalPages` is short-circuited instead of dividing by zero.
+   *
+   * In every other mode the meta MUST use the same `DEFAULT_ADMIN_PAGE_SIZE` the repository
+   * sliced with (TASK-429, review finding #12). The two used to disagree: `?page=2` with no
+   * `limit` returned rows 21-40 while the meta claimed `{ page: 2, limit: total,
+   * totalPages: 1 }` — a pager that reads its own response then renders "сторінка 2 з 1"
+   * and quietly hides every row past the first page.
    */
   private buildAdminMeta(total: number, page?: number, limit?: number): PaginationMeta {
-    const effectiveLimit = limit ?? total;
+    const isCompleteList = page === undefined && limit === undefined;
+    const effectiveLimit = isCompleteList ? total : (limit ?? DEFAULT_ADMIN_PAGE_SIZE);
 
     return {
       total,
