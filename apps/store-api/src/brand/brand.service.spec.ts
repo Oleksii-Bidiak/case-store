@@ -6,7 +6,7 @@ import { BrandService } from './brand.service';
 import { BrandEntity } from './entities';
 import { CategoryRepository } from '../category/category.repository';
 import { CacheService } from '../cache';
-import { brandListCategoryKey } from '../cache/cache-key.util';
+import { BRAND_LIST_PREFIX, brandListCategoryKey } from '../cache/cache-key.util';
 
 const mockBrand = {
   id: 'brand-uuid-1',
@@ -179,6 +179,22 @@ describe('BrandService', () => {
       await expect(service.create({ name: 'Spigen' })).rejects.toThrow(ConflictException);
       expect(brandRepositoryMock.create).not.toHaveBeenCalled();
     });
+
+    it('drops the cached brand lists', async () => {
+      brandRepositoryMock.findBySlug.mockResolvedValue(null);
+      brandRepositoryMock.create.mockResolvedValue(mockBrand);
+
+      await service.create({ name: 'Spigen' });
+
+      expect(cacheServiceMock.delByPrefix).toHaveBeenCalledWith(BRAND_LIST_PREFIX);
+    });
+
+    it('leaves the cache alone when the write is rejected', async () => {
+      brandRepositoryMock.findBySlug.mockResolvedValue(mockBrand);
+
+      await expect(service.create({ name: 'Spigen' })).rejects.toThrow(ConflictException);
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+    });
   });
 
   describe('update', () => {
@@ -208,6 +224,15 @@ describe('BrandService', () => {
       expect(brandRepositoryMock.findBySlug).not.toHaveBeenCalled();
       expect(result.name).toBe('Spigen UA');
     });
+
+    it('drops the cached brand lists so a rename cannot survive in the dropdown', async () => {
+      brandRepositoryMock.findById.mockResolvedValue(mockBrand);
+      brandRepositoryMock.update.mockResolvedValue({ ...mockBrand, name: 'Spigen UA' });
+
+      await service.update('brand-uuid-1', { name: 'Spigen UA' });
+
+      expect(cacheServiceMock.delByPrefix).toHaveBeenCalledWith(BRAND_LIST_PREFIX);
+    });
   });
 
   describe('setActive', () => {
@@ -225,6 +250,17 @@ describe('BrandService', () => {
 
       expect(brandRepositoryMock.setActive).toHaveBeenCalledWith('brand-uuid-1', false);
       expect(result.isActive).toBe(false);
+    });
+
+    // The one an operator actually notices: they withdraw a brand and the
+    // storefront keeps offering it in «Виробник» for the rest of the TTL.
+    it('drops the cached brand lists', async () => {
+      brandRepositoryMock.findById.mockResolvedValue(mockBrand);
+      brandRepositoryMock.setActive.mockResolvedValue({ ...mockBrand, isActive: false });
+
+      await service.setActive('brand-uuid-1', false);
+
+      expect(cacheServiceMock.delByPrefix).toHaveBeenCalledWith(BRAND_LIST_PREFIX);
     });
   });
 });

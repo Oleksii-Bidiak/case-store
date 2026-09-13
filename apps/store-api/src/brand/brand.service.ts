@@ -12,7 +12,7 @@ import { generateSlug } from '../common/utils';
 import { CategoryRepository } from '../category/category.repository';
 import { CacheService } from '../cache';
 // Direct file import: the `../cache` barrel is outside this change's file scope.
-import { brandListCategoryKey } from '../cache/cache-key.util';
+import { BRAND_LIST_PREFIX, brandListCategoryKey } from '../cache/cache-key.util';
 
 /** Fallback TTL (seconds) when REDIS_CACHE_TTL_SECONDS is not configured. */
 const DEFAULT_CACHE_TTL_SECONDS = 300;
@@ -71,8 +71,11 @@ export class BrandService {
    * of just itself and therefore returns an empty list, which is the honest
    * answer rather than a silent fallback to "every brand".
    *
-   * Cache-aside, keyed per category, invalidated by `ProductService` on every
-   * catalogue write (the list is derived from products, not from brands).
+   * Cache-aside, keyed per category. Two sides invalidate it, because the list
+   * is derived from BOTH: `ProductService` on every catalogue write (filing a
+   * product under a brand changes which brands a category offers), and every
+   * brand mutation below (the query also reads `brand.isActive` and
+   * `brand.name`, which only these mutations touch).
    */
   async findAllActive(categoryId?: string): Promise<BrandListResponse> {
     const cacheKey = brandListCategoryKey(categoryId);
@@ -142,6 +145,7 @@ export class BrandService {
     };
 
     const brand = await this.brandRepository.create({ ...input, slug });
+    await this.purgeBrandLists();
     return BrandEntity.fromPrisma(brand);
   }
 
@@ -171,6 +175,7 @@ export class BrandService {
     };
 
     const updated = await this.brandRepository.update(id, input);
+    await this.purgeBrandLists();
     return BrandEntity.fromPrisma(updated);
   }
 
@@ -184,6 +189,19 @@ export class BrandService {
       throw new NotFoundException('Brand not found');
     }
     const updated = await this.brandRepository.setActive(id, isActive);
+    await this.purgeBrandLists();
     return BrandEntity.fromPrisma(updated);
+  }
+
+  /**
+   * Drop every per-category brand-list entry.
+   *
+   * Wholesale rather than per-category on purpose: the cached VALUE is computed
+   * over a category subtree, so one brand change can affect the entry of every
+   * ancestor category. Working out which ones would cost a tree walk to save a
+   * cache that refills on the next request.
+   */
+  private async purgeBrandLists(): Promise<void> {
+    await this.cache.delByPrefix(BRAND_LIST_PREFIX);
   }
 }

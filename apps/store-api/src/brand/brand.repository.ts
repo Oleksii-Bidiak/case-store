@@ -76,17 +76,25 @@ export class BrandRepository {
    * subtree (`CategoryRepository.findSubtreeIds`); this repository does not own
    * that cross-entity rule, exactly as `ProductRepository.findAll` does not.
    *
-   * NOT filtered on the product's CATEGORY being active: a deactivated category
-   * is withdrawn by the listing's own `categoryActiveOnly`, and adding it here
-   * would mean a second rule to keep in step for a case the subtree filter has
-   * already narrowed to one branch.
+   * The fourth rule — `category: { isActive: true }` — is NOT redundant with
+   * the subtree filter, which is the trap this mirror fell into first. Asking
+   * for a PARENT category expands to every descendant regardless of its own
+   * `isActive` (`CategoryRepository.findSubtreeIds` has no such predicate), so a
+   * brand stocked only inside a deactivated child was offered in the parent's
+   * dropdown and then filtered the grid to nothing — the listing drops those
+   * products through its own `categoryActiveOnly`.
    */
   findAllActive(categoryIds?: string[]): Promise<Brand[]> {
     const where: Prisma.BrandWhereInput = { isActive: true };
 
     if (categoryIds !== undefined) {
       where.products = {
-        some: { isActive: true, deletedAt: null, categoryId: { in: categoryIds } },
+        some: {
+          isActive: true,
+          deletedAt: null,
+          categoryId: { in: categoryIds },
+          category: { isActive: true },
+        },
       };
     }
 

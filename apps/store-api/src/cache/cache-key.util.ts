@@ -148,6 +148,24 @@ function canonicalizeSpecs(raw: string): string {
 }
 
 /**
+ * Escape a value so it cannot forge the `|` that separates key segments.
+ *
+ * `search` and `specs` are the only fields carrying shopper-supplied text, and
+ * they are serialized BEFORE `onSale`/`inStock`/`sortBy`/`sortOrder`. Unescaped,
+ * `?search=чохол|inStock=true` produced byte-identical key to
+ * `?search=чохол&inStock=true` while running different SQL — so an empty page
+ * could be written into the entry a real filtered query reads back, for every
+ * visitor, for the whole TTL.
+ *
+ * Percent-escaping only `%` and `|` (rather than `encodeURIComponent`) keeps the
+ * Cyrillic catalogue readable in `redis-cli --scan` while still being injective:
+ * `%` is escaped first, so nothing else can produce a `%7C`.
+ */
+function encodeSegment(value: string): string {
+  return value.replaceAll('%', '%25').replaceAll('|', '%7C');
+}
+
+/**
  * Build a deterministic cache key for a paginated product-list query.
  *
  * - `undefined` / `null` values are omitted (not serialized as the literal
@@ -168,11 +186,11 @@ export function buildProductListKey(params: ProductListKeyParams): string {
       // A param that parses to nothing filters nothing — it must map to the
       // SAME key as an absent one, not to `specs=`.
       if (canonical === '') continue;
-      segments.push(`specs=${canonical}`);
+      segments.push(`specs=${encodeSegment(canonical)}`);
       continue;
     }
 
-    segments.push(`${field}=${String(value)}`);
+    segments.push(`${field}=${encodeSegment(String(value))}`);
   }
 
   return `${PRODUCT_LIST_PREFIX}:${segments.join('|')}`;
