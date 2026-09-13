@@ -164,4 +164,47 @@ describe("Combobox", () => {
       expect(input).toHaveAttribute("aria-activedescendant", first.id);
     });
   });
+
+  // TASK-411: `activeIndex` is the KEYBOARD selection and nothing else. It
+  // used to be written by onMouseEnter too, so a cursor left resting over the
+  // popup silently re-targeted Enter at whatever row it happened to cover.
+  describe("hover is separate from the keyboard selection", () => {
+    it("does not highlight an option the pointer merely crosses", async () => {
+      const user = userEvent.setup();
+      const { onSelect } = setup({ value: "Ки" });
+
+      const input = screen.getByRole("combobox");
+      await user.click(input);
+      const [first, second] = screen.getAllByRole("option");
+
+      await user.hover(second);
+      expect(second).toHaveAttribute("aria-selected", "false");
+      expect(first).toHaveAttribute("aria-selected", "false");
+      expect(input).not.toHaveAttribute("aria-activedescendant");
+
+      // Enter over a hovered row selects nothing — the typed free text is left
+      // for the form to submit (the Nova Poshta fallback depends on this).
+      await user.keyboard("{Enter}");
+      expect(onSelect).not.toHaveBeenCalled();
+
+      // And the first ArrowDown still starts at the top of the list.
+      await user.keyboard("{ArrowDown}");
+      expect(first).toHaveAttribute("aria-selected", "true");
+      expect(input).toHaveAttribute("aria-activedescendant", first.id);
+    });
+
+    it("still selects the row that is clicked", async () => {
+      const user = userEvent.setup();
+      const { onSelect } = setup({ value: "Ки" });
+
+      const input = screen.getByRole("combobox");
+      await user.click(input);
+      const [, second] = screen.getAllByRole("option");
+
+      await user.hover(second);
+      await user.click(second);
+
+      expect(onSelect).toHaveBeenCalledWith(options[1]);
+    });
+  });
 });

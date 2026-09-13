@@ -9,6 +9,14 @@ interface PaginationProps {
   totalPages: number;
   /** Build an href for a given page number, preserving all other filters. */
   buildHref: (page: number) => string;
+  /**
+   * Accessible name for the `<nav>`. Defaults to the shared «Навігація
+   * сторінками», which is what every paged listing wants; pass one only where a
+   * page carries two separate paginations that must be told apart.
+   */
+  ariaLabel?: string;
+  /** Extra classes for the `<nav>` (spacing is the caller's business). */
+  className?: string;
 }
 
 /**
@@ -34,10 +42,26 @@ const arrowBase =
 const numberBase =
   "inline-flex h-[42px] min-w-[42px] items-center justify-center rounded-[11px] border-[1.5px] px-1.5 font-mono text-sm font-semibold transition-colors";
 
+/**
+ * The storefront's ONE numbered pagination (TASK-417).
+ *
+ * It used to live in `widgets/product-list`, which is why `/search` grew its own
+ * bare prev/next pair and the blog hub a "load more" link: three listings, three
+ * different controls, three different keyboard and screen-reader behaviours. It
+ * is a dumb shared primitive — links only, no data access, no router — so every
+ * paged listing renders the same control, and a caller supplies the hrefs.
+ *
+ * Navigation is `<Link>`-based on purpose: a page is addressable, shareable and
+ * crawlable, and prev/next carry `rel` so crawlers read the sequence. The
+ * current page is marked `aria-current="page"`; the disabled ends stay in the
+ * DOM as inert `<span>`s so the control does not change width at the edges.
+ */
 export function Pagination({
   currentPage,
   totalPages,
   buildHref,
+  ariaLabel,
+  className,
 }: PaginationProps) {
   const items = getPageItems(currentPage, totalPages);
   const isFirst = currentPage <= 1;
@@ -45,8 +69,8 @@ export function Pagination({
 
   return (
     <nav
-      aria-label={dict.catalog.paginationAria}
-      className="flex items-center justify-center gap-2"
+      aria-label={ariaLabel ?? dict.catalog.paginationAria}
+      className={`flex items-center justify-center gap-2${className ? ` ${className}` : ""}`}
     >
       {isFirst ? (
         <span
@@ -59,6 +83,7 @@ export function Pagination({
       ) : (
         <Link
           href={buildHref(currentPage - 1)}
+          rel="prev"
           aria-label={dict.catalog.paginationPreviousAria}
           className={`${arrowBase} text-muted-foreground hover:border-primary hover:text-foreground`}
         >
@@ -105,6 +130,7 @@ export function Pagination({
       ) : (
         <Link
           href={buildHref(currentPage + 1)}
+          rel="next"
           aria-label={dict.catalog.paginationNextAria}
           className={`${arrowBase} text-foreground hover:border-primary`}
         >

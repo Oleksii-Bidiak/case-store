@@ -16,11 +16,25 @@ import { dict } from "@/shared/config";
 
 const t = dict.filters;
 
+/**
+ * Radix Select forbids an empty-string item value, so "no selection" needs a
+ * sentinel. Without an item carrying it there is no way to UN-set either select
+ * from its own control — which is exactly how this filter behaved until
+ * TASK-414: once a device was picked, the only way back was the chip above the
+ * grid or editing the URL.
+ */
+const ANY_DEVICE = "__any_device__";
+
 interface DeviceModelFilterProps {
   /** Currently-selected device model id (from the URL), or undefined. */
   currentDeviceModelId?: string;
   /** Write the chosen model id (or `undefined` to clear) back to the URL. */
   onChange: (deviceModelId: string | undefined) => void;
+  /**
+   * Prefix for the DOM ids of the two selects. The filter panel renders twice
+   * (desktop aside + mobile drawer), so each instance needs a distinct prefix to
+   * keep ids unique in the document — same contract as `ProductFilters`.
+   */
   idPrefix?: string;
 }
 
@@ -35,6 +49,7 @@ interface DeviceModelFilterProps {
 export function DeviceModelFilter({
   currentDeviceModelId,
   onChange,
+  idPrefix = "filter",
 }: DeviceModelFilterProps) {
   const { data: brandsData } = useDeviceControllerFindBrands();
   const brands = brandsData?.data ?? [];
@@ -53,6 +68,13 @@ export function DeviceModelFilter({
   const brandModels = models.filter((m) => m.deviceBrandId === brandId);
 
   function handleBrandChange(nextBrandId: string) {
+    if (nextBrandId === ANY_DEVICE) {
+      // Clearing the brand clears the whole cascade — a model without its brand
+      // would leave the second select populated from a brand nobody selected.
+      setBrandOverride(null);
+      onChange(undefined);
+      return;
+    }
     setBrandOverride(nextBrandId);
     // Clear any selected model that no longer belongs to the chosen brand.
     if (selectedModel && selectedModel.deviceBrandId !== nextBrandId) {
@@ -61,19 +83,24 @@ export function DeviceModelFilter({
   }
 
   function handleModelChange(nextModelId: string) {
-    onChange(nextModelId || undefined);
+    onChange(nextModelId === ANY_DEVICE ? undefined : nextModelId || undefined);
   }
 
   return (
     <div className="flex flex-col gap-2.5">
-      <Select value={brandId} onValueChange={handleBrandChange}>
+      <Select
+        value={brandId === "" ? ANY_DEVICE : brandId}
+        onValueChange={handleBrandChange}
+      >
         <SelectTrigger
+          id={`${idPrefix}-device-brand`}
           aria-label={t.deviceBrandAria}
           className="h-[42px] bg-background"
         >
           <SelectValue placeholder={t.deviceBrandPlaceholder} />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value={ANY_DEVICE}>{t.deviceAnyOption}</SelectItem>
           {brands.map((b) => (
             <SelectItem key={b.id} value={b.id}>
               {b.name}
@@ -83,17 +110,19 @@ export function DeviceModelFilter({
       </Select>
 
       <Select
-        value={currentDeviceModelId ?? ""}
+        value={currentDeviceModelId ?? ANY_DEVICE}
         onValueChange={handleModelChange}
         disabled={!brandId}
       >
         <SelectTrigger
+          id={`${idPrefix}-device-model`}
           aria-label={t.deviceModelAria}
           className="h-[42px] bg-background"
         >
           <SelectValue placeholder={t.deviceModelPlaceholder} />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value={ANY_DEVICE}>{t.deviceAnyOption}</SelectItem>
           {brandModels.map((m) => (
             <SelectItem key={m.id} value={m.id}>
               {m.name}

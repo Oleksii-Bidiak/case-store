@@ -83,7 +83,12 @@ export function NewsletterSubscribeForm({
       className={cn("flex w-full flex-col gap-2", className)}
       noValidate
     >
-      <div className="flex gap-2.5">
+      {/* Stacked under `sm`, side by side above it (TASK-410). An email input's
+          intrinsic width is ~180px and the submit label never wraps, so the old
+          single row could not fit a 320px screen: `flex-1` alone does not let a
+          flex item shrink below that intrinsic width — hence `min-w-0` on the
+          input for the row layout, and the column layout for the narrowest. */}
+      <div className="flex flex-col gap-3 sm:flex-row">
         <label htmlFor={inputId} className="sr-only">
           {dict.newsletterForm.emailLabel}
         </label>
@@ -96,7 +101,7 @@ export function NewsletterSubscribeForm({
           aria-describedby={statusId}
           {...register("email")}
           className={cn(
-            "h-12 flex-1 rounded-xl border border-border bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring",
+            "h-12 w-full min-w-0 rounded-xl border border-border bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring sm:flex-1",
             inputClassName,
           )}
         />
@@ -104,7 +109,7 @@ export function NewsletterSubscribeForm({
           type="submit"
           disabled={subscribe.isPending}
           className={cn(
-            "h-12 rounded-xl bg-primary px-6 text-sm font-bold whitespace-nowrap text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
+            "h-12 shrink-0 rounded-xl bg-primary px-6 text-sm font-bold whitespace-nowrap text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
             buttonClassName,
           )}
         >

@@ -68,7 +68,11 @@ export function Logo({ logoUrl, className, markClassName }: LogoProps) {
   const trimmed = logoUrl?.trim() || null;
   const src = trimmed && trimmed !== failedUrl ? trimmed : null;
 
-  const wrapper = cn("inline-flex items-center gap-2", className);
+  // `min-w-0` so the brand block is the part of a cramped header row that gives
+  // way (TASK-410): a flex item's default `min-width: auto` is its intrinsic
+  // width, which on a 320px screen would push the action cluster off-canvas.
+  // The monogram keeps its size (`shrink-0`) and the wordmark truncates instead.
+  const wrapper = cn("inline-flex min-w-0 items-center gap-2", className);
 
   if (!src) {
     return (
@@ -76,13 +80,13 @@ export function Logo({ logoUrl, className, markClassName }: LogoProps) {
         <span
           aria-hidden="true"
           className={cn(
-            "inline-flex size-9 items-center justify-center rounded-xl bg-primary font-display text-lg font-bold text-primary-foreground",
+            "inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary font-display text-lg font-bold text-primary-foreground",
             markClassName,
           )}
         >
           {SITE_NAME.charAt(0)}
         </span>
-        <span className="font-display text-xl font-bold tracking-tight">
+        <span className="truncate font-display text-xl font-bold tracking-tight">
           {SITE_NAME}
         </span>
       </span>

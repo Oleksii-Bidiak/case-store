@@ -79,6 +79,16 @@ export const dict = {
     catalogSubcategoriesAria: "Підкатегорії",
     toggleSubcategoriesAria: (name: string) =>
       `Підкатегорії категорії «${name}»`,
+    // TASK-412 — the light/system/dark switch. The three option labels are NOT
+    // repeated here: they live once in `account.dashboard.theme*` below, so the
+    // header and the account settings can never drift apart. Only the group's
+    // accessible name is new — "Оформлення" alone would read as "checkout" next
+    // to a cart icon.
+    themeAria: "Тема оформлення",
+    // TASK-413 — the mega-menu footer's second exit. «Усі категорії» lands on
+    // the category index; a shopper who wants the goods themselves, not a
+    // taxonomy, needs the flat catalogue too.
+    catalogAllProducts: "Усі товари",
   },
 
   // TASK-075 — full-text search (header autocomplete + /search results page).
@@ -113,6 +123,13 @@ export const dict = {
      * as the visible section heading and the second listbox's aria-label.
      */
     blogSectionLabel: "Статті блогу",
+    /**
+     * Compact header search below `lg` (TASK-411): the magnifier trigger's
+     * accessible name, and the row that turns an empty suggestions popup into
+     * a way out — a link to the full results page for what was typed.
+     */
+    openPanel: "Відкрити пошук",
+    showAllResults: (q: string) => `Показати всі результати для «${q}»`,
   },
 
   footer: {
@@ -353,7 +370,6 @@ export const dict = {
       compare: "Порівняння",
     },
     featuredBadge: "Головна тема тижня",
-    loadMore: "Показати більше статей",
     emptyHeading: "Нічого не знайдено",
     emptyBody: "Спробуйте іншу категорію або уточніть запит.",
     newsletter: {
@@ -386,6 +402,11 @@ export const dict = {
       authorBioPlaceholder:
         "Тестує смартфони й ноутбуки для MobileStore понад 5 років. Любить довгі порівняння та чесні висновки без маркетингу.",
     },
+    // TASK-417 — the hub pages properly now (numbered pages, one slice each)
+    // instead of growing one ever-longer list, so the old "показати більше"
+    // link says what it actually does: it opens the next page.
+    nextPageLink: "Наступні статті",
+    paginationAria: "Навігація сторінками статей",
   },
 
   // Admin-authored static/legal pages (/legal + /legal/[slug], Legal.dc.html
@@ -467,6 +488,16 @@ export const dict = {
     paginationAria: "Навігація сторінками",
     paginationPreviousAria: "Попередня сторінка",
     paginationNextAria: "Наступна сторінка",
+    // `/search` results page (TASK-417). It now carries the catalogue's own
+    // filter panel, so its chrome lives beside the catalogue's: only the strings
+    // the catalogue has no equivalent for are here — the rest of the page's copy
+    // stays in the `search` block.
+    searchPage: {
+      sortAria: "Сортування результатів",
+      // Ranked full-text relevance — the engine's own order, which no column
+      // can express, and the reason /search does not reuse the catalogue sort.
+      sortRelevance: "За релевантністю",
+    },
   },
 
   // Info & support hub (/info, Info.dc.html import). Content is static (stub)
@@ -783,6 +814,16 @@ export const dict = {
     specAnyOption: "Будь-яка",
     // TASK-084 — per-section collapse inside the mobile drawer (native <details>).
     sectionToggleAria: (section: string) => `Розгорнути/згорнути «${section}»`,
+    // TASK-414 — «Будь-який» clears a device select (until now the cascade could
+    // be set but never un-set from its own control).
+    deviceAnyOption: "Будь-який",
+    // TASK-414 — availability filter (`?inStock=true`, server-side `stock > 0`).
+    availabilityTitle: "Наявність",
+    inStockOnly: "Тільки в наявності",
+    inStockChip: "В наявності",
+    // TASK-414 — facets beyond the first few fold behind this toggle.
+    moreFacets: (n: number) => `Ще фільтри (${n})`,
+    fewerFacets: "Згорнути фільтри",
   },
 
   product: {
@@ -862,6 +903,15 @@ export const dict = {
         free: true,
       },
     ],
+    // Full-screen gallery lightbox (TASK-416).
+    zoomAria: "Відкрити фото на весь екран",
+    lightboxTitle: (name: string) => `Фото товару «${name}»`,
+    lightboxHint:
+      "Гортайте стрілками ← та → або свайпом. Натисніть Esc, щоб закрити.",
+    lightboxPrev: "Попереднє фото",
+    lightboxNext: "Наступне фото",
+    lightboxCounter: (current: number, total: number) =>
+      `${current} з ${total}`,
   },
 
   reviews: {
@@ -997,6 +1047,12 @@ export const dict = {
       selectedAria: (name: string) => `Послугу «${name}» додано`,
       deselectedAria: (name: string) => `Послугу «${name}» прибрано`,
     },
+    // Undo after removing a line (TASK-418). Removal is one click with no
+    // confirmation, so the way back is offered right after it — an 8-second
+    // toast that re-adds the line with the same add-on services.
+    removedToast: (name: string) => `«${name}» прибрано з кошика`,
+    undoRemove: "Повернути",
+    undoError: "Не вдалося повернути товар. Спробуйте ще раз.",
   },
 
   // Promo code / discount (TASK-079)
@@ -1321,11 +1377,15 @@ export const dict = {
       bonusesHint: "знижки на наступні покупки",
       bonusesStub:
         "Програма лояльності готується — тут з’являться ваші бали та історія нарахувань.",
-      // Settings section (stub)
+      // Settings section (notifications are still a stub; appearance is real)
       settingsHeading: "Налаштування",
       appearanceHeading: "Оформлення",
+      // TASK-505 — this line used to promise that the theme "adjusts
+      // automatically to your system settings". That stopped being true the
+      // moment TASK-412 gave visitors a manual switch, so the note no longer
+      // describes the behaviour: it introduces the control right below it.
       appearanceNote:
-        "Тема інтерфейсу автоматично підлаштовується під налаштування вашої системи.",
+        "Оберіть тему інтерфейсу. «Системна» слідує за налаштуваннями пристрою, а ваш вибір зберігається в цьому браузері.",
       themeDark: "Темна",
       themeLight: "Світла",
       themeSystem: "Системна",

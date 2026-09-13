@@ -35,12 +35,16 @@ export function HeroCategorySidebar() {
   return (
     <aside
       aria-label={dict.home.hero.sidebarAria}
-      className="hidden rounded-2xl border border-border bg-card p-2 shadow-card lg:block"
+      // `h-full` + a flex column so the rail always fills the hero row and its
+      // three states (loading / error / loaded) occupy the SAME box. Previously
+      // the placeholder was a fixed 7×36px stack: when the real categories
+      // arrived the rail grew and shoved the slider down (TASK-416).
+      className="hidden h-full flex-col rounded-2xl border border-border bg-card p-2 shadow-card lg:flex"
     >
       {isPending && (
-        <div className="flex flex-col gap-1 p-1" aria-hidden="true">
+        <div className="flex flex-1 flex-col gap-1 p-1" aria-hidden="true">
           {Array.from({ length: 7 }).map((_, i) => (
-            <Skeleton key={i} className="h-9 w-full rounded-lg" />
+            <Skeleton key={i} className="min-h-9 w-full flex-1 rounded-lg" />
           ))}
         </div>
       )}
@@ -52,7 +56,7 @@ export function HeroCategorySidebar() {
       )}
 
       {!isPending && !isError && (
-        <nav>
+        <nav className="flex-1">
           <ul>
             {(data?.data ?? []).map((category, i) => (
               <li key={category.id}>

@@ -14,6 +14,7 @@ import { dict } from "@/shared/config";
 // Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders, which this client form does not need.
 import { customerPasswordSchema } from "@/shared/lib/password-policy";
+import { sanitizeRedirectTarget } from "../lib/sanitize-redirect-target";
 
 const registerSchema = z
   .object({
@@ -60,11 +61,9 @@ export function RegisterForm({
   const inSheet = Boolean(onAuthenticated);
 
   // Honour a `?redirect=` param so post-registration navigation returns the user
-  // to where they came from (e.g. /checkout). Only same-origin paths are allowed
-  // — the leading-slash check prevents open-redirect attacks. Mirrors login-form.
-  const redirectParam = searchParams.get("redirect");
-  const redirectTarget =
-    redirectParam && redirectParam.startsWith("/") ? redirectParam : "/";
+  // to where they came from (e.g. /checkout). Only same-origin paths survive the
+  // sanitizer. Mirrors login-form.
+  const redirectTarget = sanitizeRedirectTarget(searchParams.get("redirect"));
 
   const {
     register,

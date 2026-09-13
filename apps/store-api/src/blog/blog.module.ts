@@ -5,9 +5,15 @@ import { BlogController } from './blog.controller';
 import { AdminBlogController } from './admin-blog.controller';
 import { PUBLISHABLE_REPOSITORY } from '../publishing';
 import { SlugRedirectModule } from '../slug-redirect';
+import { SearchModule } from '../search/search.module';
 
 @Module({
-  imports: [SlugRedirectModule],
+  // SearchModule supplies the BlogIndexer seam (TASK-417) — the narrow port
+  // BlogService uses to keep the `blog_posts` index in step with post mutations
+  // and to ask it a query. The edge is one-directional on purpose: SearchModule
+  // provides its OWN BlogRepository instance rather than importing BlogModule,
+  // so this import cannot close a module cycle.
+  imports: [SlugRedirectModule, SearchModule],
   controllers: [BlogController, AdminBlogController],
   providers: [
     BlogRepository,

@@ -24,7 +24,12 @@ import {
 } from './category.errors';
 import { ReorderGroupInput } from './category-reorder.rules';
 import { generateSlug } from '../common/utils';
-import { CacheService, PRODUCT_CACHE_PREFIX, PRODUCT_LIST_PREFIX } from '../cache';
+import {
+  BRAND_LIST_PREFIX,
+  CacheService,
+  PRODUCT_CACHE_PREFIX,
+  PRODUCT_LIST_PREFIX,
+} from '../cache';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
 
@@ -116,6 +121,13 @@ export class CategoryService {
    */
   private async purgeProductCaches(prefix: string): Promise<void> {
     await this.cache.delByPrefix(prefix);
+    // The per-category brand list (TASK-414) lives OUTSIDE the `product:`
+    // namespace on purpose, so neither prefix above can reach it — yet it is
+    // derived from the same two things a category write changes: which products
+    // fall in the subtree, and whether the subtree is on sale at all. Left out,
+    // a reparent updated the grid while the «Виробник» dropdown above it kept
+    // offering the old set for the whole TTL.
+    await this.cache.delByPrefix(BRAND_LIST_PREFIX);
     try {
       await this.revalidation.revalidate(CATALOGUE_REVALIDATE_TARGET);
     } catch {

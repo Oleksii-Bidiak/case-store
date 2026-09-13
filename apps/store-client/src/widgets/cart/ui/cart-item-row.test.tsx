@@ -1,4 +1,5 @@
 import { http, HttpResponse } from "msw";
+import { toast } from "sonner";
 import {
   renderWithProviders,
   screen,
@@ -7,12 +8,41 @@ import {
   userEvent,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
-import { makeCartItem } from "@/shared/test/msw-handlers";
+import { makeCart, makeCartItem } from "@/shared/test/msw-handlers";
+import { getGetCartQueryKey, type GetCart200 } from "@/entities/cart";
 import { dict } from "@/shared/config";
+import { Toaster } from "@/shared/ui";
 import { CartItemRow } from "./cart-item-row";
 
+/**
+ * TASK-418 is the storefront's first toast with an ACTION, so the undo tests
+ * render the REAL `<Toaster/>` and click the real button — a mocked-away toast
+ * would prove nothing about the affordance a shopper actually gets.
+ *
+ * `toast` is additionally wrapped in a spy, because one property cannot be
+ * observed through the DOM here: the 8-second lifetime. Sonner schedules that
+ * dismissal with `setTimeout`, and this suite cannot run MSW under fake timers
+ * (see the debounce tests, which have to switch back to real timers to let a
+ * request settle), so the lifetime is asserted on the call instead.
+ */
+jest.mock("sonner", () => {
+  const actual = jest.requireActual<typeof import("sonner")>("sonner");
+  const spy = Object.assign(
+    jest.fn((...args: Parameters<typeof actual.toast>) =>
+      actual.toast(...args),
+    ),
+    actual.toast,
+  );
+  return { ...actual, toast: spy };
+});
+
+const toastSpy = toast as unknown as jest.Mock;
+
 describe("CartItemRow", () => {
-  afterEach(() => jest.useRealTimers());
+  afterEach(() => {
+    jest.useRealTimers();
+    toastSpy.mockClear();
+  });
 
   it("renders the product name and quantity", () => {
     const item = makeCartItem({ productName: "Test Product", quantity: 2 });
@@ -156,6 +186,83 @@ describe("CartItemRow", () => {
     fireEvent.blur(input);
 
     await waitFor(() => expect(lastBody).toEqual({ quantity: 7 }));
+  });
+
+  // ─── recalculation while typing (TASK-418) ────────────────────────────────
+  // The stepper has always recalculated on the click; the typed field did not,
+  // and waited for blur. A shopper who typed «5» saw the old money and read it
+  // as "the cart ignored me".
+  it("recalculates the line and the cart totals on the keystroke, before any blur", () => {
+    jest.useFakeTimers();
+    const item = makeCartItem({
+      id: "item-1",
+      quantity: 2,
+      price: "499.00",
+      maxQty: 50,
+    });
+
+    const { queryClient } = renderWithProviders(<CartItemRow item={item} />);
+    queryClient.setQueryData(getGetCartQueryKey(), makeCart([item]));
+
+    fireEvent.change(screen.getByLabelText(dict.cart.quantityAria), {
+      target: { value: "5" },
+    });
+
+    const cart = queryClient.getQueryData<GetCart200>(getGetCartQueryKey());
+    expect(cart?.data?.items[0].lineTotal).toBe("2495.00");
+    expect(cart?.data?.totals.subtotal).toBe("2495.00");
+    expect(cart?.data?.totals.itemCount).toBe(5);
+  });
+
+  it("still writes a typed quantity on the one 300 ms debounce, blur or not", async () => {
+    jest.useFakeTimers();
+    const item = makeCartItem({ id: "item-1", quantity: 2, maxQty: 50 });
+    let patchCount = 0;
+    let lastBody: { quantity?: number } | null = null;
+    server.use(
+      http.patch("*/api/cart/items/:itemId", async ({ request }) => {
+        patchCount += 1;
+        lastBody = (await request.json()) as { quantity?: number };
+        return HttpResponse.json({ data: {} });
+      }),
+    );
+
+    renderWithProviders(<CartItemRow item={item} />);
+    const input = screen.getByLabelText(dict.cart.quantityAria);
+    // Typing «12» one digit at a time: recalculating per keystroke must not
+    // turn into one request per keystroke.
+    fireEvent.change(input, { target: { value: "1" } });
+    fireEvent.change(input, { target: { value: "12" } });
+
+    expect(patchCount).toBe(0);
+
+    jest.advanceTimersByTime(300);
+    jest.useRealTimers();
+
+    await waitFor(() => expect(patchCount).toBe(1));
+    expect(lastBody).toEqual({ quantity: 12 });
+  });
+
+  it("leaves the money alone while the field is transiently empty", () => {
+    jest.useFakeTimers();
+    const item = makeCartItem({
+      id: "item-1",
+      quantity: 2,
+      price: "499.00",
+      maxQty: 50,
+    });
+
+    const { queryClient } = renderWithProviders(<CartItemRow item={item} />);
+    queryClient.setQueryData(getGetCartQueryKey(), makeCart([item]));
+
+    fireEvent.change(screen.getByLabelText(dict.cart.quantityAria), {
+      target: { value: "" },
+    });
+
+    // An empty field is a user mid-edit, not an order for zero (TASK-207).
+    const cart = queryClient.getQueryData<GetCart200>(getGetCartQueryKey());
+    expect(cart?.data?.items[0].quantity).toBe(2);
+    expect(cart?.data?.totals.subtotal).toBe("998.00");
   });
 
   // ─── manual clear restores previous quantity (TASK-207) ───────────────────
@@ -573,6 +680,199 @@ describe("CartItemRow", () => {
       expect(
         screen.getByRole("button", { name: dict.cart.increaseAria }),
       ).toBeEnabled();
+    });
+  });
+
+  // ─── undo after removal (TASK-418) ────────────────────────────────────────
+  // Removal is one click with no confirmation dialog. The way back is the
+  // toast, not a modal in front of every deletion.
+  describe("undo after removal", () => {
+    const warranty = {
+      addonServiceId: "svc-warranty",
+      name: "Гарантійний сертифікат",
+      description: null,
+      price: "499.00",
+      source: "template" as const,
+    };
+    const insurance = {
+      addonServiceId: "svc-insurance",
+      name: "Страхування",
+      description: null,
+      price: "899.00",
+      source: "override" as const,
+    };
+
+    /** A DELETE that succeeds, so the undo offer is reached. */
+    const removalSucceeds = () =>
+      server.use(
+        http.delete("*/api/cart/items/:itemId", () =>
+          HttpResponse.json(makeCart([])),
+        ),
+      );
+
+    it("offers «Повернути» once the line is gone", async () => {
+      const user = userEvent.setup();
+      removalSucceeds();
+
+      renderWithProviders(
+        <>
+          <CartItemRow
+            item={makeCartItem({ id: "item-7", productName: "Doomed Item" })}
+          />
+          <Toaster />
+        </>,
+      );
+      await user.click(
+        screen.getByRole("button", {
+          name: dict.cart.removeNamedAria("Doomed Item"),
+        }),
+      );
+
+      expect(
+        await screen.findByText(dict.cart.removedToast("Doomed Item")),
+      ).toBeInTheDocument();
+      const undo = await screen.findByRole("button", {
+        name: dict.cart.undoRemove,
+      });
+      expect(undo).toBeInTheDocument();
+      // The mini-cart sheet is a modal Radix dialog and parks
+      // `pointer-events: none` on <body>; without this class the button is on
+      // screen and refuses every click (see the comment on the toast call).
+      expect(undo.closest("[data-sonner-toast]")).toHaveClass(
+        "pointer-events-auto",
+      );
+    });
+
+    it("asks for an 8-second offer — long enough to notice, short enough to expire", async () => {
+      const user = userEvent.setup();
+      removalSucceeds();
+
+      renderWithProviders(
+        <>
+          <CartItemRow
+            item={makeCartItem({ id: "item-7", productName: "Doomed Item" })}
+          />
+          <Toaster />
+        </>,
+      );
+      await user.click(
+        screen.getByRole("button", {
+          name: dict.cart.removeNamedAria("Doomed Item"),
+        }),
+      );
+      await screen.findByRole("button", { name: dict.cart.undoRemove });
+
+      expect(toastSpy).toHaveBeenCalledWith(
+        dict.cart.removedToast("Doomed Item"),
+        expect.objectContaining({ duration: 8000 }),
+      );
+    });
+
+    it("re-adds the line with the SAME add-ons, after the row itself is gone", async () => {
+      const user = userEvent.setup();
+      const item = makeCartItem({
+        id: "item-7",
+        productId: "product-9",
+        productName: "Doomed Item",
+        quantity: 3,
+        availableAddons: [warranty, insurance],
+        selectedAddonIds: ["svc-warranty", "svc-insurance"],
+      });
+      let addBody: { productId?: string; quantity?: number } | null = null;
+      const reselected: string[] = [];
+      removalSucceeds();
+      server.use(
+        http.post("*/api/cart/items", async ({ request }) => {
+          addBody = (await request.json()) as {
+            productId?: string;
+            quantity?: number;
+          };
+          // The restored line is a NEW row: the old id died with the DELETE.
+          return HttpResponse.json(
+            makeCart([
+              makeCartItem({
+                id: "item-99",
+                productId: "product-9",
+                quantity: 3,
+              }),
+            ]),
+            { status: 201 },
+          );
+        }),
+        http.post(
+          "*/api/cart/items/:itemId/addons/:addonServiceId",
+          ({ params }) => {
+            reselected.push(`${params.itemId}:${params.addonServiceId}`);
+            return HttpResponse.json(makeCart());
+          },
+        ),
+      );
+
+      // The `null` slot keeps the Toaster in the same position across the
+      // rerender, so only the row unmounts — exactly what the cart page does.
+      const tree = (rowMounted: boolean) => (
+        <>
+          {rowMounted ? <CartItemRow item={item} /> : null}
+          <Toaster />
+        </>
+      );
+
+      const { rerender } = renderWithProviders(tree(true));
+      await user.click(
+        screen.getByRole("button", {
+          name: dict.cart.removeNamedAria("Doomed Item"),
+        }),
+      );
+      await screen.findByRole("button", { name: dict.cart.undoRemove });
+
+      // The real cart drops the row the moment the DELETE lands, so the offer
+      // has to outlive the component that made it.
+      rerender(tree(false));
+      await user.click(
+        screen.getByRole("button", { name: dict.cart.undoRemove }),
+      );
+
+      await waitFor(() =>
+        expect(addBody).toEqual({ productId: "product-9", quantity: 3 }),
+      );
+      await waitFor(() =>
+        expect(reselected).toEqual([
+          "item-99:svc-warranty",
+          "item-99:svc-insurance",
+        ]),
+      );
+    });
+
+    it("offers nothing when the removal itself failed", async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.delete("*/api/cart/items/:itemId", () =>
+          HttpResponse.json({}, { status: 500 }),
+        ),
+      );
+
+      renderWithProviders(
+        <>
+          <CartItemRow
+            item={makeCartItem({ id: "item-7", productName: "Doomed Item" })}
+          />
+          <Toaster />
+        </>,
+      );
+      await user.click(
+        screen.getByRole("button", {
+          name: dict.cart.removeNamedAria("Doomed Item"),
+        }),
+      );
+
+      // The line is still there — an undo button would be a lie.
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        dict.cart.updateError,
+      );
+      expect(
+        screen.queryByRole("button", { name: dict.cart.undoRemove }),
+      ).not.toBeInTheDocument();
+      expect(toastSpy).not.toHaveBeenCalled();
     });
   });
 });

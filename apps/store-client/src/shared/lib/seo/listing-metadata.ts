@@ -30,6 +30,8 @@ export interface ListingFilterParams {
   deviceModelId?: string;
   /** Wire-level string; only "true" counts as a present filter (Decision 4). */
   onSale?: string;
+  /** Wire-level string; only "true" counts as a present filter (TASK-414). */
+  inStock?: string;
 }
 
 export interface ListingMetadataInput {
@@ -70,7 +72,11 @@ function hasAnyFilter(filters: ListingFilterParams): boolean {
     isPresent(filters.deviceModelId) ||
     // Boolean-shaped on the wire: only the literal "true" is a filter —
     // `?onSale=false` is a no-op, not "filtering by not-on-sale".
-    filters.onSale === "true"
+    filters.onSale === "true" ||
+    // Same rule for the availability filter (TASK-414). An in-stock-only view is
+    // a narrowed, volatile slice of the catalogue — it must not be indexed, and
+    // it must not compete with the unfiltered listing for a canonical.
+    filters.inStock === "true"
   );
 }
 

@@ -69,12 +69,13 @@ export async function generateMetadata({
     fetchSeoSettings(),
   ]);
 
-  // Canonical/robots policy (plan 143): ALL seven filter params are read here —
-  // brandId/deviceModelId/onSale included, even though the server-rendered query
-  // only uses a subset — so the noindex decision is complete, not partial. Sort
-  // params never participate (Decision 1). One helper call covers both branches:
-  // a clean ?categoryId= view canonicalizes onto its /categories/[slug] landing
-  // page (TASK-277 behaviour, now inside the helper); any filter → noindex.
+  // Canonical/robots policy (plan 143): ALL EIGHT filter params are read here —
+  // brandId/deviceModelId/onSale/inStock included, even though the
+  // server-rendered query only uses a subset — so the noindex decision is
+  // complete, not partial. Sort params never participate (Decision 1). One
+  // helper call covers both branches: a clean ?categoryId= view canonicalizes
+  // onto its /categories/[slug] landing page (TASK-277 behaviour, now inside
+  // the helper); any filter → noindex.
   const filters: ListingFilterParams = {
     search: first(resolvedParams.search)?.trim() || undefined,
     minPrice: first(resolvedParams.minPrice),
@@ -83,6 +84,7 @@ export async function generateMetadata({
     brandId: first(resolvedParams.brandId),
     deviceModelId: first(resolvedParams.deviceModelId),
     onSale: first(resolvedParams.onSale),
+    inStock: first(resolvedParams.inStock),
   };
   const listingMeta = buildListingMetadata({
     basePath: "/products",
@@ -229,7 +231,10 @@ export default async function ProductsPage({
         </p>
       </div>
 
-      <Suspense fallback={<ProductListSkeleton />}>
+      {/* The fallback stands in for ProductListView as a whole — chips row,
+          toolbar and the 268px filter rail included (TASK-416) — so the grid
+          does not render full-width and then shrink into a column. */}
+      <Suspense fallback={<ProductListSkeleton withSidebar />}>
         <ProductListView initialParams={initialParams} />
       </Suspense>
     </div>

@@ -1,5 +1,10 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  within,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { ProductListView } from "./product-list-view";
@@ -185,6 +190,124 @@ describe("ProductListView — lockedCategoryId (/categories/[slug], TASK-277)", 
     expect(path).toBe("/categories/cases");
     expect(params.get("minPrice")).toBeNull();
     expect(params.has("categoryId")).toBe(false);
+  });
+});
+
+/**
+ * TASK-414 — the catalogue filters: one reset set, the availability param, and
+ * the per-category brand query.
+ */
+describe("ProductListView — filters (TASK-414)", () => {
+  it("forwards ?inStock=true to the product query", async () => {
+    const productRequests = installCatalogHandlers();
+    currentQuery = "inStock=true";
+
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+
+    await screen.findByText("Alpha Case");
+    expect(productRequests.at(-1)?.searchParams.get("inStock")).toBe("true");
+  });
+
+  // Only the literal "true" turns it on — the same rule the API's boolean
+  // transform applies, so `?inStock=false` must not filter anything.
+  it("ignores ?inStock=false rather than treating it as a filter", async () => {
+    const productRequests = installCatalogHandlers();
+    currentQuery = "inStock=false";
+
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+
+    await screen.findByText("Alpha Case");
+    expect(productRequests.at(-1)?.searchParams.has("inStock")).toBe(false);
+  });
+
+  // The regression that motivated the shared filter set: «Скинути фільтри»
+  // cleared four params and left the device, spec and availability selections
+  // applied — visible in the chips row, unreachable from the reset.
+  it("«Скинути фільтри» clears EVERY filter, not just the four it used to", async () => {
+    const user = userEvent.setup();
+    installCatalogHandlers({ empty: true });
+    currentQuery =
+      "search=чохол&categoryId=cat-other&brandId=b1&deviceModelId=m1" +
+      "&minPrice=100&maxPrice=900&specs=material%3AСилікон&inStock=true";
+
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText(dict.catalog.emptyHeading);
+
+    // The sidebar panel carries a reset button with the SAME label, and it
+    // deliberately leaves the category alone (its control is the chips row).
+    // The one under test is the empty state's, which clears the lot — so pick
+    // it by its container rather than by a label the two share.
+    const emptyState = screen
+      .getByText(dict.catalog.emptyHeading)
+      .closest("div")!;
+    await user.click(
+      within(emptyState).getByRole("button", {
+        name: dict.catalog.clearFilters,
+      }),
+    );
+
+    const target = mockReplace.mock.calls.at(-1)![0] as string;
+    const params = new URLSearchParams(target.split("?")[1]);
+    for (const key of [
+      "search",
+      "categoryId",
+      "brandId",
+      "deviceModelId",
+      "minPrice",
+      "maxPrice",
+      "specs",
+      "inStock",
+    ]) {
+      expect(params.has(key)).toBe(false);
+    }
+  });
+
+  it("badges the mobile filters button with the spec facets the old count missed", async () => {
+    installCatalogHandlers();
+    currentQuery = "specs=material%3AСилікон%2CTPU&inStock=true";
+
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+
+    await screen.findByText("Alpha Case");
+    // specs (1) + inStock (1) — the category is excluded (its control is the
+    // chips row), and both of these were previously uncounted. The badge is
+    // inside the button, so its accessible name is "Фільтри 2".
+    expect(screen.getByRole("button", { name: /^Фільтри/ })).toHaveTextContent(
+      "2",
+    );
+  });
+
+  it("scopes the brand query to the active category", async () => {
+    const brandRequests: URL[] = [];
+    installCatalogHandlers();
+    server.use(
+      http.get("*/api/brands", ({ request }) => {
+        brandRequests.push(new URL(request.url));
+        return HttpResponse.json({ data: [] });
+      }),
+    );
+    currentQuery = "categoryId=cat-other";
+
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+
+    await screen.findByText("Alpha Case");
+    expect(brandRequests.at(-1)?.searchParams.get("categoryId")).toBe(
+      "cat-other",
+    );
+  });
+
+  // A sticky aside with no height cap runs off the bottom of a short viewport
+  // and, being sticky, the page scroll never brings the overflow back.
+  it("gives the desktop sidebar its own scroll box", async () => {
+    const { container } = renderWithProviders(
+      <ProductListView initialParams={{ page: 1 }} />,
+    );
+    installCatalogHandlers();
+
+    const aside = container.querySelector("aside")!;
+    expect(aside.className).toContain("lg:max-h-[calc(100dvh-7rem)]");
+    expect(aside.className).toContain("lg:overflow-y-auto");
+    expect(aside.className).toContain("lg:overscroll-contain");
   });
 });
 

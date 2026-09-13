@@ -11,4 +11,10 @@ export {
   PaginatedBrandsResult,
 } from './brand.repository';
 export { BrandEntity } from './entities';
-export { CreateBrandDto, UpdateBrandDto, BrandListQueryDto, UpdateBrandStatusDto } from './dto';
+export {
+  CreateBrandDto,
+  UpdateBrandDto,
+  BrandListQueryDto,
+  PublicBrandListQueryDto,
+  UpdateBrandStatusDto,
+} from './dto';

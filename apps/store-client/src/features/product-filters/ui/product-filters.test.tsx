@@ -10,7 +10,14 @@ import { ProductFilters } from "./product-filters";
 // GET /brands (TASK-189). Stub it empty so the control is hidden and these
 // price-focused tests stay deterministic under onUnhandledRequest: "error".
 beforeEach(() => {
-  server.use(http.get("*/api/brands", () => HttpResponse.json({ data: [] })));
+  server.use(
+    http.get("*/api/brands", () => HttpResponse.json({ data: [] })),
+    // DeviceModelFilter fetches the brand→model cascade in every layout, not
+    // only the collapsible one; stubbed empty so it renders two empty selects
+    // and these tests stay free of unhandled-request noise.
+    http.get("*/api/device-brands", () => HttpResponse.json({ data: [] })),
+    http.get("*/api/device-models", () => HttpResponse.json({ data: [] })),
+  );
 });
 
 /**
@@ -166,13 +173,15 @@ describe("ProductFilters collapsible mobile drawer (TASK-084)", () => {
     await screen.findByText(dict.filters.deviceTitle);
 
     // Brands are stubbed empty and no category is set, so brand + specs self-hide;
-    // the three rendered disclosures are search / device / price in DOM order.
+    // the four rendered disclosures are search / availability / device / price
+    // in DOM order (availability added by TASK-414).
     const sections = container.querySelectorAll("details");
-    expect(sections).toHaveLength(3);
-    // Search carries the active value → open; device & price start collapsed.
+    expect(sections).toHaveLength(4);
+    // Search carries the active value → open; the rest start collapsed.
     expect(sections[0]).toHaveAttribute("open");
     expect(sections[1]).not.toHaveAttribute("open");
     expect(sections[2]).not.toHaveAttribute("open");
+    expect(sections[3]).not.toHaveAttribute("open");
   });
 
   it("opens the price section (and not search) when only a price bound is active", async () => {
@@ -187,8 +196,132 @@ describe("ProductFilters collapsible mobile drawer (TASK-084)", () => {
     await screen.findByText(dict.filters.deviceTitle);
 
     const sections = container.querySelectorAll("details");
-    // Order: [0] search, [1] device, [2] price.
+    // Order: [0] search, [1] availability, [2] device, [3] price.
     expect(sections[0]).not.toHaveAttribute("open");
-    expect(sections[2]).toHaveAttribute("open");
+    expect(sections[3]).toHaveAttribute("open");
+  });
+
+  it("opens the availability section when the in-stock filter is on", async () => {
+    const { container } = renderWithProviders(
+      <ProductFilters
+        collapsible
+        currentParams={{ inStock: true }}
+        onFilterChange={() => {}}
+      />,
+    );
+
+    await screen.findByText(dict.filters.deviceTitle);
+
+    expect(container.querySelectorAll("details")[1]).toHaveAttribute("open");
+  });
+});
+
+/**
+ * TASK-414 — the availability filter and the ONE reset set.
+ */
+describe("ProductFilters — availability + reset (TASK-414)", () => {
+  it("writes ?inStock=true when the checkbox is ticked", async () => {
+    const user = userEvent.setup();
+    const onFilterChange = jest.fn();
+
+    renderWithProviders(
+      <ProductFilters currentParams={{}} onFilterChange={onFilterChange} />,
+    );
+
+    await user.click(
+      screen.getByRole("checkbox", { name: dict.filters.inStockOnly }),
+    );
+
+    expect(onFilterChange).toHaveBeenCalledWith({ inStock: "true" });
+  });
+
+  // Absent, not `false`: an unused filter must never show up in a shared link,
+  // and on the API side `inStock=false` is a no-op anyway.
+  it("REMOVES the param when the checkbox is unticked", async () => {
+    const user = userEvent.setup();
+    const onFilterChange = jest.fn();
+
+    renderWithProviders(
+      <ProductFilters
+        currentParams={{ inStock: true }}
+        onFilterChange={onFilterChange}
+      />,
+    );
+
+    const checkbox = screen.getByRole("checkbox", {
+      name: dict.filters.inStockOnly,
+    });
+    expect(checkbox).toBeChecked();
+
+    await user.click(checkbox);
+
+    expect(onFilterChange).toHaveBeenCalledWith({ inStock: undefined });
+  });
+
+  // The defect this replaces: the button appeared for {search, brandId,
+  // minPrice, maxPrice} only, and cleared exactly those — a device, spec or
+  // availability selection stayed applied while the button vanished.
+  it("offers the reset button for a filter the old set did not know about", async () => {
+    renderWithProviders(
+      <ProductFilters
+        currentParams={{ specs: "material:Силікон" }}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("button", { name: dict.filters.clear }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the reset button when only the category (owned by the chips row) is set", () => {
+    renderWithProviders(
+      <ProductFilters
+        currentParams={{ categoryId: "cat-1" }}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: dict.filters.clear }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clears EVERY panel filter at once, category excepted", async () => {
+    const user = userEvent.setup();
+    const onFilterChange = jest.fn();
+
+    renderWithProviders(
+      <ProductFilters
+        currentParams={{
+          categoryId: "cat-1",
+          search: "чохол",
+          brandId: "brand-1",
+          deviceModelId: "model-1",
+          minPrice: 100,
+          maxPrice: 900,
+          specs: "material:Силікон",
+          inStock: true,
+        }}
+        onFilterChange={onFilterChange}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: dict.filters.clear }),
+    );
+
+    const updates = onFilterChange.mock.calls.at(-1)![0];
+    expect(updates).toEqual({
+      search: undefined,
+      brandId: undefined,
+      deviceModelId: undefined,
+      minPrice: undefined,
+      maxPrice: undefined,
+      specs: undefined,
+      inStock: undefined,
+    });
+    // The category's control is the chips row / the route, not this panel.
+    expect("categoryId" in updates).toBe(false);
   });
 });

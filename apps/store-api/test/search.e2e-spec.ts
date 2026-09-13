@@ -25,6 +25,15 @@ class ThrottlerGuardPassThrough extends ThrottlerGuard {
   }
 }
 
+/**
+ * Facet ids for the query-string tests. Real UUIDs, not the `cat-1` shorthand
+ * used for the Prisma row fixtures below: `SearchQueryDto` validates these three
+ * as UUIDs because they are interpolated into a Meilisearch filter expression,
+ * so a shorthand id is now a 400 rather than a filter.
+ */
+const SEARCH_CATEGORY_ID = '550e8400-e29b-41d4-a716-446655440000';
+const SEARCH_BRAND_ID = '550e8400-e29b-41d4-a716-446655440001';
+
 /** A Prisma-shaped active product row consumed by PublicProductEntity.fromPrisma. */
 function makeProductRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -56,6 +65,9 @@ describe('Search (e2e)', () => {
     product: {
       findMany: jest.fn(async () => [] as unknown[]),
       count: jest.fn(async () => 0),
+      // The exact-article-number lookup (TASK-417 / SF-SRCH-09). Answers "no
+      // such code" by default so every other test keeps taking full text.
+      findFirst: jest.fn(async () => null as unknown),
     },
     productImage: {
       findMany: jest.fn(async () => [] as unknown[]),
@@ -118,6 +130,7 @@ describe('Search (e2e)', () => {
     meiliClientMock.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
     prismaServiceMock.product.findMany.mockResolvedValue([]);
     prismaServiceMock.product.count.mockResolvedValue(0);
+    prismaServiceMock.product.findFirst.mockResolvedValue(null);
     prismaServiceMock.productImage.findMany.mockResolvedValue([]);
     prismaServiceMock.review.groupBy.mockResolvedValue([]);
   });
@@ -161,7 +174,11 @@ describe('Search (e2e)', () => {
       expect(res.body.meta.total).toBe(1);
     });
 
-    it('falls back to Postgres when the engine errors (search → null)', async () => {
+    // Scope, stated honestly: the whole MeiliClient is replaced here, so this
+    // pins the CALLER's handling of the `null` sentinel, not that a real engine
+    // error produces it. The other half — an SDK rejection becoming `null` — is
+    // covered in `meili.client.spec.ts` ('search returns null on an SDK error').
+    it('falls back to Postgres when the client reports unavailable (search → null)', async () => {
       meiliClientMock.isConfigured.mockReturnValue(true);
       meiliClientMock.search.mockResolvedValue(null);
       prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
@@ -173,6 +190,105 @@ describe('Search (e2e)', () => {
         .expect(200);
 
       expect(res.body.data).toHaveLength(1);
+    });
+  });
+
+  describe('GET /api/search — facets and ordering (TASK-417)', () => {
+    it('accepts the catalogue filter params and narrows the engine query with them', async () => {
+      meiliClientMock.search.mockResolvedValue({
+        hits: [{ id: 'product-1' }],
+        estimatedTotalHits: 1,
+      });
+      prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
+
+      await request(app.getHttpServer())
+        .get('/api/search')
+        .query({
+          q: 'case',
+          categoryId: SEARCH_CATEGORY_ID,
+          brandId: SEARCH_BRAND_ID,
+          inStock: 'true',
+          minPrice: '10',
+          maxPrice: '50',
+          sort: 'price_asc',
+        })
+        .expect(200);
+
+      expect(meiliClientMock.search).toHaveBeenCalledWith(
+        'case',
+        expect.objectContaining({
+          filter: [
+            'isActive = true',
+            `categoryIds = "${SEARCH_CATEGORY_ID}"`,
+            `brandId = "${SEARCH_BRAND_ID}"`,
+            'inStock = true',
+            'price >= 10',
+            'price <= 50',
+          ],
+          sort: ['price:asc'],
+        }),
+      );
+    });
+
+    it('reads inStock=false as false, not as a truthy string', async () => {
+      // `enableImplicitConversion` would otherwise Boolean-coerce 'false' to true
+      // before validation ever saw it (the documented store-api DTO trap).
+      await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'case', inStock: 'false' })
+        .expect(200);
+
+      expect(meiliClientMock.search).toHaveBeenCalledWith(
+        'case',
+        expect.objectContaining({ filter: ['isActive = true'] }),
+      );
+    });
+
+    it('rejects an unknown sort with 400', async () => {
+      await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'case', sort: 'cheapest' })
+        .expect(400);
+    });
+
+    it('rejects a negative minPrice with 400', async () => {
+      await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'case', minPrice: '-1' })
+        .expect(400);
+    });
+
+    // The three facet ids land inside a quoted Meilisearch filter expression.
+    // Validated as free strings they could rewrite it — widening the facet under
+    // a URL that says otherwise, or making it unparsable so every search falls
+    // onto the Postgres scan.
+    it.each(['categoryId', 'brandId', 'deviceModelId'])(
+      'rejects a %s that is not a UUID with 400',
+      async (field) => {
+        await request(app.getHttpServer())
+          .get('/api/search')
+          .query({ q: 'case', [field]: 'x" OR price > 0 OR brandId = "y' })
+          .expect(400);
+
+        expect(meiliClientMock.search).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  describe('GET /api/search — exact article number (SF-SRCH-09)', () => {
+    it('answers a code query with the one product it names, without the engine', async () => {
+      prismaServiceMock.product.findFirst.mockResolvedValue(makeProductRow());
+      prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'IP15-1' })
+        .expect(200);
+
+      expect(meiliClientMock.search).not.toHaveBeenCalled();
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0]).toMatchObject({ id: 'product-1' });
+      expect(res.body.meta).toMatchObject({ total: 1, page: 1, totalPages: 1 });
     });
   });
 

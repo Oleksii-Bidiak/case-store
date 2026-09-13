@@ -69,6 +69,32 @@ describe("LoginForm", () => {
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/"));
   });
 
+  it("returns the shopper to the same-origin page they came from", async () => {
+    mockSearchParams = { redirect: "/products/chohol-dlya-iphone-15" };
+    const user = userEvent.setup();
+    renderWithProviders(<LoginForm />);
+
+    await submitCredentials(user);
+
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith("/products/chohol-dlya-iphone-15"),
+    );
+  });
+
+  // A leading-slash check already stopped `https://evil.com`. It did not stop
+  // `//evil.com`, which starts with "/" and which the browser reads as
+  // protocol-relative — sign in with real credentials, land on the attacker.
+  it("ignores a protocol-relative ?redirect= and falls back to '/'", async () => {
+    mockSearchParams = { redirect: "//evil.com" };
+    const user = userEvent.setup();
+    renderWithProviders(<LoginForm />);
+
+    await submitCredentials(user);
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/"));
+    expect(mockPush).not.toHaveBeenCalledWith("//evil.com");
+  });
+
   it("shows the invalid-credentials message on a plain 401", async () => {
     server.use(
       http.post("*/api/auth/login", () => unauthorized("Invalid credentials")),

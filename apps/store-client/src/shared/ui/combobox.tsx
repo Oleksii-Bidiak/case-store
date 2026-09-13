@@ -29,6 +29,8 @@ export interface ComboboxProps {
   loadingText?: string;
   emptyText?: string;
   autoComplete?: string;
+  /** Focus the input on mount (a panel that opens on demand — TASK-411). */
+  autoFocus?: boolean;
   "aria-invalid"?: boolean;
   /** Links the input to an external error message element (form a11y). */
   "aria-describedby"?: string;
@@ -45,6 +47,10 @@ export interface ComboboxProps {
  * Accessibility: WAI-ARIA combobox pattern — `role="combobox"` +
  * `aria-expanded`/`aria-controls`/`aria-activedescendant`, a `role="listbox"`
  * popup, and ArrowUp/ArrowDown/Enter/Escape keyboard navigation.
+ *
+ * `activeIndex` is the KEYBOARD selection and nothing else (TASK-411): hovering
+ * an option tints it through CSS `:hover` but never moves the selection, so a
+ * cursor resting over the popup cannot change what Enter commits.
  */
 export function Combobox({
   id,
@@ -58,6 +64,7 @@ export function Combobox({
   loadingText = "…",
   emptyText,
   autoComplete = "off",
+  autoFocus = false,
   "aria-invalid": ariaInvalid,
   "aria-describedby": ariaDescribedBy,
   className,
@@ -129,6 +136,7 @@ export function Combobox({
         aria-autocomplete="list"
         aria-activedescendant={activeDescendantId}
         autoComplete={autoComplete}
+        autoFocus={autoFocus}
         value={value}
         disabled={disabled}
         placeholder={placeholder}
@@ -176,12 +184,13 @@ export function Combobox({
                 role="option"
                 aria-selected={i === activeIndex}
                 className={cn(
-                  "cursor-pointer px-3 py-2 text-sm",
+                  // Hover is a pointer affordance only — it tints the row but
+                  // leaves `activeIndex` (what Enter commits) untouched.
+                  "cursor-pointer px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground",
                   i === activeIndex && "bg-accent text-accent-foreground",
                 )}
                 // Prevent the input's blur from firing before the click selects.
                 onMouseDown={(e) => e.preventDefault()}
-                onMouseEnter={() => setActiveIndex(i)}
                 onClick={() => select(option)}
               >
                 <span className="block">{option.label}</span>

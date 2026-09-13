@@ -88,7 +88,7 @@ export async function generateMetadata({
     content: { name: node.name, description: node.description },
   });
 
-  // All seven filter params are read so the noindex decision is complete —
+  // All eight filter params are read so the noindex decision is complete —
   // sort params never participate; no categoryCanonicalPath here because the
   // category is already the URL segment (plan 143, Decisions 1 & 3).
   const filters: ListingFilterParams = {
@@ -99,6 +99,7 @@ export async function generateMetadata({
     brandId: first(resolvedParams.brandId),
     deviceModelId: first(resolvedParams.deviceModelId),
     onSale: first(resolvedParams.onSale),
+    inStock: first(resolvedParams.inStock),
   };
   const listingMeta = buildListingMetadata({
     basePath: `/categories/${node.slug}`,

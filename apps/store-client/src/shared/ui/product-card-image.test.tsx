@@ -19,6 +19,7 @@ jest.mock("next/image", () => ({
     sizes,
     preload,
     loading,
+    className,
   }: {
     src: string;
     alt: string;
@@ -28,11 +29,13 @@ jest.mock("next/image", () => ({
     sizes?: string;
     preload?: boolean;
     loading?: string;
+    className?: string;
   }) => (
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={src}
       alt={alt}
+      className={className}
       data-placeholder={placeholder}
       data-blur={blurDataURL}
       data-sizes={sizes}
@@ -75,6 +78,26 @@ describe("ProductCardImage (TASK-091)", () => {
     expect(img).toHaveAttribute("data-blur", BLUR_PLACEHOLDER);
   });
 
+  // An empty string is not an LQIP. `??` passed it straight through, and
+  // `placeholder="blur"` with an empty `blurDataURL` renders no placeholder at
+  // all (next/image throws on it in dev) — so a blank value must fall back to
+  // the shared shimmer, while a real per-image LQIP still wins (TASK-415).
+  it("falls back to the shared shimmer when the LQIP is an empty string", () => {
+    renderWithProviders(
+      <ProductCardImage
+        src="https://cdn.example.com/case.webp"
+        alt="Clear case"
+        initial="C"
+        blurDataUrl=""
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "Clear case" })).toHaveAttribute(
+      "data-blur",
+      BLUR_PLACEHOLDER,
+    );
+  });
+
   it("renders the gradient initial (no img) when there is no src", () => {
     renderWithProviders(
       <ProductCardImage
@@ -86,6 +109,42 @@ describe("ProductCardImage (TASK-091)", () => {
 
     expect(screen.queryByRole("img")).toBeNull();
     expect(screen.getByText("N")).toBeInTheDocument();
+  });
+});
+
+describe("ProductCardImage — fit & motion (TASK-415)", () => {
+  // Accessory photos come in mixed aspect ratios; `object-cover` cropped plugs,
+  // straps and case edges out of the square card box. The box keeps its fixed
+  // ratio (no layout shift) and the photo is letterboxed inside it instead.
+  it("fits the whole photo into the card box instead of cropping it", () => {
+    renderWithProviders(
+      <ProductCardImage
+        src="https://cdn.example.com/case.webp"
+        alt="Clear case"
+        initial="C"
+      />,
+    );
+
+    const img = screen.getByRole("img", { name: "Clear case" });
+    expect(img).toHaveClass("object-contain");
+    expect(img).not.toHaveClass("object-cover");
+  });
+
+  // The hover zoom is declared here and only here — card wrappers used to add a
+  // second `[&_img]:transition-transform` whose descendant selector won, so the
+  // duration declared next to the scale never actually ran.
+  it("owns the hover zoom, and disables it under prefers-reduced-motion", () => {
+    renderWithProviders(
+      <ProductCardImage
+        src="https://cdn.example.com/case.webp"
+        alt="Clear case"
+        initial="C"
+      />,
+    );
+
+    const img = screen.getByRole("img", { name: "Clear case" });
+    expect(img).toHaveClass("group-hover:scale-105", "transition-transform");
+    expect(img).toHaveClass("motion-reduce:transition-none");
   });
 });
 
@@ -101,7 +160,10 @@ describe("ProductCardImage — lazy loading & sizes (TASK-210)", () => {
 
     expect(screen.getByRole("img", { name: "Clear case" })).toHaveAttribute(
       "data-sizes",
-      "(max-width: 639px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), 300px",
+      // First stop is 389px, not 639px: the grid goes two-up at 390px
+      // (TASK-415), so a 390–639px viewport must not be told to fetch a
+      // full-viewport candidate for a half-width card.
+      "(max-width: 389px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), 300px",
     );
   });
 

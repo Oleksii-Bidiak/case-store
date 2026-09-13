@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { dict } from "@/shared/config";
+import { Pagination } from "@/shared/ui/pagination";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import type { BlogPostView } from "../model/posts";
 import { BlogArrowDownIcon, BlogSearchIcon } from "./blog-icons";
@@ -29,17 +30,23 @@ interface BlogViewProps {
   activeCategory: string;
   /** Active free-text query (from the URL). */
   query: string;
-  /** Whether more posts exist beyond the current page (drives "load more"). */
-  hasMore: boolean;
-  /** Href that reveals the next batch (category + q preserved, page + 1). */
-  nextPageHref: string;
+  /** 1-based page currently on screen (from `?page=`). */
+  page: number;
+  /** How many pages the current filter selection has. */
+  totalPages: number;
 }
 
-/** Build a `/blog` href for a category + query selection. */
-function blogHref(category: string, query: string): string {
+/**
+ * Build a `/blog` href for a category + query + page selection. Page 1 is
+ * spelled without a `?page=` so the hub keeps one canonical URL, and changing
+ * the category or the query drops the page entirely — a page 4 of the old
+ * selection means nothing in the new one.
+ */
+function blogHref(category: string, query: string, page = 1): string {
   const params = new URLSearchParams();
   if (category && category !== "all") params.set("category", category);
   if (query.trim()) params.set("q", query.trim());
+  if (page > 1) params.set("page", String(page));
   const qs = params.toString();
   return qs ? `/blog?${qs}` : "/blog";
 }
@@ -50,8 +57,14 @@ function blogHref(category: string, query: string): string {
  *
  * Filtering, searching and pagination are resolved SERVER-side via the
  * `?category=`/`?q=`/`?page=` URL contract (TASK-173): the search box debounces a
- * `router.push`, category chips are plain links, and "load more" is a link to the
- * next page. This component only renders the server-provided slice.
+ * `router.push`, category chips are plain links, and every page is its own
+ * address. This component only renders the server-provided slice.
+ *
+ * Paging is the storefront's shared numbered control since TASK-417. Before it,
+ * the hub grew one ever-longer list behind a "load more" link — three listings
+ * in the app, three different paginations, and a reader who wanted the oldest
+ * article had to click their way down to it. The link survives as a shortcut to
+ * the next page, which is what it now says.
  */
 export function BlogView({
   posts,
@@ -59,8 +72,8 @@ export function BlogView({
   featured,
   activeCategory,
   query,
-  hasMore,
-  nextPageHref,
+  page,
+  totalPages,
 }: BlogViewProps) {
   const router = useRouter();
 
@@ -94,6 +107,7 @@ export function BlogView({
 
   const hasPosts = posts.length > 0;
   const isEmpty = !featured && !hasPosts;
+  const hasMore = page < totalPages;
 
   return (
     <>
@@ -173,17 +187,29 @@ export function BlogView({
       {/* Empty state */}
       {isEmpty && <BlogEmptyState />}
 
-      {/* Load more */}
+      {/* Next page shortcut — the reading order most people want, one click */}
       {hasMore && (
         <div className="mt-9 flex justify-center">
           <Link
-            href={nextPageHref}
+            href={blogHref(activeCategory, query, page + 1)}
+            rel="next"
             className="inline-flex h-12 cursor-pointer items-center gap-2.5 rounded-xl border-[1.5px] border-border bg-card px-[26px] text-[14.5px] font-semibold text-foreground no-underline transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            {dict.blog.loadMore}
+            {dict.blog.nextPageLink}
             <BlogArrowDownIcon width={17} height={17} />
           </Link>
         </div>
+      )}
+
+      {/* Numbered pages — every slice of the archive is one click away */}
+      {totalPages > 1 && (
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          buildHref={(target) => blogHref(activeCategory, query, target)}
+          ariaLabel={dict.blog.paginationAria}
+          className="mt-7"
+        />
       )}
 
       {/* Newsletter / social channels */}

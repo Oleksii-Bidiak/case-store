@@ -13,6 +13,7 @@ import { getGetCartQueryKey } from "@/entities/cart";
 import { getGetWishlistQueryKey } from "@/entities/wishlist";
 import { dict } from "@/shared/config";
 import { apiErrorStatus } from "@/shared/lib";
+import { sanitizeRedirectTarget } from "../lib/sanitize-redirect-target";
 
 const loginSchema = z.object({
   email: z.string().email(dict.auth.login.validationEmail),
@@ -86,11 +87,10 @@ export function LoginForm({
   const inSheet = Boolean(onAuthenticated);
 
   // Honour a `?redirect=` param so post-login navigation returns the user to
-  // where they came from (e.g. /checkout). Only same-origin paths are allowed —
-  // the leading-slash check prevents open-redirect attacks.
-  const redirectParam = searchParams.get("redirect");
-  const redirectTarget =
-    redirectParam && redirectParam.startsWith("/") ? redirectParam : "/";
+  // where they came from (e.g. /checkout, or the product whose review they came
+  // to write). Only same-origin paths survive the sanitizer — see its file for
+  // why a leading-slash check alone was an open redirect.
+  const redirectTarget = sanitizeRedirectTarget(searchParams.get("redirect"));
 
   // Failure-redirect path of the Google OAuth flow (TASK-168): the backend
   // callback funnels every failure (denied consent, unverified email, locked

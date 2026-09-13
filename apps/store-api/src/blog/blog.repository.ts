@@ -236,6 +236,22 @@ export class BlogRepository implements PublishablePort {
     return this.prisma.blogPost.findUnique({ where: { id }, include: CATEGORY_INCLUDE });
   }
 
+  /**
+   * Hydrate PUBLISHED posts for a set of ids (TASK-417) — the read behind a
+   * search-index hit. The `PUBLISHED` gate is what makes trusting the index
+   * safe: de-indexing on unpublish is best-effort, so a lingering document must
+   * not be able to put a draft back on the hub. Order is NOT meaningful here
+   * (Prisma returns rows in its own order); the caller re-applies the engine's
+   * ranking.
+   */
+  findPublishedByIds(ids: string[]): Promise<BlogPostWithCategory[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.prisma.blogPost.findMany({
+      where: { id: { in: ids }, status: PublishStatus.PUBLISHED },
+      include: CATEGORY_INCLUDE,
+    });
+  }
+
   /** Find a post by slug regardless of status — used to enforce slug uniqueness. */
   findBySlugAny(slug: string): Promise<BlogPost | null> {
     return this.prisma.blogPost.findUnique({ where: { slug } });

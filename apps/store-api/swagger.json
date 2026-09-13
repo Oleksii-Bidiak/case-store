@@ -2051,6 +2051,80 @@
               "example": 20,
               "type": "number"
             }
+          },
+          {
+            "name": "categoryId",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to a category. Rolls up the whole subtree (a parent id also matches products filed in its subcategories), exactly like the catalogue listing.",
+            "schema": {
+              "example": "c1a2b3c4-0000-4000-8000-000000000000",
+              "type": "string"
+            }
+          },
+          {
+            "name": "brandId",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to one manufacturer (brand id).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceModelId",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to products compatible with one device model.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inStock",
+            "required": false,
+            "in": "query",
+            "description": "Keep only products a shopper can buy right now (`stock > 0`).",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "minPrice",
+            "required": false,
+            "in": "query",
+            "description": "Minimum price filter",
+            "schema": {
+              "example": "10.00",
+              "type": "number"
+            }
+          },
+          {
+            "name": "maxPrice",
+            "required": false,
+            "in": "query",
+            "description": "Maximum price filter",
+            "schema": {
+              "example": "100.00",
+              "type": "number"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Result order. `relevance` (default) keeps the engine ranking; the others sort by price or recency and apply on the Postgres fallback too.",
+            "schema": {
+              "example": "relevance",
+              "type": "string",
+              "enum": [
+                "relevance",
+                "price_asc",
+                "price_desc",
+                "newest"
+              ]
+            }
           }
         ],
         "responses": {
@@ -2214,6 +2288,16 @@
             }
           },
           {
+            "name": "inStock",
+            "required": false,
+            "in": "query",
+            "description": "Filter to products a shopper can actually buy right now — `stock > 0` (TASK-414). The storefront «В наявності» checkbox. Composes with every other filter. On the admin listing the opposite `outOfStock` worklist filter wins if both are sent.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
             "name": "onSale",
             "required": false,
             "in": "query",
@@ -2257,9 +2341,9 @@
             "name": "specs",
             "required": false,
             "in": "query",
-            "description": "Structured spec facet filter as a single \"key:value\" pair (TASK-191), e.g. \"material:Силікон\". Kept a plain string on the wire so it maps to a normal query param; parsed to a { key, value } pair server-side via parseSpecFilter (malformed input is ignored).",
+            "description": "Structured spec facet filter (TASK-191, multi-value since TASK-414 / owner decision B-10): `key:v1,v2;key2:v3`. Values INSIDE one facet are OR-ed, facets are AND-ed — \"силікон or TPU, and a case\". The original single-pair form (\"material:Силікон\") stays a valid input so live links keep working. Kept a plain string on the wire so it maps to a normal query param; parsed server-side via parseSpecFilters (malformed chunks are ignored, never rejected). Values may contain \":\" but NOT \",\" or \";\" — those are the separators and there is no escape form.",
             "schema": {
-              "example": "material:Силікон",
+              "example": "material:Силікон,TPU;case-type:Накладка",
               "type": "string"
             }
           },
@@ -2422,6 +2506,16 @@
             }
           },
           {
+            "name": "inStock",
+            "required": false,
+            "in": "query",
+            "description": "Filter to products a shopper can actually buy right now — `stock > 0` (TASK-414). The storefront «В наявності» checkbox. Composes with every other filter. On the admin listing the opposite `outOfStock` worklist filter wins if both are sent.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
             "name": "onSale",
             "required": false,
             "in": "query",
@@ -2465,9 +2559,9 @@
             "name": "specs",
             "required": false,
             "in": "query",
-            "description": "Structured spec facet filter as a single \"key:value\" pair (TASK-191), e.g. \"material:Силікон\". Kept a plain string on the wire so it maps to a normal query param; parsed to a { key, value } pair server-side via parseSpecFilter (malformed input is ignored).",
+            "description": "Structured spec facet filter (TASK-191, multi-value since TASK-414 / owner decision B-10): `key:v1,v2;key2:v3`. Values INSIDE one facet are OR-ed, facets are AND-ed — \"силікон or TPU, and a case\". The original single-pair form (\"material:Силікон\") stays a valid input so live links keep working. Kept a plain string on the wire so it maps to a normal query param; parsed server-side via parseSpecFilters (malformed chunks are ignored, never rejected). Values may contain \":\" but NOT \",\" or \";\" — those are the separators and there is no escape form.",
             "schema": {
-              "example": "material:Силікон",
+              "example": "material:Силікон,TPU;case-type:Накладка",
               "type": "string"
             }
           },
@@ -3291,7 +3385,18 @@
     "/api/brands": {
       "get": {
         "operationId": "BrandController_findAll",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "categoryId",
+            "required": false,
+            "in": "query",
+            "description": "Narrow the list to brands that have at least one purchasable product in this category SUBTREE (the category itself plus its descendants, matching the catalogue rollup). Omit for every active brand.",
+            "schema": {
+              "example": "550e8400-e29b-41d4-a716-446655440000",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "List of active brands",

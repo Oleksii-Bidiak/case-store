@@ -73,6 +73,42 @@ describe('BrandRepository', () => {
         orderBy: { name: 'asc' },
       });
     });
+
+    // TASK-414. The dropdown must never offer a brand that filters the grid to
+    // nothing, so the relation filter mirrors ALL FOUR of the PUBLIC listing's
+    // visibility rules — active AND not soft-deleted AND in the subtree AND in
+    // an active category. The last one is the one that is easy to talk yourself
+    // out of: the subtree of a parent includes DEACTIVATED children, so a brand
+    // stocked only there was offered and then filtered the grid to nothing.
+    it('narrows to brands with a purchasable product in the given categories', async () => {
+      prismaMock.brand.findMany.mockResolvedValue([mockBrand]);
+
+      await repository.findAllActive(['cat-1', 'cat-1-child']);
+
+      expect(prismaMock.brand.findMany).toHaveBeenCalledWith({
+        where: {
+          isActive: true,
+          products: {
+            some: {
+              isActive: true,
+              deletedAt: null,
+              categoryId: { in: ['cat-1', 'cat-1-child'] },
+              category: { isActive: true },
+            },
+          },
+        },
+        orderBy: { name: 'asc' },
+      });
+    });
+
+    it('applies no product filter at all when no categories are given', async () => {
+      prismaMock.brand.findMany.mockResolvedValue([mockBrand]);
+
+      await repository.findAllActive(undefined);
+
+      const where = prismaMock.brand.findMany.mock.calls.at(-1)![0].where;
+      expect(where).not.toHaveProperty('products');
+    });
   });
 
   describe('findAllAdmin', () => {

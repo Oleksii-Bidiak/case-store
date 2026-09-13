@@ -65,7 +65,7 @@
   /* Footer & announcement bar — owner decision (F-06): these stay a dark panel
      in BOTH themes, so they are theme-invariant. Defined once here (mirroring
      the light-mode foreground/background) and deliberately NOT redefined in the
-     dark media block below, so they hold these values under dark mode too. */
+     dark blocks below, so they hold these values under dark mode too. */
   --color-footer: #0f172a;
   --color-footer-foreground: #ffffff;
 
@@ -84,9 +84,35 @@
 
 /* ─────────────────────────────────────────────
    Semantic Design Tokens (Dark Mode)
+
+   ⚠️ DELIBERATE DUPLICATE (TASK-412) — the two blocks below carry the SAME
+   declarations (only the nesting differs) and MUST always be edited together.
+   Changing one alone ships a theme that is right for half the visitors.
+
+   Why it cannot be one rule: CSS offers no way to write "the OS asks for dark
+   OR the visitor chose dark" in a single selector — the first condition lives
+   in an `@media` block, the second in a plain selector, and the two contexts
+   cannot be merged. (`light-dark()` would collapse them, but it needs every
+   token restated as a value pair and drops the shadow/`color-scheme` cases —
+   parked in BACKLOG rather than half-done here.)
+
+   Together they implement ONE rule: an explicit choice beats the system
+   preference in BOTH directions.
+     · nothing chosen  → no `data-theme` → the OS decides (the media block).
+     · chose light     → `:not([data-theme='light'])` switches the media block
+                         off, so a dark OS can no longer force dark.
+     · chose dark      → `:root[data-theme='dark']` applies on a light OS.
+
+   `data-theme` is owned by next-themes (mounted in `app/providers.tsx`). Its
+   inline script writes the attribute before first paint — hence no flash of
+   the wrong theme — and always writes a RESOLVED value (`light` / `dark`),
+   never `system`.
    ───────────────────────────────────────────── */
+
+/* 1 of 2 — system preference, unless the visitor explicitly picked light.
+   KEEP IN SYNC WITH THE `:root[data-theme='dark']` BLOCK BELOW. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     /* Opt native controls into dark theming. */
     color-scheme: dark;
 
@@ -145,6 +171,97 @@
     --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.4);
     --shadow-elevated: 0 4px 12px -2px rgb(0 0 0 / 0.5);
     --shadow-lift: 0 12px 28px -6px rgb(0 0 0 / 0.6);
+  }
+}
+
+/* 2 of 2 — the visitor explicitly chose dark, whatever the OS prefers.
+   KEEP IN SYNC WITH THE `@media (prefers-color-scheme: dark)` BLOCK ABOVE. */
+:root[data-theme='dark'] {
+  /* Opt native controls into dark theming. */
+  color-scheme: dark;
+
+  /* Core colors */
+  --color-background: #0a0a0a;
+  --color-foreground: #ededed;
+
+  /* Primary */
+  --color-primary: #6366f1;
+  --color-primary-foreground: #ffffff;
+
+  /* Secondary */
+  --color-secondary: #1e293b;
+  --color-secondary-foreground: #ededed;
+
+  /* Muted */
+  --color-muted: #1e293b;
+  --color-muted-foreground: #94a3b8;
+
+  /* Accent */
+  --color-accent: #1e293b;
+  --color-accent-foreground: #ededed;
+
+  /* Destructive */
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
+
+  /* Sale / Success / Warning */
+  --color-sale: #f43f5e;
+  --color-sale-foreground: #ffffff;
+  --color-success: #22c55e;
+  --color-success-foreground: #052e16;
+  --color-warning: #f59e0b;
+  --color-warning-foreground: #271100;
+
+  /* Card */
+  --color-card: #0f0f0f;
+  --color-card-foreground: #ededed;
+
+  /* Popover */
+  --color-popover: #0f0f0f;
+  --color-popover-foreground: #ededed;
+
+  /* Border & Input */
+  --color-border: #334155;
+  --color-input: #334155;
+  --color-ring: #6366f1;
+
+  /* Overlay */
+  --color-overlay: rgba(0, 0, 0, 0.8);
+
+  /* Radius */
+  --radius: 0.75rem;
+
+  /* Elevation — deeper, since soft shadows read weaker on dark surfaces */
+  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-elevated: 0 4px 12px -2px rgb(0 0 0 / 0.5);
+  --shadow-lift: 0 12px 28px -6px rgb(0 0 0 / 0.6);
+}
+
+/* ─────────────────────────────────────────────
+   The `dark:` variant (TASK-412)
+
+   Tailwind v4's built-in `dark` variant is `@media (prefers-color-scheme: dark)`
+   and nothing else. Left at the default, the tokens above honoured an explicit
+   choice while every `dark:`-prefixed utility kept obeying the OS — so on a dark
+   OS with «світла» chosen, the page went light but `shared/ui`'s inputs, outline
+   buttons, textareas, selects and destructive badges stayed dark on it. The two
+   halves of the theme disagreed.
+
+   Redefined here with the SAME two branches as the token blocks, in the same
+   order, so one rule governs both halves:
+     · explicit `data-theme` wins in both directions;
+     · with nothing chosen, the OS decides.
+   The media branch keeps `dark:` working before next-themes' inline script runs
+   and for a visitor with JavaScript off.
+   ───────────────────────────────────────────── */
+@custom-variant dark {
+  &:where([data-theme='dark'], [data-theme='dark'] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme='light']) *, :root:not([data-theme='light'])) {
+      @slot;
+    }
   }
 }
 
@@ -234,6 +351,22 @@ button:not(:disabled) {
 html {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
+}
+/* Reserve the scrollbar's gutter even on pages short enough not to scroll, so
+   the content width (and therefore every centered container) stays identical
+   from route to route — no sideways jump between a long catalog page and a
+   short cart, and no `100vw` element that is a scrollbar wider than the
+   viewport can actually show (TASK-410). Overlay scrollbars (phones) have zero
+   width, so this costs mobile nothing.
+
+   Scoped OUT while a Radix overlay is open: react-remove-scroll locks the page
+   by setting `overflow: hidden` + `margin-right: <scrollbar width>` on <body>
+   (it measures `innerWidth - documentElement.clientWidth`, see
+   react-remove-scroll-bar/utils). With a stable gutter that compensation would
+   be counted twice and the page would slide under every sheet/dialog. Dropping
+   the gutter exactly when the lock attribute appears keeps the two in step. */
+html:not(:has(body[data-scroll-locked])) {
+  scrollbar-gutter: stable;
 }
 *::-webkit-scrollbar {
   width: 10px;

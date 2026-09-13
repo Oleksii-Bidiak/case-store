@@ -90,8 +90,23 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
 - **Section vertical rhythm:** `py-12 md:py-16` (hero may go `py-20 md:py-28`).
 - **Grid gaps:** cards `gap-4 md:gap-6`; form fields `gap-4`.
 - **Card internal padding:** `p-4` (compact) / `p-6` (roomy).
-- **Product grid:** `grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4` (2-up on mobile
-  matches the benchmark UA shops — denser than typical SaaS).
+- **Product grid:** `grid grid-cols-1 items-stretch min-[390px]:grid-cols-2 lg:grid-cols-4`
+  — **1 / 2 / 4 columns** (owner's call, TASK-415). One card below 390px: on the narrowest
+  phones a 2-up row left the photo, the price and the button all unreadable. Two cards from
+  390px (2-up matches the benchmark UA shops — denser than typical SaaS), four from `lg`.
+  This supersedes both the old auto-fill `minmax(232px,1fr)` layout and the always-2-up rule
+  of TASK-259 (F-19). `min-[390px]` is deliberate: 390px is the design viewport, not a
+  Tailwind breakpoint. `items-stretch` (+ `h-full` on the card root) keeps every card in a
+  row the same height. The same grid is used on `/products`, `/search` and `/wishlist`, and
+  each **skeleton must repeat the class list byte for byte** — a skeleton with different
+  columns reflows the page the moment real cards replace it.
+- **Product card image:** a fixed `aspect-square` box with `object-contain` over the card
+  gradient — accessory photos arrive in mixed aspect ratios and must never be cropped
+  (TASK-415). Banners and category tiles keep `object-cover`: there the frame matters more
+  than the edges of the subject.
+- **Known debt:** the `/products` and `/wishlist` grids still carry a grandfathered
+  `gap-[18px]` (see `eslint-suppressions.json`). New grids use `gap-4 md:gap-6`; moving the
+  old ones onto the scale is a single separate pass, not a drive-by edit.
 - **Sticky asides** (filter rails, summary panels, TOCs, side navs): the site header is
   `sticky top-0 z-50` (64px), so any other sticky panel must clear it with a **96px** top
   offset — `lg:sticky` + `STICKY_ASIDE_TOP` (`lg:top-24`) from
@@ -161,9 +176,10 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
 
 Reusable patterns the storefront should converge on — pulled from the UA benchmark shops:
 
-- **Product card:** image (4:3, `rounded-lg bg-muted` placeholder), New/Sale chips top-left,
-  wishlist heart top-right, title (2-line clamp), rating stars + count, price block
-  (sale price `text-sale` + old price struck), variant color dots, delivery hint, Add-to-cart.
+- **Product card:** image (square box, `object-contain` over the gradient placeholder — §4),
+  New/Sale chips top-left, wishlist heart top-right, title (2-line clamp), rating stars +
+  count, price block (sale price `text-sale` + old price struck), variant color dots,
+  delivery hint, Add-to-cart.
 - **Price block:** current `font-semibold text-lg tabular-nums`; if discounted, old price
   `text-sm text-muted-foreground line-through` + `bg-sale` "-XX%" chip; optional
   "від N ₴/міс" installment line in `text-xs text-muted-foreground`.

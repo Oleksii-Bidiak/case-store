@@ -3,7 +3,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { keepPreviousData } from "@tanstack/react-query";
 import { Menu, Newspaper, Search } from "lucide-react";
+import { SearchAutocomplete } from "@/features/search";
 import { useSearchSuggest } from "@/entities/search";
 import { useBlogControllerFindAll } from "@/entities/blog";
 import { useCategoryControllerGetCategoryTree } from "@/entities/category";
@@ -22,8 +24,7 @@ const BLOG_SUGGEST_LIMIT = 5;
  * blog posts, addressed by a single `activeIndex` across both listboxes.
  */
 type CombinedSuggestion =
-  | { kind: "product"; slug: string }
-  | { kind: "blog"; slug: string };
+  { kind: "product"; slug: string } | { kind: "blog"; slug: string };
 
 /**
  * HeaderSearch — the desktop search pill from the design import: one bordered
@@ -36,6 +37,18 @@ type CombinedSuggestion =
  *
  * Reuses the storefront search hooks; keyboard nav (↑/↓/Enter/Esc) mirrors the
  * shared Combobox. Hidden below `md` — mobile navigates via the header Sheet.
+ *
+ * The catalog panel is fully keyboard-operable (TASK-413): ↑/↓/Home/End walk
+ * one pane, →/← cross between them, each pane keeps a single roving tab stop,
+ * Escape closes and hands focus back to the trigger, and the page behind the
+ * open panel is scroll-locked.
+ *
+ * Between `md` and `lg` the row has no room for the 410px pill (it squeezed the
+ * wordmark to ~16px at 768px), so the input and submit segments collapse into a
+ * single magnifier that drops a panel with the shared {@link SearchAutocomplete}
+ * (TASK-411). The "Каталог" segment stays at every width this widget exists at —
+ * from `lg` it is the only catalog entry point, since the slide-out menu that
+ * carries the category accordion is `lg:hidden` (TASK-413).
  */
 export function HeaderSearch() {
   const router = useRouter();
@@ -46,6 +59,7 @@ export function HeaderSearch() {
   const uid = useId();
   const listboxId = `${uid}-listbox`;
   const blogListboxId = `${uid}-blog-listbox`;
+  const compactPanelId = `${uid}-compact-panel`;
   /** Option id addressed by the SINGLE combined index (products, then blog). */
   const optionId = (index: number) => `${uid}-option-${index}`;
 
@@ -53,6 +67,12 @@ export function HeaderSearch() {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  /** Below `lg`: the magnifier's drop-down panel (TASK-411). */
+  const [compactOpen, setCompactOpen] = useState(false);
+  /**
+   * KEYBOARD selection only. Hovering an option never writes here — otherwise a
+   * cursor resting over the popup silently re-targets Enter (TASK-411).
+   */
   const [activeIndex, setActiveIndex] = useState(-1);
 
   const debouncedSetQuery = useDebouncedCallback(
@@ -60,9 +80,17 @@ export function HeaderSearch() {
     250,
   );
 
+  // `keepPreviousData` on BOTH suggest calls: without it every keystroke empties
+  // the dropdown while the next request is in flight, so the popup blinks
+  // through "Пошук…" between letters and jumps in height (TASK-411).
   const { data: suggestData, isFetching } = useSearchSuggest(
     { q: query },
-    { query: { enabled: query.trim().length >= MIN_QUERY_LENGTH } },
+    {
+      query: {
+        enabled: query.trim().length >= MIN_QUERY_LENGTH,
+        placeholderData: keepPreviousData,
+      },
+    },
   );
   const suggestions = suggestData?.data ?? [];
 
@@ -70,18 +98,25 @@ export function HeaderSearch() {
   // state as the product suggest call (no second debounce timer).
   const { data: blogData } = useBlogControllerFindAll(
     { q: query, limit: BLOG_SUGGEST_LIMIT },
-    { query: { enabled: query.trim().length >= MIN_QUERY_LENGTH } },
+    {
+      query: {
+        enabled: query.trim().length >= MIN_QUERY_LENGTH,
+        placeholderData: keepPreviousData,
+      },
+    },
   );
   const blogPosts = (blogData?.data ?? []).slice(0, BLOG_SUGGEST_LIMIT);
 
   // Single logical list for ↑/↓/Enter: products first, then blog posts.
   const combined: CombinedSuggestion[] = [
-    ...suggestions.map(
-      (s): CombinedSuggestion => ({ kind: "product", slug: s.slug }),
-    ),
-    ...blogPosts.map(
-      (p): CombinedSuggestion => ({ kind: "blog", slug: p.slug }),
-    ),
+    ...suggestions.map((s): CombinedSuggestion => ({
+      kind: "product",
+      slug: s.slug,
+    })),
+    ...blogPosts.map((p): CombinedSuggestion => ({
+      kind: "blog",
+      slug: p.slug,
+    })),
   ];
 
   // Category tree (TASK-082) — roots + one nested level for the flyout. The
@@ -101,28 +136,143 @@ export function HeaderSearch() {
   const activeRoot =
     categories.find((c) => c.id === activeRootId) ?? categories[0];
 
+  /**
+   * Which child holds the right pane's single tab stop. Deliberately NOT reset
+   * by an effect when the active root changes: the id simply stops matching any
+   * child, `findIndex` returns -1, and the fallback below hands the tab stop
+   * back to the first row. One less effect, and no frame where the pane has no
+   * tabbable row at all.
+   */
+  const [activeChildId, setActiveChildId] = useState<string | undefined>();
+  const activeChildren = activeRoot?.children ?? [];
+  const foundChildIndex = activeChildren.findIndex(
+    (c) => c.id === activeChildId,
+  );
+  const childTabIndex = foundChildIndex >= 0 ? foundChildIndex : 0;
+
   // Focus plumbing for the two-pane keyboard traversal (ArrowRight/ArrowLeft)
   // and for returning focus to the trigger when Escape closes the panel.
   const catalogTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const compactTriggerRef = useRef<HTMLButtonElement | null>(null);
   const rootLinkRefs = useRef<Record<string, HTMLAnchorElement | null>>({});
   const childLinkRefs = useRef<Record<string, HTMLAnchorElement | null>>({});
 
-  // Close both dropdowns on outside-click and Escape.
+  /**
+   * Vertical traversal inside one pane (TASK-413). Wraps, as the APG menu
+   * pattern prescribes for a vertical menu, so End→ArrowDown is never a dead
+   * key. Moving focus onto a root also previews its children, which is exactly
+   * what hovering it does — arrows and the pointer drive the same pane.
+   */
+  function focusRoot(index: number) {
+    const category = categories[index];
+    if (!category) return;
+    setActiveRootId(category.id);
+    rootLinkRefs.current[category.id]?.focus();
+  }
+
+  function focusChild(index: number) {
+    const child = activeChildren[index];
+    if (!child) return;
+    setActiveChildId(child.id);
+    childLinkRefs.current[child.id]?.focus();
+  }
+
+  /**
+   * Shared ↑/↓/Home/End handling for both panes: `move` receives the index to
+   * land on, already wrapped by the caller's list length. Returns true when the
+   * key was consumed, so each pane can add its own horizontal key on top.
+   */
+  function handleVerticalKeys(
+    event: React.KeyboardEvent,
+    index: number,
+    length: number,
+    move: (next: number) => void,
+  ) {
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        move((index + 1) % length);
+        return true;
+      case "ArrowUp":
+        event.preventDefault();
+        move((index - 1 + length) % length);
+        return true;
+      case "Home":
+        event.preventDefault();
+        move(0);
+        return true;
+      case "End":
+        event.preventDefault();
+        move(length - 1);
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Scroll-lock while the catalogue panel is open (TASK-413). The cleanup — not
+   * a per-close-path call — is what makes the unlock reliable: Escape, an
+   * outside click, picking a link and unmounting the header all funnel through
+   * `catalogOpen` going false, and React runs this teardown for every one of
+   * them.
+   *
+   * `data-scroll-locked` is Radix's own attribute name, and it is deliberate:
+   * globals.css drops `scrollbar-gutter: stable` exactly while that attribute
+   * is on <body>, so the gutter and the compensation below can never be counted
+   * twice. That also means the margin is NOT optional — without it the page
+   * would slide sideways by the gutter width the moment the panel opens.
+   */
   useEffect(() => {
-    if (!searchOpen && !catalogOpen) return;
+    if (!catalogOpen) return;
+    const { body } = document;
+    // A Radix overlay already owns the page — don't take a lock we would then
+    // release out from under it. (They cannot both be open in practice: opening
+    // the slide-out menu is an outside click that closes this panel first.)
+    if (body.hasAttribute("data-scroll-locked")) return;
+
+    // How much narrower the root box is than the viewport — the gutter that is
+    // about to be given back. NOT `innerWidth - documentElement.clientWidth`,
+    // the usual idiom: under `scrollbar-gutter: stable` Chrome keeps reporting
+    // the full viewport in clientWidth (measured: 1280 vs a 1270px root box),
+    // so that subtraction reads 0 and the compensation silently does nothing.
+    // A layout-less environment (jsdom) reports 0 and is simply not compensated.
+    const rootWidth = document.documentElement.offsetWidth;
+    const gutter = rootWidth > 0 ? window.innerWidth - rootWidth : 0;
+    const previousOverflow = body.style.overflow;
+    const previousMarginRight = body.style.marginRight;
+
+    body.style.overflow = "hidden";
+    if (gutter > 0) body.style.marginRight = `${gutter}px`;
+    body.setAttribute("data-scroll-locked", "");
+
+    return () => {
+      body.style.overflow = previousOverflow;
+      body.style.marginRight = previousMarginRight;
+      body.removeAttribute("data-scroll-locked");
+    };
+  }, [catalogOpen]);
+
+  // Close every dropdown on outside-click and Escape.
+  useEffect(() => {
+    if (!searchOpen && !catalogOpen && !compactOpen) return;
     function onPointerDown(event: MouseEvent) {
       if (!containerRef.current?.contains(event.target as Node)) {
         setSearchOpen(false);
         setCatalogOpen(false);
+        setCompactOpen(false);
       }
     }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setSearchOpen(false);
         setCatalogOpen(false);
+        setCompactOpen(false);
         // Keyboard users keep their place: Escape on the catalog panel returns
-        // focus to the "Каталог" trigger (TASK-082).
+        // focus to the "Каталог" trigger (TASK-082), and on the compact search
+        // panel to the magnifier that opened it (TASK-411).
         if (catalogOpen) catalogTriggerRef.current?.focus();
+        else if (compactOpen) compactTriggerRef.current?.focus();
       }
     }
     document.addEventListener("mousedown", onPointerDown);
@@ -131,10 +281,18 @@ export function HeaderSearch() {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [searchOpen, catalogOpen]);
+  }, [searchOpen, catalogOpen, compactOpen]);
 
   const showSuggestions = searchOpen && value.trim().length >= MIN_QUERY_LENGTH;
-  const hasSuggestions = suggestions.length > 0;
+  // Anything the popup can offer — products OR articles. Counting products
+  // alone printed "нічого не знайдено" above a list of matching posts.
+  const hasSuggestions = suggestions.length > 0 || blogPosts.length > 0;
+  // The 250ms debounce means `query` trails `value`: between the keystroke and
+  // the request there is a window where nothing is in flight and nothing has
+  // arrived. Counting that window as "loading" is what stops the popup from
+  // flashing "Нічого не знайдено" on the first letter of every search.
+  const isSearching = isFetching || value.trim() !== query.trim();
+  const searchHref = `/search?q=${encodeURIComponent(value.trim())}`;
 
   // Single source of truth for BOTH the visual highlight and the ARIA pointer:
   // the same `activeIndex`. Absent (undefined, not "") when the list is closed
@@ -174,11 +332,12 @@ export function HeaderSearch() {
         break;
       case "Enter": {
         const item = activeIndex >= 0 ? combined[activeIndex] : undefined;
-        if (item) {
-          event.preventDefault();
-          if (item.kind === "blog") pickBlogPost(item.slug);
-          else pick(item.slug);
-        }
+        event.preventDefault();
+        // Nothing highlighted (the popup is merely open, or the cursor is
+        // hovering a row) → the query itself goes to the results page.
+        if (!item) submitSearch(value);
+        else if (item.kind === "blog") pickBlogPost(item.slug);
+        else pick(item.slug);
         break;
       }
       case "Escape":
@@ -191,7 +350,31 @@ export function HeaderSearch() {
   return (
     <div
       ref={containerRef}
-      className="relative z-40 hidden max-w-2xl flex-1 md:block"
+      // Tabbing out of an open catalogue panel closes it (TASK-413). Without
+      // this the panel stays open behind a focus ring the visitor has already
+      // left, and — now that the page under it is scroll-locked — focus can
+      // walk down to something it cannot scroll into view. `relatedTarget` is
+      // where focus is heading; inside our own box it is pane-to-pane movement,
+      // which must not close anything. A NULL relatedTarget is deliberately
+      // ignored: that is focus dropping to <body> — a click on the panel's own
+      // padding looks exactly like that, and real outside clicks are already
+      // the pointerdown handler's job.
+      onBlur={(event) => {
+        if (!catalogOpen || !event.relatedTarget) return;
+        if (containerRef.current?.contains(event.relatedTarget)) return;
+        setCatalogOpen(false);
+      }}
+      // Only from `lg` does the pill claim the row's free space; in the md–lg
+      // band the widget is as wide as its content (Каталог + magnifier).
+      //
+      // `lg:min-w-0` is load-bearing (TASK-413). A flex item defaults to
+      // `min-width: auto`, i.e. it refuses to go below its min-content — 410px
+      // here. Once the row also carries the section links and the theme switch,
+      // the free space at 1024 is 253, so the pill clamped itself at 410 and
+      // the overflow was billed to the only shrinkable item left: the brand,
+      // which collapsed to 1px. The search field is the elastic part of this
+      // row; the store's name is not.
+      className="relative z-40 hidden md:block lg:max-w-2xl lg:min-w-0 lg:flex-1"
     >
       <form
         role="search"
@@ -208,6 +391,12 @@ export function HeaderSearch() {
             onClick={() => {
               setCatalogOpen((v) => !v);
               setSearchOpen(false);
+              // The magnifier's panel is a peer dropdown, not a sibling of
+              // this one: both are absolutely positioned at the same corner,
+              // so leaving it open would stack two panels over each other and
+              // report aria-expanded from two triggers at once. Opening
+              // either closes the other (TASK-411).
+              setCompactOpen(false);
               // Fresh open always previews the first root's children.
               setActiveRootId(undefined);
             }}
@@ -243,19 +432,56 @@ export function HeaderSearch() {
             }}
             onFocus={() => setSearchOpen(true)}
             onKeyDown={onInputKeyDown}
-            className="h-full min-w-0 flex-1 border-0 bg-transparent px-4 text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
+            className="hidden h-full min-w-0 flex-1 border-0 bg-transparent px-4 text-[15px] text-foreground outline-none placeholder:text-muted-foreground lg:block"
           />
 
-          {/* Primary submit (right). */}
+          {/* Compact trigger (md–lg) — opens the search panel below. `w-12` on
+              a 48px-tall pill is a 48×48 touch target. */}
+          <button
+            ref={compactTriggerRef}
+            type="button"
+            onClick={() => {
+              setCompactOpen((v) => !v);
+              setCatalogOpen(false);
+              setSearchOpen(false);
+            }}
+            aria-expanded={compactOpen}
+            aria-controls={compactPanelId}
+            aria-label={dict.search.openPanel}
+            className="flex h-full w-12 shrink-0 items-center justify-center bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset lg:hidden"
+          >
+            <Search className="size-5" aria-hidden="true" />
+          </button>
+
+          {/* Primary submit (right) — pairs with the input, so it shares its
+              breakpoint. */}
           <button
             type="submit"
             aria-label={dict.search.submitAria}
-            className="flex h-full w-[54px] shrink-0 items-center justify-center bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            className="hidden h-full w-[54px] shrink-0 items-center justify-center bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset lg:flex"
           >
             <Search className="size-5" aria-hidden="true" />
           </button>
         </div>
       </form>
+
+      {/* Compact search panel (md–lg) — the shared autocomplete, focused on
+          open so the magnifier behaves like the input it replaces. */}
+      {compactOpen && (
+        <div
+          id={compactPanelId}
+          // `w-96` is measured against the narrowest width this panel exists
+          // at: 384px fits beside the logo from 768px up. `max-w-full` would
+          // clamp it to the pill (the relative box), not the viewport.
+          className="absolute top-full left-0 z-50 mt-2 w-96 rounded-2xl border border-border bg-popover p-3 shadow-lift lg:hidden"
+        >
+          <SearchAutocomplete
+            id="compact-search"
+            autoFocus
+            onNavigate={() => setCompactOpen(false)}
+          />
+        </div>
+      )}
 
       {/* Catalog panel — root categories + the active root's children in a
           two-pane flyout (TASK-082). Root links keep navigating on click; the
@@ -282,7 +508,7 @@ export function HeaderSearch() {
             <>
               <div className="flex">
                 <ul className="w-64 pr-2">
-                  {categories.map((category) => (
+                  {categories.map((category, index) => (
                     <li key={category.id}>
                       <Link
                         ref={(el) => {
@@ -290,6 +516,10 @@ export function HeaderSearch() {
                         }}
                         href={`/categories/${category.slug}`}
                         role="menuitem"
+                        // Roving tab stop: the root list is ONE Tab away, and
+                        // ↑/↓ walk it from there. The stop follows the active
+                        // root, so Tab always re-enters where the visitor left.
+                        tabIndex={category.id === activeRoot?.id ? 0 : -1}
                         aria-haspopup={
                           category.children.length > 0 ? "true" : undefined
                         }
@@ -301,6 +531,16 @@ export function HeaderSearch() {
                         onMouseEnter={() => setActiveRootId(category.id)}
                         onFocus={() => setActiveRootId(category.id)}
                         onKeyDown={(event) => {
+                          if (
+                            handleVerticalKeys(
+                              event,
+                              index,
+                              categories.length,
+                              focusRoot,
+                            )
+                          ) {
+                            return;
+                          }
                           if (
                             event.key === "ArrowRight" &&
                             category.children[0]
@@ -332,7 +572,7 @@ export function HeaderSearch() {
                     className="w-64 border-l border-border pl-2"
                   >
                     <ul>
-                      {activeRoot.children.map((child) => (
+                      {activeRoot.children.map((child, index) => (
                         <li key={child.id}>
                           <Link
                             ref={(el) => {
@@ -340,7 +580,22 @@ export function HeaderSearch() {
                             }}
                             href={`/categories/${child.slug}`}
                             role="menuitem"
+                            // Second roving tab stop — the right pane is its
+                            // own list, so Tab steps root pane → child pane →
+                            // footer instead of through every subcategory.
+                            tabIndex={index === childTabIndex ? 0 : -1}
+                            onFocus={() => setActiveChildId(child.id)}
                             onKeyDown={(event) => {
+                              if (
+                                handleVerticalKeys(
+                                  event,
+                                  index,
+                                  activeRoot.children.length,
+                                  focusChild,
+                                )
+                              ) {
+                                return;
+                              }
                               if (event.key === "ArrowLeft") {
                                 event.preventDefault();
                                 rootLinkRefs.current[activeRoot.id]?.focus();
@@ -358,14 +613,27 @@ export function HeaderSearch() {
                 )}
               </div>
 
-              <div className="mt-0.5 border-t border-border pt-2">
+              {/* Two exits, not one (TASK-413): the category index for someone
+                  still browsing the taxonomy, and the flat catalogue for
+                  someone who is done with it and wants the goods. Both keep the
+                  default tab stop — they are the panel's last two Tab targets,
+                  after the two roving lists. */}
+              <div className="mt-0.5 flex border-t border-border pt-2">
                 <Link
                   href="/categories"
                   role="menuitem"
                   onClick={() => setCatalogOpen(false)}
-                  className="flex items-center rounded-xl px-3 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex flex-1 items-center rounded-xl px-3 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {dict.header.catalogAll}
+                </Link>
+                <Link
+                  href="/products"
+                  role="menuitem"
+                  onClick={() => setCatalogOpen(false)}
+                  className="flex flex-1 items-center rounded-xl px-3 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {dict.header.catalogAllProducts}
                 </Link>
               </div>
             </>
@@ -380,9 +648,11 @@ export function HeaderSearch() {
             id={listboxId}
             role="listbox"
             aria-label={dict.search.inputAria}
-            className="max-h-72 overflow-y-auto"
+            // `min-h-16` is the floor that keeps the popup from resizing under
+            // the cursor as a query narrows from several rows down to one.
+            className="max-h-72 min-h-16 overflow-y-auto"
           >
-            {isFetching && !hasSuggestions && (
+            {isSearching && !hasSuggestions && (
               <li
                 role="presentation"
                 className="px-3 py-2 text-sm text-muted-foreground"
@@ -390,7 +660,7 @@ export function HeaderSearch() {
                 {dict.search.loading}
               </li>
             )}
-            {!isFetching && !hasSuggestions && (
+            {!isSearching && !hasSuggestions && (
               <li
                 role="presentation"
                 className="px-3 py-2 text-sm text-muted-foreground"
@@ -405,10 +675,11 @@ export function HeaderSearch() {
                 role="option"
                 aria-selected={i === activeIndex}
                 onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={() => setActiveIndex(i)}
                 onClick={() => pick(suggestion.slug)}
                 className={cn(
-                  "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-popover-foreground",
+                  // Hover tints the row through CSS only — it must not move the
+                  // keyboard selection that Enter commits.
+                  "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-popover-foreground hover:bg-muted",
                   i === activeIndex && "bg-muted",
                 )}
               >
@@ -449,10 +720,9 @@ export function HeaderSearch() {
                       role="option"
                       aria-selected={index === activeIndex}
                       onMouseDown={(event) => event.preventDefault()}
-                      onMouseEnter={() => setActiveIndex(index)}
                       onClick={() => pickBlogPost(post.slug)}
                       className={cn(
-                        "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-popover-foreground",
+                        "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-popover-foreground hover:bg-muted",
                         index === activeIndex && "bg-muted",
                       )}
                     >
@@ -477,6 +747,26 @@ export function HeaderSearch() {
                 })}
               </ul>
             </>
+          )}
+
+          {/* A dead end is never acceptable: when nothing matched, the popup
+              still offers the full results page for what was typed (TASK-411).
+              It sits OUTSIDE the listbox on purpose — a focusable link is not a
+              valid child of `role="listbox"`, whose children must be options. */}
+          {!isSearching && !hasSuggestions && (
+            <Link
+              href={searchHref}
+              // Mirrors the option rows: keep the input from blurring before
+              // the click lands.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => setSearchOpen(false)}
+              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Search className="size-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate">
+                {dict.search.showAllResults(value.trim())}
+              </span>
+            </Link>
           )}
         </div>
       )}

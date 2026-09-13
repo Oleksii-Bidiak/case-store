@@ -10,14 +10,20 @@ import { formatMoney, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
 /**
- * Wishlist grid: `repeat(auto-fill, minmax(232px, 1fr))` inside the
- * `max-w-[1320px]` page, minus the 268px sidebar + 28px gap on `lg`. The
- * widest a column gets is ~313px (three 18px-gapped columns in the 976px
- * content area), so cap the srcset hint at 320px instead of the generic
- * viewport-based default (TASK-210).
+ * Wishlist grid: 1 / 2 / 4 columns (TASK-415) inside the `max-w-[1320px]` page,
+ * minus the 268px sidebar + 28px gap on `lg`. The widest a column gets is
+ * ~313px (three 18px-gapped columns in the 976px content area), so cap the
+ * srcset hint at 320px instead of the generic viewport-based default
+ * (TASK-210).
+ *
+ * The first breakpoint tracks the GRID, not a Tailwind breakpoint — the same
+ * reason `ProductCardImage.GRID_SIZES` uses 389px. It said 639px while the grid
+ * went two-up at 390px, so 390–639px downloaded a full-viewport candidate for a
+ * half-width slot: roughly twice the bytes, on the widths that can least afford
+ * them.
  */
 const WISHLIST_GRID_SIZES =
-  "(max-width: 639px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), 320px";
+  "(max-width: 389px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), 320px";
 
 /**
  * WishlistItemCard — a single saved product on the `/wishlist` grid.

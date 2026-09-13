@@ -71,6 +71,27 @@ describe("ProductCard — availability (TASK-362)", () => {
     expect(screen.getByText(dict.product.newBadge)).toBeInTheDocument();
   });
 
+  it("fills the height of its grid cell so a row of cards lines up (TASK-415)", () => {
+    const { container } = renderWithProviders(
+      <ProductCard product={product()} />,
+    );
+
+    // Titles wrap to two lines on some cards and one on others; without this the
+    // card only grew as tall as its own content and rows looked ragged.
+    expect(container.querySelector("article")).toHaveClass("h-full");
+  });
+
+  it("declares no second image transition on top of ProductCardImage (TASK-415)", () => {
+    const { container } = renderWithProviders(
+      <ProductCard product={product()} />,
+    );
+
+    // The wrapper used to carry `[&_img]:transition-transform
+    // [&_img]:duration-500`, which out-specified the duration declared next to
+    // the scale in ProductCardImage. One declaration, one duration.
+    expect(container.innerHTML).not.toContain("[&_img]:");
+  });
+
   it("keeps a sold-out product clickable — it stays browsable, just dimmed", () => {
     renderWithProviders(<ProductCard product={product({ inStock: false })} />);
 
