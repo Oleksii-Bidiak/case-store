@@ -25,6 +25,15 @@ class ThrottlerGuardPassThrough extends ThrottlerGuard {
   }
 }
 
+/**
+ * Facet ids for the query-string tests. Real UUIDs, not the `cat-1` shorthand
+ * used for the Prisma row fixtures below: `SearchQueryDto` validates these three
+ * as UUIDs because they are interpolated into a Meilisearch filter expression,
+ * so a shorthand id is now a 400 rather than a filter.
+ */
+const SEARCH_CATEGORY_ID = '550e8400-e29b-41d4-a716-446655440000';
+const SEARCH_BRAND_ID = '550e8400-e29b-41d4-a716-446655440001';
+
 /** A Prisma-shaped active product row consumed by PublicProductEntity.fromPrisma. */
 function makeProductRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -196,8 +205,8 @@ describe('Search (e2e)', () => {
         .get('/api/search')
         .query({
           q: 'case',
-          categoryId: 'cat-1',
-          brandId: 'brand-1',
+          categoryId: SEARCH_CATEGORY_ID,
+          brandId: SEARCH_BRAND_ID,
           inStock: 'true',
           minPrice: '10',
           maxPrice: '50',
@@ -210,8 +219,8 @@ describe('Search (e2e)', () => {
         expect.objectContaining({
           filter: [
             'isActive = true',
-            'categoryIds = "cat-1"',
-            'brandId = "brand-1"',
+            `categoryIds = "${SEARCH_CATEGORY_ID}"`,
+            `brandId = "${SEARCH_BRAND_ID}"`,
             'inStock = true',
             'price >= 10',
             'price <= 50',
@@ -248,6 +257,22 @@ describe('Search (e2e)', () => {
         .query({ q: 'case', minPrice: '-1' })
         .expect(400);
     });
+
+    // The three facet ids land inside a quoted Meilisearch filter expression.
+    // Validated as free strings they could rewrite it — widening the facet under
+    // a URL that says otherwise, or making it unparsable so every search falls
+    // onto the Postgres scan.
+    it.each(['categoryId', 'brandId', 'deviceModelId'])(
+      'rejects a %s that is not a UUID with 400',
+      async (field) => {
+        await request(app.getHttpServer())
+          .get('/api/search')
+          .query({ q: 'case', [field]: 'x" OR price > 0 OR brandId = "y' })
+          .expect(400);
+
+        expect(meiliClientMock.search).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('GET /api/search — exact article number (SF-SRCH-09)', () => {
