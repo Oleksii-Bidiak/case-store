@@ -3,12 +3,14 @@ import { Skeleton } from "@/shared/ui";
 /**
  * ProductDetailSkeleton — loading placeholder for the product detail page.
  * Mirrors the real ProductDetailView layout block-for-block (TASK-214):
- * breadcrumb row, the three-column hero (`1fr 1fr 360px` on lg — gallery with
- * square main frame + 64px thumbnail strip, info column with title/rating/
- * variant selector, bordered buy-box card with price/stock/CTA/trust rows) and
- * the tabs section — so hydration causes no jarring reflow at mobile or
- * desktop breakpoints. Container classes (grid template, gaps, paddings,
- * radii) are copied from the view; keep them in sync when the view changes.
+ * breadcrumb row, the responsive hero (one column on phones, `1fr 360px` from
+ * 768px with the buy box spanning both rows, `1fr 1fr 360px` from 1024px —
+ * gallery with square main frame + 64px thumbnail strip, info column with
+ * title/rating/variant selector, bordered buy-box card with price/stock/CTA/
+ * trust rows) and the tabs section — so hydration causes no jarring reflow at
+ * mobile, tablet or desktop breakpoints. Container classes (grid template,
+ * column/row placement, gaps, paddings, radii) are copied from the view
+ * VERBATIM; keep them in sync when the view changes (TASK-416).
  * Server-compatible (no client interactivity); used as a <Suspense> fallback.
  */
 export function ProductDetailSkeleton() {
@@ -19,7 +21,7 @@ export function ProductDetailSkeleton() {
 
       {/* Hero: gallery + info + buy box — same grid as the view. */}
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
-      <div className="grid grid-cols-1 gap-7 lg:grid-cols-[1fr_1fr_360px] lg:items-start">
+      <div className="grid grid-cols-1 gap-7 md:grid-cols-[1fr_360px] md:items-start lg:grid-cols-[1fr_1fr_360px]">
         {/* Gallery: square main frame + 64px thumbnail strip. */}
         <div className="flex flex-col gap-4">
           <Skeleton className="aspect-square w-full rounded-xl" />
@@ -31,7 +33,7 @@ export function ProductDetailSkeleton() {
         </div>
 
         {/* Info column: title (up to two lines), rating/SKU row, variant selector. */}
-        <div className="flex min-w-0 flex-col gap-[18px]">
+        <div className="flex min-w-0 flex-col gap-[18px] md:col-start-1 md:row-start-2 lg:col-start-2 lg:row-start-1">
           <div className="flex flex-col gap-2">
             <Skeleton className="h-8 w-full" />
             <Skeleton className="h-8 w-2/3" />
@@ -48,7 +50,7 @@ export function ProductDetailSkeleton() {
         </div>
 
         {/* Buy box: real card chrome with skeleton rows inside. */}
-        <div className="rounded-[18px] border border-border bg-card p-[22px]">
+        <div className="rounded-[18px] border border-border bg-card p-[22px] md:col-start-2 md:row-span-2 md:row-start-1 lg:col-start-3 lg:row-span-1">
           <div className="mb-1 flex flex-wrap items-end gap-3">
             <Skeleton className="h-10 w-36" />
             <Skeleton className="h-5 w-24" />

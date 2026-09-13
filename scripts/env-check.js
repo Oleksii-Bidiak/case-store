@@ -1389,6 +1389,26 @@ const VARS = [
       "`true` — і лише після того, як у store-api задані справжні GOOGLE_CLIENT_ID/_SECRET. Порожньо (сховано) — правильний стан, доки OAuth-клієнт у Google Cloud Console не створений.",
   },
   {
+    name: "NEXT_PUBLIC_FEATURE_STUBS",
+    group: "frontend",
+    need: "optional",
+    compose: "none",
+    services: [],
+    buildArgs: [],
+    example: false,
+    validated: "absent",
+    code: "used",
+    effect:
+      "Не `true` (тобто в будь-якому нормальному розгортанні) → вітрина ховає три контроли, за якими ще немає функції: «Порівняти» і «Купити в 1 клік» у картці товару та розділ «Порівняння» в кабінеті. Раніше вони показувалися завжди і на кожен клік відповідали тостом «скоро» — покупець читав це як зламаний магазин. Розмітку не видалено: TASK-085 і TASK-178 при розпаркуванні вмикають прапорець і замінюють заглушки справжньою функцією. Build-time.",
+    howTo:
+      "Не задавати. `true` — лише на демостенді, де свідомо показують, що саме в роботі.",
+    gap: {
+      reason:
+        "code-only for now: the flag is deliberately not threaded through compose, the Dockerfile build args or the operator example, because the only value an operator should ever set is the absent one — TASK-085/TASK-178 do that plumbing when they switch the stubs on",
+      task: "TASK-526",
+    },
+  },
+  {
     name: "SERVER_FETCH_TIMEOUT_MS",
     group: "frontend",
     need: "optional",
@@ -1822,9 +1842,12 @@ function parseDockerfileBuildVars(text) {
   // Split at `FROM`, keeping each stage's body. Index 0 is the pre-FROM preamble,
   // which is deliberately dropped: those ARGs are not in scope inside any stage.
   const stages = folded.split(/^\s*FROM\s+/gim).slice(1);
-  const buildStage = stages.find((body) => /^\s*RUN\b[^\n]*\bnpm run build\b/im.test(body));
+  const buildStage = stages.find((body) =>
+    /^\s*RUN\b[^\n]*\bnpm run build\b/im.test(body),
+  );
 
-  if (!buildStage) return { args: new Set(), envs: new Set(), buildStage: false };
+  if (!buildStage)
+    return { args: new Set(), envs: new Set(), buildStage: false };
 
   const args = new Set(
     [...buildStage.matchAll(/^\s*ARG\s+([A-Z][A-Z0-9_]*)/gim)].map((m) => m[1]),

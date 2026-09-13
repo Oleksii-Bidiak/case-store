@@ -27,8 +27,14 @@ export function generateMetadata(): Promise<Metadata> {
   });
 }
 
-const INITIAL_LIMIT = 9;
-const LOAD_STEP = 6;
+/**
+ * Posts per page. One size for EVERY page (TASK-417): the hub used to grow a
+ * single accumulating window — `?page=3` meant "the first 21 posts" — which is
+ * why it could never carry numbered pages. On the unfiltered first page one of
+ * these nine is lifted out as the featured hero rather than fetched on top of
+ * them, so page 2 starts exactly where page 1 ended.
+ */
+const PAGE_SIZE = 9;
 
 interface BlogPageProps {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -39,21 +45,11 @@ function readParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-/** Build the `/blog` href for the given category / query / page. */
-function blogHref(category: string, query: string, page: number): string {
-  const params = new URLSearchParams();
-  if (category && category !== "all") params.set("category", category);
-  if (query.trim()) params.set("q", query.trim());
-  if (page > 1) params.set("page", String(page));
-  const qs = params.toString();
-  return qs ? `/blog?${qs}` : "/blog";
-}
-
 /**
  * Blog hub (/blog). Server component: resolves the `?category=`/`?q=`/`?page=`
  * URL contract, fetches the matching PUBLISHED posts + categories through the
- * ISR-tagged blog fetchers, and renders the interactive listing. "Load more"
- * grows the fetched window by paging, so the grid accumulates on navigation.
+ * ISR-tagged blog fetchers, and renders the interactive listing. Each page is
+ * one disjoint slice of the archive, addressable on its own URL.
  */
 export default async function BlogPage({ searchParams }: BlogPageProps) {
   const resolved = await searchParams;
@@ -61,19 +57,19 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
   const query = readParam(resolved.q) ?? "";
   const pageNum = Math.max(1, Number(readParam(resolved.page) ?? "1") || 1);
 
+  // The featured hero is lifted out of the FIRST page of the unfiltered hub
+  // only: under a category chip or a search it would be an arbitrary article
+  // promoted above the results the reader actually asked for.
   const isUnfiltered = !category && !query;
-  // Fetch one extra when unfiltered so the grid still shows INITIAL_LIMIT cards
-  // after the featured hero card is lifted out of the list.
-  const featuredExtra = isUnfiltered ? 1 : 0;
-  const limit = INITIAL_LIMIT + (pageNum - 1) * LOAD_STEP + featuredExtra;
 
   const [{ posts, meta }, categories] = await Promise.all([
-    // A list surface: unlisted posts stay out of the grid (TASK-436).
+    // develop paginates the hub (TASK-417); this branch keeps unlisted posts out
+    // of it (TASK-436). A list surface wants both.
     fetchPublishedPosts({
       category,
       q: query,
-      page: 1,
-      limit,
+      page: pageNum,
+      limit: PAGE_SIZE,
       includeUnlisted: false,
     }),
     fetchBlogCategories(),
@@ -81,12 +77,13 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
 
   const views = posts.map(toBlogPostView);
 
-  const featured = isUnfiltered
-    ? (views.find((p) => p.featured) ?? views[0] ?? null)
-    : null;
+  const featured =
+    isUnfiltered && pageNum === 1
+      ? (views.find((p) => p.featured) ?? views[0] ?? null)
+      : null;
   const rest = featured ? views.filter((p) => p.slug !== featured.slug) : views;
 
-  const hasMore = meta.total > views.length;
+  const totalPages = Math.max(1, meta.totalPages || 1);
   const activeCategory = category || "all";
 
   return (
@@ -120,8 +117,8 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
         featured={featured}
         activeCategory={activeCategory}
         query={query}
-        hasMore={hasMore}
-        nextPageHref={blogHref(activeCategory, query, pageNum + 1)}
+        page={pageNum}
+        totalPages={totalPages}
       />
     </div>
   );

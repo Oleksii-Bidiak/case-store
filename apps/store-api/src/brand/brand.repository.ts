@@ -67,12 +67,38 @@ export class BrandRepository {
    * List all active brands, ordered by name. Backs the public storefront filter
    * dropdown and the "Популярні бренди" strip — no pagination needed at the
    * expected brand-count scale (dozens).
+   *
+   * With `categoryIds` (TASK-414) the list is narrowed to brands that actually
+   * have something on sale in that category subtree. The nested `products.some`
+   * mirrors the PUBLIC listing's own visibility rules — active, not
+   * soft-deleted, and in the requested categories — so the dropdown can never
+   * offer a brand that filters the grid to nothing. The caller expands the
+   * subtree (`CategoryRepository.findSubtreeIds`); this repository does not own
+   * that cross-entity rule, exactly as `ProductRepository.findAll` does not.
+   *
+   * The fourth rule — `category: { isActive: true }` — is NOT redundant with
+   * the subtree filter, which is the trap this mirror fell into first. Asking
+   * for a PARENT category expands to every descendant regardless of its own
+   * `isActive` (`CategoryRepository.findSubtreeIds` has no such predicate), so a
+   * brand stocked only inside a deactivated child was offered in the parent's
+   * dropdown and then filtered the grid to nothing — the listing drops those
+   * products through its own `categoryActiveOnly`.
    */
-  findAllActive(): Promise<Brand[]> {
-    return this.prisma.brand.findMany({
-      where: { isActive: true },
-      orderBy: { name: 'asc' },
-    });
+  findAllActive(categoryIds?: string[]): Promise<Brand[]> {
+    const where: Prisma.BrandWhereInput = { isActive: true };
+
+    if (categoryIds !== undefined) {
+      where.products = {
+        some: {
+          isActive: true,
+          deletedAt: null,
+          categoryId: { in: categoryIds },
+          category: { isActive: true },
+        },
+      };
+    }
+
+    return this.prisma.brand.findMany({ where, orderBy: { name: 'asc' } });
   }
 
   /**

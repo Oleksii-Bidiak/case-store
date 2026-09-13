@@ -442,6 +442,86 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       );
     });
 
+    // ── TASK-414: in-stock + multi-value spec facets ─────────────────────────
+
+    it('filters to stock > 0 for the storefront «В наявності» checkbox', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20, inStock: true });
+
+      const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
+      expect(findManyArgs.where).toEqual(expect.objectContaining({ stock: { gt: 0 } }));
+      // The count must carry the same predicate or `total` overcounts.
+      expect(prismaMock.product.count.mock.calls[0][0].where).toEqual(
+        expect.objectContaining({ stock: { gt: 0 } }),
+      );
+    });
+
+    it('applies no stock predicate at all when inStock is unset', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20 });
+
+      expect(prismaMock.product.findMany.mock.calls[0][0].where).not.toHaveProperty('stock');
+    });
+
+    it('lets the admin restock worklist (outOfStock) win over inStock', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20, inStock: true, outOfStock: true });
+
+      // The two are exact opposites; an AND of both would always be empty, so
+      // the more specific admin intent takes the field.
+      expect(prismaMock.product.findMany.mock.calls[0][0].where).toEqual(
+        expect.objectContaining({ stock: { lte: 0 } }),
+      );
+    });
+
+    // B-10: values inside a facet OR, facets AND. The AND must be one ENTRY PER
+    // FACET — a single `specValues.some` covering two definition keys asks for
+    // one spec row that is both keys at once, which is never true.
+    it('builds one AND entry per facet, with the facet values OR-ed inside it', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({
+        page: 1,
+        limit: 20,
+        specFilters: [
+          { key: 'material', values: ['Силікон', 'TPU'] },
+          { key: 'case-type', values: ['Накладка'] },
+        ],
+      });
+
+      const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
+      expect(findManyArgs.where.AND).toEqual([
+        {
+          specValues: {
+            some: { value: { in: ['Силікон', 'TPU'] }, definition: { key: 'material' } },
+          },
+        },
+        {
+          specValues: {
+            some: { value: { in: ['Накладка'] }, definition: { key: 'case-type' } },
+          },
+        },
+      ]);
+      // Never collapsed into a single `some`, which would be unsatisfiable.
+      expect(findManyArgs.where).not.toHaveProperty('specValues');
+    });
+
+    it('leaves where.AND untouched when no facet is requested', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20, specFilters: [] });
+
+      expect(prismaMock.product.findMany.mock.calls[0][0].where).not.toHaveProperty('AND');
+    });
+
     it('attaches active sibling positions of each grouped product for the variant summary', async () => {
       prismaMock.product.findMany
         // page rows

@@ -297,6 +297,29 @@ describe('ProductService', () => {
       expect(categoryRepositoryMock.findSubtreeIds).toHaveBeenCalledWith('cat-uuid-1');
     });
 
+    // TASK-414: the two new storefront filters must survive the DTO → repository
+    // mapping — `inStock` as a plain flag, `specs` parsed into facets.
+    it('passes inStock and the parsed spec facets through to the repository', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.findAll({
+        page: 1,
+        limit: 20,
+        inStock: true,
+        specs: 'material:Силікон,TPU;case-type:Накладка',
+      });
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          inStock: true,
+          specFilters: [
+            { key: 'material', values: ['Силікон', 'TPU'] },
+            { key: 'case-type', values: ['Накладка'] },
+          ],
+        }),
+      );
+    });
+
     // TASK-236: filtering by a ROOT category must roll up its subcategories'
     // products — the service expands the id set before delegating to the repo.
     it('expands a requested categoryId into its full subtree before querying', async () => {
@@ -1052,7 +1075,15 @@ describe('ProductService', () => {
 
       await service.setStatusMany(['product-uuid-1', 'product-uuid-2'], false);
 
-      expect(cacheServiceMock.delByPrefix).toHaveBeenCalledTimes(1);
+      // Counted per PREFIX, not per call: one invalidation round now purges the
+      // product-list namespace AND the derived per-category brand list
+      // (TASK-414). The invariant under test is "once per BATCH, not once per
+      // product", which is about the product-list prefix.
+      expect(
+        cacheServiceMock.delByPrefix.mock.calls.filter(
+          ([prefix]: [string]) => prefix === PRODUCT_LIST_PREFIX,
+        ),
+      ).toHaveLength(1);
     });
 
     it('maps the repository domain error to 404 and touches no cache', async () => {
@@ -1142,6 +1173,72 @@ describe('ProductService', () => {
       });
       expect(cacheServiceMock.get).toHaveBeenCalledWith(expectedKey);
       expect(cacheServiceMock.set).toHaveBeenCalledWith(expectedKey, result, 300);
+    });
+
+    // TASK-414. A filter that is applied but ABSENT from the cache key is the
+    // worst failure mode this layer has: the filtered page is served from — and
+    // written into — the UNFILTERED page's entry, so a shopper who ticks
+    // "В наявності" poisons the catalogue for everyone. That is exactly why
+    // `outOfStock` is forced off on the public path (see the comment in
+    // `ProductService.findAll`); `inStock` is public and cannot be, so it MUST
+    // be keyed.
+    it('keys inStock into the cache key (an unkeyed filter would poison the list cache)', async () => {
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.findAll({ page: 1, limit: 20, inStock: true });
+      const filteredKey = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      cacheServiceMock.get.mockClear();
+      await service.findAll({ page: 1, limit: 20 });
+      const unfilteredKey = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      expect(filteredKey).toContain('inStock=true');
+      expect(filteredKey).not.toBe(unfilteredKey);
+    });
+
+    it('keys the spec facets into the cache key', async () => {
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.findAll({ page: 1, limit: 20, specs: 'material:Силікон' });
+      const key = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      expect(key).toContain('specs=material:Силікон');
+    });
+
+    // The checkbox tick ORDER must not decide which cache entry a shopper lands
+    // on: `?specs=material:Силікон,TPU` and `?specs=material:TPU,Силікон` are
+    // the same filter and the same result set, so they must be one entry.
+    it('canonicalizes the specs param so equivalent orderings share one entry', async () => {
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.findAll({ page: 1, limit: 20, specs: 'material:Силікон,TPU;form:Накладка' });
+      const first = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      cacheServiceMock.get.mockClear();
+      await service.findAll({ page: 1, limit: 20, specs: 'form:Накладка;material:TPU,Силікон' });
+      const second = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      expect(second).toBe(first);
+    });
+
+    // A malformed facet is dropped before the query runs, so it must also be
+    // dropped from the key — otherwise the same result set fragments across two
+    // entries and the junk-param request never gets a hit.
+    it('drops an unparseable specs param from the key instead of fragmenting it', async () => {
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.findAll({ page: 1, limit: 20, specs: 'not-a-pair' });
+      const junkKey = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      cacheServiceMock.get.mockClear();
+      await service.findAll({ page: 1, limit: 20 });
+      const plainKey = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      expect(junkKey).toBe(plainKey);
     });
 
     it('falls through to the DB when the cache errors (get returns null)', async () => {
@@ -1349,8 +1446,14 @@ describe('ProductService', () => {
 
       await service.update('product-uuid-1', { price: 999 });
 
+      // One product-list purge ⇔ one storefront purge. Counted on the
+      // product-list prefix specifically, since an invalidation round also
+      // purges the derived brand-list namespace (TASK-414) and that half has no
+      // storefront counterpart.
       expect(revalidationMock.revalidate).toHaveBeenCalledTimes(
-        cacheServiceMock.delByPrefix.mock.calls.length,
+        cacheServiceMock.delByPrefix.mock.calls.filter(
+          ([prefix]: [string]) => prefix === PRODUCT_LIST_PREFIX,
+        ).length,
       );
     });
 

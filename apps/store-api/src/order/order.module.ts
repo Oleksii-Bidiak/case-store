@@ -6,6 +6,7 @@ import { UserModule } from '../user';
 import { DeliveryModule } from '../delivery';
 import { DiscountModule } from '../discount';
 import { AddonServiceModule } from '../addon-service';
+import { SearchModule } from '../search';
 import { OrderRepository } from './order.repository';
 import { OrderService } from './order.service';
 import { OrderController } from './order.controller';
@@ -25,6 +26,10 @@ import { AdminReturnController } from './returns/admin-return.controller';
   // each line's add-ons fresh at creation time before freezing them into
   // OrderItemAddon snapshots (TASK-174).
   // ConfigModule: GUEST_ORDER_TOKEN_TTL_DAYS and STORE_CLIENT_URL (TASK-338).
+  // SearchModule provides the ProductIndexer seam: every stock movement here
+  // (sale, cancel-restock, revive, return) has to refresh the search document's
+  // `inStock`, which became a Meilisearch facet in TASK-417. No cycle —
+  // SearchModule knows nothing about orders.
   imports: [
     ConfigModule,
     CartModule,
@@ -32,6 +37,7 @@ import { AdminReturnController } from './returns/admin-return.controller';
     DeliveryModule,
     DiscountModule,
     AddonServiceModule,
+    SearchModule,
   ],
   controllers: [OrderController, AdminOrderController, ReturnController, AdminReturnController],
   // TASK-338: OrderController resolves the buyer's identity exactly as the cart

@@ -113,4 +113,18 @@ describe("SearchAutocomplete", () => {
 
     expect(mockPush).not.toHaveBeenCalled();
   });
+
+  // TASK-411: the header's compact magnifier drops this component into a panel
+  // that only exists once it is opened, so it has to arrive ready to type in.
+  it("takes focus on mount when autoFocus is set", () => {
+    renderWithProviders(<SearchAutocomplete id="compact-search" autoFocus />);
+
+    expect(screen.getByRole("combobox")).toHaveFocus();
+  });
+
+  it("never steals focus by default (the always-mounted instances)", () => {
+    renderWithProviders(<SearchAutocomplete />);
+
+    expect(screen.getByRole("combobox")).not.toHaveFocus();
+  });
 });

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Factory } from "lucide-react";
 import { useBrandControllerFindAll } from "@/entities/brand";
 import { dict } from "@/shared/config";
@@ -18,6 +19,11 @@ interface BrandFilterProps {
   /** Currently selected brand id (from `?brandId=`), if any. */
   activeBrandId?: string;
   /**
+   * Narrow the offered brands to those stocking something in this category
+   * subtree (TASK-414). Omit on an unscoped catalogue to offer every brand.
+   */
+  categoryId?: string;
+  /**
    * Select a brand (`undefined` = all brands). The caller writes the choice to
    * the `?brandId=` URL param, combinable with the category/price/search filters.
    */
@@ -33,15 +39,45 @@ interface BrandFilterProps {
  * panel. Lists the active brands from `GET /brands`; a leading "Всі виробники"
  * option clears the selection. Renders nothing (no empty card) while there are
  * no brands — same empty-state convention as `CategoryChips`.
+ *
+ * Scoped to the active category since TASK-414. Before that the dropdown listed
+ * every brand in the shop regardless of where the shopper was standing, so
+ * inside a category stocking two makes it offered a dozen — and picking one of
+ * the others produced a guaranteed-empty grid. The API does the narrowing
+ * (`?categoryId=`) against the same subtree rollup the product list uses, so the
+ * dropdown and the grid can never disagree.
  */
 export function BrandFilter({
   activeBrandId,
+  categoryId,
   onSelect,
   cardClassName,
   titleClassName,
 }: BrandFilterProps) {
-  const { data } = useBrandControllerFindAll();
+  const { data, isSuccess } = useBrandControllerFindAll(
+    categoryId ? { categoryId } : undefined,
+  );
   const brands = data?.data ?? [];
+
+  // Narrowing the list can strip out the brand that is currently selected —
+  // switching category is the everyday way to hit it. Left alone, the URL would
+  // keep filtering by an invisible brand and the grid would sit empty with no
+  // control showing why. Gated on `isSuccess` so an in-flight (or failed)
+  // request never clears a valid selection.
+  const missingFromSlice =
+    isSuccess &&
+    Boolean(activeBrandId) &&
+    !brands.some((brand) => brand.id === activeBrandId);
+
+  useEffect(() => {
+    if (missingFromSlice) {
+      onSelect(undefined);
+    }
+    // `onSelect` is a fresh closure on every render of the parent; depending on
+    // it would re-fire this effect continuously. The guard above is the real
+    // trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [missingFromSlice]);
 
   if (brands.length === 0) {
     return null;
@@ -51,7 +87,7 @@ export function BrandFilter({
     <div className={cardClassName}>
       <h3 className={titleClassName}>{dict.filters.brandTitle}</h3>
       <Select
-        value={activeBrandId ? activeBrandId : ALL_BRANDS}
+        value={activeBrandId && !missingFromSlice ? activeBrandId : ALL_BRANDS}
         onValueChange={(value) =>
           onSelect(value === ALL_BRANDS ? undefined : value)
         }

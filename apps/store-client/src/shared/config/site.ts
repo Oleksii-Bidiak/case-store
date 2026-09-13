@@ -60,3 +60,19 @@ export const UMAMI_WEBSITE_ID = process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID ?? "";
 // `src` is invalid); the trackEvent() call sites don't re-check it — they rely
 // on the facade's `window.umami?.` guard instead.
 export const UMAMI_ENABLED = Boolean(UMAMI_SRC && UMAMI_WEBSITE_ID);
+
+// ─── Parked-feature stubs (TASK-419) ─────────────────────────────────────────
+// Three storefront controls answer every click with a "скоро" toast because the
+// feature behind them does not exist yet: «Порівняти» and «Купити в 1 клік» in
+// the product buy box (TASK-085 / TASK-178), and the «Порівняння» section of
+// /account. For a real shopper a control that only ever apologises is worse
+// than no control at all, so they are HIDDEN unless a deployment opts in.
+//
+// Absent variable = hidden. That is the useful default in both directions: the
+// demo stand and production show only what works, and nobody has to delete the
+// markup to get there — TASK-085 / TASK-178 flip this on when they land, which
+// is also the moment the stubs are replaced by the real thing.
+//
+// Literal `process.env.X` access on purpose — that is the form Next.js inlines
+// at build time for NEXT_PUBLIC_*, so flipping it means rebuilding the image.
+export const FEATURE_STUBS = process.env.NEXT_PUBLIC_FEATURE_STUBS === "true";

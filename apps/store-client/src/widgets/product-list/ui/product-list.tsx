@@ -21,7 +21,7 @@ import {
 } from "../model/load-more";
 import { ProductListSkeleton } from "./product-list-skeleton";
 import { ProductListItem } from "./product-list-item";
-import { Pagination } from "./pagination";
+import { Pagination } from "@/shared/ui/pagination";
 
 interface ProductListProps {
   /** Active filter params (all URL-derived). */
@@ -179,7 +179,17 @@ export function ProductList({
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-[18px] sm:[grid-template-columns:repeat(auto-fill,minmax(232px,1fr))]">
+          // 1 / 2 / 4 columns (TASK-415, owner's call): a single card below
+          // 390px so the smallest phones get a readable photo and price, two
+          // from 390px, four from `lg`. Keep this class list byte-identical to
+          // `ProductListSkeleton` — the skeleton must lay out in exactly the
+          // same columns as the cards that replace it, or the page reflows on
+          // every load. `items-stretch` is explicit: sibling cards in a row
+          // share one height whatever their title/badge count. The 18px gap is
+          // pre-existing debt (grandfathered in eslint-suppressions.json) and
+          // is left untouched here so the whole storefront can move to the 4px
+          // scale in one pass — see BACKLOG.
+          <div className="grid grid-cols-1 items-stretch gap-[18px] min-[390px]:grid-cols-2 lg:grid-cols-4">
             {products.map((product, index) => (
               <ProductCard
                 key={product.id}

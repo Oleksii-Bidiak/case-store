@@ -295,6 +295,35 @@ export class BlogRepository implements PublishablePort {
     return this.prisma.blogPost.findUnique({ where: { id }, include: CATEGORY_INCLUDE });
   }
 
+  /**
+   * Hydrate PUBLISHED posts for a set of ids (TASK-417) — the read behind a
+   * search-index hit. The `PUBLISHED` gate is what makes trusting the index
+   * safe: de-indexing on unpublish is best-effort, so a lingering document must
+   * not be able to put a draft back on the hub. Order is NOT meaningful here
+   * (Prisma returns rows in its own order); the caller re-applies the engine's
+   * ranking.
+   *
+   * `includeUnlisted` is required for the same reason it is on
+   * {@link FindAllPostsParams}, and for a sharper one: this read is the SECOND
+   * path into the public list. The index knows nothing about `listed`, so
+   * without this clause a `listed = false` post reappears the moment a visitor
+   * types a word from it — on the very surfaces (`/blog`, the header
+   * suggestions) the flag exists to keep it off. The two waves that created the
+   * index and the flag landed on separate branches, so this is the one place
+   * where they have to be told about each other.
+   */
+  findPublishedByIds(ids: string[], includeUnlisted: boolean): Promise<BlogPostWithCategory[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.prisma.blogPost.findMany({
+      where: {
+        id: { in: ids },
+        status: PublishStatus.PUBLISHED,
+        ...listedWhere(includeUnlisted),
+      },
+      include: CATEGORY_INCLUDE,
+    });
+  }
+
   /** Find a post by slug regardless of status — used to enforce slug uniqueness. */
   findBySlugAny(slug: string): Promise<BlogPost | null> {
     return this.prisma.blogPost.findUnique({ where: { slug } });

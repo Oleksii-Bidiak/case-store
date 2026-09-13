@@ -145,6 +145,19 @@ describe('BlogRepository', () => {
       expect(where).not.toHaveProperty('listed');
     });
 
+    // The SECOND path into the public list (TASK-417's search-index re-read)
+    // needs the same gate: Meilisearch stores no `listed` field, so the flag can
+    // only be enforced here.
+    it('applies the same listing gate to the search-index re-read', async () => {
+      prismaMock.blogPost.findMany.mockResolvedValue([]);
+
+      await repository.findPublishedByIds(['post-1'], false);
+      expect(prismaMock.blogPost.findMany.mock.calls[0][0].where.listed).toBe(true);
+
+      await repository.findPublishedByIds(['post-1'], true);
+      expect(prismaMock.blogPost.findMany.mock.calls[1][0].where).not.toHaveProperty('listed');
+    });
+
     it('applies category and search filters', async () => {
       prismaMock.blogPost.findMany.mockResolvedValue([]);
       prismaMock.blogPost.count.mockResolvedValue(0);

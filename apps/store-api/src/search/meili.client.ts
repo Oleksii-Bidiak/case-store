@@ -3,8 +3,17 @@ import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { MeiliSearch } from 'meilisearch';
 
-/** The single Meilisearch index this app maintains — active products. */
+/** The Meilisearch index of active products. */
 export const PRODUCTS_INDEX = 'products';
+
+/**
+ * The Meilisearch index of PUBLISHED blog posts (TASK-417). A second index
+ * rather than a second document type in `products`: the two have different
+ * searchable fields and different lifecycles, and Meilisearch ranks within one
+ * index — mixing them would make an article compete with a product for the same
+ * result slots.
+ */
+export const BLOG_POSTS_INDEX = 'blog_posts';
 
 /** Meili status string that means the engine is up and reachable. */
 const HEALTH_AVAILABLE = 'available';
@@ -23,12 +32,30 @@ const TASK_WAIT_TIMEOUT_MS = 30_000;
 const DOCUMENT_ID_PAGE = 1000;
 
 /**
+ * Per-request ceiling, in milliseconds.
+ *
+ * Without it the SDK skips its timeout race entirely, so the graceful
+ * Postgres fallback covered a refused, erroring or 404-ing engine but NOT a
+ * hung one: a wedged container that accepts the connection and never answers
+ * parked every `/api/search`, every suggest keystroke, and — since TASK-417 —
+ * the editor's Save, which waits on the blog index write.
+ *
+ * Five seconds is well past a healthy p99 (single-digit ms on this catalogue)
+ * and well under any client-side patience.
+ */
+const REQUEST_TIMEOUT_MS = 5_000;
+
+/** Anything this wrapper can store: a document keyed by its primary `id`. */
+export interface IndexedDocument {
+  id: string;
+}
+
+/**
  * A search document as stored in the `products` index. Holds enough to render a
  * result/suggestion card without a second DB hit (public fields only — no raw
  * stock). `price`/`createdAt` are numeric so Meili can sort on them.
  */
-export interface ProductSearchDocument {
-  id: string;
+export interface ProductSearchDocument extends IndexedDocument {
   name: string;
   description: string | null;
   slug: string;
@@ -61,6 +88,29 @@ export interface ProductSearchDocument {
    * Cyrillic UA equivalents of the (EN) name/category tokens, injected at
    * indexing time so typo-tolerant matching works for Ukrainian queries
    * (TASK-200). Searchable, never displayed.
+   */
+  searchTerms: string[];
+}
+
+/**
+ * A PUBLISHED blog post as stored in the `blog_posts` index (TASK-417). Only the
+ * fields the header dropdown and the hub grid need are duplicated here; the hit
+ * ids are re-hydrated from Postgres before anything is rendered, exactly as the
+ * product path does, so a stale document can never put an unpublished article on
+ * screen.
+ */
+export interface BlogPostSearchDocument extends IndexedDocument {
+  title: string;
+  excerpt: string;
+  slug: string;
+  categorySlug: string;
+  categoryName: string;
+  /** Unix epoch ms of publication (0 when unknown) — sortable recency key. */
+  publishedAt: number;
+  /**
+   * Cyrillic/Latin equivalents of the title + category tokens, injected at index
+   * time so typo tolerance covers cross-script queries — the same trick the
+   * product index uses (see `search-synonyms.ts`).
    */
   searchTerms: string[];
 }
@@ -112,10 +162,7 @@ export interface TaskStatus {
  */
 export interface MeiliIndexApi {
   updateSettings(settings: IndexSettings): Promise<unknown>;
-  addDocuments(
-    docs: ProductSearchDocument[],
-    options?: { primaryKey?: string },
-  ): Promise<EnqueuedWrite>;
+  addDocuments(docs: IndexedDocument[], options?: { primaryKey?: string }): Promise<EnqueuedWrite>;
   deleteDocument(id: string): Promise<unknown>;
   deleteDocuments(ids: string[]): Promise<EnqueuedWrite>;
   deleteAllDocuments(): Promise<unknown>;
@@ -125,7 +172,7 @@ export interface MeiliIndexApi {
     offset: number;
   }): Promise<{ results: Array<{ id: string }>; total?: number }>;
   waitForTask(taskUid: number, options?: { timeOutMs?: number }): Promise<TaskStatus>;
-  search<T = ProductSearchDocument>(
+  search<T = IndexedDocument>(
     query: string,
     options?: MeiliSearchOptions,
   ): Promise<{ hits: T[]; estimatedTotalHits?: number }>;
@@ -175,7 +222,10 @@ export class MeiliClient {
     // use and is not needed here.
     const apiKey = config.get<string>('MEILI_MASTER_KEY');
 
-    this.client = host && apiKey ? (new MeiliSearch({ host, apiKey }) as MeiliClientApi) : null;
+    this.client =
+      host && apiKey
+        ? (new MeiliSearch({ host, apiKey, timeout: REQUEST_TIMEOUT_MS }) as MeiliClientApi)
+        : null;
   }
 
   /** True when the engine is configured (host + key present, or a client was injected). */
@@ -200,18 +250,18 @@ export class MeiliClient {
    * and best-effort — a failure here is logged and swallowed so bootstrap never
    * crashes on a down engine.
    */
-  async ensureIndex(settings: IndexSettings): Promise<void> {
+  async ensureIndex(settings: IndexSettings, indexUid: string = PRODUCTS_INDEX): Promise<void> {
     if (!this.client) return;
     try {
       try {
-        await this.client.getIndex(PRODUCTS_INDEX);
+        await this.client.getIndex(indexUid);
       } catch {
         // Index does not exist yet — create it with `id` as the primary key.
-        await this.client.createIndex(PRODUCTS_INDEX, { primaryKey: 'id' });
+        await this.client.createIndex(indexUid, { primaryKey: 'id' });
       }
-      await this.client.index(PRODUCTS_INDEX).updateSettings(settings);
+      await this.client.index(indexUid).updateSettings(settings);
     } catch (err) {
-      this.logger.warn({ err }, 'Meilisearch ensureIndex failed');
+      this.logger.warn({ err, indexUid }, 'Meilisearch ensureIndex failed');
     }
   }
 
@@ -225,13 +275,16 @@ export class MeiliClient {
    * reindex can log a healthy document count while the engine rejects every
    * batch.
    */
-  async indexDocuments(docs: ProductSearchDocument[]): Promise<number | null> {
+  async indexDocuments(
+    docs: IndexedDocument[],
+    indexUid: string = PRODUCTS_INDEX,
+  ): Promise<number | null> {
     if (!this.client || docs.length === 0) return null;
     try {
-      const task = await this.client.index(PRODUCTS_INDEX).addDocuments(docs, { primaryKey: 'id' });
+      const task = await this.client.index(indexUid).addDocuments(docs, { primaryKey: 'id' });
       return task?.taskUid ?? null;
     } catch (err) {
-      this.logger.warn({ err, count: docs.length }, 'Meilisearch addDocuments failed');
+      this.logger.warn({ err, indexUid, count: docs.length }, 'Meilisearch addDocuments failed');
       return null;
     }
   }
@@ -241,9 +294,12 @@ export class MeiliClient {
    * NOT reach `succeeded` — including ones we could not check, because an
    * unverified write is not a successful write.
    */
-  async waitForTasks(taskUids: number[]): Promise<{ failedUids: number[] }> {
+  async waitForTasks(
+    taskUids: number[],
+    indexUid: string = PRODUCTS_INDEX,
+  ): Promise<{ failedUids: number[] }> {
     if (!this.client || taskUids.length === 0) return { failedUids: [] };
-    const index = this.client.index(PRODUCTS_INDEX);
+    const index = this.client.index(indexUid);
     const failedUids: number[] = [];
     for (const taskUid of taskUids) {
       try {
@@ -269,9 +325,9 @@ export class MeiliClient {
    * failed listing that looked like an empty one would make the reindex prune
    * delete the whole index.
    */
-  async listDocumentIds(): Promise<Set<string> | null> {
+  async listDocumentIds(indexUid: string = PRODUCTS_INDEX): Promise<Set<string> | null> {
     if (!this.client) return null;
-    const index = this.client.index(PRODUCTS_INDEX);
+    const index = this.client.index(indexUid);
     const ids = new Set<string>();
     let offset = 0;
     try {
@@ -294,23 +350,23 @@ export class MeiliClient {
   }
 
   /** Remove a single document by id (best-effort). */
-  async deleteDocument(id: string): Promise<void> {
+  async deleteDocument(id: string, indexUid: string = PRODUCTS_INDEX): Promise<void> {
     if (!this.client) return;
     try {
-      await this.client.index(PRODUCTS_INDEX).deleteDocument(id);
+      await this.client.index(indexUid).deleteDocument(id);
     } catch (err) {
-      this.logger.warn({ err, id }, 'Meilisearch deleteDocument failed');
+      this.logger.warn({ err, indexUid, id }, 'Meilisearch deleteDocument failed');
     }
   }
 
   /** Remove several documents by id (best-effort). Returns the task uid. */
-  async deleteDocuments(ids: string[]): Promise<number | null> {
+  async deleteDocuments(ids: string[], indexUid: string = PRODUCTS_INDEX): Promise<number | null> {
     if (!this.client || ids.length === 0) return null;
     try {
-      const task = await this.client.index(PRODUCTS_INDEX).deleteDocuments(ids);
+      const task = await this.client.index(indexUid).deleteDocuments(ids);
       return task?.taskUid ?? null;
     } catch (err) {
-      this.logger.warn({ err, count: ids.length }, 'Meilisearch deleteDocuments failed');
+      this.logger.warn({ err, indexUid, count: ids.length }, 'Meilisearch deleteDocuments failed');
       return null;
     }
   }
@@ -330,19 +386,21 @@ export class MeiliClient {
    * the engine is unconfigured or the request fails — the caller treats `null`
    * as "not available" and falls back to Postgres.
    */
-  async search(
+  async search<T extends IndexedDocument = ProductSearchDocument>(
     query: string,
     options?: MeiliSearchOptions,
-  ): Promise<MeiliSearchResult<ProductSearchDocument> | null> {
+    indexUid: string = PRODUCTS_INDEX,
+  ): Promise<MeiliSearchResult<T> | null> {
     if (!this.client) return null;
     try {
-      const res = await this.client
-        .index(PRODUCTS_INDEX)
-        .search<ProductSearchDocument>(query, options);
+      const res = await this.client.index(indexUid).search<T>(query, options);
       const hits = res.hits ?? [];
       return { hits, estimatedTotalHits: res.estimatedTotalHits ?? hits.length };
     } catch (err) {
-      this.logger.warn({ err, query }, 'Meilisearch search failed; caller will fall back');
+      this.logger.warn(
+        { err, indexUid, query },
+        'Meilisearch search failed; caller will fall back',
+      );
       return null;
     }
   }

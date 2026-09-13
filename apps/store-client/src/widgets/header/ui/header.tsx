@@ -18,6 +18,7 @@ import {
 import { dict } from "@/shared/config";
 import type { BannerEntity } from "@/shared/api/generated/models";
 import { SearchAutocomplete } from "@/features/search";
+import { ThemeToggle } from "@/features/theme";
 import { AnnouncementBar } from "./announcement-bar";
 import { HeaderSearch } from "./header-search";
 import { HeaderAuth } from "./header-auth";
@@ -75,15 +76,30 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
     <>
       <AnnouncementBar banner={announcement} />
       <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80">
-        <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4">
-          {/* Left: mobile menu trigger + logo */}
-          <div className="flex items-center gap-2">
+        <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 sm:gap-3">
+          {/* Left: mobile menu trigger + logo. `min-w-0` (here and on the logo
+              link) makes this the cluster that yields on a 320px screen — the
+              wordmark truncates instead of pushing the cart off-canvas. */}
+          <div className="flex min-w-0 items-center gap-2">
             <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
               <SheetTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="md:hidden"
+                  // size-11 (44px): this is the only navigation control on a
+                  // phone, so it gets a full touch target; `shrink-0` keeps it
+                  // at that size when the row runs out of width.
+                  //
+                  // `lg:hidden`, not `md:hidden` (TASK-413/TASK-504). Measured:
+                  // the 768px row is 736px wide and the desktop cluster it
+                  // would have to carry — brand 168 + search 163 + section
+                  // links 117 + actions 402 + gaps 36 — is 886. Something has
+                  // to give, and before this it was the brand: the logo was
+                  // crushed to 8px. Keeping the slide-out menu to `lg` instead
+                  // means the 768–1023 tablet band reaches the section links,
+                  // «Акції», the theme switch and the account links through it,
+                  // which is exactly the fallback TASK-504 asks for.
+                  className="size-11 shrink-0 lg:hidden"
                   aria-label={dict.header.openMenu}
                 >
                   <Menu className="size-5" />
@@ -93,7 +109,11 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
                   Radix does not emit its "Missing Description" dev warning. */}
               <SheetContent
                 side="left"
-                className="w-72 overflow-y-auto"
+                // max-h-dvh + overscroll-contain: the panel keeps its own
+                // scrolling to itself (no scroll-chaining to the page behind it
+                // on iOS) and never grows past the visible viewport when the
+                // mobile browser chrome is showing.
+                className="max-h-dvh w-72 max-w-full overflow-y-auto overscroll-contain"
                 aria-describedby={undefined}
               >
                 <SheetHeader>
@@ -203,12 +223,23 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
                       </>
                     ))}
                 </nav>
+
+                {/* Theme switch — a preference, not navigation, so it sits
+                    below the menu and outside the <nav> landmark. Always
+                    visible here: on a phone this is the only place it appears,
+                    since the header cluster has no room for it. */}
+                <div className="mt-2 border-t border-border px-2 pt-3 pb-4">
+                  <ThemeToggle variant="full" />
+                </div>
               </SheetContent>
             </Sheet>
 
             <Link
               href="/"
-              className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              // `flex min-w-0` (not just min-w-0): the Logo is an inline-flex
+              // box, so only as a flex CHILD of a shrinkable link does it
+              // actually give way and let its wordmark truncate.
+              className="flex min-w-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Logo logoUrl={logoUrl} markClassName="shadow-elevated" />
             </Link>
@@ -217,17 +248,56 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
           {/* Search pill (Каталог + search + submit) — desktop. */}
           <HeaderSearch />
 
-          {/* Right: action cluster */}
-          <div className="ml-auto flex items-center gap-1 sm:gap-1.5">
+          {/* Section links — the desktop half of NAV_LINKS (TASK-413). They
+              appear at exactly the width the slide-out menu that carries them
+              disappears (`lg`), so the same two destinations are one gesture
+              away at every size and this row costs a phone nothing. */}
+          <nav
+            aria-label={dict.nav.primaryAria}
+            className="hidden shrink-0 items-center gap-1 lg:flex"
+          >
+            {NAV_LINKS.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="flex min-h-11 items-center rounded-lg px-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:px-3"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+
+          {/* Right: action cluster. `shrink-0` — these are the commerce actions,
+              so they keep their size and the brand block absorbs the squeeze.
+              Below 390px only the cart survives: Обране and Кабінет are hidden
+              (both are in the slide-out menu above) rather than letting four
+              targets collide on the narrowest phones. */}
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
+            {/* Theme switch — leftmost, so the commerce actions stay grouped
+                next to the cart.
+
+                It appears at exactly `lg`, the width where the slide-out menu —
+                the only other place it lives — disappears, so the two together
+                cover every width with no gap. That is what TASK-504 caught
+                behind the old `min-[1100px]`: the menu stopped at `md` and the
+                switch only started at 1100, leaving 768–1099 with no way to
+                change the theme at all. The threshold is measured, not guessed:
+                at 1024 the row has 992px for brand 168 + search + links 133 +
+                actions 402 + gaps 36, which leaves the search pill 253 — above
+                its 165px floor, so nothing is squeezed. At 768 the same cluster
+                needs 886 of 736 and the brand pays; hence the menu to `lg`. */}
+            <ThemeToggle className="mr-1 hidden lg:flex" />
             <Link
               href="/promo"
-              className="hidden flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-sale transition-colors hover:bg-sale/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
+              className="hidden min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-sale transition-colors hover:bg-sale/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
             >
               <Tag className="size-[22px]" aria-hidden="true" />
               {dict.header.promoLabel}
             </Link>
-            <HeaderWishlistBadge />
-            <HeaderAuth />
+            <HeaderWishlistBadge className="hidden min-[390px]:flex" />
+            <div className="hidden min-[390px]:block">
+              <HeaderAuth />
+            </div>
             <HeaderCartBadge className="ml-1" />
           </div>
         </div>

@@ -1,5 +1,6 @@
-import { test, expect, type Page } from "./fixtures/test";
+import { test, expect } from "./fixtures/test";
 import { E2E_PRODUCT_SLUG } from "./fixtures/seed-e2e";
+import { addSeededProductToCart } from "./fixtures/cart";
 
 /**
  * Guest browse → add-to-cart → checkout. Exercises the guest-cart cookie
@@ -21,36 +22,6 @@ import { E2E_PRODUCT_SLUG } from "./fixtures/seed-e2e";
  * Selectors lean on accessible roles/names; adjust if the storefront markup
  * changes. This spec runs against the seeded `test-product` fixture.
  */
-
-/**
- * Put the seeded product in this context's cart.
- *
- * Inlined into each test that needs it rather than hoisted into `beforeEach`,
- * because Playwright gives every test its own browser context: the cart cookie
- * from the first test does not exist in the second, and a guest checkout test
- * that assumed otherwise would be testing an empty cart.
- */
-async function addSeededProductToCart(page: Page): Promise<void> {
-  await page.goto(`/products/${E2E_PRODUCT_SLUG}`);
-
-  // The PDP add-to-cart CTA is «Додати до кошика». Match it exactly: the header
-  // has a «Кошик» button and the PDP a stub «Купити в 1 клік» (TASK-178) that
-  // looser regexes used to hit instead.
-  await page
-    .getByRole("main")
-    .getByRole("button", { name: /додати до кошика/i })
-    .click();
-
-  // Wait for the add to land: the header badge switches to the cart total.
-  // Scoped to the header and matched exactly, because since TASK-409 the buy
-  // box renders its own «…вже в кошику — відкрити кошик» button once the cart
-  // query reports the line, and a loose regex resolves to both.
-  await expect(
-    page
-      .getByRole("banner")
-      .getByRole("button", { name: "Відкрити кошик", exact: true }),
-  ).toContainText("499");
-}
 
 test.describe("guest cart flow", () => {
   test("a guest can add a product to the cart", async ({ page }) => {

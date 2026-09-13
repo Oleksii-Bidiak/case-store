@@ -84,9 +84,12 @@ export function ProductCard({
   const gradient = pickProductGradient(product.slug || product.name);
 
   return (
-    <article className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lift has-[[data-card-link]:focus-visible]:ring-2 has-[[data-card-link]:focus-visible]:ring-ring has-[[data-card-link]:focus-visible]:ring-offset-2 has-[[data-card-link]:focus-visible]:ring-offset-background">
+    <article className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lift has-[[data-card-link]:focus-visible]:ring-2 has-[[data-card-link]:focus-visible]:ring-ring has-[[data-card-link]:focus-visible]:ring-offset-2 has-[[data-card-link]:focus-visible]:ring-offset-background">
+      {/* Fixed square box, gradient behind it: the photo is letterboxed
+          (`object-contain` inside `ProductCardImage`), never cropped — and the
+          hover zoom is declared there too, so it is not duplicated per card. */}
       <div
-        className={`relative aspect-square w-full overflow-hidden bg-gradient-to-br [&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105 ${gradient}`}
+        className={`relative aspect-square w-full overflow-hidden bg-gradient-to-br ${gradient}`}
       >
         {/* Sold-out products are dimmed rather than hidden (TASK-362): they stay
             browsable and indexable, but a shopper can tell at a glance across a

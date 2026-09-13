@@ -7,6 +7,7 @@ import {
   productDetailSlugKey,
   PRODUCT_LIST_PREFIX,
 } from '../../cache';
+import { ProductIndexer } from '../../search/product-indexer';
 import { RETURN_SORT_FIELDS } from './dto';
 import type { ReturnSortField } from './dto';
 import type { CreateReturnParams, ReturnWithItems } from './return.types';
@@ -79,6 +80,7 @@ export class ReturnRepository {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly productIndexer: ProductIndexer,
   ) {}
 
   /** Open a return request with its lines in one write (TASK-340). */
@@ -250,6 +252,18 @@ export class ReturnRepository {
       seen.add(product.id);
       await this.cache.del(productDetailSlugKey(product.slug));
       await this.cache.del(productDetailIdKey(product.id));
+    }
+
+    // Third derived read model, added in TASK-417: the search index carries an
+    // `inStock` facet. A restock that skips it leaves the product missing from
+    // «В наявності» on `/search` until an admin happens to edit the card — the
+    // mirror of the sale case handled by the twin in `OrderRepository`. Fired,
+    // never awaited: a search engine must not be able to delay a refund.
+    for (const productId of seen) {
+      void this.productIndexer.index(productId).catch(() => {
+        // ProductIndexer logs its own failures; a rejection before it gets that
+        // far is still never allowed to touch the return.
+      });
     }
   }
 }

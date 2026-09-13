@@ -16,6 +16,8 @@ import {
   CategoryChips,
   SortSelect,
   ViewToggle,
+  clearFilterUpdates,
+  countActiveFilters,
   type CatalogView,
 } from "@/features/product-filters";
 import {
@@ -44,16 +46,20 @@ interface ProductListViewProps {
 
 const PAGE_SIZE = 20;
 
-/** Keys that clearing "all filters" removes (everything except sort/view/page). */
-const CLEARABLE_FILTERS = {
-  categoryId: undefined,
-  brandId: undefined,
-  search: undefined,
-  minPrice: undefined,
-  maxPrice: undefined,
-  deviceModelId: undefined,
-  specs: undefined,
-} as const;
+/**
+ * Desktop sidebar scroll box (TASK-414). A sticky aside with no height cap runs
+ * straight off the bottom of a short viewport, and because it is `position:
+ * sticky` the page scroll never brings the overflow back — the lower filters
+ * (price, spec facets) are simply unreachable on a laptop in landscape. Capping
+ * it at the viewport minus the sticky offset (`lg:top-24` = 6rem, plus a 1rem
+ * breathing gap) gives the aside its own scrollbar instead.
+ *
+ * A module constant like the `STICKY_ASIDE_TOP` it sits beside: `calc()` over
+ * `dvh` has no design-token equivalent, and keeping the pair together makes the
+ * two halves of the offset obviously related.
+ */
+const ASIDE_SCROLL_BOX =
+  "lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto lg:overscroll-contain";
 
 /**
  * Orchestrates the catalog page: keeps filter/sort/view state in the URL, fetches
@@ -93,6 +99,11 @@ export function ProductListView({
     minPrice: minPriceRaw ? Number(minPriceRaw) : initialParams.minPrice,
     maxPrice: maxPriceRaw ? Number(maxPriceRaw) : initialParams.maxPrice,
     specs: searchParams.get("specs") ?? initialParams.specs,
+    // Only the literal "true" turns the filter on (TASK-414): anything else in
+    // the URL — including "false" — means "no availability filter", which is
+    // also what the API's own boolean transform does with it.
+    inStock:
+      searchParams.get("inStock") === "true" ? true : initialParams.inStock,
     page: pageRaw ? Number(pageRaw) : (initialParams.page ?? 1),
     limit: PAGE_SIZE,
     isActive: true,
@@ -115,13 +126,12 @@ export function ProductListView({
 
   // Count of active filters INSIDE the drawer/sidebar — drives the mobile
   // "Filters" badge. The category is excluded: its control is the always-visible
-  // chips row, not the drawer (TASK-216).
-  const activeFilterCount =
-    (params.search ? 1 : 0) +
-    (params.brandId ? 1 : 0) +
-    (params.minPrice != null ? 1 : 0) +
-    (params.maxPrice != null ? 1 : 0) +
-    (params.deviceModelId ? 1 : 0);
+  // chips row, not the drawer (TASK-216). Counted through the shared definition
+  // (TASK-414) so the badge cannot silently omit a filter the panel offers —
+  // which is exactly how `specs` went uncounted.
+  const activeFilterCount = countActiveFilters(params, {
+    includeCategory: false,
+  });
 
   const applyFilters = useCallback(
     (updates: Record<string, string | undefined>) => {
@@ -154,15 +164,9 @@ export function ProductListView({
   );
 
   const clearFilters = useCallback(() => {
-    const updates: Record<string, string | undefined> = {
-      ...CLEARABLE_FILTERS,
-    };
-    if (lockedCategoryId) {
-      // The category is fixed by the route, not a clearable filter — «скинути
-      // всі» drops everything else but never un-locks it.
-      delete updates.categoryId;
-    }
-    applyFilters(updates);
+    // The category is fixed by the route on a landing page, not a clearable
+    // filter — «скинути всі» drops everything else but never un-locks it.
+    applyFilters(clearFilterUpdates({ includeCategory: !lockedCategoryId }));
   }, [applyFilters, lockedCategoryId]);
 
   const buildPageHref = useCallback(
@@ -182,7 +186,12 @@ export function ProductListView({
 
   // Active brands power both the sidebar «Виробник» select and the removable
   // brand chip's label (id → name). One shared query, deduped by React Query.
-  const { data: brandsData } = useBrandControllerFindAll();
+  // Same category scope the sidebar's BrandFilter uses (TASK-414) — one shared
+  // query key, so the chip label resolves from the very slice the dropdown
+  // offered rather than from a second, wider list.
+  const { data: brandsData } = useBrandControllerFindAll(
+    params.categoryId ? { categoryId: params.categoryId } : undefined,
+  );
   const activeBrandName = params.brandId
     ? brandsData?.data.find((brand) => brand.id === params.brandId)?.name
     : undefined;
@@ -240,7 +249,7 @@ export function ProductListView({
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
         {/* Desktop sidebar */}
         <aside
-          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} lg:block lg:self-start`}
+          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} ${ASIDE_SCROLL_BOX} lg:block lg:self-start`}
         >
           <ProductFilters
             currentParams={params}

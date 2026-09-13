@@ -154,6 +154,12 @@ export default async function RootLayout({
   return (
     <html
       lang="uk"
+      // next-themes (TASK-412) writes `data-theme` + `style.color-scheme` onto
+      // this element from an inline script that runs before hydration, so the
+      // client tree legitimately differs from the server HTML here. Without the
+      // flag React logs a hydration warning on every page load; scoped to <html>
+      // alone, so real mismatches anywhere inside still surface.
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} ${sora.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">

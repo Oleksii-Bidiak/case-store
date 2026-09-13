@@ -63,7 +63,15 @@ export class SearchController {
   @ApiOperation({ summary: 'Search products (paginated, typo-tolerant)', operationId: 'search' })
   @ApiResponse({ status: 200, description: 'Matching products', type: SearchResultsResponse })
   async search(@Query() query: SearchQueryDto): Promise<SearchResults> {
-    return this.searchService.search(query.q ?? '', query.page ?? 1, query.limit ?? 20);
+    return this.searchService.search(query.q ?? '', query.page ?? 1, query.limit ?? 20, {
+      categoryId: query.categoryId,
+      brandId: query.brandId,
+      deviceModelId: query.deviceModelId,
+      inStock: query.inStock,
+      minPrice: query.minPrice,
+      maxPrice: query.maxPrice,
+      sort: query.sort,
+    });
   }
 
   @Get('suggest')

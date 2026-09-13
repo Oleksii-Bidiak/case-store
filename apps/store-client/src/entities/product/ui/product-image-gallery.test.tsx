@@ -6,10 +6,13 @@ import {
   renderWithProviders,
   screen,
   userEvent,
+  waitFor,
+  within,
 } from "@/shared/test/render";
 import {
   IMAGE_LOADING_INDICATOR_DELAY_MS,
   ProductImageGallery,
+  SWIPE_THRESHOLD_PX,
 } from "./product-image-gallery";
 
 const image = (id: string, sortOrder: number): ProductImageEntity => ({
@@ -19,6 +22,13 @@ const image = (id: string, sortOrder: number): ProductImageEntity => ({
   sortOrder,
   isPrimary: sortOrder === 0,
 });
+
+/**
+ * The thumbnail buttons only — scoped through the strip's `<ul>` so the
+ * full-frame zoom trigger (TASK-416) never leaks into these queries.
+ */
+const thumbnails = () =>
+  within(screen.getByRole("list")).getAllByRole("button");
 
 /**
  * Regression guard for TASK-126: the thumbnail strip is intentionally gated on
@@ -33,9 +43,13 @@ describe("ProductImageGallery — thumbnail strip gate (TASK-126)", () => {
       <ProductImageGallery images={[image("a", 0)]} altFallback="Product" />,
     );
 
-    // Main image present, but no thumbnail buttons.
+    // Main image present, but no thumbnail strip at all.
     expect(screen.getByRole("img")).toBeInTheDocument();
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+    // The only button on a single-image gallery is the zoom trigger.
+    expect(screen.getAllByRole("button")).toEqual([
+      screen.getByRole("button", { name: dict.product.zoomAria }),
+    ]);
   });
 
   it("renders a thumbnail button per image when there are several", () => {
@@ -46,7 +60,7 @@ describe("ProductImageGallery — thumbnail strip gate (TASK-126)", () => {
       />,
     );
 
-    expect(screen.getAllByRole("button")).toHaveLength(3);
+    expect(thumbnails()).toHaveLength(3);
   });
 
   it("swaps the active thumbnail on click (aria-pressed follows selection)", async () => {
@@ -58,7 +72,7 @@ describe("ProductImageGallery — thumbnail strip gate (TASK-126)", () => {
       />,
     );
 
-    const [first, second] = screen.getAllByRole("button");
+    const [first, second] = thumbnails();
     expect(first).toHaveAttribute("aria-pressed", "true");
     expect(second).toHaveAttribute("aria-pressed", "false");
 
@@ -125,7 +139,7 @@ describe("ProductImageGallery — image-switch loading indicator (TASK-214)", ()
   it("shows the indicator after the delay while the new image loads, and removes it on load", async () => {
     const user = await setup();
 
-    const [, second] = screen.getAllByRole("button");
+    const [, second] = thumbnails();
     await user.click(second);
 
     // Within the grace window — no indicator yet.
@@ -144,7 +158,7 @@ describe("ProductImageGallery — image-switch loading indicator (TASK-214)", ()
   it("never flashes the indicator when the image loads within the delay (cache hit)", async () => {
     const user = await setup();
 
-    const [, second] = screen.getAllByRole("button");
+    const [, second] = thumbnails();
     await user.click(second);
     // Loads immediately — before the delay elapses.
     await fireLoad("Image b");
@@ -155,7 +169,7 @@ describe("ProductImageGallery — image-switch loading indicator (TASK-214)", ()
     expect(queryIndicator()).not.toBeInTheDocument();
 
     // Switching back to an already-loaded image is also indicator-free.
-    const [first] = screen.getAllByRole("button");
+    const [first] = thumbnails();
     await user.click(first);
     act(() => {
       jest.advanceTimersByTime(IMAGE_LOADING_INDICATOR_DELAY_MS * 3);
@@ -166,7 +180,7 @@ describe("ProductImageGallery — image-switch loading indicator (TASK-214)", ()
   it("clears the indicator and falls back to the placeholder on error", async () => {
     const user = await setup();
 
-    const [, second] = screen.getAllByRole("button");
+    const [, second] = thumbnails();
     await user.click(second);
     act(() => {
       jest.advanceTimersByTime(IMAGE_LOADING_INDICATOR_DELAY_MS + 10);
@@ -178,6 +192,175 @@ describe("ProductImageGallery — image-switch loading indicator (TASK-214)", ()
     expect(queryIndicator()).not.toBeInTheDocument();
     expect(
       screen.queryByRole("img", { name: "Image b" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-416 — full-screen lightbox. The zoom trigger overlays the main frame;
+ * inside the dialog the photo can be stepped with the arrow buttons, the arrow
+ * keys and a horizontal swipe, Escape closes it (Radix), and focus lands back
+ * on the trigger rather than at the top of the document.
+ */
+describe("ProductImageGallery — lightbox (TASK-416)", () => {
+  const THREE = [image("a", 0), image("b", 1), image("c", 2)];
+
+  /**
+   * jsdom implements neither `Touch` nor `TouchEvent`, so RTL's
+   * `fireEvent.touchStart(el, { changedTouches })` silently drops the
+   * coordinates. Build a bubbling Event and attach `changedTouches` by hand —
+   * React reads the property straight off the native event when it builds the
+   * synthetic one.
+   */
+  const fireTouch = (target: Element, type: string, clientX: number) => {
+    const event = new Event(type, { bubbles: true });
+    Object.defineProperty(event, "changedTouches", { value: [{ clientX }] });
+    fireEvent(target, event);
+  };
+
+  const openLightbox = async (images = THREE) => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ProductImageGallery images={images} altFallback="Product" />,
+    );
+    const trigger = screen.getByRole("button", { name: dict.product.zoomAria });
+    await user.click(trigger);
+    const dialog = await screen.findByRole("dialog");
+    return { user, trigger, dialog };
+  };
+
+  it("opens the full-screen dialog from the zoom trigger and names the product", async () => {
+    const { dialog } = await openLightbox();
+
+    expect(
+      within(dialog).getByText(dict.product.lightboxTitle("Product")),
+    ).toBeInTheDocument();
+    // A description is rendered, so Radix's aria-describedby stays wired up.
+    expect(dialog).toHaveAttribute("aria-describedby");
+    expect(
+      within(dialog).getByText(dict.product.lightboxHint),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(dict.product.lightboxCounter(1, 3)),
+    ).toBeInTheDocument();
+  });
+
+  it("steps through photos with the next/prev buttons, wrapping at both ends", async () => {
+    const { user, dialog } = await openLightbox();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: dict.product.lightboxNext }),
+    );
+    expect(
+      within(dialog).getByText(dict.product.lightboxCounter(2, 3)),
+    ).toBeInTheDocument();
+
+    // Backwards past the first photo wraps round to the last one.
+    await user.click(
+      within(dialog).getByRole("button", { name: dict.product.lightboxPrev }),
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: dict.product.lightboxPrev }),
+    );
+    expect(
+      within(dialog).getByText(dict.product.lightboxCounter(3, 3)),
+    ).toBeInTheDocument();
+  });
+
+  it("steps through photos with the left/right arrow keys", async () => {
+    const { user, dialog } = await openLightbox();
+
+    await user.keyboard("{ArrowRight}");
+    expect(
+      within(dialog).getByText(dict.product.lightboxCounter(2, 3)),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{ArrowLeft}");
+    expect(
+      within(dialog).getByText(dict.product.lightboxCounter(1, 3)),
+    ).toBeInTheDocument();
+  });
+
+  it("advances on a left swipe and goes back on a right swipe", async () => {
+    const { dialog } = await openLightbox();
+    const surface = within(dialog).getByRole("img");
+
+    fireTouch(surface, "touchstart", 300);
+    fireTouch(surface, "touchend", 300 - SWIPE_THRESHOLD_PX - 10);
+    expect(
+      within(dialog).getByText(dict.product.lightboxCounter(2, 3)),
+    ).toBeInTheDocument();
+
+    fireTouch(surface, "touchstart", 100);
+    fireTouch(surface, "touchend", 100 + SWIPE_THRESHOLD_PX + 10);
+    expect(
+      within(dialog).getByText(dict.product.lightboxCounter(1, 3)),
+    ).toBeInTheDocument();
+  });
+
+  it("ignores a drag shorter than the swipe threshold", async () => {
+    const { dialog } = await openLightbox();
+    const surface = within(dialog).getByRole("img");
+
+    fireTouch(surface, "touchstart", 300);
+    fireTouch(surface, "touchend", 300 - (SWIPE_THRESHOLD_PX - 5));
+
+    expect(
+      within(dialog).getByText(dict.product.lightboxCounter(1, 3)),
+    ).toBeInTheDocument();
+  });
+
+  it("closes on Escape and returns focus to the zoom trigger", async () => {
+    const { user, trigger } = await openLightbox();
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("keeps the lightbox selection in sync with the thumbnail strip", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ProductImageGallery images={THREE} altFallback="Product" />,
+    );
+
+    await user.click(thumbnails()[2]);
+    await user.click(
+      screen.getByRole("button", { name: dict.product.zoomAria }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(dict.product.lightboxCounter(3, 3)),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no arrows or counter for a single photo", async () => {
+    const { dialog } = await openLightbox([image("a", 0)]);
+
+    expect(
+      within(dialog).queryByRole("button", { name: dict.product.lightboxNext }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("button", { name: dict.product.lightboxPrev }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByText(dict.product.lightboxCounter(1, 1)),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers no zoom trigger when the photo failed to load", () => {
+    renderWithProviders(
+      <ProductImageGallery images={[image("a", 0)]} altFallback="Product" />,
+    );
+
+    fireEvent.error(screen.getByRole("img", { name: "Image a" }));
+
+    expect(
+      screen.queryByRole("button", { name: dict.product.zoomAria }),
     ).not.toBeInTheDocument();
   });
 });

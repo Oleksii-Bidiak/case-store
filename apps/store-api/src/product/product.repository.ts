@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma';
 import { Product, Prisma, AttributeType, PaymentStatus, SlugRedirectEntity } from '@prisma/client';
 import { SlugRedirectRepository } from '../slug-redirect';
 import { rankProductIdsBySales } from './bestseller-rank.util';
+import type { SpecFacetFilter } from './dto/product-list-query.dto';
 import { PRE_SHIPMENT_STATUSES } from '../order/order.constants';
 
 /**
@@ -98,11 +99,22 @@ export interface FindAllParams {
    */
   searchIncludesSku?: boolean;
   /**
-   * Structured-spec facet filter (TASK-191): keep only products carrying a
-   * spec value whose definition `key` and `value` both match. A single pair for
-   * this "basic" cut (doc 099 §6); multi-pair stacking is a future enhancement.
+   * Structured-spec facet filter (TASK-191; multi-value since TASK-414 / owner
+   * decision B-10). One entry per requested facet, already parsed and capped by
+   * `parseSpecFilters`.
+   *
+   * Semantics: values WITHIN a facet are OR-ed (one `value IN (...)`), facets
+   * are AND-ed (one `where.AND` entry each) — "силікон or TPU, and a case".
+   * Anything narrower would make a second facet silently discard the first.
    */
-  specFilter?: { key: string; value: string };
+  specFilters?: SpecFacetFilter[];
+  /**
+   * Keep only positions with something free to sell, `stock > 0` (TASK-414) —
+   * the storefront «В наявності» checkbox. The exact complement of
+   * {@link FindAllParams.outOfStock}, which wins when both are set (the admin
+   * restock worklist is the more specific intent).
+   */
+  inStock?: boolean;
   /**
    * On-sale filter (TASK-179): keep only products whose `compareAtPrice` is set
    * and strictly greater than `price`. A same-row column-to-column comparison
@@ -498,7 +510,8 @@ export class ProductRepository {
       minPrice,
       maxPrice,
       search,
-      specFilter,
+      specFilters,
+      inStock,
       onSale,
       sortBy = 'createdAt',
       sortOrder = 'desc',
@@ -532,7 +545,15 @@ export class ProductRepository {
       where.isActive = isActive;
     }
 
+    // Storefront «В наявності» (TASK-414): only what can actually be bought.
+    if (inStock) {
+      where.stock = { gt: 0 };
+    }
+
     // Restock worklist (TASK-362): positions with nothing free to sell.
+    // Deliberately AFTER `inStock` so it wins if a caller somehow sends both —
+    // the two are exact opposites, and the admin worklist is the more specific
+    // intent. (The public path forces `outOfStock: undefined` anyway.)
     if (params.outOfStock) {
       where.stock = { lte: 0 };
     }
@@ -570,12 +591,22 @@ export class ProductRepository {
       where.OR = searchOr;
     }
 
-    // Structured-spec facet (TASK-191): the product must have at least one spec
-    // value whose definition key AND value both match the requested pair.
-    if (specFilter) {
-      where.specValues = {
-        some: { value: specFilter.value, definition: { key: specFilter.key } },
-      };
+    // Structured-spec facets (TASK-191, multi-value since TASK-414 / B-10).
+    //
+    // ONE `where.AND` entry PER FACET, each a `specValues.some(...)` over that
+    // facet's value list. That shape is the whole point: `some` is an EXISTS
+    // subquery, so a single `some` with two definition keys would ask for one
+    // spec row matching both keys at once — never true. Separate entries ask for
+    // one matching row per facet, which is the AND-between-facets /
+    // OR-within-facet semantics the owner decided (B-10).
+    //
+    // `where.AND` is assigned here and NOWHERE else in this builder — every
+    // other filter writes its own `where` key — so a plain assignment is safe;
+    // if that ever stops being true this must become an append.
+    if (specFilters && specFilters.length > 0) {
+      where.AND = specFilters.map((facet) => ({
+        specValues: { some: { value: { in: facet.values }, definition: { key: facet.key } } },
+      }));
     }
 
     // On-sale (TASK-179): `compareAtPrice > price` is a same-row column-to-column
