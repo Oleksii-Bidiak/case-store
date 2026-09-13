@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CreatePageDto, UpdatePageDto } from "@/entities/page";
 import { dict } from "@/shared/config";
+import { fromKyivDateTimeLocal } from "@/shared/lib";
 
 const e = dict.pageForm.errors;
 
@@ -114,9 +115,13 @@ export function pageFormValuesToCreateDto(
   const metaTitle = values.metaTitle?.trim();
   const metaDescription = values.metaDescription?.trim();
 
+  // Read as KYIV wall-clock time. `new Date("YYYY-MM-DDTHH:mm")` — what stood
+  // here — parses a zone-less datetime in the RUNTIME's zone, which contradicts
+  // the Kyiv-pinned page list the operator read the date off in the first place.
+  // See `shared/lib/format/datetime-local.ts`.
   const scheduledAt =
     values.status === "SCHEDULED" && values.scheduledAt
-      ? new Date(values.scheduledAt).toISOString()
+      ? fromKyivDateTimeLocal(values.scheduledAt)?.toISOString()
       : undefined;
 
   return {

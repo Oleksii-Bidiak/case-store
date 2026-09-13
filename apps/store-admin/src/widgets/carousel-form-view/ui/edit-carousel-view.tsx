@@ -21,6 +21,7 @@ import {
   type CarouselEntity,
 } from "@/entities/carousel";
 import { dict } from "@/shared/config";
+import { toKyivDateTimeLocal } from "@/shared/lib";
 
 interface EditCarouselViewProps {
   carouselId: string;
@@ -171,20 +172,13 @@ function mapCarouselToFormValues(
     itemLimit: String(carousel.itemLimit),
     sortOrder: String(carousel.sortOrder),
     status: carousel.status,
-    // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant.
+    // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant,
+    // in KYIV time. The local `toDateTimeLocal` this replaces read the BROWSER's
+    // zone, so outside Kyiv this field contradicted the carousel list, which
+    // renders the same instant through the Kyiv-pinned `formatDate`. See
+    // `shared/lib/format/datetime-local.ts`.
     scheduledAt: carousel.scheduledAt
-      ? toDateTimeLocal(carousel.scheduledAt)
+      ? toKyivDateTimeLocal(carousel.scheduledAt)
       : "",
   };
-}
-
-/** Convert an ISO instant to the `datetime-local` input value (local time). */
-function toDateTimeLocal(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  );
 }

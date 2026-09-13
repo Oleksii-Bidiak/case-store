@@ -19,6 +19,7 @@ import {
   type BannerEntity,
 } from "@/entities/banner";
 import { dict } from "@/shared/config";
+import { toKyivDateTimeLocal } from "@/shared/lib";
 
 interface EditBannerViewProps {
   bannerId: string;
@@ -119,25 +120,23 @@ function mapBannerToFormValues(banner: BannerEntity): Partial<BannerFormInput> {
     ctaHref: banner.ctaHref ?? "",
     theme: banner.theme ?? "",
     status: banner.status,
-    // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant.
-    scheduledAt: banner.scheduledAt ? toDateTimeLocal(banner.scheduledAt) : "",
+    // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant,
+    // in KYIV time. This used to be a local `toDateTimeLocal` that read
+    // getFullYear()/getHours() — the BROWSER's zone — while the banner list next
+    // door renders the same instant through `formatDate`, which is pinned to
+    // Kyiv. On any machine outside Kyiv the two screens disagreed: the list said
+    // «Заплановано на 02.10» and this form said 01.10. Nothing broke on save
+    // (browser-zone in, browser-zone out round-trips), so the only victim was the
+    // operator who believed the list and re-typed the date they read there.
+    scheduledAt: banner.scheduledAt
+      ? toKyivDateTimeLocal(banner.scheduledAt)
+      : "",
     // TASK-429: the window END must be seeded too. Without it the field renders
     // empty on every edit and the next save — which always carries `status` —
     // would silently WIPE a live window: the operator renames a title and the
     // promo quietly loses its take-down date.
     scheduledUntil: banner.scheduledUntil
-      ? toDateTimeLocal(banner.scheduledUntil)
+      ? toKyivDateTimeLocal(banner.scheduledUntil)
       : "",
   };
-}
-
-/** Convert an ISO instant to the `datetime-local` input value (local time). */
-function toDateTimeLocal(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  );
 }

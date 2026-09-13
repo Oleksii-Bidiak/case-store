@@ -83,7 +83,12 @@ describe("pageFormValuesToCreateDto", () => {
     });
 
     expect(dto.status).toBe("SCHEDULED");
-    expect(dto.scheduledAt).toBe(new Date("2026-08-01T09:00").toISOString());
+    // 09:00 Kyiv on 1 August is 06:00 UTC (EEST, UTC+3). Hard-coded on purpose:
+    // the expectation this replaced was `new Date("2026-08-01T09:00")
+    // .toISOString()` — the mapper's own expression, so it agreed with any
+    // implementation, including the browser-zone one that was wrong everywhere
+    // outside Kyiv (TASK-421 finding #10).
+    expect(dto.scheduledAt).toBe("2026-08-01T06:00:00.000Z");
   });
 
   it("omits scheduledAt when the page is not SCHEDULED", () => {

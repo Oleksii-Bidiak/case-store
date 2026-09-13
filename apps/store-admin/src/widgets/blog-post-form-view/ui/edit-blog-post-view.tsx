@@ -19,6 +19,7 @@ import {
   type BlogPostEntity,
 } from "@/entities/blog";
 import { dict } from "@/shared/config";
+import { toKyivDateTimeLocal } from "@/shared/lib";
 
 interface EditBlogPostViewProps {
   postId: string;
@@ -133,17 +134,11 @@ function mapPostToFormValues(post: BlogPostEntity): Partial<BlogPostFormInput> {
       post.readingMinutes != null ? String(post.readingMinutes) : "",
     featured: post.featured,
     status: post.status,
-    scheduledAt: post.scheduledAt ? toDateTimeLocal(post.scheduledAt) : "",
+    // Seeded in KYIV time, like every rendered date in the admin panel. The
+    // local `toDateTimeLocal` this replaces used the BROWSER's zone, so on any
+    // machine outside Kyiv this field and the post list disagreed about when the
+    // post goes live — by hours, and across midnight by a whole day. See
+    // `shared/lib/format/datetime-local.ts`.
+    scheduledAt: post.scheduledAt ? toKyivDateTimeLocal(post.scheduledAt) : "",
   };
-}
-
-/** Convert an ISO instant to the `datetime-local` input value (local time). */
-function toDateTimeLocal(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  );
 }
