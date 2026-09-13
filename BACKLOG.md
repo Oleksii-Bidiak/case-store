@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-500**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-502**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -669,6 +669,8 @@
 | TASK-497 | «Розумний» пошук товарів в адмінці через Meilisearch (план 175, TASK-423 п.6). Відкладено рішенням власника 2026-09-11: залежить від SKU в індексі (TASK-417, хвиля 174), а головне — адмінський список мусить показувати приховані й **видалені** товари, яких в індексі немає, тож наївне перемикання зробило б пошук гіршим за нинішній. Робити після мержу 174, з фолбеком на Postgres для рядків поза індексом | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
 | TASK-498 | [🟡] Форма редагування адреси замовлення перевіряє телефон лише на непорожність (`features/order-address-edit/model/address-schema.ts:19`, `min(1)`), а той самий ендпоінт вимагає `@IsInternationalPhone` (`address.dto.ts:112`) — тобто `123` проходить форму і падає 400 на API. Гірше за саму невідповідність те, як вона виглядає: `order-address-form.tsx:123-133` віддає 400 у `orderConflictMessage`, а `isOrderConflict` матчить конверт Nest `error: "Bad Request"`, тож оператор бачить «замовлення змінилося, оновіть сторінку» через одруківку в номері. Передіснуюче, знайдено при ревʼю TASK-426 (який вирівняв решту телефонних полів); виправляється тим самим `isValidInternationalPhone` | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
 | TASK-499 | Підказка місця вставки в дереві категорій рахує `getProjection` **двічі** — у мемо підказки (`sortable-tree.tsx:321-332`) і вдруге на drop (`:367`). Геометрія однакова (та сама чиста функція й ті самі входи), різниться лише джерело `over id`: мемо бере збережений станом `overId`, а `handleDragEnd` — `over.id` із події. На практиці dnd-kit виводить обидва з однієї колізії, але жоден тест не стверджує, що показана підказка збігається з фактичним приземленням. Або звести до одного обчислення, або накрити тестом «куди показали — туди й поклали» | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-500 | `buildAdminWhere` присвоює `where.status` **двічі**: фільтр `?status=` потрапляє в літерал об'єкта (`order/order.repository.ts:627`), а пресет `unpaidInTransit` тут же перезаписує його на `{ notIn: [CANCELLED, REFUNDED] }` (`:677`). TASK-425 свідомо провів свої нові `paymentStatus`/`paymentMethod`/`pendingOverdue` через масив `AND` саме щоб уникнути цього, але старішу колізію не чіпав — хвиля лише зробила її **видимою**: оператор, що прийшов із плитки «Активні неоплачені» (`/orders?unpaidInTransit=true`) і обрав Статус = «Очікує» в новому рядку фільтрів, бачить знімний чип, який стверджує, що фільтр статусу діє, тоді як запит його ігнорує, а сам `unpaidInTransit` чипом не є, тож ніщо не натякає, що він увімкнений. `GET /admin/orders/export` ділить той самий `buildAdminWhere`, тож і CSV відтворює хибну вибірку. Завести пресет у той самий масив `and`, щоб він перетинався, а не заміщав; заодно подумати про `unpaidInTransit` як про знімний чип. Передіснуюче на develop — не дефект цієї хвилі | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-501 | `BannersRepository.update()` (`banners/banners.repository.ts:263`) пише `placement` наскрізь, не переприв'язуючи `sortOrder` до цільового кошика, тож перенесення банера між плейсментами кладе його на слот, який у цільовому кошику вже зайнятий, і позиція скочується до тайбрейкера `createdAt`. За формою це той самий розрив, що й у каруселях, який ця хвиля закриває (знахідка ревʼю #11), але передіснуючий на develop, а шляху оновлення банерів хвиля не торкалася. Дописувати в кінець під адвізорним локом цільового плейсмента — рівно так, як це вже робить `create()` через `nextSortOrder()` | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
 
 ---
 
@@ -678,6 +680,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-500**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-502**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.

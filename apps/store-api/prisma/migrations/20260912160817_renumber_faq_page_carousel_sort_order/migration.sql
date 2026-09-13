@@ -19,8 +19,14 @@
 -- already-numbered table computes the numbers it already has. `id` is the final tiebreaker
 -- so the result is deterministic even for rows created in the same instant.
 --
--- The `IS DISTINCT FROM` guard means a re-run writes ZERO rows rather than rewriting every
--- one of them, so replaying it costs nothing and touches nothing.
+-- REPLAY: the `IS DISTINCT FROM` guard narrows a re-run to the rows whose number actually
+-- changes, not to zero rows — read it as "order-preserving and safe to replay", not as "a
+-- replay never writes". It IS zero rows only while a bucket is still contiguous from 0, and
+-- nothing renumbers on DELETE: `FaqRepository.delete` and its siblings simply remove the row,
+-- so deleting slot 1 leaves 0,2,3 and a replay compacts that back to 0,1,2 — two writes. The
+-- compaction is harmless, and the property anyone reasoning about a restore-and-reapply
+-- actually needs still holds: because the ranking leads with `sort_order`, closing the gap
+-- cannot change the relative order of the surviving rows.
 --
 -- NOT a schema change: there is deliberately no UNIQUE constraint on (bucket, sort_order).
 -- The reorder endpoint rewrites a bucket one row at a time inside a transaction, so
