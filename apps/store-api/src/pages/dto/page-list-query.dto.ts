@@ -1,12 +1,26 @@
 import { IsOptional, IsInt, IsEnum, IsString, MaxLength, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { PublishStatus } from '@prisma/client';
+import { PageKind, PublishStatus } from '@prisma/client';
 
 /**
  * Query DTO for the public page list (published pages only).
  */
 export class PageListQueryDto {
+  @ApiProperty({
+    description:
+      'Filter by page kind. LEGAL backs the /legal hub, INFO the /info help pages. ' +
+      'Without it the list still omits HUB rows — a hub row is not a page (TASK-435).',
+    enum: PageKind,
+    example: PageKind.LEGAL,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(PageKind, {
+    message: `kind must be one of: ${Object.values(PageKind).join(', ')}`,
+  })
+  kind?: PageKind;
+
   @ApiProperty({ description: 'Page number (1-based)', example: 1, required: false, default: 1 })
   @IsOptional()
   @Type(() => Number)
@@ -29,8 +43,35 @@ export class PageListQueryDto {
 }
 
 /**
+ * Query DTO for a single published page (`GET /api/pages/:slug`).
+ *
+ * `kind` is how the storefront keeps the two page routes from bleeding into each
+ * other (TASK-435): `/legal/<slug>` asks for LEGAL, `/info/<slug>` for INFO, and
+ * a mismatch is a 404, so a help page can never be served under a legal address
+ * (or the reverse). Without a `kind` the endpoint still refuses HUB rows, which
+ * have no address of their own at all.
+ */
+export class PageDetailQueryDto {
+  @ApiProperty({
+    description:
+      'Require the page to be of this kind; a mismatch is a 404. Omitted, any kind but HUB matches.',
+    enum: PageKind,
+    example: PageKind.LEGAL,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(PageKind, {
+    message: `kind must be one of: ${Object.values(PageKind).join(', ')}`,
+  })
+  kind?: PageKind;
+}
+
+/**
  * Query DTO for the admin page list (all statuses), with an optional status
- * filter and a title/slug search (TASK-357).
+ * filter and a title/slug search (TASK-357). The inherited `kind` filter backs
+ * the Усі / Юридичні / Довідкові / Хаби tabs — unlike the public list it does
+ * NOT hide HUB rows when omitted: the panel is exactly where hub meta tags are
+ * edited, so "Усі" must show them.
  *
  * The search lives ONLY on the admin list: the public `GET /api/pages` backs the
  * `/legal` hub, which lists everything published and has nothing to search.
@@ -87,4 +128,29 @@ export class AdminPageListQueryDto {
   @IsString()
   @MaxLength(200, { message: 'Search query must be at most 200 characters' })
   search?: string;
+
+  /**
+   * Kind filter for the panel's tabs (TASK-435).
+   *
+   * DECLARED here rather than inherited, unlike on develop where this class still
+   * extended {@link PageListQueryDto}: that inheritance is exactly what TASK-428
+   * had to drop (see the class docblock — the superclass's `page = 1` initializer
+   * makes the complete list unrequestable). The field came back by hand so the
+   * tabs keep working; losing it is what the merge did on its own, and the
+   * typechecker is what noticed.
+   *
+   * Unlike the public readers, an ABSENT kind here means EVERY kind, HUB rows
+   * included — the panel is where hub rows are edited.
+   */
+  @ApiProperty({
+    description: 'Filter by page kind (LEGAL, INFO, HUB). Omitted, every kind is listed.',
+    enum: PageKind,
+    example: PageKind.LEGAL,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(PageKind, {
+    message: `kind must be one of: ${Object.values(PageKind).join(', ')}`,
+  })
+  kind?: PageKind;
 }

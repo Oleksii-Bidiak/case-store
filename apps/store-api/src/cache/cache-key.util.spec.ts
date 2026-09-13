@@ -87,6 +87,44 @@ describe('cache-key.util', () => {
       const key = buildProductListKey({ page: 1, limit: 20, onSale: false });
       expect(key).toContain('onSale=false');
     });
+
+    // The builder's own promise is "two structurally identical queries map to
+    // one key". Its converse is the one that matters for correctness, and only
+    // these two fields carry shopper-supplied text: a `|` inside `search` or a
+    // spec value used to forge every segment serialized after it, so an empty
+    // page could be written into the entry a real filtered query reads back.
+    it('cannot forge a later segment through a pipe in search', () => {
+      const forged = buildProductListKey({ page: 1, limit: 20, search: 'чохол|inStock=true' });
+      const real = buildProductListKey({ page: 1, limit: 20, search: 'чохол', inStock: true });
+
+      expect(forged).not.toBe(real);
+      expect(real).toContain('inStock=true');
+      expect(forged).not.toContain('|inStock=true');
+    });
+
+    it('cannot forge a later segment through a pipe in a spec value', () => {
+      const forged = buildProductListKey({
+        page: 1,
+        limit: 20,
+        specs: 'ratio:16|inStock=true',
+      });
+      const real = buildProductListKey({ page: 1, limit: 20, specs: 'ratio:16', inStock: true });
+
+      expect(forged).not.toBe(real);
+      expect(forged).not.toContain('|inStock=true');
+    });
+
+    it('keeps the escape injective — a literal percent cannot spell an escaped pipe', () => {
+      const escaped = buildProductListKey({ page: 1, limit: 20, search: 'a|b' });
+      const literal = buildProductListKey({ page: 1, limit: 20, search: 'a%7Cb' });
+
+      expect(escaped).not.toBe(literal);
+    });
+
+    it('leaves an ordinary Cyrillic search readable in the key', () => {
+      const key = buildProductListKey({ page: 1, limit: 20, search: 'чохол' });
+      expect(key).toContain('search=чохол');
+    });
   });
 
   describe('detail key helpers', () => {

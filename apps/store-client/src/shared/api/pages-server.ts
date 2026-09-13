@@ -1,5 +1,6 @@
 import type {
   PageEntity,
+  PageEntityKind,
   PageListResponse,
   PageResponseEnvelope,
 } from "@/shared/api/generated/models";
@@ -34,8 +35,44 @@ const PAGE_SIZE = 100;
  * Fetch a single PUBLISHED page by slug, tagged for on-demand revalidation.
  * Returns null on 404 (draft / scheduled / missing) or any transport error so
  * the caller can render a Next.js `notFound()`.
+ *
+ * `kind` is REQUIRED (TASK-435): every caller is a route that serves exactly one
+ * kind, and the API 404s a mismatch, so `/legal/<slug>` can never render a help
+ * page and `/info/<slug>` can never render a legal document. Making the argument
+ * mandatory is the point — a caller that forgot it would silently re-open that
+ * hole.
  */
 export async function fetchPublishedPage(
+  slug: string,
+  kind: PageEntityKind,
+): Promise<PageEntity | null> {
+  try {
+    const res = await serverFetch(
+      `${API_BASE_URL}/api/pages/${encodeURIComponent(slug)}?kind=${kind}`,
+      { next: { tags: [PAGES_COLLECTION_TAG, pageDetailTag(slug)] } },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as PageResponseEnvelope;
+    return body.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch a single PUBLISHED page by slug WITHOUT narrowing to a kind — the
+ * deliberate exception to the rule above.
+ *
+ * Used by the two document routes only, and only after their own kind-narrowed
+ * read has already missed: at that point the question is no longer "may this
+ * route render this page" (the answer is no) but "did this page move to the
+ * other surface, and where should the stale URL point". The result is never
+ * rendered — it is turned into a 308 by `pageCanonicalPath()` — so this cannot
+ * re-open the wrong-kind hole `fetchPublishedPage`'s mandatory argument closes.
+ *
+ * HUB rows stay excluded by the API itself, whatever we ask for.
+ */
+export async function fetchPublishedPageAnyKind(
   slug: string,
 ): Promise<PageEntity | null> {
   try {
@@ -52,13 +89,17 @@ export async function fetchPublishedPage(
 }
 
 /**
- * Fetch all PUBLISHED pages (first page of up to {@link PAGE_SIZE}), tagged for
- * on-demand revalidation. Never throws — returns an empty list on error.
+ * Fetch all PUBLISHED pages of one kind (first page of up to {@link PAGE_SIZE}),
+ * tagged for on-demand revalidation. Never throws — returns an empty list on
+ * error. The kind keeps the `/legal` hub listing legal documents only and the
+ * `/info` one help pages only.
  */
-export async function fetchPublishedPages(): Promise<PageEntity[]> {
+export async function fetchPublishedPages(
+  kind: PageEntityKind,
+): Promise<PageEntity[]> {
   try {
     const res = await serverFetch(
-      `${API_BASE_URL}/api/pages?page=1&limit=${PAGE_SIZE}`,
+      `${API_BASE_URL}/api/pages?kind=${kind}&page=1&limit=${PAGE_SIZE}`,
       { next: { tags: [PAGES_COLLECTION_TAG] } },
     );
     if (!res.ok) return [];

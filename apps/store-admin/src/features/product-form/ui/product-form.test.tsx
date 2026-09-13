@@ -442,6 +442,39 @@ describe("productFormValuesToDto — SEO meta mapping (TASK-241)", () => {
     expect(dto.metaTitle).toBe("SEO Title");
     expect(dto.metaDescription).toBe("SEO description");
   });
+
+  // TASK-437 — tags and the OG override. A list clears by being EMPTY (no null
+  // form), so the same array is right for both verbs; `ogImage` follows the meta
+  // fields' undefined-on-create / null-on-update rule.
+  it("splits the comma-separated tag field and de-duplicates it", () => {
+    const dto = productFormValuesToDto({
+      ...baseValues,
+      keywords: "magsafe, чохол ,  MagSafe",
+    });
+    expect(dto.keywords).toEqual(["magsafe", "чохол"]);
+  });
+
+  it("sends an empty tag list for a blank field, on both verbs", () => {
+    expect(productFormValuesToDto(baseValues).keywords).toEqual([]);
+    expect(
+      productFormValuesToDto(baseValues, { isUpdate: true }).keywords,
+    ).toEqual([]);
+  });
+
+  it("maps a blank ogImage to undefined on CREATE and null on UPDATE", () => {
+    expect(productFormValuesToDto(baseValues).ogImage).toBeUndefined();
+    expect(
+      productFormValuesToDto(baseValues, { isUpdate: true }).ogImage,
+    ).toBeNull();
+  });
+
+  it("passes a provided ogImage through, trimmed", () => {
+    const dto = productFormValuesToDto({
+      ...baseValues,
+      ogImage: "  https://cdn.example.com/og/case.jpg  ",
+    });
+    expect(dto.ogImage).toBe("https://cdn.example.com/og/case.jpg");
+  });
 });
 
 describe("ProductForm — SEO meta fields (TASK-241)", () => {
@@ -514,6 +547,58 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
     await waitFor(() => expect(metaTitleField()).toHaveValue("Seeded Title"));
     expect(metaDescriptionField()).toHaveValue("Seeded description");
   });
+
+  // TASK-437 — the tag hint has one job beyond labelling the field: telling the
+  // operator that this is NOT the Google keywords tag. If that sentence ever
+  // disappears, the field starts promising ranking it does not deliver.
+  it("renders the tag and OG fields, and says the tags are not a Google meta tag", () => {
+    renderWithProviders(<ProductForm onSubmit={noop} isPending={false} />);
+
+    expect(screen.getByLabelText(dict.seoFields.keywords)).toBeInTheDocument();
+    expect(screen.getByLabelText(dict.seoFields.ogImage)).toBeInTheDocument();
+    expect(screen.getByText(dict.seoFields.keywordsHint)).toBeInTheDocument();
+    expect(screen.getByText(dict.seoFields.ogImageHint)).toBeInTheDocument();
+  });
+
+  it("EDIT: seeds the tag field as a comma-separated list", async () => {
+    renderWithProviders(
+      <ProductForm
+        defaultValues={{ ...validDefaults, keywords: "magsafe, чохол" }}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(dict.seoFields.keywords)).toHaveValue(
+        "magsafe, чохол",
+      ),
+    );
+  });
+
+  it("refuses an ogImage that is not a URL without calling onSubmit", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(
+      <ProductForm
+        defaultValues={validDefaults}
+        onSubmit={onSubmit}
+        isPending={false}
+      />,
+    );
+
+    await userEvent.type(
+      screen.getByLabelText(dict.seoFields.ogImage),
+      "og-card.jpg",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.productForm.submit }),
+    );
+
+    expect(
+      await screen.findByText(dict.seoFields.errors.ogImageUrl),
+    ).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  }, 15000);
 });
 
 describe("ProductForm — stock hint & breakdown (TASK-253 / TASK-254)", () => {

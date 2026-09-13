@@ -4,6 +4,7 @@ import { validateSync } from 'class-validator';
 import { ReturnStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma';
 import { CacheService } from '../../cache';
+import { ProductIndexer } from '../../search/product-indexer';
 import { ReturnRepository } from './return.repository';
 import { RETURN_SORT_FIELDS, ReturnListQueryDto } from './dto';
 
@@ -22,6 +23,11 @@ const cacheMock = {
   delByPrefix: jest.fn(),
 };
 
+const productIndexerMock = {
+  index: jest.fn().mockResolvedValue(undefined),
+  remove: jest.fn().mockResolvedValue(undefined),
+};
+
 const orderByOfLastFindMany = (): unknown =>
   (prismaMock.return.findMany.mock.calls.at(-1)?.[0] as { orderBy: unknown }).orderBy;
 
@@ -38,6 +44,7 @@ describe('ReturnRepository — admin queue sorting (TASK-354)', () => {
         ReturnRepository,
         { provide: PrismaService, useValue: prismaMock },
         { provide: CacheService, useValue: cacheMock },
+        { provide: ProductIndexer, useValue: productIndexerMock },
       ],
     }).compile();
 
@@ -119,6 +126,10 @@ describe('ReturnRepository — admin queue search (TASK-423)', () => {
         ReturnRepository,
         { provide: PrismaService, useValue: prismaMock },
         { provide: CacheService, useValue: cacheMock },
+        // Third constructor dependency since TASK-417 (parallel wave): the restock
+        // path re-indexes the product. This suite never reaches it, but Nest
+        // resolves the whole constructor before any test runs.
+        { provide: ProductIndexer, useValue: productIndexerMock },
       ],
     }).compile();
 

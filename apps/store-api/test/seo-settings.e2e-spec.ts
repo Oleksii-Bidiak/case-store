@@ -74,6 +74,7 @@ describe('SeoSettings (e2e)', () => {
 
   const settingsRow = {
     id: SINGLETON_ID,
+    siteName: 'MobileStore',
     defaultMetaTitle: null,
     defaultMetaDescription: 'Магазин аксесуарів',
     titleTemplate: null,
@@ -147,6 +148,9 @@ describe('SeoSettings (e2e)', () => {
       const response = await request(app.getHttpServer()).get('/api/seo-settings').expect(200);
 
       expect(response.body.data).toMatchObject({
+        // siteName is null, not absent: the storefront distinguishes "no name
+        // configured" (use SITE_NAME) from a name it should render (TASK-433).
+        siteName: null,
         defaultMetaTitle: null,
         defaultMetaDescription: null,
         titleTemplate: null,
@@ -161,6 +165,7 @@ describe('SeoSettings (e2e)', () => {
       const response = await request(app.getHttpServer()).get('/api/seo-settings').expect(200);
 
       expect(response.body.data).toMatchObject({
+        siteName: 'MobileStore',
         defaultMetaDescription: 'Магазин аксесуарів',
         noindexSite: false,
       });
@@ -209,6 +214,31 @@ describe('SeoSettings (e2e)', () => {
 
       expect(response.body.data).toMatchObject(body);
       expect(seoSettingsRepositoryMock.upsertSettings).toHaveBeenCalledWith(body);
+    });
+
+    it('stores the store name (TASK-433)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      const body = { siteName: 'Аксесуарня' };
+      seoSettingsRepositoryMock.upsertSettings.mockResolvedValue({ ...settingsRow, ...body });
+
+      const response = await request(app.getHttpServer())
+        .put('/api/admin/seo-settings')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(200);
+
+      expect(response.body.data).toMatchObject(body);
+      expect(seoSettingsRepositoryMock.upsertSettings).toHaveBeenCalledWith(body);
+    });
+
+    it('returns 400 for a store name longer than 120 characters (TASK-433)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .put('/api/admin/seo-settings')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ siteName: 'я'.repeat(121) })
+        .expect(400);
     });
 
     it('returns 400 when titleTemplate has no %s token', async () => {

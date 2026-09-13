@@ -5,7 +5,8 @@ import type { ProductControllerFindAllParams } from "@/entities/product";
 import { useDeviceControllerFindModels } from "@/entities/device";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
-import { parseSpecParam } from "../model/spec-facet";
+import { parseSpecParam, removeSpecValue } from "../model/spec-facet";
+import { clearFilterUpdates } from "../model/active-filters";
 
 interface ActiveFilterChipsProps {
   currentParams: ProductControllerFindAllParams;
@@ -87,15 +88,30 @@ export function ActiveFilterChips({
     });
   }
 
-  // Structured-spec facet chip (TASK-191). Shows the selected value; clearing
-  // removes just the specs param.
-  const specSelection = parseSpecParam(currentParams.specs);
-  if (specSelection) {
+  if (currentParams.inStock === true) {
     chips.push({
-      key: "specs",
-      label: specSelection.value,
-      clear: () => onFilterChange({ specs: undefined }),
+      key: "inStock",
+      label: dict.filters.inStockChip,
+      clear: () => onFilterChange({ inStock: undefined }),
     });
+  }
+
+  // Structured-spec facet chips (TASK-191; one chip PER SELECTED VALUE since
+  // TASK-414). With multi-select a single "specs" chip would be the only way to
+  // undo an entire many-facet selection — clicking × to drop one unwanted value
+  // would silently drop the other five. Each chip now removes just its own
+  // value and leaves the rest of the param intact.
+  for (const facet of parseSpecParam(currentParams.specs)) {
+    for (const value of facet.values) {
+      chips.push({
+        key: `specs:${facet.key}:${value}`,
+        label: value,
+        clear: () =>
+          onFilterChange({
+            specs: removeSpecValue(currentParams.specs, facet.key, value),
+          }),
+      });
+    }
   }
 
   if (chips.length === 0) {
@@ -132,17 +148,10 @@ export function ActiveFilterChips({
       ))}
       <button
         type="button"
-        onClick={() =>
-          onFilterChange({
-            categoryId: undefined,
-            brandId: undefined,
-            search: undefined,
-            minPrice: undefined,
-            maxPrice: undefined,
-            deviceModelId: undefined,
-            specs: undefined,
-          })
-        }
+        // The full set, from the one shared definition (TASK-414). On a locked
+        // category landing page `categoryId` is not in the URL query at all, so
+        // clearing it there is a harmless no-op — the route keeps the category.
+        onClick={() => onFilterChange(clearFilterUpdates())}
         className="text-[13.5px] font-semibold text-muted-foreground underline decoration-1 underline-offset-[3px] outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         {dict.filters.clearAll}

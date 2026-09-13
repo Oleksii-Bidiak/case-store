@@ -13,12 +13,14 @@ import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import {
   buildListingMetadata,
+  buildOgImages,
   resolveSeo,
+  resolveSiteName,
   toMetadataTitle,
   type ListingFilterParams,
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { SITE_URL, SITE_NAME, dict } from "@/shared/config";
+import { SITE_URL, dict } from "@/shared/config";
 
 /** Take the first value when a query param appears more than once. */
 function first(value: string | string[] | undefined): string | undefined {
@@ -48,8 +50,11 @@ async function resolveCategoryNode(
  * precedence helper so they are category-specific and SeoSettings-aware instead
  * of the generic "Товари", across all three tiers:
  *
- *   category metaTitle/metaDescription (tier 1) → SeoSettings defaults (tier 2)
- *   → category name/description (tier 3).
+ *   category metaTitle/metaDescription (tier 1) → category name/description
+ *   (tier 2) → SeoSettings defaults (tier 3).
+ *
+ * TASK-432 inverted tiers 2 and 3: the global default used to outrank real
+ * category content, so one line in /settings/seo described every listing.
  *
  * The category's own `metaTitle`/`metaDescription` admin overrides (tier 1) are
  * now surfaced on the public category tree (TASK-247), so they are passed here
@@ -68,13 +73,17 @@ export async function generateMetadata({
     categoryId ? resolveCategoryNode(categoryId) : Promise.resolve(null),
     fetchSeoSettings(),
   ]);
+  // TASK-433: the store name is admin-managed; one read per request feeds both
+  // the branded title template and every `og:site_name` below.
+  const siteName = resolveSiteName(seo);
 
-  // Canonical/robots policy (plan 143): ALL seven filter params are read here —
-  // brandId/deviceModelId/onSale included, even though the server-rendered query
-  // only uses a subset — so the noindex decision is complete, not partial. Sort
-  // params never participate (Decision 1). One helper call covers both branches:
-  // a clean ?categoryId= view canonicalizes onto its /categories/[slug] landing
-  // page (TASK-277 behaviour, now inside the helper); any filter → noindex.
+  // Canonical/robots policy (plan 143): ALL EIGHT filter params are read here —
+  // brandId/deviceModelId/onSale/inStock included, even though the
+  // server-rendered query only uses a subset — so the noindex decision is
+  // complete, not partial. Sort params never participate (Decision 1). One
+  // helper call covers both branches: a clean ?categoryId= view canonicalizes
+  // onto its /categories/[slug] landing page (TASK-277 behaviour, now inside
+  // the helper); any filter → noindex.
   const filters: ListingFilterParams = {
     search: first(resolvedParams.search)?.trim() || undefined,
     minPrice: first(resolvedParams.minPrice),
@@ -83,6 +92,7 @@ export async function generateMetadata({
     brandId: first(resolvedParams.brandId),
     deviceModelId: first(resolvedParams.deviceModelId),
     onSale: first(resolvedParams.onSale),
+    inStock: first(resolvedParams.inStock),
   };
   const listingMeta = buildListingMetadata({
     basePath: "/products",
@@ -105,26 +115,59 @@ export async function generateMetadata({
       entityDescription: node.metaDescription,
       content: { name: node.name, description: node.description },
     });
+    const title = toMetadataTitle(seoMeta, {
+      settings: seo,
+      siteName,
+      fallback: dict.meta.productsTitle,
+    });
+    const description = seoMeta.description ?? dict.meta.productsDescription;
     return {
-      title: toMetadataTitle(seoMeta, {
-        settings: seo,
-        siteName: SITE_NAME,
-        fallback: dict.meta.productsTitle,
-      }),
-      description: seoMeta.description ?? dict.meta.productsDescription,
+      title,
+      description,
       ...canonicalAndRobots,
+      // TASK-432 — the catalogue had no openGraph block at all, so every shared
+      // `/products?categoryId=…` link previewed as the site-wide root card. The
+      // canonical URL is the one the listing policy already picked (a clean
+      // category view canonicalizes onto /categories/<slug>), so the preview and
+      // the canonical never disagree.
+      openGraph: {
+        title: title.absolute,
+        description,
+        url: `${SITE_URL}${listingMeta.canonicalPath ?? "/products"}`,
+        siteName,
+        locale: "uk_UA",
+        type: "website",
+        // The category's OWN card first (TASK-437) — same chain as
+        // /categories/[slug]. Without it the two surfaces that render a category
+        // disagree about its preview image, and the admin-chosen card is dead on
+        // every filtered `/products?categoryId=…` link.
+        images: buildOgImages({
+          entityOgImage: node.ogImage,
+          defaultOgImage: seoMeta.ogImage,
+        }),
+      },
     };
   }
 
   // Unfiltered / keyword-search / unknown-category → generic listing metadata,
   // still branded through the same helper so the title carries the store name.
+  const title = toMetadataTitle(
+    { title: dict.meta.productsTitle, titleAbsolute: false },
+    { settings: seo, siteName, fallback: dict.meta.productsTitle },
+  );
   return {
-    title: toMetadataTitle(
-      { title: dict.meta.productsTitle, titleAbsolute: false },
-      { settings: seo, siteName: SITE_NAME, fallback: dict.meta.productsTitle },
-    ),
+    title,
     description: dict.meta.productsDescription,
     ...canonicalAndRobots,
+    openGraph: {
+      title: title.absolute,
+      description: dict.meta.productsDescription,
+      url: `${SITE_URL}${listingMeta.canonicalPath ?? "/products"}`,
+      siteName,
+      locale: "uk_UA",
+      type: "website",
+      images: buildOgImages({ defaultOgImage: seo?.defaultOgImage }),
+    },
   };
 }
 
@@ -229,7 +272,10 @@ export default async function ProductsPage({
         </p>
       </div>
 
-      <Suspense fallback={<ProductListSkeleton />}>
+      {/* The fallback stands in for ProductListView as a whole — chips row,
+          toolbar and the 268px filter rail included (TASK-416) — so the grid
+          does not render full-width and then shrink into a column. */}
+      <Suspense fallback={<ProductListSkeleton withSidebar />}>
         <ProductListView initialParams={initialParams} />
       </Suspense>
     </div>

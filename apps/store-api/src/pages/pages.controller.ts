@@ -8,7 +8,7 @@ import {
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { PageService } from './pages.service';
-import { PageListQueryDto } from './dto';
+import { PageListQueryDto, PageDetailQueryDto } from './dto';
 import { PageEntity } from './entities';
 
 /**
@@ -71,12 +71,20 @@ export class PageController {
   }
 
   @Get(':slug')
-  @ApiOperation({ summary: 'Get a published page by slug' })
+  @ApiOperation({
+    summary: 'Get a published page by slug, optionally required to be of a given kind',
+  })
   @ApiParam({ name: 'slug', description: 'Page URL slug' })
   @ApiResponse({ status: 200, description: 'Published page', type: PageResponseEnvelope })
-  @ApiResponse({ status: 404, description: 'Page not found or not published' })
-  async findBySlug(@Param('slug') slug: string): Promise<PageResponseEnvelope> {
-    const page = await this.pageService.findPublishedBySlug(slug);
+  @ApiResponse({
+    status: 404,
+    description: 'Page not found, not published, or not of the requested kind',
+  })
+  async findBySlug(
+    @Param('slug') slug: string,
+    @Query() query: PageDetailQueryDto,
+  ): Promise<PageResponseEnvelope> {
+    const page = await this.pageService.findPublishedBySlug(slug, query.kind);
 
     return { data: page };
   }

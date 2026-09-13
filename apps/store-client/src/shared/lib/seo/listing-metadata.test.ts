@@ -108,6 +108,24 @@ describe("buildListingMetadata — filter params force noindex,follow (cases 6�
     ).toEqual({ canonicalPath: "/products" });
   });
 
+  it('case 13a: inStock "true" → noindex,follow', () => {
+    expect(
+      buildListingMetadata({
+        basePath: "/products",
+        filters: { inStock: "true" },
+      }),
+    ).toEqual(NOINDEX_FOLLOW);
+  });
+
+  it('case 13b: inStock "false" is not a present filter → self-canonical', () => {
+    expect(
+      buildListingMetadata({
+        basePath: "/products",
+        filters: { inStock: "false" },
+      }),
+    ).toEqual({ canonicalPath: "/products" });
+  });
+
   it("case 14: empty-string filter value is treated as absent → self-canonical", () => {
     expect(
       buildListingMetadata({ basePath: "/products", filters: { search: "" } }),

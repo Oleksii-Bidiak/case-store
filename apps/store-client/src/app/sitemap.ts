@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 import * as Sentry from "@sentry/nextjs";
-import { SITE_URL } from "@/shared/config";
+import { SITE_URL, pageRouteFor } from "@/shared/config";
 import {
   fetchAllActiveCategories,
   fetchAllActiveProducts,
@@ -131,7 +131,14 @@ async function fetchCategoryRoutes(): Promise<MetadataRoute.Sitemap> {
 async function fetchBlogRoutes(now: Date): Promise<MetadataRoute.Sitemap> {
   try {
     // One page of up to 100 published posts covers the current catalogue.
-    const { posts } = await fetchPublishedPosts({ limit: 100 });
+    // `includeUnlisted: true` is the whole reason that flag exists (TASK-436): a
+    // post kept out of the feed is still a public document, and a sitemap that
+    // omitted it while its URL answered 200 would be the cloaking-shaped design
+    // the owner rejected. This is the ONE caller allowed to pass true.
+    const { posts } = await fetchPublishedPosts({
+      limit: 100,
+      includeUnlisted: true,
+    });
     return posts.map((post) => ({
       url: `${SITE_URL}/blog/${post.slug}`,
       lastModified: post.publishedAt ? new Date(post.publishedAt) : now,
@@ -144,15 +151,27 @@ async function fetchBlogRoutes(now: Date): Promise<MetadataRoute.Sitemap> {
   }
 }
 
+/**
+ * One entry per published page that HAS an address (TASK-435): LEGAL rows under
+ * `/legal/<slug>`, INFO rows under `/info/<slug>`. HUB rows are skipped — they
+ * are meta tags for a listing route, and that route is already in the static
+ * list above, so emitting them here would duplicate those six URLs.
+ */
 async function fetchPageRoutes(): Promise<MetadataRoute.Sitemap> {
   try {
     const pages = await fetchAllPublishedPages();
-    return pages.map((page) => ({
-      url: `${SITE_URL}/legal/${page.slug}`,
-      lastModified: new Date(page.updatedAt),
-      changeFrequency: "monthly",
-      priority: 0.5,
-    }));
+    return pages.flatMap((page) => {
+      const route = pageRouteFor(page.kind, page.slug);
+      if (!route) return [];
+      return [
+        {
+          url: `${SITE_URL}${route}`,
+          lastModified: new Date(page.updatedAt),
+          changeFrequency: "monthly" as const,
+          priority: 0.5,
+        },
+      ];
+    });
   } catch (err) {
     reportSourceFailure("pages", err);
     return [];

@@ -29,6 +29,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { GripVertical } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
@@ -38,6 +39,7 @@ import {
   useAdminPageControllerPublish,
   useAdminPageControllerUnpublish,
   useAdminPageControllerDelete,
+  PageEntityKind,
   type PageEntity,
 } from "@/entities/page";
 import { pagesToItems, usePageReorder } from "@/features/list-reorder";
@@ -60,14 +62,68 @@ import {
   TableRow,
   TableSearch,
   TableToolbar,
+  Tabs,
+  TabsList,
+  TabsTrigger,
   type SortableTreeRowRenderProps,
 } from "@/shared/ui";
 import { formatDate } from "@/shared/lib";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { dict } from "@/shared/config";
 import { AdminPageTableSkeleton } from "./admin-page-table-skeleton";
 
 export const PAGE_INSTRUCTIONS_LONG_ID = "page-grid-instructions-long";
 export const PAGE_INSTRUCTIONS_SHORT_ID = "page-grid-instructions-short";
+
+/**
+ * Kind tabs (TASK-435), filtering LOCALLY (TASK-428).
+ *
+ * One screen holds three different things: legal documents served at
+ * `/legal/<slug>`, help pages at `/info/<slug>`, and hub rows that are not
+ * pages at all (meta tags for a listing route). Mixed into one list they are
+ * indistinguishable, so the tabs write `?kind=` and a badge column labels each
+ * row.
+ *
+ * The filter is applied HERE rather than sent to the API, and that is the one
+ * thing that changed when this wave met the reorder grid: pages carry ONE
+ * global `sortOrder`, and `PATCH /reorder` rewrites the complete list. A
+ * server-side `?kind=` would return a slice, and a drag inside a slice cannot
+ * describe the whole order — so, exactly like the search needle beside it, a
+ * kind tab hides rows and LOCKS dragging. Same idiom as the banner,
+ * blog-category and device-brand lists.
+ *
+ * "Усі" carries the `ALL_OPTION` sentinel rather than an empty string, which is
+ * not a legal Radix `Tabs` value (the lesson TASK-405 learned on the order
+ * table): the sentinel never reaches the URL — `handleKindChange` maps it back
+ * to no `?kind=` at all.
+ */
+const ALL_OPTION = "__all__";
+
+/**
+ * Radix `Tabs.Root` value used when `?kind=` matches no tab (a hand-typed or
+ * stale value): it matches no `TabsTrigger`, so no tab renders active — the
+ * honest state rather than a lie about what is being listed.
+ */
+const CUSTOM_TAB = "__custom__";
+
+const KIND_TABS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: ALL_OPTION, label: dict.pages.tabAll },
+  { value: PageEntityKind.LEGAL, label: dict.pages.tabLegal },
+  { value: PageEntityKind.INFO, label: dict.pages.tabInfo },
+  { value: PageEntityKind.HUB, label: dict.pages.tabHub },
+];
+
+/** Plain-UA label for a row's kind. */
+const KIND_LABELS: Record<PageEntityKind, string> = {
+  [PageEntityKind.LEGAL]: dict.pages.kindLegal,
+  [PageEntityKind.INFO]: dict.pages.kindInfo,
+  [PageEntityKind.HUB]: dict.pages.kindHub,
+};
+
+/** Narrow an arbitrary `?kind=` string to the enum. */
+function isPageKind(value: string): value is PageEntityKind {
+  return Object.values(PageEntityKind).includes(value as PageEntityKind);
+}
 
 export function AdminPageTable() {
   return (
@@ -99,19 +155,41 @@ function AdminPageGrid() {
   const needle = search.trim().toLowerCase();
   const searchActive = needle.length > 0;
 
+  const searchParams = useSearchParams();
+  const updateParams = useUrlParams();
+  const kindParam = searchParams.get("kind") ?? "";
+  const kindFilter = isPageKind(kindParam) ? kindParam : undefined;
+  const kindActive = kindFilter !== undefined;
+
+  // Either filter hides rows, and either one therefore locks the drag.
+  const filterActive = searchActive || kindActive;
+
+  // The active tab is the one matching `?kind=` exactly, with an absent filter
+  // standing for the "Усі" sentinel; otherwise CUSTOM_TAB → nothing highlighted.
+  const currentTabValue = kindParam || ALL_OPTION;
+  const activeTab = KIND_TABS.some((tab) => tab.value === currentTabValue)
+    ? currentTabValue
+    : CUSTOM_TAB;
+
+  const handleKindChange = (value: string) => {
+    updateParams({ kind: value === ALL_OPTION ? undefined : value });
+  };
+
   // Title OR slug — an operator hunting for a legal page usually remembers its URL.
   const visibleIds = useMemo(() => {
-    if (!searchActive) return undefined;
+    if (!filterActive) return undefined;
     return new Set(
       pages
         .filter(
           (page) =>
-            page.title.toLowerCase().includes(needle) ||
-            page.slug.toLowerCase().includes(needle),
+            (kindFilter === undefined || page.kind === kindFilter) &&
+            (!searchActive ||
+              page.title.toLowerCase().includes(needle) ||
+              page.slug.toLowerCase().includes(needle)),
         )
         .map((page) => page.id),
     );
-  }, [needle, pages, searchActive]);
+  }, [filterActive, kindFilter, needle, pages, searchActive]);
 
   const focus = useRowFocus();
   const reorder = usePageReorder({
@@ -122,7 +200,7 @@ function AdminPageGrid() {
     reorder,
     focus,
     rowIdPrefix: "page-row-",
-    locked: searchActive,
+    locked: filterActive,
     visibleIds,
   });
 
@@ -190,6 +268,16 @@ function AdminPageGrid() {
 
   return (
     <div className="flex flex-col gap-4">
+      <Tabs value={activeTab} onValueChange={handleKindChange}>
+        <TabsList aria-label={dict.pages.tabsAria}>
+          {KIND_TABS.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value}>
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
       <TableToolbar
         className="mb-0"
         onRefresh={() => void refetch()}
@@ -218,7 +306,9 @@ function AdminPageGrid() {
       <p className="text-sm text-muted-foreground">
         {searchActive
           ? dict.reorderList.searchLockedHint
-          : dict.pages.reorderHint}
+          : kindActive
+            ? dict.pages.kindLockedHint
+            : dict.pages.reorderHint}
       </p>
 
       <div id={PAGE_INSTRUCTIONS_LONG_ID} className="sr-only">
@@ -240,7 +330,9 @@ function AdminPageGrid() {
         </div>
       ) : grid.rows.length === 0 ? (
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {dict.reorderList.emptyMatch(search.trim())}
+          {searchActive
+            ? dict.reorderList.emptyMatch(search.trim())
+            : dict.pages.emptyKind}
         </div>
       ) : (
         <div className="rounded-lg border border-border shadow-card overflow-hidden">
@@ -254,6 +346,7 @@ function AdminPageGrid() {
               <TableRow aria-rowindex={1}>
                 <TableHead>{dict.pages.colTitle}</TableHead>
                 <TableHead hideOnMobile>{dict.pages.colSlug}</TableHead>
+                <TableHead>{dict.pages.colKind}</TableHead>
                 <TableHead>{dict.pages.colStatus}</TableHead>
                 <TableHead className="text-right">
                   {dict.common.actions}
@@ -378,6 +471,9 @@ function PageRow({
       </TableCell>
       <TableCell role="gridcell" hideOnMobile className="text-muted-foreground">
         {page.slug}
+      </TableCell>
+      <TableCell role="gridcell">
+        <Badge variant="outline">{KIND_LABELS[page.kind]}</Badge>
       </TableCell>
       <TableCell role="gridcell">
         <PageStatusBadge page={page} />

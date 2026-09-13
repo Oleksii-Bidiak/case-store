@@ -1,3 +1,4 @@
+import { PageEntityKind } from "@/entities/page";
 import {
   CONTENT_MAP_ZONES,
   CONTENT_MAP_PAGE_GROUPS,
@@ -6,9 +7,13 @@ import {
 } from "./content-map-zones";
 
 describe("content-map zone config (TASK-264-A)", () => {
-  // Ten since TASK-429 added the /promo zone (AD-CNT-26).
-  it("has ten zones with unique ids", () => {
-    expect(CONTENT_MAP_ZONES).toHaveLength(10);
+  it("has twelve zones with unique ids", () => {
+    // Nine until TASK-435 split the single "pages" zone into three — legal
+    // documents, help pages, and the hub meta cards — because one Pages screen
+    // now edits three different things; twelve once TASK-429 added the /promo
+    // zone (AD-CNT-26) in the parallel wave. Neither wave's number survived the
+    // merge, which is the point of asserting it here.
+    expect(CONTENT_MAP_ZONES).toHaveLength(12);
     const ids = CONTENT_MAP_ZONES.map((z) => z.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -39,6 +44,31 @@ describe("content-map zone config (TASK-264-A)", () => {
   it("has no duplicate target hrefs (each zone links somewhere distinct)", () => {
     const hrefs = CONTENT_MAP_ZONES.map((z) => z.targetHref);
     expect(new Set(hrefs).size).toBe(hrefs.length);
+  });
+
+  // TASK-435 — each page zone must land on its own tab, or all three links go
+  // to the same unfiltered list and the map stops answering "where do I edit
+  // THIS?".
+  it("page zones deep-link with a ?kind= param matching their counted kind", () => {
+    const pageZones = CONTENT_MAP_ZONES.filter(
+      (zone) => zone.count?.kind === "pages",
+    );
+
+    expect(pageZones).toHaveLength(3);
+    for (const zone of pageZones) {
+      const count = zone.count as { kind: "pages"; pageKind: PageEntityKind };
+      expect(zone.targetHref).toBe(`/pages?kind=${count.pageKind}`);
+    }
+    // …and all three kinds are represented exactly once.
+    expect(
+      new Set(
+        pageZones.map(
+          (zone) => (zone.count as { pageKind: PageEntityKind }).pageKind,
+        ),
+      ),
+    ).toEqual(
+      new Set([PageEntityKind.LEGAL, PageEntityKind.INFO, PageEntityKind.HUB]),
+    );
   });
 
   it("banner zones deep-link with a ?placement= param matching their count placement", () => {

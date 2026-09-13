@@ -21,6 +21,16 @@ import { dict } from "@/shared/config";
 import { resetReorderLock } from "@/shared/lib/reorder-lock";
 import { AdminPageTable } from "./admin-page-table";
 
+// jsdom mounts no app router, and since the wave-176 merge this grid reads
+// `?kind=` and writes it back, so both ends need a stub.
+const mockReplace = jest.fn();
+let mockSearchParams = new URLSearchParams("");
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  usePathname: () => "/pages",
+  useSearchParams: () => mockSearchParams,
+}));
+
 /* ─────────────────────────────── fixtures ──────────────────────────────── */
 
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"; // Privacy Policy (published)
@@ -37,6 +47,12 @@ const SLUGS: Record<string, string> = {
   [B]: "faq",
   [C]: "delivery",
 };
+/** TASK-435 kinds. HUB is deliberately unused — an empty tab is a case. */
+const KINDS: Record<string, "LEGAL" | "INFO" | "HUB"> = {
+  [A]: "LEGAL",
+  [B]: "LEGAL",
+  [C]: "INFO",
+};
 
 const DEFAULT_ORDER = [A, B, C];
 
@@ -45,6 +61,7 @@ function listResponse(order: string[] = DEFAULT_ORDER) {
     data: order.map((id, i) => ({
       id,
       slug: SLUGS[id],
+      kind: KINDS[id],
       title: TITLES[id],
       content: "<p>Body</p>",
       excerpt: null,
@@ -89,6 +106,8 @@ beforeEach(() => {
   resetReorderLock();
   bodies = [];
   listCalls = 0;
+  mockReplace.mockClear();
+  mockSearchParams = new URLSearchParams("");
 });
 
 /* ─────────────────────────────── DOM helpers ───────────────────────────── */
@@ -465,5 +484,103 @@ describe("AdminPageTable — the payload can never be partial", () => {
       await screen.findByText(dict.reorderList.emptyMatch("невідоме")),
     ).toBeInTheDocument();
     expect(screen.queryByText(dict.pages.empty)).not.toBeInTheDocument();
+  });
+});
+
+/* ───────────────────────── kind tabs (TASK-435 × TASK-428) ──────────────── */
+
+/**
+ * The tabs arrived on develop filtering SERVER-side, against a paginated list.
+ * This grid is unpaginated because reordering rewrites one global order, so the
+ * merge made the tabs a LOCAL filter that locks the drag — the same bargain the
+ * search box beside them already made. These tests pin that bargain: the wave
+ * that wrote the tabs and the wave that wrote the grid could each pass their own
+ * suite while together producing a list that reorders itself wrongly.
+ */
+describe("AdminPageTable — kind tabs", () => {
+  it("labels every row with its kind", async () => {
+    mockReorder();
+    await renderGrid();
+
+    expect(
+      within(rowEl(A)).getByText(dict.pages.kindLegal),
+    ).toBeInTheDocument();
+    expect(within(rowEl(C)).getByText(dict.pages.kindInfo)).toBeInTheDocument();
+  });
+
+  it("writes ?kind= to the URL when a tab is clicked", async () => {
+    mockReorder();
+    await renderGrid();
+
+    await userEvent.click(
+      screen.getByRole("tab", { name: dict.pages.tabInfo }),
+    );
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+    expect(mockReplace.mock.calls.at(-1)?.[0]).toContain("kind=INFO");
+  });
+
+  it("clears ?kind= again on the «Усі» tab", async () => {
+    mockSearchParams = new URLSearchParams("kind=INFO");
+    mockReorder();
+    renderWithProviders(<AdminPageTable />);
+    await waitFor(() => expect(rowIds()).toEqual([C]));
+
+    await userEvent.click(screen.getByRole("tab", { name: dict.pages.tabAll }));
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+    expect(mockReplace.mock.calls.at(-1)?.[0]).not.toContain("kind=");
+  });
+
+  it("filters the rows it already has instead of re-asking the server", async () => {
+    // The server round-trip is what would break the drag: a kind slice cannot
+    // describe the one global order that PATCH /reorder rewrites.
+    mockSearchParams = new URLSearchParams("kind=INFO");
+    mockReorder();
+    renderWithProviders(<AdminPageTable />);
+
+    await waitFor(() => expect(rowIds()).toEqual([C]));
+    expect(listCalls).toBe(1);
+  });
+
+  it("locks reordering while a kind tab is active, and says why", async () => {
+    mockSearchParams = new URLSearchParams("kind=LEGAL");
+    mockReorder();
+    renderWithProviders(<AdminPageTable />);
+    await waitFor(() => expect(rowIds()).toEqual([A, B]));
+
+    expect(screen.getByText(dict.pages.kindLockedHint)).toBeInTheDocument();
+
+    // The grid is locked, so a keyboard pick-up must move nothing.
+    keyboardMoveUp(B);
+    expect(rowIds()).toEqual([A, B]);
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("says WHICH kind is empty rather than blaming a search nobody typed", async () => {
+    mockSearchParams = new URLSearchParams("kind=HUB");
+    mockReorder();
+    renderWithProviders(<AdminPageTable />);
+
+    expect(await screen.findByText(dict.pages.emptyKind)).toBeInTheDocument();
+  });
+
+  it("highlights no tab for a bogus ?kind= and lists everything", async () => {
+    mockSearchParams = new URLSearchParams("kind=NOT_A_KIND");
+    mockReorder();
+    renderWithProviders(<AdminPageTable />);
+    await waitFor(() => expect(rowIds()).toEqual([A, B, C]));
+
+    for (const label of [
+      dict.pages.tabAll,
+      dict.pages.tabLegal,
+      dict.pages.tabInfo,
+      dict.pages.tabHub,
+    ]) {
+      expect(screen.getByRole("tab", { name: label })).toHaveAttribute(
+        "aria-selected",
+        "false",
+      );
+    }
   });
 });

@@ -1,5 +1,10 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
-import { Prisma, PublishStatus } from '@prisma/client';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
+import { PageKind, Prisma, PublishStatus } from '@prisma/client';
 import {
   DEFAULT_ADMIN_PAGE_SIZE,
   PageRepository,
@@ -20,6 +25,13 @@ import { generateSlug } from '../common/utils';
 import { sanitizeRichText } from '../common/sanitize';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
 import { reorderErrorToHttp } from '../common/reorder';
+import { HUB_SLUGS, PAGE_ROOT_PATHS, hubRouteForSlug, revalidatePathsForPage } from './hub-routes';
+
+/** A page identified well enough to purge its storefront routes. */
+interface PageRef {
+  slug: string;
+  kind: PageKind;
+}
 
 /**
  * Pagination metadata returned alongside paginated results.
@@ -53,6 +65,7 @@ export class PageService {
     const params: FindAllParams = {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
+      kind: query.kind,
     };
 
     const { pages, total } = await this.pageRepository.findAll(params);
@@ -65,10 +78,13 @@ export class PageService {
 
   /**
    * Get a single published page by slug (public).
-   * Throws NotFoundException when the page is missing or unpublished.
+   * Throws NotFoundException when the page is missing, unpublished, or of a
+   * different kind than the caller asked for — the storefront passes the kind
+   * its route serves, so a help page can never answer a `/legal/<slug>` request
+   * (TASK-435). A HUB row is never served here at all.
    */
-  async findPublishedBySlug(slug: string): Promise<PageEntity> {
-    const page = await this.pageRepository.findBySlug(slug);
+  async findPublishedBySlug(slug: string, kind?: PageKind): Promise<PageEntity> {
+    const page = await this.pageRepository.findBySlug(slug, kind);
 
     if (!page) {
       throw new NotFoundException('Page not found');
@@ -87,6 +103,7 @@ export class PageService {
       limit: query.limit,
       status: query.status,
       search: query.search,
+      kind: query.kind,
     };
 
     const { pages, total } = await this.pageRepository.findAllAdmin(params);
@@ -116,6 +133,8 @@ export class PageService {
    */
   async create(dto: CreatePageDto): Promise<PageEntity> {
     const slug = dto.slug ?? generateSlug(dto.title);
+    const kind = dto.kind ?? PageKind.LEGAL;
+    this.assertHubSlug(kind, slug);
 
     const existing = await this.pageRepository.findBySlugAny(slug);
     if (existing) {
@@ -132,11 +151,14 @@ export class PageService {
 
     const input: CreatePageInput = {
       slug,
+      kind,
       title: dto.title,
       content: sanitizeRichText(dto.content),
       excerpt: dto.excerpt,
       metaTitle: dto.metaTitle,
       metaDescription: dto.metaDescription,
+      keywords: dto.keywords,
+      ogImage: dto.ogImage,
       status: publishState.status,
       publishedAt: publishState.publishedAt,
       scheduledAt: publishState.scheduledAt,
@@ -147,7 +169,7 @@ export class PageService {
       const page = await this.pageRepository.create(input);
       const entity = PageEntity.fromPrisma(page);
       if (entity.status === PublishStatus.PUBLISHED) {
-        await this.notifyRevalidation(entity.slug);
+        await this.notifyRevalidation(entity);
       }
       return entity;
     } catch (error) {
@@ -171,6 +193,13 @@ export class PageService {
       }
     }
 
+    // The kind and slug this row will HAVE after the write — either may be
+    // absent from a partial update, and a hub is only valid as a pairing of the
+    // two (kind HUB + one of the six hub slugs).
+    const nextKind = dto.kind ?? page.kind;
+    const nextSlug = dto.slug ?? page.slug;
+    this.assertHubSlug(nextKind, nextSlug);
+
     const wasPublished = page.status === PublishStatus.PUBLISHED;
 
     // Record a 301 redirect only when the page was publicly visible BEFORE
@@ -184,6 +213,7 @@ export class PageService {
 
     const input: UpdatePageInput = {
       slug: dto.slug,
+      kind: dto.kind,
       title: dto.title,
       // Only sanitize when content is actually being written; leave `undefined`
       // untouched so a partial update never blanks the stored body.
@@ -191,6 +221,8 @@ export class PageService {
       excerpt: dto.excerpt,
       metaTitle: dto.metaTitle,
       metaDescription: dto.metaDescription,
+      keywords: dto.keywords,
+      ogImage: dto.ogImage,
       sortOrder: dto.sortOrder,
     };
 
@@ -214,12 +246,16 @@ export class PageService {
       const updated = await this.pageRepository.update(id, input, slugRename);
       const entity = PageEntity.fromPrisma(updated);
       // Revalidate whenever public visibility could have changed: the page is
-      // live now, or it was live before (e.g. just unpublished). If the slug
-      // was renamed, purge the OLD slug too so its stale route is dropped and
-      // the fresh 301 is served immediately (mirrors BlogService, TASK-285-E).
+      // live now, or it was live before (e.g. just unpublished). The page's
+      // address BEFORE the write is purged alongside the one after it, so a slug
+      // rename drops the stale route (and the fresh 301 is served at once —
+      // mirrors BlogService, TASK-285-E) and a KIND change purges the surface the
+      // page just left as well as the one it joined.
       if (wasPublished || entity.status === PublishStatus.PUBLISHED) {
-        const slugs = isSlugRename ? [page.slug, entity.slug] : [entity.slug];
-        await this.notifyRevalidationForSlugs(slugs);
+        await this.notifyRevalidation(
+          { slug: page.slug, kind: page.kind },
+          { slug: entity.slug, kind: entity.kind },
+        );
       }
       return entity;
     } catch (error) {
@@ -234,7 +270,7 @@ export class PageService {
     await this.ensureExists(id);
     const page = await this.pageRepository.publish(id);
     const entity = PageEntity.fromPrisma(page);
-    await this.notifyRevalidation(entity.slug);
+    await this.notifyRevalidation(entity);
     return entity;
   }
 
@@ -246,7 +282,7 @@ export class PageService {
     const page = await this.pageRepository.unpublish(id);
     const entity = PageEntity.fromPrisma(page);
     // Purge the now-stale published copy from the storefront cache.
-    await this.notifyRevalidation(entity.slug);
+    await this.notifyRevalidation(entity);
     return entity;
   }
 
@@ -277,7 +313,17 @@ export class PageService {
       throw reorderErrorToHttp(error);
     }
 
-    await this.revalidation.revalidate({ tags: ['pages'], paths: ['/legal'] });
+    // Coarse on purpose, and coarser than it was: reordering moves rows inside
+    // whichever hub lists them, and since TASK-435 that is no longer only
+    // `/legal` — an INFO page reordered here surfaces on `/info`. The wave that
+    // wrote this line and the wave that added `kind` landed separately, so
+    // purging `/legal` alone would have left `/info` serving yesterday's order
+    // with every container reporting healthy. Same list the scheduler purges for
+    // the same reason: the new order is a property of the lists, not of one row.
+    await this.revalidation.revalidate({
+      tags: ['pages'],
+      paths: [...PAGE_ROOT_PATHS],
+    });
 
     // Shape parity with `findAllAdmin` is load-bearing: the admin panel writes this
     // response straight into the list query's cache (`useReorderLifecycle` →
@@ -340,31 +386,45 @@ export class PageService {
     return value ? new Date(value) : null;
   }
 
-  /** Cache-revalidation target for a single page (hub + the page's own route). */
-  private revalidateTargetForSlug(slug: string): RevalidateTarget {
-    return {
-      tags: ['pages', `page:${slug}`],
-      paths: ['/legal', `/legal/${slug}`],
-    };
-  }
-
-  /** Best-effort storefront revalidation after an admin write. Never throws. */
-  private async notifyRevalidation(slug: string): Promise<void> {
-    await this.revalidation.revalidate(this.revalidateTargetForSlug(slug));
+  /**
+   * Reject a HUB row whose slug names no hub route (TASK-435).
+   *
+   * A HUB row's slug is not an address, it is the NAME of the storefront route
+   * whose meta tags it carries. `kind: HUB, slug: "pro-nas"` would therefore be a
+   * ghost: editable in the panel, attached to nothing, rendered nowhere — and
+   * silently so, which is exactly the kind of defect nobody notices for months.
+   * Only the two ways of creating one (create / update) can produce it, so both
+   * pass through here.
+   */
+  private assertHubSlug(kind: PageKind, slug: string): void {
+    if (kind === PageKind.HUB && !hubRouteForSlug(slug)) {
+      throw new BadRequestException(
+        `A HUB page describes an existing storefront hub, so its slug must be one of: ${HUB_SLUGS.join(', ')}`,
+      );
+    }
   }
 
   /**
-   * Revalidate several slugs in one call (used on slug rename to purge both
-   * the old and the new route — mirrors BlogService's pattern).
+   * Cache-revalidation target for one or more pages, by kind:
+   * LEGAL → `/legal` + `/legal/<slug>`, INFO → `/info` + `/info/<slug>`,
+   * HUB → the one hub route the row describes. Several refs merge into a single
+   * purge (a rename or a kind change names the page twice — before and after).
    */
-  private async notifyRevalidationForSlugs(slugs: string[]): Promise<void> {
+  private revalidateTargetForPages(refs: PageRef[]): RevalidateTarget {
     const tags = new Set<string>(['pages']);
-    const paths = new Set<string>(['/legal']);
-    for (const slug of slugs) {
-      tags.add(`page:${slug}`);
-      paths.add(`/legal/${slug}`);
+    const paths = new Set<string>();
+    for (const ref of refs) {
+      tags.add(`page:${ref.slug}`);
+      for (const path of revalidatePathsForPage(ref.kind, ref.slug)) {
+        paths.add(path);
+      }
     }
-    await this.revalidation.revalidate({ tags: [...tags], paths: [...paths] });
+    return { tags: [...tags], paths: [...paths] };
+  }
+
+  /** Best-effort storefront revalidation after an admin write. Never throws. */
+  private async notifyRevalidation(...refs: PageRef[]): Promise<void> {
+    await this.revalidation.revalidate(this.revalidateTargetForPages(refs));
   }
 
   /**

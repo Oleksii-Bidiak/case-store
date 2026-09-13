@@ -8,6 +8,7 @@ import {
   IsUrl,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsKeywordsField, IsOgImageField } from '../../common/validators';
 
 /**
  * DTO for creating a new category.
@@ -108,4 +109,10 @@ export class CreateCategoryDto {
   @IsString()
   @MaxLength(500, { message: 'Meta description must be at most 500 characters' })
   metaDescription?: string;
+
+  @IsKeywordsField()
+  keywords?: string[];
+
+  @IsOgImageField()
+  ogImage?: string | null;
 }

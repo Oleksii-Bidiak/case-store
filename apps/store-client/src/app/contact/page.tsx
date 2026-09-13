@@ -3,13 +3,18 @@ import { ContactView } from "@/widgets/contact";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
+import { buildHubMetadata } from "@/shared/lib/seo";
 import { SITE_URL, dict } from "@/shared/config";
 
-export const metadata: Metadata = {
-  title: dict.meta.contactTitle,
-  description: dict.meta.contactDescription,
-  alternates: { canonical: `${SITE_URL}/contact` },
-};
+// TASK-435 — admin-managed via the `contact` HUB page row; dictionary fallback.
+export function generateMetadata(): Promise<Metadata> {
+  return buildHubMetadata({
+    slug: "contact",
+    canonical: `${SITE_URL}/contact`,
+    fallbackTitle: dict.meta.contactTitle,
+    fallbackDescription: dict.meta.contactDescription,
+  });
+}
 
 export default async function ContactPage() {
   // Admin-managed contact details (TASK-154) through the shared, `site-contact`

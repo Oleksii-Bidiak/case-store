@@ -18,7 +18,7 @@ import {
   resolveSeoPreviewDescription,
   resolveEffectiveTitleTemplate,
 } from "@/shared/lib/seo";
-import { dict } from "@/shared/config";
+import { dict, STOREFRONT_HOST } from "@/shared/config";
 import {
   getSeoSettingsControllerGetSettingsQueryKey,
   useAdminSeoSettingsControllerUpdate,
@@ -80,12 +80,17 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
     name: "defaultMetaDescription",
   });
   const titleTemplateValue = useWatch({ control, name: "titleTemplate" });
+  // TASK-433: the brand half of the `%s | …` template now follows the store name
+  // being typed above, so the preview shows the rename as it happens. `dict.brand`
+  // stays as the fallback for a blank field — it is the same constant the
+  // storefront falls back to (`SITE_NAME`) when `SeoSettings.siteName` is null.
+  const siteNameValue = useWatch({ control, name: "siteName" });
   const previewTitle = resolveSeoPreviewTitle({
     entityTitle: defaultMetaTitleValue,
     contentName: dict.seoSnippetPreview.samplePageName,
     titleTemplate: resolveEffectiveTitleTemplate(
       titleTemplateValue,
-      dict.brand,
+      (siteNameValue ?? "").trim() || dict.brand,
     ),
   });
   const previewDescription = resolveSeoPreviewDescription({
@@ -132,6 +137,27 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
       className="flex max-w-2xl flex-col gap-5"
       noValidate
     >
+      {/* Store name (TASK-433) — deliberately the FIRST field: it is the name
+          every title and template below is built from, and it is the field the
+          owner comes to this page looking for. The logo caveat is its own
+          paragraph rather than a clause in the hint, because an owner who
+          renames the shop here WILL expect the header lettering to follow. */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="seo-site-name">{f.siteName}</Label>
+        <p className="text-sm text-muted-foreground">{f.siteNameHint}</p>
+        <Input
+          id="seo-site-name"
+          placeholder={f.siteNamePlaceholder(dict.brand)}
+          {...register("siteName")}
+        />
+        <p className="text-sm text-muted-foreground">{f.siteNameLogoNote}</p>
+        {errors.siteName && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.siteName.message}
+          </p>
+        )}
+      </div>
+
       {/* Default meta title */}
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="seo-default-title">{f.defaultMetaTitle}</Label>
@@ -178,7 +204,7 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
           titleTier={previewTitle.tier}
           description={previewDescription.text || undefined}
           descriptionTier={previewDescription.tier}
-          url={`${dict.seoSnippetPreview.urlHost} › …`}
+          url={`${STOREFRONT_HOST} › …`}
           rawTitleLength={(defaultMetaTitleValue ?? "").trim().length}
           rawDescriptionLength={
             (defaultMetaDescriptionValue ?? "").trim().length
@@ -212,7 +238,7 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
         <Input
           id="seo-og-image"
           type="url"
-          placeholder={f.defaultOgImagePlaceholder}
+          placeholder={f.defaultOgImagePlaceholder(STOREFRONT_HOST)}
           {...register("defaultOgImage")}
         />
         {errors.defaultOgImage && (

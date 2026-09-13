@@ -1,7 +1,10 @@
-import { IsString, IsOptional, IsInt, MaxLength, Min, Matches } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsEnum, MaxLength, Min, Matches } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { PageKind } from '@prisma/client';
+import { IsKeywordsField, IsOgImageField } from '../../common/validators';
 import { PublishFieldsDto } from '../../publishing';
+import { HUB_SLUGS } from '../hub-routes';
 
 /**
  * DTO for updating a static page (admin-only).
@@ -36,6 +39,20 @@ export class UpdatePageDto extends PublishFieldsDto {
   slug?: string;
 
   @ApiProperty({
+    description:
+      'What this row is — LEGAL: a document at /legal/<slug>; INFO: a help page at ' +
+      `/info/<slug>; HUB: meta tags for an existing hub route (slug must be one of: ${HUB_SLUGS.join(', ')})`,
+    enum: PageKind,
+    example: PageKind.INFO,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(PageKind, {
+    message: `kind must be one of: ${Object.values(PageKind).join(', ')}`,
+  })
+  kind?: PageKind;
+
+  @ApiProperty({
     description: 'Short summary',
     example: 'How we handle your data.',
     required: false,
@@ -64,6 +81,12 @@ export class UpdatePageDto extends PublishFieldsDto {
   @IsString()
   @MaxLength(500, { message: 'Meta description must be at most 500 characters' })
   metaDescription?: string;
+
+  @IsKeywordsField()
+  keywords?: string[];
+
+  @IsOgImageField()
+  ogImage?: string | null;
 
   @ApiProperty({
     description: 'Sort order for display (lower values appear first)',

@@ -17,6 +17,8 @@ export const SINGLETON_ID = '00000000-0000-0000-0000-000000000002';
  * All are optional — only provided fields are updated.
  */
 export interface UpsertSeoSettingsInput {
+  /** Store display name (TASK-433); null/absent → the storefront's SITE_NAME fallback. */
+  siteName?: string | null;
   defaultMetaTitle?: string | null;
   defaultMetaDescription?: string | null;
   titleTemplate?: string | null;

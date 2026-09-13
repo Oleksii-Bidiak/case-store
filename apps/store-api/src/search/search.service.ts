@@ -6,6 +6,7 @@ import { PublicProductEntity } from '../product/entities';
 import { MeiliClient, ProductSearchDocument, IndexSettings } from './meili.client';
 import { UA_EN_SYNONYMS, extractSearchSynonymTerms } from './search-synonyms';
 import { SearchSuggestionEntity } from './entities';
+import type { SearchSort } from './dto';
 
 /** Default page size for the `/search` results grid. */
 export const DEFAULT_SEARCH_LIMIT = 20;
@@ -30,7 +31,18 @@ const REINDEX_BATCH = 100;
  */
 export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
   searchableAttributes: ['name', 'description', 'categoryName', 'brandName', 'searchTerms'],
-  filterableAttributes: ['isActive', 'categoryIds', 'brandId', 'deviceModelIds'],
+  // `price` and `inStock` joined the facets in TASK-417: the results page now
+  // carries the catalogue's filter panel, and a price or availability filter has
+  // to narrow the ENGINE's answer — filtering the hydrated page afterwards would
+  // shrink the page instead of the result set and leave `total` lying.
+  filterableAttributes: [
+    'isActive',
+    'categoryIds',
+    'brandId',
+    'deviceModelIds',
+    'price',
+    'inStock',
+  ],
   sortableAttributes: ['price', 'createdAt'],
   rankingRules: ['words', 'typo', 'proximity', 'attribute', 'sort', 'exactness'],
   typoTolerance: {
@@ -38,6 +50,60 @@ export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
     minWordSizeForTypos: { oneTypo: 4, twoTypos: 8 },
   },
   synonyms: UA_EN_SYNONYMS,
+};
+
+/**
+ * Facets + ordering the results page may narrow by (TASK-417). Mirrors the
+ * catalogue filter panel, which `/search` now renders in its own sidebar.
+ */
+export interface SearchFilters {
+  categoryId?: string;
+  brandId?: string;
+  deviceModelId?: string;
+  inStock?: boolean;
+  minPrice?: number;
+  maxPrice?: number;
+  sort?: SearchSort;
+}
+
+/** True when at least one facet is applied (ordering alone does not count). */
+function hasFacets(filters: SearchFilters): boolean {
+  return (
+    filters.categoryId != null ||
+    filters.brandId != null ||
+    filters.deviceModelId != null ||
+    filters.inStock === true ||
+    filters.minPrice != null ||
+    filters.maxPrice != null
+  );
+}
+
+/**
+ * A query shaped like an article number: one unbroken token with at least one
+ * digit. Used only to decide whether the exact-SKU lookup is worth a round trip
+ * — never to reject a query, so a false negative costs nothing but the usual
+ * full-text path.
+ */
+const SKU_SHAPED = /^[\p{L}\p{N}][\p{L}\p{N}._/-]{2,63}$/u;
+
+function looksLikeSku(query: string): boolean {
+  return SKU_SHAPED.test(query) && /\d/.test(query);
+}
+
+/** Postgres sort columns per {@link SearchSort} (the fallback has no relevance). */
+const POSTGRES_SORT: Record<SearchSort, { sortBy: string; sortOrder: 'asc' | 'desc' }> = {
+  relevance: { sortBy: 'createdAt', sortOrder: 'desc' },
+  price_asc: { sortBy: 'price', sortOrder: 'asc' },
+  price_desc: { sortBy: 'price', sortOrder: 'desc' },
+  newest: { sortBy: 'createdAt', sortOrder: 'desc' },
+};
+
+/** Meilisearch `sort` expressions per {@link SearchSort}; `relevance` sends none. */
+const MEILI_SORT: Record<SearchSort, string[] | undefined> = {
+  relevance: undefined,
+  price_asc: ['price:asc'],
+  price_desc: ['price:desc'],
+  newest: ['createdAt:desc'],
 };
 
 /** Pagination metadata returned with a search result page. */
@@ -199,16 +265,25 @@ export class SearchService implements OnModuleInit {
    * as ids which are hydrated into full product cards; on any miss it falls back
    * to the Postgres `contains` scan.
    */
-  async search(rawQuery: string, page = 1, limit = DEFAULT_SEARCH_LIMIT): Promise<SearchResults> {
+  async search(
+    rawQuery: string,
+    page = 1,
+    limit = DEFAULT_SEARCH_LIMIT,
+    filters: SearchFilters = {},
+  ): Promise<SearchResults> {
     const query = (rawQuery ?? '').trim();
     const pageNum = page > 0 ? page : 1;
     const pageSize = limit > 0 ? limit : DEFAULT_SEARCH_LIMIT;
+
+    const exact = await this.findByExactSku(query, pageNum, pageSize, filters);
+    if (exact) return exact;
 
     if (this.meili.isConfigured()) {
       const result = await this.meili.search(query, {
         limit: pageSize,
         offset: (pageNum - 1) * pageSize,
-        filter: ['isActive = true'],
+        filter: this.buildMeiliFilter(filters),
+        sort: MEILI_SORT[filters.sort ?? 'relevance'],
       });
       // An EMPTY hit list falls through to Postgres, exactly like an error
       // (TASK-376). Zero hits is a perfectly valid Meilisearch response, so the
@@ -225,11 +300,74 @@ export class SearchService implements OnModuleInit {
           .map((id) => byId.get(id))
           .filter((p): p is NonNullable<typeof p> => p != null)
           .map((p) => PublicProductEntity.fromPrisma(p));
-        return { data, meta: this.buildMeta(result.estimatedTotalHits, pageNum, pageSize) };
+        // Nothing survived the visibility-gated re-read (TASK-297 drops products
+        // whose category was withdrawn). Answering "nothing found" over a live
+        // catalogue would be a lie told by a stale index, so let Postgres have
+        // the query — the same rule the blog path applies.
+        if (data.length > 0) {
+          return { data, meta: this.buildMeta(result.estimatedTotalHits, pageNum, pageSize) };
+        }
       }
     }
 
-    return this.postgresSearch(query, pageNum, pageSize);
+    return this.postgresSearch(query, pageNum, pageSize, filters);
+  }
+
+  /**
+   * Exact article-number lookup (SF-SRCH-09). An SKU is a CODE, not a phrase:
+   * «RN13PRO-BK» has no business being typo-corrected, stemmed or ranked, and
+   * the shopper who typed it wants the one position it names — which is why this
+   * runs BEFORE the full-text path rather than as a fallback behind it.
+   *
+   * Deliberately narrow:
+   *  - only for a query shaped like a code, so an ordinary phrase costs no extra
+   *    round trip;
+   *  - only on page 1 with NO facet applied — an SKU already identifies a single
+   *    product, so paging or narrowing it further is meaningless and would make
+   *    a filtered result set contradict its own filters;
+   *  - the hit is re-read through `findByIdsForCards`, which gates on
+   *    `isActive` + an active category, so a withdrawn product never surfaces
+   *    through its code.
+   *
+   * The index itself still carries no `sku` (`ProductIndexSource` does not
+   * expose one — TASK-522), so this is also the only path that can answer such a
+   * query while the engine is up.
+   */
+  private async findByExactSku(
+    query: string,
+    page: number,
+    limit: number,
+    filters: SearchFilters,
+  ): Promise<SearchResults | null> {
+    if (page !== 1 || !looksLikeSku(query) || hasFacets(filters)) return null;
+
+    const match = await this.productRepository.findBySku(query);
+    if (!match) return null;
+
+    const [card] = await this.productRepository.findByIdsForCards([match.id]);
+    if (!card) return null;
+
+    return {
+      data: [PublicProductEntity.fromPrisma(card)],
+      meta: { total: 1, page: 1, limit, totalPages: 1 },
+    };
+  }
+
+  /**
+   * Translate the requested facets into a Meilisearch filter expression. The
+   * category rolls UP (`categoryIds` holds the product's own category plus every
+   * ancestor, TASK-236), so filtering by a parent matches its subcategories
+   * without expanding anything here.
+   */
+  private buildMeiliFilter(filters: SearchFilters): string[] {
+    const expressions = ['isActive = true'];
+    if (filters.categoryId) expressions.push(`categoryIds = "${filters.categoryId}"`);
+    if (filters.brandId) expressions.push(`brandId = "${filters.brandId}"`);
+    if (filters.deviceModelId) expressions.push(`deviceModelIds = "${filters.deviceModelId}"`);
+    if (filters.inStock === true) expressions.push('inStock = true');
+    if (filters.minPrice != null) expressions.push(`price >= ${filters.minPrice}`);
+    if (filters.maxPrice != null) expressions.push(`price <= ${filters.maxPrice}`);
+    return expressions;
   }
 
   /**
@@ -300,8 +438,25 @@ export class SearchService implements OnModuleInit {
     }));
   }
 
-  /** Postgres `contains` fallback for the results page (current behaviour). */
-  private async postgresSearch(query: string, page: number, limit: number): Promise<SearchResults> {
+  /**
+   * Postgres `contains` fallback for the results page. Applies the SAME facets
+   * as the engine path (TASK-417) — a filtered search that quietly widened when
+   * Meilisearch went down would be worse than an outright error, because nothing
+   * on screen would say the filter had stopped applying.
+   */
+  private async postgresSearch(
+    query: string,
+    page: number,
+    limit: number,
+    filters: SearchFilters = {},
+  ): Promise<SearchResults> {
+    // The subtree rollup lives in the service, not the repository (TASK-236):
+    // `findAll` takes an already-expanded id set.
+    const categoryIds = filters.categoryId
+      ? await this.categoryRepository.findSubtreeIds(filters.categoryId)
+      : undefined;
+    const { sortBy, sortOrder } = POSTGRES_SORT[filters.sort ?? 'relevance'];
+
     const { products, total } = await this.productRepository.findAll({
       page,
       limit,
@@ -309,8 +464,14 @@ export class SearchService implements OnModuleInit {
       // Same on-sale rule as the index (TASK-297) — see `suggest`.
       categoryActiveOnly: true,
       search: query || undefined,
-      sortBy: 'createdAt',
-      sortOrder: 'desc',
+      categoryIds,
+      brandId: filters.brandId,
+      deviceModelId: filters.deviceModelId,
+      inStock: filters.inStock === true ? true : undefined,
+      minPrice: filters.minPrice,
+      maxPrice: filters.maxPrice,
+      sortBy,
+      sortOrder,
     });
     return {
       data: products.map((p) => PublicProductEntity.fromPrisma(p)),

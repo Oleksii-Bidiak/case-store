@@ -15,6 +15,7 @@ import {
   productDetailSlugKey,
   PRODUCT_LIST_PREFIX,
 } from '../cache';
+import { ProductIndexer } from '../search/product-indexer';
 import type { CreateOrderParams } from './order.types';
 import type { CartWithItems } from '../cart/cart.repository';
 
@@ -25,6 +26,13 @@ const cacheMock = {
   set: jest.fn().mockResolvedValue(undefined),
   del: jest.fn().mockResolvedValue(undefined),
   delByPrefix: jest.fn().mockResolvedValue(undefined),
+};
+
+// ─── ProductIndexer mock (TASK-417: stock movement must refresh `inStock`) ────
+
+const productIndexerMock = {
+  index: jest.fn().mockResolvedValue(undefined),
+  remove: jest.fn().mockResolvedValue(undefined),
 };
 
 // ─── Prisma mock ────────────────────────────────────────────────────────────
@@ -126,9 +134,11 @@ describe('OrderRepository', () => {
     cacheMock.set.mockResolvedValue(undefined);
     cacheMock.del.mockResolvedValue(undefined);
     cacheMock.delByPrefix.mockResolvedValue(undefined);
+    productIndexerMock.index.mockResolvedValue(undefined);
     repository = new OrderRepository(
       prismaMock as unknown as PrismaService,
       cacheMock as unknown as CacheService,
+      productIndexerMock as unknown as ProductIndexer,
     );
   });
 
@@ -603,6 +613,29 @@ describe('OrderRepository', () => {
       expect(cacheMock.del).toHaveBeenCalledWith(productDetailSlugKey('iphone-15-pro-case'));
       expect(cacheMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
     });
+
+    // The search index is the third read model derived from `stock`. Since
+    // TASK-417 `inStock` is a Meilisearch facet, so a stock movement that skips
+    // the reindex leaves `/search?inStock=true` disagreeing with the PDP about
+    // the same product.
+    it('refreshes the search document of every product whose stock moved', async () => {
+      const tx = seedTx();
+      tx.product.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID, null);
+
+      expect(productIndexerMock.index).toHaveBeenCalledWith('product-uuid-1');
+    });
+
+    it('does not fail the write when the search engine is unreachable', async () => {
+      const tx = seedTx();
+      tx.product.updateMany.mockResolvedValue({ count: 1 });
+      productIndexerMock.index.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+
+      await expect(
+        repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID, null),
+      ).resolves.toBeDefined();
+    });
   });
 
   // ─── updateStatus — conditional product-cache eviction (TASK-254) ───────────
@@ -1015,6 +1048,10 @@ describe('OrderRepository', () => {
       expect(cacheMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
       expect(cacheMock.del).toHaveBeenCalledWith(productDetailSlugKey('screen-protector'));
       expect(cacheMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-2'));
+      // The sale case: without this the last unit of a product stays listed
+      // under «В наявності» on `/search` while the PDP calls it sold out.
+      expect(productIndexerMock.index).toHaveBeenCalledWith('product-uuid-1');
+      expect(productIndexerMock.index).toHaveBeenCalledWith('product-uuid-2');
     });
 
     it('cancelAndRestock evicts list pages and per-product detail caches after commit', async () => {
@@ -1039,6 +1076,9 @@ describe('OrderRepository', () => {
       expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
       expect(cacheMock.del).toHaveBeenCalledWith(productDetailSlugKey('iphone-15-pro-case'));
       expect(cacheMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
+      // The mirror case: a cancel puts stock back, so the product has to return
+      // to «В наявності» on `/search` without waiting for an admin edit.
+      expect(productIndexerMock.index).toHaveBeenCalledWith('product-uuid-1');
     });
   });
 

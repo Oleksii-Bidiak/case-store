@@ -1,5 +1,6 @@
-import { SITE_URL, SITE_NAME } from "@/shared/config";
+import { SITE_URL } from "@/shared/config";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { resolveSiteName } from "@/shared/lib/seo";
 
 /**
  * llms.txt (https://llmstxt.org/) — a curated, LLM-friendly map of the store so
@@ -21,8 +22,12 @@ const DEFAULT_INTRO =
 export async function GET(): Promise<Response> {
   const seo = await fetchSeoSettings();
   const intro = seo?.llmsTxtSummary?.trim() || DEFAULT_INTRO;
+  // The H1 is the name an AI assistant will cite the store by, so it comes from
+  // the same admin-managed field as every `<title>` (TASK-433) — not from a
+  // constant that could disagree with the rest of the site after a rename.
+  const siteName = resolveSiteName(seo);
 
-  const body = `# ${SITE_NAME}
+  const body = `# ${siteName}
 
 > ${intro}
 

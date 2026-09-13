@@ -3,6 +3,7 @@ import type { PageEntity } from "@/shared/api/generated/models";
 import { sanitizeHtml } from "@/shared/lib/sanitize-html";
 import { dict } from "@/shared/config";
 import { extractDocSections, formatLegalDate } from "../model/extract-sections";
+import { LEGAL_DOC_HUB, type DocHub } from "../model/doc-hub";
 import { LegalDocActions } from "./legal-doc-actions";
 import { LegalDocToc } from "./legal-doc-toc";
 import { LegalChatIcon, LegalClockIcon, LegalFileIcon } from "./legal-icons";
@@ -14,17 +15,25 @@ export interface LegalOtherDoc {
 }
 
 /**
- * LegalDocView — the Legal.dc.html template for admin-authored static/legal
- * pages served at `/legal/[slug]`. Renders the sanitized `page.content` inside a
- * document card with a numbered heading counter, a sticky scroll-spy TOC built
- * from the content's `<h2>`s, a contact CTA, and links to the other pages.
+ * LegalDocView — the Legal.dc.html template for admin-authored `Page` rows.
+ * Renders the sanitized `page.content` inside a document card with a numbered
+ * heading counter, a sticky scroll-spy TOC built from the content's `<h2>`s, a
+ * contact CTA, and links to the sibling documents.
+ *
+ * Serves BOTH page surfaces (TASK-435): legal documents at `/legal/[slug]` and
+ * help pages at `/info/[slug]`. Everything but the chrome is identical, so the
+ * differing parts arrive in `hub` (breadcrumb target + label, badge, sibling
+ * grid heading, and the prefix of the sibling links). It defaults to the legal
+ * hub, so the original call site is unchanged.
  */
 export function LegalDocView({
   page,
   otherDocs,
+  hub = LEGAL_DOC_HUB,
 }: {
   page: PageEntity;
   otherDocs: LegalOtherDoc[];
+  hub?: DocHub;
 }) {
   // Sanitize admin HTML, then inject heading ids for the TOC.
   const { html, sections } = extractDocSections(sanitizeHtml(page.content));
@@ -43,8 +52,11 @@ export function LegalDocView({
         <span aria-hidden="true" className="opacity-50">
           ›
         </span>
-        <Link href="/legal" className="transition-colors hover:text-foreground">
-          {dict.legal.breadcrumbHub}
+        <Link
+          href={hub.href}
+          className="transition-colors hover:text-foreground"
+        >
+          {hub.label}
         </Link>
         <span aria-hidden="true" className="opacity-50">
           ›
@@ -62,7 +74,7 @@ export function LegalDocView({
                 "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
             }}
           >
-            {dict.legal.badge}
+            {hub.badge}
           </span>
           <h1 className="mt-3.5 mb-2.5 font-display text-[34px] font-bold leading-[1.12] tracking-[-0.025em] text-foreground">
             {page.title}
@@ -119,13 +131,13 @@ export function LegalDocView({
       {otherDocs.length > 0 && (
         <section className="mt-11 print:hidden">
           <h2 className="mb-4 font-display text-[20px] font-bold tracking-[-0.02em] text-foreground">
-            {dict.legal.otherHeading}
+            {hub.otherHeading}
           </h2>
           <div className="grid gap-3.5 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
             {otherDocs.map((doc) => (
               <Link
                 key={doc.slug}
-                href={`/legal/${doc.slug}`}
+                href={`${hub.href}/${doc.slug}`}
                 className="flex items-center gap-3 rounded-[14px] border border-border bg-card px-[18px] py-4 no-underline shadow-card transition-[border-color,transform] hover:-translate-y-0.5 hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <span

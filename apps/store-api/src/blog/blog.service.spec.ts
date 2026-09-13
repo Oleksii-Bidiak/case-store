@@ -7,6 +7,7 @@ import { BlogRepository } from './blog.repository';
 import { BlogService } from './blog.service';
 import { BlogPostEntity, BlogCategoryEntity } from './entities';
 import { RevalidationNotifier } from '../publishing';
+import { BlogIndexer } from '../search/blog-indexer';
 
 const category = { id: 'cat-1', slug: 'compare', name: 'Порівняння' };
 
@@ -57,9 +58,20 @@ const repositoryMock = {
   deleteCategory: jest.fn(),
   countPostsInCategory: jest.fn(),
   reorderCategories: jest.fn(),
+  findPublishedByIds: jest.fn(),
 };
 
 const revalidationMock = { revalidate: jest.fn() };
+
+/**
+ * The search seam (TASK-417). `search` answers `null` by default — "the engine
+ * cannot tell you" — so every pre-existing test keeps taking the Postgres path.
+ */
+const indexerMock = {
+  index: jest.fn(),
+  remove: jest.fn(),
+  search: jest.fn(),
+};
 
 const pinoLoggerMock = {
   setContext: jest.fn(),
@@ -74,12 +86,16 @@ describe('BlogService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     revalidationMock.revalidate.mockResolvedValue(undefined);
+    indexerMock.index.mockResolvedValue(undefined);
+    indexerMock.remove.mockResolvedValue(undefined);
+    indexerMock.search.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BlogService,
         { provide: BlogRepository, useValue: repositoryMock },
         { provide: RevalidationNotifier, useValue: revalidationMock },
+        { provide: BlogIndexer, useValue: indexerMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
       ],
     }).compile();
@@ -102,7 +118,197 @@ describe('BlogService', () => {
         limit: 9,
         category: 'compare',
         q: 'iphone',
+        includeUnlisted: false,
       });
+    });
+
+    // TASK-436 — the two halves of the `listed` invariant, asserted at the seam
+    // where they are decided. A list surface sends no flag and must get the
+    // filtered read; sitemap.xml asks for everything and must get it.
+    it('hides unlisted posts unless the caller asks for them', async () => {
+      repositoryMock.findAll.mockResolvedValue({ posts: [mockPost], total: 1 });
+
+      await service.findAll({ page: 1, limit: 9 });
+
+      expect(repositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ includeUnlisted: false }),
+      );
+    });
+
+    it('passes the sitemap opt-in through, so unlisted posts stay indexable', async () => {
+      repositoryMock.findAll.mockResolvedValue({ posts: [mockPost], total: 1 });
+
+      await service.findAll({ page: 1, limit: 9, includeUnlisted: true });
+
+      expect(repositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ includeUnlisted: true }),
+      );
+    });
+  });
+
+  describe('findAll through the search index (TASK-417)', () => {
+    const secondPost = { ...mockPost, id: 'post-3', slug: 'best-powerbanks', title: 'Павербанки' };
+
+    it('answers a free-text query from the index, in the engine ranking', async () => {
+      indexerMock.search.mockResolvedValue({ ids: ['post-3', 'post-1'], total: 2 });
+      // Prisma returns rows in its own order — the service re-applies the ranking.
+      repositoryMock.findPublishedByIds.mockResolvedValue([mockPost, secondPost]);
+
+      const result = await service.findAll({ page: 1, limit: 9, q: 'павербнак' });
+
+      expect(indexerMock.search).toHaveBeenCalledWith({
+        q: 'павербнак',
+        categorySlug: undefined,
+        offset: 0,
+        limit: 9,
+      });
+      expect(result.data.map((p) => p.id)).toEqual(['post-3', 'post-1']);
+      expect(result.meta).toEqual({ total: 2, page: 1, limit: 9, totalPages: 1 });
+      expect(repositoryMock.findAll).not.toHaveBeenCalled();
+    });
+
+    it('passes the category chip through to the index as a filter', async () => {
+      indexerMock.search.mockResolvedValue({ ids: ['post-1'], total: 1 });
+      repositoryMock.findPublishedByIds.mockResolvedValue([mockPost]);
+
+      await service.findAll({ page: 2, limit: 9, category: 'compare', q: 'iphone' });
+
+      expect(indexerMock.search).toHaveBeenCalledWith({
+        q: 'iphone',
+        categorySlug: 'compare',
+        offset: 9,
+        limit: 9,
+      });
+    });
+
+    it('never consults the index without a query', async () => {
+      repositoryMock.findAll.mockResolvedValue({ posts: [mockPost], total: 1 });
+
+      await service.findAll({ page: 1, limit: 9 });
+
+      expect(indexerMock.search).not.toHaveBeenCalled();
+      expect(repositoryMock.findAll).toHaveBeenCalled();
+    });
+
+    it('falls back to Postgres when the index cannot answer', async () => {
+      indexerMock.search.mockResolvedValue(null);
+      repositoryMock.findAll.mockResolvedValue({ posts: [mockPost], total: 1 });
+
+      const result = await service.findAll({ page: 1, limit: 9, q: 'iphone' });
+
+      expect(repositoryMock.findAll).toHaveBeenCalled();
+      expect(result.data).toHaveLength(1);
+    });
+
+    it('falls back to Postgres when a throwing engine breaks the port contract', async () => {
+      // The public hub must not be able to 500 on a search engine.
+      indexerMock.search.mockRejectedValue(new Error('engine down'));
+      repositoryMock.findAll.mockResolvedValue({ posts: [mockPost], total: 1 });
+
+      const result = await service.findAll({ page: 1, limit: 9, q: 'iphone' });
+
+      expect(result.data).toHaveLength(1);
+    });
+
+    it('falls back when the PUBLISHED re-read drops every hit (stale index)', async () => {
+      // Answering "no articles" off a stale document would be a lie — and the
+      // re-read is what keeps an unpublished post from surfacing at all.
+      indexerMock.search.mockResolvedValue({ ids: ['post-2'], total: 1 });
+      repositoryMock.findPublishedByIds.mockResolvedValue([]);
+      repositoryMock.findAll.mockResolvedValue({ posts: [mockPost], total: 1 });
+
+      const result = await service.findAll({ page: 1, limit: 9, q: 'draft' });
+
+      expect(repositoryMock.findAll).toHaveBeenCalled();
+      expect(result.data.map((p) => p.id)).toEqual(['post-1']);
+    });
+
+    // TASK-436 × TASK-417 — the two landed on separate branches, and the index
+    // knows nothing about `listed`. Without the flag on the re-read, typing a
+    // word from an unlisted post puts it straight back on /blog and in the
+    // header suggestions — the surfaces the flag exists to keep it off.
+    it('carries the listing gate into the re-read, so search cannot resurrect an unlisted post', async () => {
+      indexerMock.search.mockResolvedValue({ ids: ['post-1'], total: 1 });
+      repositoryMock.findPublishedByIds.mockResolvedValue([mockPost]);
+
+      await service.findAll({ page: 1, limit: 9, q: 'trade-in' });
+
+      expect(repositoryMock.findPublishedByIds).toHaveBeenCalledWith(['post-1'], false);
+    });
+
+    it('lets the sitemap keep its unlisted posts when it searches too', async () => {
+      indexerMock.search.mockResolvedValue({ ids: ['post-1'], total: 1 });
+      repositoryMock.findPublishedByIds.mockResolvedValue([mockPost]);
+
+      await service.findAll({ page: 1, limit: 9, q: 'trade-in', includeUnlisted: true });
+
+      expect(repositoryMock.findPublishedByIds).toHaveBeenCalledWith(['post-1'], true);
+    });
+  });
+
+  describe('search index sync on mutations (TASK-417)', () => {
+    it('indexes a post created as PUBLISHED and de-indexes one created as a draft', async () => {
+      repositoryMock.findBySlugAny.mockResolvedValue(null);
+      repositoryMock.findCategoryById.mockResolvedValue(category);
+      repositoryMock.create.mockResolvedValue(mockPost);
+
+      await service.create({
+        title: mockPost.title,
+        excerpt: mockPost.excerpt,
+        content: mockPost.content,
+        categoryId: 'cat-1',
+        authorName: mockPost.authorName,
+        status: PublishStatus.PUBLISHED,
+      });
+      expect(indexerMock.index).toHaveBeenCalledWith('post-1');
+
+      jest.clearAllMocks();
+      repositoryMock.findBySlugAny.mockResolvedValue(null);
+      repositoryMock.findCategoryById.mockResolvedValue(category);
+      repositoryMock.create.mockResolvedValue(draftPost);
+
+      await service.create({
+        title: draftPost.title,
+        excerpt: draftPost.excerpt,
+        content: draftPost.content,
+        categoryId: 'cat-1',
+        authorName: draftPost.authorName,
+      });
+      expect(indexerMock.remove).toHaveBeenCalledWith('post-2');
+      expect(indexerMock.index).not.toHaveBeenCalled();
+    });
+
+    it('re-indexes on update, publish; de-indexes on unpublish and delete', async () => {
+      repositoryMock.findById.mockResolvedValue(mockPost);
+      repositoryMock.update.mockResolvedValue(mockPost);
+      await service.update('post-1', { title: 'Оновлено' });
+      expect(indexerMock.index).toHaveBeenCalledWith('post-1');
+
+      jest.clearAllMocks();
+      repositoryMock.findById.mockResolvedValue(mockPost);
+      repositoryMock.update.mockResolvedValue(mockPost);
+      await service.publish('post-1');
+      expect(indexerMock.index).toHaveBeenCalledWith('post-1');
+
+      jest.clearAllMocks();
+      repositoryMock.findById.mockResolvedValue(mockPost);
+      repositoryMock.update.mockResolvedValue({ ...mockPost, status: PublishStatus.DRAFT });
+      await service.unpublish('post-1');
+      expect(indexerMock.remove).toHaveBeenCalledWith('post-1');
+
+      jest.clearAllMocks();
+      repositoryMock.findById.mockResolvedValue(mockPost);
+      repositoryMock.delete.mockResolvedValue(undefined);
+      await service.delete('post-1');
+      expect(indexerMock.remove).toHaveBeenCalledWith('post-1');
+    });
+
+    it('never lets an indexing failure fail the write', async () => {
+      indexerMock.index.mockRejectedValue(new Error('engine down'));
+      repositoryMock.findById.mockResolvedValue(mockPost);
+      repositoryMock.update.mockResolvedValue(mockPost);
+
+      await expect(service.publish('post-1')).resolves.toBeInstanceOf(BlogPostEntity);
     });
   });
 
@@ -141,6 +347,36 @@ describe('BlogService', () => {
       const passed = repositoryMock.create.mock.calls[0][0] as { content: string };
       expect(passed.content).toContain('<p>ok</p>');
       expect(passed.content).not.toContain('script');
+    });
+
+    // TASK-437 — the article was the one content entity with no admin-editable
+    // meta tags. The service maps the DTO field by field, so a new field that is
+    // not listed there is silently dropped with no type error anywhere.
+    it('passes the SEO overrides, tags and ogImage through to the repository', async () => {
+      repositoryMock.findBySlugAny.mockResolvedValue(null);
+      repositoryMock.findCategoryById.mockResolvedValue(category);
+      repositoryMock.create.mockResolvedValue(draftPost);
+
+      await service.create({
+        title: 'iPhone 16 vs 15',
+        excerpt: 'Картковий текст',
+        content: '<p>ok</p>',
+        categoryId: 'cat-1',
+        authorName: 'Олег',
+        metaTitle: 'iPhone 16 чи iPhone 15 у 2026',
+        metaDescription: 'Інший текст — для видачі, не для картки.',
+        keywords: ['iphone 16', 'порівняння'],
+        ogImage: 'https://cdn.example.com/og/iphone16.jpg',
+      });
+
+      expect(repositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metaTitle: 'iPhone 16 чи iPhone 15 у 2026',
+          metaDescription: 'Інший текст — для видачі, не для картки.',
+          keywords: ['iphone 16', 'порівняння'],
+          ogImage: 'https://cdn.example.com/og/iphone16.jpg',
+        }),
+      );
     });
 
     it('rejects an unknown category with BadRequestException', async () => {
@@ -274,6 +510,25 @@ describe('BlogService', () => {
 
       const passed = repositoryMock.update.mock.calls[0][1] as { content?: string };
       expect(passed.content).toBeUndefined();
+    });
+
+    // TASK-437 — clearing an override is a null, not an omission: `undefined`
+    // means "leave it alone", so a form that dropped its blank field could never
+    // take a wrong meta title back off a live article.
+    it('forwards an explicit null so an override can be cleared', async () => {
+      repositoryMock.findById.mockResolvedValue(mockPost);
+      repositoryMock.update.mockResolvedValue(mockPost);
+
+      await service.update('post-1', { metaTitle: null, ogImage: null, keywords: [] });
+
+      const passed = repositoryMock.update.mock.calls[0][1] as {
+        metaTitle: string | null;
+        ogImage: string | null;
+        keywords: string[];
+      };
+      expect(passed.metaTitle).toBeNull();
+      expect(passed.ogImage).toBeNull();
+      expect(passed.keywords).toEqual([]);
     });
 
     it('validates a moved category', async () => {

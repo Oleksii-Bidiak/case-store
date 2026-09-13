@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { PublishStatus, SlugRedirectEntity } from '@prisma/client';
+import { PageKind, PublishStatus, SlugRedirectEntity } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
 import { PageRepository } from './pages.repository';
@@ -8,6 +8,7 @@ import { ReorderStaleError } from '../common/reorder';
 const mockPage = {
   id: 'page-uuid-1',
   slug: 'privacy-policy',
+  kind: PageKind.LEGAL,
   title: 'Privacy Policy',
   content: '<p>Hello</p>',
   excerpt: null,
@@ -80,16 +81,28 @@ describe('PageRepository', () => {
       const result = await repository.findAll({ page: 1, limit: 20 });
 
       expect(result).toEqual({ pages: [mockPage], total: 1 });
+      // HUB rows are excluded even without an explicit kind — they are not pages.
+      const publicWhere = {
+        status: PublishStatus.PUBLISHED,
+        kind: { not: PageKind.HUB },
+      };
+      expect(prismaMock.page.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: publicWhere, skip: 0, take: 20 }),
+      );
+      expect(prismaMock.page.count).toHaveBeenCalledWith({ where: publicWhere });
+    });
+
+    it('narrows to one kind when asked (the /legal hub never lists help pages)', async () => {
+      prismaMock.page.findMany.mockResolvedValue([]);
+      prismaMock.page.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20, kind: PageKind.LEGAL });
+
       expect(prismaMock.page.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { status: PublishStatus.PUBLISHED },
-          skip: 0,
-          take: 20,
+          where: { status: PublishStatus.PUBLISHED, kind: PageKind.LEGAL },
         }),
       );
-      expect(prismaMock.page.count).toHaveBeenCalledWith({
-        where: { status: PublishStatus.PUBLISHED },
-      });
     });
 
     it('computes skip from page/limit', async () => {
@@ -112,7 +125,24 @@ describe('PageRepository', () => {
 
       expect(result).toBe(mockPage);
       expect(prismaMock.page.findFirst).toHaveBeenCalledWith({
-        where: { slug: 'privacy-policy', status: PublishStatus.PUBLISHED },
+        where: {
+          slug: 'privacy-policy',
+          status: PublishStatus.PUBLISHED,
+          // No kind asked for → any kind BUT hub: a hub row is not a document.
+          kind: { not: PageKind.HUB },
+        },
+      });
+    });
+
+    // TASK-435 — the ONE place the "a page of one kind never answers another
+    // route's request" invariant is enforced.
+    it('narrows to the requested kind so /legal cannot serve an INFO page', async () => {
+      prismaMock.page.findFirst.mockResolvedValue(null);
+
+      await repository.findBySlug('about', PageKind.LEGAL);
+
+      expect(prismaMock.page.findFirst).toHaveBeenCalledWith({
+        where: { slug: 'about', status: PublishStatus.PUBLISHED, kind: PageKind.LEGAL },
       });
     });
   });
@@ -137,6 +167,19 @@ describe('PageRepository', () => {
 
       expect(result).toEqual({ pages: [mockPage], total: 1 });
       expect(prismaMock.page.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: {} }));
+    });
+
+    // The panel is where hub meta tags are edited, so an ABSENT kind must keep
+    // HUB rows in — the opposite of the public list's rule.
+    it('applies the kind filter when a tab is selected', async () => {
+      prismaMock.page.findMany.mockResolvedValue([]);
+      prismaMock.page.count.mockResolvedValue(0);
+
+      await repository.findAllAdmin({ page: 1, limit: 20, kind: PageKind.HUB });
+
+      expect(prismaMock.page.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { kind: PageKind.HUB } }),
+      );
     });
 
     it('applies the status filter when provided', async () => {
@@ -178,6 +221,7 @@ describe('PageRepository', () => {
 
       await repository.create({
         slug: 'privacy-policy',
+        kind: PageKind.LEGAL,
         title: 'Privacy Policy',
         content: '<p>Hello</p>',
         status: PublishStatus.PUBLISHED,
@@ -188,6 +232,7 @@ describe('PageRepository', () => {
       expect(prismaMock.page.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           slug: 'privacy-policy',
+          kind: PageKind.LEGAL,
           title: 'Privacy Policy',
           content: '<p>Hello</p>',
           status: PublishStatus.PUBLISHED,
@@ -205,6 +250,7 @@ describe('PageRepository', () => {
 
       await repository.create({
         slug: 'faq',
+        kind: PageKind.INFO,
         title: 'FAQ',
         content: '<p>x</p>',
         status: PublishStatus.DRAFT,
@@ -471,7 +517,12 @@ describe('PageRepository', () => {
 
   describe('revalidateTarget', () => {
     it('exposes the pages cache target for the scheduler', () => {
-      expect(repository.revalidateTarget).toEqual({ tags: ['pages'], paths: ['/legal'] });
+      // Coarse on purpose: the scheduler flips a batch and never learns which
+      // rows it flipped, so it purges every root a page can appear on.
+      expect(repository.revalidateTarget).toEqual({
+        tags: ['pages'],
+        paths: ['/legal', '/info', '/categories', '/blog', '/contact', '/promo'],
+      });
     });
   });
 

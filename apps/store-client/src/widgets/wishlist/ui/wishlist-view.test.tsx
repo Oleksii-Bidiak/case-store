@@ -14,6 +14,7 @@ import {
 } from "@/entities/wishlist";
 import { dict } from "@/shared/config";
 import { WishlistView } from "./wishlist-view";
+import { WishlistSkeleton } from "./wishlist-skeleton";
 
 function buildItem(
   overrides: Partial<WishlistItemEntity> = {},
@@ -243,5 +244,82 @@ describe("WishlistView quick-view triggers (TASK-290)", () => {
       within(dialog).getByRole("heading", { name: "iPhone 15 Pro Case" }),
     ).toBeInTheDocument();
     await waitFor(() => expect(detailRequests).toEqual(["iphone-15-pro-case"]));
+  });
+});
+
+// ── TASK-415: the 1 / 2 / 4 card ladder ──────────────────────────────────────
+// /wishlist renders the same kind of card as the catalog, so it follows the same
+// explicit ladder: one card below 390px (two were unreadable on the smallest
+// phones), two from 390px, four from `lg`. `WishlistSkeleton` must repeat both
+// grids — the sidebar split and the card grid — byte for byte, or the page
+// reflows the moment placeholders are swapped for real cards. Same pair of
+// guards as in `product-list.test.tsx`.
+describe("WishlistView grid ↔ skeleton parity (TASK-415)", () => {
+  /** The card grid of a rendered `WishlistView` (the grid nearest a card). */
+  function renderedCardGrid(): Element | null {
+    return screen.getByRole("article").closest(".grid");
+  }
+
+  it("renders the grid one-up under 390px, two-up from 390px and four-up from lg", () => {
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([buildItem()]),
+    });
+
+    const grid = renderedCardGrid();
+    expect(grid).not.toBeNull();
+    expect(grid).toHaveClass(
+      "grid-cols-1",
+      "min-[390px]:grid-cols-2",
+      "lg:grid-cols-4",
+    );
+    // Cards in a row share one height whatever their title/badge count.
+    expect(grid).toHaveClass("items-stretch");
+    // The old auto-fill layout is gone, not merely overridden.
+    expect(grid?.className).not.toContain("grid-template-columns");
+  });
+
+  it("lays the skeleton out in exactly the same columns as the real grid", () => {
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([buildItem()]),
+    });
+    const realGrid = renderedCardGrid();
+
+    const { container } = renderWithProviders(<WishlistSkeleton />);
+    // The skeleton has two grids (page split + cards); reach the card one the
+    // same structural way as above — from a placeholder card outwards.
+    const skeletonGrid = container
+      .querySelector(".aspect-square")
+      ?.closest(".grid");
+
+    // Both sides must exist — otherwise the comparison below would pass
+    // vacuously on two `undefined`s.
+    expect(realGrid).not.toBeNull();
+    expect(skeletonGrid).toHaveClass(
+      "grid-cols-1",
+      "min-[390px]:grid-cols-2",
+      "lg:grid-cols-4",
+    );
+    // Byte-identical, not merely "both responsive": any drift here is a visible
+    // reflow when the skeleton is replaced by cards.
+    expect(skeletonGrid?.className).toBe(realGrid?.className);
+  });
+
+  it("repeats the sidebar + content split of the real page in the skeleton", () => {
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([buildItem()]),
+    });
+    const realShell = renderedCardGrid()?.parentElement?.closest(".grid");
+
+    const { container } = renderWithProviders(<WishlistSkeleton />);
+    const skeletonShell = container
+      .querySelector(".aspect-square")
+      ?.closest(".grid")
+      ?.parentElement?.closest(".grid");
+
+    expect(realShell).toBeTruthy();
+    expect(skeletonShell).toBeTruthy();
+    // The 268px filters column is what makes the content area narrower than the
+    // viewport; if only one side declares it, the cards resize on hydration.
+    expect(skeletonShell?.className).toBe(realShell?.className);
   });
 });

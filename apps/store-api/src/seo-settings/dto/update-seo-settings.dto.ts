@@ -43,6 +43,20 @@ const normalizeVerification = ({ value }: { value: unknown }): unknown =>
  */
 export class UpdateSeoSettingsDto {
   @ApiPropertyOptional({
+    description:
+      "Human-readable store name — the single source for the storefront's title template, `openGraph.siteName`, Organization/WebSite JSON-LD, llms.txt, the web manifest and the Merchant feed. Blank/absent → the storefront's built-in SITE_NAME constant (TASK-433).",
+    example: 'MobileStore',
+    maxLength: 120,
+  })
+  @IsOptional()
+  @IsString()
+  // 120, not the 255 the other short fields use: this string is rendered INSIDE
+  // every `<title>` (Google shows ~60 chars) and as `og:site_name`, so a limit
+  // that admits a paragraph would just produce broken titles.
+  @MaxLength(120)
+  siteName?: string;
+
+  @ApiPropertyOptional({
     description: 'Default meta title used when a page has no own title',
     example: 'MobileStore — аксесуари для смартфонів',
   })

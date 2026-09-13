@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { AlertTriangle, Check, ShieldCheck, Trash2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   getGetCartQueryKey,
+  useAddToCart,
   useRemoveCartItem,
+  useSelectCartItemAddon,
   useUpdateCartItem,
   type CartItemEntity,
   type GetCart200,
@@ -18,6 +21,25 @@ import { dict } from "@/shared/config";
 import { ProductThumb } from "@/shared/ui";
 import { useCartAddonToggle } from "@/features/cart-addon-toggle";
 import { resolveQuantityCommit } from "../model/quantity-commit";
+
+/**
+ * How long the "line removed" toast keeps its «Повернути» action on screen
+ * (TASK-418). Long enough to notice and reach the button, short enough that the
+ * offer never outlives the shopper's memory of the click that caused it.
+ */
+const UNDO_TOAST_MS = 8000;
+
+/**
+ * Everything needed to re-create a removed line. It MUST be captured before the
+ * DELETE fires: afterwards the line is gone from the cache and the add-ons the
+ * shopper had picked are gone with it.
+ */
+interface RemovedLineSnapshot {
+  productId: string;
+  productName: string;
+  quantity: number;
+  addonServiceIds: string[];
+}
 
 /** Coerce a loosely-typed generated string field to a usable string. */
 function asString(value: unknown): string | null {
@@ -59,7 +81,13 @@ interface CartItemRowProps {
  * CartItemRow — a single cart line item with a quantity stepper and remove
  * control. Quantity changes update the React Query cache optimistically (so the
  * line total and cart summary recalculate instantly) and write to the server on
- * a debounce; the server remains authoritative and reconciles on refetch.
+ * a debounce; the server remains authoritative and reconciles on refetch. Since
+ * TASK-418 that holds for the typed field as well as the stepper — the money on
+ * screen follows the keystrokes, not the blur.
+ *
+ * Removing a line is undoable (TASK-418): the row photographs what it would
+ * take to re-create the line BEFORE the DELETE, then offers an 8-second toast
+ * that re-adds it with the same add-on services.
  *
  * The "додаткові пропозиції" offers block (TASK-174) renders the add-ons the
  * server resolved for this line and persists each toggle through
@@ -96,9 +124,94 @@ export function CartItemRow({
     // On error, refetch to roll back the optimistic change to server truth.
     mutation: { onSuccess: invalidate, onError: invalidate },
   });
+
+  // Undo path (TASK-418). Both mutations are deliberately left without
+  // `onSuccess: invalidate`: the restore is a POST followed by one POST per
+  // add-on, and refetching between them would flash the line back without its
+  // services. A single invalidate at the end shows the finished line.
+  const addBackItem = useAddToCart();
+  const selectAddon = useSelectCartItemAddon();
+  const pendingUndoRef = useRef<RemovedLineSnapshot | null>(null);
+
+  /**
+   * Re-create a removed line exactly as it was: the same product, the same
+   * quantity, and the same add-on services re-selected on the NEW line id (the
+   * old one died with the DELETE, so the ids cannot be reused).
+   *
+   * This runs from the toast, i.e. after the row itself has unmounted — the
+   * cart refetch drops it as soon as the DELETE lands. That is why it uses
+   * `mutateAsync` and the query client rather than per-call mutation callbacks:
+   * React Query only fires those while the observer still has listeners.
+   */
+  const restoreLine = async (snapshot: RemovedLineSnapshot) => {
+    try {
+      const cart = await addBackItem.mutateAsync({
+        data: { productId: snapshot.productId, quantity: snapshot.quantity },
+      });
+      // POST /cart/items answers with the whole cart; the re-created line is
+      // the one carrying this product.
+      const restored = cart.data?.items.find(
+        (line) => line.productId === snapshot.productId,
+      );
+      if (restored) {
+        for (const addonServiceId of snapshot.addonServiceIds) {
+          await selectAddon.mutateAsync({
+            itemId: restored.id,
+            addonServiceId,
+          });
+        }
+      }
+    } catch {
+      toast.error(dict.cart.undoError);
+    } finally {
+      invalidate();
+    }
+  };
+
   const removeItem = useRemoveCartItem({
-    mutation: { onSuccess: invalidate, onError: invalidate },
+    mutation: {
+      onSuccess: () => {
+        invalidate();
+        const snapshot = pendingUndoRef.current;
+        pendingUndoRef.current = null;
+        if (!snapshot) return;
+        toast(dict.cart.removedToast(snapshot.productName), {
+          duration: UNDO_TOAST_MS,
+          // The other host of this row is the mini-cart SHEET — a modal Radix
+          // dialog, which parks `pointer-events: none` on <body> while it is
+          // open. Sonner sets no `pointer-events` of its own on a visible
+          // toast, so the undo button would inherit that and quietly refuse
+          // every click. The toast still ends up inside the dialog's
+          // `aria-hidden` subtree, which is the a11y half of the same problem
+          // and is filed as TASK-497.
+          className: "pointer-events-auto",
+          action: {
+            label: dict.cart.undoRemove,
+            onClick: () => void restoreLine(snapshot),
+          },
+        });
+      },
+      onError: () => {
+        pendingUndoRef.current = null;
+        invalidate();
+      },
+    },
   });
+
+  /**
+   * Remove the line, having first photographed what it would take to bring it
+   * back. Removal stays a single click with no confirmation dialog — the way
+   * out is the toast, not a modal in front of every deletion.
+   */
+  const requestRemove = () => {
+    pendingUndoRef.current = {
+      productId: item.productId,
+      productName: item.productName,
+      quantity: item.quantity,
+      addonServiceIds: [...item.selectedAddonIds],
+    };
+    removeItem.mutate({ itemId: item.id });
+  };
 
   const error = updateItem.error || removeItem.error;
 
@@ -185,6 +298,27 @@ export function CartItemRow({
     setQty(clamped);
     applyOptimisticQuantity(clamped);
     debouncedUpdate(clamped);
+  };
+
+  /**
+   * Handle every keystroke in the quantity field (TASK-418). Until now typing
+   * only moved the input: the line total and the summary stood still until the
+   * field lost focus, so a shopper who typed «3» and looked at the money saw
+   * the old sum and read it as "the cart ignored me". Each keystroke now goes
+   * through the same resolver the blur commit uses — a usable quantity
+   * recalculates the cached cart immediately and rides the existing 300 ms
+   * debounce to the server, so the number of requests does not change.
+   *
+   * Transient input (an empty field, 0, a half-typed value) only moves the
+   * input; `commitTyped` decides its fate on blur, and never removes the line.
+   */
+  const handleTypedChange = (raw: string) => {
+    const entered = raw === "" ? "" : Number(raw);
+    setQty(entered);
+    const result = resolveQuantityCommit(entered, item.quantity, maxQty);
+    if (result.kind !== "update") return;
+    applyOptimisticQuantity(result.quantity);
+    debouncedUpdate(result.quantity);
   };
 
   /**
@@ -293,7 +427,7 @@ export function CartItemRow({
           <button
             type="button"
             aria-label={dict.cart.removeNamedAria(item.productName)}
-            onClick={() => removeItem.mutate({ itemId: item.id })}
+            onClick={requestRemove}
             className="flex size-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Trash2 className="size-[18px]" />
@@ -319,9 +453,7 @@ export function CartItemRow({
                 max={maxQty}
                 value={qty}
                 disabled={unavailable}
-                onChange={(e) =>
-                  setQty(e.target.value === "" ? "" : Number(e.target.value))
-                }
+                onChange={(e) => handleTypedChange(e.target.value)}
                 onBlur={commitTyped}
                 className="w-11 bg-background py-1.5 text-center font-mono text-[15px] font-semibold text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
@@ -342,7 +474,7 @@ export function CartItemRow({
               <button
                 type="button"
                 aria-label={dict.cart.unavailableRemoveAria(item.productName)}
-                onClick={() => removeItem.mutate({ itemId: item.id })}
+                onClick={requestRemove}
                 className="inline-flex items-center gap-1.5 rounded-md border border-destructive px-3 py-2 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Trash2 className="size-4" aria-hidden="true" />

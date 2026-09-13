@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Page, Prisma, PublishStatus, SlugRedirectEntity } from '@prisma/client';
+import { Page, PageKind, Prisma, PublishStatus, SlugRedirectEntity } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
 import type { PublishablePort, RevalidateTarget } from '../publishing';
@@ -29,6 +29,23 @@ const PAGES_LOCK_KEY = lockKey(LOCK_RESOURCE, null);
 /** Any client the reads accept: the injected singleton or an interactive-transaction client. */
 type PageDbClient = PrismaService | ReorderTx;
 
+import { PAGE_ROOT_PATHS } from './hub-routes';
+
+/**
+ * Kind clause shared by the two PUBLIC readers (list + detail).
+ *
+ * An explicit `kind` narrows to exactly that kind — this is what stops
+ * `/legal/<slug>` from rendering an INFO page and the reverse. WITHOUT one the
+ * query still excludes HUB, because a HUB row is not a page: it carries meta
+ * tags for a route that already exists and has no address of its own. Letting it
+ * answer `GET /api/pages/blog` would put an editable ghost document under
+ * `/legal/blog`. The admin readers deliberately do not use this clause — the
+ * panel is where hub rows are edited.
+ */
+function publicKindWhere(kind?: PageKind): Prisma.PageWhereInput {
+  return kind ? { kind } : { kind: { not: PageKind.HUB } };
+}
+
 /**
  * Slugs of a rename being persisted by this update — when present, the write
  * additionally records a 301 redirect `oldSlug → newSlug` in the SlugRedirect
@@ -47,6 +64,8 @@ export interface SlugRenameInput {
 export interface FindAllParams {
   page: number;
   limit: number;
+  /** Narrow to one kind; omitted, every kind but HUB is returned. */
+  kind?: PageKind;
 }
 
 /**
@@ -63,6 +82,8 @@ export interface FindAllAdminParams {
   limit?: number;
   status?: PublishStatus;
   search?: string;
+  /** Backs the panel's kind tabs; omitted, EVERY kind is returned (HUB included). */
+  kind?: PageKind;
 }
 
 /**
@@ -72,11 +93,14 @@ export interface FindAllAdminParams {
  */
 export interface CreatePageInput {
   slug: string;
+  kind: PageKind;
   title: string;
   content: string;
   excerpt?: string | null;
   metaTitle?: string | null;
   metaDescription?: string | null;
+  keywords?: string[];
+  ogImage?: string | null;
   status: PublishStatus;
   publishedAt: Date | null;
   scheduledAt: Date | null;
@@ -90,11 +114,15 @@ export interface CreatePageInput {
  */
 export interface UpdatePageInput {
   slug?: string;
+  kind?: PageKind;
   title?: string;
   content?: string;
   excerpt?: string | null;
   metaTitle?: string | null;
   metaDescription?: string | null;
+  /** Absent leaves the stored tags alone; `[]` clears them (TASK-437). */
+  keywords?: string[];
+  ogImage?: string | null;
   status?: PublishStatus;
   publishedAt?: Date | null;
   scheduledAt?: Date | null;
@@ -124,21 +152,33 @@ export class PageRepository implements PublishablePort {
     private readonly slugRedirectRepository: SlugRedirectRepository,
   ) {}
 
-  /** Cache target purged when scheduled pages go live (see PublishingScheduler). */
+  /**
+   * Cache target purged when scheduled pages go live (see PublishingScheduler).
+   *
+   * Deliberately coarse: the scheduler flips a whole BATCH of due rows in one
+   * `updateMany` and never learns which ones, so it cannot know their kinds or
+   * slugs. It therefore purges the `pages` tag plus every root path a page can
+   * appear on — both page hubs and all six hub routes. Per-page precision lives
+   * on the admin write path instead (PageService.revalidateTargetForPage), which
+   * does know the row it just wrote.
+   */
   readonly revalidateTarget: RevalidateTarget = {
     tags: ['pages'],
-    paths: ['/legal'],
+    paths: [...PAGE_ROOT_PATHS],
   };
 
   /**
    * Find all PUBLISHED pages with pagination. Ordered by sortOrder ascending,
    * then createdAt. Public storefront use — `status = PUBLISHED` is the single
-   * visibility gate.
+   * visibility gate; `kind` narrows to one surface (see {@link publicKindWhere}).
    */
   async findAll(params: FindAllParams): Promise<PaginatedPagesResult> {
-    const { page, limit } = params;
+    const { page, limit, kind } = params;
     const skip = (page - 1) * limit;
-    const where: Prisma.PageWhereInput = { status: PublishStatus.PUBLISHED };
+    const where: Prisma.PageWhereInput = {
+      status: PublishStatus.PUBLISHED,
+      ...publicKindWhere(kind),
+    };
 
     const [pages, total] = await Promise.all([
       this.prisma.page.findMany({
@@ -155,11 +195,12 @@ export class PageRepository implements PublishablePort {
 
   /**
    * Find a single PUBLISHED page by slug. Drafts / scheduled pages resolve to
-   * null (the service maps that to a 404).
+   * null (the service maps that to a 404), and so does a kind mismatch — the
+   * storefront's guarantee that `/legal/<slug>` never renders an INFO page.
    */
-  findBySlug(slug: string): Promise<Page | null> {
+  findBySlug(slug: string, kind?: PageKind): Promise<Page | null> {
     return this.prisma.page.findFirst({
-      where: { slug, status: PublishStatus.PUBLISHED },
+      where: { slug, status: PublishStatus.PUBLISHED, ...publicKindWhere(kind) },
     });
   }
 
@@ -194,14 +235,18 @@ export class PageRepository implements PublishablePort {
    * so while every `sortOrder` was still 0 (the pre-TASK-428 state of every row) the admin
    * list was the exact REVERSE of `findAll`'s — the operator saw one order and the shopper
    * another. The admin list must be WYSIWYG, so both reads now tiebreak identically.
+   *
+   * `kind` backs the panel's tabs (TASK-435). Unlike the public readers, an ABSENT kind
+   * here means "every kind", HUB rows included — the panel is where they are edited.
    */
   async findAllAdmin(
     params: FindAllAdminParams = {},
     client: PageDbClient = this.prisma,
   ): Promise<PaginatedPagesResult> {
-    const { page, limit, status, search } = params;
+    const { page, limit, status, search, kind } = params;
     const where: Prisma.PageWhereInput = {
       ...(status !== undefined && { status }),
+      ...(kind !== undefined && { kind }),
       ...(search && {
         OR: [
           { title: { contains: search, mode: 'insensitive' } },
@@ -276,11 +321,14 @@ export class PageRepository implements PublishablePort {
       return tx.page.create({
         data: {
           slug: data.slug,
+          kind: data.kind,
           title: data.title,
           content: data.content,
           excerpt: data.excerpt ?? null,
           metaTitle: data.metaTitle ?? null,
           metaDescription: data.metaDescription ?? null,
+          keywords: data.keywords ?? [],
+          ogImage: data.ogImage ?? null,
           status: data.status,
           publishedAt: data.publishedAt,
           scheduledAt: data.scheduledAt,

@@ -23,6 +23,8 @@ export const phones: CatalogueEntry[] = [
     metaTitle: `Купити Apple iPhone 16 Pro — ціна в Україні | ${STORE_NAME}`,
     metaDescription:
       'Apple iPhone 16 Pro у титановому корпусі: A18 Pro, камера 48 Мп, USB-C 3. Офіційна гарантія, доставка Новою Поштою.',
+    keywords: ['айфон 16 про', 'iphone 16 pro', 'титан', 'A18 Pro'],
+    demoOgImage: true,
     specs: {
       os: 'iOS',
       screen: '6.3" OLED Super Retina XDR, ProMotion 120 Гц',
@@ -94,6 +96,7 @@ export const phones: CatalogueEntry[] = [
     metaTitle: `Купити Apple iPhone 15 Pro — ціна в Україні | ${STORE_NAME}`,
     metaDescription:
       'Apple iPhone 15 Pro у титановому корпусі: A17 Pro, камера 48 Мп, USB-C. Офіційна гарантія, доставка Новою Поштою.',
+    keywords: ['айфон 15 про', 'iphone 15 pro', 'титан'],
     specs: {
       os: 'iOS',
       screen: '6.1" OLED Super Retina XDR, ProMotion 120 Гц',

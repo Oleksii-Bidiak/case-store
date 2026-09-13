@@ -48,8 +48,8 @@ describe("BlogView", () => {
         })}
         activeCategory="all"
         query=""
-        hasMore={false}
-        nextPageHref="/blog?page=2"
+        page={1}
+        totalPages={1}
       />,
     );
 
@@ -78,15 +78,15 @@ describe("BlogView", () => {
         featured={null}
         activeCategory="news"
         query="zzz"
-        hasMore={false}
-        nextPageHref="/blog?category=news&q=zzz&page=2"
+        page={1}
+        totalPages={1}
       />,
     );
 
     expect(screen.getByText(dict.blog.emptyHeading)).toBeInTheDocument();
   });
 
-  it("renders the load-more link only when there are more posts", () => {
+  it("offers the next-page shortcut only while a next page exists", () => {
     const { rerender } = renderWithProviders(
       <BlogView
         posts={[makePost()]}
@@ -94,13 +94,13 @@ describe("BlogView", () => {
         featured={null}
         activeCategory="all"
         query=""
-        hasMore
-        nextPageHref="/blog?page=2"
+        page={1}
+        totalPages={3}
       />,
     );
 
-    const loadMore = screen.getByRole("link", { name: dict.blog.loadMore });
-    expect(loadMore).toHaveAttribute("href", "/blog?page=2");
+    const next = screen.getByRole("link", { name: dict.blog.nextPageLink });
+    expect(next).toHaveAttribute("href", "/blog?page=2");
 
     rerender(
       <BlogView
@@ -109,13 +109,89 @@ describe("BlogView", () => {
         featured={null}
         activeCategory="all"
         query=""
-        hasMore={false}
-        nextPageHref="/blog?page=2"
+        page={1}
+        totalPages={1}
       />,
     );
     expect(
-      screen.queryByRole("link", { name: dict.blog.loadMore }),
+      screen.queryByRole("link", { name: dict.blog.nextPageLink }),
     ).not.toBeInTheDocument();
+  });
+
+  // ── TASK-417: the shared numbered pagination ───────────────────────────────
+  describe("pagination", () => {
+    function renderPaged(page: number, totalPages: number, query = "") {
+      return renderWithProviders(
+        <BlogView
+          posts={[makePost()]}
+          categories={categories}
+          featured={null}
+          activeCategory="all"
+          query={query}
+          page={page}
+          totalPages={totalPages}
+        />,
+      );
+    }
+
+    it("renders no pagination for a single page", () => {
+      renderPaged(1, 1);
+
+      expect(
+        screen.queryByRole("navigation", { name: dict.blog.paginationAria }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("links every page and marks the current one", () => {
+      renderPaged(2, 4);
+
+      const nav = screen.getByRole("navigation", {
+        name: dict.blog.paginationAria,
+      });
+      expect(nav).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "3" })).toHaveAttribute(
+        "href",
+        "/blog?page=3",
+      );
+      expect(screen.getByRole("link", { name: "2" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      // Page 1 keeps the canonical, page-less URL.
+      expect(screen.getByRole("link", { name: "1" })).toHaveAttribute(
+        "href",
+        "/blog",
+      );
+    });
+
+    it("carries the active category and query into every page href", () => {
+      renderWithProviders(
+        <BlogView
+          posts={[makePost()]}
+          categories={categories}
+          featured={null}
+          activeCategory="guides"
+          query="павербанк"
+          page={1}
+          totalPages={3}
+        />,
+      );
+
+      expect(screen.getByRole("link", { name: "2" })).toHaveAttribute(
+        "href",
+        "/blog?category=guides&q=%D0%BF%D0%B0%D0%B2%D0%B5%D1%80%D0%B1%D0%B0%D0%BD%D0%BA&page=2",
+      );
+    });
+
+    it("drops the page when a category chip switches the selection", () => {
+      renderPaged(3, 5);
+
+      // A page 3 of the old selection means nothing in the new one.
+      expect(screen.getByRole("link", { name: "Огляди" })).toHaveAttribute(
+        "href",
+        "/blog?category=reviews",
+      );
+    });
   });
 
   it("pushes a search query to the URL when typing", async () => {
@@ -127,8 +203,8 @@ describe("BlogView", () => {
         featured={null}
         activeCategory="all"
         query=""
-        hasMore={false}
-        nextPageHref="/blog?page=2"
+        page={1}
+        totalPages={1}
       />,
     );
 

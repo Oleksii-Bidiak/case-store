@@ -31,6 +31,84 @@ export function getAccessToken(): string | null {
 
 export function setAccessToken(token: string | null): void {
   accessToken = token;
+  // Holding a token is the one event that proves a session exists — login,
+  // register and every successful refresh funnel through here. The inverse is
+  // NOT symmetric: `setAccessToken(null)` also runs after a transient refresh
+  // failure, which must not read as a sign-out, so only `clearSessionMarker()`
+  // (logout) and a 401 from refresh take the marker away.
+  if (token) {
+    markSessionActive();
+  }
+}
+
+// ─── Session marker ──────────────────────────────────────────────────────────
+// One non-secret bit in localStorage: "this browser signed in and we have not
+// seen that session end". It is not a credential and grants nothing — the
+// session itself is the HttpOnly refresh cookie, which JavaScript cannot read,
+// and every guarantee around it (single-use, rotation, reuse detection) is
+// enforced by the API and untouched by this.
+//
+// Why it exists (TASK-419): the app restores a session on every page load with
+// POST /api/auth/refresh. A visitor who never signed in has no refresh cookie,
+// so that call answers 401 — and the BROWSER writes that failed request to the
+// console. The app logs nothing here; there is no console.* anywhere on this
+// path, and no handler can suppress a browser's own network log. So the only
+// route to a clean console for a first-time visitor (SF-UX-13) is to not make
+// the request at all, which is exactly what the marker decides.
+//
+// A marker can outlive its cookie (the refresh token expired or was revoked
+// elsewhere). That costs one 401 on one page load, after which the 401 handler
+// below drops the marker and the browser is a clean guest again.
+
+const SESSION_MARKER_KEY = "case-store:session";
+
+/** localStorage, but only if the browser has one AND lets us touch it. */
+function sessionStore(): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    // Site data blocked by the browser / enterprise policy.
+    return null;
+  }
+}
+
+/** Remember that this browser holds a session. Best-effort. */
+export function markSessionActive(): void {
+  try {
+    sessionStore()?.setItem(SESSION_MARKER_KEY, "1");
+  } catch {
+    // Quota or private-mode write failure — see shouldAttemptSessionRefresh.
+  }
+}
+
+/** Forget the session (explicit sign-out, or a refresh the API rejected). */
+export function clearSessionMarker(): void {
+  try {
+    sessionStore()?.removeItem(SESSION_MARKER_KEY);
+  } catch {
+    // Ignore — a marker we cannot remove costs one 401, nothing more.
+  }
+}
+
+/**
+ * Should the app try to restore a session from the refresh cookie?
+ *
+ * True when the marker is there — and equally when localStorage cannot be read
+ * at all (server render, blocked site data). "Unknown" deliberately keeps the
+ * old always-refresh behaviour: answering it with "no session" would sign out
+ * every visitor whose browser blocks storage, which is a far worse failure
+ * than a console line.
+ */
+export function shouldAttemptSessionRefresh(): boolean {
+  const store = sessionStore();
+  if (!store) {
+    return true;
+  }
+  try {
+    return store.getItem(SESSION_MARKER_KEY) !== null;
+  } catch {
+    return true;
+  }
 }
 
 // ─── CSRF (signed double-submit cookie) ──────────────────────────────────────
@@ -150,10 +228,19 @@ export function refreshSession(): Promise<RefreshOutcome> {
       .then((response) => ({
         accessToken: response.data?.data?.accessToken ?? null,
       }))
-      .catch((error: AxiosError) => ({
-        accessToken: null,
-        status: error.response?.status,
-      }))
+      .catch((error: AxiosError) => {
+        const status = error.response?.status;
+        // 401 is the API saying the refresh cookie is gone, expired or revoked
+        // — the one definitive "no session". Drop the marker so the next page
+        // load starts as a guest and never asks again. Everything else (429,
+        // 5xx, a network blip) is transient and the bootstrap retries it, so
+        // the marker must survive: clearing it there would sign a signed-in
+        // user out over a rate-limit hiccup (fix/196).
+        if (status === 401) {
+          clearSessionMarker();
+        }
+        return { accessToken: null, status };
+      })
       .finally(() => {
         refreshPromise = null;
       });
@@ -175,7 +262,10 @@ api.interceptors.response.use(
       error.response?.status === 401 &&
       originalRequest &&
       !originalRequest._retry &&
-      !isAuthEndpoint(originalRequest.url)
+      !isAuthEndpoint(originalRequest.url) &&
+      // No session marker → there is nothing to refresh, and asking would only
+      // add a second failed request (and a second console line) to the first.
+      shouldAttemptSessionRefresh()
     ) {
       originalRequest._retry = true;
 

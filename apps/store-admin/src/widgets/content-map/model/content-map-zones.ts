@@ -1,4 +1,5 @@
 import { BannerEntityPlacement } from "@/entities/banner";
+import { PageEntityKind } from "@/entities/page";
 import { dict } from "@/shared/config";
 
 /**
@@ -16,6 +17,8 @@ export type ContentMapZoneId =
   | "promo-banner"
   | "faq"
   | "legal-pages"
+  | "info-pages"
+  | "hub-pages"
   | "blog"
   | "site-contact"
   | "seo-settings"
@@ -31,7 +34,11 @@ export type ContentMapZoneId =
 export type ContentMapZoneCount =
   | { kind: "banner"; placement: BannerEntityPlacement }
   | { kind: "faq" }
-  | { kind: "pages" }
+  // TASK-435 — one Pages screen, three kinds of row (legal document, help page,
+  // hub meta card). Typed against the real {@link PageEntityKind} enum for the
+  // same reason `banner` is typed against its placement enum: a fourth kind must
+  // break the build here, not silently miscount.
+  | { kind: "pages"; pageKind: PageEntityKind }
   | { kind: "blog" }
   | null;
 
@@ -57,10 +64,11 @@ export interface ContentMapPageGroup {
 }
 
 /**
- * The ten content zones. Order within a group is the visual top-to-bottom
+ * The twelve content zones. Order within a group is the visual top-to-bottom
  * storefront order. Banner `targetHref`s carry a `?placement=` deep-link that
- * `AdminBannerTable` reads (TASK-264-C) to pre-filter to that one section; if
- * that reader hasn't shipped, the link still lands on the full `/banners` view.
+ * `AdminBannerTable` reads (TASK-264-C) to pre-filter to that one section, and
+ * the three page zones carry the matching `?kind=` for `AdminPageTable`'s tabs;
+ * if a reader hasn't shipped, the link still lands on the unfiltered list.
  */
 export const CONTENT_MAP_ZONES: readonly ContentMapZone[] = [
   {
@@ -134,9 +142,27 @@ export const CONTENT_MAP_ZONES: readonly ContentMapZone[] = [
     id: "legal-pages",
     sourceLabel: dict.contentMap.zones.legalPages.source,
     targetLabel: dict.contentMap.zones.legalPages.target,
-    targetHref: "/pages",
+    // `?kind=` is the tab parameter AdminPageTable reads, so each of these
+    // lands on the matching tab already filtered.
+    targetHref: `/pages?kind=${PageEntityKind.LEGAL}`,
     appliesTo: dict.contentMap.zones.legalPages.appliesTo,
-    count: { kind: "pages" },
+    count: { kind: "pages", pageKind: PageEntityKind.LEGAL },
+  },
+  {
+    id: "info-pages",
+    sourceLabel: dict.contentMap.zones.infoPages.source,
+    targetLabel: dict.contentMap.zones.infoPages.target,
+    targetHref: `/pages?kind=${PageEntityKind.INFO}`,
+    appliesTo: dict.contentMap.zones.infoPages.appliesTo,
+    count: { kind: "pages", pageKind: PageEntityKind.INFO },
+  },
+  {
+    id: "hub-pages",
+    sourceLabel: dict.contentMap.zones.hubPages.source,
+    targetLabel: dict.contentMap.zones.hubPages.target,
+    targetHref: `/pages?kind=${PageEntityKind.HUB}`,
+    appliesTo: dict.contentMap.zones.hubPages.appliesTo,
+    count: { kind: "pages", pageKind: PageEntityKind.HUB },
   },
   // AD-CNT-26 (TASK-429). `/promo` is a real storefront page linked from the
   // header, and until now the map denied it existed — an owner looking for "where
@@ -169,7 +195,10 @@ export const CONTENT_MAP_PAGE_GROUPS: readonly ContentMapPageGroup[] = [
   {
     id: "global",
     heading: dict.contentMap.groups.global,
-    zoneIds: ["announcement-bar", "site-contact", "seo-settings"],
+    // `hub-pages` sits here rather than under one page frame: a single screen
+    // supplies the meta tags of six different section landing pages, so it
+    // belongs to no one of them.
+    zoneIds: ["announcement-bar", "site-contact", "seo-settings", "hub-pages"],
   },
   {
     id: "home",
@@ -186,7 +215,7 @@ export const CONTENT_MAP_PAGE_GROUPS: readonly ContentMapPageGroup[] = [
   {
     id: "info",
     heading: dict.contentMap.groups.info,
-    zoneIds: ["faq"],
+    zoneIds: ["faq", "info-pages"],
   },
   {
     id: "blog",

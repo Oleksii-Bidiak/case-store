@@ -3,6 +3,7 @@
 
 export { Button, buttonVariants } from "./button";
 export { Checkbox } from "./checkbox";
+export { Switch } from "./switch";
 export {
   Dialog,
   DialogClose,

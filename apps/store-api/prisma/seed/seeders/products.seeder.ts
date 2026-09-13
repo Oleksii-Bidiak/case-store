@@ -109,6 +109,12 @@ export async function seedProducts(
         brandId,
         metaTitle: p.metaTitle ?? null,
         metaDescription: p.metaDescription ?? null,
+        keywords: p.keywords ?? [],
+        // Always written, including the null: the demo `ogImage` below is set in
+        // a second pass (it needs the rendered image URLs), so without this line
+        // an entry that LOSES its `demoOgImage` flag would keep the image from
+        // an earlier run and the seed would stop being reproducible.
+        ogImage: null,
         attributes,
         positionOrder: i,
         isActive: true,
@@ -150,6 +156,18 @@ export async function seedProducts(
           },
         });
         imageCount++;
+      }
+
+      // TASK-437 demo: a social-preview image that is NOT the catalogue cover.
+      // Taken from the last image this position just rendered, so the URL points
+      // at a file on disk — the seed never invents one (`defaultOgImage` in the
+      // SEO singleton is seeded null for the same reason).
+      const ogRef = p.demoOgImage ? imageRefs.at(-1) : undefined;
+      if (ogRef) {
+        await prisma.product.update({
+          where: { id: position.id },
+          data: { ogImage: ogRef.url },
+        });
       }
     }
   }

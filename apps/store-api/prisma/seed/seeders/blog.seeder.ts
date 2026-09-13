@@ -32,6 +32,15 @@ export async function seedBlog(prisma: PrismaClient) {
       authorName: post.author,
       readingMinutes: post.readingMinutes,
       featured: post.featured ?? false,
+      listed: post.listed ?? true,
+      metaTitle: post.metaTitle ?? null,
+      metaDescription: post.metaDescription ?? null,
+      keywords: post.keywords ?? [],
+      // No demo `ogImage` for articles: the seed renders no blog artwork, and an
+      // invented URL would demo a broken image (`defaultOgImage` is seeded null
+      // for the same reason). A coverless post still previews with the brand
+      // card via `buildOgImages`.
+      ogImage: null,
       categoryId: categoryIds[post.cat],
       status: 'PUBLISHED' as const,
       publishedAt,

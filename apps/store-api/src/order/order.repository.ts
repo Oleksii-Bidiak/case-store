@@ -14,6 +14,9 @@ import {
   productDetailSlugKey,
   PRODUCT_LIST_PREFIX,
 } from '../cache';
+// The narrow seam SearchModule exports — this file never learns what the search
+// engine is, exactly as `ProductService` does not.
+import { ProductIndexer } from '../search/product-indexer';
 import type {
   CreateOrderParams,
   OrderWithItems,
@@ -178,6 +181,7 @@ export class OrderRepository {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    private readonly productIndexer: ProductIndexer,
   ) {}
 
   /**
@@ -1302,6 +1306,14 @@ export class OrderRepository {
    * and checkout re-check stock server-side, so nobody can buy what is gone.
    * Noted rather than left silent, because an undocumented omission here is the
    * same class of bug this task closed.
+   *
+   * Since TASK-417 the SEARCH index is a third derived read model of the same
+   * fact. Its documents carry `inStock`, and `inStock` is a Meilisearch facet
+   * the results page filters on — so a sale that is not reindexed leaves
+   * `/search?inStock=true` offering a product the PDP calls sold out, and a
+   * restock leaves a buyable product out of «В наявності» until an admin edits
+   * the card. The reindex is fired and NOT awaited: unlike the cache deletes it
+   * is a network call to another box, and no checkout may wait on it.
    */
   private async evictProductCaches(items: OrderItemRow[]): Promise<void> {
     await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
@@ -1311,6 +1323,22 @@ export class OrderRepository {
       seen.add(item.productId);
       await this.cache.del(productDetailSlugKey(item.product.slug));
       await this.cache.del(productDetailIdKey(item.productId));
+    }
+    this.reindexInBackground([...seen]);
+  }
+
+  /**
+   * Best-effort, non-blocking search reindex of the products whose stock moved.
+   *
+   * `ProductIndexer` already swallows and logs its own failures, so the extra
+   * `catch` here only covers a rejection thrown before it gets that far — a
+   * stock movement must never fail because a search engine is unreachable.
+   */
+  private reindexInBackground(productIds: string[]): void {
+    for (const productId of productIds) {
+      void this.productIndexer.index(productId).catch((err: unknown) => {
+        this.logger.warn(`Best-effort stock reindex failed for ${productId}: ${String(err)}`);
+      });
     }
   }
 }

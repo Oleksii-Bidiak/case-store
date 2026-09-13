@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { ThemeProvider } from "next-themes";
 import { useState } from "react";
 import { AuthProvider } from "@/entities/session";
 import { Toaster } from "@/shared/ui";
@@ -44,13 +45,33 @@ export function Providers({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <QueryRecovery />
-      <AuthProvider>
-        {children}
-        <Toaster />
-        <ReactQueryDevtools initialIsOpen={false} />
-      </AuthProvider>
-    </QueryClientProvider>
+    /* ThemeProvider is the OUTERMOST provider (TASK-412): it renders an inline
+       script that sets `data-theme` on <html> before first paint, so it must be
+       able to run without waiting on anything else, and every consumer below —
+       the header switch, the account settings, <Toaster /> — reads its context.
+       `attribute="data-theme"` matches the selectors in globals.css;
+       `enableSystem` + `defaultTheme="system"` keep "follow the OS" the default
+       for a first-time visitor (the storefront behaved that way before a manual
+       choice existed); `disableTransitionOnChange` suppresses every CSS
+       transition for the duration of the switch, so flipping the theme repaints
+       once instead of animating a few hundred colours at different speeds.
+       The choice is persisted by next-themes in localStorage under `theme`.
+       NOTE: <html> in layout.tsx needs `suppressHydrationWarning` because that
+       script mutates the element the server just rendered. */
+    <ThemeProvider
+      attribute="data-theme"
+      defaultTheme="system"
+      enableSystem
+      disableTransitionOnChange
+    >
+      <QueryClientProvider client={queryClient}>
+        <QueryRecovery />
+        <AuthProvider>
+          {children}
+          <Toaster />
+          <ReactQueryDevtools initialIsOpen={false} />
+        </AuthProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }

@@ -139,6 +139,29 @@ export class ProductListQueryDto {
 
   @ApiProperty({
     description:
+      'Filter to products a shopper can actually buy right now — `stock > 0` (TASK-414). ' +
+      'The storefront «В наявності» checkbox. Composes with every other filter. On the ' +
+      'admin listing the opposite `outOfStock` worklist filter wins if both are sent.',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  // Same `obj[key]` read as `isActive` / `outOfStock` / `onSale`, for the same
+  // reason spelled out below: under the global ValidationPipe's
+  // `enableImplicitConversion: true` the raw query string is Boolean-coerced
+  // BEFORE this transform runs, and `Boolean('false')` is `true` — so a naive
+  // `@Type(() => Boolean)` would make `?inStock=false` mean "in stock only".
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
+    return undefined;
+  })
+  @IsBoolean({ message: 'inStock must be true or false' })
+  inStock?: boolean;
+
+  @ApiProperty({
+    description:
       'Filter to products currently on sale (compareAtPrice set and greater than price). ' +
       'Composes with every other filter and with sortBy=bestselling (TASK-179).',
     example: true,
@@ -201,16 +224,24 @@ export class ProductListQueryDto {
 
   @ApiProperty({
     description:
-      'Structured spec facet filter as a single "key:value" pair (TASK-191), e.g. "material:Силікон". ' +
-      'Kept a plain string on the wire so it maps to a normal query param; parsed to a ' +
-      '{ key, value } pair server-side via parseSpecFilter (malformed input is ignored).',
-    example: 'material:Силікон',
+      'Structured spec facet filter (TASK-191, multi-value since TASK-414 / owner decision B-10): ' +
+      '`key:v1,v2;key2:v3`. Values INSIDE one facet are OR-ed, facets are AND-ed — ' +
+      '"силікон or TPU, and a case". The original single-pair form ("material:Силікон") ' +
+      'stays a valid input so live links keep working. Kept a plain string on the wire so ' +
+      'it maps to a normal query param; parsed server-side via parseSpecFilters (malformed ' +
+      'chunks are ignored, never rejected). Values may contain ":" but NOT "," or ";" — ' +
+      'those are the separators and there is no escape form.',
+    example: 'material:Силікон,TPU;case-type:Накладка',
     type: String,
     required: false,
   })
   @IsOptional()
   @IsString()
-  @MaxLength(200, { message: 'specs must be at most 200 characters' })
+  // Raised from 200 for the multi-value form (TASK-414): the parser caps the
+  // result at MAX_SPEC_FACETS × MAX_SPEC_VALUES_PER_FACET, and 600 characters
+  // comfortably holds that many realistic Ukrainian facet values while still
+  // bounding what reaches the parser.
+  @MaxLength(600, { message: 'specs must be at most 600 characters' })
   specs?: string;
 
   @ApiProperty({
@@ -245,18 +276,92 @@ export class ProductListQueryDto {
   sortOrder?: 'asc' | 'desc' = 'desc';
 }
 
+/** One requested spec facet: a definition key plus the values OR-ed within it. */
+export interface SpecFacetFilter {
+  key: string;
+  values: string[];
+}
+
 /**
- * Parse the `specs=key:value` facet param into a `{ key, value }` pair
- * (TASK-191). Splits on the FIRST colon only so a value may itself contain
- * colons; returns `undefined` for missing or malformed input (empty key/value,
- * no colon), so the caller simply applies no facet filter.
+ * Hard ceiling on how many distinct facets one request may filter by. Each
+ * facet becomes its OWN `where.AND` entry — a nested `specValues.some(...)`
+ * subquery — so the count is a direct multiplier on query cost.
  */
-export function parseSpecFilter(raw?: string): { key: string; value: string } | undefined {
-  if (typeof raw !== 'string') return undefined;
-  const idx = raw.indexOf(':');
-  if (idx <= 0) return undefined;
-  const key = raw.slice(0, idx).trim();
-  const value = raw.slice(idx + 1).trim();
-  if (key === '' || value === '') return undefined;
-  return { key, value };
+export const MAX_SPEC_FACETS = 6;
+
+/** Hard ceiling on the OR-ed values inside one facet (one `IN (...)` list). */
+export const MAX_SPEC_VALUES_PER_FACET = 20;
+
+/**
+ * Parse the `specs` facet param into the requested facets (TASK-191, extended
+ * to multi-value by TASK-414 / owner decision B-10).
+ *
+ * Grammar: `key:v1,v2;key2:v3` — `;` separates facets, the FIRST `:` in a chunk
+ * separates the key from its values, `,` separates the values. Splitting the key
+ * on the first colon only means a VALUE may still contain colons ("ratio:16:9");
+ * a value may NOT contain `,` or `;`, which are the separators and have no escape
+ * form (see the BACKLOG follow-up row).
+ *
+ * Semantics (B-10): values inside one facet are OR-ed, facets are AND-ed. This
+ * function only reports what was asked for — the AND/OR is built in
+ * `ProductRepository.findAll`.
+ *
+ * Robust by design: a malformed chunk (no colon, empty key, no non-empty values)
+ * is SKIPPED rather than rejected, so an old or hand-edited link degrades to a
+ * narrower filter instead of a 400. The legacy single-pair form
+ * ("material:Силікон") therefore parses to exactly one facet with one value.
+ *
+ * Excess is discarded, not rejected: at most {@link MAX_SPEC_FACETS} facets and
+ * {@link MAX_SPEC_VALUES_PER_FACET} values per facet survive. Repeating a key
+ * MERGES its values into the one facet — two AND-ed conditions on the same
+ * definition could never both match (`@@unique([productId, definitionId])`), so
+ * merging is the only reading that is not silently empty.
+ */
+export function parseSpecFilters(raw?: string): SpecFacetFilter[] {
+  if (typeof raw !== 'string') return [];
+
+  const byKey = new Map<string, string[]>();
+
+  for (const chunk of raw.split(';')) {
+    const idx = chunk.indexOf(':');
+    if (idx <= 0) continue;
+
+    const key = chunk.slice(0, idx).trim();
+    if (key === '') continue;
+
+    const values = chunk
+      .slice(idx + 1)
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value !== '');
+    if (values.length === 0) continue;
+
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.push(...values);
+      continue;
+    }
+    // The facet ceiling applies to NEW keys only — a repeat of an already
+    // accepted key merges above and costs no extra subquery.
+    if (byKey.size >= MAX_SPEC_FACETS) continue;
+    byKey.set(key, [...values]);
+  }
+
+  return [...byKey.entries()].map(([key, values]) => ({
+    key,
+    values: [...new Set(values)].slice(0, MAX_SPEC_VALUES_PER_FACET),
+  }));
+}
+
+/**
+ * Serialize parsed facets back to the wire form. Used for the CACHE KEY, where
+ * it matters that the string reflects what was actually applied (post-cap,
+ * post-dedup) rather than whatever the client typed. Ordering is NOT normalized
+ * here — `buildProductListKey` canonicalizes it, so the sort lives in exactly
+ * one place. Returns `undefined` when nothing is filtered, matching the
+ * "omit absent fields" rule of the key builder.
+ */
+export function serializeSpecFilters(facets: SpecFacetFilter[]): string | undefined {
+  if (facets.length === 0) return undefined;
+  return facets.map((facet) => `${facet.key}:${facet.values.join(',')}`).join(';');
 }

@@ -146,6 +146,29 @@ export class PublicProductEntity {
   })
   metaDescription!: string | null;
 
+  @ApiProperty({
+    description:
+      'Internal content tags (TASK-437). The storefront does NOT render these as a ' +
+      '`<meta name="keywords">` tag — they exist for internal search and AI-summary use.',
+    example: ['magsafe', 'ударостійкий'],
+    type: [String],
+    // Optional in the CONTRACT, never absent from a response — see
+    // ProductEntity.keywords for why (TASK-437).
+    required: false,
+  })
+  keywords!: string[];
+
+  @ApiProperty({
+    description:
+      'Open Graph image chosen for this product. First tier of the storefront’s ' +
+      '`buildOgImages` chain — ahead of the product’s own first photo (TASK-437).',
+    example: 'https://cdn.example.com/og/iphone-15-case.jpg',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  ogImage!: string | null;
+
   @ApiProperty({ description: 'Creation timestamp', example: '2024-01-01T00:00:00.000Z' })
   createdAt!: Date;
 
@@ -229,6 +252,8 @@ export class PublicProductEntity {
     isActive: boolean;
     metaTitle?: string | null;
     metaDescription?: string | null;
+    keywords?: string[];
+    ogImage?: string | null;
     createdAt: Date;
     updatedAt: Date;
     ratingAverage?: number | null;
@@ -280,6 +305,8 @@ export class PublicProductEntity {
     entity.isActive = product.isActive;
     entity.metaTitle = product.metaTitle ?? null;
     entity.metaDescription = product.metaDescription ?? null;
+    entity.keywords = product.keywords ?? [];
+    entity.ogImage = product.ogImage ?? null;
     entity.createdAt = product.createdAt;
     entity.updatedAt = product.updatedAt;
     entity.ratingAverage =

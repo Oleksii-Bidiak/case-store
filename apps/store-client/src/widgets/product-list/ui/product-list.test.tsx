@@ -8,6 +8,7 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { ProductList } from "./product-list";
+import { ProductListSkeleton } from "./product-list-skeleton";
 
 function variantSummary(overrides: Record<string, unknown> = {}) {
   return {
@@ -216,7 +217,12 @@ describe("ProductList load-more append (TASK-216)", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the grid two-up on mobile (grid-cols-2) with the auto-fill layout from sm up (TASK-259-G)", async () => {
+  // TASK-415 supersedes TASK-259-G (F-19): the owner chose an explicit
+  // 1 / 2 / 4 ladder over the auto-fill layout — one card below 390px (the
+  // smallest phones were squeezing two unreadable cards side by side), two from
+  // 390px, four from `lg`. The skeleton must declare the SAME columns, or the
+  // page reflows the moment real cards replace it.
+  it("renders the grid one-up under 390px, two-up from 390px and four-up from lg (TASK-415)", async () => {
     installProducts({ "": CAT_1_PAGES }, { limit: 2 });
 
     renderWithProviders(
@@ -226,11 +232,31 @@ describe("ProductList load-more append (TASK-216)", () => {
     const card = await screen.findByText("Alpha Case");
     const grid = card.closest(".grid");
     expect(grid).not.toBeNull();
-    // 2 columns below sm; the responsive auto-fill kicks in at the sm breakpoint.
-    expect(grid).toHaveClass("grid-cols-2");
-    expect(grid?.className).toContain(
-      "sm:[grid-template-columns:repeat(auto-fill,minmax(232px,1fr))]",
+    expect(grid).toHaveClass(
+      "grid-cols-1",
+      "min-[390px]:grid-cols-2",
+      "lg:grid-cols-4",
     );
+    // Cards in a row share one height whatever their title/badge count.
+    expect(grid).toHaveClass("items-stretch");
+    // The old auto-fill layout is gone, not merely overridden.
+    expect(grid?.className).not.toContain("grid-template-columns");
+  });
+
+  it("lays the skeleton out in exactly the same columns as the real grid (TASK-415)", async () => {
+    installProducts({ "": CAT_1_PAGES }, { limit: 2 });
+
+    renderWithProviders(
+      <ProductList {...baseProps} params={{ page: 1, limit: 2 }} />,
+    );
+    const realGrid = (await screen.findByText("Alpha Case")).closest(".grid");
+
+    const { container } = renderWithProviders(<ProductListSkeleton />);
+    const skeletonGrid = container.querySelector(".grid");
+
+    // Byte-identical, not merely "both responsive": any drift here is a visible
+    // reflow when the skeleton is replaced by cards.
+    expect(skeletonGrid?.className).toBe(realGrid?.className);
   });
 
   it("resets the accumulated pages when the base ?page= changes (back/forward, pagination links)", async () => {

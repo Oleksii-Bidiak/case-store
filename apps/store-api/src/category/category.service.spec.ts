@@ -24,7 +24,12 @@ import {
   CategorySelfParentError,
   CategoryTreeStaleError,
 } from './category.errors';
-import { CacheService, PRODUCT_CACHE_PREFIX, PRODUCT_LIST_PREFIX } from '../cache';
+import {
+  BRAND_LIST_PREFIX,
+  CacheService,
+  PRODUCT_CACHE_PREFIX,
+  PRODUCT_LIST_PREFIX,
+} from '../cache';
 import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
@@ -846,8 +851,13 @@ describe('CategoryService', () => {
 
       await service.update('cat-uuid-2', { parentId: 'cat-uuid-3' });
 
-      expect(cacheMock.delByPrefix).toHaveBeenCalledTimes(1);
+      // Two namespaces, one per write: the product lists whose keys carry the
+      // subtree rollup, and the per-category brand list derived from the same
+      // subtree (TASK-414) — the latter lives outside `product:` on purpose, so
+      // it has to be named separately or it is never reached.
+      expect(cacheMock.delByPrefix).toHaveBeenCalledTimes(2);
       expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(BRAND_LIST_PREFIX);
       expect(cacheMock.delByPrefix.mock.invocationCallOrder[0]).toBeGreaterThan(
         categoryRepositoryMock.update.mock.invocationCallOrder[0],
       );
@@ -960,7 +970,7 @@ describe('CategoryService', () => {
       expect(categoryRepositoryMock.applyTreeMoves).toHaveBeenCalledWith(groups);
     });
 
-    it('evicts the product-list cache exactly once, AFTER the transaction', async () => {
+    it('evicts both catalogue caches exactly once each, AFTER the transaction', async () => {
       categoryRepositoryMock.applyTreeMoves.mockResolvedValue({
         tree: adminTree,
         movedIds: ['cat-uuid-2'],
@@ -968,8 +978,11 @@ describe('CategoryService', () => {
 
       await service.reorderTree({ groups }, 'admin-1');
 
-      expect(cacheMock.delByPrefix).toHaveBeenCalledTimes(1);
+      // Once per namespace, not once per group in the batch — that is what this
+      // test has always been guarding.
+      expect(cacheMock.delByPrefix).toHaveBeenCalledTimes(2);
       expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(BRAND_LIST_PREFIX);
       expect(cacheMock.delByPrefix.mock.invocationCallOrder[0]).toBeGreaterThan(
         categoryRepositoryMock.applyTreeMoves.mock.invocationCallOrder[0],
       );

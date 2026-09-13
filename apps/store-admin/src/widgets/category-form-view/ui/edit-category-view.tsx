@@ -14,6 +14,7 @@ import {
 import { AttributeDefinitionEditor } from "@/features/attribute-definition-editor";
 import { CategoryAddonTemplatePicker } from "@/features/category-addon-template-picker";
 import { Separator } from "@/shared/ui";
+import { formatKeywords } from "@/shared/lib/seo";
 import {
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
   getAdminCategoryControllerFindByIdQueryKey,
@@ -164,6 +165,8 @@ function mapCategoryToFormValues(category: {
   isActive: boolean;
   metaTitle?: string | null;
   metaDescription?: string | null;
+  keywords?: string[];
+  ogImage?: string | null;
 }): Partial<CategoryFormInput> {
   return {
     name: category.name,
@@ -174,5 +177,7 @@ function mapCategoryToFormValues(category: {
     isActive: category.isActive,
     metaTitle: category.metaTitle ?? "",
     metaDescription: category.metaDescription ?? "",
+    keywords: formatKeywords(category.keywords),
+    ogImage: category.ogImage ?? "",
   };
 }

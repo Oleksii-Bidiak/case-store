@@ -4,6 +4,8 @@ import {
   userEvent,
   waitFor,
 } from "@/shared/test/render";
+import { http, HttpResponse } from "msw";
+import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { PageForm } from "./page-form";
 
@@ -125,5 +127,255 @@ describe("PageForm — content preview tab (TASK-266)", () => {
     expect(screen.getByTestId("rich-text-preview")).toHaveTextContent(
       dict.contentPreview.emptyContent,
     );
+  });
+});
+
+// TASK-435 — the form now decides WHAT a row is, and the kind decides where it
+// lives. Two things must not be possible: a hub with an invented address, and a
+// SERP preview that shows an address the page will not actually have.
+describe("PageForm — page kind (TASK-435)", () => {
+  const kindField = () => screen.getByLabelText(dict.pageForm.kind);
+  const previewUrl = () => screen.getByTestId("seo-snippet-url");
+
+  it("defaults to a legal page, and previews it under /legal", async () => {
+    renderWithProviders(
+      <PageForm
+        id="page-1"
+        defaultValues={{ title: "Оферта", slug: "offer", content: "<p>x</p>" }}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() => expect(kindField()).toHaveValue("LEGAL"));
+    expect(previewUrl()).toHaveTextContent("legal › offer");
+  });
+
+  it("moves the previewed address to /info when the kind becomes a help page", async () => {
+    renderWithProviders(
+      <PageForm
+        id="page-1"
+        defaultValues={{ title: "Про нас", slug: "about", content: "<p>x</p>" }}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+    await waitFor(() =>
+      expect(previewUrl()).toHaveTextContent("legal › about"),
+    );
+
+    await userEvent.selectOptions(kindField(), "INFO");
+
+    await waitFor(() => expect(previewUrl()).toHaveTextContent("info › about"));
+    expect(previewUrl()).not.toHaveTextContent("legal");
+  });
+
+  it("replaces the free-text slug with a picker of real sections for a hub", async () => {
+    renderWithProviders(<PageForm onSubmit={noop} isPending={false} />);
+
+    expect(screen.getByLabelText(dict.pageForm.slug)).toBeInTheDocument();
+
+    await userEvent.selectOptions(kindField(), "HUB");
+
+    // The free-text field is gone — a hub address cannot be typed.
+    expect(screen.queryByLabelText(dict.pageForm.slug)).not.toBeInTheDocument();
+    const picker = screen.getByLabelText(dict.pageForm.hubSlug);
+    expect(picker).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "/blog" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "/categories" }),
+    ).toBeInTheDocument();
+  });
+
+  it("previews a hub at the section's own route, with no slug segment after it", async () => {
+    renderWithProviders(<PageForm onSubmit={noop} isPending={false} />);
+
+    await userEvent.selectOptions(kindField(), "HUB");
+    await userEvent.selectOptions(
+      screen.getByLabelText(dict.pageForm.hubSlug),
+      "blog",
+    );
+
+    await waitFor(() => expect(previewUrl()).toHaveTextContent("› blog"));
+    expect(previewUrl()).not.toHaveTextContent("legal");
+    expect(previewUrl()).not.toHaveTextContent("info");
+  });
+
+  it("refuses to submit a hub with no section chosen", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<PageForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(screen.getByTestId("rte-stub"), "<p>Текст</p>");
+    await userEvent.type(screen.getByLabelText(dict.pageForm.title), "Хаб");
+    await userEvent.selectOptions(kindField(), "HUB");
+    await userEvent.click(screen.getByRole("button", { name: /Зберегти/ }));
+
+    expect(
+      await screen.findByText(dict.pageForm.errors.hubSlugRequired),
+    ).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("submits the chosen kind and hub slug", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<PageForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(screen.getByTestId("rte-stub"), "<p>Текст</p>");
+    await userEvent.type(
+      screen.getByLabelText(dict.pageForm.title),
+      "Розділ «Блог»",
+    );
+    await userEvent.selectOptions(kindField(), "HUB");
+    await userEvent.selectOptions(
+      screen.getByLabelText(dict.pageForm.hubSlug),
+      "blog",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Зберегти/ }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      kind: "HUB",
+      slug: "blog",
+    });
+  });
+
+  it("tells the operator a hub body is never shown on the site", async () => {
+    renderWithProviders(<PageForm onSubmit={noop} isPending={false} />);
+
+    expect(
+      screen.queryByText(dict.pageForm.hubContentHint),
+    ).not.toBeInTheDocument();
+
+    await userEvent.selectOptions(kindField(), "HUB");
+
+    expect(screen.getByText(dict.pageForm.hubContentHint)).toBeInTheDocument();
+  });
+
+  // TASK-437 — the same tag/OG pair as the other three content forms, with the
+  // hint that keeps the tags from being mistaken for a Google ranking signal.
+  it("renders the tag and OG fields with their honest hint", () => {
+    renderWithProviders(<PageForm onSubmit={noop} isPending={false} />);
+
+    expect(screen.getByLabelText(dict.seoFields.keywords)).toBeInTheDocument();
+    expect(screen.getByLabelText(dict.seoFields.ogImage)).toBeInTheDocument();
+    expect(screen.getByText(dict.seoFields.keywordsHint)).toBeInTheDocument();
+  });
+});
+
+// The preview is the owner's only feedback loop for what <head> will say, so
+// where it disagrees with the storefront it is worse than no preview at all.
+describe("PageForm — preview parity with the storefront", () => {
+  const kindField = () => screen.getByLabelText(dict.pageForm.kind);
+  // The description <p> is not rendered at all when the resolved value is empty,
+  // so "no description" is queried, not asserted on a present node.
+  const previewDescription = () =>
+    screen.queryByTestId("seo-snippet-description");
+
+  // TASK-433 — the store name became an admin-managed field; the preview kept
+  // branding with the compile-time constant.
+  it("brands the title with the store name from /settings/seo, not the constant", async () => {
+    server.use(
+      http.get("*/api/seo-settings", () =>
+        HttpResponse.json({
+          data: {
+            id: "00000000-0000-0000-0000-000000000002",
+            siteName: "Аксесуарня",
+            defaultMetaTitle: null,
+            defaultMetaDescription: null,
+            titleTemplate: null,
+            defaultOgImage: null,
+            logoUrl: null,
+            noindexSite: false,
+            llmsTxtSummary: null,
+            additionalSameAsLinks: [],
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        }),
+      ),
+    );
+
+    renderWithProviders(
+      <PageForm
+        id="page-1"
+        defaultValues={{ title: "Доставка та оплата", content: "<p>x</p>" }}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(previewTitle()).toHaveTextContent(
+        "Доставка та оплата | Аксесуарня",
+      ),
+    );
+  });
+
+  // TASK-435 — `buildHubMetadata` derives a hub's description from the EXCERPT
+  // only (the body is never rendered) and deliberately blanks the store-wide
+  // defaults. A preview that showed the body would promise text <head> cannot
+  // carry.
+  it("stops deriving a hub description from the body", async () => {
+    renderWithProviders(
+      <PageForm
+        id="page-hub"
+        defaultValues={{
+          title: "Розділ «Блог»",
+          content: "<p>SEO-картка розділу.</p>",
+        }}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(previewDescription()).toHaveTextContent("SEO-картка розділу."),
+    );
+
+    await userEvent.selectOptions(kindField(), "HUB");
+
+    await waitFor(() => expect(previewDescription()).toBeNull());
+  });
+
+  it("stops showing the global default as a hub's description", async () => {
+    server.use(
+      http.get("*/api/seo-settings", () =>
+        HttpResponse.json({
+          data: {
+            id: "00000000-0000-0000-0000-000000000002",
+            siteName: null,
+            defaultMetaTitle: null,
+            defaultMetaDescription: "Магазин преміальних аксесуарів",
+            titleTemplate: null,
+            defaultOgImage: null,
+            logoUrl: null,
+            noindexSite: false,
+            llmsTxtSummary: null,
+            additionalSameAsLinks: [],
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        }),
+      ),
+    );
+
+    renderWithProviders(
+      <PageForm
+        id="page-hub-2"
+        defaultValues={{ title: "Розділ «Блог»" }}
+        onSubmit={noop}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(previewDescription()).toHaveTextContent(
+        "Магазин преміальних аксесуарів",
+      ),
+    );
+
+    await userEvent.selectOptions(kindField(), "HUB");
+
+    await waitFor(() => expect(previewDescription()).toBeNull());
   });
 });

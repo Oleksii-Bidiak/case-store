@@ -24,6 +24,7 @@ import { ProductAddonDeltaPanel } from "@/features/product-addon-delta-panel";
 import { ProductSpecsEditor } from "@/features/product-specs-editor";
 import { ProductPublishPanel } from "@/features/product-publish-panel";
 import { Separator } from "@/shared/ui";
+import { formatKeywords } from "@/shared/lib/seo";
 import { dict } from "@/shared/config";
 import { apiErrorMessage } from "@/shared/lib";
 
@@ -276,6 +277,8 @@ function mapProductToFormValues(product: {
   positionOrder: number;
   metaTitle?: string | null;
   metaDescription?: string | null;
+  keywords?: string[];
+  ogImage?: string | null;
 }): Partial<ProductFormInput> {
   return {
     name: product.name,
@@ -298,5 +301,7 @@ function mapProductToFormValues(product: {
     // `isActive` is not a form field (TASK-361) — see ProductPublishPanel.
     metaTitle: product.metaTitle ?? "",
     metaDescription: product.metaDescription ?? "",
+    keywords: formatKeywords(product.keywords),
+    ogImage: product.ogImage ?? "",
   };
 }

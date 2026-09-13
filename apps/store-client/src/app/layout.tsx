@@ -5,13 +5,9 @@ import { Providers } from "./providers";
 import { Header } from "@/widgets/header";
 import { Footer } from "@/widgets";
 import {
-  BRAND_OG_IMAGE_HEIGHT,
-  BRAND_OG_IMAGE_PATH,
-  BRAND_OG_IMAGE_WIDTH,
   PRIMARY_COLOR,
   PRIMARY_COLOR_DARK,
   SITE_URL,
-  SITE_NAME,
   dict,
   UMAMI_ENABLED,
   UMAMI_SRC,
@@ -19,7 +15,12 @@ import {
 } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { resolveSeo, resolveTitleTemplate } from "@/shared/lib/seo";
+import {
+  buildOgImages,
+  resolveSeo,
+  resolveSiteName,
+  resolveTitleTemplate,
+} from "@/shared/lib/seo";
 import "./globals.css";
 
 /**
@@ -65,7 +66,8 @@ export const viewport: Viewport = {
  * Root metadata, seeded from the admin-managed SeoSettings singleton (TASK-239)
  * with the hardcoded localized strings kept as the zero-config fallback:
  *   - title.template — `SeoSettings.titleTemplate` when it contains a `%s`
- *     token, else the default `%s | ${SITE_NAME}`.
+ *     token, else the default `%s | <store name>` (the admin-managed
+ *     `SeoSettings.siteName`, falling back to the SITE_NAME constant).
  *   - title.default / description — the admin defaults when set, else the
  *     current `dict.meta.*` strings.
  *   - openGraph.images — seeded from `SeoSettings.defaultOgImage` when set.
@@ -76,47 +78,42 @@ export const viewport: Viewport = {
 export async function generateMetadata(): Promise<Metadata> {
   const seo = await fetchSeoSettings();
 
-  // Root defaults resolved through the shared precedence helper: the SeoSettings
-  // defaults win (tier 2), else the hardcoded localized strings (tier 3). The
-  // brand title template is picked separately and applied by Next to each page's
+  // Root defaults resolved through the shared precedence helper. The root layout
+  // is not an entity — it has no content of its own — so ONLY `settings` is fed
+  // in, and the hardcoded localized strings stay where they belong: as the outer
+  // `||` / `??` fallback below. (Before TASK-432 the dict strings were passed as
+  // `content`; harmless while the global default outranked content, a regression
+  // the moment content started winning — the admin's /settings/seo defaults would
+  // have been shadowed by a constant that is never empty.) The brand title
+  // template is picked separately and applied by Next to each page's
   // plain-string `<title>` (`title.default` itself is never templated).
-  const resolved = resolveSeo({
-    settings: seo,
-    content: {
-      name: dict.meta.rootTitle,
-      description: dict.meta.rootDescription,
-    },
-  });
+  const resolved = resolveSeo({ settings: seo });
+  // TASK-433: the store's name now comes from `SeoSettings.siteName`, with
+  // SITE_NAME as the zero-config fallback baked into `resolveSiteName`. This is
+  // the root template, so it is what brands every child page's static title.
+  const siteName = resolveSiteName(seo);
 
   return {
     metadataBase: new URL(SITE_URL),
     title: {
       default: resolved.title || dict.meta.rootTitle,
-      template: resolveTitleTemplate(seo, SITE_NAME),
+      template: resolveTitleTemplate(seo, siteName),
     },
     description: resolved.description ?? dict.meta.rootDescription,
     openGraph: {
       type: "website",
-      siteName: SITE_NAME,
+      siteName,
       url: SITE_URL,
       locale: "uk_UA",
-      // Admin-uploaded default OG image (tier 2) wins verbatim; otherwise the
-      // committed brand card ships so link previews are never image-less
-      // (TASK-279, plan 145 Design Decision 1). The relative path resolves to
-      // an absolute URL via `metadataBase` above. Deliberately explicit code —
-      // NOT the app/opengraph-image.png file convention — so the fallback sits
-      // next to the tier logic instead of being merged in invisibly (segments
-      // that define their own `openGraph` would silently opt out either way).
-      images: resolved.ogImage
-        ? [{ url: resolved.ogImage }]
-        : [
-            {
-              url: BRAND_OG_IMAGE_PATH,
-              width: BRAND_OG_IMAGE_WIDTH,
-              height: BRAND_OG_IMAGE_HEIGHT,
-              alt: dict.meta.rootTitle,
-            },
-          ],
+      // Admin-uploaded default OG image wins verbatim; otherwise the committed
+      // brand card ships so link previews are never image-less (TASK-279, plan
+      // 145 Design Decision 1). The relative path resolves to an absolute URL
+      // via `metadataBase` above. Deliberately explicit code — NOT the
+      // app/opengraph-image.png file convention — so the fallback sits next to
+      // the tier logic instead of being merged in invisibly (segments that
+      // define their own `openGraph` would silently opt out either way, which
+      // is why they call the same `buildOgImages` helper — TASK-432).
+      images: buildOgImages({ defaultOgImage: resolved.ogImage }),
     },
     // Search-console ownership verification (TASK-280, plan 146 Decision 2).
     // Each key is emitted only when its admin-managed token is a non-empty
@@ -157,6 +154,12 @@ export default async function RootLayout({
   return (
     <html
       lang="uk"
+      // next-themes (TASK-412) writes `data-theme` + `style.color-scheme` onto
+      // this element from an inline script that runs before hydration, so the
+      // client tree legitimately differs from the server HTML here. Without the
+      // flag React logs a hydration warning on every page load; scoped to <html>
+      // alone, so real mismatches anywhere inside still surface.
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} ${sora.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">

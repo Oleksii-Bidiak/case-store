@@ -18,10 +18,15 @@ import {
   priceToInputText,
   rangeKey,
 } from "../model/price-range";
+import {
+  clearFilterUpdates,
+  hasActiveFilters as computeHasActiveFilters,
+} from "../model/active-filters";
 import { SearchInput } from "./search-input";
 import { BrandFilter } from "./brand-filter";
 import { DeviceModelFilter } from "./device-model-filter";
 import { SpecFacets } from "./spec-facets";
+import { FilterCheckbox } from "./filter-checkbox";
 
 interface ProductFiltersProps {
   /** Currently-active filter params (derived from the URL). */
@@ -130,13 +135,19 @@ export function ProductFilters({
     pushRange(next);
   };
 
-  // The filters this panel owns (search + brand + price) — the category
-  // selection lives in the chips row and is cleared there, not from the sidebar.
-  const hasActiveFilters = Boolean(
-    currentParams.search ||
-    currentParams.brandId ||
-    currentParams.minPrice != null ||
-    currentParams.maxPrice != null,
+  // Every filter this panel owns — search, brand, device, price, spec facets and
+  // availability. Sourced from the one shared definition (TASK-414) so the
+  // button's VISIBILITY and what it CLEARS can never drift apart again: until
+  // now it appeared for four of them and cleared those same four, leaving a
+  // device or spec selection applied and the button gone.
+  //
+  // `includeCategory: false` — the category's control is the chips row above the
+  // grid (TASK-216) and, on a category landing page, the route itself; clearing
+  // it from in here would navigate the shopper somewhere they did not ask to go.
+  const panelFilterScope = { includeCategory: false } as const;
+  const hasActiveFilters = computeHasActiveFilters(
+    currentParams,
+    panelFilterScope,
   );
 
   // Presence gates for the collapsible mobile drawer only: BrandFilter and
@@ -145,9 +156,15 @@ export function ProductFilters({
   // their own emptiness check here to skip the disclosure entirely. Both hooks
   // are deduped by React Query (the list view already fetches brands; SpecFacets
   // itself refetches the same key) and are gated off on desktop.
-  const { data: brandsData } = useBrandControllerFindAll({
-    query: { enabled: collapsible },
-  });
+  const { data: brandsData } = useBrandControllerFindAll(
+    // Same category scope BrandFilter itself uses (TASK-414), so the drawer's
+    // presence gate and the control agree — otherwise the disclosure could open
+    // onto a control that self-hides.
+    currentParams.categoryId
+      ? { categoryId: currentParams.categoryId }
+      : undefined,
+    { query: { enabled: collapsible } },
+  );
   const hasBrands = (brandsData?.data.length ?? 0) > 0;
   const { data: specsData } = useCategoryControllerGetFilterableSpecs(
     currentParams.categoryId ?? "",
@@ -209,6 +226,22 @@ export function ProductFilters({
         Boolean(currentParams.search),
       )}
 
+      {/* Availability — TASK-414. `?inStock=true`; the server reads it as
+          `stock > 0`. Absent rather than `false` when unticked, so an unused
+          filter never appears in a shared link (and never splits the cache). */}
+      {renderSection(
+        dict.filters.availabilityTitle,
+        <FilterCheckbox
+          id={`${idPrefix}-in-stock`}
+          label={dict.filters.inStockOnly}
+          checked={currentParams.inStock === true}
+          onCheckedChange={(checked) =>
+            onFilterChange({ inStock: checked ? "true" : undefined })
+          }
+        />,
+        currentParams.inStock === true,
+      )}
+
       {/* Manufacturer (brand) filter — TASK-189. Hidden when no brands exist.
           Collapsible drawer gates on `hasBrands` and strips BrandFilter's own
           card chrome (the <details> provides it); desktop keeps its self-card. */}
@@ -218,6 +251,7 @@ export function ProductFilters({
           dict.filters.brandTitle,
           <BrandFilter
             activeBrandId={currentParams.brandId}
+            categoryId={currentParams.categoryId}
             onSelect={(brandId) => onFilterChange({ brandId })}
             cardClassName=""
             titleClassName="sr-only"
@@ -227,6 +261,7 @@ export function ProductFilters({
       ) : (
         <BrandFilter
           activeBrandId={currentParams.brandId}
+          categoryId={currentParams.categoryId}
           onSelect={(brandId) => onFilterChange({ brandId })}
           cardClassName={cardClass}
           titleClassName={`${cardTitleClass} mb-4`}
@@ -237,6 +272,7 @@ export function ProductFilters({
       {renderSection(
         dict.filters.deviceTitle,
         <DeviceModelFilter
+          idPrefix={idPrefix}
           currentDeviceModelId={currentParams.deviceModelId}
           onChange={(deviceModelId) => onFilterChange({ deviceModelId })}
         />,
@@ -339,14 +375,7 @@ export function ProductFilters({
           variant="ghost"
           size="sm"
           className="self-start text-muted-foreground hover:text-foreground"
-          onClick={() =>
-            onFilterChange({
-              search: undefined,
-              brandId: undefined,
-              minPrice: undefined,
-              maxPrice: undefined,
-            })
-          }
+          onClick={() => onFilterChange(clearFilterUpdates(panelFilterScope))}
         >
           {dict.filters.clear}
         </Button>

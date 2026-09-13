@@ -16,7 +16,7 @@ import { CartSheet } from "@/widgets/cart";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { formatMoney, trackEvent } from "@/shared/lib";
-import { dict } from "@/shared/config";
+import { dict, FEATURE_STUBS } from "@/shared/config";
 import { Button, RatingStars } from "@/shared/ui";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
 import { ProductSiblingNavigator } from "./product-sibling-navigator";
@@ -148,9 +148,19 @@ export function ProductDetailView({ slug }: { slug: string }) {
         </ol>
       </nav>
 
-      {/* Hero: gallery + info + sticky buy box. */}
+      {/* Hero: gallery + info + sticky buy box.
+
+          Three breakpoints, one grid (TASK-416):
+            <768px  — one column, DOM order (gallery → info → buy box);
+            ≥768px  — two columns: a fluid left column that stacks gallery over
+                      info, and a fixed 360px commerce rail spanning both rows.
+                      Tablets used to wait until 1024px for this, so the price
+                      and the CTA sat a full screen-height below the photo;
+            ≥1024px — the original `1fr 1fr 360px` split, unchanged.
+          The explicit col/row placement on the info column and the buy box is
+          what folds three items into two columns without reordering the DOM. */}
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
-      <div className="grid grid-cols-1 gap-7 lg:grid-cols-[1fr_1fr_360px] lg:items-start">
+      <div className="grid grid-cols-1 gap-7 md:grid-cols-[1fr_360px] md:items-start lg:grid-cols-[1fr_1fr_360px]">
         {/* Gallery with sale badge + wishlist overlay. */}
         <div className="relative">
           <ProductImageGallery
@@ -172,8 +182,8 @@ export function ProductDetailView({ slug }: { slug: string }) {
           </div>
         </div>
 
-        {/* Info column. */}
-        <div className="flex min-w-0 flex-col gap-[18px]">
+        {/* Info column — under the gallery at `md`, beside it at `lg`. */}
+        <div className="flex min-w-0 flex-col gap-[18px] md:col-start-1 md:row-start-2 lg:col-start-2 lg:row-start-1">
           <div className="flex flex-col gap-1.5">
             {product.brand && (
               <Link
@@ -215,8 +225,11 @@ export function ProductDetailView({ slug }: { slug: string }) {
           <ProductHighlights highlights={product.highlights} />
         </div>
 
-        {/* Sticky buy box. */}
-        <div className="lg:sticky lg:top-20">
+        {/* Sticky buy box — its own column from `md`, spanning the gallery and
+            the info rows. `top-24` is the storefront's 96px sticky clearance
+            (STICKY_HEADER_OFFSET); `STICKY_ASIDE_TOP` itself is `lg:`-prefixed,
+            so it cannot express the `md:` breakpoint this column needs. */}
+        <div className="md:sticky md:top-24 md:col-start-2 md:row-span-2 md:row-start-1 lg:col-start-3 lg:row-span-1">
           <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-card">
             <div className="mb-1 flex flex-wrap items-end gap-3">
               <span
@@ -279,26 +292,33 @@ export function ProductDetailView({ slug }: { slug: string }) {
                   />
                 )}
               </div>
-              {/* Compare — parked feature (TASK-085); stubbed as a toast. */}
-              <button
-                type="button"
-                onClick={() => toast(dict.product.compareStub)}
-                aria-label={dict.product.compareAria}
-                className="grid size-12 shrink-0 place-items-center rounded-lg border border-border bg-background text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <BarChart3 className="size-[19px]" aria-hidden="true" />
-              </button>
+              {/* Compare — parked feature (TASK-085); stubbed as a toast, and
+                  shown only where FEATURE_STUBS opts in (TASK-419). The markup
+                  stays put: TASK-085 replaces the handler, not the button. */}
+              {FEATURE_STUBS && (
+                <button
+                  type="button"
+                  onClick={() => toast(dict.product.compareStub)}
+                  aria-label={dict.product.compareAria}
+                  className="grid size-12 shrink-0 place-items-center rounded-lg border border-border bg-background text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <BarChart3 className="size-[19px]" aria-hidden="true" />
+                </button>
+              )}
             </div>
 
-            {/* Express order — no backend yet (TASK-178); stubbed as a toast. */}
-            <button
-              type="button"
-              onClick={() => toast(dict.product.oneClickStub)}
-              disabled={!product.inStock}
-              className="h-12 w-full rounded-lg border border-border bg-background text-[15px] font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {dict.product.buyOneClick}
-            </button>
+            {/* Express order — no backend yet (TASK-178); stubbed as a toast and
+                gated by the same flag as the compare control above. */}
+            {FEATURE_STUBS && (
+              <button
+                type="button"
+                onClick={() => toast(dict.product.oneClickStub)}
+                disabled={!product.inStock}
+                className="h-12 w-full rounded-lg border border-border bg-background text-[15px] font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {dict.product.buyOneClick}
+              </button>
+            )}
 
             <ProductTrustBadges />
           </div>

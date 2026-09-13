@@ -6,7 +6,7 @@ import {
   waitFor,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
-import { dict } from "@/shared/config";
+import { dict, STOREFRONT_HOST } from "@/shared/config";
 import type { SeoSettingsEntity } from "@/entities/seo-settings";
 import { SeoSettingsForm } from "./seo-settings-form";
 
@@ -20,6 +20,7 @@ function makeSettings(
 ): SeoSettingsEntity {
   return {
     id: "00000000-0000-0000-0000-000000000002",
+    siteName: null,
     defaultMetaTitle: null,
     defaultMetaDescription: null,
     titleTemplate: null,
@@ -94,6 +95,82 @@ describe("SeoSettingsForm — self-referential SERP preview (TASK-268)", () => {
     );
     expect(previewTitle()).not.toHaveTextContent("| MobileStore");
     expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintOwn);
+  });
+
+  // TASK-433 — the green breadcrumb line used to be the hardcoded string
+  // "mobilestore.ua": somebody else's domain in the owner's own Google preview.
+  // It now comes from the storefront origin in the environment, so the assertion
+  // is against that resolved host — not against a literal copied from the output.
+  it("shows the storefront host from the environment, not a hardcoded domain", () => {
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    const url = screen.getByTestId("seo-snippet-url");
+    expect(url).toHaveTextContent(STOREFRONT_HOST);
+    expect(url).not.toHaveTextContent("mobilestore.ua");
+  });
+});
+
+describe("SeoSettingsForm — store name (TASK-433)", () => {
+  const f = dict.seoSettingsForm;
+  const siteNameField = () => screen.getByLabelText(f.siteName);
+
+  it("renders the store name as the FIRST field of the form", () => {
+    const { container } = renderWithProviders(
+      <SeoSettingsForm settings={makeSettings()} />,
+    );
+
+    // The name is what every title and template below is built from, so it leads.
+    const labels = Array.from(container.querySelectorAll("label")).map(
+      (l) => l.textContent,
+    );
+    expect(labels[0]).toBe(f.siteName);
+  });
+
+  it("seeds the input from the stored name", () => {
+    renderWithProviders(
+      <SeoSettingsForm settings={makeSettings({ siteName: "Аксесуарня" })} />,
+    );
+
+    expect(siteNameField()).toHaveValue("Аксесуарня");
+  });
+
+  it("says out loud that the logo lettering is still changed in code", () => {
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    expect(screen.getByText(f.siteNameLogoNote)).toBeInTheDocument();
+  });
+
+  it("submits the typed name to the API", async () => {
+    const bodies = stubUpdate();
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    await userEvent.type(siteNameField(), "Аксесуарня");
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ siteName: "Аксесуарня" });
+  });
+
+  it("re-brands the SERP preview live as the name is typed", async () => {
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    await userEvent.type(siteNameField(), "Аксесуарня");
+
+    await waitFor(() =>
+      expect(previewTitle()).toHaveTextContent(
+        `${dict.seoSnippetPreview.samplePageName} | Аксесуарня`,
+      ),
+    );
+  });
+
+  it("drops a blank name so the backend keeps the previous value", async () => {
+    const bodies = stubUpdate();
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).not.toHaveProperty("siteName");
   });
 });
 

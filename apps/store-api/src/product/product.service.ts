@@ -27,7 +27,7 @@ import {
   ProductImageEntity,
   ProductCategoryEntity,
 } from './entities';
-import { ProductListQueryDto, parseSpecFilter } from './dto';
+import { ProductListQueryDto, parseSpecFilters, serializeSpecFilters } from './dto';
 import { generateSlug } from '../common/utils';
 import { sanitizeRichText } from '../common/sanitize';
 import {
@@ -37,6 +37,9 @@ import {
   productDetailSlugKey,
   PRODUCT_LIST_PREFIX,
 } from '../cache';
+// Direct file import: the `../cache` barrel is outside this change's file scope,
+// so the brand-list prefix is taken from the module it is declared in.
+import { BRAND_LIST_PREFIX } from '../cache/cache-key.util';
 import { ProductIndexer } from '../search/product-indexer';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
@@ -143,14 +146,17 @@ export class ProductService {
       ...listParams,
       categoryId: query.categoryId,
       deviceModelId: query.deviceModelId,
-      // Normalize via the parser so an ignored/malformed specs value never
-      // fragments the cache key from an equivalent request.
-      specs: parseSpecFilter(query.specs)
-        ? `${parseSpecFilter(query.specs)!.key}:${parseSpecFilter(query.specs)!.value}`
-        : undefined,
+      // Key on what was actually APPLIED, not on what was typed: re-serializing
+      // the parsed facets drops malformed chunks and anything past the caps, so
+      // an ignored value can never fragment the key from an equivalent request.
+      // `buildProductListKey` then canonicalizes the ordering (TASK-414).
+      specs: serializeSpecFilters(listParams.specFilters ?? []),
       // Any filter absent from the key silently cache-collides (TASK-236/230) —
-      // `onSale=true` and `onSale` absent MUST map to distinct keys (TASK-179).
+      // `onSale=true` and `onSale` absent MUST map to distinct keys (TASK-179),
+      // and the same goes for `inStock` (TASK-414): it is a PUBLIC filter, so
+      // unlike `outOfStock` it cannot be forced off, and it must be in the key.
       onSale: listParams.onSale,
+      inStock: listParams.inStock,
       isActive: true,
     });
     const cached = await this.cache.get<PaginatedProductsResponse>(cacheKey);
@@ -253,6 +259,11 @@ export class ProductService {
    * so the async subtree expansion happens once, after the cache check.
    */
   private toListParams(query: ProductListQueryDto): FindAllParams {
+    // Collapse "asked for nothing" to `undefined` rather than an empty array:
+    // every other optional filter here means "absent = unfiltered", and the
+    // repository's facet branch is written against that convention.
+    const specFilters = parseSpecFilters(query.specs);
+
     return {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
@@ -263,7 +274,8 @@ export class ProductService {
       minPrice: query.minPrice,
       maxPrice: query.maxPrice,
       search: query.search,
-      specFilter: parseSpecFilter(query.specs),
+      specFilters: specFilters.length > 0 ? specFilters : undefined,
+      inStock: query.inStock,
       onSale: query.onSale,
       sortBy: query.sortBy ?? 'createdAt',
       sortOrder: query.sortOrder ?? 'desc',
@@ -990,6 +1002,12 @@ export class ProductService {
    */
   private async invalidateProductLists(): Promise<void> {
     await this.cache.delByPrefix(PRODUCT_LIST_PREFIX);
+    // The per-category brand list is DERIVED from products (TASK-414): which
+    // brands a category offers changes the moment a product is filed under a
+    // brand, moved between categories, deactivated or deleted — i.e. at exactly
+    // these call sites. Purged here so it can never drift from the listing it
+    // filters.
+    await this.cache.delByPrefix(BRAND_LIST_PREFIX);
     try {
       await this.revalidation.revalidate(CATALOGUE_REVALIDATE_TARGET);
     } catch {

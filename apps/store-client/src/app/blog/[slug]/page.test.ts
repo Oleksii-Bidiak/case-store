@@ -30,14 +30,31 @@ jest.mock("next/navigation", () => ({
 jest.mock("@/shared/lib/slug-redirect", () => ({
   resolveSlugRedirect: jest.fn(),
 }));
+// The SEO singleton carries the admin-managed store name (TASK-433). Defaults to
+// null — the unconfigured / API-down case, where the SITE_NAME constant stands in.
+jest.mock("@/shared/api/seo-settings-server", () => ({
+  fetchSeoSettings: jest.fn().mockResolvedValue(null),
+}));
 
-import BlogArticlePage from "./page";
+import BlogArticlePage, { generateMetadata } from "./page";
 import { notFound, permanentRedirect } from "next/navigation";
-import { fetchPublishedPost } from "@/shared/api/blog-server";
+import {
+  fetchPublishedPost,
+  fetchPublishedPosts,
+} from "@/shared/api/blog-server";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
+import { BRAND_OG_IMAGE_PATH, SITE_NAME, SITE_URL } from "@/shared/config";
+
+const fetchSeo = fetchSeoSettings as jest.MockedFunction<
+  typeof fetchSeoSettings
+>;
 
 const fetchPost = fetchPublishedPost as jest.MockedFunction<
   typeof fetchPublishedPost
+>;
+const fetchPosts = fetchPublishedPosts as jest.MockedFunction<
+  typeof fetchPublishedPosts
 >;
 const resolveRedirect = resolveSlugRedirect as jest.MockedFunction<
   typeof resolveSlugRedirect
@@ -55,6 +72,7 @@ function makePost(): BlogPostEntity {
     authorName: "Автор",
     readingMinutes: 5,
     featured: false,
+    listed: true,
     categoryId: "cat-1",
     category: { id: "cat-1", slug: "guides", name: "Гайди" },
     status: "PUBLISHED",
@@ -66,6 +84,9 @@ function makePost(): BlogPostEntity {
 }
 
 afterEach(() => jest.clearAllMocks());
+// Re-arm the default (no store name configured) after every clear, so a test that
+// sets one cannot leak it into the next.
+beforeEach(() => fetchSeo.mockResolvedValue(null));
 
 describe("blog/[slug] slug-redirect (TASK-285)", () => {
   const runPage = (slug: string) =>
@@ -102,5 +123,199 @@ describe("blog/[slug] slug-redirect (TASK-285)", () => {
     expect(resolveRedirect).not.toHaveBeenCalled();
     expect(permanentRedirect).not.toHaveBeenCalled();
     expect(notFound).not.toHaveBeenCalled();
+  });
+});
+
+// Next merges metadata SHALLOWLY: a route that declares its own `openGraph`
+// replaces the root layout's object entirely. So every such block owes the
+// preview three things the root used to supply — siteName, locale and images —
+// and forgetting one is invisible in a helper-level unit test. These assert the
+// assembled object, which is where that omission actually shows up (TASK-432).
+describe("blog/[slug] generateMetadata — the openGraph block it must re-state", () => {
+  const runMeta = (slug: string) =>
+    generateMetadata({ params: Promise.resolve({ slug }) });
+
+  it("re-states siteName and locale lost with the root openGraph", async () => {
+    fetchPost.mockResolvedValue(makePost());
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.openGraph).toMatchObject({
+      siteName: SITE_NAME,
+      locale: "uk_UA",
+      type: "article",
+      url: `${SITE_URL}/blog/iphone-16-oglyad`,
+    });
+  });
+
+  // TASK-433: this route read no settings at all, so its og:site_name was the
+  // one in the storefront that could not follow a rename in the admin.
+  it("takes og:site_name from the admin-managed store name when set", async () => {
+    fetchPost.mockResolvedValue(makePost());
+    fetchSeo.mockResolvedValue({
+      siteName: "Аксесуарня",
+    } as Awaited<ReturnType<typeof fetchSeoSettings>>);
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.openGraph).toMatchObject({ siteName: "Аксесуарня" });
+  });
+
+  it("uses the article's own cover as the OG card when it has one", async () => {
+    fetchPost.mockResolvedValue({
+      ...makePost(),
+      coverImageUrl: "https://cdn.example/cover.webp",
+    });
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.openGraph?.images).toEqual([
+      { url: "https://cdn.example/cover.webp" },
+    ]);
+  });
+
+  it("falls back to the brand card rather than shipping no image at all", async () => {
+    fetchPost.mockResolvedValue(makePost()); // coverImageUrl: null
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.openGraph?.images).toEqual([
+      expect.objectContaining({ url: BRAND_OG_IMAGE_PATH }),
+    ]);
+  });
+
+  it("404s an unknown slug instead of inventing metadata", async () => {
+    fetchPost.mockResolvedValue(null);
+
+    const meta = await runMeta("never-existed");
+
+    expect(meta.openGraph).toBeUndefined();
+  });
+
+  // TASK-437 — the article's own `ogImage` is the card a human chose; the cover is
+  // cropped for the article header. The chosen one wins.
+  it("prefers the article's own ogImage over its cover", async () => {
+    fetchPost.mockResolvedValue({
+      ...makePost(),
+      coverImageUrl: "https://cdn.example/cover.webp",
+      ogImage: "https://cdn.example/og-card.jpg",
+    });
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.openGraph?.images).toEqual([
+      { url: "https://cdn.example/og-card.jpg" },
+    ]);
+  });
+});
+
+// TASK-437 — before this task the route built its <head> by hand: `title:
+// post.title` (never branded, never truncated) and `description: post.excerpt`
+// (card copy, up to 500 chars, verbatim). It now runs the same `resolveSeo` chain
+// as every other route, and these tests are what keeps it there.
+describe("blog/[slug] generateMetadata — the shared resolveSeo chain", () => {
+  const runMeta = (slug: string) =>
+    generateMetadata({ params: Promise.resolve({ slug }) });
+
+  it("brands a derived title with the title template (tier 2)", async () => {
+    fetchPost.mockResolvedValue(makePost());
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.title).toEqual({
+      absolute: `Огляд iPhone 16 | ${SITE_NAME}`,
+    });
+    expect(meta.description).toBe("Короткий опис");
+  });
+
+  it("uses the admin's metaTitle verbatim, with no brand suffix (tier 1)", async () => {
+    fetchPost.mockResolvedValue({
+      ...makePost(),
+      metaTitle: "iPhone 16: що змінилось",
+      metaDescription: "Свій текст для видачі, не картковий.",
+    });
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.title).toEqual({ absolute: "iPhone 16: що змінилось" });
+    expect(meta.description).toBe("Свій текст для видачі, не картковий.");
+    // The OG block must carry the same pair, not the raw post fields.
+    expect(meta.openGraph).toMatchObject({
+      title: "iPhone 16: що змінилось",
+      description: "Свій текст для видачі, не картковий.",
+    });
+  });
+
+  it("truncates a long excerpt to snippet length instead of shipping 500 chars", async () => {
+    const longExcerpt = `${"Дуже довгий картковий текст. ".repeat(20)}кінець`;
+    fetchPost.mockResolvedValue({ ...makePost(), excerpt: longExcerpt });
+
+    const meta = await runMeta("iphone-16-oglyad");
+
+    expect(meta.description).not.toBe(longExcerpt);
+    expect((meta.description as string).length).toBeLessThanOrEqual(156);
+    expect(meta.description as string).toMatch(/…$/);
+  });
+});
+
+// TASK-436 — "Читайте також" used to be one same-category query, so a thin
+// category rendered a block of a single card, or none at all. These pin the
+// top-up pass and the fact that the block never reaches for unlisted posts.
+describe("blog/[slug] related posts", () => {
+  const runPage = (slug: string) =>
+    BlogArticlePage({ params: Promise.resolve({ slug }) });
+
+  const meta = { total: 3, page: 1, limit: 4, totalPages: 1 };
+
+  function otherPost(slug: string, categorySlug = "guides"): BlogPostEntity {
+    return {
+      ...makePost(),
+      id: `id-${slug}`,
+      slug,
+      category: { id: "cat-x", slug: categorySlug, name: categorySlug },
+    } as BlogPostEntity;
+  }
+
+  it("tops the block up from the newest posts when the category is thin", async () => {
+    fetchPost.mockResolvedValue(makePost());
+    // Category pass returns only the article itself — nothing usable.
+    fetchPosts.mockResolvedValueOnce({ posts: [makePost()], meta });
+    fetchPosts.mockResolvedValueOnce({
+      posts: [otherPost("a"), otherPost("b", "news"), otherPost("c")],
+      meta,
+    });
+
+    await runPage("iphone-16-oglyad");
+
+    expect(fetchPosts).toHaveBeenCalledTimes(2);
+    // The top-up is category-blind on purpose: that is where the extra cards
+    // have to come from when the article's own category has nothing left.
+    expect(fetchPosts.mock.calls[1][0]).not.toHaveProperty("category");
+  });
+
+  it("does not run the top-up when the category already fills the block", async () => {
+    fetchPost.mockResolvedValue(makePost());
+    fetchPosts.mockResolvedValueOnce({
+      posts: [otherPost("a"), otherPost("b"), otherPost("c")],
+      meta,
+    });
+
+    await runPage("iphone-16-oglyad");
+
+    expect(fetchPosts).toHaveBeenCalledTimes(1);
+  });
+
+  it("never asks for unlisted posts — the block is a list", async () => {
+    fetchPost.mockResolvedValue(makePost());
+    fetchPosts.mockResolvedValue({ posts: [makePost()], meta });
+
+    await runPage("iphone-16-oglyad");
+
+    expect(fetchPosts.mock.calls.length).toBeGreaterThan(0);
+    for (const call of fetchPosts.mock.calls) {
+      expect(call[0]).toEqual(
+        expect.objectContaining({ includeUnlisted: false }),
+      );
+    }
   });
 });

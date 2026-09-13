@@ -2,13 +2,20 @@ import type { Metadata } from "next";
 import { CategoriesView } from "@/widgets/categories";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
+import { buildHubMetadata } from "@/shared/lib/seo";
 import { SITE_URL, dict } from "@/shared/config";
 
-export const metadata: Metadata = {
-  title: dict.meta.categoriesTitle,
-  description: dict.meta.categoriesDescription,
-  alternates: { canonical: `${SITE_URL}/categories` },
-};
+// TASK-435 — title/description now come from the `categories` HUB page row, so
+// the owner can tune this listing's search result from the panel. The dictionary
+// strings below stay as the fallback for "no row yet / API down".
+export function generateMetadata(): Promise<Metadata> {
+  return buildHubMetadata({
+    slug: "categories",
+    canonical: `${SITE_URL}/categories`,
+    fallbackTitle: dict.meta.categoriesTitle,
+    fallbackDescription: dict.meta.categoriesDescription,
+  });
+}
 
 export default function CategoriesPage() {
   return (

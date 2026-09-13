@@ -9,7 +9,10 @@ const baseProps: SeoSnippetPreviewProps = {
   titleTier: "own",
   description: "Shop the best clear case for iPhone 15.",
   descriptionTier: "own",
-  url: "mobilestore.ua › products › clear-case",
+  // A LITERAL on purpose: this component is presentational and takes the line
+  // ready-made. The host in it is a neutral example — the real one now comes from
+  // the environment at the four call sites (TASK-433, `STOREFRONT_HOST`).
+  url: "example.ua › products › clear-case",
   rawTitleLength: 20,
   rawDescriptionLength: 40,
 };
@@ -25,7 +28,7 @@ describe("SeoSnippetPreview — rendering", () => {
       "Best iPhone 15 Case | MobileStore",
     );
     expect(screen.getByTestId("seo-snippet-url")).toHaveTextContent(
-      "mobilestore.ua › products › clear-case",
+      "example.ua › products › clear-case",
     );
     expect(screen.getByTestId("seo-snippet-description")).toHaveTextContent(
       "Shop the best clear case for iPhone 15.",

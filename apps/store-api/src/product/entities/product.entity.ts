@@ -148,6 +148,32 @@ export class ProductEntity {
   })
   metaDescription!: string | null;
 
+  @ApiProperty({
+    description:
+      'Internal content tags (TASK-437). NOT rendered as `<meta name="keywords">` — see ' +
+      'IsKeywordsField. Empty array when the admin set none.',
+    example: ['magsafe', 'ударостійкий'],
+    type: [String],
+    // Optional in the CONTRACT, never absent from a response: the column
+    // defaults to [] and every fromPrisma falls back to []. Marked optional so a
+    // client that never renders tags (the storefront must not) is not forced to
+    // restate them in every fixture — the same convention the meta fields above
+    // already follow (TASK-437).
+    required: false,
+  })
+  keywords!: string[];
+
+  @ApiProperty({
+    description:
+      'Open Graph image chosen for this product; wins over its first photo and over the ' +
+      'global default (TASK-437). Null = use the automatic chain.',
+    example: 'https://cdn.example.com/og/iphone-15-case.jpg',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  ogImage!: string | null;
+
   @ApiProperty({ description: 'Creation timestamp', example: '2024-01-01T00:00:00.000Z' })
   createdAt!: Date;
 
@@ -233,6 +259,8 @@ export class ProductEntity {
     isActive: boolean;
     metaTitle?: string | null;
     metaDescription?: string | null;
+    keywords?: string[];
+    ogImage?: string | null;
     createdAt: Date;
     updatedAt: Date;
     ratingAverage?: number | null;
@@ -272,6 +300,8 @@ export class ProductEntity {
     entity.isActive = product.isActive;
     entity.metaTitle = product.metaTitle ?? null;
     entity.metaDescription = product.metaDescription ?? null;
+    entity.keywords = product.keywords ?? [];
+    entity.ogImage = product.ogImage ?? null;
     entity.createdAt = product.createdAt;
     entity.updatedAt = product.updatedAt;
     entity.ratingAverage =

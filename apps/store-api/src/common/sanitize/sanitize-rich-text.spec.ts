@@ -46,6 +46,39 @@ describe('sanitizeRichText', () => {
     expect(sanitizeRichText(html)).toBe(html);
   });
 
+  /**
+   * TASK-434 — the admin editor can now build tables, and prosemirror-tables
+   * expresses a merged cell as `colspan`/`rowspan` on the surviving `th`/`td`.
+   * Until this test existed, the policy allowed no attributes on cells at all,
+   * so a merged header came back from the first save as separate cells: a
+   * silent, irreversible structural edit nobody asked for.
+   */
+  it('keeps colspan/rowspan so merged cells survive a save', () => {
+    const html =
+      '<table><tbody>' +
+      '<tr><th colspan="2">Параметри</th></tr>' +
+      '<tr><td rowspan="2">Вага</td><td>120 г</td></tr>' +
+      '<tr><td>130 г</td></tr>' +
+      '</tbody></table>';
+
+    expect(sanitizeRichText(html)).toBe(html);
+  });
+
+  it('strips every other attribute from table cells', () => {
+    const result = sanitizeRichText(
+      '<table><tbody><tr>' +
+        '<td style="color:red" onclick="alert(1)" class="x" width="300" colspan="2">D</td>' +
+        '</tr></tbody></table>',
+    );
+
+    expect(result).toContain('colspan="2"');
+    expect(result).not.toContain('style');
+    expect(result).not.toContain('onclick');
+    expect(result).not.toContain('class');
+    expect(result).not.toContain('width');
+    expect(result).toContain('>D</td>');
+  });
+
   it('forces rel="noopener noreferrer nofollow" on links', () => {
     const result = sanitizeRichText('<a href="https://example.com" target="_blank">link</a>');
 

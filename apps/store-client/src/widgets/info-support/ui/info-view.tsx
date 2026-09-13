@@ -35,6 +35,7 @@ import {
   PAYMENT_OPTIONS,
   PROTECTION_SERVICES,
   WARRANTY_CARDS,
+  type InfoAbout,
   type InfoFaq,
   type InfoIconKey,
   type InfoSectionKey,
@@ -84,18 +85,27 @@ const MESSENGERS: {
 
 /**
  * InfoView — the "Інформація та підтримка" hub (/info). A sticky side nav
- * switches between static support sections (delivery / warranty / faq / about),
- * plus a Contacts section driven by the real SiteContactSettings (TASK-154) with
- * a demo "write to us" form. Section is deep-linkable via the URL hash.
+ * switches between support sections (delivery / warranty / faq / about), plus a
+ * Contacts section driven by the real SiteContactSettings (TASK-154) with a demo
+ * "write to us" form. Section is deep-linkable via the URL hash.
+ *
+ * Three of the five sections now read real, admin-managed data (contacts, FAQ,
+ * and "Про нас" via TASK-435's `about` page). Every one of them falls back to
+ * the static copy in `../model/info-content` when its source is missing: this
+ * page carries delivery, warranty and contact information, so it renders even
+ * with the API down.
  */
 export function InfoView({
   contact,
   faqs = INFO_FAQS,
+  about = null,
 }: {
   contact: SiteContactSettingsEntity | null;
   /** FAQ entries from the admin-managed API; falls back to the static
    *  `INFO_FAQS` when the caller passes nothing (offline / error path). */
   faqs?: readonly InfoFaq[];
+  /** The `about` page from the CMS (pre-sanitized HTML); null → static copy. */
+  about?: InfoAbout | null;
 }) {
   const [section, setSection] = useState<InfoSectionKey>("delivery");
   const [openFaq, setOpenFaq] = useState<Record<number, boolean>>({});
@@ -363,10 +373,10 @@ export function InfoView({
                 }}
               >
                 <h2 className="mb-3 font-display text-[28px] font-bold">
-                  {d.aboutHeading}
+                  {about?.heading ?? d.aboutHeading}
                 </h2>
                 <p className="max-w-[620px] text-base leading-[1.6] opacity-95">
-                  {d.aboutIntro}
+                  {about?.intro ?? d.aboutIntro}
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
@@ -384,6 +394,30 @@ export function InfoView({
                   </div>
                 ))}
               </div>
+              {/* The page body from the CMS. Rendered through the same
+                  `legal-doc-body` typography as /legal/<slug> and /info/<slug>,
+                  so a document written once looks the same wherever it appears.
+                  The HTML was sanitized server-side by the route that loaded it
+                  (see /info/page.tsx) — this component never sanitizes, and must
+                  never be handed raw admin input. */}
+              {about && (
+                <div className={CARD}>
+                  <div
+                    className="legal-doc-body"
+                    dangerouslySetInnerHTML={{ __html: about.html }}
+                  />
+                  {/* Keeps /info/<slug> reachable by navigation, not only from
+                      the sitemap: without a link in from somewhere, every help
+                      page the owner writes is an orphan. */}
+                  <Link
+                    href={about.href}
+                    className="mt-5 inline-block text-sm font-semibold text-primary hover:underline"
+                  >
+                    {d.aboutOpenPage}
+                  </Link>
+                </div>
+              )}
+
               <div className={CARD}>
                 <h3 className="mb-3.5 font-display text-lg font-bold text-foreground">
                   {d.valuesHeading}

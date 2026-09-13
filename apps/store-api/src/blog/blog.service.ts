@@ -25,6 +25,7 @@ import {
   ReorderBlogCategoriesDto,
   AdminBlogCategoryListQueryDto,
 } from './dto';
+import { BlogIndexer } from '../search/blog-indexer';
 import { generateSlug } from '../common/utils';
 import { sanitizeRichText } from '../common/sanitize';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
@@ -58,6 +59,7 @@ export class BlogService {
   constructor(
     private readonly blogRepository: BlogRepository,
     private readonly revalidation: RevalidationNotifier,
+    private readonly blogIndexer: BlogIndexer,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(BlogService.name);
@@ -65,14 +67,34 @@ export class BlogService {
 
   // ─── posts: public ──────────────────────────────────────────────────────────
 
-  /** List PUBLISHED posts (public storefront) with category/search/pagination. */
+  /**
+   * List PUBLISHED posts (public storefront) with category/search/pagination.
+   *
+   * A free-text query goes to the search index first (TASK-417) so the hub and
+   * the header dropdown get the same typo tolerance and UA↔EN synonyms the
+   * product search has had since TASK-200 — «павербнак» finds the power-bank
+   * guide. The index answers with ids only; the rows are re-read through the
+   * PUBLISHED-gated repository call and re-ordered into the engine's ranking. A
+   * `null` answer (no engine, a failed request, or zero hits over a possibly
+   * stale index) falls through to the Prisma `contains` scan, exactly as the
+   * product path does.
+   *
+   * `includeUnlisted` defaults to FALSE here — the safe side for the callers that
+   * are lists (the `/blog` grid, the header search suggestions, related posts).
+   * `sitemap.xml` is the only caller that flips it, and it has to say so out loud
+   * (see `FindAllPostsParams`).
+   */
   async findAll(query: BlogPostListQueryDto): Promise<PaginatedPostsResponse> {
     const params: FindAllPostsParams = {
       page: query.page ?? 1,
       limit: query.limit ?? 9,
       category: query.category,
       q: query.q,
+      includeUnlisted: query.includeUnlisted ?? false,
     };
+
+    const indexed = await this.findAllFromIndex(params);
+    if (indexed) return indexed;
 
     const { posts, total } = await this.blogRepository.findAll(params);
 
@@ -80,6 +102,50 @@ export class BlogService {
       data: posts.map((post) => BlogPostEntity.fromPrisma(post)),
       meta: this.buildMeta(total, params.page, params.limit),
     };
+  }
+
+  /**
+   * Resolve one page of a free-text blog query through the search index, or
+   * `null` when the index cannot (or should not) answer it — no query, no
+   * engine, or no hits.
+   */
+  private async findAllFromIndex(
+    params: FindAllPostsParams,
+  ): Promise<PaginatedPostsResponse | null> {
+    const q = params.q?.trim();
+    if (!q) return null;
+
+    // Belt-and-braces: the port's contract is to ANSWER `null` rather than
+    // throw, but the public hub must not be able to 500 on a search engine, so
+    // a throwing implementation is treated as "no answer" too.
+    const hits = await this.blogIndexer
+      .search({
+        q,
+        categorySlug: params.category,
+        offset: (params.page - 1) * params.limit,
+        limit: params.limit,
+      })
+      .catch((err: unknown) => {
+        this.logger.warn({ err }, 'Blog index query failed; falling back to Postgres');
+        return null;
+      });
+    if (!hits || hits.ids.length === 0) return null;
+
+    // The index has no `listed` field, so the flag is enforced on the re-read —
+    // otherwise searching for a word from an unlisted post puts it straight back
+    // on the hub and in the header suggestions.
+    const posts = await this.blogRepository.findPublishedByIds(hits.ids, params.includeUnlisted);
+    const byId = new Map(posts.map((post) => [post.id, post]));
+    const data = hits.ids
+      .map((id) => byId.get(id))
+      .filter((post): post is NonNullable<typeof post> => post != null)
+      .map((post) => BlogPostEntity.fromPrisma(post));
+
+    // Nothing survived the PUBLISHED re-read — the index is stale enough that
+    // answering "no articles" would be a lie. Let Postgres have the query.
+    if (data.length === 0) return null;
+
+    return { data, meta: this.buildMeta(hits.total, params.page, params.limit) };
   }
 
   /** Get a single PUBLISHED post by slug (public). 404 when missing / unpublished. */
@@ -154,6 +220,11 @@ export class BlogService {
       coverBlurDataUrl: dto.coverBlurDataUrl,
       readingMinutes: dto.readingMinutes,
       featured: dto.featured,
+      listed: dto.listed,
+      metaTitle: dto.metaTitle,
+      metaDescription: dto.metaDescription,
+      keywords: dto.keywords,
+      ogImage: dto.ogImage,
       status: publishState.status,
       publishedAt: publishState.publishedAt,
       scheduledAt: publishState.scheduledAt,
@@ -162,6 +233,7 @@ export class BlogService {
     try {
       const post = await this.blogRepository.create(input);
       const entity = BlogPostEntity.fromPrisma(post);
+      await this.syncSearchIndex(entity);
       if (entity.status === PublishStatus.PUBLISHED) {
         await this.notifyRevalidationForSlug(entity.slug);
       }
@@ -219,6 +291,11 @@ export class BlogService {
       coverBlurDataUrl: dto.coverBlurDataUrl,
       readingMinutes: dto.readingMinutes,
       featured: dto.featured,
+      listed: dto.listed,
+      metaTitle: dto.metaTitle,
+      metaDescription: dto.metaDescription,
+      keywords: dto.keywords,
+      ogImage: dto.ogImage,
     };
 
     if (dto.status !== undefined) {
@@ -239,6 +316,7 @@ export class BlogService {
     try {
       const updated = await this.blogRepository.update(id, input, slugRename);
       const entity = BlogPostEntity.fromPrisma(updated);
+      await this.syncSearchIndex(entity);
       // Revalidate whenever public visibility could have changed. If the slug was
       // renamed, purge the old slug too so its stale route is dropped.
       if (wasPublished || entity.status === PublishStatus.PUBLISHED) {
@@ -261,6 +339,7 @@ export class BlogService {
       scheduledAt: null,
     });
     const entity = BlogPostEntity.fromPrisma(updated);
+    await this.syncSearchIndex(entity);
     await this.notifyRevalidationForSlug(entity.slug);
     return entity;
   }
@@ -274,6 +353,7 @@ export class BlogService {
       scheduledAt: null,
     });
     const entity = BlogPostEntity.fromPrisma(updated);
+    await this.syncSearchIndex(entity);
     // Purge the now-stale published copy from the storefront cache.
     await this.notifyRevalidationForSlug(entity.slug);
     return entity;
@@ -283,6 +363,7 @@ export class BlogService {
   async delete(id: string): Promise<void> {
     const post = await this.ensurePostExists(id);
     await this.blogRepository.delete(id);
+    await this.syncSearchIndex({ id, status: PublishStatus.DRAFT });
     if (post.status === PublishStatus.PUBLISHED) {
       await this.notifyRevalidationForSlug(post.slug);
     }
@@ -424,6 +505,30 @@ export class BlogService {
   }
 
   // ─── helpers ──────────────────────────────────────────────────────────────
+
+  /**
+   * Keep the `blog_posts` index in step with a post mutation (TASK-417) —
+   * exactly the shape `ProductService.syncSearchIndex` has for products.
+   * PUBLISHED posts are (re)indexed, everything else (draft, scheduled, deleted)
+   * is removed, so unpublishing an article takes it out of search without a
+   * separate call.
+   *
+   * **Best-effort**: any failure is swallowed here so a down or unconfigured
+   * search engine can never block or fail the blog write. The `BlogIndexer`
+   * implementation also logs and degrades on its own; this catch is the
+   * belt-and-braces guard the spec asserts.
+   */
+  private async syncSearchIndex(post: { id: string; status: PublishStatus }): Promise<void> {
+    try {
+      if (post.status === PublishStatus.PUBLISHED) {
+        await this.blogIndexer.index(post.id);
+      } else {
+        await this.blogIndexer.remove(post.id);
+      }
+    } catch {
+      // Swallowed: indexing is never allowed to affect the blog write.
+    }
+  }
 
   private async ensurePostExists(id: string) {
     const post = await this.blogRepository.findById(id);

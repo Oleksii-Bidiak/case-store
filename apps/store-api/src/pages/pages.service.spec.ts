@@ -1,15 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException } from '@nestjs/common';
-import { Prisma, PublishStatus } from '@prisma/client';
+import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { PageKind, Prisma, PublishStatus } from '@prisma/client';
 import { PageRepository } from './pages.repository';
 import { PageService } from './pages.service';
 import { PageEntity } from './entities';
+import { PAGE_ROOT_PATHS } from './hub-routes';
 import { RevalidationNotifier } from '../publishing';
 import { ReorderNotFoundError, ReorderStaleError } from '../common/reorder';
 
 const mockPage = {
   id: 'page-uuid-1',
   slug: 'privacy-policy',
+  kind: PageKind.LEGAL,
   title: 'Privacy Policy',
   content: '<p>Hello</p>',
   excerpt: null,
@@ -109,6 +111,7 @@ describe('PageService', () => {
         limit: 20,
         status: undefined,
         search: undefined,
+        kind: undefined,
       });
     });
 
@@ -201,6 +204,27 @@ describe('PageService', () => {
       expect(passed.content).toContain('<p>ok</p>');
       expect(passed.content).not.toContain('script');
       expect(passed.content).not.toContain('alert(1)');
+    });
+
+    // TASK-437 — the service builds its repository input field by field, so a
+    // field missing from that list is dropped with no compile error.
+    it('passes tags and ogImage through to the repository', async () => {
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.create.mockResolvedValue(mockPage);
+
+      await service.create({
+        title: 'Доставка і оплата',
+        content: '<p>x</p>',
+        keywords: ['доставка', 'нова пошта'],
+        ogImage: 'https://cdn.example.com/og/delivery.jpg',
+      });
+
+      expect(pageRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          keywords: ['доставка', 'нова пошта'],
+          ogImage: 'https://cdn.example.com/og/delivery.jpg',
+        }),
+      );
     });
 
     it('defaults to DRAFT (no publish, no revalidation) when status is omitted', async () => {
@@ -504,11 +528,13 @@ describe('PageService', () => {
       // The unpaginated shape: one page holding everything (the panel writes this
       // response straight into the list query's cache).
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
-      // The hub only: a reorder changes the sequence `/legal` renders, never the
-      // content of any single `/legal/<slug>` route.
+      // The hubs only: a reorder changes the sequence a hub renders, never the
+      // content of any single document route. Both hubs, not just /legal —
+      // TASK-435 gave pages a second surface, and this list is where that is
+      // kept honest.
       expect(revalidationMock.revalidate).toHaveBeenCalledWith({
         tags: ['pages'],
-        paths: ['/legal'],
+        paths: [...PAGE_ROOT_PATHS],
       });
     });
 
@@ -529,6 +555,156 @@ describe('PageService', () => {
         status: 404,
         response: { error: 'REORDER_NOT_FOUND' },
       });
+    });
+  });
+
+  // TASK-435 — `kind` is what keeps /legal and /info from bleeding into each
+  // other, and what keeps a HUB row (meta tags for an existing listing route)
+  // from ever answering as a document. The rule is enforced in ONE place — the
+  // repository query — and the service is what carries the caller's kind to it.
+  describe('page kinds (TASK-435)', () => {
+    const infoPage = {
+      ...mockPage,
+      id: 'page-uuid-3',
+      slug: 'about',
+      kind: PageKind.INFO,
+      title: 'Про нас',
+    };
+    const hubPage = {
+      ...mockPage,
+      id: 'page-uuid-4',
+      slug: 'blog',
+      kind: PageKind.HUB,
+      title: 'Блог',
+    };
+
+    it('asks the repository for exactly the kind the route serves', async () => {
+      pageRepositoryMock.findBySlug.mockResolvedValue(infoPage);
+
+      await service.findPublishedBySlug('about', PageKind.INFO);
+
+      expect(pageRepositoryMock.findBySlug).toHaveBeenCalledWith('about', PageKind.INFO);
+    });
+
+    it('404s an INFO page requested under the LEGAL route (and the reverse)', async () => {
+      // The repository's kind clause is what returns null here; the service turns
+      // that into the 404 the storefront renders.
+      pageRepositoryMock.findBySlug.mockResolvedValue(null);
+
+      await expect(service.findPublishedBySlug('about', PageKind.LEGAL)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(pageRepositoryMock.findBySlug).toHaveBeenCalledWith('about', PageKind.LEGAL);
+    });
+
+    it('forwards the kind filter of a public list request', async () => {
+      pageRepositoryMock.findAll.mockResolvedValue({ pages: [mockPage], total: 1 });
+
+      await service.findAll({ page: 1, limit: 20, kind: PageKind.LEGAL });
+
+      expect(pageRepositoryMock.findAll).toHaveBeenCalledWith({
+        page: 1,
+        limit: 20,
+        kind: PageKind.LEGAL,
+      });
+    });
+
+    it('forwards the kind filter of an admin list request (the panel tabs)', async () => {
+      pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [hubPage], total: 1 });
+
+      await service.findAllAdmin({ page: 1, limit: 20, kind: PageKind.HUB });
+
+      expect(pageRepositoryMock.findAllAdmin).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: PageKind.HUB }),
+      );
+    });
+
+    it('creates a LEGAL page when no kind is given (safe default)', async () => {
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.create.mockResolvedValue(mockPage);
+
+      await service.create({ title: 'Privacy Policy', content: '<p>x</p>' });
+
+      expect(pageRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: PageKind.LEGAL }),
+      );
+    });
+
+    it('rejects a HUB row whose slug names no hub route — no ghost hubs', async () => {
+      await expect(
+        service.create({ title: 'Про нас', content: '<p>x</p>', kind: PageKind.HUB }),
+      ).rejects.toThrow(BadRequestException);
+      expect(pageRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts a HUB row on one of the six hub slugs', async () => {
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.create.mockResolvedValue(hubPage);
+
+      await service.create({
+        title: 'Блог',
+        content: '<p>x</p>',
+        slug: 'blog',
+        kind: PageKind.HUB,
+      });
+
+      expect(pageRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ slug: 'blog', kind: PageKind.HUB }),
+      );
+    });
+
+    it('rejects flipping an existing page to HUB while it keeps a non-hub slug', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage); // slug privacy-policy
+
+      await expect(service.update('page-uuid-1', { kind: PageKind.HUB })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(pageRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it('purges the info hub and the info document for an INFO page', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(infoPage);
+      pageRepositoryMock.update.mockResolvedValue(infoPage);
+
+      await service.update('page-uuid-3', { title: 'Про нас' });
+
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith({
+        tags: ['pages', 'page:about'],
+        paths: ['/info', '/info/about'],
+      });
+    });
+
+    it('purges only the described hub route for a HUB row', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(hubPage);
+      pageRepositoryMock.update.mockResolvedValue(hubPage);
+
+      await service.update('page-uuid-4', { metaTitle: 'Блог — новини' });
+
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith({
+        tags: ['pages', 'page:blog'],
+        paths: ['/blog'],
+      });
+    });
+
+    it('purges BOTH surfaces when a published page changes kind', async () => {
+      // A legal document reclassified as a help page leaves /legal and joins
+      // /info; purging only the destination would leave it listed on the hub it
+      // just left.
+      pageRepositoryMock.findById.mockResolvedValue(mockPage); // LEGAL, PUBLISHED
+      pageRepositoryMock.update.mockResolvedValue({ ...mockPage, kind: PageKind.INFO });
+
+      await service.update('page-uuid-1', { kind: PageKind.INFO });
+
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          paths: expect.arrayContaining([
+            '/legal',
+            '/legal/privacy-policy',
+            '/info',
+            '/info/privacy-policy',
+          ]),
+        }),
+      );
     });
   });
 });

@@ -7,3 +7,4 @@ export * from './is-np-waybill.decorator';
 // went through the barrel — an inconsistency, not a rule. Exported here so the
 // next validator does not have to guess which convention applies (TASK-407).
 export * from './is-origin-list.decorator';
+export * from './seo-fields.decorator';

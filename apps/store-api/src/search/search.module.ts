@@ -1,5 +1,10 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { ProductRepository } from '../product/product.repository';
+// Same rule as ProductRepository below: the blog index needs a BlogRepository,
+// and providing it here (rather than importing BlogModule) keeps the dependency
+// edge one-directional — BlogModule imports SearchModule for the BlogIndexer
+// seam, never the other way round.
+import { BlogRepository } from '../blog/blog.repository';
 // Direct file imports (NOT the '../category' barrel): CategoryModule and SearchModule now
 // form a module cycle, and routing these through the barrels would make the emitted
 // design:paramtypes of SearchService's CategoryRepository resolve to `Object` at runtime.
@@ -9,6 +14,8 @@ import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer
 import { MeiliClient } from './meili.client';
 import { SearchService } from './search.service';
 import { ProductIndexer, SearchProductIndexer } from './product-indexer';
+import { BlogSearchService } from './blog-search.service';
+import { BlogIndexer, SearchBlogIndexer } from './blog-indexer';
 import { SearchCategorySubtreeIndexer } from './category-subtree-indexer';
 import { SearchController } from './search.controller';
 import { AdminSearchController } from './admin-search.controller';
@@ -37,9 +44,12 @@ import { AdminSearchController } from './admin-search.controller';
     MeiliClient,
     SearchService,
     ProductRepository,
+    BlogRepository,
+    BlogSearchService,
     { provide: ProductIndexer, useClass: SearchProductIndexer },
+    { provide: BlogIndexer, useClass: SearchBlogIndexer },
     { provide: CategorySubtreeIndexer, useClass: SearchCategorySubtreeIndexer },
   ],
-  exports: [ProductIndexer, CategorySubtreeIndexer, SearchService],
+  exports: [ProductIndexer, BlogIndexer, CategorySubtreeIndexer, SearchService],
 })
 export class SearchModule {}

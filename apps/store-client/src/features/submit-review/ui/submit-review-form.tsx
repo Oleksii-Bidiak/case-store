@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Star } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -30,6 +31,18 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
   const { isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
   const submit = useReviewControllerSubmit();
+  const pathname = usePathname();
+
+  // Send the guest back to the product they were reading (TASK-419). The bare
+  // "/login" this used to point at dropped the shopper on the homepage after a
+  // successful sign-in — the review they came to write was several clicks away
+  // again, and nothing said where it went. Both auth forms already honour
+  // `?redirect=` and re-check that it is a same-origin path, so only a path is
+  // ever put in the URL here; `usePathname()` yields exactly that (no origin,
+  // no query), and null only outside a router, where the plain link is right.
+  const loginHref = pathname
+    ? `/login?redirect=${encodeURIComponent(pathname)}`
+    : "/login";
 
   const {
     register,
@@ -58,7 +71,7 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
       <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
         {dict.reviews.loginToReview}{" "}
         <Link
-          href="/login"
+          href={loginHref}
           className="font-medium text-primary hover:underline"
         >
           {dict.reviews.loginLink}
