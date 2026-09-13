@@ -238,6 +238,34 @@
 }
 
 /* ─────────────────────────────────────────────
+   The `dark:` variant (TASK-412)
+
+   Tailwind v4's built-in `dark` variant is `@media (prefers-color-scheme: dark)`
+   and nothing else. Left at the default, the tokens above honoured an explicit
+   choice while every `dark:`-prefixed utility kept obeying the OS — so on a dark
+   OS with «світла» chosen, the page went light but `shared/ui`'s inputs, outline
+   buttons, textareas, selects and destructive badges stayed dark on it. The two
+   halves of the theme disagreed.
+
+   Redefined here with the SAME two branches as the token blocks, in the same
+   order, so one rule governs both halves:
+     · explicit `data-theme` wins in both directions;
+     · with nothing chosen, the OS decides.
+   The media branch keeps `dark:` working before next-themes' inline script runs
+   and for a visitor with JavaScript off.
+   ───────────────────────────────────────────── */
+@custom-variant dark {
+  &:where([data-theme='dark'], [data-theme='dark'] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme='light']) *, :root:not([data-theme='light'])) {
+      @slot;
+    }
+  }
+}
+
+/* ─────────────────────────────────────────────
    Tailwind v4 Theme — maps CSS vars to utilities
    e.g. --color-primary → bg-primary, text-primary
         --radius        → rounded-[var(--radius)]
