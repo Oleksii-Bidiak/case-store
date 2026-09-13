@@ -67,11 +67,13 @@ export interface ThemeToggleProps {
  * segment, roving `tabIndex` so the group is ONE tab stop, and ←/→/↑/↓ (plus
  * Home/End) moving the selection the way native radios do.
  *
- * Until hydration nothing is highlighted. `useTheme()` returns `undefined` on the
- * server and on the first client render — the choice lives in localStorage,
- * which the server cannot see — so highlighting a guess would either mismatch
- * hydration or visibly jump from "Системна" to the real answer a frame later.
- * The markup is identical either way, so only the highlight arrives late.
+ * Until hydration nothing is highlighted, and the `hydrated` gate below is what
+ * holds that line — not `useTheme()`, which already carries the stored value on
+ * the first client render (next-themes seeds its state from localStorage inside
+ * the `useState` initializer). The server cannot see localStorage, so rendering
+ * that value immediately is exactly the hydration mismatch to avoid; the
+ * alternative, guessing "Системна", visibly jumps to the real answer a frame
+ * later. The markup is identical either way, so only the highlight arrives late.
  * (The PAGE itself does not wait for this: next-themes' inline script sets
  * `data-theme` on `<html>` before first paint.)
  *

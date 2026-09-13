@@ -165,7 +165,11 @@ describe('Search (e2e)', () => {
       expect(res.body.meta.total).toBe(1);
     });
 
-    it('falls back to Postgres when the engine errors (search → null)', async () => {
+    // Scope, stated honestly: the whole MeiliClient is replaced here, so this
+    // pins the CALLER's handling of the `null` sentinel, not that a real engine
+    // error produces it. The other half — an SDK rejection becoming `null` — is
+    // covered in `meili.client.spec.ts` ('search returns null on an SDK error').
+    it('falls back to Postgres when the client reports unavailable (search → null)', async () => {
       meiliClientMock.isConfigured.mockReturnValue(true);
       meiliClientMock.search.mockResolvedValue(null);
       prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
