@@ -80,6 +80,7 @@ describe('Carousel placement (e2e)', () => {
     findById: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    updateWithPlacementMove: jest.fn(),
     publish: jest.fn(),
     unpublish: jest.fn(),
     delete: jest.fn(),
@@ -260,12 +261,17 @@ describe('Carousel placement (e2e)', () => {
       expect(carouselRepositoryMock.update).not.toHaveBeenCalled();
     });
 
-    it('moves a live carousel to HOME_TABS and purges the homepage cache', async () => {
+    // A placement change is a MOVE between two independent `sortOrder` sequences (TASK-428),
+    // so it must reach the RE-APPENDING repository path — the plain in-place write carried
+    // the row's old slot into the target bucket, putting two carousels at the same position
+    // and letting `createdAt` decide where the operator's move actually landed.
+    it('moves a live carousel to HOME_TABS through the re-appending path and purges the cache', async () => {
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
       carouselRepositoryMock.findById.mockResolvedValue(railCarousel);
-      carouselRepositoryMock.update.mockResolvedValue({
+      carouselRepositoryMock.updateWithPlacementMove.mockResolvedValue({
         ...railCarousel,
         placement: CarouselPlacement.HOME_TABS,
+        sortOrder: 3,
       });
 
       const response = await request(app.getHttpServer())
@@ -274,15 +280,33 @@ describe('Carousel placement (e2e)', () => {
         .send(body)
         .expect(200);
 
-      expect(carouselRepositoryMock.update).toHaveBeenCalledWith(
+      expect(carouselRepositoryMock.updateWithPlacementMove).toHaveBeenCalledWith(
         railId,
         expect.objectContaining({ placement: CarouselPlacement.HOME_TABS }),
+        CarouselPlacement.HOME_TABS,
       );
+      expect(carouselRepositoryMock.update).not.toHaveBeenCalled();
       expect(response.body.data.placement).toBe(CarouselPlacement.HOME_TABS);
+      expect(response.body.data.sortOrder).toBe(3);
       expect(revalidationMock.revalidate).toHaveBeenCalledWith({
         tags: ['carousels'],
         paths: ['/'],
       });
+    });
+
+    it('keeps an edit that re-sends the SAME placement on the plain in-place write', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+      carouselRepositoryMock.findById.mockResolvedValue(railCarousel);
+      carouselRepositoryMock.update.mockResolvedValue({ ...railCarousel, title: 'Новинки 2' });
+
+      await request(app.getHttpServer())
+        .put(`/api/admin/carousels/${railId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Новинки 2', placement: CarouselPlacement.HOME_RAILS })
+        .expect(200);
+
+      expect(carouselRepositoryMock.updateWithPlacementMove).not.toHaveBeenCalled();
+      expect(carouselRepositoryMock.update).toHaveBeenCalledTimes(1);
     });
 
     it('returns 404 for a missing carousel', async () => {

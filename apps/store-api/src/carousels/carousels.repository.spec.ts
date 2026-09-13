@@ -355,7 +355,10 @@ describe('CarouselRepository', () => {
       });
     });
 
-    it('writes a new placement when provided', async () => {
+    // The in-place write forwards `placement` verbatim — correct ONLY when it equals the
+    // stored one (the admin form re-sends the current placement on every save). A real
+    // MOVE goes through `updateWithPlacementMove`; see the describe below.
+    it('forwards a placement verbatim, taking no lock and reading no max', async () => {
       prismaMock.carousel.update.mockResolvedValue({
         ...mockCarousel,
         placement: CarouselPlacement.HOME_TABS,
@@ -366,6 +369,92 @@ describe('CarouselRepository', () => {
       expect(prismaMock.carousel.update).toHaveBeenCalledWith({
         where: { id: 'carousel-uuid-1' },
         data: { placement: CarouselPlacement.HOME_TABS },
+      });
+      expect(txMock.$executeRaw).not.toHaveBeenCalled();
+      expect(prismaMock.carousel.aggregate).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── updateWithPlacementMove ───────────────────────────────────────────────
+
+  describe('updateWithPlacementMove', () => {
+    // The bug this method exists for: a plain `update` carried the row's OLD slot into the
+    // new bucket, so HOME_TABS (0,1,2) gained a SECOND row at 0 and the homepage ordered
+    // the pair by createdAt — the moved carousel surfacing in a position nobody chose.
+    it('re-appends the moved carousel to the END of the TARGET bucket (max + 1)', async () => {
+      prismaMock.carousel.aggregate.mockResolvedValue({ _max: { sortOrder: 2 } });
+      prismaMock.carousel.update.mockResolvedValue({
+        ...mockCarousel,
+        placement: CarouselPlacement.HOME_TABS,
+        sortOrder: 3,
+      });
+
+      await repository.updateWithPlacementMove(
+        'carousel-uuid-1',
+        { title: 'Renamed', placement: CarouselPlacement.HOME_TABS },
+        CarouselPlacement.HOME_TABS,
+      );
+
+      // The max is read for the TARGET bucket, never the source one — the two placements
+      // are independent sequences and the source's numbers say nothing about the target's.
+      expect(prismaMock.carousel.aggregate).toHaveBeenCalledWith({
+        where: { placement: CarouselPlacement.HOME_TABS },
+        _max: { sortOrder: true },
+      });
+      expect(prismaMock.carousel.update).toHaveBeenCalledWith({
+        where: { id: 'carousel-uuid-1' },
+        data: { title: 'Renamed', placement: CarouselPlacement.HOME_TABS, sortOrder: 3 },
+      });
+    });
+
+    // Without the lock, a move and a concurrent create both read the same max and write the
+    // same slot — the very collision the re-append is here to prevent.
+    it('takes the TARGET bucket lock before reading max, inside one transaction', async () => {
+      prismaMock.carousel.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      prismaMock.carousel.update.mockResolvedValue(mockCarousel);
+
+      await repository.updateWithPlacementMove(
+        'carousel-uuid-1',
+        { placement: CarouselPlacement.HOME_TABS },
+        CarouselPlacement.HOME_TABS,
+      );
+
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+      const lockCallOrder = txMock.$executeRaw.mock.invocationCallOrder[0];
+      const maxCallOrder = prismaMock.carousel.aggregate.mock.invocationCallOrder[0];
+      expect(lockCallOrder).toBeLessThan(maxCallOrder);
+    });
+
+    it('starts an EMPTY target bucket at 0', async () => {
+      prismaMock.carousel.aggregate.mockResolvedValue({ _max: { sortOrder: null } });
+      prismaMock.carousel.update.mockResolvedValue(mockCarousel);
+
+      await repository.updateWithPlacementMove(
+        'carousel-uuid-1',
+        { placement: CarouselPlacement.HOME_TABS },
+        CarouselPlacement.HOME_TABS,
+      );
+
+      expect(prismaMock.carousel.update).toHaveBeenCalledWith({
+        where: { id: 'carousel-uuid-1' },
+        data: { placement: CarouselPlacement.HOME_TABS, sortOrder: 0 },
+      });
+    });
+
+    it('honours an explicit sortOrder without reading max (same rule as create)', async () => {
+      prismaMock.carousel.update.mockResolvedValue(mockCarousel);
+
+      await repository.updateWithPlacementMove(
+        'carousel-uuid-1',
+        { placement: CarouselPlacement.HOME_TABS, sortOrder: 9 },
+        CarouselPlacement.HOME_TABS,
+      );
+
+      expect(prismaMock.carousel.aggregate).not.toHaveBeenCalled();
+      expect(prismaMock.carousel.update).toHaveBeenCalledWith({
+        where: { id: 'carousel-uuid-1' },
+        data: { placement: CarouselPlacement.HOME_TABS, sortOrder: 9 },
       });
     });
   });

@@ -41,6 +41,7 @@ const carouselRepositoryMock = {
   findById: jest.fn(),
   create: jest.fn(),
   update: jest.fn(),
+  updateWithPlacementMove: jest.fn(),
   publish: jest.fn(),
   unpublish: jest.fn(),
   delete: jest.fn(),
@@ -496,7 +497,7 @@ describe('CarouselService', () => {
 
     it('writes a new placement and revalidates the homepage for a live carousel (TASK-288)', async () => {
       carouselRepositoryMock.findById.mockResolvedValue(baseCarousel);
-      carouselRepositoryMock.update.mockResolvedValue({
+      carouselRepositoryMock.updateWithPlacementMove.mockResolvedValue({
         ...baseCarousel,
         placement: CarouselPlacement.HOME_TABS,
       });
@@ -505,12 +506,79 @@ describe('CarouselService', () => {
         placement: CarouselPlacement.HOME_TABS,
       });
 
-      const passed = carouselRepositoryMock.update.mock.calls[0][1] as {
+      const passed = carouselRepositoryMock.updateWithPlacementMove.mock.calls[0][1] as {
         placement?: CarouselPlacement;
       };
       expect(passed.placement).toBe(CarouselPlacement.HOME_TABS);
       expect(entity.placement).toBe(CarouselPlacement.HOME_TABS);
       expect(revalidationMock.revalidate).toHaveBeenCalledWith(carouselsTarget);
+    });
+
+    // ─── placement moves re-append (review #11) ─────────────────────────────
+    //
+    // `sortOrder` is a contiguous per-placement sequence (TASK-428), so the two placements
+    // are independent 0..n lists. A plain `update` carried the row's OLD slot into the new
+    // list — HOME_TABS ending up with two rows at 0 and the homepage tiebreaking them by
+    // createdAt. The service is what decides this is a MOVE; the re-append itself is the
+    // repository's locked `max + 1`.
+
+    it('routes a placement CHANGE through the re-appending repository path', async () => {
+      carouselRepositoryMock.findById.mockResolvedValue(baseCarousel); // stored: HOME_RAILS
+      carouselRepositoryMock.updateWithPlacementMove.mockResolvedValue({
+        ...baseCarousel,
+        placement: CarouselPlacement.HOME_TABS,
+        sortOrder: 3,
+      });
+
+      await service.update('carousel-uuid-1', { placement: CarouselPlacement.HOME_TABS });
+
+      expect(carouselRepositoryMock.update).not.toHaveBeenCalled();
+      expect(carouselRepositoryMock.updateWithPlacementMove).toHaveBeenCalledWith(
+        'carousel-uuid-1',
+        expect.objectContaining({ placement: CarouselPlacement.HOME_TABS }),
+        CarouselPlacement.HOME_TABS,
+      );
+    });
+
+    it('keeps an edit that RE-SENDS the current placement an in-place write', async () => {
+      carouselRepositoryMock.findById.mockResolvedValue(baseCarousel); // stored: HOME_RAILS
+      carouselRepositoryMock.update.mockResolvedValue(baseCarousel);
+
+      await service.update('carousel-uuid-1', {
+        title: 'Renamed',
+        placement: CarouselPlacement.HOME_RAILS,
+      });
+
+      // The admin form always submits the select's current value, so treating an unchanged
+      // placement as a move would drop the carousel to the bottom of its own list on every
+      // rename.
+      expect(carouselRepositoryMock.updateWithPlacementMove).not.toHaveBeenCalled();
+      expect(carouselRepositoryMock.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps an edit that omits placement entirely an in-place write', async () => {
+      carouselRepositoryMock.findById.mockResolvedValue(baseCarousel);
+      carouselRepositoryMock.update.mockResolvedValue(baseCarousel);
+
+      await service.update('carousel-uuid-1', { title: 'Renamed' });
+
+      expect(carouselRepositoryMock.updateWithPlacementMove).not.toHaveBeenCalled();
+      expect(carouselRepositoryMock.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('still validates the category before moving — no write on a bad category', async () => {
+      carouselRepositoryMock.findById.mockResolvedValue(baseCarousel);
+      categoryRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(
+        service.update('carousel-uuid-1', {
+          placement: CarouselPlacement.HOME_TABS,
+          source: CarouselSource.CATEGORY,
+          categoryId: 'missing-category',
+        }),
+      ).rejects.toThrow(NotFoundException);
+      expect(carouselRepositoryMock.updateWithPlacementMove).not.toHaveBeenCalled();
+      expect(carouselRepositoryMock.update).not.toHaveBeenCalled();
     });
 
     it('leaves placement untouched when the update omits it', async () => {

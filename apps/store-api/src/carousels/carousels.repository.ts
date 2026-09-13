@@ -280,12 +280,60 @@ export class CarouselRepository implements PublishablePort {
   }
 
   /**
-   * Update a carousel's fields. Only provided fields are written.
+   * Update a carousel's fields IN PLACE. Only provided fields are written.
+   *
+   * Valid only while the row STAYS in its bucket. A `placement` that differs from the stored
+   * one must go through {@link updateWithPlacementMove} instead — see its docblock for the
+   * duplicate-slot failure this plain write causes. The service makes that call.
    */
   update(id: string, data: UpdateCarouselInput): Promise<Carousel> {
     return this.prisma.carousel.update({
       where: { id },
       data,
+    });
+  }
+
+  /**
+   * Update a carousel that is MOVING to another placement: write the submitted fields and,
+   * in the SAME advisory-locked transaction, RE-APPEND the row to the end of the TARGET
+   * bucket (`sortOrder = max(target) + 1`).
+   *
+   * WHY THE MOVE CANNOT BE A PLAIN `update`. Since TASK-428 `sortOrder` is a CONTIGUOUS
+   * per-placement sequence, which makes the two placements two independent 0..n lists — and
+   * a plain write carries the row's OLD slot into the new list. HOME_TABS holds 0,1,2 and
+   * HOME_RAILS holds 0..4; the operator edits the rail at slot 0 and switches it to
+   * HOME_TABS, and HOME_TABS now has TWO rows at 0. `findAllPublished` orders by
+   * `sortOrder, createdAt`, so the moved carousel lands wherever its creation date happens
+   * to put it rather than at the end — the operator moved a section and the homepage put it
+   * somewhere they did not choose, with nothing in the UI to explain it.
+   *
+   * The lock is the TARGET bucket's, taken before the `max` read and held for the whole
+   * transaction, exactly as `create` does: without it two concurrent appends (a move and a
+   * create, or two moves) read the same max and hand out the same slot, recreating the
+   * collision the method exists to prevent.
+   *
+   * The SOURCE bucket is deliberately left with a hole where the row was. Ordering is by
+   * relative value, so a gap changes nothing anyone can see, and the next drag in that
+   * bucket rewrites it 0..n anyway — resequencing it here would mean taking a second
+   * bucket's lock (two locks, in some order, in one transaction) to fix nothing.
+   *
+   * An EXPLICIT `data.sortOrder` still wins, same as in `create` — the append is the
+   * default, not an override. The admin form has sent no `sortOrder` since TASK-428.
+   */
+  updateWithPlacementMove(
+    id: string,
+    data: UpdateCarouselInput,
+    placement: CarouselPlacement,
+  ): Promise<Carousel> {
+    return this.prisma.$transaction(async (tx) => {
+      await acquireAdvisoryLocks(tx, [placementLockKey(placement)]);
+
+      const sortOrder = data.sortOrder ?? (await this.nextSortOrder(tx, placement));
+
+      return tx.carousel.update({
+        where: { id },
+        data: { ...data, placement, sortOrder },
+      });
     });
   }
 

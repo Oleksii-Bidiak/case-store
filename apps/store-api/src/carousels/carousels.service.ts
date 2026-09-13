@@ -164,6 +164,11 @@ export class CarouselService {
    * real category. Revalidates the homepage whenever public visibility could
    * have changed — a `placement` move of a live carousel counts (it relocates
    * the carousel between homepage sections) and is covered by the same rule.
+   *
+   * A placement CHANGE is not an ordinary field write: since TASK-428 each placement is its
+   * own contiguous 0..n `sortOrder` sequence, so the row has to be re-appended to the target
+   * list rather than arrive carrying its old slot. That decision is made here; the locked
+   * `max + 1` write belongs to `CarouselRepository.updateWithPlacementMove`.
    */
   async update(id: string, dto: UpdateCarouselDto): Promise<CarouselEntity> {
     const carousel = await this.carouselRepository.findById(id);
@@ -172,6 +177,13 @@ export class CarouselService {
     }
 
     const wasPublished = carousel.status === PublishStatus.PUBLISHED;
+
+    // Only a placement that DIFFERS from the stored one is a move. Re-sending the carousel's
+    // current placement (which the admin form does on every save, because the select is
+    // always populated) must stay an in-place edit — treating it as a move would shove the
+    // row to the bottom of its own list every time anyone renamed it.
+    const targetPlacement =
+      dto.placement !== undefined && dto.placement !== carousel.placement ? dto.placement : null;
 
     const input: UpdateCarouselInput = {
       title: dto.title,
@@ -207,7 +219,9 @@ export class CarouselService {
           : resolved.publishedAt;
     }
 
-    const updated = await this.carouselRepository.update(id, input);
+    const updated = targetPlacement
+      ? await this.carouselRepository.updateWithPlacementMove(id, input, targetPlacement)
+      : await this.carouselRepository.update(id, input);
     const entity = CarouselEntity.fromPrisma(updated);
     // Revalidate whenever public visibility could have changed: the carousel is
     // live now, or it was live before (e.g. just unpublished or edited in place).
