@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import {
+  act,
   fireEvent,
   renderWithProviders,
   screen,
@@ -126,5 +127,104 @@ describe("ProductImageManager — drag-and-drop batch upload (TASK-424)", () => 
         dict.productImages.announceAllDone(1, 1),
       ),
     );
+  });
+});
+
+/** Two existing photos, so the per-image gallery controls actually render. */
+const EXISTING_IMAGES = [
+  {
+    id: "img-1",
+    url: "/uploads/1.webp",
+    sortOrder: 0,
+    isPrimary: true,
+    alt: null,
+  },
+  {
+    id: "img-2",
+    url: "/uploads/2.webp",
+    sortOrder: 1,
+    isPrimary: false,
+    alt: null,
+  },
+];
+
+/**
+ * Like `stubGallery`, but the upload of `holdFile` hangs until `release()` is
+ * called. Without a held request there is no observable window in which a batch
+ * is "still uploading", and the whole second-drop race is untestable.
+ */
+function stubGalleryHolding(holdFile: string) {
+  const requests: string[][] = [];
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  server.use(
+    http.get(`*/api/products/${PRODUCT_ID}/images`, () =>
+      HttpResponse.json({ data: EXISTING_IMAGES }),
+    ),
+    http.post(`*/api/products/${PRODUCT_ID}/images`, async ({ request }) => {
+      const form = await request.formData();
+      const names = form
+        .getAll("files")
+        .map((file) => (file instanceof File ? file.name : String(file)));
+      requests.push(names);
+      if (names.includes(holdFile)) await held;
+      return HttpResponse.json({ data: [] });
+    }),
+  );
+  return { requests, release: () => release() };
+}
+
+describe("ProductImageManager — a second drop while the first is uploading", () => {
+  it("joins the running queue and keeps every control disabled until all files settle", async () => {
+    const { requests, release } = stubGalleryHolding("slow.png");
+    renderWithProviders(<ProductImageManager productId={PRODUCT_ID} />);
+    // Wait for the gallery, so the per-image controls exist to be asserted on.
+    await screen.findAllByRole("button", {
+      name: dict.productImages.deleteImage,
+    });
+
+    const clearQueue = () =>
+      screen.getByRole("button", { name: dict.productImages.clearQueue });
+    const deleteImage = () =>
+      screen.getAllByRole("button", {
+        name: dict.productImages.deleteImage,
+      })[0];
+
+    dropFiles([makeFile("slow.png")]);
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(clearQueue()).toBeDisabled();
+    expect(deleteImage()).toBeDisabled();
+
+    // The second drop. The drop zone has no `busy` guard by design — it must
+    // append to the queue the running loop is draining, not start its own.
+    dropFiles([makeFile("second.png")]);
+    expect(await screen.findByText("second.png")).toBeInTheDocument();
+
+    // Long enough for a second, concurrent loop to have uploaded its one file
+    // and cleared `isUploading` (MSW answers from memory). Nothing may be sent
+    // while slow.png is in flight, «Очистити список» must stay disabled —
+    // pressing it wipes the rows the running loop is still patching — and so
+    // must delete, whose `reorder`/gallery view is still growing server-side.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    expect(requests).toHaveLength(1);
+    expect(clearQueue()).toBeDisabled();
+    expect(deleteImage()).toBeDisabled();
+
+    release();
+
+    // The second batch is not dropped on the floor: the one loop picks it up.
+    await waitFor(() =>
+      expect(requests).toEqual([["slow.png"], ["second.png"]]),
+    );
+    await waitFor(() => expect(clearQueue()).toBeEnabled());
+    expect(deleteImage()).toBeEnabled();
+    // One summary for both drops — they were one upload to the operator.
+    expect(
+      screen.getByText(dict.productImages.queueProgress(2, 2)),
+    ).toBeInTheDocument();
   });
 });

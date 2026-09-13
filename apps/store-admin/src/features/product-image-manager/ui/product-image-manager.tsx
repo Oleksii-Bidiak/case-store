@@ -101,6 +101,16 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
   const [isUploading, setIsUploading] = useState(false);
   const { announcePolite, announceAssertive } = useAnnouncer();
 
+  /**
+   * Files accepted but not yet sent, and whether a loop is draining them.
+   *
+   * Refs, not state: `runQueue` below reads both after every `await`, and a
+   * state snapshot captured when the loop started would never see a batch
+   * dropped while it was running.
+   */
+  const pendingRef = useRef<QueueItem[]>([]);
+  const isDrainingRef = useRef(false);
+
   const listQueryKey = getProductImageControllerListQueryKey(productId);
   const { data, isLoading, isError } = useProductImageControllerList(productId);
   const images = [...(data?.data ?? [])].sort(
@@ -120,14 +130,40 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
       prev.map((item) => (item.id === id ? { ...item, ...changes } : item)),
     );
 
-  /** Upload the given items one after another, reporting each one. */
+  /**
+   * Queue the given items and upload them one after another, reporting each one.
+   *
+   * ONE DRAIN LOOP AT A TIME — this is the whole reason `pendingRef` exists.
+   * The drop zone cannot be disabled the way the picker button is (a browser
+   * drops files on whatever is under the cursor), so a second drop lands here
+   * while the first batch is still going. When each call looped over its OWN
+   * argument, that second drop started a SECOND loop, and whichever finished
+   * first called `setIsUploading(false)` — re-enabling «Очистити список»,
+   * «Повторити невдалі» and every per-image move/primary/delete control while
+   * the other loop was still uploading. Drop 20 photos, then 2 more: the 2-file
+   * loop wins, the operator presses «Очистити список», `setQueue([])` runs and
+   * the remaining 18 uploads go invisible (`patch()` matches no row any more);
+   * or they reorder/delete, and the `reorder` payload is computed from a gallery
+   * the server is still appending to. Appending to one queue that one loop
+   * drains keeps `isUploading` true until the LAST file has settled AND keeps
+   * the second drop — refusing it (an `if (busy) return`) would silently lose
+   * photos the operator watched land in the zone. Do not "simplify" this back
+   * into a loop over `items`.
+   */
   const runQueue = async (items: QueueItem[]) => {
     if (items.length === 0) return;
+    pendingRef.current = [...pendingRef.current, ...items];
+    // A loop is already running — it will pick these up on its next turn.
+    if (isDrainingRef.current) return;
+
+    isDrainingRef.current = true;
     setIsUploading(true);
     let done = 0;
     let failed = 0;
 
-    for (const item of items) {
+    for (;;) {
+      const item = pendingRef.current.shift();
+      if (!item) break;
       patch(item.id, { status: "uploading", error: undefined });
       try {
         await upload.mutateAsync({
@@ -147,11 +183,20 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
       }
     }
 
+    // Released together, and only once `pendingRef` is empty: any drop that
+    // arrives from here on starts a fresh loop, which re-disables the controls
+    // synchronously in the same drop handler — there is no window in which a
+    // file is in flight and the gallery is live.
+    isDrainingRef.current = false;
     setIsUploading(false);
     // Refetch once, at the end: the grid below is the same list every request
     // appended to, and invalidating per file would re-render it N times.
     await invalidate();
 
+    // One summary for everything this loop drained: two overlapping drops were
+    // a single upload from the operator's point of view, and two toasts (one of
+    // them counting only half the files) is how the old double loop announced
+    // "Завантаження завершено: 2" with 18 files still to go.
     if (failed === 0) {
       toast.success(dict.productImages.toastUploaded);
     } else {
@@ -250,6 +295,10 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
         onDrop={(event) => {
           event.preventDefault();
           setIsDragging(false);
+          // No `busy` guard here, unlike the picker button: a drop mid-upload
+          // joins the queue the running `runQueue` loop is draining (see its
+          // docblock) instead of starting a second one, so the photos are kept
+          // rather than silently refused.
           enqueue(event.dataTransfer.files);
         }}
         className={cn(
