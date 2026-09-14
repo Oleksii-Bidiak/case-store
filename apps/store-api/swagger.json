@@ -5987,6 +5987,568 @@
         ]
       }
     },
+    "/api/products/{productId}/reviews": {
+      "post": {
+        "operationId": "reviewControllerSubmit",
+        "parameters": [
+          {
+            "name": "productId",
+            "required": true,
+            "in": "path",
+            "description": "Product UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReviewDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Review submitted (pending)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (rating out of range)"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "409": {
+            "description": "You have already reviewed this product"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Submit a product review",
+        "tags": [
+          "Reviews"
+        ]
+      },
+      "get": {
+        "operationId": "reviewControllerList",
+        "parameters": [
+          {
+            "name": "productId",
+            "required": true,
+            "in": "path",
+            "description": "Product UUID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (1-based)",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page (max 50)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated approved reviews with aggregate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewListResponseEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List approved product reviews",
+        "tags": [
+          "Reviews"
+        ]
+      }
+    },
+    "/api/products/{productId}/reviews/mine": {
+      "get": {
+        "operationId": "reviewControllerMine",
+        "parameters": [
+          {
+            "name": "productId",
+            "required": true,
+            "in": "path",
+            "description": "Product UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller’s own review, or null when they have not reviewed this product",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnReviewResponseEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "The caller's own review of this product",
+        "tags": [
+          "Reviews"
+        ]
+      }
+    },
+    "/api/reviews/{id}": {
+      "patch": {
+        "operationId": "reviewControllerUpdate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Review UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateReviewDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Text saved; it is back in the moderation queue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdatedReviewResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — text too long, or an attempt to change the rating"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "No such review of yours"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Add or change the text on your own review",
+        "tags": [
+          "Reviews"
+        ]
+      }
+    },
+    "/api/admin/reviews": {
+      "get": {
+        "operationId": "adminReviewControllerList",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Filter: pending | approved | rejected",
+            "schema": {
+              "default": "pending",
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (1-based)",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page (max 100)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Free-text search over review text, author email and product name",
+            "schema": {
+              "maxLength": 120,
+              "example": "чохол",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated moderation queue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReviewListResponseEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List reviews for moderation (admin)",
+        "tags": [
+          "Reviews"
+        ]
+      }
+    },
+    "/api/admin/reviews/moderate": {
+      "patch": {
+        "operationId": "adminReviewControllerModerateMany",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkReviewModerationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Number of review texts written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkReviewModerationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — empty, oversized or non-UUID ids"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Unknown review id — nothing was written"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Approve or reject reviews in bulk (admin)",
+        "tags": [
+          "Reviews"
+        ]
+      }
+    },
+    "/api/admin/reviews/authors/{userId}/hide": {
+      "post": {
+        "operationId": "adminReviewControllerHideAuthor",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "description": "Author UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reviews withdrawn — ratings and texts alike",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorModerationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Forbidden — reviews:moderate required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Hide every review of one account (admin)",
+        "tags": [
+          "Reviews"
+        ]
+      }
+    },
+    "/api/admin/reviews/authors/{userId}/unhide": {
+      "post": {
+        "operationId": "adminReviewControllerUnhideAuthor",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "description": "Author UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reviews restored; their ratings count again only if the author’s address is confirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorModerationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Forbidden — reviews:moderate required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Restore every review of one account (admin)",
+        "tags": [
+          "Reviews"
+        ]
+      }
+    },
+    "/api/admin/reviews/{id}/approve": {
+      "patch": {
+        "operationId": "adminReviewControllerApprove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Review UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Review approved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReviewResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Review not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Approve a review (admin)",
+        "tags": [
+          "Reviews"
+        ]
+      }
+    },
+    "/api/admin/reviews/{id}/reject": {
+      "patch": {
+        "operationId": "adminReviewControllerReject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Review UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Review text rejected; the rating is untouched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReviewResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Review not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reject a review text (admin)",
+        "tags": [
+          "Reviews"
+        ]
+      }
+    },
+    "/api/admin/reviews/{id}/reply": {
+      "post": {
+        "operationId": "adminReviewControllerReply",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Review UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReviewReplyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reply saved — replacing the previous one if there was any",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewReplyResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — empty or oversized reply"
+          },
+          "403": {
+            "description": "Forbidden — reviews:write required"
+          },
+          "404": {
+            "description": "Review not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reply to a review as the shop (admin)",
+        "tags": [
+          "Reviews"
+        ]
+      }
+    },
     "/api/admin/users/{userId}/notes": {
       "get": {
         "operationId": "listUserNotes",
@@ -11481,322 +12043,6 @@
         ]
       }
     },
-    "/api/products/{productId}/reviews": {
-      "post": {
-        "operationId": "reviewControllerSubmit",
-        "parameters": [
-          {
-            "name": "productId",
-            "required": true,
-            "in": "path",
-            "description": "Product UUID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateReviewDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Review submitted (pending)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReviewResponseEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error (rating out of range)"
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "409": {
-            "description": "You have already reviewed this product"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Submit a product review",
-        "tags": [
-          "Reviews"
-        ]
-      },
-      "get": {
-        "operationId": "reviewControllerList",
-        "parameters": [
-          {
-            "name": "productId",
-            "required": true,
-            "in": "path",
-            "description": "Product UUID",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "description": "Page number (1-based)",
-            "schema": {
-              "minimum": 1,
-              "default": 1,
-              "type": "number"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "description": "Items per page (max 50)",
-            "schema": {
-              "minimum": 1,
-              "maximum": 50,
-              "default": 10,
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Paginated approved reviews with aggregate",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReviewListResponseEnvelope"
-                }
-              }
-            }
-          }
-        },
-        "summary": "List approved product reviews",
-        "tags": [
-          "Reviews"
-        ]
-      }
-    },
-    "/api/admin/reviews": {
-      "get": {
-        "operationId": "adminReviewControllerList",
-        "parameters": [
-          {
-            "name": "status",
-            "required": false,
-            "in": "query",
-            "description": "Filter: pending | approved",
-            "schema": {
-              "default": "pending",
-              "type": "string",
-              "enum": [
-                "pending",
-                "approved"
-              ]
-            }
-          },
-          {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "description": "Page number (1-based)",
-            "schema": {
-              "minimum": 1,
-              "default": 1,
-              "type": "number"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "description": "Items per page (max 100)",
-            "schema": {
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20,
-              "type": "number"
-            }
-          },
-          {
-            "name": "search",
-            "required": false,
-            "in": "query",
-            "description": "Free-text search over review text, author email and product name",
-            "schema": {
-              "maxLength": 120,
-              "example": "чохол",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Paginated moderation queue",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminReviewListResponseEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "403": {
-            "description": "Forbidden — admin access required"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "List reviews for moderation (admin)",
-        "tags": [
-          "Reviews"
-        ]
-      }
-    },
-    "/api/admin/reviews/moderate": {
-      "patch": {
-        "operationId": "adminReviewControllerModerateMany",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BulkReviewModerationDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Number of reviews written (for `reject`, deleted)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BulkReviewModerationResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error — empty, oversized or non-UUID ids"
-          },
-          "403": {
-            "description": "Forbidden — admin access required"
-          },
-          "404": {
-            "description": "Unknown review id — nothing was written"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Approve or reject reviews in bulk (admin)",
-        "tags": [
-          "Reviews"
-        ]
-      }
-    },
-    "/api/admin/reviews/{id}/approve": {
-      "patch": {
-        "operationId": "adminReviewControllerApprove",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "Review UUID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Review approved",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminReviewResponseEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden — admin access required"
-          },
-          "404": {
-            "description": "Review not found"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Approve a review (admin)",
-        "tags": [
-          "Reviews"
-        ]
-      }
-    },
-    "/api/admin/reviews/{id}": {
-      "delete": {
-        "operationId": "adminReviewControllerReject",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "Review UUID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Review rejected (deleted)"
-          },
-          "403": {
-            "description": "Forbidden — admin access required"
-          },
-          "404": {
-            "description": "Review not found"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Reject a review (admin)",
-        "tags": [
-          "Reviews"
-        ]
-      }
-    },
     "/api/admin/dashboard/summary": {
       "get": {
         "operationId": "adminDashboardControllerGetSummary",
@@ -16918,10 +17164,15 @@
             "example": "Great case!",
             "nullable": true
           },
-          "isActive": {
-            "type": "boolean",
-            "description": "Moderation state — true = approved/published",
-            "example": true
+          "textStatus": {
+            "type": "string",
+            "description": "Moderation verdict on the review text",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED"
+            ],
+            "example": "APPROVED"
           },
           "createdAt": {
             "format": "date-time",
@@ -16935,7 +17186,7 @@
           "productId",
           "productName",
           "rating",
-          "isActive",
+          "textStatus",
           "createdAt"
         ]
       },
@@ -17197,6 +17448,538 @@
         },
         "required": [
           "role"
+        ]
+      },
+      "ReviewReplyEntity": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "The shop’s reply text",
+            "example": "Дякуємо за відгук! Передали ваші зауваження постачальнику."
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the shop answered",
+            "example": "2026-07-02T09:15:00.000Z"
+          }
+        },
+        "required": [
+          "body",
+          "createdAt"
+        ]
+      },
+      "ReviewEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Review unique identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "userId": {
+            "type": "string",
+            "description": "Author user id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "productId": {
+            "type": "string",
+            "description": "Reviewed product id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "rating": {
+            "type": "number",
+            "description": "Star rating from 1 to 5",
+            "example": 5
+          },
+          "comment": {
+            "type": "string",
+            "description": "Optional free-text comment",
+            "nullable": true,
+            "example": "Great quality, fast shipping."
+          },
+          "verifiedPurchase": {
+            "type": "boolean",
+            "description": "Whether the author has purchased this product (badge signal)",
+            "example": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp",
+            "example": "2026-06-30T00:00:00.000Z"
+          },
+          "reply": {
+            "nullable": true,
+            "description": "The shop’s reply to this review, or null",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReviewReplyEntity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "productId",
+          "rating",
+          "verifiedPurchase",
+          "createdAt",
+          "reply"
+        ]
+      },
+      "ReviewAggregateEntity": {
+        "type": "object",
+        "properties": {
+          "ratingAverage": {
+            "type": "number",
+            "description": "Average approved-review rating (1–5), or null when there are no reviews",
+            "nullable": true,
+            "example": 4.3
+          },
+          "ratingCount": {
+            "type": "number",
+            "description": "Number of approved reviews",
+            "example": 12
+          }
+        },
+        "required": [
+          "ratingAverage",
+          "ratingCount"
+        ]
+      },
+      "OwnReviewEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Review unique identifier — the id to PATCH when adding text",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "productId": {
+            "type": "string",
+            "description": "Reviewed product id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "rating": {
+            "type": "number",
+            "description": "Star rating from 1 to 5 — immutable once given",
+            "example": 5
+          },
+          "comment": {
+            "type": "string",
+            "description": "The author’s own text; null when they left a rating only",
+            "nullable": true,
+            "example": "Great quality, fast shipping."
+          },
+          "textStatus": {
+            "type": "string",
+            "description": "Moderation verdict on the author’s own text",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED"
+            ],
+            "example": "PENDING"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp",
+            "example": "2026-06-30T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "productId",
+          "rating",
+          "textStatus",
+          "createdAt"
+        ]
+      },
+      "ReviewPaginationMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "Total number of items",
+            "example": 12
+          },
+          "page": {
+            "type": "number",
+            "description": "Current page (1-based)",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "description": "Items per page",
+            "example": 10
+          },
+          "totalPages": {
+            "type": "number",
+            "description": "Total number of pages",
+            "example": 2
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit",
+          "totalPages"
+        ]
+      },
+      "ReviewResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ReviewEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ReviewListResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Approved reviews for the current page",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewEntity"
+            }
+          },
+          "aggregate": {
+            "$ref": "#/components/schemas/ReviewAggregateEntity"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ReviewPaginationMeta"
+          }
+        },
+        "required": [
+          "data",
+          "aggregate",
+          "meta"
+        ]
+      },
+      "OwnReviewResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "nullable": true,
+            "description": "The caller’s own review of this product, or null if they have none",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OwnReviewEntity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CreateReviewDto": {
+        "type": "object",
+        "properties": {
+          "rating": {
+            "type": "number",
+            "description": "Star rating from 1 to 5",
+            "minimum": 1,
+            "maximum": 5,
+            "example": 5
+          },
+          "comment": {
+            "type": "string",
+            "description": "Optional free-text comment (max 1000 chars)",
+            "maxLength": 1000,
+            "example": "Excellent case, fits perfectly and feels premium."
+          }
+        },
+        "required": [
+          "rating"
+        ]
+      },
+      "UpdatedReviewResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OwnReviewEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "UpdateReviewDto": {
+        "type": "object",
+        "properties": {
+          "comment": {
+            "type": "string",
+            "description": "The review text (max 1000 chars). Writing or changing it sends the text back to moderation. Omit the field entirely to leave the existing text — and its verdict — untouched.",
+            "maxLength": 1000,
+            "example": "Came back a month later: still perfect."
+          }
+        }
+      },
+      "AdminReviewEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Review unique identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "userId": {
+            "type": "string",
+            "description": "Author user id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "productId": {
+            "type": "string",
+            "description": "Reviewed product id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "rating": {
+            "type": "number",
+            "description": "Star rating from 1 to 5",
+            "example": 5
+          },
+          "comment": {
+            "type": "string",
+            "description": "Optional free-text comment",
+            "nullable": true,
+            "example": "Great quality, fast shipping."
+          },
+          "verifiedPurchase": {
+            "type": "boolean",
+            "description": "Whether the author has purchased this product (badge signal)",
+            "example": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp",
+            "example": "2026-06-30T00:00:00.000Z"
+          },
+          "reply": {
+            "nullable": true,
+            "description": "The shop’s reply to this review, or null",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReviewReplyEntity"
+              }
+            ]
+          },
+          "textStatus": {
+            "type": "string",
+            "description": "Moderation verdict on the review text",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED"
+            ],
+            "example": "PENDING"
+          },
+          "ratingVisible": {
+            "type": "boolean",
+            "description": "Whether this rating counts toward the product's average",
+            "example": true
+          },
+          "userEmail": {
+            "type": "string",
+            "description": "Author email address",
+            "example": "olena@example.com"
+          },
+          "productName": {
+            "type": "string",
+            "description": "Reviewed product name",
+            "example": "iPhone 15 Pro Case"
+          },
+          "productSku": {
+            "type": "string",
+            "description": "Reviewed product SKU; null when the product has none",
+            "example": "CASE-IP15P-BLK",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "productId",
+          "rating",
+          "verifiedPurchase",
+          "createdAt",
+          "reply",
+          "textStatus",
+          "ratingVisible",
+          "userEmail",
+          "productName",
+          "productSku"
+        ]
+      },
+      "AdminReviewPaginationMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "Total number of items",
+            "example": 7
+          },
+          "page": {
+            "type": "number",
+            "description": "Current page (1-based)",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "description": "Items per page",
+            "example": 10
+          },
+          "totalPages": {
+            "type": "number",
+            "description": "Total number of pages",
+            "example": 1
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit",
+          "totalPages"
+        ]
+      },
+      "AdminReviewListResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Reviews for the current page",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminReviewEntity"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/AdminReviewPaginationMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "AdminReviewResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ReviewEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "BulkReviewModerationResult": {
+        "type": "object",
+        "properties": {
+          "updatedCount": {
+            "type": "number",
+            "description": "Review texts written",
+            "example": 7
+          }
+        },
+        "required": [
+          "updatedCount"
+        ]
+      },
+      "BulkReviewModerationResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkReviewModerationResult"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "AuthorModerationResult": {
+        "type": "object",
+        "properties": {
+          "updatedCount": {
+            "type": "number",
+            "description": "Reviews written",
+            "example": 12
+          }
+        },
+        "required": [
+          "updatedCount"
+        ]
+      },
+      "AuthorModerationResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AuthorModerationResult"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ReviewReplyResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ReviewReplyEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "BulkReviewModerationDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "description": "Ids of the reviews being moderated.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "action": {
+            "type": "string",
+            "description": "`approve` publishes the review texts to the storefront; `reject` withholds them. Neither deletes anything, and neither changes the ratings.",
+            "enum": [
+              "approve",
+              "reject"
+            ]
+          }
+        },
+        "required": [
+          "ids",
+          "action"
+        ]
+      },
+      "CreateReviewReplyDto": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "The shop’s reply, shown under the review on the storefront",
+            "example": "Дякуємо за відгук! Передали ваші зауваження постачальнику.",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "body"
         ]
       },
       "UserNoteEntity": {
@@ -22499,352 +23282,6 @@
           }
         }
       },
-      "ReviewEntity": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "Review unique identifier",
-            "example": "550e8400-e29b-41d4-a716-446655440000"
-          },
-          "userId": {
-            "type": "string",
-            "description": "Author user id",
-            "example": "550e8400-e29b-41d4-a716-446655440000"
-          },
-          "productId": {
-            "type": "string",
-            "description": "Reviewed product id",
-            "example": "550e8400-e29b-41d4-a716-446655440000"
-          },
-          "rating": {
-            "type": "number",
-            "description": "Star rating from 1 to 5",
-            "example": 5
-          },
-          "comment": {
-            "type": "string",
-            "description": "Optional free-text comment",
-            "nullable": true,
-            "example": "Great quality, fast shipping."
-          },
-          "verifiedPurchase": {
-            "type": "boolean",
-            "description": "Whether the author has purchased this product (badge signal)",
-            "example": true
-          },
-          "isActive": {
-            "type": "boolean",
-            "description": "Whether the review is approved and visible on the storefront",
-            "example": false
-          },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string",
-            "description": "Creation timestamp",
-            "example": "2026-06-30T00:00:00.000Z"
-          }
-        },
-        "required": [
-          "id",
-          "userId",
-          "productId",
-          "rating",
-          "verifiedPurchase",
-          "isActive",
-          "createdAt"
-        ]
-      },
-      "ReviewAggregateEntity": {
-        "type": "object",
-        "properties": {
-          "ratingAverage": {
-            "type": "number",
-            "description": "Average approved-review rating (1–5), or null when there are no reviews",
-            "nullable": true,
-            "example": 4.3
-          },
-          "ratingCount": {
-            "type": "number",
-            "description": "Number of approved reviews",
-            "example": 12
-          }
-        },
-        "required": [
-          "ratingAverage",
-          "ratingCount"
-        ]
-      },
-      "ReviewPaginationMeta": {
-        "type": "object",
-        "properties": {
-          "total": {
-            "type": "number",
-            "description": "Total number of items",
-            "example": 12
-          },
-          "page": {
-            "type": "number",
-            "description": "Current page (1-based)",
-            "example": 1
-          },
-          "limit": {
-            "type": "number",
-            "description": "Items per page",
-            "example": 10
-          },
-          "totalPages": {
-            "type": "number",
-            "description": "Total number of pages",
-            "example": 2
-          }
-        },
-        "required": [
-          "total",
-          "page",
-          "limit",
-          "totalPages"
-        ]
-      },
-      "ReviewResponseEnvelope": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/ReviewEntity"
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
-      "ReviewListResponseEnvelope": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "description": "Approved reviews for the current page",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ReviewEntity"
-            }
-          },
-          "aggregate": {
-            "$ref": "#/components/schemas/ReviewAggregateEntity"
-          },
-          "meta": {
-            "$ref": "#/components/schemas/ReviewPaginationMeta"
-          }
-        },
-        "required": [
-          "data",
-          "aggregate",
-          "meta"
-        ]
-      },
-      "CreateReviewDto": {
-        "type": "object",
-        "properties": {
-          "rating": {
-            "type": "number",
-            "description": "Star rating from 1 to 5",
-            "minimum": 1,
-            "maximum": 5,
-            "example": 5
-          },
-          "comment": {
-            "type": "string",
-            "description": "Optional free-text comment (max 1000 chars)",
-            "maxLength": 1000,
-            "example": "Excellent case, fits perfectly and feels premium."
-          }
-        },
-        "required": [
-          "rating"
-        ]
-      },
-      "AdminReviewEntity": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "Review unique identifier",
-            "example": "550e8400-e29b-41d4-a716-446655440000"
-          },
-          "userId": {
-            "type": "string",
-            "description": "Author user id",
-            "example": "550e8400-e29b-41d4-a716-446655440000"
-          },
-          "productId": {
-            "type": "string",
-            "description": "Reviewed product id",
-            "example": "550e8400-e29b-41d4-a716-446655440000"
-          },
-          "rating": {
-            "type": "number",
-            "description": "Star rating from 1 to 5",
-            "example": 5
-          },
-          "comment": {
-            "type": "string",
-            "description": "Optional free-text comment",
-            "nullable": true,
-            "example": "Great quality, fast shipping."
-          },
-          "verifiedPurchase": {
-            "type": "boolean",
-            "description": "Whether the author has purchased this product (badge signal)",
-            "example": true
-          },
-          "isActive": {
-            "type": "boolean",
-            "description": "Whether the review is approved and visible on the storefront",
-            "example": false
-          },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string",
-            "description": "Creation timestamp",
-            "example": "2026-06-30T00:00:00.000Z"
-          },
-          "userEmail": {
-            "type": "string",
-            "description": "Author email address",
-            "example": "olena@example.com"
-          },
-          "productName": {
-            "type": "string",
-            "description": "Reviewed product name",
-            "example": "iPhone 15 Pro Case"
-          },
-          "productSku": {
-            "type": "string",
-            "description": "Reviewed product SKU; null when the product has none",
-            "example": "CASE-IP15P-BLK",
-            "nullable": true
-          }
-        },
-        "required": [
-          "id",
-          "userId",
-          "productId",
-          "rating",
-          "verifiedPurchase",
-          "isActive",
-          "createdAt",
-          "userEmail",
-          "productName",
-          "productSku"
-        ]
-      },
-      "AdminReviewPaginationMeta": {
-        "type": "object",
-        "properties": {
-          "total": {
-            "type": "number",
-            "description": "Total number of items",
-            "example": 7
-          },
-          "page": {
-            "type": "number",
-            "description": "Current page (1-based)",
-            "example": 1
-          },
-          "limit": {
-            "type": "number",
-            "description": "Items per page",
-            "example": 10
-          },
-          "totalPages": {
-            "type": "number",
-            "description": "Total number of pages",
-            "example": 1
-          }
-        },
-        "required": [
-          "total",
-          "page",
-          "limit",
-          "totalPages"
-        ]
-      },
-      "AdminReviewListResponseEnvelope": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "description": "Reviews for the current page",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AdminReviewEntity"
-            }
-          },
-          "meta": {
-            "$ref": "#/components/schemas/AdminReviewPaginationMeta"
-          }
-        },
-        "required": [
-          "data",
-          "meta"
-        ]
-      },
-      "AdminReviewResponseEnvelope": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/ReviewEntity"
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
-      "BulkReviewModerationResult": {
-        "type": "object",
-        "properties": {
-          "updatedCount": {
-            "type": "number",
-            "description": "Reviews written (for reject, deleted)",
-            "example": 7
-          }
-        },
-        "required": [
-          "updatedCount"
-        ]
-      },
-      "BulkReviewModerationResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/BulkReviewModerationResult"
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
-      "BulkReviewModerationDto": {
-        "type": "object",
-        "properties": {
-          "ids": {
-            "description": "Ids of the reviews being moderated.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "action": {
-            "type": "string",
-            "description": "`approve` publishes the reviews to the storefront. `reject` DELETES them permanently.",
-            "enum": [
-              "approve",
-              "reject"
-            ]
-          }
-        },
-        "required": [
-          "ids",
-          "action"
-        ]
-      },
       "DailyDataPointDto": {
         "type": "object",
         "properties": {
@@ -23146,7 +23583,7 @@
           },
           "pendingReviews": {
             "type": "number",
-            "description": "Reviews awaiting moderation (isActive = false)",
+            "description": "Review texts awaiting a moderation verdict (textStatus = PENDING)",
             "example": 2
           },
           "unpaidInTransit": {
@@ -23163,6 +23600,11 @@
             "type": "number",
             "description": "Orders sitting in PENDING for more than 48 hours (subset of newOrders)",
             "example": 1
+          },
+          "ratingAbuse": {
+            "type": "number",
+            "description": "Things that look like rating abuse: products with more than 10 ratings in the last hour, plus IP addresses behind 3 or more 1★ ratings in the last 24 hours",
+            "example": 2
           }
         },
         "required": [
@@ -23170,7 +23612,8 @@
           "pendingReviews",
           "unpaidInTransit",
           "failedMails",
-          "pendingOver48h"
+          "pendingOver48h",
+          "ratingAbuse"
         ]
       },
       "NeedsActionResponse": {
