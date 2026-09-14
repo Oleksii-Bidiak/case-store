@@ -18,12 +18,13 @@ datasource db {
 
 // Enums
 
-/// CUSTOMER shops; ADMIN is the owner and is deliberately NOT subject to the
-/// permission matrix (a matrix that can revoke the owner's own access is a lockout
-/// waiting to happen). MANAGER (TASK-334) is the employee role: it can sign into
-/// the admin panel, and everything it may actually do comes from RolePermission
-/// rows the owner ticks. A MANAGER with no rows granted can log in and see nothing
-/// — that is the intended default, not a broken state.
+/// CUSTOMER shops. ADMIN holds every permission that exists without being granted
+/// one — the owner and their deputies; which of them actually OWNS the shop is
+/// `User.isOwner`, not this enum (TASK-474). MANAGER (TASK-334) is the employee
+/// role: it can sign into the admin panel, and everything it may actually do comes
+/// from that person's own UserPermission rows (TASK-475). A MANAGER with no rows
+/// granted can log in and see nothing — that is the intended default for a new
+/// hire, not a broken state.
 enum UserRole {
   CUSTOMER
   ADMIN
@@ -1805,34 +1806,18 @@ model PaymentEvent {
 // RBAC and audit (TASK-334 / TASK-318, Етап 8)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Which permissions a role holds. The CATALOGUE of possible permissions lives in
-/// code (`permission.catalog.ts`), not here — a permission exists because an
-/// endpoint exists, so it is a property of the code and gets type-checking and diff
-/// review. This table only records the owner's decisions about who gets what, which
-/// is business data and must be changeable without a release.
-///
-/// Absence means DENIED. A permission with no row is granted to nobody but the
-/// owner, so a newly shipped admin section is never silently handed to an existing
-/// MANAGER. `allowed` exists so a deliberate revocation reads differently from
-/// "never configured" in the UI.
-model RolePermission {
-  id         String   @id @default(uuid())
-  role       UserRole
-  /// Matches a key from the code catalogue, e.g. "orders:write". Text rather than an
-  /// enum so adding a permission is a code change plus a data row, never a schema
-  /// migration.
-  permission String
-  allowed    Boolean  @default(true)
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+// `RolePermission` / `role_permissions` lived here until TASK-475 and is gone,
+// table and all. It held "which permissions a role holds", which the access model
+// no longer has a use for: rights belong to a PERSON (see UserPermission below),
+// an ADMIN holds everything by level, and a MANAGER holds their own rows. Leaving
+// the table behind would have left a second, unread source of truth that still
+// looked authoritative to anyone reading the schema — and the one thing worse
+// than rights in two places is rights in two places where only one is consulted.
+// The TASK-474 migration copied every live manager's role grants onto them
+// personally before the drop; see `20260914140000_access_model`.
 
-  @@unique([role, permission])
-  @@index([role])
-  @@map("role_permissions")
-}
-
-/// What one PERSON may do (TASK-474, plan 181) — the successor to RolePermission,
-/// which is removed once the guard reads these rows instead (TASK-475).
+/// What one PERSON may do (TASK-474, plan 181) — the successor to the role→permission
+/// matrix, which TASK-475 removed once the guard read these rows instead.
 ///
 /// WHY THE PERSON AND NOT THE ROLE. Two managers in a real shop are never the same
 /// job: one answers the phone and processes orders, the other writes the blog.
@@ -1849,8 +1834,8 @@ model RolePermission {
 /// for a matrix screen that showed every possible key; a person's rights are shown
 /// as the set they hold, and deleting a row is how you take one away.
 ///
-/// `permission` is text, not an enum, for the same reason as RolePermission: the
-/// CATALOGUE lives in code (`permission.catalog.ts`), because a permission exists
+/// `permission` is text, not an enum, for the same reason the retired role matrix
+/// used text: the CATALOGUE lives in code (`permission.catalog.ts`), because a permission exists
 /// only because an endpoint exists, so adding one is a code change plus data — never
 /// a schema migration.
 model UserPermission {

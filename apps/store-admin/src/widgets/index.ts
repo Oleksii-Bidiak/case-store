@@ -77,11 +77,9 @@ export {
   AdminSubscriberTableSkeleton,
 } from "./subscriber-list";
 export { UserDetailView, UserDetailSkeleton } from "./user-detail";
-// TASK-334 / TASK-318 / TASK-317 — RBAC surfaces.
-export {
-  PermissionMatrixView,
-  PermissionMatrixSkeleton,
-} from "./permission-matrix";
+// TASK-318 / TASK-317 — RBAC surfaces. The role-matrix screen was deleted in
+// TASK-475 along with the API behind it; the per-person replacement is /staff
+// (TASK-480).
 export { AuditLogView, AuditLogSkeleton } from "./audit-log";
 export { AdminProfileView } from "./admin-profile";
 export {

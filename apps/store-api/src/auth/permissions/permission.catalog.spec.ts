@@ -1,16 +1,19 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
 import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
-import { UserRole } from '@prisma/client';
 import { PermissionGuard } from './permission.guard';
-import { PermissionRepository } from './permission.repository';
 import { OWNER_ONLY_KEY, REQUIRE_PERMISSION_KEY } from './require-permission.decorator';
 import {
+  GRANTABLE_PERMISSIONS,
   MANAGER_BACKFILL_TEMPLATE_NAME,
   MEDIA_BACKFILL_SOURCE_PERMISSIONS,
   MEDIA_PERMISSIONS,
+  NON_GRANTABLE_PERMISSIONS,
   PERMISSIONS,
   PERMISSION_KEYS,
+  PERMISSION_ZONES,
+  PERMISSION_ZONE_LABELS,
+  isGrantablePermission,
   isKnownPermission,
 } from './permission.catalog';
 
@@ -178,6 +181,15 @@ describe('permission catalogue', () => {
     expect(PERMISSION_KEYS.size).toBe(PERMISSIONS.length);
   });
 
+  it('gives every permission a zone that has a label', () => {
+    const labelled = new Set(PERMISSION_ZONE_LABELS.map((entry) => entry.zone));
+    const offenders = PERMISSIONS.filter((permission) => !labelled.has(permission.zone)).map(
+      (permission) => `${permission.key} is in zone "${permission.zone}", which has no label`,
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
   it('every @RequirePermission names a permission that exists in the catalogue', () => {
     const offenders = routes
       .filter((route) => route.permission !== undefined && !isKnownPermission(route.permission))
@@ -239,14 +251,17 @@ describe('permission catalogue', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('no controller still uses the retired AdminGuard', () => {
-    // The migration is only finished if it cannot be partially undone: a
-    // reintroduced AdminGuard would restore the hardcoded `role !== ADMIN`
-    // check and quietly lock every MANAGER out of a route the matrix says they
-    // hold — visible only as a support ticket months later.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { AdminGuard } = require('../guards/admin.guard') as { AdminGuard: unknown };
-
+  it('leaves no controller carrying a guard that answers a ROLE instead of a person', () => {
+    // `AdminGuard` and `RolesGuard` were deleted in TASK-475, so the old check —
+    // "does any controller still reference them" — can no longer be written by
+    // importing them. It is replaced by the stronger property their deletion was
+    // for: every guard a controller wears is one this codebase still defines.
+    //
+    // The direction that matters is a REINTRODUCTION. `RolesGuard` with no
+    // `@Roles` metadata let through any authenticated caller at all
+    // (roles.guard.ts:30-32), and `AdminGuard` hardcoded `role !== ADMIN`, which
+    // locks out a manager the grant screen says is allowed. Both failures are
+    // invisible until somebody complains.
     const offenders: string[] = [];
     for (const file of findControllerFiles(SRC_ROOT)) {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -256,21 +271,89 @@ describe('permission catalogue', () => {
         const controller = exported as new (...args: never[]) => object;
         if (Reflect.getMetadata(PATH_METADATA, controller) === undefined) continue;
 
-        if (guardsOf(controller).includes(AdminGuard)) {
-          offenders.push(`${controller.name} (class level)`);
+        const named = (guards: unknown[]) =>
+          guards
+            .filter((guard): guard is { name: string } => typeof guard === 'function')
+            .map((guard) => guard.name);
+
+        for (const guardName of named(guardsOf(controller))) {
+          if (/^(AdminGuard|RolesGuard)$/.test(guardName)) {
+            offenders.push(`${controller.name} (class level) uses ${guardName}`);
+          }
         }
         const prototype = controller.prototype as Record<string, unknown>;
         for (const handlerName of Object.getOwnPropertyNames(prototype)) {
           const handler = prototype[handlerName];
           if (typeof handler !== 'function') continue;
-          if (guardsOf(handler as object).includes(AdminGuard)) {
-            offenders.push(`${controller.name}.${handlerName}`);
+          for (const guardName of named(guardsOf(handler as object))) {
+            if (/^(AdminGuard|RolesGuard)$/.test(guardName)) {
+              offenders.push(`${controller.name}.${handlerName} uses ${guardName}`);
+            }
           }
         }
       }
     }
 
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * Grantability (TASK-475, plan 181).
+ *
+ * A permission key is not automatically something the owner may hand to somebody.
+ * Three of them — the staff register and the action log — are real keys that
+ * `@RequirePermission` enforces, and are deliberately absent from every granting
+ * surface, so by construction only an owner and an admin can hold them.
+ *
+ * WHY THIS REPLACED `@OwnerOnly` FOR THOSE THREE. `@OwnerOnly` now means the
+ * owner ALONE (plan 178, decision 1), and the whole point of a deputy admin is
+ * that the shop runs while the owner is away: reading the log and managing
+ * managers are exactly the jobs a deputy is for. But they are still not jobs to
+ * delegate downwards — an operator who could read the log could check whether
+ * their own actions had been noticed, and one who could edit staff could promote
+ * themselves. Non-grantable is the level in between, and it is the only one that
+ * says both things at once.
+ */
+describe('grantable and non-grantable permissions', () => {
+  it('splits the catalogue into exactly grantable + non-grantable, with no overlap', () => {
+    expect(GRANTABLE_PERMISSIONS.length + NON_GRANTABLE_PERMISSIONS.length).toBe(
+      PERMISSIONS.length,
+    );
+
+    const grantable = new Set(GRANTABLE_PERMISSIONS.map((p) => p.key));
+    const overlap = NON_GRANTABLE_PERMISSIONS.filter((p) => grantable.has(p.key));
+    expect(overlap).toEqual([]);
+  });
+
+  it('never offers the staff register or the action log', () => {
+    const grantable = GRANTABLE_PERMISSIONS.map((p) => p.key);
+
+    for (const key of ['staff:read', 'staff:write', 'audit:read']) {
+      // They exist…
+      expect(isKnownPermission(key)).toBe(true);
+      // …and they are never on offer.
+      expect(grantable).not.toContain(key);
+      expect(isGrantablePermission(key)).toBe(false);
+    }
+  });
+
+  it('keeps every other permission grantable — non-grantable is the rare exception', () => {
+    expect(NON_GRANTABLE_PERMISSIONS.map((p) => p.key).sort()).toEqual([
+      'audit:read',
+      'staff:read',
+      'staff:write',
+    ]);
+  });
+
+  it('puts the non-grantable keys in their own zone, so a UI cannot render them by accident', () => {
+    for (const permission of NON_GRANTABLE_PERMISSIONS) {
+      expect(permission.zone).toBe(PERMISSION_ZONES.STAFF);
+    }
+  });
+
+  it('refuses an unknown key as non-grantable rather than falling through', () => {
+    expect(isGrantablePermission('blog:writ')).toBe(false);
   });
 });
 
@@ -349,19 +432,17 @@ describe('media permission backfill migration', () => {
     expect(MEDIA_BACKFILL_SOURCE_PERMISSIONS.every((key) => isKnownPermission(key))).toBe(true);
   });
 
-  it('counts a row as a grant under the SAME predicate the runtime uses', async () => {
-    const findMany = jest.fn().mockResolvedValue([]);
-    const repository = new PermissionRepository({
-      rolePermission: { findMany },
-    } as never);
-
-    await repository.findGrantedByRole(UserRole.MANAGER);
-
-    // What the guard really asks for…
-    expect(findMany).toHaveBeenCalledWith({ where: { role: UserRole.MANAGER, allowed: true } });
-    // …and what the migration asks for. A row with `allowed = false` is a
-    // DELIBERATE revocation, not "never configured", and a backfill that treated
-    // the two alike would hand the library back to a role the owner stripped.
+  it('counts a row as a grant only where it was deliberately allowed', () => {
+    // A row with `allowed = false` was a DELIBERATE revocation, not "never
+    // configured", and a backfill that treated the two alike would hand the
+    // library back to a role the owner had stripped.
+    //
+    // This used to be pinned against `PermissionRepository.findGrantedByRole`,
+    // which read the same predicate at runtime. TASK-475 removed both the method
+    // and the `role_permissions` table, so the statement is now frozen history —
+    // it replays on a fresh database in migration order, against the table as it
+    // existed at the time, and there is no runtime query left for it to drift
+    // from. The assertion stays because the replay is still real.
     expect(statement).toMatch(/"allowed"\s*=\s*true/);
   });
 
@@ -462,19 +543,13 @@ describe('access model migration (TASK-474)', () => {
     expect(ownerFlag).toMatch(/NOT EXISTS/);
   });
 
-  it('copies grants under the SAME predicate the runtime reads them with', async () => {
-    const findMany = jest.fn().mockResolvedValue([]);
-    const repository = new PermissionRepository({
-      rolePermission: { findMany },
-    } as never);
-
-    await repository.findGrantedByRole(UserRole.MANAGER);
-
-    // What the guard really asks for today…
-    expect(findMany).toHaveBeenCalledWith({ where: { role: UserRole.MANAGER, allowed: true } });
-    // …and what the migration carries forward. `allowed = false` is a DELIBERATE
-    // revocation, not "never configured"; a backfill that ignored the column
-    // would hand every manager back a key the owner had taken away.
+  it('copies only grants that were deliberately allowed', () => {
+    // `allowed = false` is a DELIBERATE revocation, not "never configured"; a
+    // backfill that ignored the column would hand every manager back a key the
+    // owner had taken away. Pinned against `PermissionRepository.findGrantedByRole`
+    // until TASK-475 deleted both that method and the table it read — see the
+    // note on the media backfill above for why the SQL assertion still earns its
+    // place afterwards.
     expect(managerGrants).toMatch(/"allowed"\s*=\s*true/);
   });
 

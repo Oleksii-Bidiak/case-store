@@ -9,22 +9,29 @@
  * database drifts the moment someone ships an endpoint without adding a row, and
  * that drift is silent in the dangerous direction.
  *
- * WHAT IS DATA: which role holds which of these. That lives in `RolePermission`
- * and the owner edits it without a release.
+ * WHAT IS DATA: which PERSON holds which of these. That lives in `UserPermission`
+ * (TASK-475) and the owner edits it without a release. It used to live on the
+ * ROLE; two managers in a real shop are never the same job, so it does not.
  *
  * ZONES are a display grouping, carried as a field on each permission rather than
- * kept as a separate list. The admin screen groups by `zone` dynamically, so a new
- * admin section appears in the permission matrix simply by being declared here —
- * no UI change, no migration. A zone that grows too coarse is split by editing one
- * field, and the screen follows.
+ * kept as a separate list. The granting screen groups by `zone` dynamically, so a
+ * new admin section appears there simply by being declared here — no UI change, no
+ * migration. A zone that grows too coarse is split by editing one field, and the
+ * screen follows.
  *
- * DEFAULT IS DENIED. A permission with no RolePermission row is granted to nobody
- * except ADMIN (the owner, who is never subject to the matrix — a matrix that can
- * revoke the owner's own access is a lockout waiting to happen). So shipping a new
- * admin section never silently hands it to an existing MANAGER.
+ * DEFAULT IS DENIED. A permission with no `UserPermission` row is granted to
+ * nobody below admin level. So shipping a new admin section never silently hands
+ * it to an existing MANAGER.
+ *
+ * THREE LEVELS READ THIS CATALOGUE DIFFERENTLY (plan 178, decision 1):
+ *   - the OWNER (`User.isOwner`, exactly one) holds everything, plus the reserve
+ *     `@OwnerOnly` marks — the four doors that decide who runs the shop;
+ *   - an ADMIN holds every permission in here without a single row of their own,
+ *     but never the reserve;
+ *   - a MANAGER holds exactly their own rows.
  */
 
-/** Display grouping for the permission matrix screen. */
+/** Display grouping for the granting screen. */
 export const PERMISSION_ZONES = {
   ORDERS: 'orders',
   CATALOG: 'catalog',
@@ -34,6 +41,8 @@ export const PERMISSION_ZONES = {
   SUPPORT: 'support',
   SETTINGS: 'settings',
   ANALYTICS: 'analytics',
+  /** Non-grantable by construction — see {@link GRANTABLE_PERMISSIONS}. */
+  STAFF: 'staff',
 } as const;
 
 export type PermissionZone = (typeof PERMISSION_ZONES)[keyof typeof PERMISSION_ZONES];
@@ -48,24 +57,32 @@ export const PERMISSION_ZONE_LABELS: ReadonlyArray<{ zone: PermissionZone; label
   { zone: PERMISSION_ZONES.SUPPORT, label: 'Звернення' },
   { zone: PERMISSION_ZONES.SETTINGS, label: 'Налаштування сайту' },
   { zone: PERMISSION_ZONES.ANALYTICS, label: 'Аналітика' },
+  { zone: PERMISSION_ZONES.STAFF, label: 'Персонал і журнал дій' },
 ];
 
 export interface PermissionDefinition {
-  /** Stable key stored in RolePermission.permission. Never renamed casually — a
+  /** Stable key stored in UserPermission.permission. Never renamed casually — a
    *  rename orphans every granted row and silently revokes access. */
   readonly key: string;
   readonly zone: PermissionZone;
-  /** Ukrainian label shown in the matrix. */
+  /** Ukrainian label shown on the granting screen. */
   readonly label: string;
+  /**
+   * `false` = a real, enforced key that is never OFFERED to anybody
+   * (TASK-475). See {@link GRANTABLE_PERMISSIONS}. Omitted means grantable —
+   * the default, so a new permission is an ordinary one unless its author says
+   * otherwise.
+   */
+  readonly grantable?: false;
 }
 
 /**
  * Every permission in the system.
  *
- * Note what is NOT here: user management and the permission matrix itself. Those
- * are owner-only by construction (`@OwnerOnly()`), never grantable — otherwise a
- * manager could grant themselves anything, which makes the whole matrix
- * decorative.
+ * Note what is NOT here: the four doors that decide who runs the shop — changing
+ * a role, setting somebody's password, deactivating and deleting an account.
+ * Those are `@OwnerOnly()` by construction and have no key at all, because a key
+ * is something that can be handed over and those cannot.
  */
 export const PERMISSIONS = [
   // ── Замовлення ────────────────────────────────────────────────────────────
@@ -140,7 +157,7 @@ export const PERMISSIONS = [
   // One key, two capabilities — and the label has to say so (TASK-430).
   // `customers:write` gates BOTH account deactivation (`user.controller.ts:356`,
   // `:387`) AND the customer-notes journal (`POST /admin/users/:userId/notes`).
-  // A label that mentions only blocking makes the matrix dishonest in the
+  // A label that mentions only blocking makes the screen dishonest in the
   // dangerous direction: an owner who just wants an order operator to file call
   // notes ticks this box and also hands them the power to deactivate accounts,
   // with nothing on screen saying so.
@@ -169,10 +186,86 @@ export const PERMISSIONS = [
 
   // ── Аналітика ─────────────────────────────────────────────────────────────
   { key: 'analytics:read', zone: PERMISSION_ZONES.ANALYTICS, label: 'Дашборд і показники' },
+
+  // ── Персонал і журнал дій (NON-GRANTABLE) ─────────────────────────────────
+  // See GRANTABLE_PERMISSIONS below for the whole argument. In short: these are
+  // the deputy's job, not the owner's alone and never an operator's.
+  {
+    key: 'staff:read',
+    zone: PERMISSION_ZONES.STAFF,
+    label: 'Переглядати службові акаунти',
+    grantable: false,
+  },
+  {
+    key: 'staff:write',
+    zone: PERMISSION_ZONES.STAFF,
+    label: 'Створювати службові акаунти та видавати права',
+    grantable: false,
+  },
+  {
+    key: 'audit:read',
+    zone: PERMISSION_ZONES.STAFF,
+    label: 'Читати журнал дій',
+    grantable: false,
+  },
 ] as const satisfies ReadonlyArray<PermissionDefinition>;
 
 /** Every valid permission key, as a union type. */
 export type Permission = (typeof PERMISSIONS)[number]['key'];
+
+/**
+ * The permissions the owner may actually hand to somebody (TASK-475, plan 181).
+ *
+ * WHY A THIRD CATEGORY EXISTS AT ALL. Until now there were two: a key in the
+ * catalogue (grantable to a manager) or `@OwnerOnly` (nobody but the owner,
+ * ever). The access model adds a level between them — the deputy admin, who
+ * exists so the shop runs while the owner is on holiday — and staff management
+ * and the action log fall exactly in that gap:
+ *
+ *   - they cannot be `@OwnerOnly`, because a deputy who cannot see who works
+ *     here, cannot hire, and cannot read the log is not a deputy; the owner is
+ *     back on the phone the first day they are away;
+ *   - they cannot be an ordinary grantable key either. An operator holding
+ *     `audit:read` can check whether their own actions were noticed, which is
+ *     the one reader the log is kept from. An operator holding `staff:write`
+ *     can grant themselves everything else in this file, which makes every
+ *     other tick on the screen decorative.
+ *
+ * So they are real keys that `@RequirePermission` enforces, and they are never
+ * OFFERED. An admin passes them by level (see `PermissionService`); a manager
+ * cannot be given them because the granting UI does not list them and the grant
+ * API refuses them (TASK-477). "By construction" rather than "by policy": there
+ * is no screen on which the wrong tick can be made.
+ *
+ * Adding `grantable: false` to a key is therefore a decision about DELEGATION,
+ * not about danger. `payments:refund` moves real money and is grantable — an
+ * owner may well want their order operator issuing refunds. The test is narrower:
+ * would holding this let someone change who runs the shop, or hide that they did?
+ */
+export const GRANTABLE_PERMISSIONS: ReadonlyArray<PermissionDefinition> = (
+  PERMISSIONS as ReadonlyArray<PermissionDefinition>
+).filter((permission) => permission.grantable !== false);
+
+/** The complement of {@link GRANTABLE_PERMISSIONS} — the staff/audit keys. */
+export const NON_GRANTABLE_PERMISSIONS: ReadonlyArray<PermissionDefinition> = (
+  PERMISSIONS as ReadonlyArray<PermissionDefinition>
+).filter((permission) => permission.grantable === false);
+
+/** Fast membership test for the granting API and its UI. */
+export const GRANTABLE_PERMISSION_KEYS: ReadonlySet<string> = new Set(
+  GRANTABLE_PERMISSIONS.map((permission) => permission.key),
+);
+
+/**
+ * May this key be written into somebody's `UserPermission` rows?
+ *
+ * An unknown key answers false, like a non-grantable one: both mean "not
+ * something to write", and collapsing them here means a caller cannot forget the
+ * second check after remembering the first.
+ */
+export function isGrantablePermission(value: string): value is Permission {
+  return GRANTABLE_PERMISSION_KEYS.has(value);
+}
 
 /**
  * The permissions whose holders were granted `media:read` + `media:write` by the
@@ -196,10 +289,11 @@ export type Permission = (typeof PERMISSIONS)[number]['key'];
  *
  * This list is the code half of the contract; the SQL is the other half, and
  * `permission.catalog.spec.ts` asserts the two say the same thing — including
- * that the migration only counts a row as a grant under exactly the predicate
- * `PermissionRepository.findGrantedByRole` uses (`allowed = true`). A backfill
- * that disagreed with the runtime check would hand the keys to a role the matrix
- * screen shows as having nothing.
+ * that the migration only counts a row as a grant where `allowed = true`, which
+ * is how a deliberate revocation was written down. That predicate was pinned
+ * against the runtime query which read it, until TASK-475 removed both the query
+ * and the `role_permissions` table; the statement still replays in migration
+ * order on a fresh database, so the SQL half of the assertion stays.
  */
 export const MEDIA_BACKFILL_SOURCE_PERMISSIONS = [
   'products:write',

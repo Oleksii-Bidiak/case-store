@@ -1,6 +1,7 @@
 "use client";
 
 import { toAuditEntry, useGetAuditLog } from "@/entities/audit";
+import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import {
   Skeleton,
@@ -27,18 +28,22 @@ interface ProductHistoryPanelProps {
 /**
  * Change history for one product (TASK-427).
  *
- * THE OWNER-ONLY CONSTRAINT, HANDLED RATHER THAN WORKED AROUND. The action log
- * behind this panel is `GET /api/admin/audit-log`, and that route is
- * `@OwnerOnly()` — deliberately NOT a grantable permission
- * (`audit.controller.ts`): the log denormalises actor emails, carries diffs of
- * customer-facing records, and is the record of what staff did, so a manager who
- * could read it could check whether their own actions had been noticed.
+ * THE ACCESS CONSTRAINT, HANDLED RATHER THAN WORKED AROUND. The action log behind
+ * this panel is `GET /api/admin/audit-log`, gated by `audit:read` — a real key
+ * that is NEVER OFFERED on any granting screen (`audit.controller.ts`,
+ * TASK-475), so only the owner and their deputy admins hold it: the log
+ * denormalises actor emails, carries diffs of customer-facing records, and is the
+ * record of what staff did, so a manager who could read it could check whether
+ * their own actions had been noticed.
  *
- * So this panel does not invent a permission and does not weaken the rule. For a
- * MANAGER it fires NO request at all (`enabled: isOwner`) and renders one line
- * saying whose history it is and why — not an empty table, not a spinner that
- * never resolves, and above all not a 403 turned into an error toast on a page
- * they are otherwise entitled to read.
+ * So this panel does not invent a permission and does not weaken the rule. It
+ * asks the same question the server will (`can(PERM.auditRead)`), and for anyone
+ * who cannot it fires NO request at all and renders one line saying whose history
+ * it is and why — not an empty table, not a spinner that never resolves, and
+ * above all not a 403 turned into an error toast on a page they are otherwise
+ * entitled to read. It gated on `isOwner` until TASK-475; that now means the
+ * single owner account, which would have hidden the panel from a deputy the API
+ * lets straight through.
  *
  * WHY THE FILTER IS `entityId` ALONE, WITH NO `entityType`. The interceptor
  * derives `entityType` from the CONTROLLER class (`product`, `productImage`,
@@ -49,14 +54,15 @@ interface ProductHistoryPanelProps {
  * cross-entity collision to guard against.
  */
 export function ProductHistoryPanel({ productId }: ProductHistoryPanelProps) {
-  const { isOwner } = useAuth();
+  const { can } = useAuth();
+  const canReadLog = can(PERM.auditRead);
 
   const { data, isLoading, isError } = useGetAuditLog(
     { entityId: productId, limit: HISTORY_LIMIT },
-    { query: { enabled: isOwner, staleTime: OPERATIONAL_STALE_MS } },
+    { query: { enabled: canReadLog, staleTime: OPERATIONAL_STALE_MS } },
   );
 
-  if (!isOwner) {
+  if (!canReadLog) {
     return (
       <p className="text-sm text-muted-foreground">{d.historyOwnerOnly}</p>
     );

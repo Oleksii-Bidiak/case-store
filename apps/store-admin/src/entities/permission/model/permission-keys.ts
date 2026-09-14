@@ -3,15 +3,15 @@
  *
  * This is deliberately NOT a copy of the backend catalogue. The catalogue is
  * owned by `apps/store-api/src/auth/permissions/permission.catalog.ts` and the
- * matrix screen renders whatever that endpoint returns — a new admin section
+ * granting screen renders whatever that endpoint returns — a new admin section
  * appears there with no change here. These constants exist only because the nav
  * list, the dashboard tiles and a handful of row actions have to name a specific
  * permission in code, and a bare string typo'd in one of those places would
  * silently hide a menu item forever.
  *
  * A key that disappears from the backend catalogue simply stops being granted to
- * anyone, so the corresponding UI hides for managers and stays visible for the
- * owner — the safe direction.
+ * anyone, so the corresponding UI hides for managers and stays visible for an
+ * admin — the safe direction.
  */
 export const PERM = {
   ordersRead: "orders:read",
@@ -79,6 +79,19 @@ export const PERM = {
   settingsSearch: "settings:search",
 
   analyticsRead: "analytics:read",
+
+  // TASK-475 — the staff register and the action log. Real, enforced keys that
+  // are NEVER OFFERED on any granting screen (`grantable: false` in the backend
+  // catalogue), so by construction only the owner and their deputy admins hold
+  // them. Named here because the nav and the /staff screens have to ask for them
+  // by key like any other.
+  //
+  // They replaced `@OwnerOnly` on those routes, and that is not a relaxation:
+  // `@OwnerOnly` now means the single owner account, which would have locked a
+  // deputy out of exactly the jobs a deputy exists to do while the owner is away.
+  staffRead: "staff:read",
+  staffWrite: "staff:write",
+  auditRead: "audit:read",
 } as const;
 
 export type PermissionKey = (typeof PERM)[keyof typeof PERM];

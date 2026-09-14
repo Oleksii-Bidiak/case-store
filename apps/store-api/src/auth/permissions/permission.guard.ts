@@ -27,29 +27,42 @@ export interface RequestWithActor {
 }
 
 /**
- * PermissionGuard — the one choke point for admin authorisation (TASK-334).
+ * PermissionGuard — the one choke point for admin authorisation (TASK-334,
+ * rewritten onto the three-level access model in TASK-475).
  *
- * Replaces `AdminGuard`'s hardcoded `role !== ADMIN` across 43 call sites. The
- * ordering is unchanged and load-bearing:
+ * THE DECISION ORDER IS THE WHOLE DESIGN, and it runs exactly like this:
  *
  *   1. A valid JWT — inherited from {@link JwtAuthGuard}: 401 on a missing or
  *      invalid token, and `request.user` populated on success.
  *   2. The route's requirement, read from `@RequirePermission()` / `@OwnerOnly()`.
- *   3. The caller's CURRENT role and account state, read from the DATABASE.
- *   4. ADMIN passes everything; MANAGER passes what the matrix grants; anyone
- *      else is refused.
+ *   3. FAIL CLOSED if the route declares neither.
+ *   4. The caller's CURRENT level and rights, read from the DATABASE in one go.
+ *   5. `isOwner` → allowed, whatever the route asks for.
+ *   6. `@OwnerOnly` → refused for everybody else.
+ *   7. `role === ADMIN` → allowed, without a single granted row.
+ *   8. Otherwise: does this person hold this permission?
  *
- * WHY STEP 3 IS A DATABASE READ: the role in the JWT is a 15-minute-old
+ * STEPS 6 AND 7 ARE IN THAT ORDER ON PURPOSE. An admin passes every permission
+ * that exists, so the only thing between a deputy and the owner's reserve — the
+ * four doors that decide who runs the shop: changing a role, setting a password,
+ * deactivating and deleting an account — is that `@OwnerOnly` is consulted
+ * first. Swap them and every test about admins doing admin things still passes
+ * while a deputy quietly gains the power to lock the owner out of their own shop.
+ *
+ * WHY STEP 4 IS A DATABASE READ: the role in the JWT is a 15-minute-old
  * snapshot. Trusting it means a dismissed employee — demoted, deactivated, or
  * deleted — keeps their full rights until their access token happens to expire
  * (edge case E-06). One indexed lookup on admin traffic is the price of that
- * being false.
+ * being false. Since TASK-475 the caller's own grants arrive on that same read,
+ * so there is no cache anywhere in this path and a revoked permission is refused
+ * on the very next request (plan 181, invariant 8).
  *
- * FAIL-CLOSED: a route wearing this guard with NEITHER annotation is refused,
- * not allowed. That is the shape a mistake takes — someone adds an endpoint to
- * an already-guarded admin controller and forgets the decorator — and the
- * dangerous direction of that mistake is "silently public". `permission.catalog.spec.ts`
- * turns the same mistake into a failing build so it never reaches runtime.
+ * FAIL-CLOSED (step 3): a route wearing this guard with NEITHER annotation is
+ * refused, not allowed. That is the shape a mistake takes — someone adds an
+ * endpoint to an already-guarded admin controller and forgets the decorator —
+ * and the dangerous direction of that mistake is "silently public".
+ * `permission.catalog.spec.ts` turns the same mistake into a failing build so it
+ * never reaches runtime.
  */
 @Injectable()
 export class PermissionGuard extends JwtAuthGuard {
@@ -105,20 +118,34 @@ export class PermissionGuard extends JwtAuthGuard {
     // token claimed).
     request.permissionActor = actor;
 
-    // Rule 2: the owner is never subject to the matrix.
+    // Level 1 — the owner. Everything, including the reserve.
+    if (actor.isOwner) {
+      return true;
+    }
+
+    // The reserve, closed to everyone else. BEFORE the admin bypass below: this
+    // one line is what stops a deputy reaching the four doors that decide who
+    // runs the shop.
+    if (ownerOnly) {
+      this.deny(context, userId, 'owner-only');
+    }
+
+    // Level 2 — a deputy admin. Every permission, no rows required. They exist
+    // so the shop keeps running while the owner is away, which it cannot do if
+    // somebody has to tick 38 boxes first.
     if (actor.role === UserRole.ADMIN) {
       return true;
     }
 
+    // Level 3 — everyone else holds exactly what they were personally granted.
     // `!permission` is unreachable (the fail-closed branch above already threw),
     // but expressing it here is what lets the compiler — not a `!` assertion —
-    // guarantee a permission key is present below.
-    if (ownerOnly || !permission) {
-      this.deny(context, userId, ownerOnly ? 'owner-only' : 'unannotated');
+    // guarantee a permission key is present.
+    if (!permission) {
+      this.deny(context, userId, 'unannotated');
     }
 
-    const allowed = await this.permissionService.roleHasPermission(actor.role, permission);
-    if (!allowed) {
+    if (!this.permissionService.actorHasPermission(actor, permission)) {
       this.deny(context, userId, `missing:${permission}`);
     }
 

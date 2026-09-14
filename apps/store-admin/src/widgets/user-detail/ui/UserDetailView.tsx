@@ -436,19 +436,14 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
 
               <UserRoleChange userId={user.id} currentRole={role} />
 
-              {/* TASK-406: the owner came here looking for per-person
-                  permission checkboxes. There are none — access is attached to
-                  the ROLE — so say that where the role is chosen, and link to
-                  the screen that does own it. */}
-              <p className="text-xs text-muted-foreground">
-                {dict.users.rolePermissionsHint}{" "}
-                <Link
-                  href="/settings/permissions"
-                  className="font-medium text-foreground underline underline-offset-2"
-                >
-                  {dict.users.rolePermissionsLink}
-                </Link>
-              </p>
+              {/* The «Права видаються ролі…» hint and its link to
+                  /settings/permissions stood here until TASK-475. Both were
+                  answers to a question that no longer has this shape: rights now
+                  belong to the PERSON, and the screen they pointed at is gone
+                  with the role matrix. The per-person «Права» tab arrives with
+                  /staff (TASK-480); leaving the old copy in the meantime would
+                  send the owner to a 404 to do something that is no longer true.
+                  See TASK-476/480 for the rest of this panel. */}
 
               <Separator />
 

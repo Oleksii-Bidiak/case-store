@@ -8,23 +8,31 @@ import { AuthContext, type AuthContextValue } from "./auth.context";
  * import `AuthContext`, and `shared` importing from `entities` would be an
  * upward FSD import. Not a `*.test.tsx` file, so Jest's `testMatch` ignores it.
  *
- * `can`/`canAll` are DERIVED from `isOwner` + `permissions` here exactly as the
+ * `can`/`canAll` are DERIVED from `isAdmin` + `permissions` here exactly as the
  * real provider derives them — a fixture that let a test hand-wave `can: () =>
  * true` while passing an empty permission list would happily prove things the
  * running app does not do.
+ *
+ * `isAdmin` DEFAULTS TO `isOwner` (TASK-475). Every suite written before the
+ * access model says `<WithAuth isOwner>` to mean "this session can do
+ * everything", which was true when ADMIN and owner were the same thing. Keeping
+ * that meaning is what lets those suites stay untouched. A test that wants the
+ * new third case — a DEPUTY admin, who holds every permission but not the
+ * owner's reserve — passes `isAdmin` on its own.
  */
 export function makeAuthValue(
   overrides: Partial<AuthContextValue> = {},
 ): AuthContextValue {
   const isOwner = overrides.isOwner ?? false;
+  const isAdmin = overrides.isAdmin ?? isOwner;
   const permissions = overrides.permissions ?? [];
   const can = (permission: string) =>
-    isOwner || permissions.includes(permission);
+    isAdmin || permissions.includes(permission);
 
   return {
     accessToken: "test.token",
     userId: "admin-1",
-    role: isOwner ? "ADMIN" : "MANAGER",
+    role: isAdmin ? "ADMIN" : "MANAGER",
     email: "staff@example.com",
     isAuthenticated: true,
     isStaff: true,
@@ -33,8 +41,9 @@ export function makeAuthValue(
     setTokens: jest.fn(),
     clearTokens: jest.fn(),
     ...overrides,
-    // Derived last so an override of `isOwner`/`permissions` is honoured.
+    // Derived last so an override of `isOwner`/`isAdmin`/`permissions` is honoured.
     isOwner,
+    isAdmin,
     permissions,
     can,
     canAll: (required: readonly string[]) => required.every(can),

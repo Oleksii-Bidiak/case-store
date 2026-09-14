@@ -25,7 +25,6 @@ import {
   RefreshCw,
   HelpCircle,
   Map,
-  KeyRound,
   ScrollText,
   type LucideIcon,
 } from "lucide-react";
@@ -60,7 +59,13 @@ interface NavItem {
    * a partial grant would render a page of 403s.
    */
   permission?: string | string[];
-  /** Owner-only (ADMIN). Never grantable — see permission.catalog.ts. */
+  /**
+   * Visible to the ONE account that owns the shop, and not to a deputy admin
+   * (TASK-475). Unused today — nothing in the nav is part of the owner's reserve
+   * yet — and kept because ownership transfer (TASK-478) is. Do not reach for it
+   * to mean "senior staff": `audit:read` and `staff:read` say that, and they say
+   * it to deputies too.
+   */
   ownerOnly?: boolean;
 }
 
@@ -226,19 +231,16 @@ const bottomNavItems: readonly NavItem[] = [
     icon: HelpCircle,
     permission: PERM.faqWrite,
   },
-  // TASK-334 / TASK-318 — owner-only, and deliberately not grantable: a
-  // permission to edit the matrix is a permission to grant yourself everything.
-  {
-    label: dict.nav.permissions,
-    href: "/settings/permissions",
-    icon: KeyRound,
-    ownerOnly: true,
-  },
+  // TASK-318 / TASK-475 — the log is gated by `audit:read`, a key that is real
+  // and enforced but never OFFERED on any granting screen, so in practice only
+  // the owner and their deputies hold it. `ownerOnly: true` would now mean the
+  // single owner account and would hide the log from a deputy admin, who is
+  // exactly the person meant to be able to read it while the owner is away.
   {
     label: dict.nav.auditLog,
     href: "/audit-log",
     icon: ScrollText,
-    ownerOnly: true,
+    permission: PERM.auditRead,
   },
 ];
 

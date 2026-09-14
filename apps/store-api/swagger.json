@@ -5564,77 +5564,6 @@
         ]
       }
     },
-    "/api/admin/permissions": {
-      "get": {
-        "operationId": "PermissionController_getMatrix",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Catalogue + grants",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PermissionMatrixResponseEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden — owner-only"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Read the permission catalogue and the current matrix (owner-only)",
-        "tags": [
-          "Permissions"
-        ]
-      },
-      "put": {
-        "operationId": "PermissionController_updateGrants",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateRoleGrantsDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Grants replaced",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RoleGrantsResponseEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Unknown permission key, or a role the matrix cannot express (ADMIN)"
-          },
-          "403": {
-            "description": "Forbidden — owner-only"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Replace one role’s permission grants (owner-only)",
-        "tags": [
-          "Permissions"
-        ]
-      }
-    },
     "/api/admin/audit-log": {
       "get": {
         "operationId": "getAuditLog",
@@ -5764,7 +5693,7 @@
             }
           },
           "403": {
-            "description": "Forbidden — owner-only"
+            "description": "Forbidden — requires audit:read"
           }
         },
         "security": [
@@ -5772,7 +5701,7 @@
             "access-token": []
           }
         ],
-        "summary": "Read the admin action log (owner-only)",
+        "summary": "Read the admin action log",
         "tags": [
           "Audit"
         ]
@@ -12898,7 +12827,12 @@
           "isOwner": {
             "type": "boolean",
             "example": false,
-            "description": "True for ADMIN — the owner, who always holds every permission"
+            "description": "True for the ONE account that owns the shop. Gates the owner’s reserve in the UI — transferring ownership, appointing an admin, and any action on an admin’s account."
+          },
+          "isAdmin": {
+            "type": "boolean",
+            "example": false,
+            "description": "True for any ADMIN, owner or deputy: holds every permission in the catalogue without being granted one. Reported separately from isOwner (TASK-475) because a deputy sees every operational control and none of the owner’s reserve."
           },
           "permissions": {
             "example": [
@@ -12914,6 +12848,7 @@
         "required": [
           "role",
           "isOwner",
+          "isAdmin",
           "permissions"
         ]
       },
@@ -17359,162 +17294,6 @@
         },
         "required": [
           "productId"
-        ]
-      },
-      "PermissionCatalogueEntry": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "example": "orders:read"
-          },
-          "zone": {
-            "type": "string",
-            "example": "orders"
-          },
-          "label": {
-            "type": "string",
-            "example": "Переглядати замовлення"
-          }
-        },
-        "required": [
-          "key",
-          "zone",
-          "label"
-        ]
-      },
-      "PermissionZoneEntry": {
-        "type": "object",
-        "properties": {
-          "zone": {
-            "type": "string",
-            "example": "orders"
-          },
-          "label": {
-            "type": "string",
-            "example": "Замовлення"
-          }
-        },
-        "required": [
-          "zone",
-          "label"
-        ]
-      },
-      "RoleGrantsEntry": {
-        "type": "object",
-        "properties": {
-          "role": {
-            "type": "string",
-            "enum": [
-              "CUSTOMER",
-              "ADMIN",
-              "MANAGER"
-            ],
-            "example": "MANAGER"
-          },
-          "permissions": {
-            "example": [
-              "orders:read"
-            ],
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "role",
-          "permissions"
-        ]
-      },
-      "PermissionMatrixEntity": {
-        "type": "object",
-        "properties": {
-          "catalogue": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PermissionCatalogueEntry"
-            }
-          },
-          "zones": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PermissionZoneEntry"
-            }
-          },
-          "grantableRoles": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "CUSTOMER",
-                "ADMIN",
-                "MANAGER"
-              ]
-            }
-          },
-          "grants": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RoleGrantsEntry"
-            }
-          }
-        },
-        "required": [
-          "catalogue",
-          "zones",
-          "grantableRoles",
-          "grants"
-        ]
-      },
-      "PermissionMatrixResponseEnvelope": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/PermissionMatrixEntity"
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
-      "RoleGrantsResponseEnvelope": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/RoleGrantsEntry"
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
-      "UpdateRoleGrantsDto": {
-        "type": "object",
-        "properties": {
-          "role": {
-            "type": "string",
-            "description": "The role whose grants are being replaced. ADMIN is rejected — the owner always holds everything.",
-            "enum": [
-              "MANAGER"
-            ],
-            "example": "MANAGER"
-          },
-          "permissions": {
-            "description": "The complete set of permission keys this role should hold. An empty array revokes everything.",
-            "example": [
-              "orders:read",
-              "products:write"
-            ],
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "role",
-          "permissions"
         ]
       },
       "AuditLogEntity": {

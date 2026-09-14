@@ -30,7 +30,7 @@ import { FailClosedThrottle } from '../throttler';
 import { OrderService, PaginationMeta } from './order.service';
 import { OrderEntity, OrderItemEntity, OrderGuestData } from './entities';
 import { CreateOrderDto, OrderListQueryDto } from './dto';
-import { JwtAuthGuard, RolesGuard, CurrentUser } from '../auth';
+import { JwtAuthGuard, CurrentUser } from '../auth';
 import { OptionalJwtAuthGuard } from '../cart/guards';
 import { CartIdentityInterceptor } from '../cart/interceptors';
 import { CartIdentity } from '../cart/decorators';
@@ -233,9 +233,16 @@ export class OrderController {
    * GET /api/orders
    *
    * List the authenticated user's orders (paginated, newest first).
+   *
+   * `JwtAuthGuard` alone on this and the two customer routes below — the
+   * authorisation is ownership (`userId` is taken from the token and passed to
+   * the service), never a role. They carried `RolesGuard` as well until
+   * TASK-475, with no `@Roles` metadata anywhere on the class or the handlers,
+   * which made it return true for every authenticated caller. Dropping it
+   * therefore changes who can reach them: nobody.
    */
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'List current user orders', operationId: 'getOrders' })
   @ApiQuery({ name: 'status', required: false, description: 'Filter by order status' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (1-based)' })
@@ -258,7 +265,7 @@ export class OrderController {
    * Get a single order owned by the authenticated user.
    */
   @Get(':orderId')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get order by ID', operationId: 'getOrder' })
   @ApiParam({ name: 'orderId', description: 'Order UUID' })
   @ApiResponse({
@@ -286,7 +293,7 @@ export class OrderController {
    * Cancel a PENDING order owned by the authenticated user.
    */
   @Patch(':orderId/cancel')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Cancel a pending order', operationId: 'cancelOrder' })
   @ApiParam({ name: 'orderId', description: 'Order UUID' })
   @ApiResponse({

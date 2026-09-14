@@ -356,18 +356,28 @@ describe("UserDetailView (customer card, TASK-252)", () => {
     ).toBeInTheDocument();
   });
 
-  // TASK-406: the owner went looking for per-person permission checkboxes here.
-  it("explains that permissions belong to the role and links to the matrix", async () => {
+  // TASK-475: the «Права видаються ролі…» hint and its link to the role matrix
+  // were removed here, because the matrix screen is gone and the sentence is no
+  // longer true — rights belong to the person now. This asserts the ABSENCE
+  // rather than deleting the case outright: a dangling link to a deleted route
+  // is a 404 the owner finds by clicking, and the per-person «Права» tab that
+  // replaces it lands with /staff (TASK-480).
+  it("no longer points the owner at a role-permissions screen that does not exist", async () => {
     mockCard();
 
     renderWithProviders(<UserDetailView userId={USER_ID} />);
 
+    // The owner panel itself is still here…
     expect(
-      await screen.findByText(dict.users.rolePermissionsHint, { exact: false }),
+      await screen.findByText(dict.users.staffHeading),
     ).toBeInTheDocument();
+    // …and it offers no route to the retired matrix.
     expect(
-      screen.getByRole("link", { name: dict.users.rolePermissionsLink }),
-    ).toHaveAttribute("href", "/settings/permissions");
+      screen.queryByRole("link", { name: /права/i }),
+    ).not.toBeInTheDocument();
+    for (const link of screen.queryAllByRole("link")) {
+      expect(link).not.toHaveAttribute("href", "/settings/permissions");
+    }
   });
 
   // ─── Email confirmation (TASK-430 / AD-CRM-04) ────────────────────────────

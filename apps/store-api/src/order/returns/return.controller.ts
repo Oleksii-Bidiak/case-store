@@ -18,7 +18,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { JwtAuthGuard, RolesGuard, CurrentUser } from '../../auth';
+import { JwtAuthGuard, CurrentUser } from '../../auth';
 import { ReturnService } from './return.service';
 import { ReturnEntity, ReturnItemEntity } from './entities';
 import { CreateReturnDto } from './dto';
@@ -39,12 +39,18 @@ class ReturnListResponseEnvelope {
  * Scoped to the caller's own orders throughout — a return names order lines, and
  * order lines are the one place a mistake leaks another customer's purchase
  * history.
+ *
+ * `JwtAuthGuard` alone, and that is the real requirement: authorisation here is
+ * ownership, enforced in the service against `orderId`, not a role. The retired
+ * `RolesGuard` sat alongside it until TASK-475 carrying no `@Roles` metadata,
+ * which made it a no-op that returned true for every authenticated caller — so
+ * removing it admits exactly the same set of callers it did.
  */
 @ApiTags('Returns')
 @ApiBearerAuth('access-token')
 @ApiExtraModels(ReturnEntity, ReturnItemEntity, ReturnResponseEnvelope, ReturnListResponseEnvelope)
 @Controller('orders/:orderId/returns')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class ReturnController {
   constructor(private readonly returnService: ReturnService) {}
 

@@ -15,8 +15,8 @@ export * from "./page-form";
 export * from "./site-contact-form";
 export * from "./order-status-update";
 export * from "./user-ban-toggle";
-// TASK-317 / TASK-333 / TASK-334 — staff management and the permission matrix.
+// TASK-317 / TASK-333 — staff management. The role-matrix editor went with the
+// matrix itself in TASK-475; per-person granting arrives with /staff (TASK-480).
 export * from "./user-create";
 export * from "./user-account-actions";
 export * from "./admin-password-change";
-export * from "./permission-matrix-form";

@@ -50,18 +50,32 @@ export interface AuthContextValue {
   /** True for an authenticated staff session (ADMIN or MANAGER). */
   isStaff: boolean;
   /**
-   * True only for ADMIN — the shop owner, who is never subject to the
-   * permission matrix and is the only role that may manage users, edit the
-   * matrix, or read the action log.
+   * True for the ONE account that owns the shop (`User.isOwner`), straight from
+   * the server — never inferred from the role (TASK-475).
+   *
+   * Gates the owner's reserve only: transferring ownership, appointing or
+   * removing an admin, and any action on an admin's own account. Do NOT use it
+   * to mean "senior staff" — a deputy admin holds every permission and answers
+   * false here.
    */
   isOwner: boolean;
+  /**
+   * True for any ADMIN, owner or deputy: this session holds every permission in
+   * the catalogue without having been granted one.
+   *
+   * Separate from {@link isOwner} because they hide different things. Collapsing
+   * them is precisely the bug this release fixed: the context used to fall back
+   * to `role === "ADMIN"` when the server answer had not arrived, which told a
+   * deputy they owned the shop and offered them buttons that can only 403.
+   */
+  isAdmin: boolean;
   /** True while the initial refresh attempt is in-flight. */
   isInitializing: boolean;
   /**
    * Effective permission keys for this session, resolved from the DATABASE via
    * `GET /api/auth/me/permissions` — never decoded from the JWT, whose role
-   * claim is a up-to-15-minute-old snapshot. Empty for the owner, who holds
-   * everything implicitly (`isOwner` / `can()` cover that).
+   * claim is a up-to-15-minute-old snapshot. For any ADMIN the server returns
+   * the whole catalogue, so `can()` answers true without a special case.
    */
   permissions: string[];
   /** True until the first effective-permission answer has arrived. */
@@ -276,12 +290,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const role = effective?.role ?? tokenRole;
   const isStaff =
     accessToken !== null && role !== null && STAFF_ROLES.has(role);
-  const isOwner =
-    effective?.isOwner ?? (accessToken !== null && role === "ADMIN");
+
+  // Both come from the SERVER flag, with no role-based fallback (TASK-475).
+  // There used to be one — `role === "ADMIN"` — and it was wrong in the only
+  // case the access model added: a deputy admin is an ADMIN who does not own the
+  // shop, and the fallback would have shown them the owner's reserve until the
+  // permissions request resolved. Undefined until then means "not the owner
+  // yet", which hides a control for a moment instead of offering a 403.
+  const isOwner = effective?.isOwner ?? false;
+  const isAdmin = effective?.isAdmin ?? false;
 
   const can = useCallback(
-    (permission: string) => isOwner || permissions.includes(permission),
-    [isOwner, permissions],
+    // `isAdmin`, not `isOwner`: an admin holds every permission. The server says
+    // so too (it returns the full catalogue), so this is belt and braces for the
+    // window before the answer arrives — and it is the line that would silently
+    // strip a deputy's whole panel if it still read `isOwner`.
+    (permission: string) => isAdmin || permissions.includes(permission),
+    [isAdmin, permissions],
   );
 
   const canAll = useCallback(
@@ -298,6 +323,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: accessToken !== null,
       isStaff,
       isOwner,
+      isAdmin,
       isInitializing,
       permissions,
       arePermissionsLoading: accessToken !== null && permissionsPending,
@@ -313,6 +339,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email,
       isStaff,
       isOwner,
+      isAdmin,
       isInitializing,
       permissions,
       permissionsPending,

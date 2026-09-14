@@ -1,0 +1,24 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Retire the role→permission matrix (TASK-475, plan 181).
+--
+-- WHY THE TABLE GOES RATHER THAN JUST STOPPING BEING READ. As of this release
+-- `PermissionGuard` resolves rights from `user_permissions` — the person, not the
+-- role. Leaving `role_permissions` in place would leave a second set of rows that
+-- still looks authoritative to anyone reading the schema, a psql session or a
+-- backup, while nothing consults it. Rights in two places is survivable; rights in
+-- two places where only one is enforced is how somebody "restores" a permission by
+-- editing the wrong table and reports that the fix did not work.
+--
+-- NOTHING IS LOST HERE. The preceding migration (`…_access_model`, TASK-474)
+-- already copied every live manager's grants onto them personally and preserved
+-- the whole set as the «Менеджер (як було)» template, so this drop removes only
+-- rows whose meaning has already been carried forward. On a fresh database the two
+-- run in order, so the copy always happens before the drop.
+--
+-- IRREVERSIBLE, AND DELIBERATELY SO: there is no rollback that could put the rows
+-- back with their original ids, and the model they described no longer exists. The
+-- recovery path for a bad deploy is a restore, not a down-migration.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- DropTable
+DROP TABLE "role_permissions";
