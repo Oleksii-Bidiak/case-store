@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-584**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-585**.
 
 ### Етап 0 — Config & docs cleanup
 
@@ -665,7 +665,7 @@
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
 | TASK-439 | Зняти ліміт 5 МБ: resize+rotate на сервері, 20/25 МБ, Caddy `max_size` | ✅ | [177](docs/plans/177-media-pipeline.md) |
-| TASK-440 | AVIF у `next/image` + тест на відсутність EXIF | ⬜ | [177](docs/plans/177-media-pipeline.md) |
+| TASK-440 | AVIF у `next/image` + тест на відсутність EXIF — заміряно, `formats` свідомо **не** додано: AVIF коштує 1.8–5.3× CPU проти WebP за 26–43% байтів, перший рендер лайтбоксової ширини ≈4 с на 2 vCPU (бюджет 1 с) і близько до `.timeout(7s)` оптимізатора, який мовчки віддає оригінал; причина з числами — коментарем у `next.config.ts`. EXIF-тест закрито в TASK-439 | ✅ | [177](docs/plans/177-media-pipeline.md) |
 | TASK-441 | [L] Внутрішня медіатека `MediaAsset` з пікером у всіх формах | ⬜ | [177](docs/plans/177-media-pipeline.md) |
 | TASK-442 | Створення товару з усім одразу: локальне стейджування → `:id`-ендпоінти після створення | ⬜ | [177](docs/plans/177-media-pipeline.md) |
 
@@ -765,6 +765,7 @@
 | TASK-581 | [тести] `shared/lib/use-debounced-callback.ts` в адмінці — побайтова копія файлу вітрини, але юніт-тест має лише вітрина. Хук тримає гонку «Escape скасовує, а пізніший таймер воскрешає скасований термін», на якій збудований увесь пошук таблиць (TASK-423); непрямо він накритий через `table-search.test.tsx`, але якщо копії розійдуться, CI адмінки про це не дізнається. Перенести тест поруч із копією або звести обидві до одного спільного джерела | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
 | TASK-582 | [тести] `shared/lib/use-url-params.ts` не має власного тесту: merge-семантику (ключ зі значенням — записати, `undefined`/`""` — прибрати, решту не чіпати) перевіряють лише споживачі, які мокають `useRouter`/`useSearchParams` цілком і стверджують кінцевий URL. Поведінка покрита, сама одиниця — ні; після TASK-423 цей хук пише URL у 23 таблицях, тож ціна помилки в ньому зросла | ⬜ | [175](docs/plans/175-admin-crm-wave.md) |
 | TASK-583 | [безпека, 🟡] Захист від пиксель-бомби в завантаженні зображень (TASK-424) спирається на дефолтний ліміт `sharp` (~268 млн пікселів), а не на явний `limitInputPixels`. Сьогодні працює правильно, але це неявна залежність від дефолту бібліотеки: глобальний sharp-конфіг або оновлення з іншим дефолтом приберуть ліміт, і в діффі `image-processor.service.ts` цього не буде видно. Задати ліміт явно, з коментарем «чому», і накрити тестом разом із хард-кепом multer (15 МБ) і `LIMIT_FILE_COUNT` — статус-коди для них зараз виведені з коду Nest, а не з прогону. **Частково зроблено в TASK-439:** `MAX_INPUT_PIXELS` задано явно + мок-тест; лишились прогінні тести на хард-кеп multer (тепер 25 МБ) і `LIMIT_FILE_COUNT` | 🔄 | [175](docs/plans/175-admin-crm-wave.md) |
+| TASK-584 | [замір] Перепровірити рішення TASK-440 (AVIF vs WebP) на staging на справжніх 2 vCPU харнесом `scripts/load/images.js`, холодний і теплий прогін. Локальний замір був **проксі** — конвеєр оптимізатора, відтворений на одному прибитому ядрі ноутбука, а не цільова машина, тож поріг «перший рендер >1 с» узято з перерахунку, а не з прогону. Передумова: харнес у поточному вигляді AVIF **виміряти не може** — Next обирає формат за заголовком `Accept` (`image-optimizer.js`, `getSupportedMimeType`), а `images.js` жодного `Accept` не шле, тож без правки він міряє лише WebP і покаже «різниці нема». Якщо на реальних 2 vCPU перший рендер AVIF вкладеться в 1 с — увімкнути `images.formats` і замінити коментар у `next.config.ts` | ⬜ | [177](docs/plans/177-media-pipeline.md) |
 
 ---
 
@@ -774,6 +775,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-584**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-585**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
