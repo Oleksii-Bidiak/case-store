@@ -1,5 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { StaffService } from './staff.service';
 import { StaffRepository } from './staff.repository';
@@ -7,6 +12,7 @@ import { UserRepository } from '../user/user.repository';
 import { AuthRepository } from '../auth/auth.repository';
 import { AuthService } from '../auth/auth.service';
 import { ReviewService } from '../review/review.service';
+import { PermissionGrantRepository } from '../auth/permissions';
 import type { PermissionActor } from '../auth/permissions';
 
 /**
@@ -107,6 +113,10 @@ const userRepositoryMock = {
 const authRepositoryMock = { revokeAllUserTokens: jest.fn() };
 const authServiceMock = { setPassword: jest.fn() };
 const reviewServiceMock = { hideAuthor: jest.fn(), unhideAuthor: jest.fn() };
+const permissionGrantRepositoryMock = {
+  findByUserId: jest.fn().mockResolvedValue([]),
+  replaceForUser: jest.fn(),
+};
 
 describe('StaffService', () => {
   let service: StaffService;
@@ -122,6 +132,7 @@ describe('StaffService', () => {
         { provide: AuthRepository, useValue: authRepositoryMock },
         { provide: AuthService, useValue: authServiceMock },
         { provide: ReviewService, useValue: reviewServiceMock },
+        { provide: PermissionGrantRepository, useValue: permissionGrantRepositoryMock },
       ],
     }).compile();
 
@@ -468,6 +479,195 @@ describe('StaffService', () => {
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 20, totalPages: 1 });
       expect(result.data.map((row) => row.level)).toEqual([1, 3]);
       expect(result.data[1].isOwner).toBe(true);
+    });
+  });
+
+  // ─── Door 5: the permissions a person holds (TASK-477) ──────────────────────
+  //
+  // A fifth door in the sense `access-level.ts` means it: granting somebody
+  // `products:write` is not "taking over the shop", but granting them the set of
+  // keys somebody ABOVE you holds is a way to work around the other four. So the
+  // write here calls `assertMayManage` exactly like the rest, and the assertions
+  // below are the same three questions asked of a different verb.
+
+  describe('getPermissions', () => {
+    it('returns the person’s own rows plus the grantable catalogue to render', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(managerRow));
+      permissionGrantRepositoryMock.findByUserId.mockResolvedValue([
+        'products:write',
+        'orders:read',
+      ]);
+
+      const result = await service.getPermissions(managerRow.id);
+
+      expect(result.userId).toBe(managerRow.id);
+      expect(result.permissions).toEqual(['orders:read', 'products:write']);
+      expect(result.catalogue.length).toBeGreaterThan(20);
+      expect(result.zones.length).toBeGreaterThan(5);
+      expect(result.holdsEverythingByLevel).toBe(false);
+    });
+
+    it('never offers a non-grantable key in the catalogue it hands the screen', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(managerRow));
+      permissionGrantRepositoryMock.findByUserId.mockResolvedValue([]);
+
+      const result = await service.getPermissions(managerRow.id);
+      const offered = result.catalogue.map((entry) => entry.key);
+
+      expect(offered).not.toContain('staff:read');
+      expect(offered).not.toContain('staff:write');
+      expect(offered).not.toContain('audit:read');
+    });
+
+    it('says outright that an admin holds everything by level, rows or no rows', async () => {
+      // Otherwise the screen renders an empty checkbox grid for a deputy and
+      // implies they can do nothing — which is the opposite of the truth.
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(otherAdminRow));
+      permissionGrantRepositoryMock.findByUserId.mockResolvedValue([]);
+
+      const result = await service.getPermissions(otherAdminRow.id);
+
+      expect(result.holdsEverythingByLevel).toBe(true);
+    });
+
+    it('is 404 for a customer id, like every other staff route', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(null);
+
+      await expect(service.getPermissions(customerRow.id)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('setPermissions', () => {
+    beforeEach(() => {
+      permissionGrantRepositoryMock.replaceForUser.mockImplementation(
+        (_userId: string, keys: string[]) => Promise.resolve([...keys]),
+      );
+    });
+
+    it('lets a deputy replace a manager’s set and reports the before-image', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(managerRow));
+      permissionGrantRepositoryMock.findByUserId.mockResolvedValue(['orders:read']);
+
+      const result = await service.setPermissions(
+        managerRow.id,
+        ['products:write', 'orders:read'],
+        deputyActor,
+      );
+
+      expect(result.before).toEqual(['orders:read']);
+      expect(result.after).toEqual(['orders:read', 'products:write']);
+      expect(result.target.email).toBe(managerRow.email);
+      expect(permissionGrantRepositoryMock.replaceForUser).toHaveBeenCalledWith(managerRow.id, [
+        'orders:read',
+        'products:write',
+      ]);
+    });
+
+    it('replaces rather than merges — an unticked box is a revocation', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(managerRow));
+      permissionGrantRepositoryMock.findByUserId.mockResolvedValue([
+        'orders:read',
+        'products:write',
+      ]);
+
+      const result = await service.setPermissions(managerRow.id, ['orders:read'], ownerActor);
+
+      expect(result.after).toEqual(['orders:read']);
+      expect(permissionGrantRepositoryMock.replaceForUser).toHaveBeenCalledWith(managerRow.id, [
+        'orders:read',
+      ]);
+    });
+
+    it('accepts an empty set — revoking everything is a legitimate edit', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(managerRow));
+      permissionGrantRepositoryMock.findByUserId.mockResolvedValue(['orders:read']);
+
+      const result = await service.setPermissions(managerRow.id, [], ownerActor);
+
+      expect(result.after).toEqual([]);
+      expect(permissionGrantRepositoryMock.replaceForUser).toHaveBeenCalledWith(managerRow.id, []);
+    });
+
+    it('refuses a deputy editing ANOTHER ADMIN’s permissions — invariant 3', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(otherAdminRow));
+
+      await expect(
+        service.setPermissions(otherAdminRow.id, ['orders:read'], deputyActor),
+      ).rejects.toThrow(ForbiddenException);
+      expect(permissionGrantRepositoryMock.replaceForUser).not.toHaveBeenCalled();
+    });
+
+    it('refuses ANYBODY editing the OWNER’s permissions — invariant 2', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(ownerRow));
+
+      for (const actor of [deputyActor, { ...ownerActor, id: 'another-owner' }]) {
+        await expect(service.setPermissions(ownerRow.id, ['orders:read'], actor)).rejects.toThrow(
+          ForbiddenException,
+        );
+      }
+      expect(permissionGrantRepositoryMock.replaceForUser).not.toHaveBeenCalled();
+    });
+
+    it('lets the OWNER edit a deputy admin — the level rule has no exception', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(otherAdminRow));
+      permissionGrantRepositoryMock.findByUserId.mockResolvedValue([]);
+
+      await expect(
+        service.setPermissions(otherAdminRow.id, ['orders:read'], ownerActor),
+      ).resolves.toBeDefined();
+    });
+
+    it('refuses a non-grantable key with a 400 that names it, and writes nothing', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(managerRow));
+
+      await expect(
+        service.setPermissions(managerRow.id, ['orders:read', 'staff:write'], ownerActor),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.setPermissions(managerRow.id, ['staff:write'], ownerActor),
+      ).rejects.toThrow(/staff:write/);
+      expect(permissionGrantRepositoryMock.replaceForUser).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unknown key', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(managerRow));
+
+      await expect(
+        service.setPermissions(managerRow.id, ['orders:teleport'], ownerActor),
+      ).rejects.toThrow(BadRequestException);
+      expect(permissionGrantRepositoryMock.replaceForUser).not.toHaveBeenCalled();
+    });
+
+    it('checks the LEVEL before the keys — a refusal must not double as a catalogue probe', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(otherAdminRow));
+
+      await expect(
+        service.setPermissions(otherAdminRow.id, ['orders:teleport'], deputyActor),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('refuses editing YOUR OWN permissions, with no special case needed', async () => {
+      // The other four doors carry an explicit self-check because "you may only
+      // manage levels below your own" reads as a bug when the target is you. Here
+      // the level rule alone is enough and says the right thing: equal is not
+      // below, so nobody can widen their own access — which is the property that
+      // matters, and it needs no branch somebody could later relax.
+      staffRepositoryMock.findStaffById.mockResolvedValue(
+        staffAccount({ ...managerRow, id: deputyActor.id, role: UserRole.ADMIN }),
+      );
+
+      await expect(
+        service.setPermissions(deputyActor.id, ['orders:read'], deputyActor),
+      ).rejects.toThrow(ForbiddenException);
+      expect(permissionGrantRepositoryMock.replaceForUser).not.toHaveBeenCalled();
+    });
+
+    it('is 404 for a customer id', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(null);
+
+      await expect(
+        service.setPermissions(customerRow.id, ['orders:read'], ownerActor),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });

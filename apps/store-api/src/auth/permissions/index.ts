@@ -31,6 +31,8 @@ export {
   assertMayAssign,
   type LevelledAccount,
 } from './access-level';
+export { assertGrantablePermissions } from './grantable-permissions';
 export { PermissionService, type EffectivePermissions } from './permission.service';
 export { PermissionRepository, type PermissionActor } from './permission.repository';
+export { PermissionGrantRepository } from './permission-grant.repository';
 export { PermissionModule } from './permission.module';

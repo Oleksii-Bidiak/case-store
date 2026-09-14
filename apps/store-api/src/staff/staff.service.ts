@@ -10,10 +10,12 @@ import { UserRepository } from '../user/user.repository';
 import { AuthRepository } from '../auth/auth.repository';
 import { AuthService } from '../auth/auth.service';
 import { ReviewService } from '../review/review.service';
-import { StaffUserEntity } from './entities';
+import { StaffPermissionsEntity, StaffUserEntity } from './entities';
 import { CreateStaffDto, StaffListQueryDto } from './dto';
 import { hashPassword } from '../common/security';
 import {
+  PermissionGrantRepository,
+  assertGrantablePermissions,
   assertMayAssign,
   assertMayManage,
   levelOfRole,
@@ -33,15 +35,41 @@ export interface PaginatedStaffResponse {
 }
 
 /**
+ * What {@link StaffService.setPermissions} hands back.
+ *
+ * The BEFORE-IMAGE is returned rather than left for the caller to fetch, and that
+ * is the whole reason this interface exists. The generic `AuditInterceptor` can
+ * only ever see the request body — the state the caller ASKED for — so "who
+ * quietly gave the manager access to orders?" is unanswerable from it. Reading
+ * the old set inside the same operation that replaces it is the only way the two
+ * halves of the diff describe the same instant.
+ */
+export interface StaffPermissionChange {
+  entity: StaffPermissionsEntity;
+  /** The keys the person held before this write, sorted. */
+  before: string[];
+  /** The keys they hold now, sorted. */
+  after: string[];
+  /** Enough of the target to write a readable audit summary. */
+  target: { id: string; email: string };
+}
+
+/**
  * The «Персонал» section's business logic — and the place the level rule is
  * actually applied (TASK-476, plan 181).
  *
- * FOUR DOORS, ONE RULE. `updateRole`, `setPassword`, `setStatus` and `remove` all
- * lead to the same outcome if they are wrong: somebody takes over the shop. Each
- * one therefore resolves the TARGET from the database and then calls
- * `assertMayManage(actor, target)` before touching anything — the same function,
- * with the same argument order, in the same position. Grep for it: four call
- * sites, and a fifth door is visibly missing one.
+ * FIVE DOORS, ONE RULE. `updateRole`, `setPassword`, `setStatus`, `remove` and —
+ * since TASK-477 — `setPermissions` all lead to the same outcome if they are
+ * wrong: somebody takes over the shop. Each one therefore resolves the TARGET
+ * from the database and then calls `assertMayManage(actor, target)` before
+ * touching anything — the same function, with the same argument order, in the
+ * same position. Grep for it: five call sites, and a sixth door is visibly
+ * missing one.
+ *
+ * The fifth was added by the task that opened the granting API, and it belongs
+ * with the other four for a reason that is easy to miss: handing somebody the set
+ * of keys a person ABOVE you holds is a way around the first four rather than a
+ * lesser act than them.
  *
  * WHY THE ACTOR COMES FROM THE GUARD, NOT FROM THE JWT. `PermissionActor` is what
  * `PermissionGuard` read from the database on this very request, so `isOwner` and
@@ -69,6 +97,9 @@ export class StaffService {
     private readonly authRepository: AuthRepository,
     private readonly authService: AuthService,
     private readonly reviewService: ReviewService,
+    // The one writer of `user_permissions`; see its own docblock for why it lives
+    // beside the guard's reader rather than in this module.
+    private readonly permissionGrants: PermissionGrantRepository,
   ) {}
 
   /** One page of staff accounts. */
@@ -247,6 +278,73 @@ export class StaffService {
     const mangledEmail = `deleted:${account.user.id}:${account.user.email}`;
     await this.userRepository.softDelete(id, mangledEmail, account.user.email);
     await this.authRepository.revokeAllUserTokens(id);
+  }
+
+  /**
+   * Door 5 (read) — what this person may do, and what they could be given.
+   *
+   * No level check: `staff:read` already answers "may you look at the staff
+   * register at all", and a deputy who can see that an admin exists gains nothing
+   * by also seeing that admin holds no rows. The WRITE is where the level rule
+   * bites.
+   */
+  async getPermissions(id: string): Promise<StaffPermissionsEntity> {
+    const account = await this.requireStaff(id);
+    const permissions = await this.permissionGrants.findByUserId(id);
+
+    return StaffPermissionsEntity.fromParts(account.user, permissions);
+  }
+
+  /**
+   * Door 5 (write) — replace what this person holds.
+   *
+   * THIS IS THE ONLY FUNCTION IN THE SYSTEM THAT GRANTS A PERSON ANYTHING.
+   * Applying a permission template goes through here too
+   * (`PermissionTemplateService.apply`), which is not an accident of layering but
+   * the mechanism behind plan 181's invariant 5: a template is reduced to a plain
+   * `string[]` before it reaches this line, so nothing downstream can record which
+   * template a row came from, and editing that template afterwards therefore
+   * cannot move anybody's access. See `permission-template.service.ts` for the
+   * full argument, and `copy-rule.spec.ts` for the test that fails if somebody
+   * adds the link back.
+   *
+   * IT IS ALSO THE FIFTH DOOR, in the sense `access-level.ts` means. Granting
+   * `products:write` is not "taking over the shop" — but granting somebody the
+   * set of keys held by a person ABOVE you is a way around the other four, so the
+   * same `assertMayManage(actor, target)` runs here, in the same position, with
+   * the same argument order. Grep for it: five call sites now.
+   *
+   * ORDER OF CHECKS: existence (404), then level (403), then the keys (400). The
+   * level refusal must come first — otherwise a deputy who may not touch an
+   * admin could still learn from the error messages which keys the catalogue
+   * holds, one 400 at a time.
+   *
+   * @throws NotFoundException for a missing id or a customer's
+   * @throws ForbiddenException when the target is at or above the caller's level
+   * @throws BadRequestException on an unknown or non-grantable key
+   */
+  async setPermissions(
+    id: string,
+    permissions: readonly string[],
+    actor: PermissionActor,
+  ): Promise<StaffPermissionChange> {
+    const account = await this.requireStaff(id);
+    assertMayManage(actor, account.user);
+
+    const requested = assertGrantablePermissions(permissions);
+
+    // Read the old set inside the same operation that replaces it: this is the
+    // pre-image the audit row needs, and a caller fetching it separately would be
+    // recording a different instant.
+    const before = await this.permissionGrants.findByUserId(id);
+    const after = await this.permissionGrants.replaceForUser(id, requested);
+
+    return {
+      entity: StaffPermissionsEntity.fromParts(account.user, after),
+      before: [...before].sort(),
+      after: [...after].sort(),
+      target: { id: account.user.id, email: account.user.email },
+    };
   }
 
   /**

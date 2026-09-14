@@ -7054,6 +7054,367 @@
         ]
       }
     },
+    "/api/admin/staff/{id}/permissions": {
+      "get": {
+        "operationId": "getStaffPermissions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Account UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Granted keys + catalogue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffPermissionsResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires staff:read"
+          },
+          "404": {
+            "description": "No staff account with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Read a staff member's permissions and the grantable catalogue",
+        "tags": [
+          "Staff"
+        ]
+      },
+      "put": {
+        "operationId": "updateStaffPermissions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Account UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStaffPermissionsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Permissions replaced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffPermissionsResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown permission key, or one that is never granted to a person"
+          },
+          "403": {
+            "description": "Forbidden — the target is at or above your level"
+          },
+          "404": {
+            "description": "No staff account with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Replace a staff member's permissions",
+        "tags": [
+          "Staff"
+        ]
+      }
+    },
+    "/api/admin/permission-templates": {
+      "get": {
+        "operationId": "listPermissionTemplates",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Templates, by name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionTemplateListResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires staff:read"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List permission templates",
+        "tags": [
+          "Permission templates"
+        ]
+      },
+      "post": {
+        "operationId": "createPermissionTemplate",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePermissionTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Template created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionTemplateResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown permission key, or one that is never granted to a person"
+          },
+          "403": {
+            "description": "Forbidden — requires staff:write"
+          },
+          "409": {
+            "description": "A template with this name already exists"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Create a permission template",
+        "tags": [
+          "Permission templates"
+        ]
+      }
+    },
+    "/api/admin/permission-templates/{id}": {
+      "get": {
+        "operationId": "getPermissionTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Template UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Template",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionTemplateResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires staff:read"
+          },
+          "404": {
+            "description": "No template with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Get one permission template",
+        "tags": [
+          "Permission templates"
+        ]
+      },
+      "patch": {
+        "operationId": "updatePermissionTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Template UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePermissionTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Template updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionTemplateResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown permission key, or one that is never granted to a person"
+          },
+          "403": {
+            "description": "Forbidden — requires staff:write"
+          },
+          "404": {
+            "description": "No template with this id"
+          },
+          "409": {
+            "description": "A template with this name already exists"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Edit a permission template (affects nobody already set up from it)",
+        "tags": [
+          "Permission templates"
+        ]
+      },
+      "delete": {
+        "operationId": "deletePermissionTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Template UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Template deleted"
+          },
+          "403": {
+            "description": "Forbidden — requires staff:write"
+          },
+          "404": {
+            "description": "No template with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Delete a permission template",
+        "tags": [
+          "Permission templates"
+        ]
+      }
+    },
+    "/api/admin/permission-templates/{id}/apply": {
+      "post": {
+        "operationId": "applyPermissionTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Template UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyPermissionTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Template copied onto the account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppliedTemplateResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The template holds a key that cannot be granted"
+          },
+          "403": {
+            "description": "Forbidden — the target is at or above your level"
+          },
+          "404": {
+            "description": "No such template, or no such staff account"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Copy a template onto a person (replaces their permissions)",
+        "tags": [
+          "Permission templates"
+        ]
+      }
+    },
     "/api/admin/users/{userId}/notes": {
       "get": {
         "operationId": "listUserNotes",
@@ -18779,6 +19140,124 @@
           "meta"
         ]
       },
+      "GrantablePermissionEntry": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "orders:read"
+          },
+          "zone": {
+            "type": "string",
+            "example": "orders"
+          },
+          "label": {
+            "type": "string",
+            "example": "Переглядати замовлення"
+          }
+        },
+        "required": [
+          "key",
+          "zone",
+          "label"
+        ]
+      },
+      "PermissionZoneEntry": {
+        "type": "object",
+        "properties": {
+          "zone": {
+            "type": "string",
+            "example": "orders"
+          },
+          "label": {
+            "type": "string",
+            "example": "Замовлення"
+          }
+        },
+        "required": [
+          "zone",
+          "label"
+        ]
+      },
+      "StaffPermissionsEntity": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "The account these permissions belong to"
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address, so the screen can title itself"
+          },
+          "role": {
+            "type": "string",
+            "description": "Account role",
+            "enum": [
+              "CUSTOMER",
+              "ADMIN",
+              "MANAGER"
+            ],
+            "example": "MANAGER"
+          },
+          "level": {
+            "type": "number",
+            "description": "Access level: 3 owner, 2 admin, 1 manager, 0 customer",
+            "example": 1
+          },
+          "holdsEverythingByLevel": {
+            "type": "boolean",
+            "description": "True for the owner and for deputy admins: they hold every permission by level, so the rows below are not what they can do.",
+            "example": false
+          },
+          "permissions": {
+            "description": "The keys granted to this person personally, sorted",
+            "example": [
+              "orders:read",
+              "orders:write"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "catalogue": {
+            "description": "Every permission that MAY be granted, with its zone and Ukrainian label",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GrantablePermissionEntry"
+            }
+          },
+          "zones": {
+            "description": "Zone display order and headings",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionZoneEntry"
+            }
+          }
+        },
+        "required": [
+          "userId",
+          "email",
+          "role",
+          "level",
+          "holdsEverythingByLevel",
+          "permissions",
+          "catalogue",
+          "zones"
+        ]
+      },
+      "StaffPermissionsResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/StaffPermissionsEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "CreateStaffDto": {
         "type": "object",
         "properties": {
@@ -18862,6 +19341,217 @@
         },
         "required": [
           "isActive"
+        ]
+      },
+      "UpdateStaffPermissionsDto": {
+        "type": "object",
+        "properties": {
+          "permissions": {
+            "description": "The complete set of permission keys this person should hold. An empty array revokes everything. Non-grantable keys (staff:read, staff:write, audit:read) are refused with 400.",
+            "example": [
+              "orders:read",
+              "orders:write"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "permissions"
+        ]
+      },
+      "PermissionTemplateEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Template id"
+          },
+          "name": {
+            "type": "string",
+            "description": "Template name, unique",
+            "example": "Оператор замовлень"
+          },
+          "description": {
+            "type": "string",
+            "description": "What this template is for",
+            "nullable": true
+          },
+          "permissions": {
+            "description": "The permission keys this template carries, sorted",
+            "example": [
+              "orders:read",
+              "orders:write"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Last update timestamp"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "permissions",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AppliedTemplateEntity": {
+        "type": "object",
+        "properties": {
+          "template": {
+            "description": "The template that was copied",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionTemplateEntity"
+              }
+            ]
+          },
+          "userId": {
+            "type": "string",
+            "description": "The account it was copied onto"
+          },
+          "before": {
+            "description": "What that person held before",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "after": {
+            "description": "What they hold now — a copy of the template",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "template",
+          "userId",
+          "before",
+          "after"
+        ]
+      },
+      "PermissionTemplateResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PermissionTemplateEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "PermissionTemplateListResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionTemplateEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "AppliedTemplateResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AppliedTemplateEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CreatePermissionTemplateDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Template name, unique",
+            "example": "Оператор замовлень"
+          },
+          "description": {
+            "type": "string",
+            "description": "What this template is for, shown next to the name",
+            "example": "Телефонує клієнтам, змінює статуси замовлень",
+            "nullable": true
+          },
+          "permissions": {
+            "description": "The permission keys this template carries. Non-grantable keys (staff:read, staff:write, audit:read) are refused with 400 — a template must not be a way round that.",
+            "example": [
+              "orders:read",
+              "orders:write"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "permissions"
+        ]
+      },
+      "UpdatePermissionTemplateDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "New name",
+            "example": "Оператор замовлень"
+          },
+          "description": {
+            "type": "string",
+            "description": "New description",
+            "nullable": true
+          },
+          "permissions": {
+            "description": "The COMPLETE new set of permission keys. Omit to leave the set untouched.",
+            "example": [
+              "orders:read",
+              "orders:write",
+              "payments:read"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ApplyPermissionTemplateDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "The account to copy this template onto",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          }
+        },
+        "required": [
+          "userId"
         ]
       },
       "UserNoteEntity": {

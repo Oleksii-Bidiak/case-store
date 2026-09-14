@@ -5,6 +5,7 @@ import { tap } from 'rxjs/operators';
 import type { Request } from 'express';
 import { AuditService } from './audit.service';
 import { bodyToDiff } from './audit.sanitize';
+import { RECORDS_OWN_AUDIT_KEY } from './records-own-audit.decorator';
 import {
   OWNER_ONLY_KEY,
   REQUIRE_PERMISSION_KEY,
@@ -92,6 +93,15 @@ export class AuditInterceptor implements NestInterceptor {
   private isAuditable(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<AuditableRequest>();
     if (!MUTATING_METHODS.has(request.method)) {
+      return false;
+    }
+
+    // The handler writes a richer entry itself — one with a before-image this
+    // interceptor cannot have. Read from the HANDLER only, never the class: a
+    // controller-wide opt-out would silently un-audit every route added to it
+    // later, which is the mistake this interceptor's whole annotation-derived
+    // design exists to prevent. See `records-own-audit.decorator.ts`.
+    if (this.reflector.get<boolean | undefined>(RECORDS_OWN_AUDIT_KEY, context.getHandler())) {
       return false;
     }
 
