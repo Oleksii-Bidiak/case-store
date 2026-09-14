@@ -174,6 +174,20 @@ export interface OrderWithItems {
     firstName: string | null;
     lastName: string | null;
   };
+  /**
+   * Refunded amounts of this order's return requests (TASK-472), selected only by
+   * the admin read paths via `ADMIN_ORDERS_INCLUDE`.
+   *
+   * Optional and deliberately thin: the entity needs a SUM, not the returns. An
+   * absent array means "this read did not ask", which is why
+   * {@link OrderEntity.fromPrisma} omits `refundedTotal` rather than reporting a
+   * zero it did not measure — a zero would read as "nothing was refunded" on
+   * every customer-facing response.
+   *
+   * `refundedAmount` is null until a return is actually paid out, so nulls are
+   * skipped rather than counted.
+   */
+  returns?: Array<{ refundedAmount: { toString(): string } | null }>;
 }
 
 /**

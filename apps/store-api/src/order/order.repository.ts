@@ -91,6 +91,21 @@ const ADMIN_ORDERS_INCLUDE = {
   user: {
     select: { id: true, email: true, firstName: true, lastName: true },
   },
+  /**
+   * Just the refunded amounts (TASK-472) — never the return rows themselves.
+   *
+   * The "Повернуто X з Y" label needs one number per order, Σ `refundedAmount`,
+   * and it is computed ON READ rather than stored: a column holding the same sum
+   * would have to be maintained by every path that touches a return, and the
+   * first one that forgets leaves the order claiming an amount that no return
+   * supports (owner decision B-1, closing paragraph: all five labels are
+   * derived).
+   *
+   * Admin include only. The label belongs to the admin list and order card; the
+   * storefront reads returns through the returns endpoints, so a customer-facing
+   * order read should not pay for this join.
+   */
+  returns: { select: { refundedAmount: true } },
 } satisfies Prisma.OrderInclude;
 
 /**

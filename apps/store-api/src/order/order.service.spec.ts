@@ -2924,4 +2924,50 @@ describe('OrderService', () => {
       expect(entity.restockedAt).toEqual(restockedAt);
     });
   });
+
+  // ─── OrderEntity.fromPrisma — refundedTotal (TASK-472) ────────────────────────
+  // The X of "Повернуто X з Y": Σ Return.refundedAmount, derived at read time and
+  // stored nowhere.
+
+  describe('OrderEntity.fromPrisma — refundedTotal', () => {
+    it('omits the field entirely when the read did not join the returns', () => {
+      const entity = OrderEntity.fromPrisma(makeOrder());
+
+      // Absent, NOT '0.00': a customer-facing read has not measured anything, and
+      // a zero would assert that nothing was refunded.
+      expect(entity.refundedTotal).toBeUndefined();
+      expect('refundedTotal' in entity).toBe(false);
+    });
+
+    it('reports 0.00 for an order that has no returns at all', () => {
+      const entity = OrderEntity.fromPrisma(makeOrder({ returns: [] }));
+
+      expect(entity.refundedTotal).toBe('0.00');
+    });
+
+    it('sums several partial refunds in cents (no floating-point drift)', () => {
+      const entity = OrderEntity.fromPrisma(
+        makeOrder({
+          returns: [
+            { refundedAmount: { toString: () => '33.33' } },
+            { refundedAmount: { toString: () => '33.33' } },
+            { refundedAmount: { toString: () => '33.33' } },
+          ],
+        }),
+      );
+
+      expect(entity.refundedTotal).toBe('99.99');
+    });
+
+    it('skips a return that has not paid anything out yet (null amount)', () => {
+      const entity = OrderEntity.fromPrisma(
+        makeOrder({
+          returns: [{ refundedAmount: { toString: () => '499' } }, { refundedAmount: null }],
+        }),
+      );
+
+      // Also pads, like every other money string on the entity.
+      expect(entity.refundedTotal).toBe('499.00');
+    });
+  });
 });

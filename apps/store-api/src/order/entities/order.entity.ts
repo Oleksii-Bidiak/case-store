@@ -1,8 +1,27 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { OrderStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
 import { OrderItemEntity } from './order-item.entity';
-import { toTwoDecimals } from '../../addon-service';
+import { centsToString, toCents, toTwoDecimals } from '../../addon-service';
 import type { OrderWithItems, ShippingAddressData } from '../order.types';
+
+/**
+ * Σ of a set of return `refundedAmount`s, as a two-decimal string (TASK-472).
+ *
+ * Summed in integer cents, like every other money total in this codebase: three
+ * partial refunds of 33.33 must add up to 99.99 and not to 99.99000000000001.
+ * A null amount is a return that has not paid anything out yet, and contributes
+ * nothing rather than counting as an unknown.
+ */
+function sumRefundedAmounts(
+  returns: ReadonlyArray<{ refundedAmount: { toString(): string } | null }>,
+): string {
+  const cents = returns.reduce(
+    (sum, row) => sum + (row.refundedAmount === null ? 0 : toCents(row.refundedAmount)),
+    0,
+  );
+
+  return centsToString(cents);
+}
 
 /**
  * Customer account data attached to an order on admin responses only.
@@ -163,6 +182,31 @@ export class OrderEntity {
   @ApiProperty({ description: 'Grand total as string', example: '149.97' })
   total!: string;
 
+  /**
+   * How much of this order's money has gone back (TASK-472) — the X of the
+   * "Повернуто X з Y" label, where Y is {@link total}.
+   *
+   * DERIVED, never stored: Σ of the `refundedAmount` of this order's return
+   * requests, summed in integer cents at read time. There is no column behind it
+   * on purpose (owner decision B-1, closing paragraph) — a stored copy would have
+   * to be kept in step by every path that touches a return, and the first one
+   * that forgets leaves the order asserting a refund no return supports.
+   *
+   * Absent — not `'0.00'` — on reads that did not join the returns (every
+   * customer-facing path). Absent means "not measured here"; a zero would mean
+   * "measured, nothing came back", and those must not look the same.
+   */
+  @ApiProperty({
+    description:
+      'Total refunded across this order\'s return requests, as a string ("X" of "X of Y", ' +
+      'with Y = `total`). Derived at read time from Σ `Return.refundedAmount`; present on ' +
+      'admin responses only.',
+    type: String,
+    required: false,
+    example: '499.00',
+  })
+  refundedTotal?: string;
+
   @ApiProperty({
     description: 'Shipping address snapshot',
     nullable: true,
@@ -308,6 +352,11 @@ export class OrderEntity {
         phone: order.guestPhone ?? '',
         name: order.guestName ?? '',
       };
+    }
+    // TASK-472: only when this read actually joined the returns — see the
+    // field's docblock for why an unmeasured order must not report a zero.
+    if (order.returns) {
+      entity.refundedTotal = sumRefundedAmounts(order.returns);
     }
     entity.restockedAt = order.restockedAt;
     entity.trackingNumber = order.trackingNumber ?? null;
