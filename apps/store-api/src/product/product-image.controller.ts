@@ -12,6 +12,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -23,7 +24,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ProductImageService } from './product-image.service';
-import { ReorderImagesDto, UploadImagesDto } from './dto';
+import { AttachImageDto, ReorderImagesDto, UploadImagesDto } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import { ProductImageEntity } from './entities';
 import { imageMulterOptions, MAX_FILES_PER_UPLOAD } from '../uploads';
@@ -39,6 +40,12 @@ const galleryMulterOptions = imageMulterOptions(MAX_FILES_PER_UPLOAD);
 class ProductImageListEnvelope {
   @ApiProperty({ type: [ProductImageEntity] })
   data!: ProductImageEntity[];
+}
+
+/** Response envelope for the single row an attach creates. */
+class ProductImageEnvelope {
+  @ApiProperty({ type: ProductImageEntity })
+  data!: ProductImageEntity;
 }
 
 /**
@@ -80,6 +87,12 @@ export class ProductImageController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission('products:write')
+  // 20/min, the rate the admin routes already use (TASK-586). The global 100/min
+  // is sized for JSON; an upload holds a multipart buffer and then a decoded
+  // frame, so the heaviest requests in the API were also the least limited ones.
+  // The admin panel uploads one file per request in a serial queue, so a real
+  // batch of twenty photos still fits inside the window.
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @UseInterceptors(FilesInterceptor('files', MAX_FILES_PER_UPLOAD, galleryMulterOptions))
   @ApiBearerAuth('access-token')
   @ApiConsumes('multipart/form-data')
@@ -99,7 +112,13 @@ export class ProductImageController {
   })
   @ApiResponse({ status: 201, description: 'Images uploaded', type: ProductImageListEnvelope })
   @ApiResponse({ status: 400, description: 'Invalid file (type/empty)' })
-  @ApiResponse({ status: 413, description: 'File too large' })
+  @ApiResponse({
+    status: 413,
+    description:
+      'A file exceeds the 20 MB limit, or the batch exceeds the 25 MB one request may carry. ' +
+      'The per-file limit is not the whole story here: several legal files can still be too ' +
+      'much together, so a batch of large photos should be sent one file per request.',
+  })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   @ApiResponse({ status: 404, description: 'Product not found' })
@@ -110,6 +129,38 @@ export class ProductImageController {
   ): Promise<{ data: ProductImageEntity[] }> {
     const images = await this.imageService.uploadImages(productId, files, dto.altTexts);
     return { data: images };
+  }
+
+  /**
+   * POST /api/products/:productId/images/attach
+   * Add an image that already exists in the media library. Admin-only.
+   *
+   * A sibling of the upload route rather than a mode of it: the request is JSON,
+   * not multipart, nothing is validated or written to disk, and the two have
+   * nothing in common past the row they end up creating. Folding "either a file
+   * or an id" into one handler would mean a multipart endpoint whose body is
+   * sometimes not multipart, and a Swagger schema that lies to Orval about both.
+   */
+  @Post('attach')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:write')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Attach a media-library image to a product (admin)',
+    operationId: 'productImageControllerAttach',
+  })
+  @ApiParam({ name: 'productId', description: 'Product UUID' })
+  @ApiResponse({ status: 201, description: 'Image attached', type: ProductImageEnvelope })
+  @ApiResponse({ status: 400, description: 'Invalid payload (mediaAssetId is not a UUID)' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 403, description: 'Forbidden — products:write required' })
+  @ApiResponse({ status: 404, description: 'Product or media asset not found' })
+  async attach(
+    @Param('productId') productId: string,
+    @Body() dto: AttachImageDto,
+  ): Promise<{ data: ProductImageEntity }> {
+    const image = await this.imageService.attachAsset(productId, dto.mediaAssetId);
+    return { data: image };
   }
 
   /**

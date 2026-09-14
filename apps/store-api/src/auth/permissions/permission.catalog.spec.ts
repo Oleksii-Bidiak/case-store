@@ -1,9 +1,17 @@
-import { readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
 import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
+import { UserRole } from '@prisma/client';
 import { PermissionGuard } from './permission.guard';
+import { PermissionRepository } from './permission.repository';
 import { OWNER_ONLY_KEY, REQUIRE_PERMISSION_KEY } from './require-permission.decorator';
-import { PERMISSIONS, PERMISSION_KEYS, isKnownPermission } from './permission.catalog';
+import {
+  MEDIA_BACKFILL_SOURCE_PERMISSIONS,
+  MEDIA_PERMISSIONS,
+  PERMISSIONS,
+  PERMISSION_KEYS,
+  isKnownPermission,
+} from './permission.catalog';
 
 /**
  * The gate against the one outcome a 43-site guard migration can produce that
@@ -262,5 +270,104 @@ describe('permission catalogue', () => {
     }
 
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * The media-library permission backfill (TASK-441).
+ *
+ * A backfill migration is the one place where "who holds what" stops being data
+ * the owner edits and becomes a statement written in SQL, six directories away
+ * from the rule it has to obey. Nothing in the build connects the two — the
+ * migration has already run by the time anyone reads the catalogue — so this
+ * suite is the connection.
+ *
+ * It checks three things, and each of them is a way the grant could be wrong in
+ * a direction nobody would notice:
+ *
+ *  1. the SQL grants exactly the keys the catalogue declares (a typo'd key is a
+ *     row `isKnownPermission` filters out at read time, so the grant silently
+ *     does nothing and the picker is empty anyway);
+ *  2. it reads exactly the source keys the code names (add `pages:write` to the
+ *     list in one place only and half the shop gets a library the other half
+ *     cannot see);
+ *  3. it counts a row as a grant under the SAME predicate the runtime does. The
+ *     runtime half is asserted by CALLING the repository, not by reading it:
+ *     `findGrantedByRole` is what the guard actually consults, so if that query
+ *     ever stops filtering on `allowed`, this fails here rather than in
+ *     production, where the symptom is a role the owner deliberately stripped
+ *     quietly getting the library back.
+ */
+describe('media permission backfill migration', () => {
+  const MIGRATIONS_ROOT = resolve(SRC_ROOT, '../prisma/migrations');
+
+  const sql = (() => {
+    const dir = readdirSync(MIGRATIONS_ROOT).find((entry) =>
+      entry.endsWith('_backfill_media_permissions'),
+    );
+    if (!dir) {
+      throw new Error(
+        `No *_backfill_media_permissions migration under ${MIGRATIONS_ROOT}. ` +
+          'The two media permissions are denied by default without it, which ships an ' +
+          'empty media picker to every existing content manager.',
+      );
+    }
+    return readFileSync(join(MIGRATIONS_ROOT, dir, 'migration.sql'), 'utf8');
+  })();
+
+  /** The statement only, with the explanatory comment block stripped off. */
+  const statement = sql
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+
+  it('grants keys that exist in the catalogue', () => {
+    for (const key of MEDIA_PERMISSIONS) {
+      expect(isKnownPermission(key)).toBe(true);
+    }
+  });
+
+  it('grants exactly the keys the catalogue calls the media permissions', () => {
+    for (const key of MEDIA_PERMISSIONS) {
+      expect(statement).toContain(`'${key}'`);
+    }
+
+    // And nothing else: every quoted `x:y` token in the statement is either one
+    // of the granted keys or one of the declared sources.
+    const quoted = new Set(statement.match(/'[a-z]+:[a-z]+'/g) ?? []);
+    const allowed = new Set(
+      [...MEDIA_PERMISSIONS, ...MEDIA_BACKFILL_SOURCE_PERMISSIONS].map((key) => `'${key}'`),
+    );
+    expect([...quoted].filter((token) => !allowed.has(token))).toEqual([]);
+  });
+
+  it('reads exactly the source permissions the code declares', () => {
+    for (const key of MEDIA_BACKFILL_SOURCE_PERMISSIONS) {
+      expect(statement).toContain(`'${key}'`);
+    }
+    expect(MEDIA_BACKFILL_SOURCE_PERMISSIONS.every((key) => isKnownPermission(key))).toBe(true);
+  });
+
+  it('counts a row as a grant under the SAME predicate the runtime uses', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new PermissionRepository({
+      rolePermission: { findMany },
+    } as never);
+
+    await repository.findGrantedByRole(UserRole.MANAGER);
+
+    // What the guard really asks for…
+    expect(findMany).toHaveBeenCalledWith({ where: { role: UserRole.MANAGER, allowed: true } });
+    // …and what the migration asks for. A row with `allowed = false` is a
+    // DELIBERATE revocation, not "never configured", and a backfill that treated
+    // the two alike would hand the library back to a role the owner stripped.
+    expect(statement).toMatch(/"allowed"\s*=\s*true/);
+  });
+
+  it('never grants to ADMIN, who is not subject to the matrix at all', () => {
+    // `PermissionService.roleHasPermission` short-circuits on ADMIN, so an ADMIN
+    // row is inert at best — and at worst it teaches the next reader that the
+    // matrix governs the owner, which is the belief the whole design refuses.
+    expect(statement).not.toContain('ADMIN');
   });
 });

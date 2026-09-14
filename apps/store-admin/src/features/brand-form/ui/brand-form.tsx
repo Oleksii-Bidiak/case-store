@@ -10,6 +10,7 @@ import {
   useImageUploadField,
   useUploadsControllerUploadBrandLogo,
 } from "@/features/content-image-upload";
+import { MediaPicker } from "@/features/media-picker";
 import { dict } from "@/shared/config";
 import {
   brandSchema,
@@ -134,6 +135,18 @@ export function BrandForm({
           setValue("logo", "", { shouldDirty: true, shouldValidate: true })
         }
         fieldError={errors.logo?.message}
+        // TASK-441 — a logo is the picture most likely to be in the library
+        // already: it appears on the brand page, in filters and on every card.
+        picker={
+          <MediaPicker
+            onPick={(asset) =>
+              setValue("logo", asset.url, {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+            }
+          />
+        }
         {...logoUpload}
       />
 

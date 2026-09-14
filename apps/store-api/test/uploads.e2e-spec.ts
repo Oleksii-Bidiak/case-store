@@ -42,7 +42,7 @@ describe('UploadsController (e2e)', () => {
 
   const authRepositoryMock = { findById: jest.fn(), findByEmail: jest.fn() };
   const storageMock = { save: jest.fn(), read: jest.fn(), delete: jest.fn() };
-  const imageProcessorMock = { process: jest.fn(), detectFormat: jest.fn() };
+  const imageProcessorMock = { process: jest.fn(), detectFormat: jest.fn(), probe: jest.fn() };
   const prismaServiceMock = { $connect: jest.fn(), $disconnect: jest.fn() };
 
   function generateAccessToken(userId: string, role: string): string {
@@ -100,9 +100,13 @@ describe('UploadsController (e2e)', () => {
   beforeEach(() => {
     storageMock.save.mockResolvedValue('content/abc.webp');
     imageProcessorMock.detectFormat.mockResolvedValue('png');
+    imageProcessorMock.probe.mockResolvedValue({ format: 'png', width: 2000, height: 1333 });
     imageProcessorMock.process.mockResolvedValue({
       webp: Buffer.from('optimized-webp'),
       blurDataUrl: 'data:image/webp;base64,BLUR',
+      width: 2000,
+      height: 1333,
+      bytes: Buffer.from('optimized-webp').length,
     });
   });
 
@@ -167,7 +171,7 @@ describe('UploadsController (e2e)', () => {
 
   it('passes an animated GIF through untouched with a null blurDataUrl', async () => {
     const token = generateAccessToken('admin-e2e-1', 'ADMIN');
-    imageProcessorMock.detectFormat.mockResolvedValue('gif');
+    imageProcessorMock.probe.mockResolvedValue({ format: 'gif', width: 320, height: 240 });
     storageMock.save.mockResolvedValue('content/abc.gif');
 
     const response = await request(app.getHttpServer())
@@ -191,7 +195,7 @@ describe('UploadsController (e2e)', () => {
       // declared Content-Type cannot be trusted there: a polyglot announced as
       // image/gif would otherwise be served from our own origin.
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
-      imageProcessorMock.detectFormat.mockResolvedValue(null);
+      imageProcessorMock.probe.mockResolvedValue(null);
 
       await request(app.getHttpServer())
         .post('/api/admin/uploads/categories')
@@ -221,13 +225,33 @@ describe('UploadsController (e2e)', () => {
       expect(storageMock.save).not.toHaveBeenCalled();
     });
 
-    it('rejects a file over the 5 MB business limit (413)', async () => {
+    // One accept and one refuse around MAX_IMAGE_BYTES, and no more than that:
+    // a 20 MB multipart body through supertest is not free, so the boundary is
+    // worth two cases and not a sweep.
+    it('accepts a file at the 20 MB business limit (201)', async () => {
+      // The case TASK-439 exists for: a photo straight off a phone, which the
+      // old 5 MB cap refused outright. It is the server's job to shrink it now.
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
 
       await request(app.getHttpServer())
         .post('/api/admin/uploads/categories')
         .set('Authorization', `Bearer ${token}`)
-        .attach('file', Buffer.alloc(6 * 1024 * 1024, 1), {
+        .attach('file', Buffer.alloc(20 * 1024 * 1024, 1), {
+          filename: 'from-a-phone.png',
+          contentType: 'image/png',
+        })
+        .expect(201);
+
+      expect(storageMock.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a file over the 20 MB business limit (413)', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+
+      await request(app.getHttpServer())
+        .post('/api/admin/uploads/categories')
+        .set('Authorization', `Bearer ${token}`)
+        .attach('file', Buffer.alloc(21 * 1024 * 1024, 1), {
           filename: 'big.png',
           contentType: 'image/png',
         })

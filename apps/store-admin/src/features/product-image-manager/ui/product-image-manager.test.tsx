@@ -9,6 +9,13 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import {
+  LIBRARY_ASSET_ALT,
+  MEDIA_PERMISSIONS,
+  makeMediaAsset,
+  pickFromLibrary,
+  stubMediaLibrary,
+} from "@/features/media-picker/model/media-picker.fixture";
 import { ProductImageManager } from "./product-image-manager";
 
 jest.mock("sonner", () => ({
@@ -53,6 +60,97 @@ function dropFiles(files: File[]) {
     dataTransfer: { files, items: [], types: ["Files"] },
   });
 }
+
+describe("ProductImageManager — media library picker (TASK-441)", () => {
+  /** Stub the attach route; collects the asset ids it was asked to attach. */
+  function stubAttach(status = 201) {
+    const attached: string[] = [];
+    server.use(
+      http.post(
+        `*/api/products/${PRODUCT_ID}/images/attach`,
+        async ({ request }) => {
+          const body = (await request.json()) as { mediaAssetId: string };
+          attached.push(body.mediaAssetId);
+          if (status !== 201) return new HttpResponse(null, { status });
+          return HttpResponse.json({
+            data: {
+              id: "img-1",
+              url: `http://localhost:3001/uploads/media/${body.mediaAssetId}.webp`,
+              alt: LIBRARY_ASSET_ALT,
+              blurDataUrl: null,
+              sortOrder: 0,
+              isPrimary: true,
+            },
+          });
+        },
+      ),
+    );
+    return attached;
+  }
+
+  it("attaches the picked asset to THIS product's gallery", async () => {
+    stubGallery();
+    stubMediaLibrary([makeMediaAsset("m7", { alt: LIBRARY_ASSET_ALT })]);
+    const attached = stubAttach();
+
+    renderWithProviders(<ProductImageManager productId={PRODUCT_ID} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    await pickFromLibrary();
+
+    // The gallery is the one place a picked asset is not a URL in a field: it
+    // needs a request, and that request must carry the ASSET ID, not a URL —
+    // the server reads the file's details off the asset itself.
+    await waitFor(() => expect(attached).toEqual(["m7"]));
+  });
+
+  it("uploads nothing when an existing asset is chosen", async () => {
+    const uploads = stubGallery();
+    stubMediaLibrary([makeMediaAsset("m7", { alt: LIBRARY_ASSET_ALT })]);
+    stubAttach();
+
+    renderWithProviders(<ProductImageManager productId={PRODUCT_ID} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    await pickFromLibrary();
+
+    // One file on disk, two rows pointing at it. A picker that re-posted the
+    // bytes would grow the library by a duplicate on every reuse.
+    await waitFor(() => expect(uploads).toHaveLength(0));
+  });
+
+  it("offers no picker before the product exists", () => {
+    stubMediaLibrary();
+    renderWithProviders(
+      <ProductImageManager value={[]} onStage={jest.fn()} />,
+      { auth: { permissions: MEDIA_PERMISSIONS } },
+    );
+
+    // STAGED mode on `/products/new`: there is no `:productId` to attach to, so
+    // the panel says so instead of offering a button that would 404.
+    expect(
+      screen.queryByRole("button", { name: dict.mediaPicker.trigger }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(dict.mediaPicker.galleryNeedsProduct),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no picker to an operator with no media keys", () => {
+    stubGallery();
+    renderWithProviders(<ProductImageManager productId={PRODUCT_ID} />);
+
+    expect(
+      screen.queryByRole("button", { name: dict.mediaPicker.trigger }),
+    ).not.toBeInTheDocument();
+    // The upload path they already had is untouched.
+    expect(
+      screen.getByRole("button", { name: dict.productImages.upload }),
+    ).toBeInTheDocument();
+  });
+});
 
 describe("ProductImageManager — drag-and-drop batch upload (TASK-424)", () => {
   it("renders a labelled drop zone alongside the picker button", () => {

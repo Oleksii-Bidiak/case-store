@@ -12,3 +12,4 @@ export type { DateInput } from "./formatDate";
 export { toKyivDateTimeLocal, fromKyivDateTimeLocal } from "./datetime-local";
 export { formatPercent } from "./formatPercent";
 export { formatDurationHours } from "./formatDurationHours";
+export { formatFileSize } from "./formatFileSize";

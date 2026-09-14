@@ -12,6 +12,16 @@ export interface CreateImageInput {
   blurDataUrl: string | null;
   sortOrder: number;
   isPrimary: boolean;
+  /**
+   * PROVENANCE — the media-library asset this row was created from (TASK-441),
+   * or null/absent for a direct upload, the seed and the catalogue import.
+   *
+   * Never read to answer "is that asset still used": that question is settled by
+   * matching URLs in `MediaUsageRepository`, precisely because this column is
+   * only ever set by the paths that remembered to set it. See the note on
+   * `ProductImage.mediaAssetId` in `schema.prisma`.
+   */
+  mediaAssetId?: string | null;
 }
 
 /** Fields for updating ordering/primary flag of an existing image. */

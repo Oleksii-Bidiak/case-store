@@ -9,6 +9,7 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { ProductRepository } from '../src/product/product.repository';
 import { ProductImageRepository } from '../src/product/product-image.repository';
+import { MediaRepository, MediaUsageRepository } from '../src/media';
 import { ImageProcessor, STORAGE_SERVICE } from '../src/storage';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
@@ -28,6 +29,7 @@ class ThrottlerGuardPassThrough extends ThrottlerGuard {
 
 const PRODUCT_ID = 'product-e2e-1';
 const IMAGE_ID = '550e8400-e29b-41d4-a716-446655440000';
+const ASSET_ID = '770e8400-e29b-41d4-a716-446655440222';
 
 describe('ProductImageController (e2e)', () => {
   let app: INestApplication;
@@ -42,9 +44,19 @@ describe('ProductImageController (e2e)', () => {
   const imageRepositoryMock = {
     getMaxSortOrder: jest.fn(),
     bulkCreate: jest.fn(),
+    create: jest.fn(),
     findById: jest.fn(),
     delete: jest.fn(),
     updateMany: jest.fn(),
+  };
+
+  const mediaRepositoryMock = {
+    findById: jest.fn(),
+    findByUrl: jest.fn(),
+  };
+
+  const mediaUsageRepositoryMock = {
+    findUsageForUrl: jest.fn(),
   };
 
   const storageMock = {
@@ -57,6 +69,7 @@ describe('ProductImageController (e2e)', () => {
   const imageProcessorMock = {
     process: jest.fn(),
     detectFormat: jest.fn(),
+    probe: jest.fn(),
   };
 
   const prismaServiceMock = {
@@ -95,6 +108,10 @@ describe('ProductImageController (e2e)', () => {
       .useValue(productRepositoryMock)
       .overrideProvider(ProductImageRepository)
       .useValue(imageRepositoryMock)
+      .overrideProvider(MediaRepository)
+      .useValue(mediaRepositoryMock)
+      .overrideProvider(MediaUsageRepository)
+      .useValue(mediaUsageRepositoryMock)
       .overrideProvider(STORAGE_SERVICE)
       .useValue(storageMock)
       .overrideProvider(ImageProcessor)
@@ -124,6 +141,16 @@ describe('ProductImageController (e2e)', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  beforeEach(() => {
+    // Deleting a gallery row asks two questions before it touches the file
+    // (TASK-585). The default answer here is "nobody else points at it", which
+    // is what every pre-existing delete test assumes; the two tests that care
+    // about sharing set their own answer. Note `clearAllMocks` clears CALLS but
+    // keeps implementations, so these have to be re-stated per test, not once.
+    mediaRepositoryMock.findByUrl.mockResolvedValue(null);
+    mediaUsageRepositoryMock.findUsageForUrl.mockResolvedValue([]);
   });
 
   // ─── POST /api/products/:id/images ────────────────────────────────────────
@@ -181,7 +208,7 @@ describe('ProductImageController (e2e)', () => {
       imageRepositoryMock.getMaxSortOrder.mockResolvedValue(-1);
       imageRepositoryMock.bulkCreate.mockResolvedValue(undefined);
       storageMock.save.mockResolvedValue('products/generated.gif');
-      imageProcessorMock.detectFormat.mockResolvedValue('gif');
+      imageProcessorMock.probe.mockResolvedValue({ format: 'gif', width: 320, height: 240 });
 
       const response = await request(app.getHttpServer())
         .post(`/api/products/${PRODUCT_ID}/images`)
@@ -204,7 +231,7 @@ describe('ProductImageController (e2e)', () => {
       productRepositoryMock.findById.mockResolvedValue(testProduct);
       imageRepositoryMock.getMaxSortOrder.mockResolvedValue(-1);
       // `sharp` cannot decode it → the declared Content-Type was a lie.
-      imageProcessorMock.detectFormat.mockResolvedValue(null);
+      imageProcessorMock.probe.mockResolvedValue(null);
 
       await request(app.getHttpServer())
         .post(`/api/products/${PRODUCT_ID}/images`)
@@ -218,10 +245,36 @@ describe('ProductImageController (e2e)', () => {
       expect(storageMock.save).not.toHaveBeenCalled();
     });
 
+    // Both sides of MAX_IMAGE_BYTES, and only both sides: a 20 MB multipart body
+    // through supertest costs real time, so the boundary gets two cases, not a
+    // sweep.
+    it('accepts a 20 MB photo — the size gallery images actually arrive at', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      imageRepositoryMock.getMaxSortOrder.mockResolvedValue(-1);
+      imageRepositoryMock.bulkCreate.mockResolvedValue(undefined);
+      storageMock.save.mockResolvedValue('products/generated.webp');
+      imageProcessorMock.process.mockResolvedValue({
+        webp: Buffer.from('optimized-webp'),
+        blurDataUrl: 'data:image/webp;base64,BLUR',
+      });
+      const straightOffAPhone = Buffer.alloc(20 * 1024 * 1024, 1); // == MAX_IMAGE_BYTES
+
+      await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images`)
+        .set('Authorization', `Bearer ${token}`)
+        .attach('files', straightOffAPhone, { filename: 'big.jpg', contentType: 'image/jpeg' })
+        .expect(201);
+
+      // What lands in storage is the shrunk re-encode, never the 20 MB original.
+      expect(storageMock.save).toHaveBeenCalledTimes(1);
+      expect(storageMock.save.mock.calls[0][0]).toEqual(Buffer.from('optimized-webp'));
+    });
+
     it('returns 413 for an oversized file', async () => {
       const token = generateAccessToken('admin-1', 'ADMIN');
       productRepositoryMock.findById.mockResolvedValue(testProduct);
-      const big = Buffer.alloc(6 * 1024 * 1024, 1); // 6 MB > 5 MB business limit
+      const big = Buffer.alloc(21 * 1024 * 1024, 1); // 21 MB > 20 MB business limit
 
       await request(app.getHttpServer())
         .post(`/api/products/${PRODUCT_ID}/images`)
@@ -240,6 +293,100 @@ describe('ProductImageController (e2e)', () => {
           contentType: 'text/plain',
         })
         .expect(400);
+    });
+  });
+
+  // ─── POST /api/products/:id/images/attach ─────────────────────────────────
+
+  describe('POST /api/products/:id/images/attach', () => {
+    const libraryAsset = {
+      id: ASSET_ID,
+      url: 'http://localhost:3001/uploads/media/autumn.webp',
+      alt: 'Осіння банерна зйомка',
+      blurDataUrl: 'data:image/webp;base64,LIBRARYBLUR',
+    };
+
+    it('returns 401 without a token', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images/attach`)
+        .send({ mediaAssetId: ASSET_ID })
+        .expect(401);
+    });
+
+    it('returns 403 for a non-admin user', async () => {
+      const token = generateAccessToken('customer-1', 'CUSTOMER');
+      await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images/attach`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ mediaAssetId: ASSET_ID })
+        .expect(403);
+
+      expect(imageRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 201 with a row reusing the stored file, and saves nothing new', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      mediaRepositoryMock.findById.mockResolvedValue(libraryAsset);
+      imageRepositoryMock.getMaxSortOrder.mockResolvedValue(-1);
+      imageRepositoryMock.create.mockImplementation((input: unknown) => Promise.resolve(input));
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images/attach`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ mediaAssetId: ASSET_ID })
+        .expect(201);
+
+      expect(response.body.data.url).toBe(libraryAsset.url);
+      expect(response.body.data.alt).toBe(libraryAsset.alt);
+      expect(response.body.data.blurDataUrl).toBe(libraryAsset.blurDataUrl);
+      // First picture of an empty gallery becomes the cover — the upload route's
+      // rule, so the gallery behaves the same however a photo got into it.
+      expect(response.body.data.isPrimary).toBe(true);
+      expect(response.body.data.sortOrder).toBe(0);
+      // One file on disk, two rows pointing at it.
+      expect(storageMock.save).not.toHaveBeenCalled();
+      expect(imageProcessorMock.process).not.toHaveBeenCalled();
+      expect(imageRepositoryMock.create.mock.calls[0][0].mediaAssetId).toBe(ASSET_ID);
+    });
+
+    it('returns 404 for an asset that does not exist', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      mediaRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images/attach`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ mediaAssetId: ASSET_ID })
+        .expect(404);
+
+      expect(imageRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 for a product that does not exist', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(null);
+      mediaRepositoryMock.findById.mockResolvedValue(libraryAsset);
+
+      await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images/attach`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ mediaAssetId: ASSET_ID })
+        .expect(404);
+    });
+
+    it('returns 400 when the body is not a UUID', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+
+      await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images/attach`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ mediaAssetId: 'http://evil.tld/photo.png' })
+        .expect(400);
+
+      expect(mediaRepositoryMock.findById).not.toHaveBeenCalled();
     });
   });
 
@@ -309,6 +456,54 @@ describe('ProductImageController (e2e)', () => {
         .expect(204);
 
       expect(storageMock.delete).toHaveBeenCalledWith('products/generated.jpg');
+    });
+
+    // TASK-585. `attachAsset` means one file can back several galleries, so a
+    // 204 here must not take the bytes with it when someone else still points
+    // at them. The route still answers 204 — the row IS gone; what survives is
+    // the file.
+    it('returns 204 but keeps the file when the library still owns it', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      imageRepositoryMock.findById.mockResolvedValue({
+        id: IMAGE_ID,
+        productId: PRODUCT_ID,
+        url: 'http://localhost:3001/uploads/media/autumn.webp',
+      });
+      imageRepositoryMock.delete.mockResolvedValue({ id: IMAGE_ID });
+      mediaRepositoryMock.findByUrl.mockResolvedValue({
+        id: ASSET_ID,
+        url: 'http://localhost:3001/uploads/media/autumn.webp',
+      });
+
+      await request(app.getHttpServer())
+        .delete(`/api/products/${PRODUCT_ID}/images/${IMAGE_ID}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(204);
+
+      expect(imageRepositoryMock.delete).toHaveBeenCalledWith(IMAGE_ID);
+      expect(storageMock.delete).not.toHaveBeenCalled();
+    });
+
+    it('returns 204 but keeps the file when another product still shows it', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      imageRepositoryMock.findById.mockResolvedValue({
+        id: IMAGE_ID,
+        productId: PRODUCT_ID,
+        url: 'http://localhost:3001/uploads/products/shared.webp',
+      });
+      imageRepositoryMock.delete.mockResolvedValue({ id: IMAGE_ID });
+      mediaUsageRepositoryMock.findUsageForUrl.mockResolvedValue([
+        { kind: 'PRODUCT_IMAGE', entityId: 'product-e2e-2', label: 'Чохол синій' },
+      ]);
+
+      await request(app.getHttpServer())
+        .delete(`/api/products/${PRODUCT_ID}/images/${IMAGE_ID}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(204);
+
+      expect(storageMock.delete).not.toHaveBeenCalled();
     });
 
     it('returns 404 for a non-existent image', async () => {

@@ -13,6 +13,15 @@ import {
  * been sniffed and re-encoded, and a temp file written by Multer would already
  * be on the disk by the time the service got a look at it.
  *
+ * That stays true after the caps went to 20/25 MB (TASK-439), and it is the
+ * deliberate answer to the obvious "just use `diskStorage` for big files": doing
+ * so would break the TASK-424 invariant above in exchange for memory we do not
+ * actually need. The admin panel sends ONE file per request (see the "ONE
+ * REQUEST PER FILE" docblock in `product-image-manager.tsx`), so the realistic
+ * ceiling is one 25 MB buffer in flight, not {@link MAX_FILES_PER_UPLOAD} of
+ * them — and Caddy's `request_body max_size` caps the whole body before Node
+ * allocates anything.
+ *
  * The `fileFilter` here is the FIRST of two MIME gates and is transport-level
  * config — {@link ImageUploadService} re-checks the type and enforces the
  * stricter business size limit, because a service must not assume its transport

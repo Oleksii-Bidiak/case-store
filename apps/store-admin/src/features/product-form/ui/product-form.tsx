@@ -32,6 +32,7 @@ import {
   Textarea,
   type ComboboxOption,
 } from "@/shared/ui";
+import { MediaPickerEditorButton } from "@/features/media-picker";
 import { dict, STOREFRONT_HOST } from "@/shared/config";
 import {
   productSchema,
@@ -86,8 +87,9 @@ interface ProductFormProps {
    * Optional slot rendered below the fields (TASK-191) — receives the LIVE
    * selected `categoryId` so an embedded structured-spec editor re-renders its
    * effective-definition set the moment the admin picks a different category,
-   * before saving. Omitted in create mode (a product must exist before specs
-   * can be assigned).
+   * before saving. Filled in BOTH modes since TASK-442: the create page passes a
+   * staged editor (no product id, values held until `POST /products` answers),
+   * so the two forms offer the same fields.
    */
   renderSpecsSection?: (categoryId: string) => React.ReactNode;
   /**
@@ -299,6 +301,11 @@ export function ProductForm({
                   resetKey={id}
                   placeholder={dict.productForm.descriptionPlaceholder}
                   disabled={isPending}
+                  // TASK-547 — the editor lives in `shared/ui` and cannot reach
+                  // the media library itself, so the control is handed in.
+                  imagePicker={(insert) => (
+                    <MediaPickerEditorButton insert={insert} />
+                  )}
                 />
               )}
             />

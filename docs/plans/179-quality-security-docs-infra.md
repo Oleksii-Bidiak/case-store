@@ -26,7 +26,7 @@
 | Валідація                           | `main.ts:74` whitelist + forbidNonWhitelisted                                                                                                   |
 | Санітайзер rich-text                | `common/sanitize/sanitize-rich-text.ts:16-71`                                                                                                   |
 | SSRF хости зображень                | `apps/store-client/next.config.ts` bare hostnames, https only                                                                                   |
-| Завантаження                        | MIME allowlist, 15 МБ multer, 5 МБ бізнес, sniff байтів, SVG-санітайзер, traversal-guard                                                        |
+| Завантаження                        | MIME allowlist, 25 МБ multer, 20 МБ бізнес, явний `limitInputPixels`, sniff байтів, SVG-санітайзер, traversal-guard                             |
 | Аудит-лог, редакція                 | `audit/`, `audit.sanitize.ts:32`; Pino redact `pino.config.ts:17`                                                                               |
 | Анти-енумерація, lockout            | `auth.service.ts:429-437`, `:65,74` (5/15 хв на акаунт)                                                                                         |
 | Swagger лише dev                    | `main.ts`                                                                                                                                       |

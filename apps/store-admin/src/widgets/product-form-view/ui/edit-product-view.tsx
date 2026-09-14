@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -23,10 +23,15 @@ import { ProductDeviceCompatManager } from "@/features/product-device-compat";
 import { ProductAddonDeltaPanel } from "@/features/product-addon-delta-panel";
 import { ProductSpecsEditor } from "@/features/product-specs-editor";
 import { ProductPublishPanel } from "@/features/product-publish-panel";
-import { Separator } from "@/shared/ui";
+import { Button, Separator } from "@/shared/ui";
 import { formatKeywords } from "@/shared/lib/seo";
 import { dict } from "@/shared/config";
 import { apiErrorMessage } from "@/shared/lib";
+import {
+  clearCreateCarryover,
+  readCreateCarryover,
+  type CreateCarryoverFailures,
+} from "../model/create-carryover";
 
 interface EditProductViewProps {
   productId: string;
@@ -71,6 +76,26 @@ export function EditProductView({ productId }: EditProductViewProps) {
   const update = useProductControllerUpdate();
 
   const isNotFound = error?.response?.status === 404;
+
+  /**
+   * TASK-442 — what did NOT land when this product was created with everything
+   * at once. Read once per product id, kept until the operator dismisses it: the
+   * panels that can finish the job are all on this page, and a toast would be
+   * gone before they had scrolled to the right one.
+   *
+   * Re-read through the render-time guard of `docs/conventions/forms.md`
+   * Rule 1a rather than a bare lazy initializer, so navigating from one edit
+   * page straight to another (same component instance, new id) cannot show the
+   * previous product's report.
+   */
+  const [carryoverFor, setCarryoverFor] = useState(productId);
+  const [carryover, setCarryover] = useState<CreateCarryoverFailures | null>(
+    () => readCreateCarryover(productId),
+  );
+  if (carryoverFor !== productId) {
+    setCarryoverFor(productId);
+    setCarryover(readCreateCarryover(productId));
+  }
 
   useEffect(() => {
     if (isNotFound) {
@@ -171,6 +196,45 @@ export function EditProductView({ productId }: EditProductViewProps) {
           )}
         </div>
       </div>
+
+      {carryover && (
+        <div
+          role="alert"
+          className="flex max-w-2xl flex-col gap-2 rounded-lg border border-destructive/50 bg-destructive/5 p-4"
+        >
+          <h3 className="text-sm font-semibold text-destructive">
+            {dict.products.createCarryover.heading}
+          </h3>
+          <p className="text-sm text-foreground">
+            {dict.products.createCarryover.intro}
+          </p>
+          <ul className="list-disc pl-5 text-sm text-foreground">
+            {carryover.images.length > 0 && (
+              <li>{dict.products.createCarryover.images(carryover.images)}</li>
+            )}
+            {carryover.specs && <li>{dict.products.createCarryover.specs}</li>}
+            {carryover.compat && (
+              <li>{dict.products.createCarryover.compat}</li>
+            )}
+            {carryover.addons.length > 0 && (
+              <li>{dict.products.createCarryover.addons(carryover.addons)}</li>
+            )}
+          </ul>
+          <div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                clearCreateCarryover();
+                setCarryover(null);
+              }}
+            >
+              {dict.products.createCarryover.dismiss}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex max-w-2xl flex-col gap-5">
