@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 /**
@@ -30,6 +31,12 @@ export class CreateReviewDto {
     maxLength: REVIEW_COMMENT_MAX_LENGTH,
     example: 'Excellent case, fits perfectly and feels premium.',
   })
+  // Trimmed before anything else looks at it (TASK-598). A comment of spaces is
+  // not a text: it passes `not: null`, it is not the empty string the public
+  // filter excludes, and it renders on the PDP as an author, a date and an empty
+  // speech bubble — the exact thing that filter was written to prevent. Trimming
+  // turns it into `''`, which every downstream predicate already handles.
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsOptional()
   @IsString()
   @MaxLength(REVIEW_COMMENT_MAX_LENGTH)

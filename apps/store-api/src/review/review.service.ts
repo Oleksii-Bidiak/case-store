@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { Prisma } from '@prisma/client';
+import { Prisma, type Review } from '@prisma/client';
 import { ReviewRepository, ReviewsNotFoundError } from './review.repository';
 import {
   ReviewEntity,
@@ -110,12 +110,19 @@ export class ReviewService {
       throw new ConflictException('You have already reviewed this product');
     }
 
-    const [verifiedPurchase, ratingVisible] = await Promise.all([
+    const [verifiedPurchase, emailVerified, authorHidden] = await Promise.all([
       this.reviewRepository.isVerifiedPurchase(userId, productId),
       this.reviewRepository.isEmailVerified(userId),
+      this.reviewRepository.isAuthorHidden(userId),
     ]);
 
-    let review;
+    // Both gates, and the moderator's outranks the author's own (TASK-598). A
+    // withdrawn account is not banned and not logged out, so without this arm it
+    // simply went on submitting: the thirty ratings a moderator had just pulled
+    // came straight back as thirty new ones that counted on arrival.
+    const ratingVisible = emailVerified && !authorHidden;
+
+    let review: Review;
     try {
       review = await this.reviewRepository.create({
         userId,
@@ -124,6 +131,10 @@ export class ReviewService {
         comment: dto.comment ?? null,
         ratingVisible,
         createdIp,
+        // Stamped so the row is withdrawn on every path the flag governs — the
+        // public list, the author's own view, the moderation queue — and not only
+        // in the average.
+        hiddenAt: authorHidden ? new Date() : null,
       });
     } catch (error) {
       // P2002 = unique constraint violation: a concurrent request inserted the

@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, ReviewTextStatus } from '@prisma/client';
 
 /**
  * "This rating counts toward the product's score" — the single predicate, shared
@@ -53,3 +53,36 @@ export const COUNTS_TOWARD_RATING = {
 export const AUTHOR_NOT_HIDDEN = {
   hiddenAt: null,
 } as const satisfies Prisma.ReviewWhereInput;
+
+/**
+ * "There is a sentence here" — the third shared predicate (TASK-598).
+ *
+ * Two arms, because either alone lets through exactly what the other catches:
+ * `not: null` passes the empty string, and `NOT: { comment: '' }` is vacuous on a
+ * NULL. Whitespace is handled a layer earlier — both review DTOs trim, so `'   '`
+ * arrives as `''` and is caught here rather than rendering as an author, a date
+ * and an empty speech bubble.
+ *
+ * Asked by two queries that look unrelated and are not:
+ *  - `findApprovedByProduct` — the storefront renders texts, not silent ratings;
+ *  - `findForModeration` — a star-only row gives a moderator nothing to decide,
+ *    and approving it publishes nothing, so putting it in the queue only inflates
+ *    a badge that no verdict can clear.
+ */
+export const HAS_TEXT_TO_MODERATE = {
+  comment: { not: null },
+  NOT: { comment: '' },
+} as const satisfies Prisma.ReviewWhereInput;
+
+/**
+ * What the moderation queue selects, in one place (TASK-598).
+ *
+ * A function rather than three constants because the queue and the dashboard
+ * badge above it are read as one number: `findForModeration('pending')` fills the
+ * screen and `getNeedsAction().pendingReviews` counts it, and when the two `where`
+ * clauses drifted the badge said 50 over a list of none. Whoever narrows one
+ * narrows both.
+ */
+export function moderationQueueWhere(status: ReviewTextStatus): Prisma.ReviewWhereInput {
+  return { textStatus: status, ...AUTHOR_NOT_HIDDEN, ...HAS_TEXT_TO_MODERATE };
+}

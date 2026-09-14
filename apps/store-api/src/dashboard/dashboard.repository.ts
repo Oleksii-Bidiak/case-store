@@ -7,6 +7,7 @@ import {
   ReviewTextStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { moderationQueueWhere } from '../review/review.constants';
 import {
   DASHBOARD_WINDOW_DAYS,
   LOW_STOCK_LIMIT,
@@ -277,11 +278,13 @@ export class DashboardRepository {
    * (TASK-248). Independent reads run in a single `Promise.all` — no N+1, no
    * joins, mirroring the `getSummary()` parallelization style:
    *   - `newOrders`       — orders awaiting confirmation (`status = PENDING`)
-   *   - `pendingReviews`  — review TEXTS awaiting a verdict (`textStatus = PENDING`,
-   *                         matching `ReviewRepository.findForModeration('pending')`).
+   *   - `pendingReviews`  — review TEXTS awaiting a verdict, counted with the exact
+   *                         `where` of `ReviewRepository.findForModeration('pending')`.
    *                         Deliberately not about ratings: since TASK-585 a rating
    *                         needs no moderator, so counting invisible ratings here
-   *                         would send an operator to a queue with nothing to do
+   *                         would send an operator to a queue with nothing to do —
+   *                         which is what `textStatus = PENDING` alone did until
+   *                         TASK-598, because star-only rows are written PENDING too
    *   - `unpaidInTransit` — active-but-unpaid orders ({@link unrealizedOrderWhere})
    *   - `failedMails`     — outbox rows permanently failed (`status = FAILED`)
    *   - `ratingAbuse`     — bursts and one-star runs ({@link getRatingAbuseCount})
@@ -290,7 +293,7 @@ export class DashboardRepository {
     const [newOrders, pendingReviews, unpaidInTransit, failedMails, pendingOver48h, ratingAbuse] =
       await Promise.all([
         this.prisma.order.count({ where: { status: OrderStatus.PENDING, deletedAt: null } }),
-        this.prisma.review.count({ where: { textStatus: ReviewTextStatus.PENDING } }),
+        this.prisma.review.count({ where: moderationQueueWhere(ReviewTextStatus.PENDING) }),
         this.prisma.order.count({ where: this.unrealizedOrderWhere() }),
         this.prisma.mailOutbox.count({ where: { status: MailOutboxStatus.FAILED } }),
         this.prisma.order.count({ where: this.pendingOver48hWhere() }),
@@ -322,18 +325,30 @@ export class DashboardRepository {
    * without this filter the second query returns one group of ~2 200 one-star-ish
    * rows and the panel opens on a single "address" responsible for the entire
    * shop. Absent means "we do not know", never "the same as the last one".
+   *
+   * ## `hiddenAt: null` is what makes it clearable (TASK-598)
+   *
+   * Hiding the author is the action this signal exists to prompt, and it leaves
+   * the rows in place. Counting them anyway produced a "needs action" number that
+   * the action did not change — still there an hour later, still there a day
+   * later — and an operator who clicks through twice and finds nothing to do stops
+   * clicking. A counter no action can clear is worse than no counter.
    */
   private async getRatingAbuseCount(): Promise<number> {
     const [burstProducts, oneStarAddresses] = await Promise.all([
       this.prisma.review.groupBy({
         by: ['productId'],
-        where: { createdAt: { gte: this.hoursAgo(RATING_BURST_WINDOW_HOURS) } },
+        where: {
+          hiddenAt: null,
+          createdAt: { gte: this.hoursAgo(RATING_BURST_WINDOW_HOURS) },
+        },
         having: { productId: { _count: { gt: RATING_BURST_THRESHOLD } } },
       }),
       this.prisma.review.groupBy({
         by: ['createdIp'],
         where: {
           rating: 1,
+          hiddenAt: null,
           createdIp: { not: null },
           createdAt: { gte: this.hoursAgo(ONE_STAR_RUN_WINDOW_HOURS) },
         },

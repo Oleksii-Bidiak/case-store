@@ -62,6 +62,9 @@ const reviewRepositoryMock = {
   // decides if their stars count — asked at submission, and again when a hidden
   // account is restored.
   isEmailVerified: jest.fn(),
+  // TASK-598: the same lever, asked at submission — hiding an account has to stop
+  // it writing NEW ratings, not merely withdraw the ones it already wrote.
+  isAuthorHidden: jest.fn(),
   // TASK-589: the one-click account-wide lever.
   hideAuthorReviews: jest.fn(),
   restoreAuthorReviews: jest.fn(),
@@ -84,6 +87,10 @@ describe('ReviewService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // The ordinary author: nobody has withdrawn them. Stated rather than left to
+    // an undefined mock, because "not hidden" is now an input to whether a
+    // submitted rating counts.
+    reviewRepositoryMock.isAuthorHidden.mockResolvedValue(false);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -110,6 +117,27 @@ describe('ReviewService', () => {
       expect(reviewRepositoryMock.create).not.toHaveBeenCalled();
     });
 
+    it('refuses to let a withdrawn account write itself back into the average', async () => {
+      // TASK-598. Hiding an author stamps the rows that exist at that moment and
+      // nothing asked again, so the lever did not hold: the account is not banned
+      // and not logged out, and a moderator who withdrew thirty ratings watched
+      // thirty fresh ones appear — counting on arrival, texts back in the queue.
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      // Address proven: the email gate alone would let this one through.
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(true);
+      reviewRepositoryMock.isAuthorHidden.mockResolvedValue(true);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview());
+
+      await submit({ rating: 1, comment: 'Same abuser, new review' });
+
+      const written = reviewRepositoryMock.create.mock.calls[0][0];
+      expect(written.ratingVisible).toBe(false);
+      // Stamped, not merely uncounted: `hiddenAt` is what the text paths filter
+      // on, so without it the sentence would still reach the moderation queue.
+      expect(written.hiddenAt).toBeInstanceOf(Date);
+    });
+
     it('creates the review and returns the entity', async () => {
       reviewRepositoryMock.findExisting.mockResolvedValue(null);
       reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
@@ -125,6 +153,7 @@ describe('ReviewService', () => {
         comment: 'Great case!',
         ratingVisible: false,
         createdIp: SUBMITTER_IP,
+        hiddenAt: null,
       });
       expect(result.id).toBe('review-uuid-1');
     });

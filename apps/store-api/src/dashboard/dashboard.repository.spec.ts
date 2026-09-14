@@ -59,9 +59,43 @@ describe('DashboardRepository — the rating-abuse signal (TASK-589)', () => {
     await repo.getNeedsAction();
 
     const args = groupByFor('productId');
-    expect(args.where).toEqual({ createdAt: { gte: new Date('2026-09-14T11:00:00.000Z') } });
+    expect(args.where).toEqual({
+      createdAt: { gte: new Date('2026-09-14T11:00:00.000Z') },
+      // TASK-598: hiding the author is the action this signal asks for, and it
+      // leaves the rows in place. Counting them anyway gave the operator a number
+      // their own click could not move.
+      hiddenAt: null,
+    });
     // MORE than ten, not ten: the threshold is the number that is still fine.
     expect(args.having).toEqual({ productId: { _count: { gt: 10 } } });
+  });
+
+  it('counts the moderation badge over the queue’s own rows, not over every PENDING row', async () => {
+    // TASK-598. Every submission is written `textStatus: PENDING`, star-only ones
+    // included, so counting that alone made the badge read 50 while the queue it
+    // labelled held nothing anyone could act on: approving an empty comment
+    // publishes nothing, and the only way to clear it was to "reject" a review
+    // nobody wrote. The badge and the list now ask the same question.
+    await repo.getNeedsAction();
+
+    expect(prismaMock.review.count).toHaveBeenCalledWith({
+      where: {
+        textStatus: 'PENDING',
+        hiddenAt: null,
+        comment: { not: null },
+        NOT: { comment: '' },
+      },
+    });
+  });
+
+  it('stops counting a burst once the moderator has withdrawn its author', async () => {
+    // TASK-598 — the property that makes the tile actionable. Both queries must
+    // carry it: an operator who hides the author and watches the number sit there
+    // for another day learns the tile is noise.
+    await repo.getNeedsAction();
+
+    expect(groupByFor('productId').where).toMatchObject({ hiddenAt: null });
+    expect(groupByFor('createdIp').where).toMatchObject({ hiddenAt: null });
   });
 
   it('counts an address that left three or more one-star ratings in a day', async () => {

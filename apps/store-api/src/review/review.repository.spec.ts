@@ -109,13 +109,25 @@ describe('ReviewRepository — findForModeration search', () => {
     });
   });
 
-  it('filters on the TEXT status alone when no term is given', async () => {
+  /**
+   * What every queue read carries besides the status (TASK-598).
+   *
+   * A star-only row is written `PENDING` like any other, and the queue used to
+   * show it: an entry with an empty comment, which approving publishes nowhere
+   * and only rejecting removes — a verdict on a review nobody wrote. `hiddenAt`
+   * joins it because a withdrawn account's sentences are not awaiting a verdict.
+   */
+  const QUEUE_ARMS = { hiddenAt: null, comment: { not: null }, NOT: { comment: '' } };
+
+  it('filters on the TEXT status and on there being a text to judge', async () => {
     await repo.findForModeration('pending', 1, 20);
 
-    expect(issuedWhere()).toEqual({ textStatus: 'PENDING' });
+    expect(issuedWhere()).toEqual({ textStatus: 'PENDING', ...QUEUE_ARMS });
     // The COUNT must carry the same `where`, or the pager claims pages the list
     // cannot show.
-    expect(reviewCount).toHaveBeenCalledWith({ where: { textStatus: 'PENDING' } });
+    expect(reviewCount).toHaveBeenCalledWith({
+      where: { textStatus: 'PENDING', ...QUEUE_ARMS },
+    });
   });
 
   // TASK-585: the queue's third tab. Rejecting no longer deletes, so there is now
@@ -124,8 +136,10 @@ describe('ReviewRepository — findForModeration search', () => {
   it('reaches the rejected pile, which is a population now that reject does not delete', async () => {
     await repo.findForModeration('rejected', 1, 20);
 
-    expect(issuedWhere()).toEqual({ textStatus: 'REJECTED' });
-    expect(reviewCount).toHaveBeenCalledWith({ where: { textStatus: 'REJECTED' } });
+    expect(issuedWhere()).toEqual({ textStatus: 'REJECTED', ...QUEUE_ARMS });
+    expect(reviewCount).toHaveBeenCalledWith({
+      where: { textStatus: 'REJECTED', ...QUEUE_ARMS },
+    });
   });
 
   it('ORs the term across review text, author email and product name', async () => {
@@ -133,6 +147,7 @@ describe('ReviewRepository — findForModeration search', () => {
 
     expect(issuedWhere()).toEqual({
       textStatus: 'APPROVED',
+      ...QUEUE_ARMS,
       OR: [
         { comment: { contains: 'чохол', mode: 'insensitive' } },
         { user: { email: { contains: 'чохол', mode: 'insensitive' } } },
@@ -522,6 +537,8 @@ describe('ReviewRepository — what a submission records (TASK-588)', () => {
         comment: 'Чудово',
         ratingVisible: true,
         createdIp: '203.0.113.42',
+        // Null unless the service says the author is already withdrawn (TASK-598).
+        hiddenAt: null,
         textStatus: 'PENDING',
       },
     });

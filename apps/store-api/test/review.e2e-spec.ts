@@ -57,6 +57,9 @@ describe('ReviewController (e2e)', () => {
     findExisting: jest.fn(),
     // TASK-588: the email gate, asked at submission and again on restore.
     isEmailVerified: jest.fn(),
+    // TASK-598: hiding an account has to stop it writing NEW ratings too, not
+    // merely withdraw the ones it already wrote.
+    isAuthorHidden: jest.fn().mockResolvedValue(false),
     // TASK-589: the one-click account-wide lever.
     hideAuthorReviews: jest.fn(),
     restoreAuthorReviews: jest.fn(),
@@ -218,6 +221,29 @@ describe('ReviewController (e2e)', () => {
       expect(response.body.data).not.toHaveProperty('isActive');
       expect(response.body.data).not.toHaveProperty('textStatus');
       expect(response.body.data).not.toHaveProperty('ratingVisible');
+    });
+
+    it('stores a comment of spaces as no comment at all', async () => {
+      // TASK-598. `'   '` is not null and not the empty string, so it cleared both
+      // arms of the public filter and rendered on the PDP as an author, a date and
+      // an empty speech bubble — the one thing that filter exists to prevent. It is
+      // also invisible in the moderation queue, where the operator sees a blank
+      // cell and has no reason not to approve it. Trimmed at the boundary, it
+      // becomes `''`, which every predicate downstream already excludes.
+      const token = generateAccessToken(customer.id, customer.role);
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview({ comment: '' }));
+
+      await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/reviews`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ rating: 5, comment: '   ' })
+        .expect(201);
+
+      expect(reviewRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ comment: '' }),
+      );
     });
 
     it('should return 400 for a rating out of range', async () => {
@@ -452,6 +478,48 @@ describe('ReviewController (e2e)', () => {
         .patch(url)
         .set('Authorization', `Bearer ${token}`)
         .send({ comment: 'x'.repeat(1001) })
+        .expect(400);
+
+      expect(reviewRepositoryMock.updateComment).not.toHaveBeenCalled();
+    });
+
+    it('leaves the row untouched for an empty body — no write at all', async () => {
+      const token = generateAccessToken(customer.id, customer.role);
+      reviewRepositoryMock.findOwnById.mockResolvedValue(
+        makeReview({ comment: 'Already said my piece', textStatus: 'APPROVED' }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(200);
+
+      expect(reviewRepositoryMock.updateComment).not.toHaveBeenCalled();
+      // And the published verdict survives: omitting the field is not an edit.
+      expect(response.body.data.textStatus).toBe('APPROVED');
+    });
+
+    // TASK-598 — three bodies that used to erase a text and re-queue the row.
+    // `@IsOptional()` waves `null` through, and the service short-circuits only on
+    // `undefined`, so `{"comment": null}` wiped the comment AND sent it back to
+    // PENDING: an entry in the moderation queue with nothing in it, which only a
+    // verdict on a review nobody wrote could clear. There is no erase in this
+    // contract, so all three are refused.
+    it.each([
+      ['an explicit null', null],
+      ['an empty string', ''],
+      ['a string of spaces', '   '],
+    ])('refuses %s instead of erasing the text and re-queueing the row', async (_label, value) => {
+      const token = generateAccessToken(customer.id, customer.role);
+      reviewRepositoryMock.findOwnById.mockResolvedValue(
+        makeReview({ comment: 'Already said my piece', textStatus: 'APPROVED' }),
+      );
+
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ comment: value })
         .expect(400);
 
       expect(reviewRepositoryMock.updateComment).not.toHaveBeenCalled();

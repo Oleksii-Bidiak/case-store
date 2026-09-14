@@ -33,7 +33,14 @@ describe('ThrottlerHealthModule wiring', () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         LoggerModule.forRoot(),
-        ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }),
+        // `load` rather than the environment: since TASK-598 the review buckets
+        // ask for JWT_SECRET, because the account tracker verifies the token
+        // itself instead of trusting a `req.user` that is not set yet.
+        ConfigModule.forRoot({
+          isGlobal: true,
+          ignoreEnvFile: true,
+          load: [() => ({ JWT_SECRET: 'throttler-health-module-spec-secret' })],
+        }),
         ThrottlerHealthModule,
         ThrottlerModule.forRootAsync({
           imports: [ConfigModule, ThrottlerHealthModule],

@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, Review, ReviewReply, ReviewTextStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
-import { AUTHOR_NOT_HIDDEN, COUNTS_TOWARD_RATING } from './review.constants';
+import {
+  AUTHOR_NOT_HIDDEN,
+  COUNTS_TOWARD_RATING,
+  HAS_TEXT_TO_MODERATE,
+  moderationQueueWhere,
+} from './review.constants';
 
 /**
  * Which pile of the moderation queue to show. Maps 1:1 onto {@link ReviewTextStatus}
@@ -51,6 +56,11 @@ export interface CreateReviewInput {
    * Never a placeholder: see the column's docblock in `schema.prisma`.
    */
   createdIp: string | null;
+  /**
+   * Set when the author was already withdrawn by a moderator (TASK-598), so the
+   * new row arrives withdrawn too. Null for everybody else.
+   */
+  hiddenAt?: Date | null;
 }
 
 /**
@@ -137,9 +147,31 @@ export class ReviewRepository {
         comment: data.comment ?? null,
         ratingVisible: data.ratingVisible,
         createdIp: data.createdIp,
+        hiddenAt: data.hiddenAt ?? null,
         textStatus: ReviewTextStatus.PENDING,
       },
     });
+  }
+
+  /**
+   * Has a moderator withdrawn this account's contribution (TASK-598)?
+   *
+   * `hideAuthorReviews` stamps the rows that exist at that moment and nothing
+   * consulted it again, so the lever did not hold: the account is not banned and
+   * not logged out, and every review it wrote AFTERWARDS arrived with
+   * `ratingVisible = true` and counted immediately. Hiding thirty ratings and
+   * watching thirty fresh ones appear is not a moderation action.
+   *
+   * Asked per submission rather than denormalised onto `User`: submission is not
+   * a hot path — it is capped at five an hour per account — and a second flag to
+   * keep in step is how `ratingVisible` and `hiddenAt` drifted apart in the first
+   * place.
+   */
+  async isAuthorHidden(userId: string): Promise<boolean> {
+    const hidden = await this.prisma.review.count({
+      where: { userId, hiddenAt: { not: null } },
+    });
+    return hidden > 0;
   }
 
   /**
@@ -184,10 +216,7 @@ export class ReviewRepository {
       productId,
       textStatus: ReviewTextStatus.APPROVED,
       ...AUTHOR_NOT_HIDDEN,
-      comment: { not: null },
-      // `not: null` alone lets an empty string through, and the submission DTO
-      // accepts one — `comment: ''` is a star-only review wearing a text's clothes.
-      NOT: { comment: '' },
+      ...HAS_TEXT_TO_MODERATE,
     };
     const [reviews, total] = await Promise.all([
       this.prisma.review.findMany({
@@ -238,6 +267,21 @@ export class ReviewRepository {
    * Three piles rather than the old two: since TASK-585 a rejection is a verdict
    * the row keeps, not a deletion, so `rejected` selects something that exists and
    * can be re-read — or reversed.
+   *
+   * ## Why the queue is about TEXTS and not about rows (TASK-598)
+   *
+   * `textStatus` is written `PENDING` on every submission, star-only ones
+   * included, and this filtered on nothing else — so fifty customers leaving fifty
+   * silent five-star ratings produced fifty queue entries with an empty comment
+   * and a sidebar badge reading 50. There is nothing to approve in them: the
+   * public list requires a non-empty comment, so approving publishes nothing and
+   * the only way to clear the badge was to "reject" a review nobody wrote. The
+   * owner's decision of 2026-09-10 says star-only records do not appear in the
+   * list; they have no business making moderation work either.
+   *
+   * {@link HAS_TEXT_TO_MODERATE} is the same non-empty test the public list uses,
+   * and `hiddenAt` goes with it: a withdrawn account's sentences are not waiting
+   * for a verdict, they are withdrawn.
    */
   async findForModeration(
     status: ReviewModerationFilter,
@@ -246,7 +290,7 @@ export class ReviewRepository {
     search?: string,
   ): Promise<PaginatedModerationResult> {
     const skip = (page - 1) * limit;
-    const where: Prisma.ReviewWhereInput = { textStatus: MODERATION_FILTER_STATUS[status] };
+    const where: Prisma.ReviewWhereInput = moderationQueueWhere(MODERATION_FILTER_STATUS[status]);
 
     // TASK-423: free-text search over the three things the queue actually
     // displays — the review text, who wrote it, and what it is about. The arms
