@@ -1248,6 +1248,24 @@ export class OrderRepository {
         });
       }
 
+      // TASK-431: the event asked for a move the payment state machine forbids.
+      // Nothing on the order moved — this row exists so the timeline shows that
+      // the provider said something at this moment and the shop did not act on
+      // it. `current → current` is the literal truth: the payment status is where
+      // it was. (What was asked for is in the warning log; see the field's
+      // docblock for why it is not written as a `to`.)
+      if (plan.refusedPaymentStatusChange) {
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: plan.orderId,
+            changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+            fromPaymentStatus: plan.refusedPaymentStatusChange.current,
+            toPaymentStatus: plan.refusedPaymentStatusChange.current,
+            changedBy: null,
+          },
+        });
+      }
+
       if (plan.statusChange) {
         await tx.orderStatusHistory.create({
           data: {

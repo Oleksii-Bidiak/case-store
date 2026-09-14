@@ -306,6 +306,22 @@ export interface PaymentApplyPlan {
    * (e.g. a late failure for a superseded attempt on an already-paid order).
    */
   paymentStatusChange?: { from: PaymentStatus; to: PaymentStatus };
+  /**
+   * An order payment-status move the state machine refused (TASK-431).
+   *
+   * Mutually exclusive with {@link paymentStatusChange}: exactly one of the two
+   * can be set, because either the move happened or it did not. When this is set
+   * the order's columns are left untouched and the repository writes ONE
+   * `OrderStatusHistory` row recording that the payment status stayed where it
+   * was (`current → current`) at the moment the event arrived.
+   *
+   * The row deliberately does not claim the rejected target as a `to`: a chain of
+   * history rows is read as a chain, and a row saying "PAID → FAILED" on an order
+   * that is still PAID would break it for every later reader. The rejected value
+   * lives in the structured log, next to the provider status that asked for it,
+   * which is where that question is actually diagnosed.
+   */
+  refusedPaymentStatusChange?: { current: PaymentStatus; rejected: PaymentStatus };
   /** Set when money settled; null leaves the column untouched. */
   paidAt?: Date | null;
   /**

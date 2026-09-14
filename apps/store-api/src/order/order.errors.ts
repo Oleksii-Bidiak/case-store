@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import type { OrderStatus } from '@prisma/client';
+import type { OrderStatus, PaymentStatus } from '@prisma/client';
 
 /**
  * Stable, machine-readable error codes for order-lifecycle conflicts (TASK-332).
@@ -19,6 +19,22 @@ export const OrderErrorCode = {
   TRANSITION_INVALID: 'ORDER_TRANSITION_INVALID',
   /** The order changed after the client read it — a lost update (edge case E-11). */
   STALE: 'ORDER_STALE',
+  /**
+   * The requested PAYMENT status is not reachable from the order's current one
+   * (TASK-431). A separate code from {@link TRANSITION_INVALID} because the two
+   * are repaired by different actions and by different pickers: this one means
+   * "the money cannot have moved that way", and the payment select — not the
+   * status select — is the control that must refetch its options.
+   */
+  PAYMENT_TRANSITION_INVALID: 'ORDER_PAYMENT_TRANSITION_INVALID',
+  /**
+   * A FULL refund was requested while the order is still live (TASK-431, B-1 §1).
+   * Distinct from {@link PAYMENT_TRANSITION_INVALID} because nothing is wrong
+   * with the payment move itself — the operator simply has one more thing to do
+   * first (cancel the order), and a message that says so is the difference
+   * between "try something else" and "do this, then this".
+   */
+  REFUND_REQUIRES_CLOSED_ORDER: 'ORDER_REFUND_REQUIRES_CLOSED_ORDER',
 } as const;
 
 export type OrderErrorCode = (typeof OrderErrorCode)[keyof typeof OrderErrorCode];
@@ -33,6 +49,42 @@ export function invalidTransitionError(from: OrderStatus, to: OrderStatus): Conf
   return new ConflictException({
     error: OrderErrorCode.TRANSITION_INVALID,
     message: `Order status cannot move from ${from} to ${to}`,
+  });
+}
+
+/**
+ * 409 for a payment move the payment state machine forbids (TASK-431).
+ *
+ * Raised on the ADMIN door only. The webhook and the reconcile worker ask the
+ * same table and get the same answer, but they must never see this exception: a
+ * 409 handed to a payment provider is not a refusal, it is a retry every few
+ * minutes forever. They ignore the move and record that they did — see
+ * `planPaymentApplication`.
+ */
+export function invalidPaymentTransitionError(
+  from: PaymentStatus,
+  to: PaymentStatus,
+): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.PAYMENT_TRANSITION_INVALID,
+    message: `Order payment status cannot move from ${from} to ${to}`,
+  });
+}
+
+/**
+ * 409 for a full refund on an order that is still live (TASK-431).
+ *
+ * The cross-rule the payment table cannot express: marking every hryvnia
+ * returned while the order still says DELIVERED describes a shop that gave back
+ * the money AND the goods. A PARTIAL refund is deliberately NOT caught here —
+ * refunding one line of a delivered order is an ordinary Tuesday.
+ */
+export function refundRequiresClosedOrderError(status: OrderStatus): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.REFUND_REQUIRES_CLOSED_ORDER,
+    message:
+      `A full refund needs the order cancelled or refunded first; it is ${status}. ` +
+      'Use PARTIALLY_REFUNDED to record a partial return of money.',
   });
 }
 

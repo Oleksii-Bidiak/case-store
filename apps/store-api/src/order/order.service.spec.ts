@@ -30,6 +30,7 @@ import type {
   PaymentWithOrderRow,
 } from './order.types';
 import type { CreateOrderDto } from './dto';
+import { OrderErrorCode } from './order.errors';
 import { PaymentOutcome, type PaymentEventInput } from '../payment/payment.types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1270,12 +1271,12 @@ describe('OrderService', () => {
       expect(result.paymentStatus).toBe(PaymentStatus.PAID);
     });
 
-    it('sets REFUNDED on a DELIVERED order without changing the order status', async () => {
+    it('sets REFUNDED on a CANCELLED order without changing the order status', async () => {
       orderRepositoryMock.findById.mockResolvedValue(
-        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
+        makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID }),
       );
       orderRepositoryMock.updatePaymentStatus.mockResolvedValue(
-        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.REFUNDED }),
+        makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.REFUNDED }),
       );
 
       const result = await service.adminUpdatePaymentStatus(
@@ -1289,7 +1290,7 @@ describe('OrderService', () => {
         PaymentStatus.REFUNDED,
         ADMIN_ID,
       );
-      expect(result.status).toBe(OrderStatus.DELIVERED);
+      expect(result.status).toBe(OrderStatus.CANCELLED);
       expect(result.paymentStatus).toBe(PaymentStatus.REFUNDED);
     });
 
@@ -1300,6 +1301,127 @@ describe('OrderService', () => {
         service.adminUpdatePaymentStatus('missing', PaymentStatus.PAID, ADMIN_ID),
       ).rejects.toThrow(NotFoundException);
       expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    // ─── The payment state machine on the ADMIN door (TASK-431) ───────────────
+    // This door has an operator in front of it, so an illegal move is a 409 they
+    // can read. (The webhook door must NOT behave this way — see
+    // `applyPaymentEvent` below.)
+
+    it('refuses an illegal payment transition with a coded 409 and writes nothing', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.REFUNDED }),
+      );
+
+      await expect(
+        service.adminUpdatePaymentStatus('order-uuid-1', PaymentStatus.PAID, ADMIN_ID),
+      ).rejects.toMatchObject({
+        status: 409,
+        response: { error: OrderErrorCode.PAYMENT_TRANSITION_INVALID },
+      });
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('refuses a full REFUNDED while the order is still DELIVERED, with its own code', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      await expect(
+        service.adminUpdatePaymentStatus('order-uuid-1', PaymentStatus.REFUNDED, ADMIN_ID),
+      ).rejects.toMatchObject({
+        status: 409,
+        response: { error: OrderErrorCode.REFUND_REQUIRES_CLOSED_ORDER },
+      });
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('allows PARTIALLY_REFUNDED on a DELIVERED order (the cross-rule binds only full refunds)', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
+      );
+      orderRepositoryMock.updatePaymentStatus.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+        }),
+      );
+
+      const result = await service.adminUpdatePaymentStatus(
+        'order-uuid-1',
+        PaymentStatus.PARTIALLY_REFUNDED,
+        ADMIN_ID,
+      );
+
+      expect(result.paymentStatus).toBe(PaymentStatus.PARTIALLY_REFUNDED);
+    });
+
+    it('refuses re-asserting the current payment status (no duplicate history row)', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      await expect(
+        service.adminUpdatePaymentStatus('order-uuid-1', PaymentStatus.PAID, ADMIN_ID),
+      ).rejects.toMatchObject({
+        response: { error: OrderErrorCode.PAYMENT_TRANSITION_INVALID },
+      });
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── getAllowedPaymentTransitions (TASK-431) ─────────────────────────────────
+
+  describe('getAllowedPaymentTransitions', () => {
+    it('returns the legal targets and the lock token for a PENDING payment', async () => {
+      const updatedAt = new Date('2026-09-14T10:00:00.000Z');
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING, updatedAt }),
+      );
+
+      await expect(service.getAllowedPaymentTransitions('order-uuid-1')).resolves.toEqual({
+        current: PaymentStatus.PENDING,
+        allowed: [PaymentStatus.PAID, PaymentStatus.FAILED],
+        updatedAt,
+      });
+    });
+
+    it('hides REFUNDED while the order is live, and keeps PARTIALLY_REFUNDED', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      const result = await service.getAllowedPaymentTransitions('order-uuid-1');
+
+      expect(result.allowed).toEqual([PaymentStatus.PARTIALLY_REFUNDED]);
+    });
+
+    it('offers REFUNDED once the order itself is CANCELLED', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      const result = await service.getAllowedPaymentTransitions('order-uuid-1');
+
+      expect(result.allowed).toEqual([PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.REFUNDED]);
+    });
+
+    it('offers nothing from REFUNDED', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.REFUNDED, paymentStatus: PaymentStatus.REFUNDED }),
+      );
+
+      const result = await service.getAllowedPaymentTransitions('order-uuid-1');
+
+      expect(result.allowed).toEqual([]);
+    });
+
+    it('throws NotFoundException when the order does not exist', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.getAllowedPaymentTransitions('missing')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -2516,6 +2638,119 @@ describe('OrderService', () => {
       await expect(
         service.applyPaymentEvent(makeEvent({ outcome: PaymentOutcome.IGNORED, amount: '0.01' })),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    // ── The payment state machine on the WEBHOOK door (TASK-431) ──────────────
+    // The whole point of the second door: this one may not raise. LiqPay and the
+    // reconcile worker retry anything that is not a 2xx, so a 409 here is not a
+    // refusal — it is the same event every few minutes until a human notices.
+
+    describe('an illegal payment move from a provider event', () => {
+      it('never throws; it records the attempt and leaves the order alone', async () => {
+        seed(makePayment({ paymentStatus: PaymentStatus.REFUNDED }));
+
+        const result = await service.applyPaymentEvent(makeEvent());
+
+        expect(result).toEqual({ applied: true, orderId: 'order-uuid-1' });
+        const plan = lastPlan();
+        // The attempt did succeed at the provider — that fact is still written.
+        expect(plan.attemptStatus).toBe(PaymentAttemptStatus.SUCCEEDED);
+        // Nothing about the ORDER moves: not the payment status, not `paidAt`,
+        // not the reservation, not the order status.
+        expect(plan.paymentStatusChange).toBeUndefined();
+        expect(plan.paidAt).toBeUndefined();
+        expect(plan.clearReservation).toBeUndefined();
+        expect(plan.statusChange).toBeUndefined();
+      });
+
+      it('records the refusal as an OrderStatusHistory row that claims no movement', async () => {
+        seed(makePayment({ paymentStatus: PaymentStatus.PARTIALLY_REFUNDED }));
+
+        await service.applyPaymentEvent(makeEvent());
+
+        expect(lastPlan().refusedPaymentStatusChange).toEqual({
+          current: PaymentStatus.PARTIALLY_REFUNDED,
+          rejected: PaymentStatus.PAID,
+        });
+      });
+
+      it('refuses a refund callback for money we never recorded as received', async () => {
+        seed(makePayment({ paymentStatus: PaymentStatus.PENDING }));
+
+        await service.applyPaymentEvent(
+          makeEvent({ outcome: PaymentOutcome.REFUNDED, providerStatus: 'reversed' }),
+        );
+
+        const plan = lastPlan();
+        expect(plan.paymentStatusChange).toBeUndefined();
+        expect(plan.statusChange).toBeUndefined();
+        expect(plan.refusedPaymentStatusChange).toEqual({
+          current: PaymentStatus.PENDING,
+          rejected: PaymentStatus.REFUNDED,
+        });
+      });
+
+      it('accepts PARTIALLY_REFUNDED → REFUNDED as the second half of one refund', async () => {
+        seed(
+          makePayment({
+            status: OrderStatus.DELIVERED,
+            paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+          }),
+        );
+
+        await service.applyPaymentEvent(
+          makeEvent({ outcome: PaymentOutcome.REFUNDED, providerStatus: 'reversed' }),
+        );
+
+        const plan = lastPlan();
+        expect(plan.paymentStatusChange).toEqual({
+          from: PaymentStatus.PARTIALLY_REFUNDED,
+          to: PaymentStatus.REFUNDED,
+        });
+        expect(plan.refusedPaymentStatusChange).toBeUndefined();
+      });
+    });
+
+    describe('idempotency of a repeated callback (TASK-431 acceptance)', () => {
+      it('treats a second PAID callback as a no-op — not an error, not a second row', async () => {
+        seed(makePayment({ paymentStatus: PaymentStatus.PAID }));
+
+        const result = await service.applyPaymentEvent(makeEvent());
+
+        expect(result).toEqual({ applied: false, orderId: 'order-uuid-1' });
+        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+      });
+
+      it('writes no second FAILED history row when the order is already FAILED', async () => {
+        seed(
+          makePayment(
+            { paymentStatus: PaymentStatus.FAILED },
+            { status: PaymentAttemptStatus.FAILED },
+          ),
+        );
+
+        const result = await service.applyPaymentEvent(
+          makeEvent({ outcome: PaymentOutcome.FAILED, providerStatus: 'failure' }),
+        );
+
+        expect(result.applied).toBe(false);
+        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+      });
+
+      it('still records a fresh FAILED attempt on an already-FAILED order, without a status row', async () => {
+        // The attempt row is new (a second card was tried and also declined), so
+        // it is written — but FAILED → FAILED is not a move, so no history row.
+        seed(makePayment({ paymentStatus: PaymentStatus.FAILED }));
+
+        await service.applyPaymentEvent(
+          makeEvent({ outcome: PaymentOutcome.FAILED, providerStatus: 'failure' }),
+        );
+
+        const plan = lastPlan();
+        expect(plan.attemptStatus).toBe(PaymentAttemptStatus.FAILED);
+        expect(plan.paymentStatusChange).toBeUndefined();
+        expect(plan.refusedPaymentStatusChange).toBeUndefined();
+      });
     });
   });
 

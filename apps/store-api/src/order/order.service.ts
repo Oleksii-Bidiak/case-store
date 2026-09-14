@@ -17,8 +17,18 @@ import { DeliveryService, isDeliveryNotConfigured } from '../delivery';
 import { DiscountService } from '../discount';
 import { OrderEntity, OrderStatusHistoryEntity } from './entities';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
-import { allowedTransitions, canTransition } from './order-state-machine';
-import { invalidTransitionError, staleOrderError } from './order.errors';
+import {
+  allowedPaymentTransitions,
+  allowedTransitions,
+  canTransition,
+  canTransitionPayment,
+} from './order-state-machine';
+import {
+  invalidPaymentTransitionError,
+  invalidTransitionError,
+  refundRequiresClosedOrderError,
+  staleOrderError,
+} from './order.errors';
 import { AddonApplicabilityResolver, toTwoDecimals } from '../addon-service';
 // Shared with the newsletter export: one formula-injection guard, so a fix
 // cannot land in one export and miss the other (see the helper's docblock).
@@ -1123,6 +1133,58 @@ export class OrderService {
   }
 
   /**
+   * Admin — which PAYMENT statuses this order may move to right now (TASK-431).
+   *
+   * Mirrors {@link getAllowedTransitions} down to the `updatedAt` token, and for
+   * the same reason: the payment picker used to offer "every value except the
+   * current one", so an operator could pick REFUNDED on a delivered order and
+   * only then learn it was never possible.
+   *
+   * The cross-rule is applied HERE too, not only on the write. A target the PATCH
+   * would refuse has no business being in the list the picker renders — offering
+   * it and then rejecting it is precisely the behaviour this endpoint exists to
+   * end.
+   *
+   * @throws NotFoundException when the order does not exist or is soft-deleted.
+   */
+  async getAllowedPaymentTransitions(
+    orderId: string,
+  ): Promise<{ current: PaymentStatus; allowed: PaymentStatus[]; updatedAt: Date }> {
+    const existing = await this.orderRepository.findById(orderId);
+
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return {
+      current: existing.paymentStatus,
+      allowed: allowedPaymentTransitions(existing.paymentStatus).filter((to) =>
+        this.isPaymentTargetReachable(existing.status, to),
+      ),
+      updatedAt: existing.updatedAt,
+    };
+  }
+
+  /**
+   * The cross-rule the payment table cannot hold, because it reads two columns
+   * at once (TASK-431, owner decision B-1 §1).
+   *
+   * A FULL refund is allowed only while the order itself is CANCELLED or
+   * REFUNDED. Anything else would assert that the shop returned all of the money
+   * for an order it still considers live — the customer has the goods AND the
+   * cash. The operator's path is the honest one: cancel (or refund) the order,
+   * then record the money.
+   *
+   * PARTIALLY_REFUNDED is deliberately NOT constrained: refunding one line out of
+   * three on a DELIVERED order is an ordinary day, and it is exactly the case
+   * that used to force the operator to choose between two lies.
+   */
+  private isPaymentTargetReachable(orderStatus: OrderStatus, to: PaymentStatus): boolean {
+    if (to !== PaymentStatus.REFUNDED) return true;
+    return orderStatus === OrderStatus.CANCELLED || orderStatus === OrderStatus.REFUNDED;
+  }
+
+  /**
    * Refuse the write when the caller was looking at an older version of the order
    * (edge case E-11: two admins with the same order open).
    *
@@ -1144,11 +1206,20 @@ export class OrderService {
 
   /**
    * Admin — set an order's payment status directly, independently of its order
-   * status (TASK-151). This is the manual stand-in for the Stripe payment
-   * webhook (TASK-034) and the supported way to mark an order paid/unpaid/
-   * refunded. Authorization (ADMIN role) is enforced at the controller.
+   * status (TASK-151). This is the manual stand-in for the payment webhook and
+   * the supported way to mark an order paid/unpaid/refunded. Authorization
+   * (ADMIN role) is enforced at the controller.
+   *
+   * ── The FIRST of the two doors onto `paymentStatus` (TASK-431) ──────────────
+   * This one is human, synchronous and has a screen in front of it, so an illegal
+   * move is answered with a 409 the operator can read and act on. The other door
+   * — {@link planPaymentApplication}, serving the LiqPay webhook and the
+   * reconcile worker — must NOT raise: a 409 to a payment provider is an
+   * infinite retry, not a refusal. Same table, two reactions, on purpose.
    *
    * @throws NotFoundException when the order does not exist.
+   * @throws ConflictException when the payment state machine forbids the move, or
+   *   when a full refund is asked for on an order that is still live.
    */
   async adminUpdatePaymentStatus(
     orderId: string,
@@ -1159,6 +1230,37 @@ export class OrderService {
 
     if (!existing) {
       throw new NotFoundException('Order not found');
+    }
+
+    if (!canTransitionPayment(existing.paymentStatus, paymentStatus)) {
+      this.logger.warn(
+        {
+          event: 'order.payment_status_transition_refused',
+          orderId,
+          from: existing.paymentStatus,
+          to: paymentStatus,
+          changedBy,
+        },
+        'Refused an illegal payment-status transition',
+      );
+      throw invalidPaymentTransitionError(existing.paymentStatus, paymentStatus);
+    }
+
+    // The cross-rule, checked AFTER the table so the operator gets the more
+    // specific of the two messages: "cancel the order first" tells them what to
+    // do, "that move is impossible" only tells them what not to.
+    if (!this.isPaymentTargetReachable(existing.status, paymentStatus)) {
+      this.logger.warn(
+        {
+          event: 'order.payment_refund_refused_open_order',
+          orderId,
+          status: existing.status,
+          from: existing.paymentStatus,
+          changedBy,
+        },
+        'Refused a full refund on an order that is neither cancelled nor refunded',
+      );
+      throw refundRequiresClosedOrderError(existing.status);
     }
 
     const order = await this.orderRepository.updatePaymentStatus(orderId, paymentStatus, changedBy);
@@ -1253,6 +1355,25 @@ export class OrderService {
       return { applied: false, orderId: order.id };
     }
 
+    if (plan.refusedPaymentStatusChange) {
+      // WARN, not ERROR: nothing is broken and nothing needs retrying — the event
+      // simply disagrees with what we hold, and we kept what we hold. It is a
+      // warning rather than info because a provider contradicting our records is
+      // how a lost callback or a double refund first becomes visible.
+      this.logger.warn(
+        {
+          event: 'order.payment_event_transition_refused',
+          orderId: order.id,
+          paymentId: payment.id,
+          outcome: event.outcome,
+          providerStatus: event.providerStatus,
+          current: plan.refusedPaymentStatusChange.current,
+          rejected: plan.refusedPaymentStatusChange.rejected,
+        },
+        'Payment event asked for an illegal payment-status move; recorded and ignored',
+      );
+    }
+
     await this.orderRepository.applyPaymentOutcome(plan);
 
     this.logger.info(
@@ -1325,6 +1446,23 @@ export class OrderService {
    * - **IGNORED** — "still processing" — changes nothing. There is no PENDING
    *   outcome for exactly this reason: treating "not finished yet" as an event to
    *   act on is how an order flips to paid before the money exists.
+   *
+   * ── The SECOND door onto `paymentStatus`, and why it never throws (TASK-431) ─
+   * Since TASK-431 the payment status has a state machine of its own, and this
+   * method asks it exactly like {@link adminUpdatePaymentStatus} does. What it
+   * must NOT do is react the same way. The callers here are a LiqPay webhook and
+   * the reconcile worker; both retry on anything that is not a 2xx, so a 409
+   * would not refuse the event, it would schedule it again every few minutes
+   * until someone noticed. So an illegal move is IGNORED: the order's columns are
+   * left exactly as they are, the attempt row is still written (the provider's
+   * statement about the ATTEMPT is a fact regardless), a warning goes to the log
+   * and `refusedPaymentStatusChange` puts a row in `OrderStatusHistory` so the
+   * operator can see that something was said and not acted on.
+   *
+   * Idempotency is untouched by any of this: a repeat SUCCEEDED on an order that
+   * is already PAID still returns `null` at the top of its branch, before the
+   * machine is ever consulted — so it is neither an error nor a duplicate history
+   * row, exactly as before.
    */
   private planPaymentApplication(
     payment: PaymentWithOrderRow,
@@ -1341,6 +1479,24 @@ export class OrderService {
     switch (event.outcome) {
       case PaymentOutcome.SUCCEEDED: {
         if (order.paymentStatus === PaymentStatus.PAID) return null;
+        // Refused sources here are PARTIALLY_REFUNDED and REFUNDED: the provider
+        // is reporting a success on money we have already sent back. Record the
+        // attempt and the contradiction; touch nothing on the order — not the
+        // payment status, not `paidAt`, and certainly not the reservation, whose
+        // deadline is meaningless on an order that reached a refund.
+        if (!canTransitionPayment(order.paymentStatus, PaymentStatus.PAID)) {
+          return {
+            ...base,
+            attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+            settledAt: now,
+            failureCode: null,
+            failureMessage: null,
+            refusedPaymentStatusChange: {
+              current: order.paymentStatus,
+              rejected: PaymentStatus.PAID,
+            },
+          };
+        }
         return {
           ...base,
           attemptStatus: PaymentAttemptStatus.SUCCEEDED,
@@ -1360,25 +1516,45 @@ export class OrderService {
         // An attempt that failed is worth recording even on a paid order (the
         // customer's second card may have been declined before the third worked),
         // but it must not touch the order's payment status.
-        const alreadySettled =
-          order.paymentStatus === PaymentStatus.PAID ||
-          order.paymentStatus === PaymentStatus.REFUNDED;
-        if (payment.status === PaymentAttemptStatus.FAILED && alreadySettled) return null;
+        //
+        // TASK-431: "must not touch it" is now the state machine's answer rather
+        // than a hand-written list of settled statuses — which also closes the
+        // case the list missed, a repeat FAILED on an order already marked FAILED
+        // appending a second identical history row. A blocked move is NOT
+        // recorded as a refusal here: for this outcome a non-move is the designed
+        // behaviour (a superseded attempt), not a contradiction worth flagging.
+        const canFail = canTransitionPayment(order.paymentStatus, PaymentStatus.FAILED);
+        if (payment.status === PaymentAttemptStatus.FAILED && !canFail) return null;
         return {
           ...base,
           attemptStatus: PaymentAttemptStatus.FAILED,
           ...(event.failureCode !== undefined ? { failureCode: event.failureCode } : {}),
           ...(event.failureMessage !== undefined ? { failureMessage: event.failureMessage } : {}),
-          ...(alreadySettled
-            ? {}
-            : {
+          ...(canFail
+            ? {
                 paymentStatusChange: { from: order.paymentStatus, to: PaymentStatus.FAILED },
-              }),
+              }
+            : {}),
         };
       }
 
       case PaymentOutcome.REFUNDED: {
         if (order.paymentStatus === PaymentStatus.REFUNDED) return null;
+        // Refused sources here are PENDING and FAILED: money we never recorded as
+        // received is coming back. That is a genuine contradiction — most likely
+        // a success callback we lost — so it is logged and left in the order's
+        // history for a human, rather than written as a refund of nothing.
+        if (!canTransitionPayment(order.paymentStatus, PaymentStatus.REFUNDED)) {
+          return {
+            ...base,
+            attemptStatus: PaymentAttemptStatus.REFUNDED,
+            settledAt: now,
+            refusedPaymentStatusChange: {
+              current: order.paymentStatus,
+              rejected: PaymentStatus.REFUNDED,
+            },
+          };
+        }
         return {
           ...base,
           attemptStatus: PaymentAttemptStatus.REFUNDED,

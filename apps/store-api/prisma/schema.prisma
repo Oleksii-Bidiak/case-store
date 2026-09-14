@@ -74,6 +74,13 @@ enum PaymentStatus {
   PENDING
   PAID
   FAILED
+  /// Part of the money went back, the rest did not (TASK-431, B-1 decision 5).
+  /// Added because the operator who refunded one line out of three had to lie
+  /// otherwise: keep PAID (while part of it is no longer ours) or set REFUNDED
+  /// (and be forced to kill a live order). Added WITHOUT a backfill — no existing
+  /// row is reinterpreted; the amount behind the label stays derived (Σ of
+  /// `Return.refundedAmount`), never a second column that drifts from the returns.
+  PARTIALLY_REFUNDED
   REFUNDED
 }
 
@@ -590,6 +597,13 @@ model Order {
   /// cookie is gone or they switch device (edge case E-17). Unique so a lookup by
   /// token is a single indexed hit rather than a scan.
   accessTokenHash      String?       @unique @map("access_token_hash")
+  /// When `accessTokenHash` was last issued (TASK-484, B-5 decision 4). The guest
+  /// link's TTL is counted from HERE, not from `createdAt`: an operator who
+  /// re-issues the link a month after the order was taken would otherwise hand the
+  /// customer a URL that is already dead at birth. Null on orders created before
+  /// this column existed and on orders that never had a token — both are read as
+  /// "fall back to `createdAt`", which is exactly what the TTL used to mean.
+  accessTokenIssuedAt  DateTime?     @map("access_token_issued_at")
   status               OrderStatus   @default(PENDING)
   paymentStatus        PaymentStatus @default(PENDING) @map("payment_status")
   /// Defaults to ON_DELIVERY because that is what every pre-TASK-330 order
