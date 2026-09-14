@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { Prisma, Review, ReviewTextStatus } from '@prisma/client';
+import { Prisma, Review, ReviewReply, ReviewTextStatus } from '@prisma/client';
 import { ReviewRepository, ReviewsNotFoundError } from './review.repository';
 import { ReviewService } from './review.service';
 import { ReviewModerationStatus } from './dto';
@@ -29,6 +29,17 @@ const makeReview = (overrides: Partial<Review> = {}): Review => ({
   ...overrides,
 });
 
+/** A shop reply row as Prisma returns it — author id included, as the table has it. */
+const makeReply = (overrides: Partial<ReviewReply> = {}): ReviewReply => ({
+  id: 'reply-uuid-1',
+  reviewId: 'review-uuid-1',
+  authorUserId: 'staff-uuid-1',
+  body: 'Дякуємо! Передали ваш відгук виробнику.',
+  createdAt: now,
+  updatedAt: now,
+  ...overrides,
+});
+
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
 const reviewRepositoryMock = {
@@ -40,6 +51,7 @@ const reviewRepositoryMock = {
   findOwnByProduct: jest.fn(),
   findOwnById: jest.fn(),
   updateComment: jest.fn(),
+  upsertReply: jest.fn(),
   approve: jest.fn(),
   rejectText: jest.fn(),
   moderateMany: jest.fn(),
@@ -577,6 +589,113 @@ describe('ReviewService', () => {
       expect(reviewRepositoryMock.updateComment).not.toHaveBeenCalled();
       expect(result.comment).toBe('Published months ago');
       expect(result.textStatus).toBe(ReviewTextStatus.APPROVED);
+    });
+  });
+
+  // ─── replyToReview (TASK-587) ───────────────────────────────────────────────
+  //
+  // Owner's decision, 2026-09-14: only the SHOP replies, anyone holding
+  // `reviews:write` may write on its behalf, there is no author thread, and the
+  // customer byline stays «Покупець».
+
+  describe('replyToReview', () => {
+    it('throws NotFoundException when the review does not exist', async () => {
+      reviewRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(
+        service.replyToReview('missing', 'staff-uuid-1', { body: 'Дякуємо!' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(reviewRepositoryMock.upsertReply).not.toHaveBeenCalled();
+    });
+
+    it('records WHO at the shop wrote it', async () => {
+      // Accountability, not attribution: the customer is answered by the shop, but
+      // somebody has to be answerable internally for what the shop said.
+      reviewRepositoryMock.findById.mockResolvedValue(makeReview());
+      reviewRepositoryMock.upsertReply.mockResolvedValue(makeReply());
+
+      await service.replyToReview('review-uuid-1', 'staff-uuid-1', { body: 'Дякуємо!' });
+
+      expect(reviewRepositoryMock.upsertReply).toHaveBeenCalledWith(
+        'review-uuid-1',
+        'staff-uuid-1',
+        'Дякуємо!',
+      );
+    });
+
+    it('returns the text and the date, and nothing that names a person', async () => {
+      // The storefront renders the SHOP. Leaking `authorUserId` here is how a
+      // later "improvement" ends up putting an employee's name under a review.
+      reviewRepositoryMock.findById.mockResolvedValue(makeReview());
+      reviewRepositoryMock.upsertReply.mockResolvedValue(makeReply());
+
+      const result = await service.replyToReview('review-uuid-1', 'staff-uuid-1', {
+        body: 'Дякуємо!',
+      });
+
+      expect(result.body).toBe('Дякуємо! Передали ваш відгук виробнику.');
+      expect(result.createdAt).toEqual(now);
+      expect(result).not.toHaveProperty('authorUserId');
+      expect(result).not.toHaveProperty('authorUser');
+    });
+  });
+
+  // ─── the reply on the read paths (TASK-587) ─────────────────────────────────
+
+  describe('the shop reply as customers and moderators see it', () => {
+    it('hangs the reply under the review on the public list', async () => {
+      reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
+        reviews: [{ ...makeReview({ textStatus: ReviewTextStatus.APPROVED }), reply: makeReply() }],
+        total: 1,
+      });
+      reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 5, ratingCount: 1 });
+      reviewRepositoryMock.findVerifiedPurchaserIds.mockResolvedValue(new Set<string>());
+
+      const result = await service.getApprovedReviews(PRODUCT_ID, {});
+
+      expect(result.data[0].reply).toEqual({
+        body: 'Дякуємо! Передали ваш відгук виробнику.',
+        createdAt: now,
+      });
+    });
+
+    it('says null rather than omitting the field when nobody has answered', async () => {
+      // An absent key and an explicit null read the same in JSON but not in
+      // TypeScript, and the storefront branches on this to decide whether to
+      // render the reply block at all.
+      reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
+        reviews: [{ ...makeReview({ textStatus: ReviewTextStatus.APPROVED }), reply: null }],
+        total: 1,
+      });
+      reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 5, ratingCount: 1 });
+      reviewRepositoryMock.findVerifiedPurchaserIds.mockResolvedValue(new Set<string>());
+
+      const result = await service.getApprovedReviews(PRODUCT_ID, {});
+
+      expect(result.data[0].reply).toBeNull();
+    });
+
+    it('shows the moderation queue what was already answered', async () => {
+      // Without it the panel offers "reply" on rows that already carry one, and an
+      // operator working a backlog silently overwrites a colleague's answer.
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview(),
+            user: { email: 'olena@example.com' },
+            product: { name: 'Чохол', sku: 'CASE-1' },
+            reply: makeReply(),
+          },
+        ],
+        total: 1,
+      });
+
+      const result = await service.getReviewsForModeration({});
+
+      expect(result.data[0].reply).toEqual({
+        body: 'Дякуємо! Передали ваш відгук виробнику.',
+        createdAt: now,
+      });
     });
   });
 });

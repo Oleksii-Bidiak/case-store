@@ -48,6 +48,7 @@ describe('ReviewController (e2e)', () => {
     findOwnByProduct: jest.fn(),
     findOwnById: jest.fn(),
     updateComment: jest.fn(),
+    upsertReply: jest.fn(),
     approve: jest.fn(),
     rejectText: jest.fn(),
     moderateMany: jest.fn(),
@@ -91,8 +92,16 @@ describe('ReviewController (e2e)', () => {
 
   const customer = { id: 'customer-e2e-1', role: 'CUSTOMER' as const };
   const admin = { id: 'admin-e2e-1', role: 'ADMIN' as const };
+  const manager = { id: 'manager-e2e-1', role: 'MANAGER' as const };
   const PRODUCT_ID = 'product-e2e-1';
   const now = new Date('2026-06-30T00:00:00.000Z');
+
+  // The matrix for this suite: a manager who may MODERATE review texts and — for
+  // now — nothing else. `reviews:write` is a separate tick (TASK-587), and the
+  // reply route below must prove it is really separate.
+  const permissionRepositoryMock = createPermissionRepositoryMock({
+    grants: { MANAGER: ['reviews:moderate'] },
+  });
 
   const makeReview = (overrides: Record<string, unknown> = {}) => ({
     id: 'review-e2e-1',
@@ -104,6 +113,16 @@ describe('ReviewController (e2e)', () => {
     textStatus: 'PENDING',
     hiddenAt: null,
     createdIp: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  });
+
+  const makeReply = (overrides: Record<string, unknown> = {}) => ({
+    id: 'reply-e2e-1',
+    reviewId: 'review-e2e-1',
+    authorUserId: admin.id,
+    body: 'Дякуємо за відгук!',
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -127,7 +146,7 @@ describe('ReviewController (e2e)', () => {
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
       .overrideProvider(PermissionRepository)
-      .useValue(createPermissionRepositoryMock())
+      .useValue(permissionRepositoryMock)
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(UserRepository)
@@ -281,6 +300,31 @@ describe('ReviewController (e2e)', () => {
 
       expect(response.body.aggregate.ratingCount).toBe(9);
       expect(response.body.meta.total).toBe(1);
+    });
+
+    // TASK-587: the shop's answer rides with the review it answers, and carries
+    // no identity. The storefront renders «Магазин», never a person — that is the
+    // owner's decision of 2026-09-14, and the wire format is what enforces it.
+    it('carries the shop reply — its text and date, and nobody’s name', async () => {
+      reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview({ textStatus: 'APPROVED', ratingVisible: true }),
+            reply: makeReply(),
+          },
+        ],
+        total: 1,
+      });
+      reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 5, ratingCount: 1 });
+      reviewRepositoryMock.findVerifiedPurchaserIds.mockResolvedValue(new Set<string>());
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/products/${PRODUCT_ID}/reviews`)
+        .expect(200);
+
+      expect(response.body.data[0].reply.body).toBe('Дякуємо за відгук!');
+      expect(response.body.data[0].reply).not.toHaveProperty('authorUserId');
+      expect(JSON.stringify(response.body)).not.toContain(admin.id);
     });
   });
 
@@ -615,6 +659,138 @@ describe('ReviewController (e2e)', () => {
         .delete('/api/admin/reviews/review-e2e-1')
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
+    });
+  });
+
+  // ─── POST /api/admin/reviews/:id/reply (TASK-587) ────────────────────────────
+  //
+  // Owner's decision, 2026-09-14: only the SHOP answers, anyone holding
+  // `reviews:write` writes on its behalf, there is no author thread, and the
+  // customer byline stays «Покупець».
+  //
+  // Declared LAST in the suite on purpose: the permission tests below rewrite the
+  // MANAGER row through the real `PUT /api/admin/permissions`, and the mock is
+  // stateful, so nothing may run after them expecting the original matrix.
+
+  describe('POST /api/admin/reviews/:id/reply', () => {
+    const url = '/api/admin/reviews/review-e2e-1/reply';
+
+    it('returns 401 without a JWT', async () => {
+      await request(app.getHttpServer()).post(url).send({ body: 'Дякуємо!' }).expect(401);
+    });
+
+    it('returns 403 for a customer', async () => {
+      const token = generateAccessToken(customer.id, customer.role);
+      await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ body: 'Дякуємо!' })
+        .expect(403);
+
+      expect(reviewRepositoryMock.upsertReply).not.toHaveBeenCalled();
+    });
+
+    it('saves the reply and records the acting admin as its author', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      reviewRepositoryMock.findById.mockResolvedValue(makeReview());
+      reviewRepositoryMock.upsertReply.mockResolvedValue(makeReply());
+
+      const response = await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ body: 'Дякуємо за відгук!' })
+        .expect(200);
+
+      expect(reviewRepositoryMock.upsertReply).toHaveBeenCalledWith(
+        'review-e2e-1',
+        admin.id,
+        'Дякуємо за відгук!',
+      );
+      expect(response.body.data.body).toBe('Дякуємо за відгук!');
+      // Recorded in the table, never on the wire — see the route's docblock.
+      expect(response.body.data).not.toHaveProperty('authorUserId');
+    });
+
+    it('returns 404 for an unknown review', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      reviewRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .post('/api/admin/reviews/missing/reply')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ body: 'Дякуємо!' })
+        .expect(404);
+
+      expect(reviewRepositoryMock.upsertReply).not.toHaveBeenCalled();
+    });
+
+    it('refuses an empty answer and one past the 1000-character cap', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      reviewRepositoryMock.findById.mockResolvedValue(makeReview());
+
+      await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ body: '   ' })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ body: 'x'.repeat(1001) })
+        .expect(400);
+
+      expect(reviewRepositoryMock.upsertReply).not.toHaveBeenCalled();
+    });
+
+    it('is refused to a manager who may moderate but not answer', async () => {
+      // The point of the new permission. `reviews:moderate` decides whether a
+      // sentence may be PUBLISHED; `reviews:write` decides whether the shop may
+      // SAY something under its own name. A manager trusted with the first is not
+      // automatically speaking for the business.
+      const token = generateAccessToken(manager.id, manager.role);
+
+      // Baseline: the moderation grant this manager does hold really works, so a
+      // 403 below is about the missing permission and not about the manager.
+      reviewRepositoryMock.findForModeration.mockResolvedValue({ reviews: [], total: 0 });
+      await request(app.getHttpServer())
+        .get('/api/admin/reviews')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ body: 'Дякуємо!' })
+        .expect(403);
+
+      expect(reviewRepositoryMock.upsertReply).not.toHaveBeenCalled();
+    });
+
+    it('is allowed to a manager once the owner ticks reviews:write', async () => {
+      // Granted through the REAL endpoint so the real cache eviction runs — the
+      // same technique as rbac.e2e-spec.ts. A grant that only the test's fixture
+      // knows about would prove nothing about the running system.
+      await request(app.getHttpServer())
+        .put('/api/admin/permissions')
+        .set('Authorization', `Bearer ${generateAccessToken(admin.id, admin.role)}`)
+        .send({ role: 'MANAGER', permissions: ['reviews:moderate', 'reviews:write'] })
+        .expect(200);
+
+      reviewRepositoryMock.findById.mockResolvedValue(makeReview());
+      reviewRepositoryMock.upsertReply.mockResolvedValue(makeReply({ authorUserId: manager.id }));
+
+      await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', `Bearer ${generateAccessToken(manager.id, manager.role)}`)
+        .send({ body: 'Дякуємо!' })
+        .expect(200);
+
+      expect(reviewRepositoryMock.upsertReply).toHaveBeenCalledWith(
+        'review-e2e-1',
+        manager.id,
+        'Дякуємо!',
+      );
     });
   });
 });

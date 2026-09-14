@@ -101,6 +101,11 @@ describe('ReviewRepository — findForModeration search', () => {
     expect(reviewFindMany.mock.calls[0][0].include).toEqual({
       user: { select: { email: true } },
       product: { select: { name: true, sku: true } },
+      // TASK-587: and whatever the shop has already answered. Without it the
+      // panel offers "reply" on every row, including the ones that carry one, and
+      // an operator working a backlog overwrites a colleague's answer having
+      // never seen it.
+      reply: true,
     });
   });
 
@@ -248,6 +253,15 @@ describe('ReviewRepository — rating aggregate vs public text list (TASK-585)',
     // A star-only row is APPROVED-able and must still never reach the list: it
     // would render as an author, a date and an empty speech bubble.
     expect(where).not.toHaveProperty('ratingVisible');
+  });
+
+  // TASK-587: the shop's answer travels with the review it answers. A second
+  // round-trip per page would be the alternative, on a PUBLIC, uncached endpoint
+  // that already fought off one N+1 (TASK-298).
+  it('brings the shop reply along with the public list', async () => {
+    await repo.findApprovedByProduct('product-1', 1, 10);
+
+    expect(reviewFindMany.mock.calls[0][0].include).toEqual({ reply: true });
   });
 
   it('counts the page with the same filter, so `meta.total` matches what is shown', async () => {
@@ -402,5 +416,58 @@ describe("ReviewRepository — the author's own review (TASK-586)", () => {
     expect(written).not.toHaveProperty('rating');
     expect(written).not.toHaveProperty('ratingVisible');
     expect(written).not.toHaveProperty('hiddenAt');
+  });
+});
+
+/**
+ * The shop's reply (TASK-587) — one per review, by the schema's `@unique` on
+ * `ReviewReply.reviewId` and by the owner's decision that there is no thread.
+ *
+ * The write is an UPSERT for a plain reason: fixing a typo in a published answer
+ * is a real need, and `create` would answer it with a unique-constraint error at
+ * best, or a second row at worst. A second row is not a lesser feature — it is a
+ * review with two shop answers and no rule about which one renders.
+ */
+describe('ReviewRepository — the shop replies once (TASK-587)', () => {
+  let repo: ReviewRepository;
+
+  const replyUpsert = jest.fn();
+
+  const prismaMock = {
+    order: { findMany: jest.fn() },
+    orderItem: { findFirst: jest.fn() },
+    review: {},
+    reviewReply: { upsert: replyUpsert },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    replyUpsert.mockResolvedValue({ id: 'reply-1' });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [ReviewRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(ReviewRepository);
+  });
+
+  it('upserts on the review id, so posting again REPLACES the answer', async () => {
+    await repo.upsertReply('review-1', 'staff-1', 'Дякуємо!');
+
+    expect(replyUpsert).toHaveBeenCalledWith({
+      where: { reviewId: 'review-1' },
+      create: { reviewId: 'review-1', authorUserId: 'staff-1', body: 'Дякуємо!' },
+      update: { authorUserId: 'staff-1', body: 'Дякуємо!' },
+    });
+  });
+
+  it('re-attributes a corrected answer to whoever corrected it', async () => {
+    // The `update` arm carries `authorUserId` deliberately: after an edit, the
+    // person answerable for the words on screen is the one who wrote THOSE words,
+    // not whoever opened the thread.
+    await repo.upsertReply('review-1', 'second-staffer', 'Уточнення.');
+
+    expect(replyUpsert.mock.calls[0][0].update).toEqual({
+      authorUserId: 'second-staffer',
+      body: 'Уточнення.',
+    });
   });
 });
