@@ -5,6 +5,7 @@ import { SlugRedirectRepository } from '../slug-redirect';
 import { rankProductIdsBySales } from './bestseller-rank.util';
 import type { SpecFacetFilter } from './dto/product-list-query.dto';
 import { PRE_SHIPMENT_STATUSES } from '../order/order.constants';
+import { COUNTS_TOWARD_RATING } from '../review/review.constants';
 
 /**
  * Slugs of a rename being persisted by this update — when present, the write
@@ -373,15 +374,10 @@ export class ProductRepository {
    * by product id; products nobody has rated are absent from the map (callers
    * default them to `{ null, 0 }`).
    *
-   * `ratingVisible` is the ONLY filter, and it must stay identical to
-   * `ReviewRepository.aggregate`'s (TASK-585). These two methods answer the same
-   * question for two screens one click apart — the stars on a catalogue card and
-   * the stars above the reviews tab — so a filter added to one and not the other
-   * shows the same product two different scores, with nothing failing anywhere.
-   *
-   * It is also why the flag is denormalised rather than derived: this query runs
-   * for every card of every catalogue page, and a join to `users` here to re-ask
-   * "is the author's email confirmed?" is a cost the listing cannot carry.
+   * The filter is {@link COUNTS_TOWARD_RATING}, imported rather than written out,
+   * because `ReviewRepository.aggregate` asks the identical question for the PDP's
+   * reviews tab — one click from these cards. See that constant for why the flag is
+   * denormalised instead of joined.
    */
   private async getRatingsByProductId(productIds: string[]): Promise<Map<string, ProductRating>> {
     if (productIds.length === 0) {
@@ -389,7 +385,7 @@ export class ProductRepository {
     }
     const groups = await this.prisma.review.groupBy({
       by: ['productId'],
-      where: { productId: { in: productIds }, ratingVisible: true },
+      where: { productId: { in: productIds }, ...COUNTS_TOWARD_RATING },
       _avg: { rating: true },
       _count: { rating: true },
     });

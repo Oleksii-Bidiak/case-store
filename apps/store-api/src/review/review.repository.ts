@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, Review, ReviewTextStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { COUNTS_TOWARD_RATING } from './review.constants';
 
 /**
  * Which pile of the moderation queue to show. Maps 1:1 onto {@link ReviewTextStatus}
@@ -161,22 +162,18 @@ export class ReviewRepository {
   /**
    * The product's rating: average and count over every rating that COUNTS.
    *
-   * `ratingVisible` alone — the text's fate is irrelevant here, which is the
-   * owner's decision of 2026-09-10 made literal. A three-star rating whose comment
-   * is still in the queue is part of the average today. Hidden accounts need no arm
-   * of their own: `ratingVisible` is the denormalised effective flag and already
-   * folds them in.
+   * Filtered by {@link COUNTS_TOWARD_RATING} and nothing else — the text's fate is
+   * irrelevant here, which is the owner's decision of 2026-09-10 made literal. A
+   * three-star rating whose comment is still in the queue is part of the average
+   * today.
    *
    * Returns `{ ratingAverage: null, ratingCount: 0 }` when nothing counts, so the
    * storefront can say «ще немає оцінок» instead of rendering a zero-star product.
-   *
-   * MUST stay in step with `ProductRepository.getRatingsByProductId`, which answers
-   * the same question for the catalogue listing.
    */
   async aggregate(productId: string): Promise<ReviewAggregateData> {
     const groups = await this.prisma.review.groupBy({
       by: ['productId'],
-      where: { productId, ratingVisible: true },
+      where: { productId, ...COUNTS_TOWARD_RATING },
       _avg: { rating: true },
       _count: { rating: true },
     });
