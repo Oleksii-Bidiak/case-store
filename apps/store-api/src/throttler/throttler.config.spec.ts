@@ -1,17 +1,16 @@
 import type { ExecutionContext } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import type { ThrottlerModuleOptions, ThrottlerOptions } from '@nestjs/throttler';
 import {
+  authorFromAccessToken,
   buildThrottlerOptions,
-  trackReviewAuthor,
+  createReviewAuthorTracker,
   verifyThrottlerRedis,
   type PingableRedis,
 } from './throttler.config';
 import { REVIEW_SUBMISSION_THROTTLE_KEY } from './review-submission-throttle.decorator';
 import type { ThrottlerRedisHealth } from './throttler-redis-health';
-
-/** `trackReviewAuthor` never reads the context; one stub serves every case. */
-const ctx = (): ExecutionContext => ({}) as ExecutionContext;
 
 function makeHealth() {
   return {
@@ -100,9 +99,18 @@ describe('verifyThrottlerRedis', () => {
   });
 });
 
+/** The same secret the access-token strategy would be given. */
+const TEST_JWT_SECRET = 'throttler-spec-secret';
+
 const configWithout = (): ConfigService =>
   ({
     get: (key: string, fallback?: unknown) => (key === 'REDIS_HOST' ? undefined : fallback),
+    getOrThrow: (key: string) => {
+      if (key === 'JWT_SECRET') {
+        return TEST_JWT_SECRET;
+      }
+      throw new Error(`Unexpected getOrThrow(${key})`);
+    },
   }) as unknown as ConfigService;
 
 describe('buildThrottlerOptions without REDIS_HOST', () => {
@@ -180,38 +188,72 @@ describe('review submission is capped per ACCOUNT and per ADDRESS (TASK-588)', (
   });
 });
 
-describe('trackReviewAuthor (TASK-588)', () => {
-  it('counts the authenticated author, so a fresh address buys no fresh quota', async () => {
+/**
+ * The account tracker (TASK-588, corrected by TASK-598).
+ *
+ * These used to hand the tracker a `req.user`, which is the one shape the real
+ * request never has: the throttler is a global guard and `JwtAuthGuard` is a route
+ * guard, and Nest runs global guards first. So the cases below are written around
+ * the AUTHORIZATION HEADER, which is what is actually present when this runs.
+ */
+describe('createReviewAuthorTracker (TASK-598)', () => {
+  const jwt = new JwtService({ secret: TEST_JWT_SECRET });
+  const track = createReviewAuthorTracker(authorFromAccessToken(jwt, TEST_JWT_SECRET));
+  const bearer = (sub: string, secret = TEST_JWT_SECRET) => ({
+    authorization: `Bearer ${jwt.sign({ sub, role: 'CUSTOMER' }, { secret })}`,
+  });
+
+  it('counts the token’s author, so a fresh address buys no fresh quota', async () => {
+    // The failure this pins: both buckets keyed on the address, so one office
+    // shared five an hour and a phone changing networks got five more each time.
+    await expect(track({ headers: bearer('author-1'), ip: '203.0.113.7' })).resolves.toBe(
+      'user:author-1',
+    );
+    await expect(track({ headers: bearer('author-1'), ip: '198.51.100.4' })).resolves.toBe(
+      'user:author-1',
+    );
+  });
+
+  it('never collapses two authors on one address into one bucket', async () => {
+    const ip = '203.0.113.7';
+    const first = await track({ headers: bearer('author-1'), ip });
+    const second = await track({ headers: bearer('author-2'), ip });
+
+    expect(first).toBe('user:author-1');
+    expect(second).toBe('user:author-2');
+  });
+
+  it('still prefers req.user when some other guard has already set it', async () => {
+    // Costs nothing and keeps this correct if the guard order ever changes.
     await expect(
-      trackReviewAuthor({ user: { id: 'author-1' }, ip: '203.0.113.7' }, ctx()),
-    ).resolves.toBe('user:author-1');
-    // Same author, different address — still one bucket.
-    await expect(
-      trackReviewAuthor({ user: { id: 'author-1' }, ip: '198.51.100.4' }, ctx()),
+      track({ user: { id: 'author-1' }, headers: bearer('author-2'), ip: '203.0.113.7' }),
     ).resolves.toBe('user:author-1');
   });
 
-  it('never collapses two authors into one tracker', async () => {
-    const first = await trackReviewAuthor({ user: { id: 'author-1' } }, ctx());
-    const second = await trackReviewAuthor({ user: { id: 'author-2' } }, ctx());
-
-    expect(first).not.toBe(second);
+  it('VERIFIES the signature rather than trusting the payload', async () => {
+    // Decoding without verifying would let a submitter mint a fresh `sub` — and a
+    // fresh five an hour — per request: a worse limiter than the address one.
+    await expect(
+      track({ headers: bearer('forged', 'not-the-real-secret'), ip: '203.0.113.7' }),
+    ).resolves.toBe('ip:203.0.113.7');
   });
 
-  it('falls back to the address when there is somehow no author — never to a constant', async () => {
-    // The route sits behind JwtAuthGuard, so this should not happen. If it ever
-    // does, a constant would put EVERY submitter into one five-an-hour bucket:
-    // the shared-bucket bug of TASK-386, reintroduced at the single route this
-    // task exists to protect. Degrading to per-IP keeps the cap honest.
-    const alice = await trackReviewAuthor({ ip: '203.0.113.7' }, ctx());
-    const bob = await trackReviewAuthor({ socket: { remoteAddress: '198.51.100.4' } }, ctx());
+  it('falls back to the address for a missing or malformed token — never to a constant', async () => {
+    // A constant would put EVERY submitter into one five-an-hour bucket: the
+    // shared-bucket bug of TASK-386, reintroduced at the single route this task
+    // exists to protect. Degrading to per-IP keeps the cap honest, and the route's
+    // own JwtAuthGuard turns these into 401 a moment later.
+    const alice = await track({ ip: '203.0.113.7' });
+    const bob = await track({
+      headers: { authorization: 'Basic nope' },
+      socket: { remoteAddress: '198.51.100.4' },
+    });
 
     expect(alice).toBe('ip:203.0.113.7');
     expect(bob).toBe('ip:198.51.100.4');
-    expect(alice).not.toBe(bob);
   });
 
   it('refuses to invent a tracker when neither an author nor an address is known', async () => {
-    await expect(trackReviewAuthor({}, ctx())).rejects.toThrow(/tracker/i);
+    await expect(track({})).rejects.toThrow(/tracker/i);
   });
 });

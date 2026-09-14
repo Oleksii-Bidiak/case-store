@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import type { ThrottlerModuleOptions, ThrottlerOptions } from '@nestjs/throttler';
 import Redis from 'ioredis';
 import { RedisThrottlerStorage } from './redis-throttler-storage';
@@ -19,8 +20,20 @@ const REVIEWS_PER_ACCOUNT_PER_HOUR = 5;
 /** Ratings one ADDRESS may submit per day, however many accounts it uses. */
 const REVIEWS_PER_IP_PER_DAY = 20;
 
+/** Reads an access token and answers who signed it, or null if nobody did. */
+export type ReviewAuthorFromToken = (token: string) => string | null;
+
+/** `Authorization: Bearer <token>` → the token, or null for anything else. */
+function bearerToken(header: unknown): string | null {
+  if (typeof header !== 'string') {
+    return null;
+  }
+  const [scheme, token] = header.split(' ');
+  return scheme?.toLowerCase() === 'bearer' && token ? token : null;
+}
+
 /**
- * Who the per-account review bucket counts (TASK-588).
+ * Who the per-account review bucket counts (TASK-588, corrected by TASK-598).
  *
  * ## Why the route needs a tracker of its own
  *
@@ -31,45 +44,91 @@ const REVIEWS_PER_IP_PER_DAY = 20;
  * `ThrottlerGuard` resolves `namedThrottler.getTracker` ahead of its own, so
  * naming this on the throttler is what makes the account bucket count accounts.
  *
+ * ## Why it reads the TOKEN and not `req.user`
+ *
+ * It used to read `req.user`, on the stated grounds that "the route is behind
+ * `JwtAuthGuard`, so it is always there". It is never there. `ClientIpThrottlerGuard`
+ * is a global `APP_GUARD` and `JwtAuthGuard` is declared on the route, and Nest
+ * builds the chain as `[...global, ...class, ...method]`
+ * (`@nestjs/core/helpers/context-creator.js`) — so THIS runs first, before passport
+ * has assigned anything. Every submission fell through to the address branch, and
+ * the two buckets both counted addresses: five an hour shared by an office, and a
+ * cap an attacker stepped around by changing networks. The e2e did not see it
+ * because it faked the author with express middleware, which runs ahead of all
+ * guards and so produced a request shape production never makes.
+ *
+ * So the tracker verifies the bearer token itself, with the same secret the
+ * strategy uses. `req.user` is still consulted first: it costs nothing, and it
+ * keeps this correct if the guard order ever changes.
+ *
  * ## Why it must never return a constant
  *
- * The route is behind `JwtAuthGuard`, so `req.user` is always there — but "always"
- * is an assumption about a guard declared in another file, and the cost of it
- * being wrong is specific: a constant tracker puts every submitter on earth into
- * ONE five-an-hour bucket. That is TASK-386's shared bucket, reintroduced at the
- * single route this task exists to protect, and it would present as "reviews are
- * broken for everyone" rather than as a limiter bug. So an unauthenticated
- * request degrades to its address — a real per-client cap, merely a stricter one
- * than intended — and a request with neither is refused outright.
+ * A constant tracker puts every submitter on earth into ONE five-an-hour bucket.
+ * That is TASK-386's shared bucket, reintroduced at the single route this task
+ * exists to protect, and it would present as "reviews are broken for everyone"
+ * rather than as a limiter bug. So a request with no readable author degrades to
+ * its address — a real per-client cap, merely a stricter one than intended — and
+ * a request with neither is refused outright.
  *
  * `user:` / `ip:` prefixes because the two namespaces share one bucket name, and
  * an id that happened to look like an address should not be able to collide with
  * one.
  */
-export function trackReviewAuthor(req: Record<string, unknown>): Promise<string> {
-  const request = req as {
-    user?: { id?: string };
-    ip?: string;
-    socket?: { remoteAddress?: string };
+export function createReviewAuthorTracker(
+  authorFromToken: ReviewAuthorFromToken,
+): (req: Record<string, unknown>) => Promise<string> {
+  return function trackReviewAuthor(req: Record<string, unknown>): Promise<string> {
+    const request = req as {
+      user?: { id?: string };
+      headers?: Record<string, unknown>;
+      ip?: string;
+      socket?: { remoteAddress?: string };
+    };
+
+    const userId = request.user?.id;
+    if (userId) {
+      return Promise.resolve(`user:${userId}`);
+    }
+
+    const token = bearerToken(request.headers?.authorization);
+    const authorId = token ? authorFromToken(token) : null;
+    if (authorId) {
+      return Promise.resolve(`user:${authorId}`);
+    }
+
+    const address = request.ip ?? request.socket?.remoteAddress;
+    if (address) {
+      return Promise.resolve(`ip:${address}`);
+    }
+
+    return Promise.reject(
+      new Error(
+        'Cannot build a review-submission tracker: the request carries neither an ' +
+          'authenticated author nor a client address. Refusing rather than counting ' +
+          'every submitter in one shared bucket.',
+      ),
+    );
   };
+}
 
-  const userId = request.user?.id;
-  if (userId) {
-    return Promise.resolve(`user:${userId}`);
-  }
-
-  const address = request.ip ?? request.socket?.remoteAddress;
-  if (address) {
-    return Promise.resolve(`ip:${address}`);
-  }
-
-  return Promise.reject(
-    new Error(
-      'Cannot build a review-submission tracker: the request carries neither an ' +
-        'authenticated author nor a client address. Refusing rather than counting ' +
-        'every submitter in one shared bucket.',
-    ),
-  );
+/**
+ * Verify an access token the way {@link JwtAccessStrategy} does, and answer with
+ * its subject.
+ *
+ * The signature is checked, not merely decoded: an unverified `sub` would let a
+ * submitter mint a fresh identity — and a fresh five an hour — per request, which
+ * is a worse limiter than the address one this replaces. An invalid or expired
+ * token yields null and the caller falls back to the address; the route's own
+ * `JwtAuthGuard` is what turns that request into a 401 a moment later.
+ */
+export function authorFromAccessToken(jwt: JwtService, secret: string): ReviewAuthorFromToken {
+  return (token) => {
+    try {
+      return jwt.verify<{ sub?: string }>(token, { secret }).sub ?? null;
+    } catch {
+      return null;
+    }
+  };
 }
 
 /**
@@ -100,21 +159,26 @@ export function trackReviewAuthor(req: Record<string, unknown>): Promise<string>
 const onlyOnReviewSubmission: ThrottlerOptions['skipIf'] = (context) =>
   !isReviewSubmissionRoute(context);
 
-const REVIEW_SUBMISSION_THROTTLERS: ThrottlerOptions[] = [
-  {
-    name: 'reviewsAccount',
-    limit: REVIEWS_PER_ACCOUNT_PER_HOUR,
-    ttl: ONE_HOUR_MS,
-    getTracker: trackReviewAuthor,
-    skipIf: onlyOnReviewSubmission,
-  },
-  {
-    name: 'reviewsIp',
-    limit: REVIEWS_PER_IP_PER_DAY,
-    ttl: ONE_DAY_MS,
-    skipIf: onlyOnReviewSubmission,
-  },
-];
+function buildReviewSubmissionThrottlers(configService: ConfigService): ThrottlerOptions[] {
+  const secret = configService.getOrThrow<string>('JWT_SECRET');
+  const authorFromToken = authorFromAccessToken(new JwtService({ secret }), secret);
+
+  return [
+    {
+      name: 'reviewsAccount',
+      limit: REVIEWS_PER_ACCOUNT_PER_HOUR,
+      ttl: ONE_HOUR_MS,
+      getTracker: createReviewAuthorTracker(authorFromToken),
+      skipIf: onlyOnReviewSubmission,
+    },
+    {
+      name: 'reviewsIp',
+      limit: REVIEWS_PER_IP_PER_DAY,
+      ttl: ONE_DAY_MS,
+      skipIf: onlyOnReviewSubmission,
+    },
+  ];
+}
 
 /**
  * How long the boot-time PING may take before Redis is called unreachable.
@@ -162,7 +226,7 @@ export async function buildThrottlerOptions(
 ): Promise<ThrottlerModuleOptions> {
   const throttlers: ThrottlerOptions[] = [
     { ttl: DEFAULT_TTL_MS, limit: DEFAULT_LIMIT },
-    ...REVIEW_SUBMISSION_THROTTLERS,
+    ...buildReviewSubmissionThrottlers(configService),
   ];
   const redisHost = configService.get<string>('REDIS_HOST');
 

@@ -5,7 +5,13 @@ export {
   REVIEW_SUBMISSION_THROTTLE_KEY,
 } from './review-submission-throttle.decorator';
 export { RedisThrottlerStorage } from './redis-throttler-storage';
-export { buildThrottlerOptions, trackReviewAuthor, verifyThrottlerRedis } from './throttler.config';
+export {
+  authorFromAccessToken,
+  buildThrottlerOptions,
+  createReviewAuthorTracker,
+  verifyThrottlerRedis,
+  type ReviewAuthorFromToken,
+} from './throttler.config';
 export { ThrottlerHealthModule } from './throttler-health.module';
 export { ThrottlerRedisHealth, type ThrottlerStoreStatus } from './throttler-redis-health';
 export {
