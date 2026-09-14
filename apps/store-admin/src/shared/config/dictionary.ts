@@ -2126,6 +2126,14 @@ export const dict = {
     // --- Payment card (TASK-330-C, partial — see the widget's note) -----------
     paymentHeading: "Оплата",
     paymentAmountLabel: "Сума",
+    // --- "Повернуто X з Y" (TASK-472) -----------------------------------------
+    // Shown only while the payment status is PARTIALLY_REFUNDED: on a full refund
+    // the badge already says everything, and on a PAID order there is nothing to
+    // say. X is Σ Return.refundedAmount, Y is the order total — both computed at
+    // read time, neither stored.
+    refundedLabel: "Повернуто",
+    refundedOfTotal: (refunded: string, total: string) =>
+      `${refunded} з ${total}`,
     // An honest blank. The method, the per-attempt history and the refund button
     // need `Order.paymentMethod` on the order entity plus the admin payments
     // endpoints, and the merged backend exposes neither — so the card says it

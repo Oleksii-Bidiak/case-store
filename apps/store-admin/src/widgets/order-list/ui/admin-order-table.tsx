@@ -58,11 +58,17 @@ const EXPORT_FILENAME = "orders.csv";
 /**
  * Payment-status filter options (TASK-425). Every value of the enum: an
  * operator's question is as often "what failed" as it is "what is unpaid".
+ *
+ * TASK-472 added PARTIALLY_REFUNDED here at the same time as it added it to the
+ * enum. "Every value" is the rule this list lives by, and a new payment status
+ * that the list cannot be filtered by is a status the operator can only find by
+ * scrolling — which is how a half-refunded order gets forgotten.
  */
 const PAYMENT_STATUS_FILTER_OPTIONS = [
   OrderEntityPaymentStatus.PENDING,
   OrderEntityPaymentStatus.PAID,
   OrderEntityPaymentStatus.FAILED,
+  OrderEntityPaymentStatus.PARTIALLY_REFUNDED,
   OrderEntityPaymentStatus.REFUNDED,
 ];
 

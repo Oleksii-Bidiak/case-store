@@ -7,6 +7,7 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { OrderEntityPaymentStatus, paymentStatusLabel } from "@/entities/order";
 import { AdminOrderTable } from "./admin-order-table";
 
 // next/navigation is unavailable under jsdom — mock the router + URL state.
@@ -439,6 +440,47 @@ describe("AdminOrderTable — queue filters (TASK-425)", () => {
     await userEvent.click(screen.getByRole("option", { name: "Оплачено" }));
 
     expect(mockReplace).toHaveBeenCalledWith("/orders?paymentStatus=PAID");
+  });
+
+  // TASK-472. The option list claimed "every value of the enum" and no test held
+  // it to that, which is how PARTIALLY_REFUNDED could be added to the enum and
+  // missed here. Asserted against `OrderEntityPaymentStatus` itself, so the next
+  // value added to the enum fails this test instead of silently going missing.
+  it("offers every payment status, PARTIALLY_REFUNDED included", async () => {
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.orders.empty);
+
+    await userEvent.click(
+      screen.getByRole("combobox", {
+        name: dict.orders.filterPaymentStatusAria,
+      }),
+    );
+
+    for (const status of Object.values(OrderEntityPaymentStatus)) {
+      expect(
+        screen.getByRole("option", { name: paymentStatusLabel(status) }),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it("filters by PARTIALLY_REFUNDED from the picker", async () => {
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.orders.empty);
+
+    await userEvent.click(
+      screen.getByRole("combobox", {
+        name: dict.orders.filterPaymentStatusAria,
+      }),
+    );
+    await userEvent.click(
+      screen.getByRole("option", {
+        name: dict.orderStatus.paymentLabels.PARTIALLY_REFUNDED,
+      }),
+    );
+
+    expect(mockReplace).toHaveBeenCalledWith(
+      "/orders?paymentStatus=PARTIALLY_REFUNDED",
+    );
   });
 
   it("toggles the «waiting too long» chip into a SERVER filter", async () => {

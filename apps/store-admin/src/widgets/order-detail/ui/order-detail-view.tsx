@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   isPreShipmentStatus,
+  OrderEntityPaymentStatus,
   orderStatusBadgeVariant,
   orderStatusLabel,
   paymentStatusBadgeVariant,
@@ -169,6 +170,23 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
               label={dict.orders.paymentAmountLabel}
               value={formatCurrency(order.total)}
             />
+            {/* TASK-472: "Повернуто X з Y", the fifth derived mark of B-1. Rendered
+                only at PARTIALLY_REFUNDED — a full refund needs no fraction and a
+                paid order has nothing to report — and only when the response
+                actually carried the sum, since `refundedTotal` is absent (not
+                "0.00") whenever the returns were not joined. Nothing here is
+                stored: X is Σ Return.refundedAmount, computed on read. */}
+            {order.paymentStatus ===
+              OrderEntityPaymentStatus.PARTIALLY_REFUNDED &&
+            order.refundedTotal != null ? (
+              <SummaryRow
+                label={dict.orders.refundedLabel}
+                value={dict.orders.refundedOfTotal(
+                  formatCurrency(order.refundedTotal),
+                  formatCurrency(order.total),
+                )}
+              />
+            ) : null}
             <Separator />
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium text-foreground">
