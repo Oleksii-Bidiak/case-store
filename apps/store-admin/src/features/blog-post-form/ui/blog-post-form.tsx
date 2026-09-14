@@ -22,6 +22,7 @@ import {
   useImageUploadField,
   useUploadsControllerUploadBlogCover,
 } from "@/features/content-image-upload";
+import { MediaPicker, MediaPickerEditorButton } from "@/features/media-picker";
 import { useAdminBlogControllerFindCategories } from "@/entities/blog";
 import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
 import { slugify } from "@/shared/lib/slug";
@@ -250,6 +251,11 @@ export function BlogPostForm({
                   resetKey={id}
                   placeholder={dict.blogPostForm.contentPlaceholder}
                   disabled={isPending}
+                  // TASK-547 — the editor lives in `shared/ui` and cannot reach
+                  // the media library itself, so the control is handed in.
+                  imagePicker={(insert) => (
+                    <MediaPickerEditorButton insert={insert} />
+                  )}
                 />
               )}
             />
@@ -292,6 +298,18 @@ export function BlogPostForm({
           })
         }
         fieldError={errors.coverImageUrl?.message}
+        // TASK-441 — a picked asset writes its URL through the same `setValue`
+        // the upload uses, so the SERP preview below follows either way.
+        picker={
+          <MediaPicker
+            onPick={(asset) =>
+              setValue("coverImageUrl", asset.url, {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+            }
+          />
+        }
         {...coverUpload}
       />
 

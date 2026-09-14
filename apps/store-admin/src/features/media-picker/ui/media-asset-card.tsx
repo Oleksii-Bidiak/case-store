@@ -22,27 +22,39 @@ function fileNameFrom(url: string): string {
 
 interface MediaAssetCardProps {
   asset: MediaAssetEntity;
-  onOpen: (id: string) => void;
+  onOpen: (asset: MediaAssetEntity) => void;
+  /**
+   * Builds the tile's accessible name. Defaults to «Відкрити зображення «…»»,
+   * which is what the `/media` screen does; the picker overrides it with
+   * «Обрати…», because the same tile there does a different thing and the
+   * accessible name is the only place a screen-reader user learns which.
+   */
+  label?: (name: string) => string;
 }
 
 /**
- * One tile in the library grid.
+ * One tile in the library grid — the `/media` screen's and the picker's, the
+ * same component (TASK-441).
  *
  * The whole tile is a single `<button>`, so there is exactly one tab stop per
- * asset and Enter/Space open the card — the same thing a click does. Everything
- * inside is therefore presentational: the `<img>` carries an empty `alt` because
- * the button's own name already says which picture this is, and repeating it
- * would have a screen reader announce the same words twice.
+ * asset and Enter/Space do what a click does. Everything inside is therefore
+ * presentational: the `<img>` carries an empty `alt` because the button's own
+ * name already says which picture this is, and repeating it would have a screen
+ * reader announce the same words twice.
  */
-export function MediaAssetCard({ asset, onOpen }: MediaAssetCardProps) {
+export function MediaAssetCard({
+  asset,
+  onOpen,
+  label = t.openCardAria,
+}: MediaAssetCardProps) {
   const name = asset.alt?.trim() || fileNameFrom(asset.url);
 
   return (
     <li>
       <button
         type="button"
-        onClick={() => onOpen(asset.id)}
-        aria-label={t.openCardAria(name)}
+        onClick={() => onOpen(asset)}
+        aria-label={label(name)}
         className="flex w-full flex-col overflow-hidden rounded-lg border border-border bg-card text-left transition-colors outline-none hover:border-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
         <span className="block aspect-square w-full overflow-hidden bg-muted">

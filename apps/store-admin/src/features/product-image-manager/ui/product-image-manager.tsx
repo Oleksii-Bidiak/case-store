@@ -17,11 +17,13 @@ import {
 } from "lucide-react";
 import {
   getProductImageControllerListQueryKey,
+  useProductImageControllerAttach,
   useProductImageControllerDelete,
   useProductImageControllerList,
   useProductImageControllerReorder,
   type ProductImageEntity,
 } from "@/entities/product";
+import { MediaPicker } from "@/features/media-picker";
 import {
   Button,
   Dialog,
@@ -123,7 +125,12 @@ function ProductImageManagerView({
   const queue = useProductImageUploadQueue();
   const reorder = useProductImageControllerReorder();
   const remove = useProductImageControllerDelete();
-  const busy = queue.isUploading || reorder.isPending || remove.isPending;
+  const attach = useProductImageControllerAttach();
+  const busy =
+    queue.isUploading ||
+    reorder.isPending ||
+    remove.isPending ||
+    attach.isPending;
 
   /** Per-file screen-reader reporting, shared by the initial run and retries. */
   const announcers = {
@@ -165,6 +172,35 @@ function ProductImageManagerView({
       return;
     }
     report(queue.enqueue(productId, files, announcers));
+  };
+
+  /**
+   * Put a picture the library already holds into this gallery (TASK-441).
+   *
+   * The ONLY connection point where a picked asset is not a URL written into a
+   * form field: a gallery entry is a `ProductImage` row with a sort order and a
+   * cover flag, so it needs a request — `POST /products/:id/images/attach`,
+   * which applies the upload route's own sort/primary rules and records the
+   * asset id as provenance. Nothing is copied: one file, two rows pointing at
+   * it, which is also why the library then refuses to delete it.
+   *
+   * Sequential by construction — `onPick` fires once per asset — so a batch
+   * uploaded through the picker lands in the order it was dropped, exactly like
+   * the upload queue next door.
+   */
+  const attachAsset = (assetId: string, name: string) => {
+    if (!productId) return;
+    attach.mutate(
+      { productId, data: { mediaAssetId: assetId } },
+      {
+        onSuccess: () => {
+          void invalidate();
+          toast.success(dict.mediaPicker.toastAttached);
+          announcePolite(dict.mediaPicker.announceAttached(name));
+        },
+        onError: () => toast.error(dict.mediaPicker.toastAttachFailed),
+      },
+    );
   };
 
   const retryFailed = () => {
@@ -337,6 +373,27 @@ function ProductImageManagerView({
             event.target.value = "";
           }}
         />
+        {/*
+          TASK-441 — the third way in, next to drag-and-drop and the file
+          picker. LIVE MODE ONLY: attaching needs a `:productId` to post to, and
+          on `/products/new` there is no product yet. The create flow stages
+          FILES and replays them after `POST /products`; staging an asset id
+          alongside them would be a second replay path through a different
+          endpoint, so the honest answer there is the line below rather than a
+          button that 404s.
+        */}
+        {isStaged ? (
+          <p className="text-xs text-muted-foreground">
+            {dict.mediaPicker.galleryNeedsProduct}
+          </p>
+        ) : (
+          <MediaPicker
+            disabled={busy}
+            onPick={(asset) =>
+              attachAsset(asset.id, asset.alt?.trim() || asset.url)
+            }
+          />
+        )}
         <p className="text-xs text-muted-foreground">
           {dict.productImages.hint}
         </p>

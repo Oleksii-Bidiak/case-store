@@ -27,6 +27,9 @@ export {
   // Product images (TASK-073)
   useProductImageControllerList,
   useProductImageControllerUpload,
+  // TASK-441 — attach a picture that is already in the media library, instead
+  // of uploading the same file a second time.
+  useProductImageControllerAttach,
   useProductImageControllerReorder,
   useProductImageControllerDelete,
   getProductImageControllerListQueryKey,

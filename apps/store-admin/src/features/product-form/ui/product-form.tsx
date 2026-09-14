@@ -32,6 +32,7 @@ import {
   Textarea,
   type ComboboxOption,
 } from "@/shared/ui";
+import { MediaPickerEditorButton } from "@/features/media-picker";
 import { dict, STOREFRONT_HOST } from "@/shared/config";
 import {
   productSchema,
@@ -300,6 +301,11 @@ export function ProductForm({
                   resetKey={id}
                   placeholder={dict.productForm.descriptionPlaceholder}
                   disabled={isPending}
+                  // TASK-547 — the editor lives in `shared/ui` and cannot reach
+                  // the media library itself, so the control is handed in.
+                  imagePicker={(insert) => (
+                    <MediaPickerEditorButton insert={insert} />
+                  )}
                 />
               )}
             />

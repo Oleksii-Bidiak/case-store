@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Check,
   ImagePlus,
@@ -9,7 +9,10 @@ import {
   TriangleAlert,
   Upload,
 } from "lucide-react";
-import { useMediaControllerUpload } from "@/entities/media";
+import {
+  useMediaControllerUpload,
+  type MediaAssetDetailEntity,
+} from "@/entities/media";
 import {
   CONTENT_IMAGE_ACCEPT,
   imageUploadErrorMessage,
@@ -30,9 +33,24 @@ const t = dict.mediaLibrary;
 interface MediaUploadZoneProps {
   /**
    * Called once a whole drain loop has settled, so the grid can refetch exactly
-   * once instead of per file.
+   * once instead of per file. Receives what that loop achieved, which is how
+   * the picker knows whether it may close: a batch with a failure in it must
+   * stay on screen, because the per-file reason is only in this list.
    */
-  onBatchSettled: () => void | Promise<unknown>;
+  onBatchSettled: (summary: UploadDrainSummary) => void | Promise<unknown>;
+  /**
+   * Called with each asset the server accepted, as it lands (TASK-441).
+   *
+   * PER FILE and not per batch, because the picker's job is "put this picture
+   * where I am" and an operator who drops three of them into a product gallery
+   * means all three. For a single-value field (a category tile, a banner) the
+   * caller simply overwrites, so the last upload wins — which is what a field
+   * holding one URL means anyway.
+   *
+   * The `/media` screen passes nothing: an upload there belongs to the library,
+   * not to anything on screen.
+   */
+  onAssetUploaded?: (asset: MediaAssetDetailEntity) => void;
 }
 
 /**
@@ -55,14 +73,36 @@ interface MediaUploadZoneProps {
  * Rendered only for `media:write`. The parent decides that; this component
  * assumes it may upload.
  */
-export function MediaUploadZone({ onBatchSettled }: MediaUploadZoneProps) {
+export function MediaUploadZone({
+  onBatchSettled,
+  onAssetUploaded,
+}: MediaUploadZoneProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const { announcePolite, announceAssertive } = useAnnouncer();
 
+  /**
+   * Kept current without re-capturing the drain loop.
+   *
+   * A loop outlives many renders and the closure it started with would go on
+   * calling a stale callback — the same reason the shared queue holds `send`
+   * and `describeError` in refs. See its docblock.
+   */
+  const onAssetUploadedRef = useRef(onAssetUploaded);
+  useEffect(() => {
+    onAssetUploadedRef.current = onAssetUploaded;
+  });
+
   const upload = useMediaControllerUpload();
   const queue = useImageUploadQueue<void>({
-    send: (file) => upload.mutateAsync({ data: { file } }),
+    send: async (file) => {
+      const response = await upload.mutateAsync({ data: { file } });
+      // Reported here rather than from `onItemUploaded`, because that hook is
+      // handed the QUEUE ITEM (a file) and the caller needs the ASSET the
+      // server made of it — the id and the URL only exist in this response.
+      onAssetUploadedRef.current?.(response.data);
+      return response;
+    },
     describeError: (error) => imageUploadErrorMessage(error, t),
   });
 
@@ -82,7 +122,7 @@ export function MediaUploadZone({ onBatchSettled }: MediaUploadZoneProps) {
   const report = (run: Promise<UploadDrainSummary | null>) => {
     void run.then(async (summary) => {
       if (!summary) return;
-      await onBatchSettled();
+      await onBatchSettled(summary);
       if (summary.failed === 0) {
         toast.success(t.toastUploaded);
       } else {

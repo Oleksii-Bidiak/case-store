@@ -34,6 +34,7 @@ import {
   useImageUploadField,
   useUploadsControllerUploadCategoryImage,
 } from "@/features/content-image-upload";
+import { MediaPicker } from "@/features/media-picker";
 import { dict, STOREFRONT_HOST } from "@/shared/config";
 import {
   categorySchema,
@@ -228,6 +229,18 @@ export function CategoryForm({
           setValue("image", "", { shouldDirty: true, shouldValidate: true })
         }
         fieldError={errors.image?.message}
+        // TASK-441 — picked assets go in through the same `setValue` the upload
+        // uses, so the form stays the single source of truth for the field.
+        picker={
+          <MediaPicker
+            onPick={(asset) =>
+              setValue("image", asset.url, {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+            }
+          />
+        }
         {...imageUpload}
       />
 

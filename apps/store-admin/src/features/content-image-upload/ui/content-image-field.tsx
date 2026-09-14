@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { UseFormRegisterReturn } from "react-hook-form";
 import { Input, Label, SingleImageUpload } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -31,6 +32,17 @@ export interface ContentImageFieldProps {
   uploadError: string | null;
   /** zod/RHF validation message for the field. */
   fieldError?: string;
+  /**
+   * The media-library picker for this field (TASK-441) — normally
+   * `<MediaPicker onPick={asset => setValue(name, asset.url)} />`.
+   *
+   * A SLOT and not a built-in, for two reasons. The form owns `setValue`, so
+   * only the form can say where a picked URL goes; and the picker renders
+   * nothing at all for an operator holding neither media key, which is what
+   * keeps this field working unchanged for them — the upload control and the
+   * URL box below are still the whole feature.
+   */
+  picker?: ReactNode;
 }
 
 /**
@@ -61,6 +73,7 @@ export function ContentImageField({
   isUploading,
   uploadError,
   fieldError,
+  picker,
 }: ContentImageFieldProps) {
   return (
     <div className="flex flex-col gap-2">
@@ -86,6 +99,11 @@ export function ContentImageField({
         onSelectFile={onSelectFile}
         onDelete={onRemove}
       />
+
+      {/* Between the uploader and the URL box, because that is the order the
+          three paths rank in: a picture the shop already has, a file on this
+          laptop, a link from somewhere else. */}
+      {picker}
 
       <Input id={id} placeholder={urlPlaceholder} {...urlInput} />
 

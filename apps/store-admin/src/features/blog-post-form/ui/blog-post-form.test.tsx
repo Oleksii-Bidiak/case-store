@@ -7,29 +7,45 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import {
+  MEDIA_PERMISSIONS,
+  makeMediaAsset,
+  stubMediaLibrary,
+} from "@/features/media-picker/model/media-picker.fixture";
 import { BlogPostForm } from "./blog-post-form";
 
 // Same lightweight controlled <textarea> proxy as page-form.test.tsx: Tiptap
 // touches the DOM on init, and the preview-tab tests need to drive the
 // `content` field with userEvent.type. Resolves to the module the
 // `@/shared/ui` barrel re-exports.
+//
+// It renders the `imagePicker` slot (TASK-547) so the test below can see that
+// this form really fills it. The insert callback is a no-op: what the editor
+// then DOES with an image is `rich-text-editor.test.tsx`'s subject, and driving
+// a real Tiptap instance here would pull the whole editor into every one of
+// these tests for nothing.
 jest.mock("@/shared/ui/rich-text-editor", () => ({
   __esModule: true,
   RichTextEditor: ({
     value,
     onChange,
     placeholder,
+    imagePicker,
   }: {
     value: string;
     onChange: (html: string) => void;
     placeholder?: string;
+    imagePicker?: (insert: (image: unknown) => void) => React.ReactNode;
   }) => (
-    <textarea
-      data-testid="rte-stub"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      placeholder={placeholder}
-    />
+    <div>
+      {imagePicker?.(() => {})}
+      <textarea
+        data-testid="rte-stub"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+      />
+    </div>
   ),
 }));
 
@@ -55,6 +71,64 @@ beforeEach(() => {
       }),
     ),
   );
+});
+
+describe("BlogPostForm — media library picker (TASK-441/547)", () => {
+  const COVER_URL = "http://localhost:3001/uploads/media/cover.webp";
+
+  it("writes the picked asset's URL into the cover field", async () => {
+    stubMediaLibrary([
+      makeMediaAsset("m1", { alt: "Обкладинка огляду", url: COVER_URL }),
+    ]);
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    // Two pickers on this form — the cover field's and the editor's — so the
+    // click has to go to the first, not to "a button with that name".
+    const triggers = await screen.findAllByRole("button", {
+      name: dict.mediaPicker.trigger,
+    });
+    await userEvent.click(triggers[0]);
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.mediaPicker.pickCardAria("Обкладинка огляду"),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText(dict.blogPostForm.coverImageUrl),
+      ).toHaveValue(COVER_URL),
+    );
+  });
+
+  it("fills the editor's image slot too", async () => {
+    stubMediaLibrary();
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    // The slot is filled by THIS form; what the editor does with the image is
+    // proved in `rich-text-editor.test.tsx` and `media-picker-editor-button`.
+    expect(
+      await screen.findByRole("button", {
+        name: dict.mediaPicker.editorInsert,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers neither picker to an operator with no media keys", async () => {
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);
+
+    await screen.findByLabelText(dict.blogPostForm.coverImageUrl);
+    expect(
+      screen.queryByRole("button", { name: dict.mediaPicker.trigger }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.mediaPicker.editorInsert }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("BlogPostForm — existing fields smoke (TASK-266 baseline coverage)", () => {

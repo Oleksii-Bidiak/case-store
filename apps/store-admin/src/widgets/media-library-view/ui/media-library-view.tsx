@@ -2,14 +2,15 @@
 
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
-import {
-  getMediaControllerFindAllQueryKey,
-  useMediaControllerFindAll,
-} from "@/entities/media";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { getMediaControllerFindAllQueryKey } from "@/entities/media";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
+import {
+  MediaAssetDialog,
+  MediaAssetGrid,
+  MediaUploadZone,
+} from "@/features/media-picker";
 import {
   LiveAnnouncer,
   TablePagination,
@@ -18,10 +19,6 @@ import {
   pageSizeFrom,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { MediaAssetCard } from "./media-asset-card";
-import { MediaAssetDialog } from "./media-asset-dialog";
-import { MediaLibrarySkeleton } from "./media-library-skeleton";
-import { MediaUploadZone } from "./media-upload-zone";
 
 const t = dict.mediaLibrary;
 
@@ -34,6 +31,15 @@ const t = dict.mediaLibrary;
  * get an image into the shop was to upload it INTO a product, and the same
  * picture needed re-uploading for a category tile, a banner and an article.
  *
+ * WHAT IS ACTUALLY HERE, since step e. Nothing but composition: the grid, the
+ * card, the upload zone and the asset dialog all moved into
+ * `features/media-picker`, because the picker that appears inside every content
+ * form needs exactly the same parts and a feature may not import a widget. What
+ * is left is this screen's own decisions — the URL-backed search and paging
+ * (which is what makes a filtered library a link an operator can send), the
+ * permission gate, and the fact that a card opens the detail dialog here rather
+ * than picking.
+ *
  * WHAT GATES WHAT. `media:read` gates the nav entry and the route (server-side,
  * on every endpoint); it is deliberately NOT enough to change anything.
  * `media:write` decides, right here, whether the upload zone renders at all and
@@ -41,11 +47,9 @@ const t = dict.mediaLibrary;
  * alone gets a library they can browse and search rather than a screen of
  * controls that answer 403.
  *
- * Search, page and page size live in the URL through the shared table controls,
- * which is what makes a filtered library a link an operator can send to someone
- * else. `LiveAnnouncer` wraps the body rather than sitting inside it: the upload
- * zone and the toolbar call `useAnnouncer()`, and a hook called in the same
- * component that renders the provider would read the default no-op context.
+ * `LiveAnnouncer` wraps the body rather than sitting inside it: the upload zone
+ * and the toolbar call `useAnnouncer()`, and a hook called in the same component
+ * that renders the provider would read the default no-op context.
  */
 export function MediaLibraryView() {
   return (
@@ -67,15 +71,7 @@ function MediaLibraryBody() {
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
 
-  const { data, isLoading, isFetching, isError, refetch } =
-    useMediaControllerFindAll({
-      search: search || undefined,
-      page,
-      limit: pageSize,
-    });
-
-  const assets = data?.data ?? [];
-  const totalPages = data?.meta?.totalPages ?? 1;
+  const listKey = getMediaControllerFindAllQueryKey();
 
   /**
    * Refetch the grid.
@@ -85,17 +81,24 @@ function MediaLibraryBody() {
    * after it, so any cached page other than the one on screen is wrong too, and
    * leaving it cached is how an operator pages back and sees a thumbnail whose
    * file is gone.
+   *
+   * It is also what the toolbar's «Оновити» does, now that the query itself
+   * lives one layer down in `MediaAssetGrid`: invalidating the key and calling
+   * `refetch()` on the observer have the same effect here, and only one of them
+   * needs the query handle.
    */
   const invalidateGrid = () =>
-    queryClient.invalidateQueries({
-      queryKey: getMediaControllerFindAllQueryKey(),
-    });
+    queryClient.invalidateQueries({ queryKey: listKey });
+
+  // Counts observers of ANY page of the library — which is exactly right for a
+  // spinner that means "the library is being re-read".
+  const isFetching = useIsFetching({ queryKey: listKey }) > 0;
 
   return (
     <div className="flex flex-col gap-4">
       <TableToolbar
         className="mb-0"
-        onRefresh={() => void refetch()}
+        onRefresh={() => void invalidateGrid()}
         isRefreshing={isFetching}
         search={
           <TableSearch
@@ -114,47 +117,19 @@ function MediaLibraryBody() {
         </p>
       )}
 
-      {isLoading ? (
-        <MediaLibrarySkeleton />
-      ) : isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {t.loadError}
-        </p>
-      ) : assets.length === 0 ? (
-        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {/* "Nothing uploaded yet" and "your search matched nothing" are
-              different answers, and only the first has an obvious next step. */}
-          {search ? dict.common.table.emptyFiltered : t.empty}
-        </div>
-      ) : (
-        <div className="relative">
-          {isFetching && (
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60"
-            >
-              <Loader2 className="size-6 animate-spin text-primary" />
-            </div>
-          )}
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {assets.map((asset) => (
-              <MediaAssetCard
-                key={asset.id}
-                asset={asset}
-                onOpen={setOpenAssetId}
-              />
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {!isLoading && !isError && assets.length > 0 && (
-        <TablePagination
-          page={page}
-          totalPages={totalPages}
-          pageSize={pageSize}
-        />
-      )}
+      <MediaAssetGrid
+        search={search}
+        page={page}
+        pageSize={pageSize}
+        onOpen={(asset) => setOpenAssetId(asset.id)}
+        footer={(totalPages) => (
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            pageSize={pageSize}
+          />
+        )}
+      />
 
       <MediaAssetDialog
         assetId={openAssetId}

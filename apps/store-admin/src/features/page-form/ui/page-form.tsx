@@ -24,6 +24,7 @@ import {
   resolvePreviewSiteName,
 } from "@/shared/lib/seo";
 import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
+import { MediaPickerEditorButton } from "@/features/media-picker";
 import {
   dict,
   HUB_PAGES,
@@ -270,6 +271,11 @@ export function PageForm({
                   resetKey={id}
                   placeholder={dict.pageForm.contentPlaceholder}
                   disabled={isPending}
+                  // TASK-547 — the editor lives in `shared/ui` and cannot reach
+                  // the media library itself, so the control is handed in.
+                  imagePicker={(insert) => (
+                    <MediaPickerEditorButton insert={insert} />
+                  )}
                 />
               )}
             />

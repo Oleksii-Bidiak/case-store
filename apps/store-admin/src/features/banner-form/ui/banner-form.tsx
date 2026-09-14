@@ -18,6 +18,7 @@ import {
   useImageUploadField,
   useUploadsControllerUploadBannerImage,
 } from "@/features/content-image-upload";
+import { MediaPicker } from "@/features/media-picker";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
 import {
@@ -202,6 +203,19 @@ export function BannerForm({
               })
             }
             fieldError={errors.imageUrl?.message}
+            // TASK-441: the same picture may already be in the library — a
+            // picked asset writes its URL through `setValue`, exactly like an
+            // upload, so the live preview above follows either way.
+            picker={
+              <MediaPicker
+                onPick={(asset) =>
+                  setValue("imageUrl", asset.url, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+              />
+            }
             {...imageUpload}
           />
 

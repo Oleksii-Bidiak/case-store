@@ -2,15 +2,51 @@ import {
   renderWithProviders,
   screen,
   userEvent,
+  waitFor,
   within,
 } from "@/shared/test/render";
 import { dict } from "@/shared/config";
+import {
+  MEDIA_PERMISSIONS,
+  makeMediaAsset,
+  pickFromLibrary,
+  stubMediaLibrary,
+} from "@/features/media-picker/model/media-picker.fixture";
 import { BannerForm } from "./banner-form";
 
 const noop = () => {};
 
 const previewPanel = () => screen.getByTestId("banner-form-preview-panel");
 const fieldsPanel = () => screen.getByTestId("banner-form-fields");
+
+describe("BannerForm — media library picker (TASK-441)", () => {
+  const ART_URL = "http://localhost:3001/uploads/media/hero.webp";
+
+  it("writes the picked asset's URL into the artwork field", async () => {
+    stubMediaLibrary([
+      makeMediaAsset("m1", { alt: "Осіння банерна зйомка", url: ART_URL }),
+    ]);
+    renderWithProviders(<BannerForm onSubmit={noop} isPending={false} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    await pickFromLibrary("Осіння банерна зйомка");
+
+    await waitFor(() =>
+      expect(
+        within(fieldsPanel()).getByLabelText(dict.bannerForm.imageUrl),
+      ).toHaveValue(ART_URL),
+    );
+  });
+
+  it("offers no picker to an operator with no media keys", () => {
+    renderWithProviders(<BannerForm onSubmit={noop} isPending={false} />);
+
+    expect(
+      screen.queryByRole("button", { name: dict.mediaPicker.trigger }),
+    ).not.toBeInTheDocument();
+  });
+});
 
 describe("BannerForm — live placement preview (TASK-265)", () => {
   it("live-updates the preview while typing in the title field", async () => {
