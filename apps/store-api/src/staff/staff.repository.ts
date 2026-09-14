@@ -176,6 +176,66 @@ export class StaffRepository {
     return this.prisma.user.update({ where: { id }, data: { role } });
   }
 
+  /**
+   * Move `isOwner` from one account to another — the ONE write in this codebase
+   * that changes who owns the shop (TASK-478, plan 181, invariant 1).
+   *
+   * ── THE WRITE ORDER IS THE CONTRACT, NOT A STYLE CHOICE ─────────────────────
+   *
+   * `users_single_owner_key` is a PARTIAL unique index: `ON users(is_owner) WHERE
+   * is_owner = true`. Postgres enforces a unique index IMMEDIATELY — statement by
+   * statement — not at COMMIT. So wrapping both updates in a transaction does NOT
+   * on its own make the pair legal: the instant between the two statements is
+   * still checked.
+   *
+   * Clear first, then set, and that instant holds ZERO owners, which a unique
+   * index has nothing to say about. Set first and it would hold TWO, and the very
+   * first statement is rejected with `P2002` — the transfer would never succeed at
+   * all, for anybody, in any shop. Swapping these two lines is therefore not a
+   * subtle race; it is a feature that never works. `staff.repository.spec.ts` runs
+   * the naive order against a fake index and `access-model-backfill.int-spec.ts`
+   * runs it against the real one, so the failure surfaces as a red test rather
+   * than as an owner who cannot hand over.
+   *
+   * ── WHAT THE TRANSACTION BUYS THAT THE INDEX CANNOT ─────────────────────────
+   *
+   * The index guarantees "never two owners". It says nothing about ZERO owners —
+   * `is_owner = false` everywhere satisfies it perfectly, and that is exactly the
+   * state the first statement creates. If the second statement then failed outside
+   * a transaction (the target was deleted in another tab, the connection dropped),
+   * the shop would be left with no owner at all and no route that can appoint one,
+   * because appointing an owner is the thing only an owner may do. The transaction
+   * is what makes that window unobservable and unreachable: either both writes
+   * land or neither does.
+   *
+   * Deliberately dumb about policy, like {@link updateRole}: who may call this,
+   * whether the target is live staff, and whether the caller re-entered their
+   * password are all `StaffService.transferOwnership`'s job.
+   *
+   * @param fromUserId the current owner — cleared FIRST
+   * @param toUserId the incoming owner — set SECOND
+   */
+  transferOwnership(
+    fromUserId: string,
+    toUserId: string,
+  ): Promise<{ outgoing: User; incoming: User }> {
+    return this.prisma.$transaction(async (tx) => {
+      // 1. The shop momentarily has no owner. Only inside this transaction.
+      const outgoing = await tx.user.update({
+        where: { id: fromUserId },
+        data: { isOwner: false },
+      });
+
+      // 2. …and now exactly one, which is the only state anybody else can see.
+      const incoming = await tx.user.update({
+        where: { id: toUserId },
+        data: { isOwner: true },
+      });
+
+      return { outgoing, incoming };
+    });
+  }
+
   /** Permission counts and last-session timestamps for a page of accounts. */
   private async loadExtras(userIds: string[]): Promise<{
     permissionCounts: Map<string, number>;

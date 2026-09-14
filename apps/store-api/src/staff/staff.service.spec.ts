@@ -4,6 +4,7 @@ import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { StaffService } from './staff.service';
@@ -100,6 +101,7 @@ const staffRepositoryMock = {
   findStaffById: jest.fn(),
   create: jest.fn(),
   updateRole: jest.fn(),
+  transferOwnership: jest.fn(),
 };
 
 const userRepositoryMock = {
@@ -111,7 +113,10 @@ const userRepositoryMock = {
 };
 
 const authRepositoryMock = { revokeAllUserTokens: jest.fn() };
-const authServiceMock = { setPassword: jest.fn() };
+const authServiceMock = {
+  setPassword: jest.fn(),
+  verifyOwnPassword: jest.fn().mockResolvedValue(undefined),
+};
 const reviewServiceMock = { hideAuthor: jest.fn(), unhideAuthor: jest.fn() };
 const permissionGrantRepositoryMock = {
   findByUserId: jest.fn().mockResolvedValue([]),
@@ -668,6 +673,177 @@ describe('StaffService', () => {
       await expect(
         service.setPermissions(customerRow.id, ['orders:read'], ownerActor),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ─── The transfer: the one door that reaches the owner's own account ────────
+
+  /**
+   * Handing over the shop (TASK-478, plan 181, invariant 1).
+   *
+   * THIS IS THE ONE METHOD ON THIS SERVICE THAT DOES NOT CALL `assertMayManage`,
+   * and every case below exists because of that. The level rule makes the owner
+   * untouchable through all five other doors — OWNER is the maximum and the
+   * comparison is strictly greater — which is exactly right and would also mean an
+   * owner who leaves the business is a dead end. The transfer is the door cut for
+   * that single case, so the checks the level rule would have performed are
+   * re-stated here by hand, and the suite has to prove each of them individually
+   * rather than leaning on one shared assert.
+   */
+  describe('transferOwnership', () => {
+    const PASSWORD = 'OwnerP@ssw0rd!';
+
+    /** The two rows the transaction hands back, already flipped. */
+    const transferred = {
+      outgoing: { ...ownerRow, isOwner: false },
+      incoming: { ...otherAdminRow, isOwner: true },
+    };
+
+    beforeEach(() => {
+      authServiceMock.verifyOwnPassword.mockResolvedValue(undefined);
+      staffRepositoryMock.transferOwnership.mockResolvedValue(transferred);
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(otherAdminRow));
+    });
+
+    it('moves the flag off the owner and onto the deputy, in that argument order', async () => {
+      const result = await service.transferOwnership(otherAdminRow.id, PASSWORD, ownerActor);
+
+      // Outgoing first, incoming second — the repository's contract, and the only
+      // order the partial unique index permits (staff.repository.spec.ts).
+      expect(staffRepositoryMock.transferOwnership).toHaveBeenCalledWith(
+        ownerActor.id,
+        otherAdminRow.id,
+      );
+
+      expect(result.previousOwner.isOwner).toBe(false);
+      expect(result.owner.isOwner).toBe(true);
+      expect(result.owner.id).toBe(otherAdminRow.id);
+    });
+
+    it('leaves the outgoing owner an ADMIN — a state any other door can produce', async () => {
+      const result = await service.transferOwnership(otherAdminRow.id, PASSWORD, ownerActor);
+
+      // They become an ordinary deputy: exactly what `PATCH :id/role` produces
+      // when the owner appoints one, so nothing downstream meets a row it has
+      // never seen. Demoting them further is the NEW owner's call, through the
+      // door that already exists and already writes its own audit row.
+      expect(result.previousOwner.role).toBe(UserRole.ADMIN);
+      expect(result.previousOwner.level).toBe(2);
+      expect(staffRepositoryMock.updateRole).not.toHaveBeenCalled();
+    });
+
+    it('revokes the sessions of BOTH parties', async () => {
+      await service.transferOwnership(otherAdminRow.id, PASSWORD, ownerActor);
+
+      expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith(ownerActor.id);
+      expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith(otherAdminRow.id);
+      expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledTimes(2);
+    });
+
+    it('confirms the CALLER’s own password through the shared auth path', async () => {
+      await service.transferOwnership(otherAdminRow.id, PASSWORD, ownerActor);
+
+      // The caller's, not the target's: this is a re-authentication of the person
+      // giving the shop away, and it is checked by the same code login uses.
+      expect(authServiceMock.verifyOwnPassword).toHaveBeenCalledWith(
+        ownerActor.id,
+        PASSWORD,
+        expect.objectContaining({ event: 'staff.ownershipTransferRejected' }),
+      );
+    });
+
+    it('changes NOTHING when the password is wrong', async () => {
+      authServiceMock.verifyOwnPassword.mockRejectedValue(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      await expect(
+        service.transferOwnership(otherAdminRow.id, 'not-my-password', ownerActor),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
+      expect(authRepositoryMock.revokeAllUserTokens).not.toHaveBeenCalled();
+    });
+
+    it('refuses a deputy admin — @OwnerOnly is re-stated where the actor is known', async () => {
+      // The guard already refuses this over HTTP. Re-stated here because the
+      // service is callable from anywhere in the process, and this is the one
+      // method whose whole purpose is to touch the owner's row.
+      await expect(
+        service.transferOwnership(otherAdminRow.id, PASSWORD, deputyActor),
+      ).rejects.toThrow(ForbiddenException);
+
+      // Not even the argon2 cost: a caller who may not do this at all learns
+      // nothing by being asked for a password first.
+      expect(authServiceMock.verifyOwnPassword).not.toHaveBeenCalled();
+      expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
+    });
+
+    it('is 404 for an unknown id, a customer, or a soft-deleted account', async () => {
+      // All three come back null from the staff-scoped lookup, and all three get
+      // the same answer — the same reasoning as every other door here.
+      staffRepositoryMock.findStaffById.mockResolvedValue(null);
+
+      await expect(service.transferOwnership(customerRow.id, PASSWORD, ownerActor)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
+    });
+
+    it('refuses a DEACTIVATED account — the shop would be left with no live owner', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(
+        staffAccount({ ...otherAdminRow, isActive: false }),
+      );
+
+      await expect(
+        service.transferOwnership(otherAdminRow.id, PASSWORD, ownerActor),
+      ).rejects.toThrow(BadRequestException);
+      expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
+    });
+
+    it('refuses a MANAGER — appointing a deputy is a separate, audited act', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(managerRow));
+
+      await expect(service.transferOwnership(managerRow.id, PASSWORD, ownerActor)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
+    });
+
+    it('refuses transferring to YOURSELF', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(ownerRow));
+
+      await expect(service.transferOwnership(ownerActor.id, PASSWORD, ownerActor)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
+    });
+
+    it('checks the TARGET before spending the argon2 cost on the password', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(staffAccount(managerRow));
+
+      await expect(service.transferOwnership(managerRow.id, PASSWORD, ownerActor)).rejects.toThrow(
+        BadRequestException,
+      );
+
+      // The password is the CONFIRMATION of an otherwise-valid transfer. Asking
+      // for it first would mean an owner who mistyped an id has to get their own
+      // password right before being told the id was wrong.
+      expect(authServiceMock.verifyOwnPassword).not.toHaveBeenCalled();
+    });
+
+    it('revokes nothing when the transaction itself fails', async () => {
+      // The database refused (the row vanished, or a second owner appeared).
+      // Nothing moved, so nobody is signed out — the outgoing owner must not be
+      // left locked out of a shop they still own.
+      staffRepositoryMock.transferOwnership.mockRejectedValue(
+        Object.assign(new Error('Record to update not found'), { code: 'P2025' }),
+      );
+
+      await expect(
+        service.transferOwnership(otherAdminRow.id, PASSWORD, ownerActor),
+      ).rejects.toThrow();
+      expect(authRepositoryMock.revokeAllUserTokens).not.toHaveBeenCalled();
     });
   });
 });

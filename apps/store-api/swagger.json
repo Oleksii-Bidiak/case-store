@@ -7151,6 +7151,65 @@
         ]
       }
     },
+    "/api/admin/staff/{id}/transfer-ownership": {
+      "post": {
+        "operationId": "transferStaffOwnership",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "UUID of the administrator receiving the shop",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferOwnershipDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ownership transferred; both parties’ sessions revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnershipTransferResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing password, yourself, a manager, or a deactivated account"
+          },
+          "401": {
+            "description": "The password did not match"
+          },
+          "403": {
+            "description": "Forbidden — only the shop owner may transfer"
+          },
+          "404": {
+            "description": "No staff account with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Transfer shop ownership to another administrator",
+        "tags": [
+          "Staff"
+        ]
+      }
+    },
     "/api/admin/permission-templates": {
       "get": {
         "operationId": "listPermissionTemplates",
@@ -19258,6 +19317,42 @@
           "data"
         ]
       },
+      "OwnershipTransferEntity": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "description": "The account that now owns the shop",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StaffUserEntity"
+              }
+            ]
+          },
+          "previousOwner": {
+            "description": "The account that owned it until this call; now an ordinary admin (level 2)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StaffUserEntity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "previousOwner"
+        ]
+      },
+      "OwnershipTransferResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OwnershipTransferEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "CreateStaffDto": {
         "type": "object",
         "properties": {
@@ -19360,6 +19455,19 @@
         },
         "required": [
           "permissions"
+        ]
+      },
+      "TransferOwnershipDto": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "description": "The CALLING owner's own current password, re-entered to confirm",
+            "example": "OwnerP@ssw0rd!"
+          }
+        },
+        "required": [
+          "password"
         ]
       },
       "PermissionTemplateEntity": {

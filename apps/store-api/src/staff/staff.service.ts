@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -44,6 +45,20 @@ export interface PaginatedStaffResponse {
  * the old set inside the same operation that replaces it is the only way the two
  * halves of the diff describe the same instant.
  */
+/**
+ * What {@link StaffService.transferOwnership} hands back.
+ *
+ * Both rows, already enriched, because the caller's own account is one of the two
+ * and the screen that fired the transfer is displaying both. See
+ * `OwnershipTransferEntity` for the rest of the argument.
+ */
+export interface OwnershipTransfer {
+  /** The account that now owns the shop. */
+  owner: StaffUserEntity;
+  /** The account that owned it a moment ago — now an ordinary admin, level 2. */
+  previousOwner: StaffUserEntity;
+}
+
 export interface StaffPermissionChange {
   entity: StaffPermissionsEntity;
   /** The keys the person held before this write, sorted. */
@@ -70,6 +85,16 @@ export interface StaffPermissionChange {
  * with the other four for a reason that is easy to miss: handing somebody the set
  * of keys a person ABOVE you holds is a way around the first four rather than a
  * lesser act than them.
+ *
+ * EXACTLY ONE METHOD HERE IS ALLOWED NOT TO CALL IT, and it is named so that a
+ * grep for `assertMayManage` has a complete answer rather than a suspicious gap:
+ * {@link StaffService.transferOwnership} (TASK-478). The rule refuses every
+ * caller against the owner's account by construction — OWNER is the maximum
+ * level and the comparison is strictly greater — which is exactly what makes
+ * invariant 2 true and also what would make an owner who leaves a dead end. The
+ * transfer is the door cut for that one case, so it is `@OwnerOnly()`, it asks
+ * for the caller's password, and it re-states by hand every check the level rule
+ * would have made. A SEVENTH method without the assert is still a defect.
  *
  * WHY THE ACTOR COMES FROM THE GUARD, NOT FROM THE JWT. `PermissionActor` is what
  * `PermissionGuard` read from the database on this very request, so `isOwner` and
@@ -344,6 +369,146 @@ export class StaffService {
       before: [...before].sort(),
       after: [...after].sort(),
       target: { id: account.user.id, email: account.user.email },
+    };
+  }
+
+  /**
+   * The transfer — the one door that reaches the owner's own account
+   * (TASK-478, plan 181, invariant 1).
+   *
+   * ── WHY THIS EXISTS AT ALL ───────────────────────────────────────────────────
+   *
+   * `assertMayManage` needs the actor to be STRICTLY above the target, and OWNER
+   * is the maximum level. Nothing is above a maximum, so the owner's account is
+   * unreachable through all five doors above — including to the owner themselves.
+   * That is the correct default and it is what makes invariant 2 true without a
+   * single special case. It also means that, with only those five doors, an owner
+   * who sells the business, retires or dies is a dead end: nobody can appoint a
+   * successor, because appointing one is precisely the thing only the owner may
+   * do.
+   *
+   * This method is the door cut for that single case, and it is the ONLY method on
+   * this service that does not call `assertMayManage`. Every check the level rule
+   * would have made is therefore re-stated here by hand, which is why the list
+   * below is long: there is no shared assert to fall back on.
+   *
+   * ── WHY `@OwnerOnly()` AND NOT A PERMISSION KEY ─────────────────────────────
+   *
+   * Everything else in the owner's reserve is of the form "an admin may not". This
+   * one is "only the owner, ever" — there is no arrangement of the shop in which
+   * delegating "choose who owns this business" is meaningful, so it has no key,
+   * appears on no granting screen, and cannot be ticked. `actor.isOwner` is
+   * re-checked here anyway: the guard is the HTTP door, and this service is
+   * callable from anywhere in the process.
+   *
+   * ── WHY THE INCOMING OWNER MUST ALREADY BE AN ADMIN ─────────────────────────
+   *
+   * Because promotion is a different act with its own door, its own dialog
+   * (decision 5: appointing an admin lists what the person gets) and its own audit
+   * row. Folding it in here would mean one API call that both appoints a deputy
+   * and hands them the shop — two decisions, one confirmation, one log line. It
+   * also keeps the operation exactly reversible: afterwards the two accounts
+   * differ only by the flag, so the new owner can hand it straight back and the
+   * shop returns to the state it started in. Auto-promoting a manager could not
+   * do that.
+   *
+   * ── WHAT HAPPENS TO THE OUTGOING OWNER ──────────────────────────────────────
+   *
+   * They keep `role = ADMIN` and become an ordinary deputy admin (level 2).
+   * Nothing else about their row changes. That is a state EVERY other code path
+   * already produces — it is exactly what `updateRole` leaves behind when an owner
+   * appoints a deputy — so no downstream consumer meets a shape it has never seen.
+   * The alternatives were both worse: demoting them to MANAGER would strip them to
+   * whatever `UserPermission` rows they happen to hold, which for a former owner is
+   * usually NONE (owners pass on the flag, not on grants), locking the founder out
+   * of their own shop in the same request that gave it away; deactivating them
+   * would do so outright. If the new owner wants them gone, that is now the new
+   * owner's call, through the four doors they now outrank them on.
+   *
+   * ── WHAT REVOKING BOTH SESSIONS ACTUALLY BUYS, AND WHAT IT DOES NOT ─────────
+   *
+   * It does NOT shorten the window in which either party's ADMIN authority is
+   * wrong. There is no such window: `PermissionGuard` re-reads `isOwner` and the
+   * role from the database on every admin request, so the reserve closes to the
+   * outgoing owner and opens to the incoming one on their very next call,
+   * regardless of what any token says. Claiming otherwise would be overstating it.
+   *
+   * What it buys is three narrower things:
+   *
+   *   1. The refresh cookie is the DURABLE half of the credential (days, not the
+   *      access token's ~15 minutes). Revoking it means neither party can mint a
+   *      fresh access token from a session that was opened under the old
+   *      arrangement; both re-authenticate into their new level deliberately.
+   *   2. Surfaces that read the role from the TOKEN rather than through
+   *      `PermissionGuard` — the self-service and storefront side — are bounded by
+   *      one access-token lifetime instead of one refresh-token lifetime.
+   *   3. Signing in again is what makes both admin panels re-fetch
+   *      `/auth/me/permissions` and redraw. Without it the outgoing owner's UI
+   *      would keep offering owner-only screens that now 403, which reads as a
+   *      broken panel rather than as a completed handover.
+   *
+   * ── ORDER OF THE CHECKS, AND WHY THE PASSWORD IS LAST ───────────────────────
+   *
+   * Caller (403) → target exists (404) → target is eligible (400) → password
+   * (401) → the transaction. The password is the CONFIRMATION of an otherwise
+   * valid transfer: asking for it first would make an owner who mistyped an id
+   * type their password correctly before being told the id was wrong, and would
+   * spend an argon2 hash on every malformed request. There is no enumeration
+   * concern in that ordering — the only caller who reaches these branches is the
+   * owner, who can already list every staff account.
+   *
+   * @throws ForbiddenException when the caller does not own the shop
+   * @throws NotFoundException for an unknown id, a customer or a deleted account
+   * @throws BadRequestException when the target cannot receive the shop
+   * @throws UnauthorizedException on a wrong password — generic, like login
+   */
+  async transferOwnership(
+    id: string,
+    password: string,
+    actor: PermissionActor,
+  ): Promise<OwnershipTransfer> {
+    if (!actor.isOwner) {
+      throw new ForbiddenException('Only the shop owner can transfer ownership');
+    }
+
+    if (id === actor.id) {
+      throw new BadRequestException('You already own the shop');
+    }
+
+    const account = await this.requireStaff(id);
+
+    // A deactivated or (via `requireStaff`) soft-deleted account cannot sign in.
+    // Handing the shop to one satisfies the index and strands the business: the
+    // only account that can re-activate it is the one that just gave it away.
+    if (!account.user.isActive) {
+      throw new BadRequestException(
+        'Ownership can only be transferred to an active account. Re-activate it first.',
+      );
+    }
+
+    if (account.user.role !== UserRole.ADMIN) {
+      throw new BadRequestException(
+        'Ownership can only be transferred to an administrator. Appoint them as an administrator first.',
+      );
+    }
+
+    // Re-authentication, through the same code login uses — see
+    // `AuthService.verifyOwnPassword` for what the shared path guarantees.
+    await this.authService.verifyOwnPassword(actor.id, password, {
+      event: 'staff.ownershipTransferRejected',
+      message: 'Ownership transfer rejected — the owner’s password did not match',
+    });
+
+    const { outgoing, incoming } = await this.staffRepository.transferOwnership(actor.id, id);
+
+    // Only after the flag has actually moved. Revoking first would sign the owner
+    // out of a shop they still own if the transaction then failed.
+    await this.authRepository.revokeAllUserTokens(outgoing.id);
+    await this.authRepository.revokeAllUserTokens(incoming.id);
+
+    return {
+      owner: await this.enrich(incoming),
+      previousOwner: await this.enrich(outgoing),
     };
   }
 

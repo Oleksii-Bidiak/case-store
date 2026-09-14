@@ -4,6 +4,7 @@ export {
   StaffService,
   type PaginatedStaffResponse,
   type StaffPermissionChange,
+  type OwnershipTransfer,
 } from './staff.service';
 export { StaffController } from './staff.controller';
 export {
@@ -14,11 +15,12 @@ export {
   type StaffAccount,
   type PaginatedStaffResult,
 } from './staff.repository';
-export { StaffUserEntity, StaffPermissionsEntity } from './entities';
+export { StaffUserEntity, StaffPermissionsEntity, OwnershipTransferEntity } from './entities';
 export {
   CreateStaffDto,
   SetStaffPasswordDto,
   StaffListQueryDto,
+  TransferOwnershipDto,
   UpdateStaffPermissionsDto,
   UpdateStaffRoleDto,
   UpdateStaffStatusDto,

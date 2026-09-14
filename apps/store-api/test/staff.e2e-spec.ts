@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -95,6 +95,7 @@ describe('Staff (e2e)', () => {
     findStaffById: jest.fn(),
     create: jest.fn(),
     updateRole: jest.fn(),
+    transferOwnership: jest.fn(),
   };
 
   const userRepositoryMock = {
@@ -120,7 +121,10 @@ describe('Staff (e2e)', () => {
 
   // Overridden wholesale: the password reset must be observable as "the shared
   // self-service path was called", not re-implemented here.
-  const authServiceMock = { setPassword: jest.fn().mockResolvedValue(undefined) };
+  const authServiceMock = {
+    setPassword: jest.fn().mockResolvedValue(undefined),
+    verifyOwnPassword: jest.fn().mockResolvedValue(undefined),
+  };
   const reviewRepositoryStub = { updateMany: jest.fn().mockResolvedValue({ count: 0 }) };
 
   const prismaServiceMock = {
@@ -558,6 +562,169 @@ describe('Staff (e2e)', () => {
         .expect(409);
 
       expect(staffRepositoryMock.create).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── The transfer ───────────────────────────────────────────────────────────
+
+  /**
+   * `POST /api/admin/staff/:id/transfer-ownership` (TASK-478, plan 181,
+   * invariant 1).
+   *
+   * The route the other four doors exist to make unnecessary — and the only one
+   * that can ever change who owns the shop. What this suite proves that the
+   * service spec cannot: that the handler wears `@OwnerOnly()` rather than
+   * `staff:write` (so a deputy admin — who passes every permission that exists —
+   * is still refused), that the password travels in the BODY and is required by
+   * the DTO, and that exactly one audit row is written naming both parties.
+   */
+  describe('POST /api/admin/staff/:id/transfer-ownership', () => {
+    const PASSWORD = 'OwnerP@ssw0rd!';
+    const url = `/api/admin/staff/${adminRow.id}/transfer-ownership`;
+
+    beforeEach(() => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(account(adminRow));
+      staffRepositoryMock.transferOwnership.mockResolvedValue({
+        outgoing: { ...ownerRow, isOwner: false },
+        incoming: { ...adminRow, isOwner: true },
+      });
+      authServiceMock.verifyOwnPassword.mockResolvedValue(undefined);
+    });
+
+    it('hands the shop over for the owner, with both sessions revoked', async () => {
+      const response = await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', auth(owner))
+        .send({ password: PASSWORD })
+        .expect(200);
+
+      expect(response.body.data.owner).toMatchObject({ id: adminRow.id, isOwner: true, level: 3 });
+      expect(response.body.data.previousOwner).toMatchObject({
+        id: owner.id,
+        isOwner: false,
+        role: 'ADMIN',
+        level: 2,
+      });
+
+      expect(staffRepositoryMock.transferOwnership).toHaveBeenCalledWith(owner.id, adminRow.id);
+      expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith(owner.id);
+      expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith(adminRow.id);
+    });
+
+    it('is 403 for a DEPUTY ADMIN — this is the reserve, not a permission', async () => {
+      // A deputy passes every `@RequirePermission` there is, including
+      // `staff:write`. `@OwnerOnly` is consulted BEFORE that bypass in
+      // PermissionGuard, and this assertion is what would fail if the two were
+      // ever reordered.
+      await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', auth(deputy))
+        .send({ password: PASSWORD })
+        .expect(403);
+
+      expect(authServiceMock.verifyOwnPassword).not.toHaveBeenCalled();
+      expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
+    });
+
+    it('is 403 for a manager and a customer, 401 with no token at all', async () => {
+      for (const who of [manager, customer]) {
+        await request(app.getHttpServer())
+          .post(url)
+          .set('Authorization', auth(who))
+          .send({ password: PASSWORD })
+          .expect(403);
+      }
+
+      await request(app.getHttpServer()).post(url).send({ password: PASSWORD }).expect(401);
+
+      expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
+    });
+
+    it('is 401 on a wrong password, and nothing at all happens', async () => {
+      authServiceMock.verifyOwnPassword.mockRejectedValue(
+        new UnauthorizedException('Invalid credentials'),
+      );
+
+      const response = await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', auth(owner))
+        .send({ password: 'not-my-password' })
+        .expect(401);
+
+      // The same generic message login uses — it says nothing about the account.
+      expect(response.body.message).toBe('Invalid credentials');
+
+      expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
+      expect(authRepositoryMock.revokeAllUserTokens).not.toHaveBeenCalled();
+      expect(prismaServiceMock.auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('requires the password in the body — an empty one is a 400, not a transfer', async () => {
+      for (const body of [{}, { password: '' }]) {
+        await request(app.getHttpServer())
+          .post(url)
+          .set('Authorization', auth(owner))
+          .send(body)
+          .expect(400);
+      }
+
+      expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
+    });
+
+    it('is 404 for a customer, an unknown id or a deleted account', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .post('/api/admin/staff/customer-staff-1/transfer-ownership')
+        .set('Authorization', auth(owner))
+        .send({ password: PASSWORD })
+        .expect(404);
+    });
+
+    it('is 400 for a manager and for a deactivated admin', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(account(managerRow));
+      await request(app.getHttpServer())
+        .post(`/api/admin/staff/${managerRow.id}/transfer-ownership`)
+        .set('Authorization', auth(owner))
+        .send({ password: PASSWORD })
+        .expect(400);
+
+      staffRepositoryMock.findStaffById.mockResolvedValue(
+        account(row({ id: adminRow.id, role: 'ADMIN', isActive: false })),
+      );
+      await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', auth(owner))
+        .send({ password: PASSWORD })
+        .expect(400);
+
+      expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
+    });
+
+    it('writes exactly ONE audit row, and it names both parties', async () => {
+      await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', auth(owner))
+        .send({ password: PASSWORD })
+        .expect(200);
+
+      // One, not two: `@RecordsOwnAudit()` stops the generic interceptor adding a
+      // second row whose only content would be the submitted body — which here is
+      // the owner's password.
+      expect(prismaServiceMock.auditLog.create).toHaveBeenCalledTimes(1);
+
+      const { data } = prismaServiceMock.auditLog.create.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data.action).toBe('staff.transferOwnership');
+      expect(data.entityId).toBe(adminRow.id);
+      expect(String(data.summary)).toContain(adminRow.email);
+      expect(String(data.summary)).toContain(ownerRow.email);
+      expect(data.diff).toMatchObject({
+        isOwner: { from: ownerRow.email, to: adminRow.email },
+      });
+      // And not a trace of what was typed to confirm it.
+      expect(JSON.stringify(data)).not.toContain(PASSWORD);
     });
   });
 

@@ -24,16 +24,17 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { StaffService } from './staff.service';
-import { StaffPermissionsEntity, StaffUserEntity } from './entities';
+import { OwnershipTransferEntity, StaffPermissionsEntity, StaffUserEntity } from './entities';
 import {
   CreateStaffDto,
   SetStaffPasswordDto,
   StaffListQueryDto,
+  TransferOwnershipDto,
   UpdateStaffPermissionsDto,
   UpdateStaffRoleDto,
   UpdateStaffStatusDto,
 } from './dto';
-import { CurrentActor, PermissionGuard, RequirePermission } from '../auth/permissions';
+import { CurrentActor, OwnerOnly, PermissionGuard, RequirePermission } from '../auth/permissions';
 import type { PermissionActor } from '../auth/permissions';
 import { AuditService, RecordsOwnAudit } from '../audit';
 
@@ -45,6 +46,11 @@ class StaffResponseEnvelope {
 class StaffPermissionsResponseEnvelope {
   @ApiProperty({ type: StaffPermissionsEntity })
   data!: StaffPermissionsEntity;
+}
+
+class OwnershipTransferResponseEnvelope {
+  @ApiProperty({ type: OwnershipTransferEntity })
+  data!: OwnershipTransferEntity;
 }
 
 class StaffPaginationMeta {
@@ -92,9 +98,15 @@ class StaffListResponseEnvelope {
  * `staff:write` PLUS the level rule, applied in the service where the target is
  * known.
  *
- * WHAT IS NOT HERE. Transferring ownership (TASK-478). It has no route on this
- * controller by design: no `@Patch(':id/owner')` exists, so there is nothing to
- * accidentally authorise.
+ * AND SINCE TASK-478, THE TRANSFER — `POST :id/transfer-ownership`. It is the one
+ * route here that is `@OwnerOnly()` rather than `staff:write`, and the one that
+ * asks for a password. Note what that combination refuses: a deputy admin, who
+ * passes every `@RequirePermission` in the catalogue, is refused by the guard
+ * before the body is ever read, because `PermissionGuard` consults `@OwnerOnly`
+ * BEFORE the admin bypass. It is also the only route in the system that can move
+ * `isOwner` at all — `assertMayManage` makes the owner's account unreachable
+ * through every other door, deliberately, and without this one an owner who leaves
+ * would be a dead end.
  */
 @ApiTags('Staff')
 @ApiExtraModels(
@@ -103,6 +115,8 @@ class StaffListResponseEnvelope {
   StaffListResponseEnvelope,
   StaffPermissionsEntity,
   StaffPermissionsResponseEnvelope,
+  OwnershipTransferEntity,
+  OwnershipTransferResponseEnvelope,
 )
 @Controller('admin/staff')
 @UseGuards(PermissionGuard)
@@ -374,5 +388,80 @@ export class StaffController {
     });
 
     return { data: change.entity };
+  }
+
+  /**
+   * POST /api/admin/staff/:id/transfer-ownership
+   *
+   * Hand the shop to another administrator. `@OwnerOnly()` rather than a
+   * permission key: everything else in the reserve is "an admin may not", but this
+   * one is "only the owner, ever", and a key that appears on no granting screen is
+   * still a key somebody could add to one.
+   *
+   * THE BODY CARRIES THE CALLER'S OWN PASSWORD. A valid token proves a session was
+   * opened recently; it does not prove the owner is at the keyboard now. This is
+   * the one act that cannot be undone by signing back in — afterwards the caller
+   * is a deputy and the recipient holds the reserve — so it re-authenticates. A
+   * wrong password answers 401 with the same generic message login uses.
+   *
+   * ONE NOTE FOR THE UI (TASK-480): because that 401 comes from a route outside
+   * `/auth/`, the admin client's response interceptor will refresh once and replay
+   * the request before surfacing the error. Harmless — a wrong password writes
+   * nothing, which `staff.e2e-spec.ts` asserts explicitly — but a screen here
+   * should not treat the first 401 as "your session expired".
+   *
+   * `@RecordsOwnAudit()` for two reasons, and the second is not optional. The
+   * generic interceptor logs the REQUEST BODY as the diff, and this body is the
+   * owner's password: `sanitizeForAudit` would redact the field by name, but
+   * relying on a substring match to keep a plaintext password out of the audit
+   * table is not a thing to rely on twice. It also could not name the OUTGOING
+   * owner, who is the more interesting half of "who handed the shop to whom".
+   */
+  @Post(':id/transfer-ownership')
+  @HttpCode(HttpStatus.OK)
+  @OwnerOnly()
+  @RecordsOwnAudit()
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Transfer shop ownership to another administrator',
+    operationId: 'transferStaffOwnership',
+  })
+  @ApiParam({ name: 'id', description: 'UUID of the administrator receiving the shop' })
+  @ApiResponse({
+    status: 200,
+    description: 'Ownership transferred; both parties’ sessions revoked',
+    type: OwnershipTransferResponseEnvelope,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Missing password, yourself, a manager, or a deactivated account',
+  })
+  @ApiResponse({ status: 401, description: 'The password did not match' })
+  @ApiResponse({ status: 403, description: 'Forbidden — only the shop owner may transfer' })
+  @ApiResponse({ status: 404, description: 'No staff account with this id' })
+  async transferOwnership(
+    @Param('id') id: string,
+    @Body() dto: TransferOwnershipDto,
+    @CurrentActor() actor: PermissionActor,
+    @Req() request: Request,
+  ): Promise<{ data: OwnershipTransferEntity }> {
+    const transfer = await this.staffService.transferOwnership(id, dto.password, actor);
+
+    await this.auditService.record({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+      action: 'staff.transferOwnership',
+      entityType: 'staff',
+      // The account that RECEIVED the shop: the row an operator scrolling the log
+      // would click on to ask "who is this person?".
+      entityId: transfer.owner.id,
+      summary: `Власність магазину передано: ${transfer.previousOwner.email} → ${transfer.owner.email}`,
+      diff: { isOwner: { from: transfer.previousOwner.email, to: transfer.owner.email } },
+      ip: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
+
+    return { data: OwnershipTransferEntity.fromParts(transfer.owner, transfer.previousOwner) };
   }
 }

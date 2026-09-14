@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UserRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../src/prisma';
+import { StaffRepository } from '../src/staff/staff.repository';
 
 /**
  * The single-owner invariant (TASK-474, plan 181) against a REAL Postgres.
@@ -33,6 +34,7 @@ import { PrismaService } from '../src/prisma';
 
 describe('the single-owner invariant (TASK-474) — integration', () => {
   let prisma: PrismaService;
+  let staffRepository: StaffRepository;
 
   /** Unique per run, so repeated runs never collide on `users.email`. */
   const suffix = randomUUID().slice(0, 8);
@@ -51,10 +53,11 @@ describe('the single-owner invariant (TASK-474) — integration', () => {
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
-      providers: [PrismaService],
+      providers: [PrismaService, StaffRepository],
     }).compile();
 
     prisma = moduleRef.get(PrismaService);
+    staffRepository = moduleRef.get(StaffRepository);
     await prisma.$connect();
 
     await prisma.user.deleteMany({ where: { email: { in: FIXTURE_EMAILS } } });
@@ -98,5 +101,93 @@ describe('the single-owner invariant (TASK-474) — integration', () => {
         await prisma.user.update({ where: { id: priorOwner.id }, data: { isOwner: true } });
       }
     }
+  });
+
+  /**
+   * Lend the database to `body` with exactly two fixture accounts in it — an
+   * owner and a deputy — and put the shop's real owner back afterwards whatever
+   * happens. The seeded owner has to be parked because the index is global: a
+   * fixture owner and the real one cannot coexist, which is the whole point.
+   */
+  async function withTwoAdmins(
+    body: (ids: { ownerId: string; deputyId: string }) => Promise<void>,
+  ): Promise<void> {
+    const priorOwner = await prisma.user.findFirst({
+      where: { isOwner: true },
+      select: { id: true },
+    });
+    await prisma.user.updateMany({ where: { isOwner: true }, data: { isOwner: false } });
+
+    try {
+      const owner = await prisma.user.create({
+        data: { email: OWNER_A, passwordHash: 'x', role: UserRole.ADMIN, isOwner: true },
+      });
+      const deputy = await prisma.user.create({
+        data: { email: OWNER_B, passwordHash: 'x', role: UserRole.ADMIN, isOwner: false },
+      });
+
+      await body({ ownerId: owner.id, deputyId: deputy.id });
+    } finally {
+      await prisma.user.deleteMany({ where: { email: { in: FIXTURE_EMAILS } } });
+      await prisma.user.updateMany({ where: { isOwner: true }, data: { isOwner: false } });
+      if (priorOwner) {
+        await prisma.user.update({ where: { id: priorOwner.id }, data: { isOwner: true } });
+      }
+    }
+  }
+
+  /**
+   * The transfer itself, against the real index (TASK-478).
+   *
+   * `staff.repository.spec.ts` proves the write order against a FAKE index and
+   * `staff.service.spec.ts` proves the rules around it; neither can show that the
+   * order the code ships is the order Postgres actually permits. This is the case
+   * that can: it calls the shipped `StaffRepository.transferOwnership` on a real
+   * connection, and the assertion it really makes is that the transaction commits
+   * at all — a partial unique index is checked statement by statement, not at
+   * COMMIT, so the wrong order does not fail late, it fails here.
+   */
+  it('transfers ownership through the shipped repository, and the index permits it', async () => {
+    await withTwoAdmins(async ({ ownerId, deputyId }) => {
+      const result = await staffRepository.transferOwnership(ownerId, deputyId);
+
+      expect(result.outgoing.isOwner).toBe(false);
+      expect(result.incoming.isOwner).toBe(true);
+
+      const owners = await prisma.user.findMany({
+        where: { isOwner: true },
+        select: { id: true },
+      });
+      expect(owners.map((o) => o.id)).toEqual([deputyId]);
+
+      // The outgoing owner is left an ordinary deputy admin — the state
+      // `PATCH :id/role` produces when an owner appoints one, and therefore a
+      // state every other code path already knows how to handle.
+      const before = await prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
+      expect(before).toMatchObject({ isOwner: false, role: UserRole.ADMIN, isActive: true });
+    });
+  });
+
+  it('rejects the naive write order and rolls the whole transfer back', async () => {
+    await withTwoAdmins(async ({ ownerId, deputyId }) => {
+      // Promote first, demote second — the order a reasonable author writes, and
+      // the one this task exists to rule out. Postgres refuses the very first
+      // statement, because for that instant two rows would carry `is_owner`.
+      const naive = prisma.$transaction(async (tx) => {
+        await tx.user.update({ where: { id: deputyId }, data: { isOwner: true } });
+        await tx.user.update({ where: { id: ownerId }, data: { isOwner: false } });
+      });
+
+      await expect(naive).rejects.toMatchObject({ code: 'P2002' });
+
+      // And the shop still has the owner it started the transaction with — the
+      // failure mode that matters is not "the transfer did not happen" but "the
+      // shop ended up with nobody who can sign in as owner".
+      const owners = await prisma.user.findMany({
+        where: { isOwner: true },
+        select: { id: true },
+      });
+      expect(owners.map((o) => o.id)).toEqual([ownerId]);
+    });
   });
 });
