@@ -22,6 +22,22 @@ export interface StoredImage {
   relativePath: string;
   /** base64 LQIP for `next/image` blur-up, or null for a GIF passthrough. */
   blurDataUrl: string | null;
+  /**
+   * Facts about the bytes that were actually written (TASK-441).
+   *
+   * Additive, and deliberately so: every existing caller ignores them, while the
+   * media library needs them on the row it creates. The alternative — having the
+   * library re-open the file it just handed to this service — would be a second
+   * decode of the same bytes and a second place that could disagree about them.
+   *
+   * `width`/`height` are 0 only when the format could not report them; `bytes`
+   * is always the real length of the stored buffer.
+   */
+  width: number;
+  height: number;
+  bytes: number;
+  /** Media type of the STORED file (`image/webp`, or `image/gif` passthrough). */
+  mime: string;
 }
 
 /**
@@ -90,9 +106,17 @@ export class ImageUploadService {
 
     const stored: StoredImage[] = [];
     for (const file of files) {
-      const { buffer, ext, blurDataUrl } = await this.prepareFile(file);
-      const relativePath = await this.storage.save(buffer, ext, subdir);
-      stored.push({ url: this.publicUrl(relativePath), relativePath, blurDataUrl });
+      const prepared = await this.prepareFile(file);
+      const relativePath = await this.storage.save(prepared.buffer, prepared.ext, subdir);
+      stored.push({
+        url: this.publicUrl(relativePath),
+        relativePath,
+        blurDataUrl: prepared.blurDataUrl,
+        width: prepared.width,
+        height: prepared.height,
+        bytes: prepared.buffer.length,
+        mime: prepared.mime,
+      });
     }
     return stored;
   }
@@ -110,20 +134,36 @@ export class ImageUploadService {
    * A raster file whose bytes `sharp` cannot decode fails the re-encode, which is
    * translated to 415 here rather than surfacing as a 500.
    */
-  private async prepareFile(
-    file: Express.Multer.File,
-  ): Promise<{ buffer: Buffer; ext: string; blurDataUrl: string | null }> {
+  private async prepareFile(file: Express.Multer.File): Promise<{
+    buffer: Buffer;
+    ext: string;
+    mime: string;
+    blurDataUrl: string | null;
+    width: number;
+    height: number;
+  }> {
     if (file.mimetype === GIF_MIME) {
-      const format = await this.imageProcessor.detectFormat(file.buffer);
-      if (format !== 'gif') {
+      // `probe` rather than `detectFormat`: the gate is identical (a buffer that
+      // is not really a GIF is refused), and the same single metadata read also
+      // yields the dimensions the media library records. Two reads would be two
+      // chances for the stored row to disagree with the stored bytes.
+      const probe = await this.imageProcessor.probe(file.buffer);
+      if (probe?.format !== 'gif') {
         throw new UnsupportedMediaTypeException('File contents are not a valid GIF image');
       }
-      return { buffer: file.buffer, ext: ALLOWED_IMAGE_MIME_EXT[GIF_MIME], blurDataUrl: null };
+      return {
+        buffer: file.buffer,
+        ext: ALLOWED_IMAGE_MIME_EXT[GIF_MIME],
+        mime: GIF_MIME,
+        blurDataUrl: null,
+        width: probe.width,
+        height: probe.height,
+      };
     }
 
     try {
-      const { webp, blurDataUrl } = await this.imageProcessor.process(file.buffer);
-      return { buffer: webp, ext: 'webp', blurDataUrl };
+      const { webp, blurDataUrl, width, height } = await this.imageProcessor.process(file.buffer);
+      return { buffer: webp, ext: 'webp', mime: 'image/webp', blurDataUrl, width, height };
     } catch {
       throw new UnsupportedMediaTypeException('File contents are not a decodable image');
     }

@@ -44,7 +44,7 @@ describe('ProductImageService', () => {
     updateMany: jest.Mock;
   };
   let storage: { save: jest.Mock; delete: jest.Mock };
-  let imageProcessor: { process: jest.Mock; detectFormat: jest.Mock };
+  let imageProcessor: { process: jest.Mock; detectFormat: jest.Mock; probe: jest.Mock };
   let cache: { del: jest.Mock; delByPrefix: jest.Mock };
   let revalidation: { revalidate: jest.Mock };
 
@@ -67,8 +67,12 @@ describe('ProductImageService', () => {
       process: jest.fn().mockResolvedValue({
         webp: Buffer.from('optimized-webp'),
         blurDataUrl: 'data:image/webp;base64,BLUR',
+        width: 2000,
+        height: 1333,
+        bytes: Buffer.from('optimized-webp').length,
       }),
       detectFormat: jest.fn().mockResolvedValue('gif'),
+      probe: jest.fn().mockResolvedValue({ format: 'gif', width: 320, height: 240 }),
     };
     cache = {
       del: jest.fn().mockResolvedValue(undefined),
@@ -190,7 +194,7 @@ describe('ProductImageService', () => {
       // The GIF branch is the only one that stores client bytes verbatim, so it
       // must sniff the buffer rather than trust the declared Content-Type — a
       // script polyglot would otherwise be served from our own origin.
-      imageProcessor.detectFormat.mockResolvedValue(null);
+      imageProcessor.probe.mockResolvedValue(null);
       const polyglot = makeFile({
         mimetype: 'image/gif',
         buffer: Buffer.from('<script>alert(1)</script>'),

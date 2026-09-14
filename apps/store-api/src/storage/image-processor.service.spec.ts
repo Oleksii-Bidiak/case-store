@@ -170,6 +170,57 @@ describe('ImageProcessor', () => {
     });
   });
 
+  // ─── Reported dimensions (TASK-441) ───────────────────────────────────────
+
+  describe('reported dimensions', () => {
+    it('reports the dimensions and size OF THE STORED RENDER, not of the input', async () => {
+      // The media library records these on the asset row, so "what it says" and
+      // "what it stored" have to be the same picture. A 4000×3000 input that is
+      // reported as 4000×3000 would put the pre-resize numbers on a post-resize
+      // file, and nothing downstream could tell.
+      const input = await makePhotoFixture(4000, 3000);
+
+      const { webp, width, height, bytes } = await processor.process(input);
+
+      expect({ width, height }).toEqual({ width: 2000, height: 1500 });
+      expect(bytes).toBe(webp.byteLength);
+      expect(bytes).toBeLessThan(input.byteLength);
+    });
+
+    it('reports the ROTATED dimensions for an EXIF-rotated photo', async () => {
+      // Orientation 6 swaps the axes. Reporting the pre-rotation 400×300 here
+      // would describe a file that is actually 300×400 — the one case where the
+      // numbers and the bytes can silently disagree.
+      const input = await sharp({
+        create: { width: 400, height: 300, channels: 3, background: { r: 30, g: 120, b: 210 } },
+      })
+        .withMetadata({ orientation: 6 })
+        .jpeg()
+        .toBuffer();
+
+      const { width, height } = await processor.process(input);
+
+      expect({ width, height }).toEqual({ width: 300, height: 400 });
+    });
+  });
+
+  describe('probe', () => {
+    it('reports format AND dimensions from the bytes in one read', async () => {
+      await expect(processor.probe(await makeFixture('png', 64, 48))).resolves.toEqual({
+        format: 'png',
+        width: 64,
+        height: 48,
+      });
+    });
+
+    it('returns null for a buffer that is not a decodable image', async () => {
+      // The animated-GIF passthrough gates on this, and it is the only path that
+      // writes client bytes verbatim.
+      await expect(processor.probe(Buffer.from('<script>alert(1)</script>'))).resolves.toBeNull();
+      await expect(processor.probe(Buffer.alloc(0))).resolves.toBeNull();
+    });
+  });
+
   describe('detectFormat', () => {
     it('reports the real format sniffed from the bytes', async () => {
       await expect(processor.detectFormat(await makeFixture('png'))).resolves.toBe('png');

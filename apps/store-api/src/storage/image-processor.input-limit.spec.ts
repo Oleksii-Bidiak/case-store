@@ -15,11 +15,22 @@ import { ImageProcessor, MAX_INPUT_PIXELS } from './image-processor.service';
  * test fails in exactly that case, which is the whole point of the task.
  */
 jest.mock('sharp', () => {
+  const encoded = Buffer.from('fake-webp-bytes');
   const chain: Record<string, jest.Mock> = {};
   chain.rotate = jest.fn(() => chain);
   chain.resize = jest.fn(() => chain);
   chain.webp = jest.fn(() => chain);
-  chain.toBuffer = jest.fn(() => Promise.resolve(Buffer.from('fake-webp-bytes')));
+  // The full-size encode asks for `{ resolveWithObject: true }` so it gets the
+  // stored render's own width/height/size back (TASK-441); the LQIP pass does
+  // not. The mock has to honour both shapes or it stops resembling sharp.
+  chain.toBuffer = jest.fn((options?: { resolveWithObject?: boolean }) =>
+    options?.resolveWithObject
+      ? Promise.resolve({
+          data: encoded,
+          info: { width: 2000, height: 1333, size: encoded.length },
+        })
+      : Promise.resolve(encoded),
+  );
   return { __esModule: true, default: jest.fn(() => chain) };
 });
 

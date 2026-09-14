@@ -42,7 +42,7 @@ describe('UploadsController (e2e)', () => {
 
   const authRepositoryMock = { findById: jest.fn(), findByEmail: jest.fn() };
   const storageMock = { save: jest.fn(), read: jest.fn(), delete: jest.fn() };
-  const imageProcessorMock = { process: jest.fn(), detectFormat: jest.fn() };
+  const imageProcessorMock = { process: jest.fn(), detectFormat: jest.fn(), probe: jest.fn() };
   const prismaServiceMock = { $connect: jest.fn(), $disconnect: jest.fn() };
 
   function generateAccessToken(userId: string, role: string): string {
@@ -100,9 +100,13 @@ describe('UploadsController (e2e)', () => {
   beforeEach(() => {
     storageMock.save.mockResolvedValue('content/abc.webp');
     imageProcessorMock.detectFormat.mockResolvedValue('png');
+    imageProcessorMock.probe.mockResolvedValue({ format: 'png', width: 2000, height: 1333 });
     imageProcessorMock.process.mockResolvedValue({
       webp: Buffer.from('optimized-webp'),
       blurDataUrl: 'data:image/webp;base64,BLUR',
+      width: 2000,
+      height: 1333,
+      bytes: Buffer.from('optimized-webp').length,
     });
   });
 
@@ -167,7 +171,7 @@ describe('UploadsController (e2e)', () => {
 
   it('passes an animated GIF through untouched with a null blurDataUrl', async () => {
     const token = generateAccessToken('admin-e2e-1', 'ADMIN');
-    imageProcessorMock.detectFormat.mockResolvedValue('gif');
+    imageProcessorMock.probe.mockResolvedValue({ format: 'gif', width: 320, height: 240 });
     storageMock.save.mockResolvedValue('content/abc.gif');
 
     const response = await request(app.getHttpServer())
@@ -191,7 +195,7 @@ describe('UploadsController (e2e)', () => {
       // declared Content-Type cannot be trusted there: a polyglot announced as
       // image/gif would otherwise be served from our own origin.
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
-      imageProcessorMock.detectFormat.mockResolvedValue(null);
+      imageProcessorMock.probe.mockResolvedValue(null);
 
       await request(app.getHttpServer())
         .post('/api/admin/uploads/categories')

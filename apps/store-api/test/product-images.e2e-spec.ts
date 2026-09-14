@@ -57,6 +57,7 @@ describe('ProductImageController (e2e)', () => {
   const imageProcessorMock = {
     process: jest.fn(),
     detectFormat: jest.fn(),
+    probe: jest.fn(),
   };
 
   const prismaServiceMock = {
@@ -181,7 +182,7 @@ describe('ProductImageController (e2e)', () => {
       imageRepositoryMock.getMaxSortOrder.mockResolvedValue(-1);
       imageRepositoryMock.bulkCreate.mockResolvedValue(undefined);
       storageMock.save.mockResolvedValue('products/generated.gif');
-      imageProcessorMock.detectFormat.mockResolvedValue('gif');
+      imageProcessorMock.probe.mockResolvedValue({ format: 'gif', width: 320, height: 240 });
 
       const response = await request(app.getHttpServer())
         .post(`/api/products/${PRODUCT_ID}/images`)
@@ -204,7 +205,7 @@ describe('ProductImageController (e2e)', () => {
       productRepositoryMock.findById.mockResolvedValue(testProduct);
       imageRepositoryMock.getMaxSortOrder.mockResolvedValue(-1);
       // `sharp` cannot decode it → the declared Content-Type was a lie.
-      imageProcessorMock.detectFormat.mockResolvedValue(null);
+      imageProcessorMock.probe.mockResolvedValue(null);
 
       await request(app.getHttpServer())
         .post(`/api/products/${PRODUCT_ID}/images`)

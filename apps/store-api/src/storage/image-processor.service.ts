@@ -16,6 +16,27 @@ import sharp from 'sharp';
 export interface ProcessedImage {
   webp: Buffer;
   blurDataUrl: string;
+  /**
+   * Pixel dimensions and byte size OF THE RETURNED BUFFER — the ≤2000px WebP we
+   * actually store, never the file the operator picked (TASK-441).
+   *
+   * They come free: `sharp` already reports them from the encode that produced
+   * the buffer, so `resolveWithObject` costs nothing over `toBuffer()`. Carrying
+   * them here is what lets the media library record real numbers instead of the
+   * zeros its backfill had to write for pre-existing rows, and it is the reason
+   * the library does not need a second decode pass of its own.
+   */
+  width: number;
+  height: number;
+  bytes: number;
+}
+
+/** What {@link ImageProcessor.probe} reports about an undecoded buffer. */
+export interface ImageProbe {
+  /** `'gif'`, `'png'`, `'jpeg'`, `'webp'`, … — sniffed from the bytes. */
+  format: string;
+  width: number;
+  height: number;
 }
 
 /** WebP quality for the served full-size render (higher = sharper, larger). */
@@ -85,7 +106,12 @@ export class ImageProcessor {
    * when flattened to a single WebP.
    */
   async process(buffer: Buffer): Promise<ProcessedImage> {
-    const webp = await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS })
+    // `resolveWithObject` rather than a bare `toBuffer()`: sharp hands back the
+    // encoded frame's width/height/size from the encode it just did, so the
+    // dimensions cost nothing and cannot disagree with the bytes we store.
+    // Measuring them afterwards with a second `sharp(webp).metadata()` would be
+    // a second decode AND a second source of truth.
+    const { data: webp, info } = await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS })
       .rotate()
       .resize({
         width: MAX_DIMENSION,
@@ -94,7 +120,7 @@ export class ImageProcessor {
         withoutEnlargement: true,
       })
       .webp({ quality: WEBP_QUALITY })
-      .toBuffer();
+      .toBuffer({ resolveWithObject: true });
 
     const lqip = await sharp(webp)
       .resize({ width: LQIP_WIDTH })
@@ -104,7 +130,31 @@ export class ImageProcessor {
     return {
       webp,
       blurDataUrl: `data:image/webp;base64,${lqip.toString('base64')}`,
+      width: info.width,
+      height: info.height,
+      bytes: info.size,
     };
+  }
+
+  /**
+   * Sniff format AND dimensions from a buffer's own bytes in one metadata read,
+   * or null when it is not a decodable image (TASK-441).
+   *
+   * Exists for the animated-GIF passthrough, the one path that stores client
+   * bytes verbatim: it needs the format gate {@link detectFormat} provides AND
+   * the dimensions the media library records, and reading the header twice to
+   * get them would be two chances to disagree.
+   */
+  async probe(buffer: Buffer): Promise<ImageProbe | null> {
+    try {
+      const { format, width, height } = await sharp(buffer).metadata();
+      if (!format) {
+        return null;
+      }
+      return { format, width: width ?? 0, height: height ?? 0 };
+    } catch {
+      return null;
+    }
   }
 
   /**
