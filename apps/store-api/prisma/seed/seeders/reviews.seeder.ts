@@ -59,6 +59,26 @@ export const PENDING_REVIEW_TARGETS = [
  * something to appear on. See `lib/verified-purchase-reviews.ts` for why the
  * reviewer pool alone can never produce one.
  */
+/**
+ * Texts for the bulk pool (TASK-598).
+ *
+ * Separate from `COMMENTS` in `lib/verified-purchase-reviews.ts` and deliberately
+ * so: those are written from the far side of a delivery, to sit under the
+ * «Підтверджена покупка» badge the demo shows off. These are ordinary catalogue
+ * reviews from accounts that bought nothing, which is most of what a real
+ * product page carries.
+ */
+const POOL_COMMENTS = [
+  'Користуюся вже місяць — враження тільки позитивні.',
+  'За ці гроші — чудовий варіант. Раджу.',
+  'Виглядає так само, як на фото. Якість гарна.',
+  'Брав для себе, потім замовив ще одну знайомим.',
+  'Все влаштовує, працює без нарікань.',
+  'Нормальна річ за свою ціну, очікування виправдані.',
+  'Трохи не такий відтінок, як очікував, але загалом задоволений.',
+  'Тримається міцно, зроблено акуратно.',
+];
+
 export async function seedReviews(prisma: PrismaClient) {
   const reviewerPasswordHash = await argon2.hash('Reviewer123!');
 
@@ -162,10 +182,27 @@ export async function seedReviews(prisma: PrismaClient) {
     for (let i = 0; i < count; i++) {
       // Ratings skew positive (mostly 4–5) with occasional lower scores.
       const r = hashStr(`${product.slug}:${i}`) % 100;
+      // Roughly every third row carries a text (TASK-598). Before the split the
+      // public list filtered on `isActive` alone, so these comment-less rows all
+      // rendered — as an author, a date and an empty bubble. Now they are
+      // correctly excluded, and with nothing to replace them a freshly seeded
+      // shop showed «4.6 · 12 оцінок» above an EMPTY reviews tab on 173 of 178
+      // positions, which reads as a broken feature rather than a working one.
+      // A share rather than all of them, because the rating count legitimately
+      // exceeding the review count is exactly what the split is meant to show.
+      //
+      // The first row of every product is forced, so "no position has an empty
+      // tab" is a property of the code rather than a lucky hash: a share alone
+      // leaves it to chance for each of the 178 positions, and the one that came
+      // up empty would be found by a customer, not by a test.
+      const hasText = i === 0 || hashStr(`${product.slug}:text:${i}`) % 3 === 0;
       rows.push({
         userId: reviewers[i].id,
         productId: product.id,
         rating: r < 55 ? 5 : r < 80 ? 4 : r < 93 ? 3 : r < 98 ? 2 : 1,
+        comment: hasText
+          ? POOL_COMMENTS[hashStr(`${product.slug}:c:${i}`) % POOL_COMMENTS.length]
+          : undefined,
         ratingVisible: true,
         textStatus: ReviewTextStatus.APPROVED,
         createdAt: poolCreatedAt,

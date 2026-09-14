@@ -98,6 +98,31 @@ describe('seedReviews — the seeded reviewers are confirmed accounts (TASK-588)
     }
   });
 
+  it('gives a share of the pool a text, so the reviews tab is not empty', () => {
+    // TASK-598. Before the split the public list filtered on `isActive` alone, so
+    // these comment-less rows all rendered — as an author, a date and an empty
+    // bubble. Excluding them was right; leaving nothing in their place was not.
+    // A fresh seed showed «4.6 · 12 оцінок» above an EMPTY reviews tab on 173 of
+    // 178 positions, which reads as a broken feature.
+    const pool = reviewCreateMany.mock.calls[0][0].data as {
+      productId: string;
+      comment?: string;
+    }[];
+
+    const withText = pool.filter((row) => row.comment);
+    expect(withText.length).toBeGreaterThan(0);
+
+    // And not all of them: a rating count legitimately larger than the review
+    // count is the very thing this split exists to make visible, so the seed has
+    // to produce both numbers.
+    expect(withText.length).toBeLessThan(pool.length);
+
+    // Every product carries at least one, or the empty tab merely moves to a
+    // different position rather than going away.
+    const productsWithText = new Set(withText.map((row) => row.productId));
+    expect(productsWithText.size).toBe(new Set(pool.map((row) => row.productId)).size);
+  });
+
   it('still seeds exactly the rows it always did', () => {
     // The stamp is the only change: this seeder decides what the whole
     // storefront's ratings look like, and "while I was here" is how a catalogue

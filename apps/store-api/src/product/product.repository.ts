@@ -223,8 +223,16 @@ export interface UpdateProductInput {
 }
 
 /**
- * Aggregated approved-review rating for a product. `ratingAverage` is null
- * when the product has no approved reviews.
+ * Aggregated rating for a product — every rating that COUNTS, whatever became of
+ * the text beside it. `ratingAverage` is null when the product has no counting
+ * ratings.
+ *
+ * Not "approved-review": since TASK-585 a rating needs no moderator, and the
+ * predicate is `COUNTS_TOWARD_RATING` (`ratingVisible` alone). The distinction is
+ * worth spelling out here because this docblock is what the next person reads
+ * before deciding whether the aggregate should also consult `textStatus` — and
+ * adding that arm to one of the two repositories is exactly how the same product
+ * ends up showing two different scores one click apart.
  */
 export interface ProductRating {
   ratingAverage: number | null;
@@ -286,7 +294,8 @@ export interface VariantSiblingLite {
 
 /**
  * Result of a paginated product query. Each product is enriched with its
- * approved-review aggregate (for star ratings), its primary image (for cards),
+ * rating aggregate (for star ratings — every rating that counts, not only the
+ * ones whose text was approved), its primary image (for cards),
  * and the active sibling positions of its variant group (for the variant
  * summary). `variantSiblings` is absent for standalone products (no group).
  */
