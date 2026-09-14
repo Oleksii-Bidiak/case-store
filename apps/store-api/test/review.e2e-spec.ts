@@ -45,6 +45,9 @@ describe('ReviewController (e2e)', () => {
     aggregate: jest.fn(),
     findForModeration: jest.fn(),
     findById: jest.fn(),
+    findOwnByProduct: jest.fn(),
+    findOwnById: jest.fn(),
+    updateComment: jest.fn(),
     approve: jest.fn(),
     rejectText: jest.fn(),
     moderateMany: jest.fn(),
@@ -278,6 +281,131 @@ describe('ReviewController (e2e)', () => {
 
       expect(response.body.aggregate.ratingCount).toBe(9);
       expect(response.body.meta.total).toBe(1);
+    });
+  });
+
+  // ─── GET /api/products/:productId/reviews/mine (TASK-586) ────────────────────
+  //
+  // Owner's decision 5 (2026-09-10): an author may come back and add text to a
+  // rating they already left. The storefront cannot offer that without being told
+  // a rating exists — and it cannot learn that from the public list, where a
+  // star-only row deliberately never appears.
+
+  describe('GET /api/products/:productId/reviews/mine', () => {
+    const url = `/api/products/${PRODUCT_ID}/reviews/mine`;
+
+    it('returns 401 without a JWT — there is no "mine" for an anonymous caller', async () => {
+      await request(app.getHttpServer()).get(url).expect(401);
+    });
+
+    it('answers { data: null } when the caller has not reviewed this product', async () => {
+      const token = generateAccessToken(customer.id, customer.role);
+      reviewRepositoryMock.findOwnByProduct.mockResolvedValue(null);
+
+      const response = await request(app.getHttpServer())
+        .get(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body).toEqual({ data: null });
+    });
+
+    it("carries the author's own text verdict, but no moderator bookkeeping", async () => {
+      const token = generateAccessToken(customer.id, customer.role);
+      reviewRepositoryMock.findOwnByProduct.mockResolvedValue(
+        makeReview({ comment: null, textStatus: 'REJECTED', createdIp: '203.0.113.7' }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(reviewRepositoryMock.findOwnByProduct).toHaveBeenCalledWith(customer.id, PRODUCT_ID);
+      expect(response.body.data.rating).toBe(5);
+      expect(response.body.data.textStatus).toBe('REJECTED');
+      // The author is entitled to their own verdict. They are not entitled to
+      // `hiddenAt` — a moderator's account-wide lever they must not be able to
+      // probe — nor to `createdIp`, kept for abuse signals and shown to nobody.
+      expect(response.body.data).not.toHaveProperty('hiddenAt');
+      expect(response.body.data).not.toHaveProperty('createdIp');
+    });
+  });
+
+  // ─── PATCH /api/reviews/:id (TASK-586) ───────────────────────────────────────
+
+  describe('PATCH /api/reviews/:id', () => {
+    const url = '/api/reviews/review-e2e-1';
+
+    it('returns 401 without a JWT', async () => {
+      await request(app.getHttpServer()).patch(url).send({ comment: 'hello' }).expect(401);
+    });
+
+    it('adds the text to an existing rating and sends it back to moderation', async () => {
+      const token = generateAccessToken(customer.id, customer.role);
+      reviewRepositoryMock.findOwnById.mockResolvedValue(makeReview({ comment: null }));
+      reviewRepositoryMock.updateComment.mockResolvedValue(
+        makeReview({ comment: 'Added a week later', textStatus: 'PENDING' }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ comment: 'Added a week later' })
+        .expect(200);
+
+      expect(reviewRepositoryMock.findOwnById).toHaveBeenCalledWith('review-e2e-1', customer.id);
+      expect(reviewRepositoryMock.updateComment).toHaveBeenCalledWith(
+        'review-e2e-1',
+        'Added a week later',
+      );
+      expect(response.body.data.comment).toBe('Added a week later');
+      expect(response.body.data.textStatus).toBe('PENDING');
+    });
+
+    it('refuses an attempt to change the rating instead of ignoring it', async () => {
+      // Silently dropping an unknown field is the dangerous half of this: the
+      // caller gets a 200 and believes their one star landed. The global pipe's
+      // `forbidNonWhitelisted` is what makes the refusal explicit, and `rating`
+      // being absent from the DTO is what makes it immutable.
+      const token = generateAccessToken(customer.id, customer.role);
+      reviewRepositoryMock.findOwnById.mockResolvedValue(makeReview());
+
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ rating: 1 })
+        .expect(400);
+
+      expect(reviewRepositoryMock.updateComment).not.toHaveBeenCalled();
+    });
+
+    it('404s for a non-author, so the endpoint is not an id oracle', async () => {
+      // 403 would confirm the row exists. Walk the id space, keep whatever answers
+      // 403, and you have a map of real review ids without being allowed to read
+      // one of them.
+      const token = generateAccessToken(customer.id, customer.role);
+      reviewRepositoryMock.findOwnById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ comment: 'not mine' })
+        .expect(404);
+
+      expect(reviewRepositoryMock.updateComment).not.toHaveBeenCalled();
+    });
+
+    it('rejects a comment past the 1000-character cap', async () => {
+      const token = generateAccessToken(customer.id, customer.role);
+
+      await request(app.getHttpServer())
+        .patch(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ comment: 'x'.repeat(1001) })
+        .expect(400);
+
+      expect(reviewRepositoryMock.updateComment).not.toHaveBeenCalled();
     });
   });
 

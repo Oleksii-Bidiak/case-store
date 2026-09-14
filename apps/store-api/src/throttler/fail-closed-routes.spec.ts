@@ -6,6 +6,7 @@ import { OrderController } from '../order/order.controller';
 import { LiqPayWebhookController } from '../payment/liqpay-webhook.controller';
 import { ProductController } from '../product/product.controller';
 import { ReviewController } from '../review/review.controller';
+import { ReviewUpdateController } from '../review/review-update.controller';
 import { FAIL_CLOSED_THROTTLE_KEY } from './fail-closed-throttle.decorator';
 
 /**
@@ -32,6 +33,11 @@ describe('Fail-closed route classification', () => {
       ['POST /api/auth/login', AuthController.prototype.login],
       ['POST /api/auth/password-reset/request', AuthController.prototype.requestPasswordReset],
       ['POST /api/products/:productId/reviews', ReviewController.prototype.submit],
+      // TASK-586. Editing a review re-queues its text for moderation, so an
+      // uncapped PATCH floods exactly the same backlog as an uncapped POST — and
+      // does it from ONE review row, which the `@@unique([userId, productId])`
+      // guard on submission cannot help with.
+      ['PATCH /api/reviews/:id', ReviewUpdateController.prototype.update],
       ['POST /api/orders', OrderController.prototype.createOrder],
       ['POST /api/newsletter/subscribe', NewsletterController.prototype.subscribe],
       ['POST /api/newsletter/unsubscribe', NewsletterController.prototype.unsubscribe],

@@ -340,3 +340,67 @@ describe('ReviewRepository — moderateMany writes statuses, never deletes', () 
     expect(txUpdateMany).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The author's own row (TASK-586) — the two lookups and the one write behind
+ * «дописати текст до вже поставленої оцінки» (owner's decision 5).
+ *
+ * Prisma is mocked, so what is pinned is the WHERE SHAPE, and here that shape IS
+ * the authorisation. `findOwnById` carries the author id as a FILTER rather than
+ * fetching the row and comparing afterwards; drop that arm and the endpoint
+ * happily lets anyone rewrite anyone's review, with nothing on screen to show for
+ * it.
+ */
+describe("ReviewRepository — the author's own review (TASK-586)", () => {
+  let repo: ReviewRepository;
+
+  const reviewFindFirst = jest.fn();
+  const reviewUpdate = jest.fn();
+
+  const prismaMock = {
+    order: { findMany: jest.fn() },
+    orderItem: { findFirst: jest.fn() },
+    review: { findFirst: reviewFindFirst, update: reviewUpdate },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    reviewFindFirst.mockResolvedValue(null);
+    reviewUpdate.mockResolvedValue({ id: 'review-1' });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [ReviewRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(ReviewRepository);
+  });
+
+  it('finds the caller’s own row for a product, and skips a hidden one', async () => {
+    await repo.findOwnByProduct('user-1', 'product-1');
+
+    expect(reviewFindFirst).toHaveBeenCalledWith({
+      where: { userId: 'user-1', productId: 'product-1', hiddenAt: null },
+    });
+  });
+
+  it('scopes the by-id lookup to the author, so a stranger finds nothing', async () => {
+    await repo.findOwnById('review-1', 'user-1');
+
+    expect(reviewFindFirst).toHaveBeenCalledWith({
+      where: { id: 'review-1', userId: 'user-1', hiddenAt: null },
+    });
+  });
+
+  it('writes the new text and sends it back to moderation, touching nothing else', async () => {
+    await repo.updateComment('review-1', 'Added a week later');
+
+    expect(reviewUpdate).toHaveBeenCalledWith({
+      where: { id: 'review-1' },
+      data: { comment: 'Added a week later', textStatus: 'PENDING' },
+    });
+    // An edit is a statement about the TEXT. A `rating` or `ratingVisible` in this
+    // payload would let an author move the product's score from a comment box.
+    const written = reviewUpdate.mock.calls[0][0].data;
+    expect(written).not.toHaveProperty('rating');
+    expect(written).not.toHaveProperty('ratingVisible');
+    expect(written).not.toHaveProperty('hiddenAt');
+  });
+});

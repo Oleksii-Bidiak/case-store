@@ -37,6 +37,9 @@ const reviewRepositoryMock = {
   aggregate: jest.fn(),
   findForModeration: jest.fn(),
   findById: jest.fn(),
+  findOwnByProduct: jest.fn(),
+  findOwnById: jest.fn(),
+  updateComment: jest.fn(),
   approve: jest.fn(),
   rejectText: jest.fn(),
   moderateMany: jest.fn(),
@@ -465,6 +468,115 @@ describe('ReviewService', () => {
         expect.objectContaining({ action: 'reject', count: 5 }),
         expect.not.stringContaining('deleted'),
       );
+    });
+  });
+
+  // ─── getOwnReview (TASK-586) ────────────────────────────────────────────────
+  //
+  // The author's own view of their own row. It exists because of the owner's
+  // decision 5 (2026-09-10): a person may come back and add text to a rating they
+  // already left — and the storefront cannot offer that without first being told
+  // there is a rating to add text to. The public list cannot answer it, because a
+  // star-only row never appears there.
+
+  describe('getOwnReview', () => {
+    it('answers null when this author has not reviewed this product', async () => {
+      reviewRepositoryMock.findOwnByProduct.mockResolvedValue(null);
+
+      await expect(service.getOwnReview(USER_ID, PRODUCT_ID)).resolves.toBeNull();
+    });
+
+    it("tells the author their own text's verdict — and nothing the moderator keeps private", async () => {
+      // `textStatus` IS the author's business: «на модерації» and «відхилено» are
+      // the two things they need told, and withholding them leaves someone
+      // re-submitting into a queue they cannot see. `hiddenAt` and `createdIp` are
+      // not: one is a moderator's lever the author must not be able to probe, the
+      // other is theirs but is kept for abuse signals, not for display.
+      reviewRepositoryMock.findOwnByProduct.mockResolvedValue(
+        makeReview({ textStatus: ReviewTextStatus.REJECTED, createdIp: '203.0.113.7' }),
+      );
+
+      const result = await service.getOwnReview(USER_ID, PRODUCT_ID);
+
+      expect(result).not.toBeNull();
+      expect(result?.textStatus).toBe(ReviewTextStatus.REJECTED);
+      expect(result?.rating).toBe(5);
+      expect(result).not.toHaveProperty('hiddenAt');
+      expect(result).not.toHaveProperty('createdIp');
+    });
+  });
+
+  // ─── updateOwnReview (TASK-586) ─────────────────────────────────────────────
+
+  describe('updateOwnReview', () => {
+    it('asks for the row BY AUTHOR, so a stranger gets a 404 and not a 403', async () => {
+      // A 403 would confirm the row exists. That turns `PATCH /api/reviews/:id`
+      // into an enumeration oracle: walk ids, keep the ones that answer 403, and
+      // you have a map of which review ids are real without ever being allowed to
+      // read one. Authorship therefore belongs in the LOOKUP, not in a check after
+      // it — a row that is not yours simply is not found.
+      reviewRepositoryMock.findOwnById.mockResolvedValue(null);
+
+      await expect(
+        service.updateOwnReview(USER_ID, 'someone-elses-review', { comment: 'mine now' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(reviewRepositoryMock.findOwnById).toHaveBeenCalledWith(
+        'someone-elses-review',
+        USER_ID,
+      );
+      expect(reviewRepositoryMock.updateComment).not.toHaveBeenCalled();
+    });
+
+    it('sends the edited text back to moderation', async () => {
+      reviewRepositoryMock.findOwnById.mockResolvedValue(
+        makeReview({ comment: null, textStatus: ReviewTextStatus.PENDING }),
+      );
+      reviewRepositoryMock.updateComment.mockResolvedValue(
+        makeReview({ comment: 'Added a week later', textStatus: ReviewTextStatus.PENDING }),
+      );
+
+      const result = await service.updateOwnReview(USER_ID, 'review-uuid-1', {
+        comment: 'Added a week later',
+      });
+
+      expect(reviewRepositoryMock.updateComment).toHaveBeenCalledWith(
+        'review-uuid-1',
+        'Added a week later',
+      );
+      expect(result.comment).toBe('Added a week later');
+      expect(result.textStatus).toBe(ReviewTextStatus.PENDING);
+    });
+
+    it('never asks the repository to touch the rating', async () => {
+      // The rating is a one-shot act (owner's decision 5 covers the TEXT only).
+      // Letting an edit move it would reopen exactly the abuse surface the whole
+      // task exists to close: rate five stars, wait for the average to move, edit
+      // to one. The service must not even have the words to ask.
+      reviewRepositoryMock.findOwnById.mockResolvedValue(makeReview({ rating: 5 }));
+      reviewRepositoryMock.updateComment.mockResolvedValue(makeReview({ rating: 5 }));
+
+      await service.updateOwnReview(USER_ID, 'review-uuid-1', { comment: 'still great' });
+
+      const args = reviewRepositoryMock.updateComment.mock.calls[0];
+      expect(args).toEqual(['review-uuid-1', 'still great']);
+    });
+
+    it('treats an absent comment as no edit at all, rather than as an erasure', async () => {
+      // `{}` is what a half-wired form sends. Reading it as «clear the text» would
+      // wipe a published comment AND drop it back into the moderation queue, and
+      // the author would have no copy of what they wrote.
+      const existing = makeReview({
+        comment: 'Published months ago',
+        textStatus: ReviewTextStatus.APPROVED,
+      });
+      reviewRepositoryMock.findOwnById.mockResolvedValue(existing);
+
+      const result = await service.updateOwnReview(USER_ID, 'review-uuid-1', {});
+
+      expect(reviewRepositoryMock.updateComment).not.toHaveBeenCalled();
+      expect(result.comment).toBe('Published months ago');
+      expect(result.textStatus).toBe(ReviewTextStatus.APPROVED);
     });
   });
 });
