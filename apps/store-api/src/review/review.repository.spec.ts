@@ -471,3 +471,95 @@ describe('ReviewRepository — the shop replies once (TASK-587)', () => {
     });
   });
 });
+
+/**
+ * What a submission records (TASK-588).
+ *
+ * Two columns arrive with the row and can never be reconstructed afterwards:
+ * `ratingVisible`, the email gate's verdict at the moment of writing, and
+ * `createdIp`, the only input the abuse signals have. Both are decided by the
+ * service and written verbatim here; what this block pins is that the write
+ * actually carries them and that `textStatus` stays the repository's own
+ * invariant rather than something a caller can set.
+ */
+describe('ReviewRepository — what a submission records (TASK-588)', () => {
+  let repo: ReviewRepository;
+
+  const reviewCreate = jest.fn();
+  const userFindUnique = jest.fn();
+
+  const prismaMock = {
+    order: { findMany: jest.fn() },
+    orderItem: { findFirst: jest.fn() },
+    review: { create: reviewCreate },
+    user: { findUnique: userFindUnique },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    reviewCreate.mockResolvedValue({ id: 'review-1' });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [ReviewRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(ReviewRepository);
+  });
+
+  it('writes the email gate’s verdict and the submitter’s address', async () => {
+    await repo.create({
+      userId: 'user-1',
+      productId: 'product-1',
+      rating: 5,
+      comment: 'Чудово',
+      ratingVisible: true,
+      createdIp: '203.0.113.42',
+    });
+
+    expect(reviewCreate).toHaveBeenCalledWith({
+      data: {
+        userId: 'user-1',
+        productId: 'product-1',
+        rating: 5,
+        comment: 'Чудово',
+        ratingVisible: true,
+        createdIp: '203.0.113.42',
+        textStatus: 'PENDING',
+      },
+    });
+  });
+
+  it('leaves an unknown address null instead of defaulting it to anything', async () => {
+    await repo.create({
+      userId: 'user-1',
+      productId: 'product-1',
+      rating: 1,
+      ratingVisible: false,
+      createdIp: null,
+    });
+
+    expect(reviewCreate.mock.calls[0][0].data).toMatchObject({
+      createdIp: null,
+      ratingVisible: false,
+      comment: null,
+    });
+  });
+
+  it('asks the user table whether the author’s address is proven', async () => {
+    userFindUnique.mockResolvedValue({ emailVerifiedAt: new Date('2026-09-01T00:00:00.000Z') });
+
+    await expect(repo.isEmailVerified('user-1')).resolves.toBe(true);
+    expect(userFindUnique).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      select: { emailVerifiedAt: true },
+    });
+  });
+
+  it('treats an unstamped address — and a missing user — as unproven', async () => {
+    userFindUnique.mockResolvedValueOnce({ emailVerifiedAt: null });
+    await expect(repo.isEmailVerified('user-1')).resolves.toBe(false);
+
+    // A user row that is gone must not read as "verified" by falling through a
+    // truthiness check on undefined.
+    userFindUnique.mockResolvedValueOnce(null);
+    await expect(repo.isEmailVerified('ghost')).resolves.toBe(false);
+  });
+});

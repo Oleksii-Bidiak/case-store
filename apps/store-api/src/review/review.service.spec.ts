@@ -58,7 +58,13 @@ const reviewRepositoryMock = {
   isVerifiedPurchase: jest.fn(),
   findVerifiedPurchaserIds: jest.fn(),
   findExisting: jest.fn(),
+  // TASK-588: the email gate. Whether the author's address is proven is what
+  // decides if their stars count, and it is asked once, at submission.
+  isEmailVerified: jest.fn(),
 };
+
+/** The address the submission arrived from — recorded since TASK-588. */
+const SUBMITTER_IP = '203.0.113.42';
 
 const pinoLoggerMock = {
   setContext: jest.fn(),
@@ -89,32 +95,101 @@ describe('ReviewService', () => {
   // ─── submitReview ───────────────────────────────────────────────────────────
 
   describe('submitReview', () => {
+    /** Every submission now carries the address it came from (TASK-588). */
+    const submit = (dto: { rating: number; comment?: string }, ip: string | null = SUBMITTER_IP) =>
+      service.submitReview(USER_ID, PRODUCT_ID, dto, ip);
+
     it('throws ConflictException when the user already reviewed the product', async () => {
       reviewRepositoryMock.findExisting.mockResolvedValue(makeReview());
 
-      await expect(service.submitReview(USER_ID, PRODUCT_ID, { rating: 4 })).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(submit({ rating: 4 })).rejects.toBeInstanceOf(ConflictException);
       expect(reviewRepositoryMock.create).not.toHaveBeenCalled();
     });
 
     it('creates the review and returns the entity', async () => {
       reviewRepositoryMock.findExisting.mockResolvedValue(null);
       reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(false);
       reviewRepositoryMock.create.mockResolvedValue(makeReview());
 
-      const result = await service.submitReview(USER_ID, PRODUCT_ID, {
-        rating: 5,
-        comment: 'Great case!',
-      });
+      const result = await submit({ rating: 5, comment: 'Great case!' });
 
       expect(reviewRepositoryMock.create).toHaveBeenCalledWith({
         userId: USER_ID,
         productId: PRODUCT_ID,
         rating: 5,
         comment: 'Great case!',
+        ratingVisible: false,
+        createdIp: SUBMITTER_IP,
       });
       expect(result.id).toBe('review-uuid-1');
+    });
+
+    // ── TASK-588: the email gate ─────────────────────────────────────────────
+    //
+    // The owner's decision 7: an unverified author's rating is STORED but does
+    // not count. Not refused — refusing would lose the rating for the many
+    // people who confirm later, and would tell a spammer exactly which accounts
+    // are worth verifying. Stored-and-silent is also why the flag is
+    // denormalised: the catalogue reads it on every card and cannot afford to
+    // join `users` for the answer.
+    it('counts the rating of an author whose address is proven', async () => {
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(true);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview({ ratingVisible: true }));
+
+      await submit({ rating: 5 });
+
+      expect(reviewRepositoryMock.isEmailVerified).toHaveBeenCalledWith(USER_ID);
+      expect(reviewRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ ratingVisible: true }),
+      );
+    });
+
+    it('stores an unconfirmed author’s rating but keeps it out of the average', async () => {
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(false);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview());
+
+      await submit({ rating: 1 });
+
+      // Stored — the row is written, comment and all.
+      expect(reviewRepositoryMock.create).toHaveBeenCalledTimes(1);
+      // …and silent.
+      expect(reviewRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ ratingVisible: false }),
+      );
+    });
+
+    it('records the address the submission came from', async () => {
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(true);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview());
+
+      await submit({ rating: 4 }, '198.51.100.7');
+
+      expect(reviewRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ createdIp: '198.51.100.7' }),
+      );
+    });
+
+    it('writes an unknown address as null rather than inventing one', async () => {
+      // `createdIp` is the input to «a run of 1★ from one address». A placeholder
+      // string would group every address-less row together and read as one very
+      // busy abuser; null means "we do not know" and is excluded by the signal.
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(true);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview());
+
+      await submit({ rating: 4 }, null);
+
+      expect(reviewRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ createdIp: null }),
+      );
     });
 
     // TASK-585: the public entity stops advertising moderation state. It used to
@@ -126,7 +201,7 @@ describe('ReviewService', () => {
       reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
       reviewRepositoryMock.create.mockResolvedValue(makeReview());
 
-      const result = await service.submitReview(USER_ID, PRODUCT_ID, { rating: 5 });
+      const result = await submit({ rating: 5 });
 
       expect(result).not.toHaveProperty('isActive');
       expect(result).not.toHaveProperty('textStatus');
@@ -138,7 +213,7 @@ describe('ReviewService', () => {
       reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(true);
       reviewRepositoryMock.create.mockResolvedValue(makeReview());
 
-      const result = await service.submitReview(USER_ID, PRODUCT_ID, { rating: 5 });
+      const result = await submit({ rating: 5 });
 
       expect(result.verifiedPurchase).toBe(true);
     });
@@ -148,7 +223,7 @@ describe('ReviewService', () => {
       reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
       reviewRepositoryMock.create.mockResolvedValue(makeReview());
 
-      const result = await service.submitReview(USER_ID, PRODUCT_ID, { rating: 5 });
+      const result = await submit({ rating: 5 });
 
       expect(result.verifiedPurchase).toBe(false);
     });
@@ -163,9 +238,7 @@ describe('ReviewService', () => {
         }),
       );
 
-      await expect(service.submitReview(USER_ID, PRODUCT_ID, { rating: 5 })).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(submit({ rating: 5 })).rejects.toBeInstanceOf(ConflictException);
     });
   });
 

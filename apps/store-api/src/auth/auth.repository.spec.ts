@@ -14,6 +14,11 @@ const prismaMock = {
     findUnique: jest.fn(),
     create: jest.fn(),
   },
+  // TASK-588: confirming an address also releases that author's ratings, so the
+  // auth repository writes to `reviews` — in the same transaction as the stamp.
+  review: {
+    updateMany: jest.fn(),
+  },
   $transaction: jest.fn(),
   refreshToken: {
     findUnique: jest.fn(),
@@ -607,6 +612,51 @@ describe('AuthRepository', () => {
         where: { id: 'user-uuid-1' },
         data: { failedLoginAttempts: 0, lockedUntil: null },
       });
+    });
+  });
+
+  /**
+   * Confirming an address is also what releases the ratings that were waiting on
+   * it (TASK-588).
+   *
+   * `ratingVisible` is a DENORMALISED effective flag, so nothing recomputes it on
+   * read: if the confirmation does not write it, the author's stars stay out of
+   * every average for ever, and the only symptom is a product whose score never
+   * moves. Hence the two writes travel together, in one transaction — a stamped
+   * address with un-flipped ratings is precisely the half-state that would never
+   * be noticed.
+   */
+  describe('markEmailVerified (TASK-588)', () => {
+    const verifiedAt = new Date('2026-09-14T10:00:00.000Z');
+
+    it('stamps the address and starts counting that author’s ratings, atomically', async () => {
+      await repository.markEmailVerified('user-uuid-1', verifiedAt);
+
+      expect(prismaMock.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-uuid-1' },
+        data: { emailVerifiedAt: verifiedAt },
+      });
+      expect(prismaMock.review.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-uuid-1', hiddenAt: null },
+        data: { ratingVisible: true },
+      });
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.$transaction.mock.calls[0][0]).toHaveLength(2);
+    });
+
+    it('leaves a hidden author hidden — hiddenAt outranks the email gate', async () => {
+      // The abuse lever must not be undone from the abuser's own inbox. Somebody
+      // whose whole contribution a moderator withdrew can still click the
+      // confirmation link; without the `hiddenAt: null` filter that click would
+      // put every one of their ratings back into the averages, with no admin
+      // action and no trace anywhere in the panel.
+      await repository.markEmailVerified('user-uuid-1', verifiedAt);
+
+      const where = prismaMock.review.updateMany.mock.calls[0][0].where;
+      expect(where).toMatchObject({ hiddenAt: null });
+
+      // And the write must not clear the flag either — `hiddenAt` is sticky.
+      expect(prismaMock.review.updateMany.mock.calls[0][0].data).not.toHaveProperty('hiddenAt');
     });
   });
 });
