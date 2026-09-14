@@ -25,6 +25,10 @@ const PAYMENT_STATUS_LABELS: Record<string, string> = {
   PENDING: "Очікує оплати",
   PAID: "Оплачено",
   FAILED: "Помилка оплати",
+  // TASK-431. The map falls back to the raw enum for anything it does not know,
+  // so a new PaymentStatus that is missing here is not a blank — it is the word
+  // PARTIALLY_REFUNDED shown to a customer on their own order page.
+  PARTIALLY_REFUNDED: "Частково повернуто",
   REFUNDED: "Кошти повернено",
 };
 
