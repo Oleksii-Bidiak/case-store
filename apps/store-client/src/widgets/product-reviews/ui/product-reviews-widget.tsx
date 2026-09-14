@@ -2,10 +2,13 @@
 
 import { useCallback } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Star } from "lucide-react";
 import { keepPreviousData } from "@tanstack/react-query";
-import { useReviewControllerList, type ReviewEntity } from "@/entities/review";
-import { RatingStars, Skeleton, Badge } from "@/shared/ui";
+import {
+  useReviewControllerList,
+  type ReviewEntity,
+  type ReviewReplyEntity,
+} from "@/entities/review";
+import { RatingStars, ReviewRatingStars, Skeleton, Badge } from "@/shared/ui";
 import { Pagination } from "@/shared/ui/pagination";
 import { dict } from "@/shared/config";
 import { SubmitReviewForm } from "@/features/submit-review";
@@ -40,35 +43,6 @@ export function resolveReviewPageParam(raw: string | null): number {
   return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
 }
 
-/**
- * A compact, non-interactive star row for a single review's rating (1–5).
- * The aggregate strip uses the richer {@link RatingStars}; this is the simpler
- * per-review display.
- */
-function ReviewStars({ rating }: { rating: number }) {
-  return (
-    <span
-      className="inline-flex"
-      role="img"
-      aria-label={dict.reviews.starAria(rating)}
-    >
-      {[1, 2, 3, 4, 5].map((i) => (
-        <Star
-          key={i}
-          className={
-            i <= rating
-              ? "size-3.5 text-amber-400"
-              : "size-3.5 text-muted-foreground/25"
-          }
-          fill="currentColor"
-          stroke="none"
-          aria-hidden="true"
-        />
-      ))}
-    </span>
-  );
-}
-
 /** Format an ISO date string as a short uk-UA date. */
 function formatReviewDate(value: string | Date): string {
   const date = typeof value === "string" ? new Date(value) : value;
@@ -79,13 +53,53 @@ function formatReviewDate(value: string | Date): string {
   }).format(date);
 }
 
-function ReviewRow({ review }: { review: ReviewEntity }) {
-  const replyLabelId = `review-reply-${review.id}`;
+/**
+ * The shop's answer to one review (TASK-446).
+ *
+ * Rendered INSIDE the review's own `<li>` and indented behind a rule, so it
+ * reads as a reply rather than as a second review; `role="group"` +
+ * `aria-labelledby` tell a screen reader the same thing the indent tells a
+ * sighted reader, since nesting alone carries no meaning in a generic `<div>`.
+ *
+ * Deliberately no avatar and no person's name — the API does not carry one, and
+ * that is the point: the storefront shows the shop answering, never which
+ * employee typed it.
+ */
+function ShopReply({
+  reply,
+  reviewId,
+}: {
+  reply: ReviewReplyEntity;
+  reviewId: string;
+}) {
+  const labelId = `review-reply-${reviewId}`;
 
+  return (
+    <div
+      role="group"
+      aria-labelledby={labelId}
+      className="mt-1 ml-4 flex flex-col gap-1.5 border-l-2 border-border bg-muted/30 py-2.5 pr-3 pl-4"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span id={labelId} className="text-sm font-medium text-foreground">
+          {dict.reviews.shopReply}
+        </span>
+        <span className="ml-auto text-xs text-muted-foreground">
+          {formatReviewDate(reply.createdAt)}
+        </span>
+      </div>
+      <p className="text-sm whitespace-pre-line text-muted-foreground">
+        {reply.body}
+      </p>
+    </div>
+  );
+}
+
+function ReviewRow({ review }: { review: ReviewEntity }) {
   return (
     <li className="flex flex-col gap-2 border-b border-border py-4 last:border-b-0">
       <div className="flex flex-wrap items-center gap-2">
-        <ReviewStars rating={review.rating} />
+        <ReviewRatingStars rating={review.rating} />
         <span className="text-sm font-medium text-foreground">
           {dict.reviews.anonymous}
         </span>
@@ -104,34 +118,7 @@ function ReviewRow({ review }: { review: ReviewEntity }) {
           : dict.reviews.noComment}
       </p>
 
-      {/* The shop's answer (TASK-446). It sits INSIDE the review's own <li> and
-          is indented behind a rule, so it reads as a reply rather than as a
-          second review; `role="group"` + `aria-labelledby` say the same thing to
-          a screen reader, which cannot see the indent. Deliberately no avatar
-          and no person's name: the storefront shows the shop answering, never
-          which employee typed it. */}
-      {review.reply && (
-        <div
-          role="group"
-          aria-labelledby={replyLabelId}
-          className="mt-1 ml-4 flex flex-col gap-1.5 border-l-2 border-border bg-muted/30 py-2.5 pr-3 pl-4"
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              id={replyLabelId}
-              className="text-sm font-medium text-foreground"
-            >
-              {dict.reviews.shopReply}
-            </span>
-            <span className="ml-auto text-xs text-muted-foreground">
-              {formatReviewDate(review.reply.createdAt)}
-            </span>
-          </div>
-          <p className="text-sm whitespace-pre-line text-muted-foreground">
-            {review.reply.body}
-          </p>
-        </div>
-      )}
+      {review.reply && <ShopReply reply={review.reply} reviewId={review.id} />}
     </li>
   );
 }

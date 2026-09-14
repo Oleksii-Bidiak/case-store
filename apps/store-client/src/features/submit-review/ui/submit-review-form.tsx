@@ -18,7 +18,7 @@ import {
   OwnReviewEntityTextStatus,
   type OwnReviewEntity,
 } from "@/entities/review";
-import { Button, Textarea } from "@/shared/ui";
+import { Button, ReviewRatingStars, Textarea } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { reviewSchema, type ReviewFormValues } from "../model/review-schema";
 
@@ -216,6 +216,16 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
   // verdict for nothing.
   const canSaveText = isDirty && (comment ?? "").trim().length > 0;
 
+  // The two modes differ in every label, so name them once rather than nesting
+  // a ternary inside a ternary inside JSX.
+  const submitLabel = existing
+    ? isSaving
+      ? dict.reviews.saving
+      : dict.reviews.saveText
+    : isSaving
+      ? dict.reviews.submitting
+      : dict.reviews.submitReview;
+
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
@@ -231,25 +241,7 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
           <span className="text-sm font-medium text-foreground">
             {dict.reviews.ratingLabel}
           </span>
-          <span
-            className="inline-flex w-fit items-center gap-0.5"
-            role="img"
-            aria-label={dict.reviews.starAria(existing.rating)}
-          >
-            {[1, 2, 3, 4, 5].map((value) => (
-              <Star
-                key={value}
-                className={
-                  existing.rating >= value
-                    ? "size-6 text-amber-400"
-                    : "size-6 text-muted-foreground/30"
-                }
-                fill="currentColor"
-                stroke="none"
-                aria-hidden="true"
-              />
-            ))}
-          </span>
+          <ReviewRatingStars rating={existing.rating} size="lg" />
           <p className="text-xs text-muted-foreground">
             {dict.reviews.ratingLocked}
           </p>
@@ -345,13 +337,7 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
         disabled={isSaving || (existing ? !canSaveText : false)}
         className="self-start"
       >
-        {existing
-          ? isSaving
-            ? dict.reviews.saving
-            : dict.reviews.saveText
-          : isSaving
-            ? dict.reviews.submitting
-            : dict.reviews.submitReview}
+        {submitLabel}
       </Button>
     </form>
   );
