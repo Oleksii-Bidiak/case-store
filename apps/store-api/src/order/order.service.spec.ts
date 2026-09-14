@@ -178,6 +178,8 @@ const orderRepositoryMock = {
   findByIdForAdmin: jest.fn(),
   // TASK-338: guest order access + claiming on registration.
   findByAccessTokenHash: jest.fn(),
+  // TASK-484: re-issuing a buyer's link.
+  rotateAccessToken: jest.fn(),
   // TASK-335/336: waybill + internal notes, and who to email about a shipment.
   updateDetails: jest.fn(),
   findRecipient: jest.fn(),
@@ -1821,7 +1823,127 @@ describe('OrderService', () => {
         ADMIN_ID,
       );
 
-      expect(result.internalNotes).toBe('Paid cash at the counter');
+      expect(result.order.internalNotes).toBe('Paid cash at the counter');
+    });
+
+    // ── TASK-484: the buyer's way to see a phone order ────────────────────────
+
+    it('mints an access token and stores only its SHA-256', async () => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
+
+      const { accessUrl } = await service.adminCreateOrder(dto, ADMIN_ID);
+
+      const rawToken = accessUrl!.split('/').pop()!;
+      const [params] = orderRepositoryMock.createManual.mock.calls.at(-1)!;
+      expect(params.accessTokenHash).toBe(createHash('sha256').update(rawToken).digest('hex'));
+      // The raw value is returned to the caller and never handed to the DB.
+      expect(JSON.stringify(params)).not.toContain(rawToken);
+    });
+
+    it('hands the operator a link to the same page a guest checkout produces', async () => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
+
+      const { accessUrl } = await service.adminCreateOrder(dto, ADMIN_ID);
+
+      expect(accessUrl).toMatch(/^https:\/\/shop\.example\.com\/orders\/guest\/[0-9a-f]{64}$/);
+    });
+
+    it('sends the same confirmation letter when the customer dictated an email', async () => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
+
+      await service.adminCreateOrder(dto, ADMIN_ID);
+
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: guestContact.email,
+          orderStatusUrl: expect.stringContaining('/orders/guest/'),
+          // TASK-483: and the route back that does not depend on the letter.
+          orderLookupUrl: 'https://shop.example.com/orders/status',
+        }),
+      );
+    });
+
+    it('sends no letter when the operator only had a name and a number', async () => {
+      await service.adminCreateOrder(
+        { ...dto, contact: { ...guestContact, email: undefined } },
+        ADMIN_ID,
+      );
+
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).not.toHaveBeenCalled();
+    });
+
+    it('still stores a token on a dev box with no STORE_CLIENT_URL — only the URL is missing', async () => {
+      const { accessUrl } = await service.adminCreateOrder(dto, ADMIN_ID);
+
+      expect(accessUrl).toBeNull();
+      const [params] = orderRepositoryMock.createManual.mock.calls.at(-1)!;
+      expect(params.accessTokenHash).toMatch(/^[0-9a-f]{64}$/);
+    });
+  });
+
+  // ─── issueOrderAccessLink (TASK-484) ─────────────────────────────────────────
+
+  describe('issueOrderAccessLink', () => {
+    const ORDER_ID = 'order-uuid-1';
+
+    beforeEach(() => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      orderRepositoryMock.rotateAccessToken.mockResolvedValue(now);
+    });
+
+    it('writes a fresh hash, so the link the buyer had stops working', async () => {
+      const { url } = await service.issueOrderAccessLink(ORDER_ID);
+
+      const rawToken = url.split('/').pop()!;
+      expect(orderRepositoryMock.rotateAccessToken).toHaveBeenCalledWith(
+        ORDER_ID,
+        createHash('sha256').update(rawToken).digest('hex'),
+      );
+    });
+
+    it('reports when it was issued — the TTL is counted from there, not from the order date', async () => {
+      const { issuedAt } = await service.issueOrderAccessLink(ORDER_ID);
+
+      expect(issuedAt).toBe(now);
+    });
+
+    it('never returns the same link twice', async () => {
+      const first = await service.issueOrderAccessLink(ORDER_ID);
+      const second = await service.issueOrderAccessLink(ORDER_ID);
+
+      expect(first.url).not.toBe(second.url);
+    });
+
+    it('404s for an order that does not exist, writing nothing', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.issueOrderAccessLink(ORDER_ID)).rejects.toThrow(NotFoundException);
+      expect(orderRepositoryMock.rotateAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('refuses BEFORE writing when there is no storefront address to link to', async () => {
+      // Rotating here would kill a working link and hand back nothing usable.
+      configValues.clear();
+
+      await expect(service.issueOrderAccessLink(ORDER_ID)).rejects.toThrow(BadRequestException);
+      expect(orderRepositoryMock.rotateAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('logs the rotation without the token or the URL that carries it', async () => {
+      const { url } = await service.issueOrderAccessLink(ORDER_ID);
+
+      // The operator log is shipped, searched and pasted into tickets. A link in
+      // it is a credential in it: anybody who can read the log could then open
+      // the customer's order, which is the exact thing hashing at rest prevents
+      // on the database side.
+      const rawToken = url.split('/').pop()!;
+      const logged = pinoLoggerMock.info.mock.calls.filter(
+        ([context]) => (context as { event?: string })?.event === 'order.access_link_issued',
+      );
+      expect(logged).toHaveLength(1);
+      expect(JSON.stringify(logged)).not.toContain(rawToken);
+      expect(logged[0][0]).toEqual({ event: 'order.access_link_issued', orderId: ORDER_ID });
     });
   });
 
@@ -2324,6 +2446,57 @@ describe('OrderService', () => {
       );
 
       await expect(service.getGuestOrder(RAW_TOKEN)).rejects.toThrow(NotFoundException);
+    });
+
+    // ── TASK-484: the clock starts when the LINK was issued ───────────────────
+    // An operator can now re-issue a link at any point in an order's life. If the
+    // window were still measured from `createdAt`, a link issued into a Viber
+    // chat two months after the order would be dead before it was pasted — and
+    // it would 404 identically to a stolen one, so nothing would ever report it.
+
+    it('counts the window from the re-issue, not from the order date', async () => {
+      configValues.set('GUEST_ORDER_TOKEN_TTL_DAYS', 30);
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({
+          userId: null,
+          createdAt: new Date(Date.now() - 200 * 24 * 60 * 60 * 1000),
+          accessTokenIssuedAt: new Date(),
+        }),
+      );
+
+      await expect(service.getGuestOrder(RAW_TOKEN)).resolves.toBeInstanceOf(OrderEntity);
+    });
+
+    it('expires a link whose re-issue is itself older than the window', async () => {
+      configValues.set('GUEST_ORDER_TOKEN_TTL_DAYS', 30);
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({
+          // A recent order whose link was minted long ago is not a thing an
+          // operator can produce — but a fresh `createdAt` must not resurrect a
+          // stale token if one ever is, so the rule is read off one column only.
+          userId: null,
+          createdAt: new Date(),
+          accessTokenIssuedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
+        }),
+      );
+
+      await expect(service.getGuestOrder(RAW_TOKEN)).rejects.toThrow(NotFoundException);
+    });
+
+    it('falls back to the order date for orders minted before the column existed', async () => {
+      configValues.set('GUEST_ORDER_TOKEN_TTL_DAYS', 30);
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({
+          userId: null,
+          createdAt: new Date(Date.now() - 29 * 24 * 60 * 60 * 1000),
+          accessTokenIssuedAt: null,
+        }),
+      );
+
+      // The migration added the column without a backfill, so every pre-484
+      // guest order carries null here. Treating null as "expired" would have
+      // broken every link already in a customer's inbox.
+      await expect(service.getGuestOrder(RAW_TOKEN)).resolves.toBeInstanceOf(OrderEntity);
     });
 
     it('answers expired and unknown identically (no oracle for token guessing)', async () => {

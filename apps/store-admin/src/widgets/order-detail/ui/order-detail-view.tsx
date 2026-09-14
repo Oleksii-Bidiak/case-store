@@ -16,6 +16,9 @@ import {
 import { OrderStatusSelect } from "@/features/order-status-update";
 import { PaymentStatusSelect } from "@/features/order-payment-update";
 import { OrderDetailsForm } from "@/features/order-details-form";
+// TASK-484: "give the buyer a link to their own order" — a mutation with its own
+// one-shot state, so it lives in features, not here.
+import { OrderAccessLinkCard } from "@/features/order-access-link";
 import { OrderAddressForm } from "@/features/order-address-edit";
 import {
   Badge,
@@ -388,6 +391,13 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
               </div>
             </section>
           ) : null}
+
+          {/* TASK-484: directly under "who is this", because it answers the next
+              question in the same conversation — "and how does he see it?".
+              Shown for EVERY order, account ones included: an operator takes a
+              phone order for a registered customer too, and that customer may
+              never have signed in on the phone they are holding. */}
+          <OrderAccessLinkCard orderId={orderId} />
 
           {/* Above the money block since TASK-425: this is what the operator
               reads out while the courier waits on the line. */}

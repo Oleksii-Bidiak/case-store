@@ -428,6 +428,17 @@ export interface ManualOrderParams {
   userId?: string | null;
   /** Contact details when there is no account behind the order. */
   guest?: GuestContact;
+  /**
+   * SHA-256 of the order-access token minted for this phone order (TASK-484).
+   *
+   * A SEPARATE field rather than part of {@link guest}, because the two do not
+   * travel together here: an operator-created order can belong to an ACCOUNT and
+   * still need a link — the customer dictated the order over the phone and may
+   * never have signed in on the device they will open it on. The raw value never
+   * reaches this layer; the service hashes it first, exactly as guest checkout
+   * does (see `CreateOrderParams.guest.accessTokenHash`).
+   */
+  accessTokenHash?: string;
   items: Array<{
     productId: string;
     quantity: number;

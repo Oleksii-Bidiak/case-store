@@ -185,6 +185,23 @@ export interface PaginationMeta {
 }
 
 /**
+ * What an operator gets back after taking an order over the phone (TASK-484).
+ *
+ * Two values rather than one because the second cannot be fetched again: the
+ * raw access link exists for this response and nowhere else — the database
+ * keeps only its SHA-256. If the operator does not copy it now, the way to get
+ * one is to ISSUE A NEW one from the order card, which retires this one.
+ *
+ * `accessUrl` is null only when `STORE_CLIENT_URL` is unset — a dev box. The
+ * token is still minted and stored in that case, so a correctly-configured
+ * environment can issue a working link for the same order later.
+ */
+export interface ManualOrderResult {
+  order: OrderEntity;
+  accessUrl: string | null;
+}
+
+/**
  * OrderService — business logic for placing and managing orders.
  *
  * An order is created from the authenticated user's current cart: prices are
@@ -1022,11 +1039,26 @@ export class OrderService {
    * the product must still be on sale, its category must still be on sale, and
    * there must be stock. An operator is not a reason to oversell.
    *
+   * ── TASK-484: the buyer gets a way to see it ──────────────────────────────
+   * A phone order used to be the one kind of order its own buyer could not look
+   * at: no account to sign into, no token, no confirmation letter. It now gets
+   * exactly the same access token guest checkout mints — same generator, same
+   * SHA-256 at rest — and, when the customer dictated an email, the same
+   * confirmation letter.
+   *
+   * The RAW token exists only inside this call, so it is returned alongside the
+   * order rather than stored: the operator either copies the link into the chat
+   * they are already in, or re-issues one later from the order card. Nothing
+   * anywhere can hand the same string out a second time.
+   *
    * @throws BadRequestException when neither an account nor contact details were
    *   given, a product is unknown or withdrawn, or stock is short.
    * @throws ForbiddenException when the named account is deactivated.
    */
-  async adminCreateOrder(dto: CreateManualOrderDto, adminUserId: string): Promise<OrderEntity> {
+  async adminCreateOrder(
+    dto: CreateManualOrderDto,
+    adminUserId: string,
+  ): Promise<ManualOrderResult> {
     if (!dto.userId && !dto.contact) {
       throw new BadRequestException(
         'Either an existing customer or contact details are required — an order nobody can be reached about is not a sale',
@@ -1070,10 +1102,18 @@ export class OrderService {
       };
     });
 
+    // TASK-484: minted here, hashed on the way to the database, returned raw to
+    // the caller exactly once. Same two helpers guest checkout uses — "nothing
+    // new invented" is the decision (B-5 §4), and a second token scheme would be
+    // a second thing to get wrong.
+    const accessToken = generateGuestToken();
+    const accessUrl = this.buildGuestStatusUrl(accessToken);
+
     const order = await this.orderRepository.createManual(
       {
         userId: dto.userId ?? null,
         ...(dto.contact ? { guest: dto.contact } : {}),
+        accessTokenHash: hashGuestToken(accessToken),
         items,
         shippingAddress: dto.shippingAddress,
         ...(dto.notes ? { notes: dto.notes } : {}),
@@ -1099,7 +1139,82 @@ export class OrderService {
       'Operator created an order on the customer’s behalf',
     );
 
-    return OrderEntity.fromPrisma(order, { includeInternal: true });
+    const entity = OrderEntity.fromPrisma(order, { includeInternal: true });
+
+    // TASK-484: if the customer dictated an address, the same confirmation
+    // letter a self-service checkout sends — with the same status link in it.
+    // Enqueued AFTER the order committed rather than inside its transaction,
+    // unlike `createOrder`: `createManual` does not accept a post-commit hook,
+    // and for an operator who is on the phone with the buyer, an order that
+    // exists with no letter is a recoverable inconvenience ("I'll re-send it")
+    // while an order that failed to be created is not.
+    const recipientEmail = dto.contact?.email;
+    if (recipientEmail) {
+      const lookupUrl = this.buildOrderLookupUrl();
+      await this.mailOutbox.enqueueOrderConfirmation({
+        to: recipientEmail,
+        order: entity,
+        ...(dto.contact?.name ? { customerName: dto.contact.name } : {}),
+        ...(accessUrl ? { orderStatusUrl: accessUrl } : {}),
+        ...(lookupUrl ? { orderLookupUrl: lookupUrl } : {}),
+      });
+    }
+
+    return { order: entity, accessUrl };
+  }
+
+  /**
+   * Admin — issue a fresh order-access link for a buyer, invalidating the old
+   * one (TASK-484).
+   *
+   * ── Why this action exists at all ─────────────────────────────────────────
+   * The raw token lives for the duration of one request; the database holds only
+   * its SHA-256. So there is no "show me the link again" — there is only "make a
+   * new one". That is a deliberate consequence of hashing at rest, not a gap: a
+   * system that could re-display the link would be a system storing it.
+   *
+   * ── What rotating costs, and why it is still right ────────────────────────
+   * The previous link stops working the moment this returns. That is the point
+   * when a buyer says "I forwarded it to the wrong person", and the price when
+   * they simply lost it — so the UI says so before the operator presses it.
+   *
+   * No audit call here: every mutating route under `@RequirePermission` is
+   * recorded by `AuditInterceptor`, and the response it inspects carries only
+   * the order id, never the token.
+   *
+   * @throws NotFoundException when no such order exists (or it is soft-deleted).
+   */
+  async issueOrderAccessLink(orderId: string): Promise<{ url: string; issuedAt: Date }> {
+    const existing = await this.orderRepository.findById(orderId);
+
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const rawToken = generateGuestToken();
+    const url = this.buildGuestStatusUrl(rawToken);
+
+    if (!url) {
+      // STORE_CLIENT_URL is missing, so any link we minted would point nowhere.
+      // Refuse BEFORE writing: rotating the hash here would kill the buyer's
+      // working link and hand the operator nothing in exchange.
+      throw new BadRequestException(
+        'The storefront address is not configured, so an order link cannot be issued',
+      );
+    }
+
+    const issuedAt = await this.orderRepository.rotateAccessToken(
+      orderId,
+      hashGuestToken(rawToken),
+    );
+
+    // Never the token, and never the URL that contains it.
+    this.logger.info(
+      { event: 'order.access_link_issued', orderId },
+      'A fresh order-access link was issued; the previous one no longer works',
+    );
+
+    return { url, issuedAt };
   }
 
   /**

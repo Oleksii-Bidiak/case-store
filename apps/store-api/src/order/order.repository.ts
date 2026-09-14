@@ -526,6 +526,17 @@ export class OrderRepository {
                 guestName: params.guest.name,
               }
             : {}),
+          // TASK-484: the buyer's key to their own order, on a phone order too.
+          // `accessTokenIssuedAt` is written in the same breath and is not
+          // decoration: the link's TTL is counted from it, so an order whose
+          // token is re-issued months later hands out a link that is alive, not
+          // one that was dead before it was pasted into a chat (B-5 §4).
+          ...(params.accessTokenHash
+            ? {
+                accessTokenHash: params.accessTokenHash,
+                accessTokenIssuedAt: new Date(),
+              }
+            : {}),
           status: OrderStatus.PENDING,
           paymentStatus: PaymentStatus.PENDING,
           ...(params.paymentMethod ? { paymentMethod: params.paymentMethod } : {}),
@@ -1251,6 +1262,29 @@ export class OrderRepository {
       where: { accessTokenHash, deletedAt: null },
       include: ORDERS_INCLUDE,
     }) as Promise<OrderWithItems | null>;
+  }
+
+  /**
+   * Replace an order's access token, invalidating whatever was there before
+   * (TASK-484).
+   *
+   * One `UPDATE` writing both columns, which is the whole safety property: the
+   * hash is the only copy of the credential and `accessTokenIssuedAt` is what
+   * its expiry is measured from, so a path that could set one without the other
+   * would produce either an eternal link or a stillborn one. The old hash is
+   * overwritten rather than kept anywhere — after this returns, the link the
+   * customer had stops opening the order, which is the point of "issue a new
+   * link".
+   *
+   * The caller hashes; the raw token never reaches this layer.
+   */
+  async rotateAccessToken(orderId: string, accessTokenHash: string): Promise<Date> {
+    const issuedAt = new Date();
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { accessTokenHash, accessTokenIssuedAt: issuedAt },
+    });
+    return issuedAt;
   }
 
   /**

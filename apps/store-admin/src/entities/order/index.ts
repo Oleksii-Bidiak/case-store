@@ -18,6 +18,10 @@ export {
   useAdminOrderControllerUpdateDetails,
   // TASK-341: operator-created (phone) orders.
   useAdminOrderControllerCreate,
+  // TASK-484: issue a fresh buyer link, retiring the previous one. A mutation
+  // with no query twin on purpose — the server keeps only the token's hash, so
+  // "read the current link" is a question nothing can answer.
+  useAdminOrderControllerIssueAccessLink,
   getAdminOrderControllerFindAllQueryKey,
   getAdminOrderControllerFindByIdQueryKey,
   getAdminOrderControllerGetHistoryQueryKey,
@@ -55,6 +59,11 @@ export type {
   AdminOrderAllowedTransitionsResponse,
   AdminOrderAllowedPaymentTransitions,
   AdminOrderAllowedPaymentTransitionsResponse,
+  // TASK-484: the one-time buyer link — on the create response's `meta`, and as
+  // the body of the issue-a-new-one endpoint.
+  AdminOrderAccessLink,
+  AdminOrderAccessLinkResponse,
+  AdminOrderCreatedResponseEnvelope,
 } from "@/shared/api";
 
 export {

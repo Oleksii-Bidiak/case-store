@@ -88,6 +88,61 @@ class AdminOrderResponseEnvelope {
 }
 
 /**
+ * The one-time buyer link that comes back with a freshly-created phone order
+ * (TASK-484).
+ *
+ * It rides in `meta` rather than on the order because it is NOT a property of
+ * the order: the order keeps only a SHA-256, and this string exists for the
+ * duration of this response. Putting it on `OrderEntity` would invite the next
+ * read path to expect it there, and every one of them would answer null.
+ */
+class AdminOrderCreatedMeta {
+  @ApiProperty({
+    description:
+      'Absolute order-status link for the buyer, shown to the operator ONCE — the server ' +
+      'keeps only its hash. Null when STORE_CLIENT_URL is unconfigured.',
+    type: String,
+    nullable: true,
+    example: 'https://shop.example.com/orders/guest/2f1a…',
+  })
+  accessUrl!: string | null;
+}
+
+class AdminOrderCreatedResponseEnvelope {
+  @ApiProperty({ type: OrderEntity })
+  data!: OrderEntity;
+
+  @ApiProperty({ type: AdminOrderCreatedMeta })
+  meta!: AdminOrderCreatedMeta;
+}
+
+/**
+ * A freshly issued order-access link (TASK-484).
+ *
+ * Same one-shot contract as {@link AdminOrderCreatedMeta}: this response is the
+ * only place the raw token will ever appear, and issuing this one retired
+ * whatever link the buyer had before.
+ */
+class AdminOrderAccessLink {
+  @ApiProperty({
+    description: 'Absolute order-status link for the buyer — shown once, never retrievable again',
+    example: 'https://shop.example.com/orders/guest/2f1a…',
+  })
+  url!: string;
+
+  @ApiProperty({
+    description: 'When this link was issued; its expiry window is counted from here',
+    example: '2026-09-14T10:15:30.000Z',
+  })
+  issuedAt!: Date;
+}
+
+class AdminOrderAccessLinkResponse {
+  @ApiProperty({ type: AdminOrderAccessLink })
+  data!: AdminOrderAccessLink;
+}
+
+/**
  * Response envelope for an order's status/payment-status history timeline
  * (TASK-251). Oldest-first list of {@link OrderStatusHistoryEntity} rows.
  */
@@ -182,6 +237,7 @@ class AdminOrderAllowedPaymentTransitionsResponse {
  *   PATCH  /admin/orders/:orderId                     — Waybill / internal notes (335, 336)
  *   PATCH  /admin/orders/:orderId/status              — Update an order's status
  *   PATCH  /admin/orders/:orderId/payment-status      — Update an order's payment status
+ *   POST   /admin/orders/:orderId/access-link         — Issue a new buyer link (TASK-484)
  *
  * Separate from the customer-facing {@link OrderController} (`/api/orders`),
  * which scopes every route to the authenticated user. Mirrors the
@@ -201,6 +257,10 @@ class AdminOrderAllowedPaymentTransitionsResponse {
   AdminOrderAllowedTransitionsResponse,
   AdminOrderAllowedPaymentTransitions,
   AdminOrderAllowedPaymentTransitionsResponse,
+  AdminOrderCreatedMeta,
+  AdminOrderCreatedResponseEnvelope,
+  AdminOrderAccessLink,
+  AdminOrderAccessLinkResponse,
 )
 @Controller('admin/orders')
 @UseGuards(PermissionGuard)
@@ -253,7 +313,11 @@ export class AdminOrderController {
     summary: 'Create an order on behalf of a customer (admin)',
     operationId: 'adminOrderControllerCreate',
   })
-  @ApiResponse({ status: 201, description: 'Order created', type: AdminOrderResponseEnvelope })
+  @ApiResponse({
+    status: 201,
+    description: 'Order created; `meta.accessUrl` is the buyer link, returned once',
+    type: AdminOrderCreatedResponseEnvelope,
+  })
   @ApiResponse({
     status: 400,
     description: 'No customer identified, a product is unavailable, or stock is short',
@@ -264,10 +328,51 @@ export class AdminOrderController {
     // Recorded as the history row's changedBy: unlike a self-service order, this
     // one has an acting user, and that is the point of auditing manual orders.
     @CurrentUser('id') adminUserId: string,
-  ): Promise<AdminOrderResponseEnvelope> {
-    const order = await this.orderService.adminCreateOrder(dto, adminUserId);
+  ): Promise<AdminOrderCreatedResponseEnvelope> {
+    // TASK-484: `accessUrl` is the raw buyer link and this is its only
+    // appearance — the operator copies it into the chat they took the order in,
+    // or issues a new one later from the order card.
+    const { order, accessUrl } = await this.orderService.adminCreateOrder(dto, adminUserId);
 
-    return { data: order };
+    return { data: order, meta: { accessUrl } };
+  }
+
+  /**
+   * POST /api/admin/orders/:orderId/access-link
+   *
+   * Issue a fresh order-status link for the buyer, retiring the previous one
+   * (TASK-484).
+   *
+   * There is no GET counterpart, and there cannot be: the database holds only
+   * the SHA-256 of the token, so "show me the link again" is not a question the
+   * server is able to answer. Issuing a new one is the only move, which is why
+   * this is a POST and why the admin UI warns before calling it.
+   *
+   * `orders:write` rather than the class-level `orders:read`: it invalidates a
+   * credential the customer is currently holding. The global `AuditInterceptor`
+   * records the call because the route is permission-guarded and mutating — and
+   * it records the ORDER id, never the token.
+   */
+  @Post(':orderId/access-link')
+  @RequirePermission('orders:write')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiBearerAuth('access-token')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Issue a new buyer link for an order (admin)',
+    operationId: 'adminOrderControllerIssueAccessLink',
+  })
+  @ApiParam({ name: 'orderId', description: 'Order UUID' })
+  @ApiResponse({
+    status: 201,
+    description: 'A new link; the previous one stops working',
+    type: AdminOrderAccessLinkResponse,
+  })
+  @ApiResponse({ status: 400, description: 'The storefront address is not configured' })
+  @ApiResponse({ status: 403, description: 'Forbidden — orders:write required' })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  async issueAccessLink(@Param('orderId') orderId: string): Promise<AdminOrderAccessLinkResponse> {
+    return { data: await this.orderService.issueOrderAccessLink(orderId) };
   }
 
   /**
