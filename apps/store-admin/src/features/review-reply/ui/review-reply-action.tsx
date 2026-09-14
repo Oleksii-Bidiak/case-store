@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getAdminReviewControllerListQueryKey,
@@ -78,10 +78,16 @@ export function ReviewReplyAction({
 
   const existing = review.reply?.body ?? "";
 
-  const { register, handleSubmit, watch } = useForm<ReplyFormValues>({
+  const { register, handleSubmit, control } = useForm<ReplyFormValues>({
     values: { body: existing },
     resetOptions: { keepDirtyValues: true },
   });
+
+  // `useWatch`, not the `watch()` returned by `useForm`. They subscribe to the
+  // same field, but `watch` is a plain function the React Compiler cannot reason
+  // about, so its presence makes the compiler skip memoizing this entire
+  // component — for one boolean that disables one button.
+  const body = useWatch({ control, name: "body" });
 
   // Hooks first, gate after — `can()` must not change the hook order between
   // renders when the permission list arrives.
@@ -119,7 +125,7 @@ export function ReviewReplyAction({
   };
 
   const fieldId = `review-reply-${review.id}`;
-  const isEmpty = !watch("body")?.trim();
+  const isEmpty = !body?.trim();
 
   return (
     <>

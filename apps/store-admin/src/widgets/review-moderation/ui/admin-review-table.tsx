@@ -76,6 +76,20 @@ function truncate(value: string | null | undefined): string {
 }
 
 /**
+ * How the queue names a reviewer: the email's local-part, never the address.
+ *
+ * Module-level and used by every call site, because the queue names the same
+ * person in five places — the row label, the selection checkbox, the author
+ * cell, the live-region announcement and the author-moderation confirm — and
+ * four of them used to inline `split("@")[0]` themselves. A confirm dialog that
+ * asks about «olena» while the row above it reads «olena@example.com» is a
+ * dialog the operator has to stop and reconcile before they can answer it.
+ */
+function authorOf(email: string): string {
+  return email.split("@")[0];
+}
+
+/**
  * The queue the URL asks for, defaulting to the one an absent param returns.
  *
  * Reads the generated enum instead of listing the values here: the filter is
@@ -248,7 +262,6 @@ function AdminReviewTableView() {
   // buttons: approved rows are read-only here, and a checkbox column with
   // nothing to apply to it is worse than no column.
   const selectableIds = isPending ? reviews.map((review) => review.id) : [];
-  const authorOf = (email: string) => email.split("@")[0];
   const reviewById = new Map(reviews.map((review) => [review.id, review]));
 
   const selection = useRowSelection({
@@ -383,7 +396,7 @@ function AdminReviewTableView() {
                     key={review.id}
                     rowLabel={dict.reviews.rowAria(
                       review.productName,
-                      review.userEmail.split("@")[0],
+                      authorOf(review.userEmail),
                     )}
                     data-state={
                       selection.isSelected(review.id) ? "selected" : undefined
@@ -400,7 +413,7 @@ function AdminReviewTableView() {
                         disabled={bulk.isPending || busy}
                         label={dict.reviews.bulk.selectRow(
                           review.productName,
-                          review.userEmail.split("@")[0],
+                          authorOf(review.userEmail),
                         )}
                       />
                     )}
@@ -436,7 +449,7 @@ function AdminReviewTableView() {
                       label={dict.reviews.colAuthor}
                       className="text-sm text-muted-foreground"
                     >
-                      {review.userEmail.split("@")[0]}
+                      {authorOf(review.userEmail)}
                     </TableCell>
                     <TableCell label={dict.reviews.colRating}>
                       <div className="flex flex-col items-start gap-1">
