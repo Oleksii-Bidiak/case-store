@@ -240,12 +240,19 @@ When working on this project, read these files for additional context:
   (guest, customer, owner, content manager, order operator) with per-step readiness states,
   the stable `E-NN` edge-case catalogue and a gap → TASK traceability table. Revised
   2026-07-29 after Етап 8. Read it before claiming a feature is missing — several are not
-- `docs/manual-qa-pending.md` — **Launch Gate (UA)**: the narrow, risk-ordered "we do not
-  launch without this" run (LG-1…LG-9), plus accepted 🟡 risks and per-TASK tails
+- `docs/qa-recheck.md` — **the live manual-QA list (UA), and the only one you write to.**
+  What the owner rechecks after each deploy to the demo stand: the checks that failed or
+  were never reached in the 2026-08-27 run, plus everything added by later waves. Adding a
+  manual check means adding it here — in its `SF-*` / `AD-*` section, `[🔁]` once the fix is
+  in develop, **and** its id under your task in Appendix А, which is what a deploy session
+  reads. New ids must not collide with `qa-manual-full.md`
 - `docs/qa-manual-full.md` — **Exhaustive manual regression (UA)**: every storefront and
   admin route and every RBAC permission, `ZONE-nn` ids, two completeness appendices
-  (route → check, permission → check). Use for regression; use `manual-qa-pending.md`
-  before launch
+  (route → check, permission → check). The reference for a FULL pass; between passes the
+  working list is `qa-recheck.md`
+- `docs/manual-qa-pending.md` — **superseded, read-only.** The pre-launch gate (LG-1…LG-9)
+  and per-TASK tails as they stood before the 2026-08-27 live run. Kept because those tails
+  record decisions, not because the list is current — **do not add checks to it**
 - `docs/admin-guide.md` — Admin-panel onboarding guide (UA, for non-technical operators)
 - `docs/presentation.md` — Product presentation for the client (UA): what the storefront
   does, what the admin panel does, and an honest "not there yet" section

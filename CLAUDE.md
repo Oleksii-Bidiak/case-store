@@ -54,8 +54,12 @@ Invoke the matching skill when its area comes up:
 - Frontend API calls use **Orval-generated hooks** only — never manual `fetch`/`axios`.
   Generated files live in `**/shared/api/generated/` and must not be hand-edited.
 - `BACKLOG.md` is the single source of task status — one-line rows only; narratives go to
-  the linked `docs/plans/NNN-*.md`. Mark tasks ✅ when done and tested; manual-only checks
-  go to `docs/manual-qa-pending.md`.
+  the linked `docs/plans/NNN-*.md`. Mark tasks ✅ when done and tested.
+- **Manual checks go to `docs/qa-recheck.md`, and nowhere else.** It is the live recheck
+  list: add the check in its `SF-*` / `AD-*` section, mark it `[🔁]` once the fix is merged
+  into develop, and add the id to your task's row in Appendix А — a check that is not in
+  Appendix А is not picked up after a deploy. New ids must not collide with
+  `docs/qa-manual-full.md`. `docs/manual-qa-pending.md` is **superseded** — do not add to it.
 - Claude Code PreToolUse hooks block editing `.env*` and generated API files, and block
   commits on `main` (see `.claude/settings.json`); a separate Husky pre-commit runs
   lint-staged. `.ts`/`.tsx` files are auto-formatted on save.
