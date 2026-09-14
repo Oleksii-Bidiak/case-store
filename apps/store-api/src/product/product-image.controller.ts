@@ -112,7 +112,13 @@ export class ProductImageController {
   })
   @ApiResponse({ status: 201, description: 'Images uploaded', type: ProductImageListEnvelope })
   @ApiResponse({ status: 400, description: 'Invalid file (type/empty)' })
-  @ApiResponse({ status: 413, description: 'File exceeds the 20 MB limit' })
+  @ApiResponse({
+    status: 413,
+    description:
+      'A file exceeds the 20 MB limit, or the batch exceeds the 25 MB one request may carry. ' +
+      'The per-file limit is not the whole story here: several legal files can still be too ' +
+      'much together, so a batch of large photos should be sent one file per request.',
+  })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   @ApiResponse({ status: 404, description: 'Product not found' })

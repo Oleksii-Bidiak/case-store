@@ -105,8 +105,13 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_CURRENCY: process.env.NEXT_PUBLIC_CURRENCY,
   },
   images: {
-    // Whitelist exactly the store-api uploads origin. An empty `port` means
-    // "any port" in Next.js, so a hostname without an explicit port still works.
+    // Whitelist exactly the store-api uploads origin. An empty `port` matches a
+    // URL that carries no explicit port either (`match-remote-pattern.js`
+    // compares `url.port` to the pattern's), which is what a production
+    // `https://api.mystore.ua` looks like — it is NOT "any port", so a src on a
+    // non-default port is rejected unless the pattern names that port. Here the
+    // port comes from NEXT_PUBLIC_API_URL, so dev (`:3001`) and production
+    // (none) both line up on their own.
     remotePatterns: [
       {
         protocol: apiUrl.protocol.replace(":", "") as "http" | "https",

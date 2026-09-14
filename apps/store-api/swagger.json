@@ -3334,7 +3334,7 @@
             "description": "Product not found"
           },
           "413": {
-            "description": "File exceeds the 20 MB limit"
+            "description": "A file exceeds the 20 MB limit, or the batch exceeds the 25 MB one request may carry. The per-file limit is not the whole story here: several legal files can still be too much together, so a batch of large photos should be sent one file per request."
           }
         },
         "security": [

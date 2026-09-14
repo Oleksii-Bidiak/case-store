@@ -26,12 +26,24 @@ EXIF стрипається неявно (`withMetadata` ніде не викл�
 1. `image-processor.service.ts:41`: `.rotate()` (EXIF-орієнтація до стрипу) →
    `.resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true })` → `.webp()`.
 2. `product-image.service.ts:43` `MAX_IMAGE_BYTES` 5 → 20 МБ; `product-image.controller.ts:42` multer
-   15 → 25 МБ; для великих файлів — `diskStorage` замість пам'яті (mem_limit store-api 1 ГБ ×
+   15 → 25 МБ; для великих файлів — `diskStorage` замість пам'яті (mem_limit store-api ×
    10 файлів × 25 МБ — реальна межа).
 3. `Caddyfile`: `request_body { max_size 25MB }` на API-сайті → чистий 413 на краю.
 4. `apps/store-admin/src/shared/config/dictionary.ts:2299` → «до 20 МБ; ми самі зменшимо».
 5. Тести: 12-МП JPEG → ≤400 КБ WebP, ширина ≤2000; портрет з EXIF orientation 6 → після обробки
    стоїть правильно; `metadata.exif` відсутній.
+
+**Рішення по п.2: `diskStorage` НЕ робимо.** Він зламав би інваріант TASK-424 — жодні
+недовірені байти не потрапляють на диск, доки їх не обнюхали й не перекодували, — а
+тимчасовий файл multer-а вже лежав би там до того, як сервіс його побачить. Натомість
+пам'ять обмежена там, де вона витрачається (TASK-586): декодування серіалізоване
+(`IMAGE_DECODE_CONCURRENCY`), стеля вхідних пікселів 60 Mpx ≈ 240 МБ, і `storeAll` відмовляє
+батчу понад бюджет одного запиту — тобто «10 файлів × 25 МБ» більше не тримається на самому
+лише Caddy.
+
+**Число контейнера:** `mem_limit` store-api — **640 МБ** (`MEM_STORE_API` у
+`docker-compose.prod.yml`), не 1 ГБ, як рахував перший варіант цього пункту. Уся арифметика
+в коментарях коду виходить із 640.
 
 ### TASK-440 — AVIF і перевірка форматів (S) — ✅ рішення: **лишаємо тільки WebP**
 
