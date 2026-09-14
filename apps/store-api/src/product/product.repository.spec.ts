@@ -952,4 +952,54 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       expect(updateArgs.data.metaDescription).toBeNull();
     });
   });
+
+  // ─── the stars on a product card (TASK-585) ─────────────────────────────────
+  //
+  // `getRatingsByProductId` is the catalogue's half of the rating aggregate;
+  // `ReviewRepository.aggregate` is the PDP's. They answer the same question on
+  // two screens the user sees within one click of each other, so they have to
+  // move together: if only one starts counting unapproved-text ratings, a card
+  // says «4,5 · 8 оцінок» and the reviews tab beneath it says «4,7 · 3», and
+  // nothing in either code path looks wrong.
+  describe('rating aggregate on the catalogue listing', () => {
+    beforeEach(() => {
+      prismaMock.productImage.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(1);
+    });
+
+    it('counts every VISIBLE rating, whether or not its text was approved', async () => {
+      prismaMock.product.findMany.mockResolvedValue([{ id: 'p1', groupId: null, brand: null }]);
+      prismaMock.review.groupBy.mockResolvedValue([
+        { productId: 'p1', _avg: { rating: 4.5 }, _count: { rating: 8 } },
+      ]);
+
+      const result = await repository.findAll({ page: 1, limit: 20 });
+
+      expect(prismaMock.review.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { productId: { in: ['p1'] }, ratingVisible: true } }),
+      );
+      expect(result.products[0].ratingAverage).toBe(4.5);
+      expect(result.products[0].ratingCount).toBe(8);
+    });
+
+    it('does not consult the text status — that gate belongs to the comment, not the star', async () => {
+      prismaMock.product.findMany.mockResolvedValue([{ id: 'p1', groupId: null, brand: null }]);
+      prismaMock.review.groupBy.mockResolvedValue([]);
+
+      await repository.findAll({ page: 1, limit: 20 });
+
+      expect(prismaMock.review.groupBy.mock.calls[0][0].where).not.toHaveProperty('textStatus');
+      expect(prismaMock.review.groupBy.mock.calls[0][0].where).not.toHaveProperty('isActive');
+    });
+
+    it('still reports no rating rather than zero for a product nobody rated', async () => {
+      prismaMock.product.findMany.mockResolvedValue([{ id: 'p1', groupId: null, brand: null }]);
+      prismaMock.review.groupBy.mockResolvedValue([]);
+
+      const result = await repository.findAll({ page: 1, limit: 20 });
+
+      expect(result.products[0].ratingAverage).toBeNull();
+      expect(result.products[0].ratingCount).toBe(0);
+    });
+  });
 });

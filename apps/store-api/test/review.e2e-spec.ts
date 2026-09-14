@@ -46,7 +46,7 @@ describe('ReviewController (e2e)', () => {
     findForModeration: jest.fn(),
     findById: jest.fn(),
     approve: jest.fn(),
-    delete: jest.fn(),
+    rejectText: jest.fn(),
     moderateMany: jest.fn(),
     isVerifiedPurchase: jest.fn(),
     findVerifiedPurchaserIds: jest.fn(),
@@ -97,7 +97,10 @@ describe('ReviewController (e2e)', () => {
     productId: PRODUCT_ID,
     rating: 5,
     comment: 'Great case!',
-    isActive: false,
+    ratingVisible: false,
+    textStatus: 'PENDING',
+    hiddenAt: null,
+    createdIp: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -182,8 +185,12 @@ describe('ReviewController (e2e)', () => {
       expect(response.body).toHaveProperty('data');
       expect(response.body.data).toHaveProperty('id');
       expect(response.body.data.rating).toBe(5);
-      expect(response.body.data.isActive).toBe(false);
       expect(response.body.data.verifiedPurchase).toBe(true);
+      // TASK-585: moderation state is no longer part of the public contract — not
+      // under its old name, and not under its new ones either.
+      expect(response.body.data).not.toHaveProperty('isActive');
+      expect(response.body.data).not.toHaveProperty('textStatus');
+      expect(response.body.data).not.toHaveProperty('ratingVisible');
     });
 
     it('should return 400 for a rating out of range', async () => {
@@ -233,7 +240,7 @@ describe('ReviewController (e2e)', () => {
   describe('GET /api/products/:productId/reviews', () => {
     it('should return 200 (public) with { data, aggregate, meta }', async () => {
       reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
-        reviews: [makeReview({ isActive: true })],
+        reviews: [makeReview({ textStatus: 'APPROVED', ratingVisible: true })],
         total: 1,
       });
       reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 5, ratingCount: 1 });
@@ -250,6 +257,27 @@ describe('ReviewController (e2e)', () => {
       expect(response.body.aggregate).toHaveProperty('ratingAverage');
       expect(response.body.aggregate).toHaveProperty('ratingCount');
       expect(response.body.meta).toHaveProperty('totalPages');
+      expect(response.body.data[0]).not.toHaveProperty('isActive');
+    });
+
+    // TASK-585: ratings and texts are counted by different queries now, and the
+    // owner accepted that the two numbers differ. This pins that the wire carries
+    // them separately instead of some reconciled single figure — a client that
+    // read «8 оцінок» off `meta.total` would silently under-report every product.
+    it('reports the rating count and the text count as separate numbers', async () => {
+      reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
+        reviews: [makeReview({ textStatus: 'APPROVED', ratingVisible: true })],
+        total: 1,
+      });
+      reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 4.4, ratingCount: 9 });
+      reviewRepositoryMock.findVerifiedPurchaserIds.mockResolvedValue(new Set<string>());
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/products/${PRODUCT_ID}/reviews`)
+        .expect(200);
+
+      expect(response.body.aggregate.ratingCount).toBe(9);
+      expect(response.body.meta.total).toBe(1);
     });
   });
 
@@ -377,14 +405,15 @@ describe('ReviewController (e2e)', () => {
     it('should return 200 for an ADMIN', async () => {
       const token = generateAccessToken(admin.id, admin.role);
       reviewRepositoryMock.findById.mockResolvedValue(makeReview());
-      reviewRepositoryMock.approve.mockResolvedValue(makeReview({ isActive: true }));
+      reviewRepositoryMock.approve.mockResolvedValue(makeReview({ textStatus: 'APPROVED' }));
 
       const response = await request(app.getHttpServer())
         .patch('/api/admin/reviews/review-e2e-1/approve')
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      expect(response.body.data.isActive).toBe(true);
+      expect(response.body.data.id).toBe('review-e2e-1');
+      expect(reviewRepositoryMock.approve).toHaveBeenCalledWith('review-e2e-1');
     });
 
     it('should return 404 for an unknown id', async () => {
@@ -398,18 +427,30 @@ describe('ReviewController (e2e)', () => {
     });
   });
 
-  // ─── DELETE /api/admin/reviews/:id ────────────────────────────────────────────
+  // ─── PATCH /api/admin/reviews/:id/reject (TASK-585) ──────────────────────────
+  //
+  // Was `DELETE /api/admin/reviews/:id`. A verb change, because the operation is
+  // no longer a deletion: the row stays, the rating stays counting, and only the
+  // text's verdict moves. A DELETE that left the row behind would be the wrong
+  // word for what happens.
 
-  describe('DELETE /api/admin/reviews/:id', () => {
-    it('should return 204 for an ADMIN', async () => {
+  describe('PATCH /api/admin/reviews/:id/reject', () => {
+    it('rejects the TEXT and leaves the rating intact', async () => {
       const token = generateAccessToken(admin.id, admin.role);
-      reviewRepositoryMock.findById.mockResolvedValue(makeReview());
-      reviewRepositoryMock.delete.mockResolvedValue(undefined);
+      const existing = makeReview({ rating: 5, ratingVisible: true });
+      reviewRepositoryMock.findById.mockResolvedValue(existing);
+      reviewRepositoryMock.rejectText.mockResolvedValue(
+        makeReview({ rating: 5, ratingVisible: true, textStatus: 'REJECTED' }),
+      );
 
-      await request(app.getHttpServer())
-        .delete('/api/admin/reviews/review-e2e-1')
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/reviews/review-e2e-1/reject')
         .set('Authorization', `Bearer ${token}`)
-        .expect(204);
+        .expect(200);
+
+      expect(reviewRepositoryMock.rejectText).toHaveBeenCalledWith('review-e2e-1');
+      expect(response.body.data.rating).toBe(5);
+      expect(response.body.data.id).toBe('review-e2e-1');
     });
 
     it('should return 404 for an unknown id', async () => {
@@ -417,7 +458,33 @@ describe('ReviewController (e2e)', () => {
       reviewRepositoryMock.findById.mockResolvedValue(null);
 
       await request(app.getHttpServer())
-        .delete('/api/admin/reviews/missing')
+        .patch('/api/admin/reviews/missing/reject')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('returns 403 for a customer', async () => {
+      const token = generateAccessToken(customer.id, customer.role);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/reviews/review-e2e-1/reject')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    // The old destructive route must be GONE, not merely unused. Leaving it
+    // mounted would mean the admin panel's stale generated hook still hard-deletes
+    // reviews — the exact behaviour this task exists to remove — and would do it
+    // silently, because a 204 looks like success.
+    it('no longer answers the DELETE that used to hard-delete the row', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      // A findable review on purpose: with the old route still mounted this
+      // returns 204 and the row is gone, so a 404 here proves the ROUTE is
+      // absent rather than merely that the id was not found.
+      reviewRepositoryMock.findById.mockResolvedValue(makeReview());
+
+      await request(app.getHttpServer())
+        .delete('/api/admin/reviews/review-e2e-1')
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
     });

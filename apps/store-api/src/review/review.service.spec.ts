@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { Prisma, Review } from '@prisma/client';
+import { Prisma, Review, ReviewTextStatus } from '@prisma/client';
 import { ReviewRepository, ReviewsNotFoundError } from './review.repository';
 import { ReviewService } from './review.service';
 import { ReviewModerationStatus } from './dto';
@@ -18,7 +18,12 @@ const makeReview = (overrides: Partial<Review> = {}): Review => ({
   productId: PRODUCT_ID,
   rating: 5,
   comment: 'Great case!',
-  isActive: false,
+  // The submission default since TASK-585: the rating waits on the email gate,
+  // the text waits on a moderator, and the two are no longer the same question.
+  ratingVisible: false,
+  textStatus: ReviewTextStatus.PENDING,
+  hiddenAt: null,
+  createdIp: null,
   createdAt: now,
   updatedAt: now,
   ...overrides,
@@ -33,7 +38,7 @@ const reviewRepositoryMock = {
   findForModeration: jest.fn(),
   findById: jest.fn(),
   approve: jest.fn(),
-  delete: jest.fn(),
+  rejectText: jest.fn(),
   moderateMany: jest.fn(),
   isVerifiedPurchase: jest.fn(),
   findVerifiedPurchaserIds: jest.fn(),
@@ -78,7 +83,7 @@ describe('ReviewService', () => {
       expect(reviewRepositoryMock.create).not.toHaveBeenCalled();
     });
 
-    it('creates a pending review (isActive = false) and returns the entity', async () => {
+    it('creates the review and returns the entity', async () => {
       reviewRepositoryMock.findExisting.mockResolvedValue(null);
       reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
       reviewRepositoryMock.create.mockResolvedValue(makeReview());
@@ -94,8 +99,23 @@ describe('ReviewService', () => {
         rating: 5,
         comment: 'Great case!',
       });
-      expect(result.isActive).toBe(false);
       expect(result.id).toBe('review-uuid-1');
+    });
+
+    // TASK-585: the public entity stops advertising moderation state. It used to
+    // carry `isActive`, which told the author's own browser — and anyone reading
+    // the response — that their text was queued, and told an admin's approve call
+    // nothing useful either. Moderation state now lives on the admin projection.
+    it('does not tell the storefront anything about moderation state', async () => {
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview());
+
+      const result = await service.submitReview(USER_ID, PRODUCT_ID, { rating: 5 });
+
+      expect(result).not.toHaveProperty('isActive');
+      expect(result).not.toHaveProperty('textStatus');
+      expect(result).not.toHaveProperty('ratingVisible');
     });
 
     it('returns verifiedPurchase = true when the user has purchased the product', async () => {
@@ -139,7 +159,7 @@ describe('ReviewService', () => {
   describe('getApprovedReviews', () => {
     it('returns only approved reviews with aggregate and pagination meta', async () => {
       reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
-        reviews: [makeReview({ isActive: true })],
+        reviews: [makeReview({ textStatus: ReviewTextStatus.APPROVED, ratingVisible: true })],
         total: 1,
       });
       reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 5, ratingCount: 1 });
@@ -149,10 +169,32 @@ describe('ReviewService', () => {
 
       expect(reviewRepositoryMock.findApprovedByProduct).toHaveBeenCalledWith(PRODUCT_ID, 1, 10);
       expect(result.data).toHaveLength(1);
-      expect(result.data[0].isActive).toBe(true);
+      expect(result.data[0]).not.toHaveProperty('isActive');
       expect(result.aggregate.ratingAverage).toBe(5);
       expect(result.aggregate.ratingCount).toBe(1);
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 10, totalPages: 1 });
+    });
+
+    // TASK-585: the two numbers on the reviews tab are now allowed to disagree, and
+    // the owner said so explicitly — "кількість оцінок і кількість відгуків можуть
+    // відрізнятись, і це нормально". The aggregate counts ratings (star-only rows
+    // included); `meta.total` counts the texts the list can actually render. A
+    // service that quietly reconciled them would be hiding the ratings the split
+    // exists to surface.
+    it('lets the rating count exceed the number of texts on the page', async () => {
+      reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
+        reviews: [makeReview({ textStatus: ReviewTextStatus.APPROVED, ratingVisible: true })],
+        total: 1,
+      });
+      // Nine ratings on the product, one of them with an approved text.
+      reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 4.4, ratingCount: 9 });
+      reviewRepositoryMock.findVerifiedPurchaserIds.mockResolvedValue(new Set<string>());
+
+      const result = await service.getApprovedReviews(PRODUCT_ID, {});
+
+      expect(result.aggregate.ratingCount).toBe(9);
+      expect(result.meta.total).toBe(1);
+      expect(result.data).toHaveLength(1);
     });
 
     // TASK-298: the badge used to be resolved with one `isVerifiedPurchase` call PER review
@@ -162,8 +204,12 @@ describe('ReviewService', () => {
       const nonBuyer = 'user-non-buyer';
       reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
         reviews: [
-          makeReview({ id: 'r-buyer', userId: buyer, isActive: true }),
-          makeReview({ id: 'r-non-buyer', userId: nonBuyer, isActive: true }),
+          makeReview({ id: 'r-buyer', userId: buyer, textStatus: ReviewTextStatus.APPROVED }),
+          makeReview({
+            id: 'r-non-buyer',
+            userId: nonBuyer,
+            textStatus: ReviewTextStatus.APPROVED,
+          }),
         ],
         total: 2,
       });
@@ -263,6 +309,45 @@ describe('ReviewService', () => {
       );
     });
 
+    // TASK-585: rejected rows survive now, so there is a third pile to look at.
+    // Without this filter the only way to review a moderation decision would be
+    // to remember it.
+    it('passes the rejected status through — those rows still exist', async () => {
+      reviewRepositoryMock.findForModeration.mockResolvedValue({ reviews: [], total: 0 });
+
+      await service.getReviewsForModeration({ status: ReviewModerationStatus.REJECTED });
+
+      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith(
+        'rejected',
+        1,
+        20,
+        undefined,
+      );
+    });
+
+    // TASK-585: the admin projection is where moderation state lives now that the
+    // public one has none. A queue row that cannot say whether a rating is still
+    // counting leaves the moderator unable to tell an approved text from a hidden
+    // account's approved text.
+    it('exposes the text status and the rating visibility on the queue row', async () => {
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview({ textStatus: ReviewTextStatus.REJECTED, ratingVisible: true }),
+            user: { email: 'olena@example.com' },
+            product: { name: 'iPhone 15 Pro Case', sku: 'CASE-IP15P-BLK' },
+          },
+        ],
+        total: 1,
+      });
+
+      const result = await service.getReviewsForModeration({});
+
+      expect(result.data[0].textStatus).toBe('REJECTED');
+      expect(result.data[0].ratingVisible).toBe(true);
+      expect(result.data[0]).not.toHaveProperty('isActive');
+    });
+
     // TASK-423: the queue had no search at all. A term that reached the service
     // but not the repository would render a full, unfiltered queue — which looks
     // like "nothing matched my typo" rather than "the filter was dropped".
@@ -292,32 +377,50 @@ describe('ReviewService', () => {
 
     it('approves the review and returns the entity', async () => {
       reviewRepositoryMock.findById.mockResolvedValue(makeReview());
-      reviewRepositoryMock.approve.mockResolvedValue(makeReview({ isActive: true }));
+      reviewRepositoryMock.approve.mockResolvedValue(
+        makeReview({ textStatus: ReviewTextStatus.APPROVED }),
+      );
 
       const result = await service.approveReview('review-uuid-1');
 
       expect(reviewRepositoryMock.approve).toHaveBeenCalledWith('review-uuid-1');
-      expect(result.isActive).toBe(true);
+      expect(result.id).toBe('review-uuid-1');
     });
   });
 
-  // ─── rejectReview ─────────────────────────────────────────────────────────────
+  // ─── rejectReview (TASK-585: the rating is not collateral) ───────────────────
 
   describe('rejectReview', () => {
     it('throws NotFoundException when the review does not exist', async () => {
       reviewRepositoryMock.findById.mockResolvedValue(null);
 
       await expect(service.rejectReview('missing')).rejects.toBeInstanceOf(NotFoundException);
-      expect(reviewRepositoryMock.delete).not.toHaveBeenCalled();
+      expect(reviewRepositoryMock.rejectText).not.toHaveBeenCalled();
     });
 
-    it('hard-deletes the review when it exists', async () => {
-      reviewRepositoryMock.findById.mockResolvedValue(makeReview());
-      reviewRepositoryMock.delete.mockResolvedValue(undefined);
+    it('marks the text REJECTED and leaves the rating exactly where it was', async () => {
+      // The whole point of TASK-585. Rejecting used to hard-delete the row, so a
+      // moderator binning one unusable sentence also removed a 5★ from the
+      // product's average — a score change nobody asked for and nothing recorded.
+      reviewRepositoryMock.findById.mockResolvedValue(
+        makeReview({ rating: 5, ratingVisible: true }),
+      );
+      reviewRepositoryMock.rejectText.mockResolvedValue(
+        makeReview({ rating: 5, ratingVisible: true, textStatus: ReviewTextStatus.REJECTED }),
+      );
 
-      await service.rejectReview('review-uuid-1');
+      const result = await service.rejectReview('review-uuid-1');
 
-      expect(reviewRepositoryMock.delete).toHaveBeenCalledWith('review-uuid-1');
+      expect(reviewRepositoryMock.rejectText).toHaveBeenCalledWith('review-uuid-1');
+      expect(result.rating).toBe(5);
+      expect(result.id).toBe('review-uuid-1');
+    });
+
+    // The destructive path is gone from the seam itself, not merely unused: a
+    // `delete` still hanging off the repository is a loaded gun for the next
+    // person who reads "reject" and reaches for the obvious method.
+    it('leaves the repository with no delete method to reach for', () => {
+      expect(ReviewRepository.prototype).not.toHaveProperty('delete');
     });
   });
 
@@ -333,7 +436,7 @@ describe('ReviewService', () => {
       expect(reviewRepositoryMock.moderateMany).toHaveBeenCalledWith(['a', 'b', 'c'], 'approve');
     });
 
-    it('passes reject through as reject — it is a delete, not an inverse approve', async () => {
+    it('passes reject through as reject — it is a text verdict, not an inverse approve', async () => {
       reviewRepositoryMock.moderateMany.mockResolvedValue(2);
 
       await service.moderateMany(['a', 'b'], 'reject');
@@ -349,14 +452,18 @@ describe('ReviewService', () => {
       );
     });
 
-    it('logs the destructive path with its count — this is the only record of a bulk delete', async () => {
+    // TASK-585: the log line must stop saying "deleted". Nothing is deleted any
+    // more, and a log that claims otherwise is worse than no log — it is what an
+    // operator would be shown when they ask where a review went, and it would send
+    // them looking for a row that is still sitting in the table.
+    it('records a bulk rejection without claiming anything was deleted', async () => {
       reviewRepositoryMock.moderateMany.mockResolvedValue(5);
 
       await service.moderateMany(['a', 'b', 'c', 'd', 'e'], 'reject');
 
       expect(pinoLoggerMock.info).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'reject', count: 5 }),
-        expect.stringContaining('deleted'),
+        expect.not.stringContaining('deleted'),
       );
     });
   });

@@ -342,7 +342,7 @@ describe('UserRepository (soft-delete behaviour)', () => {
           productId: 'prod-1',
           rating: 5,
           comment: 'Great!',
-          isActive: true,
+          textStatus: 'APPROVED',
           createdAt: new Date('2026-01-01T00:00:00.000Z'),
           product: { name: 'iPhone 15 Pro Case' },
         },
@@ -363,10 +363,33 @@ describe('UserRepository (soft-delete behaviour)', () => {
           productName: 'iPhone 15 Pro Case',
           rating: 5,
           comment: 'Great!',
-          isActive: true,
+          textStatus: 'APPROVED',
           createdAt: new Date('2026-01-01T00:00:00.000Z'),
         },
       ]);
+    });
+
+    // TASK-585: the card carried a boolean that could only say approved / not. A
+    // rejected text now stays on the record, and an admin reading a customer's
+    // history has to be able to tell «ще не читали» from «прочитали й відхилили» —
+    // a boolean collapses those two into the same cell.
+    it('distinguishes a rejected text from one still waiting to be read', async () => {
+      prismaMock.review.findMany.mockResolvedValue([
+        {
+          id: 'review-2',
+          productId: 'prod-2',
+          rating: 1,
+          comment: 'unusable',
+          textStatus: 'REJECTED',
+          createdAt: new Date('2026-01-02T00:00:00.000Z'),
+          product: { name: 'Cable' },
+        },
+      ]);
+
+      const rows = await repository.getReviewsByUserId('user-1', 20);
+
+      expect(rows[0].textStatus).toBe('REJECTED');
+      expect(rows[0]).not.toHaveProperty('isActive');
     });
   });
 

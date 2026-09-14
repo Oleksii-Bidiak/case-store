@@ -104,20 +104,30 @@ describe('ReviewRepository — findForModeration search', () => {
     });
   });
 
-  it('filters on the moderation gate alone when no term is given', async () => {
+  it('filters on the TEXT status alone when no term is given', async () => {
     await repo.findForModeration('pending', 1, 20);
 
-    expect(issuedWhere()).toEqual({ isActive: false });
+    expect(issuedWhere()).toEqual({ textStatus: 'PENDING' });
     // The COUNT must carry the same `where`, or the pager claims pages the list
     // cannot show.
-    expect(reviewCount).toHaveBeenCalledWith({ where: { isActive: false } });
+    expect(reviewCount).toHaveBeenCalledWith({ where: { textStatus: 'PENDING' } });
+  });
+
+  // TASK-585: the queue's third tab. Rejecting no longer deletes, so there is now
+  // a population of REJECTED rows that exists and was previously unreachable —
+  // without this arm a moderator cannot see, or undo, anything they turned down.
+  it('reaches the rejected pile, which is a population now that reject does not delete', async () => {
+    await repo.findForModeration('rejected', 1, 20);
+
+    expect(issuedWhere()).toEqual({ textStatus: 'REJECTED' });
+    expect(reviewCount).toHaveBeenCalledWith({ where: { textStatus: 'REJECTED' } });
   });
 
   it('ORs the term across review text, author email and product name', async () => {
     await repo.findForModeration('approved', 1, 20, 'чохол');
 
     expect(issuedWhere()).toEqual({
-      isActive: true,
+      textStatus: 'APPROVED',
       OR: [
         { comment: { contains: 'чохол', mode: 'insensitive' } },
         { user: { email: { contains: 'чохол', mode: 'insensitive' } } },
@@ -145,5 +155,188 @@ describe('ReviewRepository — findForModeration search', () => {
 
     expect(issuedWhere().OR).toBeUndefined();
     expect(reviewFindMany.mock.calls[0][0]).toMatchObject({ skip: 50, take: 50 });
+  });
+});
+
+/**
+ * The rating/text split (TASK-585) — the two read paths that used to share one
+ * `isActive` flag and must now diverge.
+ *
+ * Prisma is mocked, so what is pinned is the WHERE SHAPE, and that is the whole
+ * risk: both failures are silent on screen. An aggregate that still filters on the
+ * text status quietly refuses to count a rating the owner decided counts
+ * immediately; a public list that filters on `ratingVisible` instead of the text
+ * status starts publishing unmoderated comments.
+ */
+describe('ReviewRepository — rating aggregate vs public text list (TASK-585)', () => {
+  let repo: ReviewRepository;
+
+  const reviewFindMany = jest.fn();
+  const reviewCount = jest.fn();
+  const reviewGroupBy = jest.fn();
+  const reviewUpdate = jest.fn();
+
+  const prismaMock = {
+    order: { findMany: jest.fn() },
+    orderItem: { findFirst: jest.fn() },
+    review: {
+      findMany: reviewFindMany,
+      count: reviewCount,
+      groupBy: reviewGroupBy,
+      update: reviewUpdate,
+    },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    reviewFindMany.mockResolvedValue([]);
+    reviewCount.mockResolvedValue(0);
+    reviewGroupBy.mockResolvedValue([]);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [ReviewRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(ReviewRepository);
+  });
+
+  // ─── 1. the aggregate counts ratings, not texts ─────────────────────────────
+
+  it('counts EVERY visible rating, whether or not its text was approved', async () => {
+    // The owner's decision of 2026-09-10: stars count the moment they are given.
+    // A three-star rating whose comment is still in the moderation queue is part
+    // of the product's average today, not whenever someone gets round to reading
+    // the sentence next to it.
+    reviewGroupBy.mockResolvedValue([
+      { productId: 'product-1', _avg: { rating: 4.5 }, _count: { rating: 8 } },
+    ]);
+
+    const result = await repo.aggregate('product-1');
+
+    expect(reviewGroupBy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { productId: 'product-1', ratingVisible: true } }),
+    );
+    expect(result).toEqual({ ratingAverage: 4.5, ratingCount: 8 });
+  });
+
+  it('does not consult the text status when aggregating', async () => {
+    await repo.aggregate('product-1');
+
+    // Spelled out separately from the `toEqual` above because this is the exact
+    // regression: leaving a `textStatus` arm in the aggregate would still produce
+    // a plausible-looking average — just the OLD one.
+    expect(reviewGroupBy.mock.calls[0][0].where).not.toHaveProperty('textStatus');
+  });
+
+  it('reports no rating at all rather than zero when the product has none', async () => {
+    reviewGroupBy.mockResolvedValue([]);
+
+    expect(await repo.aggregate('product-1')).toEqual({ ratingAverage: null, ratingCount: 0 });
+  });
+
+  // ─── 2. the public list shows approved TEXTS ────────────────────────────────
+
+  it('lists only approved texts, and only rows that actually have one', async () => {
+    await repo.findApprovedByProduct('product-1', 1, 10);
+
+    const where = reviewFindMany.mock.calls[0][0].where;
+    expect(where).toEqual({
+      productId: 'product-1',
+      textStatus: 'APPROVED',
+      hiddenAt: null,
+      comment: { not: null },
+      NOT: { comment: '' },
+    });
+    // A star-only row is APPROVED-able and must still never reach the list: it
+    // would render as an author, a date and an empty speech bubble.
+    expect(where).not.toHaveProperty('ratingVisible');
+  });
+
+  it('counts the page with the same filter, so `meta.total` matches what is shown', async () => {
+    await repo.findApprovedByProduct('product-1', 1, 10);
+
+    expect(reviewCount).toHaveBeenCalledWith({ where: reviewFindMany.mock.calls[0][0].where });
+  });
+
+  // ─── 3. rejecting a text leaves the rating alone ────────────────────────────
+
+  it('rejects a TEXT by status, never by deleting the row', async () => {
+    reviewUpdate.mockResolvedValue({ id: 'review-1' });
+
+    await repo.rejectText('review-1');
+
+    expect(reviewUpdate).toHaveBeenCalledWith({
+      where: { id: 'review-1' },
+      data: { textStatus: 'REJECTED' },
+    });
+    // Neither the rating nor its visibility may appear in the update: a moderator
+    // turning down a sentence must not move the product's score.
+    const written = reviewUpdate.mock.calls[0][0].data;
+    expect(written).not.toHaveProperty('rating');
+    expect(written).not.toHaveProperty('ratingVisible');
+  });
+});
+
+/**
+ * Bulk moderation (TASK-585) — the per-row buttons applied to a selection.
+ *
+ * `reject` used to `deleteMany`. It now writes a status, which is the difference
+ * between an operator clearing a backlog and an operator destroying an unknown
+ * number of ratings.
+ */
+describe('ReviewRepository — moderateMany writes statuses, never deletes', () => {
+  let repo: ReviewRepository;
+
+  const txFindMany = jest.fn();
+  const txUpdateMany = jest.fn();
+  const txDeleteMany = jest.fn();
+  const tx = {
+    review: { findMany: txFindMany, updateMany: txUpdateMany, deleteMany: txDeleteMany },
+  };
+
+  const prismaMock = {
+    order: { findMany: jest.fn() },
+    orderItem: { findFirst: jest.fn() },
+    review: {},
+    $transaction: jest.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    txUpdateMany.mockResolvedValue({ count: 2 });
+    txDeleteMany.mockResolvedValue({ count: 2 });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [ReviewRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(ReviewRepository);
+  });
+
+  it('rejects a batch by setting REJECTED — the ratings survive', async () => {
+    txFindMany.mockResolvedValue([{ id: 'a' }, { id: 'b' }]);
+
+    const count = await repo.moderateMany(['a', 'b'], 'reject');
+
+    expect(txDeleteMany).not.toHaveBeenCalled();
+    expect(txUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['a', 'b'] } },
+      data: { textStatus: 'REJECTED' },
+    });
+    expect(count).toBe(2);
+  });
+
+  it('approves a batch by setting APPROVED', async () => {
+    txFindMany.mockResolvedValue([{ id: 'a' }, { id: 'b' }]);
+
+    await repo.moderateMany(['a', 'b'], 'approve');
+
+    expect(txUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['a', 'b'] } },
+      data: { textStatus: 'APPROVED' },
+    });
+  });
+
+  it('still aborts the whole batch on an unknown id', async () => {
+    txFindMany.mockResolvedValue([{ id: 'a' }]);
+
+    await expect(repo.moderateMany(['a', 'gone'], 'reject')).rejects.toThrow(/gone/);
+    expect(txUpdateMany).not.toHaveBeenCalled();
   });
 });
