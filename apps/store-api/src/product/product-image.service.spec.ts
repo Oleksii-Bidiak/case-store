@@ -12,7 +12,7 @@ import { ProductImageRepository } from './product-image.repository';
 import { CacheService } from '../cache';
 import { ImageProcessor, STORAGE_SERVICE } from '../storage';
 import { ImageUploadService } from '../uploads';
-import { MediaRepository } from '../media';
+import { MediaRepository, MediaUsageRepository, MEDIA_USAGE_KINDS } from '../media';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
 const PRODUCT_ID = '11111111-1111-1111-1111-111111111111';
@@ -54,7 +54,8 @@ describe('ProductImageService', () => {
     delete: jest.Mock;
     updateMany: jest.Mock;
   };
-  let mediaRepository: { findById: jest.Mock };
+  let mediaRepository: { findById: jest.Mock; findByUrl: jest.Mock };
+  let mediaUsage: { findUsageForUrl: jest.Mock };
   let storage: { save: jest.Mock; delete: jest.Mock };
   let imageProcessor: { process: jest.Mock; detectFormat: jest.Mock; probe: jest.Mock };
   let cache: { del: jest.Mock; delByPrefix: jest.Mock };
@@ -72,7 +73,14 @@ describe('ProductImageService', () => {
       delete: jest.fn(),
       updateMany: jest.fn().mockResolvedValue(undefined),
     };
-    mediaRepository = { findById: jest.fn().mockResolvedValue(LIBRARY_ASSET) };
+    mediaRepository = {
+      findById: jest.fn().mockResolvedValue(LIBRARY_ASSET),
+      // Default: the URL under test is NOT a library asset, i.e. an ordinary
+      // photo uploaded straight into the gallery. The delete tests below opt
+      // into the library case explicitly.
+      findByUrl: jest.fn().mockResolvedValue(null),
+    };
+    mediaUsage = { findUsageForUrl: jest.fn().mockResolvedValue([]) };
     storage = {
       save: jest.fn().mockResolvedValue('products/abc.webp'),
       delete: jest.fn().mockResolvedValue(undefined),
@@ -109,6 +117,7 @@ describe('ProductImageService', () => {
         { provide: ProductRepository, useValue: productRepository },
         { provide: ProductImageRepository, useValue: imageRepository },
         { provide: MediaRepository, useValue: mediaRepository },
+        { provide: MediaUsageRepository, useValue: mediaUsage },
         { provide: STORAGE_SERVICE, useValue: storage },
         { provide: ImageProcessor, useValue: imageProcessor },
         { provide: CacheService, useValue: cache },
@@ -295,12 +304,14 @@ describe('ProductImageService', () => {
   });
 
   describe('deleteImage', () => {
+    const GALLERY_IMAGE = {
+      id: 'img-1',
+      productId: PRODUCT_ID,
+      url: 'http://localhost:3001/uploads/products/abc.jpg',
+    };
+
     it('deletes the DB row then the stored file and evicts caches', async () => {
-      imageRepository.findById.mockResolvedValue({
-        id: 'img-1',
-        productId: PRODUCT_ID,
-        url: 'http://localhost:3001/uploads/products/abc.jpg',
-      });
+      imageRepository.findById.mockResolvedValue(GALLERY_IMAGE);
       imageRepository.delete.mockResolvedValue({ id: 'img-1' });
 
       await service.deleteImage(PRODUCT_ID, 'img-1');
@@ -308,6 +319,57 @@ describe('ProductImageService', () => {
       expect(imageRepository.delete).toHaveBeenCalledWith('img-1');
       expect(storage.delete).toHaveBeenCalledWith('products/abc.jpg');
       expect(cache.delByPrefix).toHaveBeenCalled();
+    });
+
+    // ─── TASK-585: the row and the file are two decisions ───────────────────
+    //
+    // `attachAsset` lets one stored photo back several galleries, and the
+    // TASK-441 backfill made almost every existing photo a library asset. A row
+    // delete that always deleted the file would pull it out from under whoever
+    // else points at it.
+
+    it('keeps the file when the same photo still backs another gallery', async () => {
+      imageRepository.findById.mockResolvedValue(GALLERY_IMAGE);
+      imageRepository.delete.mockResolvedValue({ id: 'img-1' });
+      mediaUsage.findUsageForUrl.mockResolvedValue([
+        { kind: MEDIA_USAGE_KINDS.PRODUCT_IMAGE, entityId: 'other-product', label: 'Чохол синій' },
+      ]);
+
+      await service.deleteImage(PRODUCT_ID, 'img-1');
+
+      expect(imageRepository.delete).toHaveBeenCalledWith('img-1');
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+
+    it('keeps the file when the library owns it, without sweeping usage', async () => {
+      imageRepository.findById.mockResolvedValue(GALLERY_IMAGE);
+      imageRepository.delete.mockResolvedValue({ id: 'img-1' });
+      mediaRepository.findByUrl.mockResolvedValue(LIBRARY_ASSET);
+
+      await service.deleteImage(PRODUCT_ID, 'img-1');
+
+      expect(storage.delete).not.toHaveBeenCalled();
+      // The library lookup answers it on its own — one indexed hit on a UNIQUE
+      // column instead of the broader sweep, which is the common path after the
+      // backfill.
+      expect(mediaUsage.findUsageForUrl).not.toHaveBeenCalled();
+    });
+
+    it('asks about usage only after the row is gone, so it cannot count itself', async () => {
+      imageRepository.findById.mockResolvedValue(GALLERY_IMAGE);
+      const order: string[] = [];
+      imageRepository.delete.mockImplementation(() => {
+        order.push('delete-row');
+        return Promise.resolve({ id: 'img-1' });
+      });
+      mediaUsage.findUsageForUrl.mockImplementation(() => {
+        order.push('find-usage');
+        return Promise.resolve([]);
+      });
+
+      await service.deleteImage(PRODUCT_ID, 'img-1');
+
+      expect(order).toEqual(['delete-row', 'find-usage']);
     });
 
     it('throws NotFound when the image does not exist', async () => {

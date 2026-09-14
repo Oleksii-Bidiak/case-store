@@ -18,7 +18,10 @@ import { MediaUsageRepository } from './media-usage.repository';
   providers: [MediaService, MediaRepository, MediaUsageRepository],
   // `MediaRepository` is exported (mirroring DeviceModule) so `ProductImageService`
   // can look an asset up when attaching it to a gallery, without a second Prisma
-  // call site for `media_assets` (TASK-441).
-  exports: [MediaService, MediaRepository],
+  // call site for `media_assets` (TASK-441). `MediaUsageRepository` goes with it
+  // (TASK-585): deleting a gallery row is the second path to the same stored
+  // file, so it needs the same "is anything still pointing at this?" answer that
+  // `MediaService.delete` uses — one implementation, not two.
+  exports: [MediaService, MediaRepository, MediaUsageRepository],
 })
 export class MediaModule {}

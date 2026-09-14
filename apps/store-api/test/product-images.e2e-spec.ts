@@ -9,7 +9,7 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { ProductRepository } from '../src/product/product.repository';
 import { ProductImageRepository } from '../src/product/product-image.repository';
-import { MediaRepository } from '../src/media';
+import { MediaRepository, MediaUsageRepository } from '../src/media';
 import { ImageProcessor, STORAGE_SERVICE } from '../src/storage';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
@@ -52,6 +52,11 @@ describe('ProductImageController (e2e)', () => {
 
   const mediaRepositoryMock = {
     findById: jest.fn(),
+    findByUrl: jest.fn(),
+  };
+
+  const mediaUsageRepositoryMock = {
+    findUsageForUrl: jest.fn(),
   };
 
   const storageMock = {
@@ -105,6 +110,8 @@ describe('ProductImageController (e2e)', () => {
       .useValue(imageRepositoryMock)
       .overrideProvider(MediaRepository)
       .useValue(mediaRepositoryMock)
+      .overrideProvider(MediaUsageRepository)
+      .useValue(mediaUsageRepositoryMock)
       .overrideProvider(STORAGE_SERVICE)
       .useValue(storageMock)
       .overrideProvider(ImageProcessor)
@@ -134,6 +141,16 @@ describe('ProductImageController (e2e)', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  beforeEach(() => {
+    // Deleting a gallery row asks two questions before it touches the file
+    // (TASK-585). The default answer here is "nobody else points at it", which
+    // is what every pre-existing delete test assumes; the two tests that care
+    // about sharing set their own answer. Note `clearAllMocks` clears CALLS but
+    // keeps implementations, so these have to be re-stated per test, not once.
+    mediaRepositoryMock.findByUrl.mockResolvedValue(null);
+    mediaUsageRepositoryMock.findUsageForUrl.mockResolvedValue([]);
   });
 
   // ─── POST /api/products/:id/images ────────────────────────────────────────
@@ -439,6 +456,54 @@ describe('ProductImageController (e2e)', () => {
         .expect(204);
 
       expect(storageMock.delete).toHaveBeenCalledWith('products/generated.jpg');
+    });
+
+    // TASK-585. `attachAsset` means one file can back several galleries, so a
+    // 204 here must not take the bytes with it when someone else still points
+    // at them. The route still answers 204 — the row IS gone; what survives is
+    // the file.
+    it('returns 204 but keeps the file when the library still owns it', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      imageRepositoryMock.findById.mockResolvedValue({
+        id: IMAGE_ID,
+        productId: PRODUCT_ID,
+        url: 'http://localhost:3001/uploads/media/autumn.webp',
+      });
+      imageRepositoryMock.delete.mockResolvedValue({ id: IMAGE_ID });
+      mediaRepositoryMock.findByUrl.mockResolvedValue({
+        id: ASSET_ID,
+        url: 'http://localhost:3001/uploads/media/autumn.webp',
+      });
+
+      await request(app.getHttpServer())
+        .delete(`/api/products/${PRODUCT_ID}/images/${IMAGE_ID}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(204);
+
+      expect(imageRepositoryMock.delete).toHaveBeenCalledWith(IMAGE_ID);
+      expect(storageMock.delete).not.toHaveBeenCalled();
+    });
+
+    it('returns 204 but keeps the file when another product still shows it', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      imageRepositoryMock.findById.mockResolvedValue({
+        id: IMAGE_ID,
+        productId: PRODUCT_ID,
+        url: 'http://localhost:3001/uploads/products/shared.webp',
+      });
+      imageRepositoryMock.delete.mockResolvedValue({ id: IMAGE_ID });
+      mediaUsageRepositoryMock.findUsageForUrl.mockResolvedValue([
+        { kind: 'PRODUCT_IMAGE', entityId: 'product-e2e-2', label: 'Чохол синій' },
+      ]);
+
+      await request(app.getHttpServer())
+        .delete(`/api/products/${PRODUCT_ID}/images/${IMAGE_ID}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(204);
+
+      expect(storageMock.delete).not.toHaveBeenCalled();
     });
 
     it('returns 404 for a non-existent image', async () => {

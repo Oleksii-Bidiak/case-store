@@ -15,7 +15,7 @@ import {
 } from '../cache';
 import { PRODUCTS_SUBDIR } from '../storage';
 import { ImageUploadService } from '../uploads';
-import { MediaRepository } from '../media';
+import { MediaRepository, MediaUsageRepository } from '../media';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
 /** A reorder instruction for one image. */
@@ -45,6 +45,10 @@ export class ProductImageService {
     // already injects `DeviceRepository` / `CategoryRepository` — one owner per
     // table, no second Prisma call site for `media_assets` (TASK-441).
     private readonly mediaRepository: MediaRepository,
+    // Same repository `MediaService.delete` uses to refuse a delete while
+    // something still references the file. Injected here because deleting a
+    // gallery row is the SECOND way to reach the same bytes (TASK-585).
+    private readonly mediaUsage: MediaUsageRepository,
     private readonly cache: CacheService,
     private readonly revalidation: RevalidationNotifier,
   ) {}
@@ -187,7 +191,29 @@ export class ProductImageService {
     await this.evictProductCaches(productId, product.slug);
   }
 
-  /** Delete one image (DB row + stored file), enforcing product ownership. */
+  /**
+   * Delete one image, enforcing product ownership. The stored FILE goes only if
+   * this row was the last thing pointing at it (TASK-585).
+   *
+   * WHY THE ROW AND THE FILE ARE NOW TWO DECISIONS. Until TASK-441 a gallery row
+   * owned its bytes outright: the only way to make one was to post a file, so
+   * one row meant one file and deleting the row meant deleting the file. The
+   * media library breaks that one-to-one — {@link attachAsset} exists precisely
+   * so one stored photo can back several galleries ("the same case shot across
+   * colour variants"), and the TASK-441 backfill turned every photo that already
+   * existed into a library asset. Deleting unconditionally therefore pulls the
+   * file out from under a live product page, or leaves the library holding a row
+   * whose file is gone — the broken-thumbnail outcome that
+   * {@link MediaService.delete} calls the worse of the two orders.
+   *
+   * BOTH QUESTIONS ARE ANSWERED BY URL, NEVER BY `mediaAssetId`. That column is
+   * provenance and nothing else: the importer, the seed and every pre-TASK-441
+   * upload leave it null, so a check reading it would call a photo-bearing asset
+   * unused and delete the file anyway (see the note on `ProductImage.mediaAssetId`
+   * in `schema.prisma`). The library lookup goes first because it is one indexed
+   * hit on a UNIQUE column and, after the backfill, it is the answer for almost
+   * every photo — the broader sweep is only paid for a direct upload.
+   */
   async deleteImage(productId: string, imageId: string): Promise<void> {
     const product = await this.productRepository.findById(productId);
     if (!product) {
@@ -200,9 +226,28 @@ export class ProductImageService {
     }
 
     await this.imageRepository.delete(imageId);
-    await this.uploads.removeByUrl(image.url);
+    if (await this.isLastReferenceToFile(image.url)) {
+      await this.uploads.removeByUrl(image.url);
+    }
 
     await this.evictProductCaches(productId, product.slug);
+  }
+
+  /**
+   * Whether the stored file behind `url` is now unreferenced and safe to remove.
+   *
+   * Call it AFTER the row is deleted: the usage sweep reads the same tables, so
+   * the row being removed must already be gone or it would count itself.
+   */
+  private async isLastReferenceToFile(url: string): Promise<boolean> {
+    // A library asset owns its bytes. Removing them here would leave `/media`
+    // showing a thumbnail that 404s, and the library is where such a file is
+    // meant to be deleted — behind `MediaService.delete`'s own usage gate.
+    if (await this.mediaRepository.findByUrl(url)) {
+      return false;
+    }
+    const stillUsed = await this.mediaUsage.findUsageForUrl(url);
+    return stillUsed.length === 0;
   }
 
   /**
