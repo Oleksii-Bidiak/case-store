@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { REVIEW_COMMENT_MAX_LENGTH } from './create-review.dto';
 
 /**
  * Body of `PATCH /api/reviews/:id` (TASK-586) — the author adding or changing the
@@ -20,15 +21,16 @@ import { IsOptional, IsString, MaxLength } from 'class-validator';
 export class UpdateReviewDto {
   @ApiProperty({
     description:
-      'The review text (max 1000 chars). Writing or changing it sends the text back to ' +
-      'moderation. Omit the field entirely to leave the existing text — and its verdict — ' +
-      'untouched.',
+      `The review text (max ${REVIEW_COMMENT_MAX_LENGTH} chars). Writing or changing it sends ` +
+      'the text back to moderation. Omit the field entirely to leave the existing text — and ' +
+      'its verdict — untouched.',
     required: false,
-    maxLength: 1000,
+    maxLength: REVIEW_COMMENT_MAX_LENGTH,
     example: 'Came back a month later: still perfect.',
   })
   @IsOptional()
   @IsString()
-  @MaxLength(1000)
+  // The SAME cap as submission, deliberately — see REVIEW_COMMENT_MAX_LENGTH.
+  @MaxLength(REVIEW_COMMENT_MAX_LENGTH)
   comment?: string;
 }
