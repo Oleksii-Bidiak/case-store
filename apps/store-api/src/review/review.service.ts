@@ -84,19 +84,36 @@ export class ReviewService {
    * text is created `PENDING` and carries a `verifiedPurchase` badge when the user
    * has an order line item for it.
    *
+   * ## The email gate (TASK-588, the owner's decision 7)
+   *
+   * A rating from an author who has not confirmed their address is STORED but
+   * does not count. Not refused: refusing would throw away the ratings of the
+   * many people who confirm a day later, and would tell a spammer exactly which
+   * of their accounts is worth verifying. The verdict is written into
+   * `ratingVisible` at insert time rather than derived on read, because the
+   * catalogue asks "does this count?" for every card on every page and cannot
+   * afford to join `users` for the answer.
+   *
+   * `createdIp` is recorded for the abuse signals (TASK-589) and for nothing
+   * else.
+   *
    * @throws ConflictException when the user already reviewed the product.
    */
   async submitReview(
     userId: string,
     productId: string,
     dto: CreateReviewDto,
+    createdIp: string | null,
   ): Promise<ReviewEntity> {
     const existing = await this.reviewRepository.findExisting(userId, productId);
     if (existing) {
       throw new ConflictException('You have already reviewed this product');
     }
 
-    const verifiedPurchase = await this.reviewRepository.isVerifiedPurchase(userId, productId);
+    const [verifiedPurchase, ratingVisible] = await Promise.all([
+      this.reviewRepository.isVerifiedPurchase(userId, productId),
+      this.reviewRepository.isEmailVerified(userId),
+    ]);
 
     let review;
     try {
@@ -105,6 +122,8 @@ export class ReviewService {
         productId,
         rating: dto.rating,
         comment: dto.comment ?? null,
+        ratingVisible,
+        createdIp,
       });
     } catch (error) {
       // P2002 = unique constraint violation: a concurrent request inserted the
@@ -115,7 +134,13 @@ export class ReviewService {
       throw error;
     }
 
-    this.logger.info({ reviewId: review.id, userId, productId }, 'Review submitted (pending)');
+    // `ratingVisible` is logged because it is the one thing about a submission
+    // that is invisible to the person who made it: an unconfirmed author sees
+    // their review accepted and their stars never appear anywhere.
+    this.logger.info(
+      { reviewId: review.id, userId, productId, ratingVisible },
+      'Review submitted (pending)',
+    );
     return ReviewEntity.fromPrisma(review, verifiedPurchase);
   }
 

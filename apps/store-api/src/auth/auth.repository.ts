@@ -234,12 +234,40 @@ export class AuthRepository {
     });
   }
 
-  /** Stamp the address as proven, at `verifiedAt`. */
+  /**
+   * Stamp the address as proven, at `verifiedAt` — and release the ratings that
+   * were waiting on it (TASK-588).
+   *
+   * ## Why the second write lives here
+   *
+   * `Review.ratingVisible` is a DENORMALISED effective flag: nothing recomputes
+   * it on read, because the catalogue asks "does this rating count?" for every
+   * card on every page and a join to `users` on that path is unaffordable. So
+   * confirmation is one of the four events that must WRITE it. Skip it and the
+   * author's stars stay out of every average for ever, with the only symptom a
+   * product score that never moves — which no screen in the shop reports.
+   *
+   * Both statements go in one transaction for the same reason: a stamped address
+   * whose ratings were never flipped is a half-state nobody would ever notice.
+   *
+   * ## Why `hiddenAt: null`
+   *
+   * `hiddenAt` is the moderator's account-wide withdrawal, and it OUTRANKS the
+   * email gate. Without this filter, an abuser whose whole contribution was
+   * hidden could put every rating of theirs back into the averages by clicking a
+   * link in their own inbox — no admin action, no audit entry, nothing on screen.
+   */
   async markEmailVerified(userId: string, verifiedAt: Date): Promise<void> {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { emailVerifiedAt: verifiedAt },
-    });
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { emailVerifiedAt: verifiedAt },
+      }),
+      this.prisma.review.updateMany({
+        where: { userId, hiddenAt: null },
+        data: { ratingVisible: true },
+      }),
+    ]);
   }
 
   /**

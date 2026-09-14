@@ -41,6 +41,16 @@ export interface CreateReviewInput {
   productId: string;
   rating: number;
   comment?: string | null;
+  /**
+   * The email gate's verdict at the moment of writing (TASK-588) — decided by the
+   * service, because "does this rating count?" is a business rule, not a query.
+   */
+  ratingVisible: boolean;
+  /**
+   * The address the submission arrived from, or null when it is not known.
+   * Never a placeholder: see the column's docblock in `schema.prisma`.
+   */
+  createdIp: string | null;
 }
 
 /**
@@ -114,8 +124,9 @@ export class ReviewRepository {
    *
    * `textStatus` is written explicitly rather than left to the column default, so
    * the invariant lives where it is enforced: no caller can submit pre-approved
-   * text. `ratingVisible` IS left to its default — that flag belongs to the email
-   * gate, which is a later task's job to set.
+   * text. `ratingVisible` and `createdIp` come from the caller (TASK-588) — the
+   * first is the email gate's verdict, the second the only input the abuse
+   * signals will ever have for this row, and neither can be reconstructed later.
    */
   create(data: CreateReviewInput): Promise<Review> {
     return this.prisma.review.create({
@@ -124,9 +135,28 @@ export class ReviewRepository {
         productId: data.productId,
         rating: data.rating,
         comment: data.comment ?? null,
+        ratingVisible: data.ratingVisible,
+        createdIp: data.createdIp,
         textStatus: ReviewTextStatus.PENDING,
       },
     });
+  }
+
+  /**
+   * Whether this author has proven their address (TASK-588) — the email gate's
+   * only question.
+   *
+   * Asked at submission and at restore, never on a read path: `ratingVisible` is
+   * the denormalised answer precisely so the catalogue never has to join `users`
+   * for it. A missing row reads as unproven rather than falling through a
+   * truthiness check, so a deleted account cannot end up counting.
+   */
+  async isEmailVerified(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { emailVerifiedAt: true },
+    });
+    return user?.emailVerifiedAt != null;
   }
 
   /**

@@ -16,7 +16,7 @@ import { buildVerifiedPurchaseReviews } from '../lib/verified-purchase-reviews';
  * which is how it reached forty on a dev database, and no QA step could say «open
  * the product with the pending review» because it was never the same product.
  */
-const PENDING_REVIEW_TARGETS = [
+export const PENDING_REVIEW_TARGETS = [
   {
     slug: 'apple-iphone-16-pro-128gb-black',
     comment: 'Чудовий товар, прийшов швидко. Рекомендую!',
@@ -62,11 +62,23 @@ const PENDING_REVIEW_TARGETS = [
 export async function seedReviews(prisma: PrismaClient) {
   const reviewerPasswordHash = await argon2.hash('Reviewer123!');
 
+  // Since TASK-588 a rating counts only while its author's address is proven, and
+  // these accounts confirm nothing — they are written straight into the table.
+  // Unstamped, the ~2 200 rows below are all invisible to the aggregate and every
+  // one of the 178 catalogue positions loses its stars, on a run that still
+  // prints «✓ Reviews: …» and exits zero.
+  //
+  // Stamped in the UPDATE arm as well as the CREATE arm, because these accounts
+  // already exist on every developer database: an `update: {}` would leave
+  // exactly the machines that seed most often broken, while a fresh database
+  // looked perfect.
+  const emailVerifiedAt = new Date();
+
   const reviewers: { id: string }[] = [];
   for (let i = 1; i <= 20; i++) {
     const reviewer = await prisma.user.upsert({
       where: { email: `reviewer${i}@store.com` },
-      update: {},
+      update: { emailVerifiedAt },
       create: {
         email: `reviewer${i}@store.com`,
         passwordHash: reviewerPasswordHash,
@@ -74,6 +86,7 @@ export async function seedReviews(prisma: PrismaClient) {
         lastName: String(i),
         role: 'CUSTOMER',
         isActive: true,
+        emailVerifiedAt,
       },
     });
     reviewers.push(reviewer);
@@ -86,7 +99,7 @@ export async function seedReviews(prisma: PrismaClient) {
   for (let i = 1; i <= 3; i++) {
     const reviewer = await prisma.user.upsert({
       where: { email: `pending-reviewer${i}@store.com` },
-      update: {},
+      update: { emailVerifiedAt },
       create: {
         email: `pending-reviewer${i}@store.com`,
         passwordHash: reviewerPasswordHash,
@@ -94,6 +107,7 @@ export async function seedReviews(prisma: PrismaClient) {
         lastName: String(i),
         role: 'CUSTOMER',
         isActive: true,
+        emailVerifiedAt,
       },
     });
     pendingReviewers.push(reviewer);
@@ -127,8 +141,10 @@ export async function seedReviews(prisma: PrismaClient) {
 
   // Since TASK-585 a seeded review needs BOTH flags set explicitly. `ratingVisible`
   // is true on every row — including the pending ones — because the rating counts
-  // the moment it is given and none of these accounts has a confirmed email, so
-  // leaving it to the column default would seed 178 products with zero stars.
+  // the moment it is given; the column default is `false`, so leaving it out would
+  // seed 178 products with zero stars. The reviewer accounts above are stamped
+  // confirmed (TASK-588) so this stays true of a review written by hand on top of
+  // the seed, not merely of the seeded rows.
   // `textStatus` is what still separates the six queue items from the rest.
   const rows: {
     userId: string;

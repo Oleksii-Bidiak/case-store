@@ -55,6 +55,8 @@ describe('ReviewController (e2e)', () => {
     isVerifiedPurchase: jest.fn(),
     findVerifiedPurchaserIds: jest.fn(),
     findExisting: jest.fn(),
+    // TASK-588: the email gate, asked once at submission.
+    isEmailVerified: jest.fn(),
   };
 
   const authRepositoryMock = {

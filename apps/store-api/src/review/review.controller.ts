@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Ip,
   Param,
   Post,
   Query,
@@ -19,8 +20,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
-import { FailClosedThrottle } from '../throttler';
+import { FailClosedThrottle, ReviewSubmissionThrottle } from '../throttler';
 import { ReviewService, PaginationMeta } from './review.service';
 import { ReviewEntity, ReviewAggregateEntity, OwnReviewEntity } from './entities';
 import { CreateReviewDto, ReviewListQueryDto } from './dto';
@@ -108,17 +108,25 @@ export class ReviewController {
   /**
    * POST /api/products/:productId/reviews
    *
-   * Submit a review for the product as the authenticated user. The review is
-   * created pending (`isActive: false`) and only appears on the storefront once
-   * an admin approves it.
+   * Submit a review for the product as the authenticated user. The TEXT is
+   * created pending and only appears on the storefront once a moderator approves
+   * it; the RATING counts immediately, unless the author's address is still
+   * unconfirmed (TASK-588).
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
-  // Writing a review is a state mutation and a spam target; cap below the
-  // global limit.
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  // Two caps, and deliberately two (TASK-588, the owner's decision 7): five an
+  // hour from one ACCOUNT, twenty a day from one ADDRESS. They answer different
+  // questions — one person reviewing the whole catalogue, versus one address
+  // running a farm of accounts — so they are separate named buckets with
+  // separate counters. See `throttler.config.ts` for the numbers.
+  //
+  // This replaces a flat `@Throttle({ default: { limit: 10, ttl: 60000 } })`,
+  // which both of the above subsume: nobody who may write five ratings an hour
+  // can reach ten in a minute.
+  @ReviewSubmissionThrottle()
   // Authenticated, but a single stolen or throwaway account with no working cap
   // can flood the moderation queue for every product (TASK-401).
   @FailClosedThrottle()
@@ -136,8 +144,13 @@ export class ReviewController {
     @CurrentUser('id') userId: string,
     @Param('productId') productId: string,
     @Body() dto: CreateReviewDto,
+    // `req.ip`, which applies the `trust proxy` setting — behind Caddy the raw
+    // socket address is the proxy container's and would make the whole shop look
+    // like one address. Never read from a header here: `X-Forwarded-For` is
+    // attacker-controlled, and this value feeds an abuse signal.
+    @Ip() createdIp: string,
   ): Promise<ReviewResponseEnvelope> {
-    const review = await this.reviewService.submitReview(userId, productId, dto);
+    const review = await this.reviewService.submitReview(userId, productId, dto, createdIp ?? null);
     return { data: review };
   }
 

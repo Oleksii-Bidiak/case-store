@@ -629,6 +629,16 @@ describe('AuthRepository', () => {
   describe('markEmailVerified (TASK-588)', () => {
     const verifiedAt = new Date('2026-09-14T10:00:00.000Z');
 
+    beforeEach(() => {
+      // `$transaction` has two dialects and this file exercises both: the OAuth
+      // block uses the CALLBACK form and leaves its implementation behind
+      // (`clearAllMocks` clears calls, not implementations), while the two writes
+      // below are an ARRAY. Without this the mock would try to call the array.
+      prismaMock.$transaction.mockImplementation((operations: unknown[]) =>
+        Promise.resolve(operations),
+      );
+    });
+
     it('stamps the address and starts counting that author’s ratings, atomically', async () => {
       await repository.markEmailVerified('user-uuid-1', verifiedAt);
 
