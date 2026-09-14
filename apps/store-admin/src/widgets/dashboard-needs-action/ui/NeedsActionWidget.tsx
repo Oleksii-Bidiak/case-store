@@ -51,12 +51,13 @@ function NeedsActionCard({
 
 /**
  * «Потребує дії» — the admin dashboard's needs-action widget (TASK-248). Fetches
- * its own four-counter payload (independent of the heavy dashboard summary) via
- * the same query key the sidebar badges read, so TanStack Query serves both from
- * one cache entry. Renders four cards: new orders, reviews awaiting moderation,
- * and unpaid-in-transit orders deep-link into their filtered sections; failed
- * mail is an info-only card (no admin destination). Zero-count cards still render
- * (so the owner sees "all clear"), visually de-emphasized.
+ * its own counter payload (independent of the heavy dashboard summary) via the
+ * same query key the sidebar badges read, so TanStack Query serves both from one
+ * cache entry. Six cards since TASK-446: new orders, reviews awaiting
+ * moderation, unpaid-in-transit orders, orders stale in PENDING and rating-abuse
+ * signals all deep-link into their section; failed mail is an info-only card (no
+ * admin destination). Zero-count cards still render (so the owner sees "all
+ * clear"), visually de-emphasized.
  */
 export function NeedsActionWidget() {
   const { data, isLoading, isError } =
@@ -80,7 +81,12 @@ export function NeedsActionWidget() {
     counts.pendingReviews === 0 &&
     counts.unpaidInTransit === 0 &&
     counts.failedMails === 0 &&
-    counts.pendingOver48h === 0;
+    counts.pendingOver48h === 0 &&
+    // TASK-446. A counter that renders but sits outside this check is the worst
+    // of both worlds: the widget shows a non-zero number AND tells the owner
+    // there is nothing to do — about the one signal they would never have
+    // thought to go looking for.
+    counts.ratingAbuse === 0;
 
   return (
     <section aria-label={dict.dashboard.needsActionHeading}>
@@ -95,7 +101,10 @@ export function NeedsActionWidget() {
         ) : null}
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-5">
+      {/* Six cards since TASK-446. `lg:grid-cols-5` left the sixth alone on a
+          second row, reading as an afterthought rather than as a peer of the
+          other five; 3 divides 6 at both breakpoints, so every row is full. */}
+      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-3">
         <NeedsActionCard
           label={dict.dashboard.needsActionNewOrders}
           count={counts.newOrders}
@@ -117,6 +126,16 @@ export function NeedsActionWidget() {
           label={dict.dashboard.needsActionPendingOver48h}
           count={counts.pendingOver48h}
           href="/orders?status=PENDING"
+        />
+        {/* TASK-446: situations worth OPENING, not reviews to moderate — a
+            product that collected a burst of ratings in an hour, an address
+            behind a run of 1★. The destination is the reviews screen with no
+            status filter, because the rows behind a burst can sit in any of the
+            three queues and a `?status=` would hide most of them. */}
+        <NeedsActionCard
+          label={dict.dashboard.needsActionRatingAbuse}
+          count={counts.ratingAbuse}
+          href="/reviews"
         />
         <NeedsActionCard
           label={dict.dashboard.needsActionFailedMails}
