@@ -1,4 +1,5 @@
 import { OrderEntityStatus, OrderEntityPaymentStatus } from "@/shared/api";
+import { dict } from "@/shared/config";
 
 /**
  * Ukrainian display labels for the order/payment status enums (TASK-129).
@@ -21,11 +22,23 @@ const ORDER_STATUS_LABELS: Record<OrderEntityStatus, string> = {
   [OrderEntityStatus.REFUNDED]: "Повернення коштів",
 };
 
+/**
+ * Payment labels read from the dictionary rather than being spelled here
+ * (TASK-431). The order labels above still hold their own strings; this map moved
+ * because PARTIALLY_REFUNDED had to be worded, and a status whose wording lives
+ * in two places — the picker's texts in `dict` and a literal here — is a status
+ * that will eventually be called two different things on one screen.
+ *
+ * The `Record<Enum, string>` typing is what makes that safe: a new enum value
+ * without a label is a compile error, not a blank badge.
+ */
 const PAYMENT_STATUS_LABELS: Record<OrderEntityPaymentStatus, string> = {
-  [OrderEntityPaymentStatus.PENDING]: "Очікує оплати",
-  [OrderEntityPaymentStatus.PAID]: "Оплачено",
-  [OrderEntityPaymentStatus.FAILED]: "Помилка оплати",
-  [OrderEntityPaymentStatus.REFUNDED]: "Кошти повернено",
+  [OrderEntityPaymentStatus.PENDING]: dict.orderStatus.paymentLabels.PENDING,
+  [OrderEntityPaymentStatus.PAID]: dict.orderStatus.paymentLabels.PAID,
+  [OrderEntityPaymentStatus.FAILED]: dict.orderStatus.paymentLabels.FAILED,
+  [OrderEntityPaymentStatus.PARTIALLY_REFUNDED]:
+    dict.orderStatus.paymentLabels.PARTIALLY_REFUNDED,
+  [OrderEntityPaymentStatus.REFUNDED]: dict.orderStatus.paymentLabels.REFUNDED,
 };
 
 /** Map a raw order-status enum to its Ukrainian label (falls back to input). */

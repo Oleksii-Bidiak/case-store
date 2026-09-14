@@ -81,6 +81,20 @@ export const handlers = [
     }),
   ),
 
+  // Legal next PAYMENT statuses (TASK-431). Same reasoning as the handler above:
+  // the payment picker is server-driven now, so every test that mounts
+  // OrderDetailView needs an answer here. The default is the real PENDING row of
+  // `PAYMENT_TRANSITIONS`.
+  http.get("*/api/admin/orders/:orderId/allowed-payment-transitions", () =>
+    HttpResponse.json({
+      data: {
+        current: "PENDING",
+        allowed: ["PAID", "FAILED"],
+        updatedAt: "2026-06-01T10:00:00.000Z",
+      },
+    }),
+  ),
+
   // Unread (NEW) contact-message count for the nav «Повідомлення» badge — none
   // by default; both AdminNavList mount points (sidebar + drawer) read it, so a
   // shared stub keeps every shell test off onUnhandledRequest. Override per-test.

@@ -25,7 +25,7 @@ import {
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { OrderService } from './order.service';
 import {
   OrderEntity,
@@ -132,6 +132,45 @@ class AdminOrderAllowedTransitionsResponse {
 }
 
 /**
+ * The PAYMENT moves an order may currently make (TASK-431).
+ *
+ * A deliberate twin of {@link AdminOrderAllowedTransitions} rather than a shared
+ * generic: the two lists are drawn from different enums and are consumed by two
+ * different pickers, and a merged shape would have had to say "strings" and lose
+ * the enum in the generated client.
+ *
+ * `allowed` can legitimately be EMPTY — from REFUNDED there is nowhere left to
+ * go — and the picker renders that as "no changes possible", not as a failure.
+ */
+class AdminOrderAllowedPaymentTransitions {
+  @ApiProperty({ description: "The order's current payment status", enum: PaymentStatus })
+  current!: PaymentStatus;
+
+  @ApiProperty({
+    description:
+      'Payment statuses the order may legally move to right now. Already filtered by the ' +
+      'cross-rule that a full REFUNDED needs the order cancelled or refunded first, so every ' +
+      'value here is one the PATCH will accept.',
+    enum: PaymentStatus,
+    isArray: true,
+  })
+  allowed!: PaymentStatus[];
+
+  @ApiProperty({
+    description:
+      "The order's current `updatedAt` — the same optimistic-lock token the status " +
+      'transitions endpoint returns, so both pickers on the page read one version of the order.',
+    example: '2026-07-28T10:15:30.000Z',
+  })
+  updatedAt!: Date;
+}
+
+class AdminOrderAllowedPaymentTransitionsResponse {
+  @ApiProperty({ type: AdminOrderAllowedPaymentTransitions })
+  data!: AdminOrderAllowedPaymentTransitions;
+}
+
+/**
  * Controller for admin order management endpoints.
  *
  * Admin endpoints (ADMIN role required):
@@ -160,6 +199,8 @@ class AdminOrderAllowedTransitionsResponse {
   AdminOrderHistoryResponse,
   AdminOrderAllowedTransitions,
   AdminOrderAllowedTransitionsResponse,
+  AdminOrderAllowedPaymentTransitions,
+  AdminOrderAllowedPaymentTransitionsResponse,
 )
 @Controller('admin/orders')
 @UseGuards(PermissionGuard)
@@ -336,6 +377,37 @@ export class AdminOrderController {
     @Param('orderId') orderId: string,
   ): Promise<AdminOrderAllowedTransitionsResponse> {
     const data = await this.orderService.getAllowedTransitions(orderId);
+
+    return { data };
+  }
+
+  /**
+   * GET /api/admin/orders/:orderId/allowed-payment-transitions
+   *
+   * The payment statuses this order may legally move to right now (TASK-431).
+   * The twin of the route above, for the other picker on the same page: until
+   * this existed, the payment select offered every value except the current one,
+   * so "REFUNDED" sat there on a delivered order looking like a decision the
+   * operator was allowed to make.
+   */
+  @Get(':orderId/allowed-payment-transitions')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'List legal next payment statuses for an order (admin)',
+    operationId: 'adminOrderControllerGetAllowedPaymentTransitions',
+  })
+  @ApiParam({ name: 'orderId', description: 'Order UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Current payment status, the legal targets, and the optimistic-lock token',
+    type: AdminOrderAllowedPaymentTransitionsResponse,
+  })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async getAllowedPaymentTransitions(
+    @Param('orderId') orderId: string,
+  ): Promise<AdminOrderAllowedPaymentTransitionsResponse> {
+    const data = await this.orderService.getAllowedPaymentTransitions(orderId);
 
     return { data };
   }

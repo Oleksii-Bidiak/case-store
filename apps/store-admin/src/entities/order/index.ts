@@ -11,6 +11,9 @@ export {
   useAdminOrderControllerGetHistory,
   // TASK-332: the server's own list of legal next statuses + the lock token.
   useAdminOrderControllerGetAllowedTransitions,
+  // TASK-431: the same, for the PAYMENT status — already filtered by the
+  // cross-rule that a full refund needs a cancelled order.
+  useAdminOrderControllerGetAllowedPaymentTransitions,
   // TASK-335 / 336 / 341: waybill, internal notes, pre-shipment address edit.
   useAdminOrderControllerUpdateDetails,
   // TASK-341: operator-created (phone) orders.
@@ -19,6 +22,7 @@ export {
   getAdminOrderControllerFindByIdQueryKey,
   getAdminOrderControllerGetHistoryQueryKey,
   getAdminOrderControllerGetAllowedTransitionsQueryKey,
+  getAdminOrderControllerGetAllowedPaymentTransitionsQueryKey,
   // Status / payment enum value objects (used for filters and badge mapping).
   OrderEntityStatus,
   OrderEntityPaymentStatus,
@@ -45,6 +49,8 @@ export type {
   AdminOrderHistoryResponse,
   AdminOrderAllowedTransitions,
   AdminOrderAllowedTransitionsResponse,
+  AdminOrderAllowedPaymentTransitions,
+  AdminOrderAllowedPaymentTransitionsResponse,
 } from "@/shared/api";
 
 export {

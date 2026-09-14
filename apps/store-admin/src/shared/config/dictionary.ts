@@ -2407,6 +2407,29 @@ export const dict = {
     paymentToastFailed: "Не вдалося оновити статус оплати",
     paymentUpdateAria: "Оновити статус оплати",
 
+    // --- Payment status names (TASK-431) --------------------------------------
+    // The single place each payment status is worded. `status-label.ts` reads
+    // them; nothing spells them twice.
+    paymentLabels: {
+      PENDING: "Очікує оплати",
+      PAID: "Оплачено",
+      FAILED: "Помилка оплати",
+      // "Частково" first, because that is the word that distinguishes it from
+      // the full refund at a glance in a list of badges.
+      PARTIALLY_REFUNDED: "Частково повернуто",
+      REFUNDED: "Кошти повернено",
+    },
+
+    // --- Server-driven payment transitions (TASK-431) -------------------------
+    paymentTransitionsLoading: "Завантаження доступних статусів оплати…",
+    paymentTransitionsLoadError:
+      "Не вдалося отримати список статусів оплати. Оновіть сторінку.",
+    noPaymentTransitions: "Статус оплати змінити неможливо",
+    // Says the quiet part out loud: a full refund is missing from the list on
+    // purpose while the order is live, and the operator's next step is named.
+    paymentTransitionsHint:
+      "Доступні лише переходи, дозволені для поточного статусу оплати. Повне повернення коштів можливе після скасування замовлення.",
+
     // --- Server-driven transitions (TASK-332) ---------------------------------
     transitionsLoading: "Завантаження доступних статусів…",
     transitionsLoadError:
@@ -2426,6 +2449,13 @@ export const dict = {
         "Хтось інший щойно змінив це замовлення, оновіть сторінку. Ваша зміна не збережена.",
       ORDER_TRANSITION_INVALID:
         "Такий перехід статусу неможливий — замовлення вже змінилося. Список статусів оновлено.",
+      // TASK-431 — the two payment codes. Separate wording from the status one
+      // above because the operator's next action differs: here the fix is either
+      // "pick another payment status" or "cancel the order first".
+      ORDER_PAYMENT_TRANSITION_INVALID:
+        "Такий перехід статусу оплати неможливий — статус уже змінився. Список оновлено.",
+      ORDER_REFUND_REQUIRES_CLOSED_ORDER:
+        "Повне повернення коштів можливе лише для скасованого замовлення. Спочатку скасуйте замовлення — або позначте часткове повернення.",
     },
     conflictUnknown:
       "Замовлення змінилося, і зміну не збережено. Оновіть сторінку й спробуйте ще раз.",

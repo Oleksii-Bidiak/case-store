@@ -23,9 +23,18 @@ describe("paymentStatusLabel (TASK-129)", () => {
     ["PENDING", "Очікує оплати"],
     ["PAID", "Оплачено"],
     ["FAILED", "Помилка оплати"],
+    // TASK-431 — and worded so the two refund states cannot be confused at a
+    // glance in a column of badges.
+    ["PARTIALLY_REFUNDED", "Частково повернуто"],
     ["REFUNDED", "Кошти повернено"],
   ])("maps %s → %s", (status, label) => {
     expect(paymentStatusLabel(status)).toBe(label);
+  });
+
+  it("gives the partial and the full refund different labels", () => {
+    expect(paymentStatusLabel("PARTIALLY_REFUNDED")).not.toBe(
+      paymentStatusLabel("REFUNDED"),
+    );
   });
 
   it("falls back to the raw value for an unknown status", () => {
