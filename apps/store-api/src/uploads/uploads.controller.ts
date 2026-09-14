@@ -82,7 +82,7 @@ export class UploadsController {
   @ApiResponse({ status: 400, description: 'No file, or a disallowed MIME type' })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({ status: 403, description: 'Forbidden — categories:write required' })
-  @ApiResponse({ status: 413, description: 'File exceeds the 5 MB limit' })
+  @ApiResponse({ status: 413, description: 'File exceeds the 20 MB limit' })
   @ApiResponse({ status: 415, description: 'File contents are not a valid image' })
   uploadCategoryImage(
     @UploadedFile() file?: Express.Multer.File,
@@ -105,7 +105,7 @@ export class UploadsController {
   @ApiResponse({ status: 400, description: 'No file, or a disallowed MIME type' })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({ status: 403, description: 'Forbidden — brands:write required' })
-  @ApiResponse({ status: 413, description: 'File exceeds the 5 MB limit' })
+  @ApiResponse({ status: 413, description: 'File exceeds the 20 MB limit' })
   @ApiResponse({ status: 415, description: 'File contents are not a valid image' })
   uploadBrandLogo(
     @UploadedFile() file?: Express.Multer.File,
@@ -128,7 +128,7 @@ export class UploadsController {
   @ApiResponse({ status: 400, description: 'No file, or a disallowed MIME type' })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({ status: 403, description: 'Forbidden — banners:write required' })
-  @ApiResponse({ status: 413, description: 'File exceeds the 5 MB limit' })
+  @ApiResponse({ status: 413, description: 'File exceeds the 20 MB limit' })
   @ApiResponse({ status: 415, description: 'File contents are not a valid image' })
   uploadBannerImage(
     @UploadedFile() file?: Express.Multer.File,
@@ -151,7 +151,7 @@ export class UploadsController {
   @ApiResponse({ status: 400, description: 'No file, or a disallowed MIME type' })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({ status: 403, description: 'Forbidden — blog:write required' })
-  @ApiResponse({ status: 413, description: 'File exceeds the 5 MB limit' })
+  @ApiResponse({ status: 413, description: 'File exceeds the 20 MB limit' })
   @ApiResponse({ status: 415, description: 'File contents are not a valid image' })
   uploadBlogCover(
     @UploadedFile() file?: Express.Multer.File,

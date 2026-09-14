@@ -221,13 +221,33 @@ describe('UploadsController (e2e)', () => {
       expect(storageMock.save).not.toHaveBeenCalled();
     });
 
-    it('rejects a file over the 5 MB business limit (413)', async () => {
+    // One accept and one refuse around MAX_IMAGE_BYTES, and no more than that:
+    // a 20 MB multipart body through supertest is not free, so the boundary is
+    // worth two cases and not a sweep.
+    it('accepts a file at the 20 MB business limit (201)', async () => {
+      // The case TASK-439 exists for: a photo straight off a phone, which the
+      // old 5 MB cap refused outright. It is the server's job to shrink it now.
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
 
       await request(app.getHttpServer())
         .post('/api/admin/uploads/categories')
         .set('Authorization', `Bearer ${token}`)
-        .attach('file', Buffer.alloc(6 * 1024 * 1024, 1), {
+        .attach('file', Buffer.alloc(20 * 1024 * 1024, 1), {
+          filename: 'from-a-phone.png',
+          contentType: 'image/png',
+        })
+        .expect(201);
+
+      expect(storageMock.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a file over the 20 MB business limit (413)', async () => {
+      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
+
+      await request(app.getHttpServer())
+        .post('/api/admin/uploads/categories')
+        .set('Authorization', `Bearer ${token}`)
+        .attach('file', Buffer.alloc(21 * 1024 * 1024, 1), {
           filename: 'big.png',
           contentType: 'image/png',
         })

@@ -28,7 +28,7 @@ export interface ImageUploadCopy {
   /** Format/size guidance under the controls. */
   hint: string;
   toastUploaded: string;
-  /** 413 — over the 5 MB cap. */
+  /** 413 — over the 20 MB cap (MAX_IMAGE_BYTES). */
   errorTooLarge: string;
   /** 400/415 — the MIME or the real bytes are not an accepted image. */
   errorUnsupportedType: string;

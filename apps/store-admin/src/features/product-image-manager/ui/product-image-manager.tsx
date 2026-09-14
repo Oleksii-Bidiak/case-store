@@ -79,7 +79,7 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
  *
  * The batch endpoint validates every file before writing any of them, which is
  * right for the API and wrong for this screen: dropping twelve photos of which
- * one is a 9 MB original meant all twelve were refused with a single unexplained
+ * one is over the size cap meant all twelve were refused with a single unexplained
  * toast, and the operator had no way to tell which file was the problem. A
  * request per file buys a per-file outcome, a per-file reason, and a retry that
  * re-sends only what failed. Uploads run strictly in sequence so the images keep

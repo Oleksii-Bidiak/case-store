@@ -22,6 +22,30 @@ async function makeFixture(
   return format === 'png' ? img.png().toBuffer() : img.jpeg().toBuffer();
 }
 
+/**
+ * A 12 MP JPEG that does NOT compress away to nothing.
+ *
+ * The solid-colour fixture above is useless for size assertions: a 4000×3000
+ * flat blue encodes to a couple of kilobytes whether it was downscaled or not,
+ * so a byte budget over it would pass even if the resize stopped happening. The
+ * gaussian noise gives the encoder real work — this fixture lands at ~88 KB
+ * once shrunk to 2000px and at ~1.5 MB if it is served at full resolution, so
+ * the budget below actually fails when the resize regresses.
+ */
+async function makePhotoFixture(width = 4000, height = 3000): Promise<Buffer> {
+  return sharp({
+    create: {
+      width,
+      height,
+      channels: 3,
+      background: { r: 30, g: 120, b: 210 },
+      noise: { type: 'gaussian', mean: 128, sigma: 10 },
+    },
+  })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+}
+
 describe('ImageProcessor', () => {
   let processor: ImageProcessor;
 
@@ -37,9 +61,6 @@ describe('ImageProcessor', () => {
     expect(Buffer.isBuffer(webp)).toBe(true);
     const meta = await sharp(webp).metadata();
     expect(meta.format).toBe('webp');
-    // Dimensions are preserved for the full-size render (only the LQIP shrinks).
-    expect(meta.width).toBe(64);
-    expect(meta.height).toBe(48);
   });
 
   it('returns a base64 WebP data URI for the blur placeholder', async () => {
@@ -64,6 +85,89 @@ describe('ImageProcessor', () => {
     const lqip = Buffer.from(blurDataUrl.replace(/^data:image\/webp;base64,/, ''), 'base64');
 
     expect(lqip.byteLength).toBeLessThan(webp.byteLength);
+  });
+
+  // ─── Downscaling (TASK-439) ───────────────────────────────────────────────
+  // The reason the upload cap could go from 5 MB to 20 MB: what arrives is no
+  // longer what gets stored.
+
+  describe('downscaling', () => {
+    it('shrinks a 12 MP photo to the 2000px cap and a sane payload', async () => {
+      const input = await makePhotoFixture(4000, 3000);
+
+      const { webp } = await processor.process(input);
+
+      const meta = await sharp(webp).metadata();
+      expect(meta.format).toBe('webp');
+      // `fit: 'inside'` on a square box → the LONGEST edge lands on the cap and
+      // the aspect ratio is kept, so 4:3 becomes 2000×1500, never 2000×2000.
+      expect(meta.width).toBe(2000);
+      expect(meta.height).toBe(1500);
+      expect(webp.byteLength).toBeLessThanOrEqual(400 * 1024);
+    });
+
+    it('leaves an image already under the cap at its original size', async () => {
+      // `withoutEnlargement` — a small logo must not be upscaled to 2000px, which
+      // would cost bytes to add blur that was never in the source.
+      const input = await makeFixture('png', 64, 48);
+
+      const { webp } = await processor.process(input);
+
+      const meta = await sharp(webp).metadata();
+      expect(meta.width).toBe(64);
+      expect(meta.height).toBe(48);
+    });
+  });
+
+  // ─── EXIF (TASK-439) ──────────────────────────────────────────────────────
+
+  describe('EXIF handling', () => {
+    it('applies the EXIF orientation tag instead of storing the photo on its side', async () => {
+      // Orientation 6 = "rotate 90° clockwise when displaying". A phone shooting
+      // in portrait writes LANDSCAPE pixels plus this tag; strip the tag without
+      // acting on it and the photo is stored sideways forever.
+      const input = await sharp({
+        create: { width: 400, height: 300, channels: 3, background: { r: 30, g: 120, b: 210 } },
+      })
+        .withMetadata({ orientation: 6 })
+        .jpeg()
+        .toBuffer();
+
+      // Guard the fixture itself: without a real orientation tag this test would
+      // pass vacuously and prove nothing about `.rotate()`.
+      const fixtureMeta = await sharp(input).metadata();
+      expect(fixtureMeta.orientation).toBe(6);
+      expect(fixtureMeta.width).toBe(400);
+      expect(fixtureMeta.height).toBe(300);
+
+      const { webp } = await processor.process(input);
+
+      // Landscape pixels in, PORTRAIT pixels out: the tag was acted on, not
+      // merely discarded. Fail this and every phone photo is stored sideways.
+      const meta = await sharp(webp).metadata();
+      expect(meta.width).toBe(300);
+      expect(meta.height).toBe(400);
+    });
+
+    it('strips EXIF from what it hands back to be stored', async () => {
+      // `withMetadata()` is deliberately never called in the processor. Camera
+      // EXIF carries GPS coordinates, so anything we serve from our own origin
+      // must not have it — and once `.rotate()` has consumed the orientation the
+      // metadata has no remaining purpose.
+      const input = await sharp({
+        create: { width: 120, height: 90, channels: 3, background: { r: 9, g: 9, b: 9 } },
+      })
+        .withMetadata({ orientation: 6 })
+        .jpeg()
+        .toBuffer();
+      expect((await sharp(input).metadata()).exif).toBeDefined();
+
+      const { webp, blurDataUrl } = await processor.process(input);
+
+      expect((await sharp(webp).metadata()).exif).toBeUndefined();
+      const lqip = Buffer.from(blurDataUrl.replace(/^data:image\/webp;base64,/, ''), 'base64');
+      expect((await sharp(lqip).metadata()).exif).toBeUndefined();
+    });
   });
 
   describe('detectFormat', () => {

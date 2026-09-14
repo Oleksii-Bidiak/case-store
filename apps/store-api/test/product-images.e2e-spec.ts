@@ -218,10 +218,36 @@ describe('ProductImageController (e2e)', () => {
       expect(storageMock.save).not.toHaveBeenCalled();
     });
 
+    // Both sides of MAX_IMAGE_BYTES, and only both sides: a 20 MB multipart body
+    // through supertest costs real time, so the boundary gets two cases, not a
+    // sweep.
+    it('accepts a 20 MB photo — the size gallery images actually arrive at', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      imageRepositoryMock.getMaxSortOrder.mockResolvedValue(-1);
+      imageRepositoryMock.bulkCreate.mockResolvedValue(undefined);
+      storageMock.save.mockResolvedValue('products/generated.webp');
+      imageProcessorMock.process.mockResolvedValue({
+        webp: Buffer.from('optimized-webp'),
+        blurDataUrl: 'data:image/webp;base64,BLUR',
+      });
+      const straightOffAPhone = Buffer.alloc(20 * 1024 * 1024, 1); // == MAX_IMAGE_BYTES
+
+      await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images`)
+        .set('Authorization', `Bearer ${token}`)
+        .attach('files', straightOffAPhone, { filename: 'big.jpg', contentType: 'image/jpeg' })
+        .expect(201);
+
+      // What lands in storage is the shrunk re-encode, never the 20 MB original.
+      expect(storageMock.save).toHaveBeenCalledTimes(1);
+      expect(storageMock.save.mock.calls[0][0]).toEqual(Buffer.from('optimized-webp'));
+    });
+
     it('returns 413 for an oversized file', async () => {
       const token = generateAccessToken('admin-1', 'ADMIN');
       productRepositoryMock.findById.mockResolvedValue(testProduct);
-      const big = Buffer.alloc(6 * 1024 * 1024, 1); // 6 MB > 5 MB business limit
+      const big = Buffer.alloc(21 * 1024 * 1024, 1); // 21 MB > 20 MB business limit
 
       await request(app.getHttpServer())
         .post(`/api/products/${PRODUCT_ID}/images`)

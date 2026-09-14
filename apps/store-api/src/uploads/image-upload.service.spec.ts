@@ -88,8 +88,8 @@ describe('ImageUploadService', () => {
       expect(storage.save).not.toHaveBeenCalled();
     });
 
-    it('rejects a file over 5 MB with 413', async () => {
-      await expect(service.store(makeFile({ size: 6 * 1024 * 1024 }), 'content')).rejects.toThrow(
+    it('rejects a file over 20 MB with 413', async () => {
+      await expect(service.store(makeFile({ size: 21 * 1024 * 1024 }), 'content')).rejects.toThrow(
         PayloadTooLargeException,
       );
       expect(storage.save).not.toHaveBeenCalled();

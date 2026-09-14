@@ -30,7 +30,7 @@ export interface StoredImage {
  * routes (`UploadsController`).
  *
  * It exists because the same eight steps were about to be written a second time.
- * They are, in order: reject an unlisted MIME type (415), reject over 5 MB (413),
+ * They are, in order: reject an unlisted MIME type (415), reject over 20 MB (413),
  * sniff the real format from the bytes, re-encode raster to WebP + derive an
  * LQIP, pass animated GIFs through untouched, narrow the target subdir through
  * the storage whitelist, write the bytes, and assemble the public URL. Getting
@@ -139,7 +139,7 @@ export class ImageUploadService {
       );
     }
     if (file.size > MAX_IMAGE_BYTES) {
-      throw new PayloadTooLargeException('File exceeds the 5 MB limit');
+      throw new PayloadTooLargeException('File exceeds the 20 MB limit');
     }
   }
 

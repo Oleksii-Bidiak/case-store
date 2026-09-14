@@ -117,8 +117,8 @@ describe('ProductImageService', () => {
       expect(storage.save).not.toHaveBeenCalled();
     });
 
-    it('rejects a file exceeding the 5 MB limit', async () => {
-      const big = makeFile({ size: 6 * 1024 * 1024 });
+    it('rejects a file exceeding the 20 MB limit', async () => {
+      const big = makeFile({ size: 21 * 1024 * 1024 });
       await expect(service.uploadImages(PRODUCT_ID, [big])).rejects.toThrow(
         PayloadTooLargeException,
       );

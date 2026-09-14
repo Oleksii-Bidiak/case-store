@@ -3334,7 +3334,7 @@
             "description": "Product not found"
           },
           "413": {
-            "description": "File too large"
+            "description": "File exceeds the 20 MB limit"
           }
         },
         "security": [
@@ -3492,7 +3492,7 @@
             "description": "Forbidden — categories:write required"
           },
           "413": {
-            "description": "File exceeds the 5 MB limit"
+            "description": "File exceeds the 20 MB limit"
           },
           "415": {
             "description": "File contents are not a valid image"
@@ -3553,7 +3553,7 @@
             "description": "Forbidden — brands:write required"
           },
           "413": {
-            "description": "File exceeds the 5 MB limit"
+            "description": "File exceeds the 20 MB limit"
           },
           "415": {
             "description": "File contents are not a valid image"
@@ -3614,7 +3614,7 @@
             "description": "Forbidden — banners:write required"
           },
           "413": {
-            "description": "File exceeds the 5 MB limit"
+            "description": "File exceeds the 20 MB limit"
           },
           "415": {
             "description": "File contents are not a valid image"
@@ -3675,7 +3675,7 @@
             "description": "Forbidden — blog:write required"
           },
           "413": {
-            "description": "File exceeds the 5 MB limit"
+            "description": "File exceeds the 20 MB limit"
           },
           "415": {
             "description": "File contents are not a valid image"
