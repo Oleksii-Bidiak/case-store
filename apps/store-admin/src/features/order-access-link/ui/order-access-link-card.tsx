@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useAdminOrderControllerIssueAccessLink } from "@/entities/order";
+import { useAuth } from "@/entities/session";
+import { PERM } from "@/entities/permission";
 import { Button, CopyButton } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatDateTime } from "@/shared/lib";
@@ -32,9 +34,16 @@ interface OrderAccessLinkCardProps {
  * Local state only, never cached in React Query: a one-shot secret that survives
  * a navigation would sit in the query cache for as long as the tab is open, and
  * "shown once" would quietly become "shown whenever you come back".
+ *
+ * ── Why it is hidden without `orders:write` ──────────────────────────────────
+ * The endpoint requires it, and there is no read half to fall back to — the only
+ * thing this panel can do is issue. A read-only operator would get a button that
+ * 403s every time, which reads as a broken page rather than a permission they do
+ * not have.
  */
 export function OrderAccessLinkCard({ orderId }: OrderAccessLinkCardProps) {
   const d = dict.orderAccess;
+  const { can } = useAuth();
   const [link, setLink] = useState<{ url: string; issuedAt: string } | null>(
     null,
   );
@@ -53,6 +62,10 @@ export function OrderAccessLinkCard({ orderId }: OrderAccessLinkCardProps) {
       },
     );
   };
+
+  if (!can(PERM.ordersWrite)) {
+    return null;
+  }
 
   // 400 means STORE_CLIENT_URL is unset — a deployment defect rather than
   // something the operator did, so it names who can fix it.

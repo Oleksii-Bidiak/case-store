@@ -49,6 +49,20 @@ function issueFails(status: number): void {
 }
 
 /**
+ * Render the card for an operator who may actually issue links.
+ *
+ * `renderWithProviders` signs the viewer in holding NO permissions, and this
+ * panel is hidden without `orders:write` — so every behavioural test below has
+ * to say that it is testing the operator who has it. The gate itself is tested
+ * separately.
+ */
+function renderCard(permissions: string[] = ["orders:write"]) {
+  return renderWithProviders(<OrderAccessLinkCard orderId={ORDER_ID} />, {
+    auth: { permissions },
+  });
+}
+
+/**
  * Install a clipboard jsdom does not ship.
  *
  * `navigator.clipboard` is undefined in jsdom exactly as it is on an insecure
@@ -66,9 +80,21 @@ afterEach(() => {
   Reflect.deleteProperty(navigator, "clipboard");
 });
 
+describe("OrderAccessLinkCard — who may issue", () => {
+  it("is absent for an operator without orders:write", () => {
+    // Issuing is all this panel does — there is no read half to fall back to —
+    // and the endpoint requires the permission. Left visible, the button would
+    // 403 on every press, which reads as a broken page rather than a permission
+    // the viewer does not hold.
+    const { container } = renderCard(["orders:read"]);
+
+    expect(container).toBeEmptyDOMElement();
+  });
+});
+
 describe("OrderAccessLinkCard — before anything is issued", () => {
   it("says the previous link cannot be shown, and shows no link", () => {
-    renderWithProviders(<OrderAccessLinkCard orderId={ORDER_ID} />);
+    renderCard();
 
     // The honest statement of what hashing at rest costs. Without it an operator
     // reads the empty panel as "this order has no link" and mints a second one
@@ -87,7 +113,7 @@ describe("OrderAccessLinkCard — issuing a link", () => {
   it("shows the new link, when it was issued, and that it is shown once", async () => {
     const user = userEvent.setup();
     issueReturns(FIRST_URL);
-    renderWithProviders(<OrderAccessLinkCard orderId={ORDER_ID} />);
+    renderCard();
 
     await user.click(
       screen.getByRole("button", { name: "Видати нове посилання" }),
@@ -101,7 +127,7 @@ describe("OrderAccessLinkCard — issuing a link", () => {
   it("renders the link as selectable text, not only behind the copy button", async () => {
     const user = userEvent.setup();
     issueReturns(FIRST_URL);
-    renderWithProviders(<OrderAccessLinkCard orderId={ORDER_ID} />);
+    renderCard();
 
     await user.click(
       screen.getByRole("button", { name: "Видати нове посилання" }),
@@ -119,7 +145,7 @@ describe("OrderAccessLinkCard — issuing a link", () => {
   it("replaces the shown link when a second one is issued", async () => {
     const user = userEvent.setup();
     issueReturns(FIRST_URL, SECOND_URL);
-    renderWithProviders(<OrderAccessLinkCard orderId={ORDER_ID} />);
+    renderCard();
 
     await user.click(
       screen.getByRole("button", { name: "Видати нове посилання" }),
@@ -143,7 +169,7 @@ describe("OrderAccessLinkCard — copying", () => {
     const writeText = jest.fn().mockResolvedValue(undefined);
     withClipboard(writeText);
     issueReturns(FIRST_URL);
-    renderWithProviders(<OrderAccessLinkCard orderId={ORDER_ID} />);
+    renderCard();
 
     await user.click(
       screen.getByRole("button", { name: "Видати нове посилання" }),
@@ -176,7 +202,7 @@ describe("OrderAccessLinkCard — copying", () => {
       configurable: true,
     });
     issueReturns(FIRST_URL);
-    renderWithProviders(<OrderAccessLinkCard orderId={ORDER_ID} />);
+    renderCard();
 
     await user.click(
       screen.getByRole("button", { name: "Видати нове посилання" }),
@@ -199,7 +225,7 @@ describe("OrderAccessLinkCard — copying", () => {
     const user = userEvent.setup();
     withClipboard(jest.fn().mockRejectedValue(new Error("denied")));
     issueReturns(FIRST_URL);
-    renderWithProviders(<OrderAccessLinkCard orderId={ORDER_ID} />);
+    renderCard();
 
     await user.click(
       screen.getByRole("button", { name: "Видати нове посилання" }),
@@ -220,7 +246,7 @@ describe("OrderAccessLinkCard — when issuing fails", () => {
   it("names the deployment defect on a 400 rather than blaming the operator", async () => {
     const user = userEvent.setup();
     issueFails(400);
-    renderWithProviders(<OrderAccessLinkCard orderId={ORDER_ID} />);
+    renderCard();
 
     await user.click(
       screen.getByRole("button", { name: "Видати нове посилання" }),
@@ -235,7 +261,7 @@ describe("OrderAccessLinkCard — when issuing fails", () => {
   it("shows a retryable error otherwise, and no link", async () => {
     const user = userEvent.setup();
     issueFails(500);
-    renderWithProviders(<OrderAccessLinkCard orderId={ORDER_ID} />);
+    renderCard();
 
     await user.click(
       screen.getByRole("button", { name: "Видати нове посилання" }),
