@@ -43,6 +43,15 @@ export class NeedsActionDto {
     example: 1,
   })
   pendingOver48h!: number;
+
+  @ApiProperty({
+    type: Number,
+    description:
+      'Things that look like rating abuse: products with more than 10 ratings in the last ' +
+      'hour, plus IP addresses behind 3 or more 1★ ratings in the last 24 hours',
+    example: 2,
+  })
+  ratingAbuse!: number;
 }
 
 export class NeedsActionResponse {

@@ -9,6 +9,7 @@ import { UserRole } from '@prisma/client';
 import { UserRepository, UpdateUserInput, FindAllParams } from './user.repository';
 import { AuthRepository } from '../auth/auth.repository';
 import { AuthService } from '../auth/auth.service';
+import { ReviewService } from '../review/review.service';
 import { UserEntity, UserAdminCardEntity } from './entities';
 import { UpdateProfileDto, UserListQueryDto, CreateUserDto } from './dto';
 import { hashPassword } from '../common/security';
@@ -43,6 +44,7 @@ export class UserService {
     private readonly userRepository: UserRepository,
     private readonly authRepository: AuthRepository,
     private readonly authService: AuthService,
+    private readonly reviewService: ReviewService,
   ) {}
 
   /**
@@ -323,6 +325,12 @@ export class UserService {
    * sessions cannot outlive the ban (the access token still works until it
    * expires — at most JWT_EXPIRATION, 15m — but no new tokens can be minted).
    *
+   * And it withdraws what they wrote (TASK-589). The owner's decision 7(г) asked
+   * whether a ban hides ratings as well as reviews; measured during planning, it
+   * hid NEITHER — the account could not log in while its texts stayed on the
+   * storefront and its one-star ratings stayed in every average. An operator
+   * banning an abuser reasonably believes they have dealt with the abuse.
+   *
    * @param id      the target user to deactivate
    * @param adminId the calling admin's own id — an admin cannot ban themselves
    * @throws ForbiddenException when an admin targets their own account, or when
@@ -349,6 +357,9 @@ export class UserService {
     // Kill every active session for the banned user (idempotent — revokes only
     // non-revoked tokens).
     await this.authRepository.revokeAllUserTokens(id);
+
+    // …and take down what they wrote, ratings included (TASK-589).
+    await this.reviewService.hideAuthor(id);
 
     return UserEntity.fromPrisma(deactivatedUser);
   }
@@ -404,6 +415,11 @@ export class UserService {
     }
 
     const activatedUser = await this.userRepository.activate(id);
+
+    // The mirror of the ban (TASK-589). Whether the restored account's RATINGS
+    // count again is decided by the email gate, not by this call — see
+    // ReviewService.unhideAuthor.
+    await this.reviewService.unhideAuthor(id);
 
     return UserEntity.fromPrisma(activatedUser);
   }

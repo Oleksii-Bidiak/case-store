@@ -94,6 +94,22 @@ class BulkReviewModerationResponse {
 }
 
 /**
+ * What hiding or restoring a whole account reports back (TASK-589): the number of
+ * reviews the database actually wrote. Same shape and same reasoning as the bulk
+ * moderation result above — the operator's confirmation should quote what
+ * happened, not what was intended.
+ */
+class AuthorModerationResult {
+  @ApiProperty({ description: 'Reviews written', example: 12 })
+  updatedCount!: number;
+}
+
+class AuthorModerationResponse {
+  @ApiProperty({ type: AuthorModerationResult })
+  data!: AuthorModerationResult;
+}
+
+/**
  * Response envelope for the shop's reply — the same two fields a customer sees,
  * so an operator can never be shown an author name the storefront does not have.
  */
@@ -111,6 +127,8 @@ class ReviewReplyResponseEnvelope {
   AdminReviewResponseEnvelope,
   BulkReviewModerationResult,
   BulkReviewModerationResponse,
+  AuthorModerationResult,
+  AuthorModerationResponse,
   ReviewReplyEntity,
   ReviewReplyResponseEnvelope,
 )
@@ -193,6 +211,81 @@ export class AdminReviewController {
   async moderateMany(@Body() dto: BulkReviewModerationDto): Promise<BulkReviewModerationResponse> {
     const updatedCount = await this.reviewService.moderateMany(dto.ids, dto.action);
 
+    return { data: { updatedCount } };
+  }
+
+  /**
+   * POST /api/admin/reviews/authors/:userId/hide
+   *
+   * Withdraw an account's WHOLE contribution — every rating and every text — in
+   * one click (TASK-589, the owner's 2026-09-10 decision).
+   *
+   * The per-row buttons below answer a different question: "is this sentence
+   * publishable?". Against a PERSON they are the wrong instrument — thirty
+   * ratings cost thirty clicks, and the ratings are not in the moderation queue
+   * at all, so the screen the operator is working does not show them.
+   *
+   * DECLARED BEFORE the `:id` routes, for the reason spelled out on
+   * `@Patch('moderate')`. `authors/:userId/hide` is three segments and `:id/reply`
+   * is two, so nothing shadows it today — but that holds only until somebody adds
+   * a `@Post(':id/:action')`, and the failure would then read as a 404 about a
+   * review that exists.
+   *
+   * Inherits the controller's `reviews:moderate`: withdrawing somebody's
+   * contribution is a judgement about their words, which is exactly what that
+   * permission is for — unlike the reply below, where the shop speaks in its own
+   * name.
+   */
+  @Post('authors/:userId/hide')
+  // 200, not the POST default of 201: nothing is created, and the honest answer
+  // is how many rows were written.
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Hide every review of one account (admin)',
+    operationId: 'adminReviewControllerHideAuthor',
+  })
+  @ApiParam({ name: 'userId', description: 'Author UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Reviews withdrawn — ratings and texts alike',
+    type: AuthorModerationResponse,
+  })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Forbidden — reviews:moderate required' })
+  async hideAuthor(@Param('userId') userId: string): Promise<AuthorModerationResponse> {
+    const updatedCount = await this.reviewService.hideAuthor(userId);
+    return { data: { updatedCount } };
+  }
+
+  /**
+   * POST /api/admin/reviews/authors/:userId/unhide
+   *
+   * Give an account its contribution back (TASK-589).
+   *
+   * NOT a symmetric undo of the ratings. `hiddenAt` is cleared unconditionally,
+   * but whether the stars count again is decided by re-asking the email gate:
+   * `ratingVisible` folds both gates, and this route lifts only the moderator's.
+   * See {@link ReviewService.unhideAuthor}.
+   */
+  @Post('authors/:userId/unhide')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Restore every review of one account (admin)',
+    operationId: 'adminReviewControllerUnhideAuthor',
+  })
+  @ApiParam({ name: 'userId', description: 'Author UUID' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Reviews restored; their ratings count again only if the author’s address is confirmed',
+    type: AuthorModerationResponse,
+  })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Forbidden — reviews:moderate required' })
+  async unhideAuthor(@Param('userId') userId: string): Promise<AuthorModerationResponse> {
+    const updatedCount = await this.reviewService.unhideAuthor(userId);
     return { data: { updatedCount } };
   }
 

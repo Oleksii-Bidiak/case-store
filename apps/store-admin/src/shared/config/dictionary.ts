@@ -2839,6 +2839,11 @@ export const dict = {
       delete: "видалено",
       deleteCategory: "видалено категорію",
       deleteLogo: "видалено логотип",
+      // TASK-589. The audit action set is DERIVED from the guarded mutating
+      // routes, so `POST /admin/reviews/authors/:userId/hide` produces
+      // `review.hideAuthor` the moment it exists — and without a verb here the
+      // owner's audit log prints the raw key.
+      hideAuthor: "приховано відгуки автора",
       moderateMany: "промодеровано (масово)",
       publish: "опубліковано",
       refund: "повернено кошти",
@@ -2861,6 +2866,7 @@ export const dict = {
       setProductDelta: "задано винятки для товару",
       setStatus: "змінено статус",
       setStatusMany: "змінено статус (масово)",
+      unhideAuthor: "повернено відгуки автора",
       unpublish: "знято з публікації",
       update: "змінено",
       updateBrand: "змінено бренд",

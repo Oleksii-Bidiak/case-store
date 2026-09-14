@@ -77,6 +77,12 @@ describe('UserController (e2e)', () => {
       update: jest.fn(),
       updateMany: jest.fn(),
     },
+    // TASK-589: banning an account now withdraws its reviews and ratings, so the
+    // ban path reaches ReviewRepository — which is real here, unlike in
+    // review.e2e-spec.ts.
+    review: {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
   };
 
   // Test data

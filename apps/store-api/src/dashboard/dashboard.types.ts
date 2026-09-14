@@ -123,7 +123,42 @@ export interface NeedsAction {
    * orders, how many have been waiting too long.
    */
   pendingOver48h: number;
+  /**
+   * How many things currently look like rating abuse (TASK-589): flagged products
+   * plus flagged addresses. See {@link RATING_BURST_THRESHOLD} and
+   * {@link ONE_STAR_RUN_THRESHOLD} for what "flagged" means, and why the second
+   * number is 3.
+   */
+  ratingAbuse: number;
 }
+
+/**
+ * Rating-abuse thresholds for the «Потребує дії» widget (TASK-589), from the
+ * owner's decision 7: «>10 оцінок на один товар за годину, або серія 1★ з однієї
+ * IP».
+ *
+ * ## The numbers, and which one was ours to choose
+ *
+ * The burst is the owner's, verbatim: MORE than ten ratings on one product
+ * within an hour. Ten is the number that is still fine.
+ *
+ * The run length was never specified — «серія» has no number in it — so 3 is our
+ * choice, and this is where a reader will find it. Two is a coincidence: any
+ * household, office or mobile carrier NAT puts unrelated customers behind one
+ * address, and two unhappy people among them is an ordinary Tuesday. Three
+ * one-star ratings from one address inside a day is the point where the cheapest
+ * explanation stops being chance. The signal only opens a screen for a human to
+ * look at, so the cost of being wrong is one glance — which is the argument for
+ * erring low rather than high.
+ *
+ * `createdIp` is null for every review written before TASK-588, and null must
+ * NEVER group as a value: those rows all share it, so an unfiltered query reads
+ * the entire seeded catalogue as one address that left ~2 200 reviews.
+ */
+export const RATING_BURST_WINDOW_HOURS = 1;
+export const RATING_BURST_THRESHOLD = 10;
+export const ONE_STAR_RUN_WINDOW_HOURS = 24;
+export const ONE_STAR_RUN_THRESHOLD = 3;
 
 /** Rolling window (in days) used for all time-series metrics. */
 export const DASHBOARD_WINDOW_DAYS = 30;

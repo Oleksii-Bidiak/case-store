@@ -356,4 +356,43 @@ export class ReviewService {
 
     return count;
   }
+
+  /**
+   * Withdraw everything an account ever wrote — every rating and every text
+   * (TASK-589, the owner's 2026-09-10 decision).
+   *
+   * Per-row moderation is the wrong instrument here. It answers "is this sentence
+   * publishable", one click at a time, and an abuser with thirty ratings costs
+   * thirty clicks — while the RATINGS never reach the moderation queue at all, so
+   * the screen an operator is looking at does not even show the damage.
+   *
+   * Also called when an account is banned, which is the other half of the same
+   * decision: a ban that leaves the banned person's words on the storefront is
+   * not the action the operator thought they were taking.
+   *
+   * @returns how many reviews were withdrawn.
+   */
+  async hideAuthor(userId: string): Promise<number> {
+    const count = await this.reviewRepository.hideAuthorReviews(userId);
+    this.logger.info({ userId, count }, 'Author contribution hidden');
+    return count;
+  }
+
+  /**
+   * Restore an account's contribution (TASK-589).
+   *
+   * The email gate is RE-ASKED rather than assumed. `ratingVisible` folds two
+   * independent gates — a moderator's `hiddenAt` and a proven address — and this
+   * call lifts only the first. Forcing the second open would mean an account that
+   * never confirmed its address could be handed counting ratings by way of an
+   * ordinary un-ban, which no screen in the panel would report.
+   *
+   * @returns how many reviews were restored.
+   */
+  async unhideAuthor(userId: string): Promise<number> {
+    const ratingVisible = await this.reviewRepository.isEmailVerified(userId);
+    const count = await this.reviewRepository.restoreAuthorReviews(userId, ratingVisible);
+    this.logger.info({ userId, count, ratingVisible }, 'Author contribution restored');
+    return count;
+  }
 }

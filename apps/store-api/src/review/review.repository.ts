@@ -406,6 +406,51 @@ export class ReviewRepository {
   }
 
   /**
+   * Withdraw an account's WHOLE contribution in one write (TASK-589) — every
+   * rating and every text, which is the abuse lever from the owner's 2026-09-10
+   * decision.
+   *
+   * BOTH flags move, because they answer different halves of "is this visible":
+   * `hiddenAt` is what the three text read-paths filter on, `ratingVisible` is
+   * what keeps the stars out of every average. Writing one without the other
+   * leaves a state that looks entirely normal — the reviews disappear and the
+   * product's score does not move.
+   *
+   * Unfiltered on `hiddenAt` on purpose: re-hiding must be idempotent, and a
+   * `hiddenAt: null` filter here would skip a row whose stars had somehow been
+   * flipped back on, leaving the operator clicking a button that does nothing.
+   *
+   * Returns how many rows were written.
+   */
+  async hideAuthorReviews(userId: string): Promise<number> {
+    const { count } = await this.prisma.review.updateMany({
+      where: { userId },
+      data: { hiddenAt: new Date(), ratingVisible: false },
+    });
+    return count;
+  }
+
+  /**
+   * Give an account its contribution back (TASK-589).
+   *
+   * `ratingVisible` is a PARAMETER rather than a hard `true`, and that is the
+   * whole point: the flag folds two gates — the moderator's `hiddenAt` and the
+   * author's confirmed address — so lifting the first does not waive the second.
+   * The service re-asks the email gate and passes the answer here; a `true`
+   * written blind would turn an ordinary un-ban into a way around it, with
+   * nothing on any screen to say so.
+   *
+   * Returns how many rows were written.
+   */
+  async restoreAuthorReviews(userId: string, ratingVisible: boolean): Promise<number> {
+    const { count } = await this.prisma.review.updateMany({
+      where: { userId },
+      data: { hiddenAt: null, ratingVisible },
+    });
+    return count;
+  }
+
+  /**
    * Write the shop's answer to a review (TASK-587).
    *
    * An UPSERT keyed on `reviewId`, which the schema makes unique. Two reasons it
