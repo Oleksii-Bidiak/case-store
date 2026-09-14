@@ -104,9 +104,9 @@ export interface DashboardSummary {
 
 /**
  * "Needs action" counters for the admin dashboard widget + sidebar badges
- * (TASK-248). Four independent COUNT reads over existing columns — no writes,
- * no migration. Plain mirror of {@link NeedsActionDto} (the decorated Swagger
- * class the controller returns), carrying no decorator metadata.
+ * (TASK-248). Independent reads over existing columns — no writes, no migration.
+ * Plain mirror of {@link NeedsActionDto} (the decorated Swagger class the
+ * controller returns), carrying no decorator metadata.
  */
 export interface NeedsAction {
   /** Orders awaiting confirmation (`status = PENDING`). */

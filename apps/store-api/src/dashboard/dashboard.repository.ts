@@ -274,8 +274,8 @@ export class DashboardRepository {
 
   /**
    * "Needs action" counters for the dashboard widget + sidebar badges
-   * (TASK-248). Four independent COUNT reads run in a single `Promise.all` —
-   * no N+1, no joins, mirroring the `getSummary()` parallelization style:
+   * (TASK-248). Independent reads run in a single `Promise.all` — no N+1, no
+   * joins, mirroring the `getSummary()` parallelization style:
    *   - `newOrders`       — orders awaiting confirmation (`status = PENDING`)
    *   - `pendingReviews`  — review TEXTS awaiting a verdict (`textStatus = PENDING`,
    *                         matching `ReviewRepository.findForModeration('pending')`).
